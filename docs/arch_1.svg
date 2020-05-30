@@ -1,0 +1,56 @@
+<svg version="1.1" baseProfile="full" width="277" height="526" viewbox="0 0 277 526" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:ev="http://www.w3.org/2001/xml-events" style="font-weight:bold; font-size:12pt; font-family:'Calibri', Helvetica, sans-serif;;stroke-width:3;stroke-linejoin:round;stroke-linecap:round">
+  <title >nomnoml</title>
+  <desc >[&lt;database&gt;qdrant master|
+	[searchers]  read-&gt; [register]
+
+	[register] -&gt; owns [segments|
+    	[raw data] - [index]
+    ]
+    
+    [&lt;input&gt;Request] -&gt; [WAL]
+    [WAL] -&gt; [indexer]
+    [indexer] write-&gt; [register]
+]
+
+
+
+</desc>
+  <rect x="13.5" y="13.5" height="500" width="251" style="stroke:none; fill:#eee8d5;"></rect>
+  <path d="M13.5 9.5 L13.5 509.5" style="stroke:#33322E;fill:none;stroke-dasharray:none;"></path>
+  <path d="M264.5 9.5 L264.5 509.5" style="stroke:#33322E;fill:none;stroke-dasharray:none;"></path>
+  <ellipse cx="139" cy="9.5" rx="125.5" ry="6" style="stroke:#33322E;fill:#eee8d5;stroke-dasharray:none;"></ellipse>
+  <path d="M13.5 509.5A125.5 6 0 1 0 264.5 509.5" style="stroke:#33322E;fill:#eee8d5;stroke-dasharray:none;"></path>
+  <text x="139" y="35" style="fill: #33322E;text-anchor: middle;">qdrant master</text>
+  <path d="M13.5 44.5 L264.5 44.5" style="stroke:#33322E;fill:none;stroke-dasharray:none;"></path>
+  <text x="31.5" y="250.5" style="fill: #33322E;font-weight:normal;">read</text>
+  <path d="M77.5 230.5 L77.5 250.5 L114.8 270.5 L114.8 270.5 " style="stroke:#33322E;fill:none;stroke-dasharray:none;"></path>
+  <path d="M100.6 268.9 L108.9 267.4 L105.6 259.5 L114.8 270.5 Z" style="stroke:#33322E;fill:#33322E;stroke-dasharray:none;"></path>
+  <text x="97.8" y="333.5" style="fill: #33322E;font-weight:normal;">owns</text>
+  <path d="M143.8 301.5 L143.8 321.5 L143.8 341.5 L143.8 341.5 " style="stroke:#33322E;fill:none;stroke-dasharray:none;"></path>
+  <path d="M138.4 328.2 L143.8 334.8 L149.1 328.2 L143.8 341.5 Z" style="stroke:#33322E;fill:#33322E;stroke-dasharray:none;"></path>
+  <path d="M210 88.5 L210 108.5 L210 128.5 L210 128.5 " style="stroke:#33322E;fill:none;stroke-dasharray:none;"></path>
+  <path d="M204.7 115.2 L210 121.8 L215.3 115.2 L210 128.5 Z" style="stroke:#33322E;fill:#33322E;stroke-dasharray:none;"></path>
+  <path d="M210 159.5 L210 179.5 L210 199.5 L210 199.5 " style="stroke:#33322E;fill:none;stroke-dasharray:none;"></path>
+  <path d="M204.7 186.2 L210 192.8 L215.3 186.2 L210 199.5 Z" style="stroke:#33322E;fill:#33322E;stroke-dasharray:none;"></path>
+  <text x="218" y="250.5" style="fill: #33322E;font-weight:normal;">write</text>
+  <path d="M210 230.5 L210 250.5 L172.7 270.5 L172.7 270.5 " style="stroke:#33322E;fill:none;stroke-dasharray:none;"></path>
+  <path d="M181.9 259.5 L178.6 267.4 L186.9 268.9 L172.7 270.5 Z" style="stroke:#33322E;fill:#33322E;stroke-dasharray:none;"></path>
+  <rect x="84.5" y="341.5" height="159" width="118" style="stroke:#33322E;fill:#fdf6e3;stroke-dasharray:none;"></rect>
+  <text x="143.5" y="363" style="fill: #33322E;text-anchor: middle;">segments</text>
+  <path d="M84.5 372.5 L202.5 372.5" style="stroke:#33322E;fill:none;stroke-dasharray:none;"></path>
+  <path d="M143.5 416.5 L143.5 436.5 L143.5 456.5 L143.5 456.5 " style="stroke:#33322E;fill:none;stroke-dasharray:none;"></path>
+  <rect x="97.5" y="385.5" height="31" width="92" style="stroke:#33322E;fill:#eee8d5;stroke-dasharray:none;"></rect>
+  <text x="143.5" y="407" style="fill: #33322E;text-anchor: middle;">raw data</text>
+  <rect x="111.5" y="456.5" height="31" width="64" style="stroke:#33322E;fill:#eee8d5;stroke-dasharray:none;"></rect>
+  <text x="143.5" y="478" style="fill: #33322E;text-anchor: middle;">index</text>
+  <rect x="26.5" y="199.5" height="31" width="102" style="stroke:#33322E;fill:#fdf6e3;stroke-dasharray:none;"></rect>
+  <text x="77.5" y="221" style="fill: #33322E;text-anchor: middle;">searchers</text>
+  <rect x="97.5" y="270.5" height="31" width="92" style="stroke:#33322E;fill:#fdf6e3;stroke-dasharray:none;"></rect>
+  <text x="143.5" y="292" style="fill: #33322E;text-anchor: middle;">register</text>
+  <path d="M176.5 57.5 L251.5 57.5 L243.5 88.5 L168.5 88.5 Z" style="stroke:#33322E;fill:#fdf6e3;stroke-dasharray:none;"></path>
+  <text x="210" y="79" style="fill: #33322E;font-weight:normal;text-anchor: middle;">Request</text>
+  <rect x="185.5" y="128.5" height="31" width="49" style="stroke:#33322E;fill:#fdf6e3;stroke-dasharray:none;"></rect>
+  <text x="210" y="150" style="fill: #33322E;text-anchor: middle;">WAL</text>
+  <rect x="168.5" y="199.5" height="31" width="83" style="stroke:#33322E;fill:#fdf6e3;stroke-dasharray:none;"></rect>
+  <text x="210" y="221" style="fill: #33322E;text-anchor: middle;">indexer</text>
+</svg>

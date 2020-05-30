@@ -1,0 +1,3 @@
+
+storage:
+  wal: ./wal_log
