@@ -12,19 +12,13 @@ pub struct BaseIndexParams {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct PlainIndex {
-    pub params: BaseIndexParams,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct HnswIndex {
-    pub params: BaseIndexParams,
-    pub m: usize,
-    pub ef_construct: usize,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub enum IndexType {
-    Plain(PlainIndex),
-    Hnsw(HnswIndex),
+pub enum Indexes {
+    PlainIndex {
+        params: BaseIndexParams,
+    },
+    HnswIndex {
+        params: BaseIndexParams,
+        m: usize,
+        ef_construct: usize,
+    },
 }

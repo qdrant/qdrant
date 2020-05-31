@@ -1,49 +1,39 @@
-use crate::common::index_def::IndexType;
+use crate::common::index_def::Indexes;
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct CreateCollection {
-    pub collection_name: String,
-    pub dim: usize,
-    pub index: Option<IndexType>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ConstructIndex {
-    pub collection_name: String,
-    pub index: IndexType,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct DeleteCollection {
-    pub collection_name: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct CreateAlias {
-    pub collection_name: String,
-    pub alias_name: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct DeleteAlias {
-    pub alias_name: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct RenameAlias {
-    pub old_alias_name: String,
-    pub new_alias_name: String,
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 pub enum AliasOperations {
-    CreateAlias,
-    DeleteAlias,
-    RenameAlias,
+    CreateAlias {
+        collection_name: String,
+        alias_name: String,
+    },
+    DeleteAlias {
+        alias_name: String,
+    },
+    RenameAlias {
+        old_alias_name: String,
+        new_alias_name: String,
+    },
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct ChangeAliases {
-    actions: Vec<AliasOperations>,
+pub enum CollectionOps {
+    /// Create new collection and (optionally) specify index params
+    CreateCollection {
+        collection_name: String,
+        dim: usize,
+        index: Option<Indexes>,
+    },
+    /// Force construct specified index
+    ConstructIndex {
+        collection_name: String,
+        index: Indexes,
+    },
+    /// Drop collection
+    DeleteCollection {
+        collection_name: String,
+    },
+    /// Perform changes of index aliases
+    ChangeAliases {
+        actions: Vec<AliasOperations>,
+    }
 }
