@@ -2,29 +2,29 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum Distance {
-  Cosine,
-  Euclid
+    Cosine,
+    Euclid,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct BaseIndexParams {
-  distance: Distance
+    pub distance: Distance,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PlainIndex {
-  params: BaseIndexParams,
+    pub params: BaseIndexParams,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HnswIndex {
-  params: BaseIndexParams,
-  m: usize,
-  ef_construct: usize
+    pub params: BaseIndexParams,
+    pub m: usize,
+    pub ef_construct: usize,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum IndexType {
-  PlainIndex, HnswIndex
+    Plain(PlainIndex),
+    Hnsw(HnswIndex),
 }
-

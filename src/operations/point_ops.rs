@@ -1,19 +1,18 @@
-use serde::{Serialize, Deserialize};
-use crate::common::types::{PointIdType, VectorType};
 use super::common::CollectionUpdateInfo;
-
+use crate::common::types::{PointIdType, VectorType};
+use serde::{Deserialize, Serialize};
 
 /// Insert or update points
 #[derive(Debug, Deserialize, Serialize)]
-struct UpsertPoints {
-  collection: CollectionUpdateInfo,
-  ids: Vec<PointIdType>,
-  vectors: Vec<VectorType>
+pub struct UpsertPoints {
+    pub collection: CollectionUpdateInfo,
+    pub ids: Vec<PointIdType>,
+    pub vectors: Vec<VectorType>,
 }
 
 /// Delete point if exists
 #[derive(Debug, Deserialize, Serialize)]
-struct DeletePoints {
-  collection: CollectionUpdateInfo,
-  ids: Vec<PointIdType>,
+pub struct DeletePoints {
+    pub collection: CollectionUpdateInfo,
+    pub ids: Vec<PointIdType>,
 }

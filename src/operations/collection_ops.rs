@@ -2,48 +2,48 @@ use crate::common::index_def::IndexType;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
-struct CreateCollection {
-    collection_name: String,
-    dim: usize,
-    index: Option<IndexType>,
+pub struct CreateCollection {
+    pub collection_name: String,
+    pub dim: usize,
+    pub index: Option<IndexType>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct ConstructIndex {
-    collection_name: String,
-    index: IndexType,
+pub struct ConstructIndex {
+    pub collection_name: String,
+    pub index: IndexType,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct DeleteCollection {
-    collection_name: String,
+pub struct DeleteCollection {
+    pub collection_name: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct CreateAlias {
-    collection_name: String,
-    alias_name: String,
+pub struct CreateAlias {
+    pub collection_name: String,
+    pub alias_name: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct DeleteAlias {
-    alias_name: String,
+pub struct DeleteAlias {
+    pub alias_name: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct RenameAlias {
-    old_alias_name: String,
-    new_alias_name: String,
+pub struct RenameAlias {
+    pub old_alias_name: String,
+    pub new_alias_name: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-enum AliasOperations {
+pub enum AliasOperations {
     CreateAlias,
     DeleteAlias,
     RenameAlias,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct ChangeAliases {
+pub struct ChangeAliases {
     actions: Vec<AliasOperations>,
 }

@@ -332,6 +332,7 @@ dependencies = [
  "config",
  "rand 0.7.3",
  "serde 1.0.111",
+ "serde_json",
  "serde_yaml",
  "wal",
 ]
