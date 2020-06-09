@@ -1,2 +1,7 @@
 
 debug: true
+log_level: INFO
+
+service:
+  host: 127.0.0.1
+  port: 6333

@@ -1,17 +1,25 @@
-
+use config::{Config, ConfigError, Environment, File};
+use serde::Deserialize;
 use std::env;
-use config::{ConfigError, Config, File, Environment};
-use serde::{Deserialize};
 
 #[derive(Debug, Deserialize)]
-struct Storage {
-    wal: String,
+pub struct StorageConfig {
+    pub wal: String,
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ServiceConfig {
+    pub host: String,
+    pub port: usize
+}
+
+
+#[derive(Debug, Deserialize)]
 pub struct Settings {
-    debug: bool,
-    storage: Storage,
+    pub debug: bool,
+    pub log_level: String,
+    pub storage: StorageConfig,
+    pub service: ServiceConfig
 }
 
 impl Settings {

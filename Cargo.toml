@@ -8,6 +8,8 @@ edition = "2018"
 
 [dependencies]
 
+log = "0.4"
+env_logger = "0.7.1"
 rand = "0.7.3"
 wal = { git = "https://github.com/generall/wal.git" }
 serde = { version = "~1.0", features = ["derive"] }
@@ -16,3 +18,8 @@ serde_json = "~1.0"
 bincode = "~1.2.1"
 
 config = "~0.10.1"
+
+
+actix-web = "2.0"
+actix-rt = "1.0"
+
