@@ -1,14 +1,15 @@
-extern crate bincode;
+extern crate serde_cbor;
 extern crate wal;
 
-use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use std::result;
+
+use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
 use thiserror::Error;
 use wal::Wal;
 use wal::WalOptions;
 
-use serde::de::DeserializeOwned;
 
 #[derive(Error, Debug)]
 pub enum WalError {
@@ -19,7 +20,7 @@ pub enum WalError {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct MyRecord {
+struct TestRecord {
     pub data: i32,
 }
 
@@ -41,7 +42,7 @@ impl<'s, R: DeserializeOwned + Serialize> SerdeWal<R> {
     }
 
     pub fn write(&mut self, entity: &R) -> Result<u64> {
-        let binary_entity = bincode::serialize(&entity).unwrap();
+        let binary_entity = serde_cbor::to_vec(&entity).unwrap();
         self.wal
             .append(&binary_entity)
             .map_err(|err| WalError::WriteWalError(format!("Can't append to WAL: {:?}", err)))
@@ -54,7 +55,7 @@ impl<'s, R: DeserializeOwned + Serialize> SerdeWal<R> {
             .skip_while(move |&idx| idx < start_from)
             .map(move |idx| {
                 let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
-                let record: R = bincode::deserialize(&record_bin)
+                let record: R = serde_cbor::from_slice(&record_bin)
                     .expect("Can't deserialize entry, probably corrupted WAL on version mismatch");
                 (idx, record)
             });
@@ -82,9 +83,9 @@ mod tests {
             segment_queue_len: 0,
         };
 
-        let mut serde_wal: SerdeWal<MyRecord> = SerdeWal::new(dir.path().to_str().unwrap(), &wal_options).unwrap();
+        let mut serde_wal: SerdeWal<TestRecord> = SerdeWal::new(dir.path().to_str().unwrap(), &wal_options).unwrap();
 
-        let record = MyRecord { data: 10 };
+        let record = TestRecord { data: 10 };
 
         serde_wal.write(&record).expect("Can't write");
 
@@ -92,7 +93,7 @@ mod tests {
             println!("{:?}", rec.data);
         }
 
-        let record = MyRecord { data: 11 };
+        let record = TestRecord { data: 11 };
 
         serde_wal.write(&record).expect("Can't write");
 
