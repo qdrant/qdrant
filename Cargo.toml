@@ -6,8 +6,13 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[dev-dependencies]
+tempdir = "0.3.7"
+
+
 [dependencies]
 
+thiserror = "1.0"
 log = "0.4"
 env_logger = "0.7.1"
 rand = "0.7.3"
@@ -19,7 +24,12 @@ bincode = "~1.2.1"
 
 config = "~0.10.1"
 
-
 actix-web = "2.0"
 actix-rt = "1.0"
 
+
+
+[[bin]]
+name = "service"
+path = "src/service.rs"
+test = false
