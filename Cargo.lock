@@ -378,16 +378,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b41b7ea54a0c9d92199de89e20e58d49f02f8e699814ef3fdf266f6f748d15c7"
 
 [[package]]
-name = "bincode"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5753e2a71534719bf3f4e57006c3a4f0d2c672a4b676eec84161f763eca87dbf"
-dependencies = [
- "byteorder 1.3.4",
- "serde 1.0.111",
-]
-
-[[package]]
 name = "bitflags"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1286,12 +1276,10 @@ version = "0.1.0"
 dependencies = [
  "actix-rt",
  "actix-web",
- "bincode",
  "config",
  "env_logger 0.7.1",
  "log 0.4.8",
  "rand 0.7.3",
- "rmp-serde",
  "serde 1.0.111",
  "serde_cbor",
  "serde_json",
@@ -1464,27 +1452,6 @@ checksum = "11834e137f3b14e309437a8276714eed3a80d1ef894869e510f2c0c0b98b9f4a"
 dependencies = [
  "hostname",
  "quick-error",
-]
-
-[[package]]
-name = "rmp"
-version = "0.8.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f10b46df14cf1ee1ac7baa4d2fbc2c52c0622a4b82fa8740e37bc452ac0184f"
-dependencies = [
- "byteorder 1.3.4",
- "num-traits 0.2.11",
-]
-
-[[package]]
-name = "rmp-serde"
-version = "0.14.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c1ee98f14fe8b8e9c5ea13d25da7b2a1796169202c57a09d7288de90d56222b"
-dependencies = [
- "byteorder 1.3.4",
- "rmp",
- "serde 1.0.111",
 ]
 
 [[package]]

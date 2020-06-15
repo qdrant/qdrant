@@ -1,13 +1,11 @@
-
 mod common;
 
-pub mod tag_ops;
-pub mod point_ops;
 pub mod collection_ops;
-
+pub mod payload_ops;
+pub mod point_ops;
 
 pub enum Operations {
-  PointOperation(point_ops::PointOps),
-  TagOperation(tag_ops::TagOps),
-  CollectionOperation(collection_ops::CollectionOps),
+    PointOperation(point_ops::PointOps),
+    PayloadOperation(payload_ops::PayloadOps),
+    CollectionOperation(collection_ops::CollectionOps),
 }
