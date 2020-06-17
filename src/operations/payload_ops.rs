@@ -24,24 +24,24 @@ pub struct NamedPayload {
 #[serde(rename_all = "snake_case")]
 pub enum PayloadOps {
 /// Appends all given tags to each given point
-    SetTags {
+    SetPayload {
         collection: CollectionUpdateInfo,
         payload: Vec<NamedPayload>,
         points: Vec<PointIdType>,
     },
-    /// Deletes specified tags if they are assigned
-    DeleteTags {
+    /// Deletes specified Payload if they are assigned
+    DeletePayload {
         collection: CollectionUpdateInfo,
-        tags: Vec<PayloadKeyType>,
+        payload: Vec<PayloadKeyType>,
         points: Vec<PointIdType>,
     },
-    /// Drops all tags associated with given points.
-    ClearTags {
+    /// Drops all Payload associated with given points.
+    ClearPayload {
         collection: CollectionUpdateInfo,
         points: Vec<PointIdType>,
     },
-    /// Drops all tags in given collection.
-    WipeTags {
+    /// Drops all Payload in given collection.
+    WipePayload {
         collection: CollectionUpdateInfo,
     }
 }

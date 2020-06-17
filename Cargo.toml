@@ -8,6 +8,7 @@ edition = "2018"
 
 [dev-dependencies]
 tempdir = "0.3.7"
+criterion = "0.3"
 
 
 [dependencies]
@@ -27,9 +28,13 @@ config = "~0.10.1"
 actix-web = "2.0"
 actix-rt = "1.0"
 
-
-
 [[bin]]
 name = "service"
 path = "src/service.rs"
 test = false
+bench = false
+
+
+[[bench]]
+name = "dyn_benchmark"
+harness = false
