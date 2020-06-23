@@ -1,9 +1,9 @@
 use std::default::Default;
 
 use super::common::CollectionUpdateInfo;
-use crate::common::types::{PointIdType, PayloadKeyType, PayloadType};
 use serde;
 use serde::{Deserialize, Serialize};
+use segment::types::{PointIdType, PayloadKeyType, PayloadType};
 
 
 fn default_as_false() -> bool {

@@ -3,6 +3,7 @@ name = "qdrant"
 version = "0.1.0"
 authors = ["Andrey Vasnetsov <vasnetsov93@gmail.com>"]
 edition = "2018"
+doctest = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -28,11 +29,18 @@ config = "~0.10.1"
 actix-web = "2.0"
 actix-rt = "1.0"
 
+segment = {path = "lib/segment"}
+
+
+[workspace]
+members = ["lib/*"]
+
 [[bin]]
 name = "service"
 path = "src/service.rs"
 test = false
 bench = false
+build = false
 
 
 [[bench]]

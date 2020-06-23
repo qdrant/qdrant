@@ -2,7 +2,6 @@ mod settings;
 mod storage;
 
 mod common;
-mod spaces;
 mod operations;
 
 use actix_web::middleware::Logger;

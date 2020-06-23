@@ -1364,6 +1364,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a170cebd8021a008ea92e4db85a72f80b35df514ec664b296fdcbb654eac0b2c"
 
 [[package]]
+name = "ordered-float"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18869315e81473c951eb56ad5558bbc56978562d3ecfb87abb7a1e944cea4518"
+dependencies = [
+ "num-traits 0.2.11",
+]
+
+[[package]]
 name = "parking_lot"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1475,6 +1484,7 @@ dependencies = [
  "env_logger 0.7.1",
  "log 0.4.8",
  "rand 0.7.3",
+ "segment",
  "serde 1.0.111",
  "serde_cbor",
  "serde_json",
@@ -1730,6 +1740,16 @@ name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
+
+[[package]]
+name = "segment"
+version = "0.1.0"
+dependencies = [
+ "ordered-float",
+ "serde 1.0.111",
+ "serde_cbor",
+ "serde_json",
+]
 
 [[package]]
 name = "semver"

@@ -1,7 +1,9 @@
 pub type PointIdType = u64;
+pub type PointOffsetType = usize;
 pub type PayloadKeyType = String;
-pub type VectorType = Vec<f64>;
-pub type SeqNumberType = u64; 
+pub type VectorType = Vec<f32>;
+pub type SeqNumberType = u64;
+pub type ScoreType = f32;
 
 use serde::{Deserialize, Serialize};
 

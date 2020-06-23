@@ -1,7 +1,6 @@
 
-use crate::common::types::{PayloadKeyType, PayloadType, PointIdType, Filter, SeqNumberType};
 use std::path::Path;
-
+use crate::types::SeqNumberType;
 
 /// Trait for versionable & saveable objects.
 pub trait VersionedPersistable {
