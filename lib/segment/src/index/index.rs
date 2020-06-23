@@ -1,5 +1,5 @@
 use crate::types::{Filter, PointOffsetType, ScoreType};
-use crate::vector_storage::vector_storage::VectorMatcher;
+use crate::vector_storage::vector_storage::{VectorMatcher, ScoredPoint};
 use crate::payload_storage::payload_storage::PayloadStorage;
 
 /// Trait for vector searching
@@ -34,6 +34,6 @@ impl<'s, El> Index<El> for PlainIndex<'s, El> {
                 self.vector_matcher.score_points(vector, &filtered_ids, 0)
             },
             None => self.vector_matcher.score_all(vector, top)
-        } 
+        } .iter().map(ScoredPoint::to_tuple).collect()
     }
 }
