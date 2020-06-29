@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn test_serialize_query() {
         let filter = Filter {
-            must: Some(vec![Condition(Match {
+            must: Some(vec![Condition::Match(Match {
                 key: "hello".to_owned(),
                 keyword: Some("world".to_owned()),
                 integer: None,

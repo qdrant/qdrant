@@ -57,7 +57,7 @@ impl<El: Clone> VectorMatcher<El> for SimpleVectorStorage<El> {
         points: &[PointOffsetType],
         top: usize,
     ) -> Vec<ScoredPoint> {
-        let mut scores: Vec<ScoredPoint> = points.iter().cloned()
+        let scores: Vec<ScoredPoint> = points.iter().cloned()
             .map(|point| {
                 let other_vector = self.vectors.get(point).unwrap();
                 ScoredPoint {
@@ -70,7 +70,7 @@ impl<El: Clone> VectorMatcher<El> for SimpleVectorStorage<El> {
 
 
     fn score_all(&self, vector: &Vec<El>, top: usize) -> Vec<ScoredPoint> {
-        let mut scores: Vec<ScoredPoint> = self.vectors.iter()
+        let scores: Vec<ScoredPoint> = self.vectors.iter()
             .enumerate().map(|(point, other_vector)| ScoredPoint {
             idx: point,
             score: self.metric.similarity(vector, other_vector),

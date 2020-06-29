@@ -1,4 +1,4 @@
-use crate::payload_storage::payload_storage::PayloadStorage;
+
 use crate::vector_storage::vector_storage::{VectorMatcher, ScoredPoint};
 use crate::index::index::{Index, PayloadIndex};
 use crate::types::{Filter, PointOffsetType, ScoreType};

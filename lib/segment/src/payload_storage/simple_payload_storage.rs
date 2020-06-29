@@ -1,5 +1,5 @@
 use crate::payload_storage::payload_storage::{PayloadStorage, TheMap, DeletedFlagStorage};
-use crate::types::{Filter, PayloadKeyType, PayloadType, PointOffsetType};
+use crate::types::{PayloadKeyType, PayloadType, PointOffsetType};
 
 pub struct SimplePayloadStorage {
     payload: Vec<TheMap<PayloadKeyType, PayloadType>>,
@@ -22,7 +22,7 @@ impl SimplePayloadStorage {
 impl PayloadStorage for SimplePayloadStorage {
     fn assign(&mut self, point_id: PointOffsetType, key: &PayloadKeyType, payload: PayloadType) {
         self.rescale_storage(point_id);
-        let mut point_payload = self.payload.get_mut(point_id).unwrap();
+        let point_payload = self.payload.get_mut(point_id).unwrap();
         point_payload.insert(key.to_owned(), payload);
     }
 
@@ -35,7 +35,7 @@ impl PayloadStorage for SimplePayloadStorage {
 
     fn delete(&mut self, point_id: PointOffsetType, key: &PayloadKeyType) {
         self.rescale_storage(point_id);
-        let mut point_payload = self.payload.get_mut(point_id).unwrap();
+        let point_payload = self.payload.get_mut(point_id).unwrap();
         point_payload.remove(key);
     }
 
