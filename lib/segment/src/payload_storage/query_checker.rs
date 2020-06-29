@@ -89,10 +89,8 @@ fn check_must_not(payload: &TheMap<PayloadKeyType, PayloadType>, must: &Option<V
 impl<T> ConditionChecker for T
     where T: PayloadStorage
 {
-    fn check(&self, point_id: usize, _query: &Filter) -> bool {
-        let _payload = self.payload(point_id);
-        let result = true;
-
-        return result;
+    fn check(&self, point_id: usize, query: &Filter) -> bool {
+        let payload = self.payload(point_id);
+        return check_filter(&payload, query);
     }
 }

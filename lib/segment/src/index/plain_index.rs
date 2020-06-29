@@ -1,20 +1,34 @@
 
-use crate::vector_storage::vector_storage::{VectorMatcher, ScoredPoint};
+use crate::vector_storage::vector_storage::{VectorMatcher, ScoredPoint, VectorCounter};
 use crate::index::index::{Index, PayloadIndex};
 use crate::types::{Filter, PointOffsetType, ScoreType};
+use crate::payload_storage::payload_storage::{PayloadStorage, ConditionChecker};
 
 
-pub struct PlainPayloadIndex {
-
+pub struct PlainPayloadIndex<'s> {
+    condition_checker: Box<&'s dyn ConditionChecker>,
+    vector_counter: Box<&'s dyn VectorCounter>
 }
 
-impl PayloadIndex for PlainPayloadIndex {
+impl PayloadIndex for PlainPayloadIndex<'_> {
     fn estimate_cardinality(&self, query: &Filter) -> (usize, usize) {
-        unimplemented!()
+        let mut matched_points = 0;
+        for i in 0..self.vector_counter.vector_count() {
+            if self.condition_checker.check(i, query) {
+                matched_points += 1;
+            }
+        }
+        (matched_points, matched_points)
     }
 
     fn query_points(&self, query: &Filter) -> Vec<usize> {
-        unimplemented!()
+        let mut matched_points = vec![];
+        for i in 0..self.vector_counter.vector_count() {
+            if self.condition_checker.check(i, query) {
+                matched_points.push(i);
+            }
+        }
+        return matched_points
     }
 }
 

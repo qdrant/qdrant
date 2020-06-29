@@ -2,7 +2,7 @@ use super::vector_storage::{VectorStorage, VectorMatcher};
 use crate::spaces::metric::Metric;
 use crate::types::{PointOffsetType};
 use std::collections::BinaryHeap;
-use crate::vector_storage::vector_storage::ScoredPoint;
+use crate::vector_storage::vector_storage::{ScoredPoint, VectorCounter};
 
 pub struct SimpleVectorStorage<El> {
     dim: usize,
@@ -36,9 +36,6 @@ fn peek_top_scores(scores: Vec<ScoredPoint>, top: usize) -> Vec<ScoredPoint> {
 }
 
 impl<El: Clone> VectorStorage<El> for SimpleVectorStorage<El> {
-    fn vector_count(&self) -> PointOffsetType {
-        return self.vectors.len();
-    }
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<El>> {
         let vec = self.vectors.get(key)?.clone();
         return Some(vec);
@@ -47,6 +44,12 @@ impl<El: Clone> VectorStorage<El> for SimpleVectorStorage<El> {
         assert_eq!(self.dim, vector.len());
         self.vectors.push(vector.clone());
         return self.vectors.len() - 1;
+    }
+}
+
+impl<El> VectorCounter for SimpleVectorStorage<El> {
+    fn vector_count(&self) -> PointOffsetType {
+        return self.vectors.len();
     }
 }
 
