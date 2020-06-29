@@ -2,7 +2,7 @@
 use crate::vector_storage::vector_storage::{VectorMatcher, ScoredPoint, VectorCounter};
 use crate::index::index::{Index, PayloadIndex};
 use crate::types::{Filter, PointOffsetType, ScoreType};
-use crate::payload_storage::payload_storage::{PayloadStorage, ConditionChecker};
+use crate::payload_storage::payload_storage::{ConditionChecker};
 
 
 pub struct PlainPayloadIndex<'s> {

@@ -137,7 +137,7 @@ mod tests {
         let filter: Filter = serde_json::from_str(query1).unwrap();
         println!("{:?}", filter);
         let must = filter.must.unwrap();
-        let must_not = filter.must_not;
+        let _must_not = filter.must_not;
         assert_eq!(must.len(), 2);
         match must.get(1) {
             Some(Condition::Filter(f)) => {

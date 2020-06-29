@@ -108,10 +108,10 @@ mod tests {
         let vec4 = vec![1.0, 1.0, 0.0, 1.0];
         let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
-        let id1 = storage.put_vector(&vec1);
+        let _id1 = storage.put_vector(&vec1);
         let id2 = storage.put_vector(&vec2);
-        let id3 = storage.put_vector(&vec3);
-        let id4 = storage.put_vector(&vec4);
+        let _id3 = storage.put_vector(&vec3);
+        let _id4 = storage.put_vector(&vec4);
         let id5 = storage.put_vector(&vec5);
 
         assert_eq!(id2, 1);
