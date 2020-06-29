@@ -1,8 +1,6 @@
 use super::vector_storage::{VectorStorage, VectorMatcher};
 use crate::spaces::metric::Metric;
-use ordered_float::OrderedFloat;
-use std::cmp::Reverse;
-use crate::types::{PointOffsetType, ScoreType};
+use crate::types::{PointOffsetType};
 use std::collections::BinaryHeap;
 use crate::vector_storage::vector_storage::ScoredPoint;
 
@@ -52,7 +50,7 @@ impl<El: Clone> VectorStorage<El> for SimpleVectorStorage<El> {
     }
 }
 
-impl<El> VectorMatcher<El> for SimpleVectorStorage<El> {
+impl<El: Clone> VectorMatcher<El> for SimpleVectorStorage<El> {
     fn score_points(
         &self,
         vector: &Vec<El>,

@@ -1,3 +1,4 @@
+pub mod types;
 mod common;
 
 pub mod collection_ops;

@@ -1,20 +1,26 @@
 pub type PointIdType = u64;
+/// Type of point index across all segments
 pub type PointOffsetType = usize;
+/// Type of point index inside a segment
 pub type PayloadKeyType = String;
-pub type VectorType = Vec<f32>;
 pub type SeqNumberType = u64;
+/// Sequential number of modification, applied to segemnt
 pub type ScoreType = f32;
+/// Type of vector matching score
+pub type TagType = u64;
+
+/// Type of internal tags, build from payload
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoPoint {
-    lon: f64,
-    lat: f64,
+    pub lon: f64,
+    pub lat: f64,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadType {
     Keyword(String),
@@ -23,34 +29,48 @@ pub enum PayloadType {
     Geo(GeoPoint),
 }
 
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct Match {
+    pub key: PayloadKeyType,
+    pub keyword: Option<String>,
+    pub integer: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct Range {
+    pub key: PayloadKeyType,
+    pub lt: Option<f64>,
+    pub gt: Option<f64>,
+    pub gte: Option<f64>,
+    pub lte: Option<f64>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct GeoBoundingBox {
+    pub key: PayloadKeyType,
+    pub top_left: GeoPoint,
+    pub bottom_right: GeoPoint,
+}
+
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Condition {
     Filter(Filter),
-    Match {
-        key: PayloadKeyType,
-        keyword: Option<String>,
-        integer: Option<i64>,
-    },
-    Range {
-        key: PayloadKeyType,
-        lt: Option<f64>,
-        gt: Option<f64>,
-        gte: Option<f64>,
-        lte: Option<f64>,
-    },
-    GeoBoundingBox {
-        key: PayloadKeyType,
-        top_left: GeoPoint,
-        bottom_right: GeoPoint,
-    },
+    Match(Match),
+    Range(Range),
+    GeoBoundingBox(GeoBoundingBox),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct Filter {
-    must: Option<Vec<Condition>>,
-    must_not: Option<Vec<Condition>>,
+    pub must: Option<Vec<Condition>>,
+    pub must_not: Option<Vec<Condition>>,
 }
 
 #[cfg(test)]
@@ -69,11 +89,11 @@ mod tests {
     #[test]
     fn test_serialize_query() {
         let filter = Filter {
-            must: Some(vec![Condition::Match {
+            must: Some(vec![Condition(Match {
                 key: "hello".to_owned(),
                 keyword: Some("world".to_owned()),
                 integer: None,
-            }]),
+            })]),
             must_not: None,
         };
         let json = serde_json::to_string_pretty(&filter).unwrap();

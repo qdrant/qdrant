@@ -1,6 +1,7 @@
 use super::common::CollectionUpdateInfo;
 use serde::{Deserialize, Serialize};
-use segment::types::{PointIdType, VectorType};
+use segment::types::{PointIdType};
+use crate::operations::types::VectorType;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]

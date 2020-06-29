@@ -1,4 +1,3 @@
-use crate::spaces::metric::Metric;
 use crate::types::{PointOffsetType, ScoreType};
 use std::cmp::{Ordering, Reverse};
 use ordered_float::OrderedFloat;
