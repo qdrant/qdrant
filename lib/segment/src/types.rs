@@ -30,7 +30,7 @@ pub enum PayloadType {
 }
 
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Match {
     pub key: PayloadKeyType,
@@ -38,7 +38,7 @@ pub struct Match {
     pub integer: Option<i64>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Range {
     pub key: PayloadKeyType,
@@ -48,7 +48,7 @@ pub struct Range {
     pub lte: Option<f64>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoBoundingBox {
     pub key: PayloadKeyType,
@@ -57,7 +57,7 @@ pub struct GeoBoundingBox {
 }
 
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum Condition {
     Filter(Filter),
@@ -66,9 +66,10 @@ pub enum Condition {
     GeoBoundingBox(GeoBoundingBox),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Filter {
+    pub should: Option<Vec<Condition>>,
     pub must: Option<Vec<Condition>>,
     pub must_not: Option<Vec<Condition>>,
 }
@@ -95,6 +96,7 @@ mod tests {
                 integer: None,
             })]),
             must_not: None,
+            should: None
         };
         let json = serde_json::to_string_pretty(&filter).unwrap();
         println!("{}", json)
