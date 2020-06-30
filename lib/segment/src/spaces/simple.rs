@@ -38,3 +38,37 @@ impl Metric<f32> for CosineMetric {
     }
 }
 
+
+impl Metric<f64> for DotProductMetric {
+    fn similarity(&self, v1: &[f64], v2: &[f64]) -> ScoreType {
+        let ip: f64 = v1.iter().zip(v2).map(|(a, b)| a * b).sum();
+        return ip as f32
+    }
+
+    fn similarity_batch(&self, vector: &[f64], other_vectors: &[&[f64]]) -> Vec<ScoreType> {
+        other_vectors.iter().map(|v2| self.similarity(vector, *v2)).collect()
+    }
+
+    fn preprocess(&self, vector: Vec<f64>) -> Vec<f64> {
+        return vector;
+    }
+}
+
+
+impl Metric<f64> for CosineMetric {
+    fn similarity(&self, v1: &[f64], v2: &[f64]) -> ScoreType {
+        let cos: f64 = v1.iter().zip(v2).map(|(a, b)| a * b).sum();
+        return cos as f32
+    }
+
+    fn similarity_batch(&self, vector: &[f64], other_vectors: &[&[f64]]) -> Vec<ScoreType> {
+        other_vectors.iter().map(|v2| self.similarity(vector, *v2)).collect()
+    }
+
+    fn preprocess(&self, vector: Vec<f64>) -> Vec<f64> {
+        let length: f64 = vector.iter().map(|x| x * x).sum();
+        let norm_vector = vector.iter().map(|x| x / length).collect();
+        return norm_vector;
+    }
+}
+

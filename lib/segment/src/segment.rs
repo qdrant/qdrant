@@ -1,6 +1,5 @@
-
 use std::path::Path;
-use crate::types::SeqNumberType;
+use crate::types::{SeqNumberType, PointOffsetType, PointIdType};
 
 /// Trait for versionable & saveable objects.
 pub trait VersionedPersistable {
@@ -11,5 +10,13 @@ pub trait VersionedPersistable {
     fn ack_persistance(&mut self, version: SeqNumberType);
 }
 
+
+pub trait Segment {
+    /// Get current update version of the segement
+    fn version(&self) -> SeqNumberType;
+
+
+    // fn update(&mut self, )
+}
 
 

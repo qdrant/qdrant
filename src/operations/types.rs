@@ -1,2 +1,5 @@
-pub type VectorType = Vec<f32>;  /// Type of vector in API
+use segment::types::VectorElementType;
+
+/// Type of vector in API
+pub type VectorType = Vec<VectorElementType>;
 

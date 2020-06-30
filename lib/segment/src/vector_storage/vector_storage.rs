@@ -1,4 +1,4 @@
-use crate::types::{PointOffsetType, ScoreType};
+use crate::types::{PointOffsetType, ScoreType, VectorElementType};
 use std::cmp::{Ordering, Reverse};
 use ordered_float::OrderedFloat;
 
@@ -33,23 +33,23 @@ impl PartialOrd for ScoredPoint {
 /// Trait for vector storage
 /// El - type of vector element, expected numerical type
 /// Storage operates with internal IDs (PointOffsetType), which always starts with zero and have no skips
-pub trait VectorStorage<El: Clone> {
-    fn get_vector(&self, key: PointOffsetType) -> Option<Vec<El>>;
-    fn put_vector(&mut self, vector: &Vec<El>) -> PointOffsetType;
+pub trait VectorStorage {
+    fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>>;
+    fn put_vector(&mut self, vector: &Vec<VectorElementType>) -> PointOffsetType;
 }
 
 pub trait VectorCounter {
     fn vector_count(&self) -> PointOffsetType;
 }
 
-pub trait VectorMatcher<El> {
+pub trait VectorMatcher {
     fn score_points(
         &self,
-        vector: &Vec<El>,
+        vector: &Vec<VectorElementType>,
         points: &[PointOffsetType],
         top: usize
     ) -> Vec<ScoredPoint>;
-    fn score_all(&self, vector: &Vec<El>, top: usize) -> Vec<ScoredPoint>;
+    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize) -> Vec<ScoredPoint>;
     fn score_internal(
         &self,
         point: PointOffsetType,

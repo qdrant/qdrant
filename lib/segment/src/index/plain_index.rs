@@ -1,7 +1,7 @@
 
 use crate::vector_storage::vector_storage::{VectorMatcher, ScoredPoint, VectorCounter};
 use crate::index::index::{Index, PayloadIndex};
-use crate::types::{Filter, PointOffsetType, ScoreType};
+use crate::types::{Filter, PointOffsetType, ScoreType, VectorElementType};
 use crate::payload_storage::payload_storage::{ConditionChecker};
 
 
@@ -33,16 +33,16 @@ impl PayloadIndex for PlainPayloadIndex<'_> {
 }
 
 
-pub struct PlainIndex<'s, El> {
-    vector_matcher: Box<&'s dyn VectorMatcher<El>>,
+pub struct PlainIndex<'s> {
+    vector_matcher: Box<&'s dyn VectorMatcher>,
     payload_index: Box<&'s dyn PayloadIndex>,
 }
 
-impl<'s, El> PlainIndex<'s, El> {
+impl<'s> PlainIndex<'s> {
     fn new(
-        vector_matcher: &'s dyn VectorMatcher<El>,
+        vector_matcher: &'s dyn VectorMatcher,
         condition_filter: &'s dyn PayloadIndex,
-    ) -> PlainIndex<'s, El> {
+    ) -> PlainIndex<'s> {
         return PlainIndex {
             vector_matcher: Box::new(vector_matcher),
             payload_index: Box::new(condition_filter),
@@ -51,8 +51,8 @@ impl<'s, El> PlainIndex<'s, El> {
 }
 
 
-impl<'s, El> Index<El> for PlainIndex<'s, El> {
-    fn search(&self, vector: &Vec<El>, filter: Option<&Filter>, top: usize) -> Vec<(PointOffsetType, ScoreType)> {
+impl<'s> Index for PlainIndex<'s> {
+    fn search(&self, vector: &Vec<VectorElementType>, filter: Option<&Filter>, top: usize) -> Vec<(PointOffsetType, ScoreType)> {
         match filter {
             Some(filter) => {
                 let filtered_ids = self.payload_index.query_points(filter);

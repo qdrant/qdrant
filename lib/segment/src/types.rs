@@ -8,6 +8,8 @@ pub type SeqNumberType = u64;
 pub type ScoreType = f32;
 /// Type of vector matching score
 pub type TagType = u64;
+/// Type of vector element. Note: used in interface only, storage vector type is NOT specified here
+pub type VectorElementType = f64;
 
 /// Type of internal tags, build from payload
 
@@ -22,11 +24,12 @@ pub struct GeoPoint {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
+#[serde(tag = "type",  content = "value")]
 pub enum PayloadType {
-    Keyword(String),
-    Integer(i64),
-    Float(f64),
-    Geo(GeoPoint),
+    Keyword(Vec<String>),
+    Integer(Vec<i64>),
+    Float(Vec<f64>),
+    Geo(Vec<GeoPoint>),
 }
 
 
@@ -82,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_name() {
-        let label = PayloadType::Keyword("Hello".to_owned());
+        let label = PayloadType::Keyword(vec!["Hello".to_owned()]);
         let label_json = serde_json::to_string(&label).unwrap();
         println!("{}", label_json);
     }

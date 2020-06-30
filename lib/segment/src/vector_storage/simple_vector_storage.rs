@@ -1,17 +1,17 @@
 use super::vector_storage::{VectorStorage, VectorMatcher};
 use crate::spaces::metric::Metric;
-use crate::types::{PointOffsetType};
+use crate::types::{PointOffsetType, VectorElementType};
 use std::collections::BinaryHeap;
 use crate::vector_storage::vector_storage::{ScoredPoint, VectorCounter};
 
-pub struct SimpleVectorStorage<El> {
+pub struct SimpleVectorStorage {
     dim: usize,
-    vectors: Vec<Vec<El>>,
-    metric: Box<dyn Metric<El>>,
+    vectors: Vec<Vec<VectorElementType>>,
+    metric: Box<dyn Metric<VectorElementType>>,
 }
 
-impl<El: Clone> SimpleVectorStorage<El> {
-    fn new(metric: Box<dyn Metric<El>>, dim: usize) -> SimpleVectorStorage<El> {
+impl SimpleVectorStorage {
+    fn new(metric: Box<dyn Metric<VectorElementType>>, dim: usize) -> SimpleVectorStorage {
         return SimpleVectorStorage {
             dim,
             vectors: Vec::new(),
@@ -35,28 +35,28 @@ fn peek_top_scores(scores: Vec<ScoredPoint>, top: usize) -> Vec<ScoredPoint> {
     return res;
 }
 
-impl<El: Clone> VectorStorage<El> for SimpleVectorStorage<El> {
-    fn get_vector(&self, key: PointOffsetType) -> Option<Vec<El>> {
+impl VectorStorage for SimpleVectorStorage {
+    fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
         let vec = self.vectors.get(key)?.clone();
         return Some(vec);
     }
-    fn put_vector(&mut self, vector: &Vec<El>) -> PointOffsetType {
+    fn put_vector(&mut self, vector: &Vec<VectorElementType>) -> PointOffsetType {
         assert_eq!(self.dim, vector.len());
         self.vectors.push(vector.clone());
         return self.vectors.len() - 1;
     }
 }
 
-impl<El> VectorCounter for SimpleVectorStorage<El> {
+impl VectorCounter for SimpleVectorStorage {
     fn vector_count(&self) -> PointOffsetType {
         return self.vectors.len();
     }
 }
 
-impl<El: Clone> VectorMatcher<El> for SimpleVectorStorage<El> {
+impl VectorMatcher for SimpleVectorStorage {
     fn score_points(
         &self,
-        vector: &Vec<El>,
+        vector: &Vec<VectorElementType>,
         points: &[PointOffsetType],
         top: usize,
     ) -> Vec<ScoredPoint> {
@@ -72,7 +72,7 @@ impl<El: Clone> VectorMatcher<El> for SimpleVectorStorage<El> {
     }
 
 
-    fn score_all(&self, vector: &Vec<El>, top: usize) -> Vec<ScoredPoint> {
+    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize) -> Vec<ScoredPoint> {
         let scores: Vec<ScoredPoint> = self.vectors.iter()
             .enumerate().map(|(point, other_vector)| ScoredPoint {
             idx: point,

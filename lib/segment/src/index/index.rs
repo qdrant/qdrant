@@ -1,9 +1,12 @@
-use crate::types::{Filter, PointOffsetType, ScoreType};
+use crate::types::{Filter, PointOffsetType, ScoreType, VectorElementType};
 
 /// Trait for vector searching
-pub trait Index<El> {
+pub trait Index {
     /// Return list of Ids with fitting
-    fn search(&self, vector: &Vec<El>, filter: Option<&Filter>, top: usize) -> Vec<(PointOffsetType, ScoreType)>;
+    fn search(&self,
+              vector: &Vec<VectorElementType>,
+              filter: Option<&Filter>,
+              top: usize) -> Vec<(PointOffsetType, ScoreType)>;
 }
 
 
