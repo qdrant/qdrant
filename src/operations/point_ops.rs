@@ -5,13 +5,13 @@ use crate::operations::types::VectorType;
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PointOps {
-    /// Delete point if exists
+    /// Insert or update points
     UpsertPoints {
         collection: String,
         ids: Vec<PointIdType>,
         vectors: Vec<VectorType>,
     },
-    /// Insert or update points
+    /// Delete point if exists
     DeletePoints {
         collection: String,
         ids: Vec<PointIdType>,

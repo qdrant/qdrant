@@ -1749,6 +1749,7 @@ dependencies = [
  "serde 1.0.111",
  "serde_cbor",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]

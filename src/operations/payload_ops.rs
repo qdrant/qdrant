@@ -59,12 +59,6 @@ pub enum PayloadOps {
         payload: HashMap<PayloadKeyType, PayloadInterface>,
         points: Vec<PointIdType>,
     },
-    /// Appends all given tags to each given point
-    UpdatePayload {
-        collection: String,
-        payload: HashMap<PayloadKeyType, PayloadInterface>,
-        points: Vec<PointIdType>,
-    },
     /// Deletes specified Payload if they are assigned
     DeletePayload {
         collection: String,
@@ -78,9 +72,6 @@ pub enum PayloadOps {
     },
     /// Drops all Payload in given collection.
     WipePayload {
-        collection: String,
-    },
-    PayloadIndex {
         collection: String,
     }
 }
