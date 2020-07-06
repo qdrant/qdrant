@@ -55,5 +55,7 @@ pub trait SegmentEntry {
     fn vector(&self, point_id: PointIdType) -> Result<Vec<VectorElementType>>;
 
     fn payload(&self, point_id: PointIdType) -> Result<TheMap<PayloadKeyType, PayloadType>>;
+
+    // ToDo: Add statistics APIs: num vectors, mem usage
 }
 

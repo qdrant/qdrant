@@ -16,6 +16,14 @@ pub type VectorElementType = f64;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub enum Distance {
+    Cosine,
+    Euclid,
+    Dot
+}
+
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoPoint {
     pub lon: f64,

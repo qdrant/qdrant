@@ -8,8 +8,8 @@ use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorEle
 use crate::query_planner::query_planner::QueryPlanner;
 
 /// Simple segment implementation
-pub struct SimpleSegment {
-    version: SeqNumberType,
+pub struct Segment {
+    pub version: SeqNumberType,
     pub id_mapper: Rc<RefCell<dyn IdMapper>>,
     pub vector_storage: Rc<RefCell<dyn VectorStorage>>,
     pub payload_storage: Rc<RefCell<dyn PayloadStorage>>,
@@ -19,7 +19,7 @@ pub struct SimpleSegment {
 }
 
 
-impl SimpleSegment {
+impl Segment {
     fn update_vector(&mut self,
                      old_iternal_id: PointOffsetType,
                      vector: &Vec<VectorElementType>,
@@ -54,7 +54,7 @@ impl SimpleSegment {
 }
 
 
-impl SegmentEntry for SimpleSegment {
+impl SegmentEntry for Segment {
     fn version(&self) -> SeqNumberType { self.version }
 
     fn search(&self,

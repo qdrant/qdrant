@@ -5,7 +5,17 @@ use std::collections::{HashMap, HashSet};
 
 pub struct SimplePayloadStorage {
     payload: HashMap<PointOffsetType, TheMap<PayloadKeyType, PayloadType>>,
-    deleted: HashSet<PointOffsetType>
+    deleted: HashSet<PointOffsetType>,
+}
+
+
+impl SimplePayloadStorage {
+    pub fn new() -> Self {
+        SimplePayloadStorage {
+            payload: Default::default(),
+            deleted: Default::default(),
+        }
+    }
 }
 
 impl PayloadStorage for SimplePayloadStorage {

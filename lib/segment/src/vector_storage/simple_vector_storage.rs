@@ -11,7 +11,7 @@ pub struct SimpleVectorStorage {
 }
 
 impl SimpleVectorStorage {
-    fn new(metric: Box<dyn Metric<VectorElementType>>, dim: usize) -> SimpleVectorStorage {
+    pub fn new(metric: Box<dyn Metric<VectorElementType>>, dim: usize) -> SimpleVectorStorage {
         return SimpleVectorStorage {
             dim,
             vectors: Vec::new(),

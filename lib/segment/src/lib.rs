@@ -4,7 +4,8 @@ mod index;
 mod payload_storage;
 mod vector_storage;
 mod spaces;
-mod simple_segment;
+mod segment;
+pub mod segment_constructor;
 pub mod entry;
 pub mod types;
 

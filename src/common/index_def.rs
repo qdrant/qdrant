@@ -1,10 +1,5 @@
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Deserialize, Serialize)]
-pub enum Distance {
-    Cosine,
-    Euclid,
-}
+use segment::types::Distance;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct BaseIndexParams {

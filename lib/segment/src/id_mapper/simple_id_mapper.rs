@@ -3,8 +3,17 @@ use crate::types::{PointOffsetType, PointIdType};
 use crate::id_mapper::id_mapper::IdMapper;
 
 pub struct SimpleIdMapper {
-    pub internal_to_external: HashMap<PointOffsetType, PointIdType>,
-    pub external_to_internal: HashMap<PointIdType, PointOffsetType>,
+    internal_to_external: HashMap<PointOffsetType, PointIdType>,
+    external_to_internal: HashMap<PointIdType, PointOffsetType>,
+}
+
+impl SimpleIdMapper {
+    pub fn new() -> Self {
+        SimpleIdMapper {
+            internal_to_external: Default::default(),
+            external_to_internal: Default::default()
+        }
+    }
 }
 
 
