@@ -22,7 +22,7 @@ impl SimpleVectorStorage {
 
 fn peek_top_scores(scores: Vec<ScoredPoint>, top: usize) -> Vec<ScoredPoint> {
     if top == 0 {
-        return scores
+        return scores;
     }
     let mut heap = BinaryHeap::from(scores);
     let mut res: Vec<ScoredPoint> = vec![];
@@ -36,6 +36,10 @@ fn peek_top_scores(scores: Vec<ScoredPoint>, top: usize) -> Vec<ScoredPoint> {
 }
 
 impl VectorStorage for SimpleVectorStorage {
+    fn vector_dim(&self) -> usize {
+        self.dim
+    }
+
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
         let vec = self.vectors.get(key)?.clone();
         return Some(vec);
@@ -87,7 +91,7 @@ impl VectorMatcher for SimpleVectorStorage {
         top: usize,
     ) -> Vec<ScoredPoint> {
         let vector = self.get_vector(point).unwrap();
-        return self.score_points(&vector, points, top)
+        return self.score_points(&vector, points, top);
     }
 }
 

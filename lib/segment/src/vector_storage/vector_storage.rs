@@ -34,6 +34,7 @@ impl PartialOrd for ScoredPoint {
 /// El - type of vector element, expected numerical type
 /// Storage operates with internal IDs (PointOffsetType), which always starts with zero and have no skips
 pub trait VectorStorage {
+    fn vector_dim(&self) -> usize;
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>>;
     fn put_vector(&mut self, vector: &Vec<VectorElementType>) -> PointOffsetType;
 }
