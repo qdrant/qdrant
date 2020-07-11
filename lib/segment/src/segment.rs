@@ -2,7 +2,7 @@ use crate::id_mapper::id_mapper::IdMapper;
 use crate::vector_storage::vector_storage::VectorStorage;
 use std::cell::RefCell;
 use std::rc::Rc;
-use crate::payload_storage::payload_storage::{PayloadStorage, DeletedFlagStorage, TheMap};
+use crate::payload_storage::payload_storage::{PayloadStorage, TheMap};
 use crate::entry::entry_point::{SegmentEntry, Result, OperationError};
 use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, ScoreType, PointOffsetType};
 use crate::query_planner::query_planner::QueryPlanner;
@@ -14,7 +14,6 @@ pub struct Segment {
     pub vector_storage: Rc<RefCell<dyn VectorStorage>>,
     pub payload_storage: Rc<RefCell<dyn PayloadStorage>>,
     /// User for writing only here.
-    pub delete_flag_storage: Rc<RefCell<dyn DeletedFlagStorage>>,
     pub query_planner: Rc<RefCell<dyn QueryPlanner>>,
 }
 
@@ -25,8 +24,11 @@ impl Segment {
                      vector: &Vec<VectorElementType>,
     ) -> PointOffsetType {
         let payload = self.payload_storage.borrow_mut().drop(old_iternal_id);
-        self.delete_flag_storage.borrow_mut().mark_deleted(old_iternal_id);
-        let new_internal_index = self.vector_storage.borrow_mut().put_vector(vector);
+        let new_internal_index = {
+            let mut vector_storage = self.vector_storage.borrow_mut();
+            vector_storage.delete(old_iternal_id);
+            vector_storage.put_vector(vector)
+        };
         match payload {
             Some(payload) => self.payload_storage
                 .borrow_mut()
@@ -105,7 +107,7 @@ impl SegmentEntry for Segment {
         self.check_version(op_num)?;
         match self.id_mapper.borrow().internal_id(point_id) {
             Some(internal_id) => {
-                self.delete_flag_storage.borrow_mut().mark_deleted(internal_id);
+                self.vector_storage.borrow_mut().delete(internal_id);
                 self.id_mapper.borrow_mut().drop(point_id);
 
                 Ok(true)

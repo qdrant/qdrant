@@ -28,14 +28,6 @@ pub trait PayloadStorage {
     fn wipe(&mut self);
 }
 
-pub trait DeletedFlagStorage {
-    /// Assign deleted flag to a segment point. Marked point will not be used in search and might be removed on segment merge\rebuild
-    fn mark_deleted(&mut self, point_id: PointOffsetType);
-
-    /// Check if point is marked deleted
-    fn is_deleted(&self, point_id: PointOffsetType) -> bool;
-}
-
 
 pub trait ConditionChecker {
     /// Check if point satisfies filter condition

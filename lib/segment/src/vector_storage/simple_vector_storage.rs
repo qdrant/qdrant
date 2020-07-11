@@ -1,13 +1,14 @@
 use super::vector_storage::{VectorStorage, VectorMatcher};
 use crate::spaces::metric::Metric;
 use crate::types::{PointOffsetType, VectorElementType};
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, HashSet};
 use crate::vector_storage::vector_storage::{ScoredPoint, VectorCounter};
 
 pub struct SimpleVectorStorage {
     dim: usize,
     vectors: Vec<Vec<VectorElementType>>,
     metric: Box<dyn Metric<VectorElementType>>,
+    deleted: HashSet<PointOffsetType>,
 }
 
 impl SimpleVectorStorage {
@@ -16,6 +17,7 @@ impl SimpleVectorStorage {
             dim,
             vectors: Vec::new(),
             metric,
+            deleted: Default::default()
         };
     }
 }
@@ -41,6 +43,7 @@ impl VectorStorage for SimpleVectorStorage {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
+        if self.deleted.contains(&key) { return None }
         let vec = self.vectors.get(key)?.clone();
         return Some(vec);
     }
@@ -48,6 +51,10 @@ impl VectorStorage for SimpleVectorStorage {
         assert_eq!(self.dim, vector.len());
         self.vectors.push(vector.clone());
         return self.vectors.len() - 1;
+    }
+
+    fn delete(&mut self, key: usize) {
+        self.deleted.insert(key);
     }
 }
 
@@ -64,7 +71,9 @@ impl VectorMatcher for SimpleVectorStorage {
         points: &[PointOffsetType],
         top: usize,
     ) -> Vec<ScoredPoint> {
-        let scores: Vec<ScoredPoint> = points.iter().cloned()
+        let scores: Vec<ScoredPoint> = points.iter()
+            .cloned()
+            .filter(|point| !self.deleted.contains(point))
             .map(|point| {
                 let other_vector = self.vectors.get(point).unwrap();
                 ScoredPoint {
@@ -78,7 +87,9 @@ impl VectorMatcher for SimpleVectorStorage {
 
     fn score_all(&self, vector: &Vec<VectorElementType>, top: usize) -> Vec<ScoredPoint> {
         let scores: Vec<ScoredPoint> = self.vectors.iter()
-            .enumerate().map(|(point, other_vector)| ScoredPoint {
+            .enumerate()
+            .filter(|(point, _)| !self.deleted.contains(point))
+            .map(|(point, other_vector)| ScoredPoint {
             idx: point,
             score: self.metric.similarity(vector, other_vector),
         }).collect();
@@ -127,9 +138,25 @@ mod tests {
 
         println!("closest = {:#?}", closest);
 
-        match closest.get(0) {
-            Some(scored_point) => assert_eq!(scored_point.idx, 2),
-            None => assert!(false, "No close vector found!")
-        }
+        let top_idx = match closest.get(0) {
+            Some(scored_point) => {
+                assert_eq!(scored_point.idx, 2);
+                scored_point.idx
+            },
+            None => { assert!(false, "No close vector found!") ; 0}
+        };
+
+        storage.delete(top_idx);
+
+        let closest = storage.score_points(&query, &[0, 1, 2, 3, 4], 2);
+
+
+        let top_idx = match closest.get(0) {
+            Some(scored_point) => {
+                assert_ne!(scored_point.idx, 2);
+            },
+            None => { assert!(false, "No close vector found!")}
+        };
+
     }
 }

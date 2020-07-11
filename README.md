@@ -2,6 +2,7 @@
 
 * Binary arrays
 * memmap
+* Segment persistancy - sled
 * HNSW index
 * SIMD acceleration
   * https://github.com/raphlinus/fearless_simd
