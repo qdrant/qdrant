@@ -1,5 +1,7 @@
 use crate::common::index_def::Indexes;
 use serde::{Deserialize, Serialize};
+use segment::types::Distance;
+
 #[derive(Debug, Deserialize, Serialize)]
 pub enum AliasOperations {
     CreateAlias {
@@ -22,6 +24,7 @@ pub enum CollectionOps {
     CreateCollection {
         collection_name: String,
         dim: usize,
+        distance: Distance,
         index: Option<Indexes>,
     },
     /// Force construct specified index

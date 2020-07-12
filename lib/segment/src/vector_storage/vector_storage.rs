@@ -1,4 +1,4 @@
-use crate::types::{PointOffsetType, ScoreType, VectorElementType};
+use crate::types::{PointOffsetType, ScoreType, VectorElementType, Distance};
 use std::cmp::{Ordering, Reverse};
 use ordered_float::OrderedFloat;
 
@@ -49,13 +49,20 @@ pub trait VectorMatcher {
         &self,
         vector: &Vec<VectorElementType>,
         points: &[PointOffsetType],
-        top: usize
+        top: usize,
+        distance: &Distance
     ) -> Vec<ScoredPoint>;
-    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize) -> Vec<ScoredPoint>;
+    fn score_all(
+        &self,
+        vector: &Vec<VectorElementType>,
+        top: usize,
+        distance: &Distance
+    ) -> Vec<ScoredPoint>;
     fn score_internal(
         &self,
         point: PointOffsetType,
         points: &[PointOffsetType],
-        top: usize
+        top: usize,
+        distance: &Distance
     ) -> Vec<ScoredPoint>;
 }

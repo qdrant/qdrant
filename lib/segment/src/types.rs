@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 pub type PointIdType = u64;
 /// Type of point index across all segments
 pub type PointOffsetType = usize;
@@ -13,13 +15,35 @@ pub type VectorElementType = f64;
 
 /// Type of internal tags, build from payload
 
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub enum Distance {
     Cosine,
     Euclid,
     Dot
+}
+
+pub enum Order {
+    LargeBetter,
+    SmallBetter
+}
+
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchParams {
+    Hnsw {
+        ef: usize
+    }
+}
+
+/// This function only stores mapping between distance and preferred result order
+pub fn distance_order(distance: &Distance) -> Order {
+    match distance {
+        Distance::Cosine => Order::LargeBetter,
+        Distance::Euclid => Order::SmallBetter,
+        Distance::Dot => Order::LargeBetter,
+    }
 }
 
 

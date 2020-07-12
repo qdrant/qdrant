@@ -1,6 +1,6 @@
 use crate::vector_storage::vector_storage::{VectorMatcher, ScoredPoint, VectorCounter};
 use crate::index::index::{Index, PayloadIndex};
-use crate::types::{Filter, PointOffsetType, ScoreType, VectorElementType};
+use crate::types::{Filter, PointOffsetType, ScoreType, VectorElementType, Distance, SearchParams};
 use crate::payload_storage::payload_storage::{ConditionChecker};
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -52,29 +52,38 @@ impl PayloadIndex for PlainPayloadIndex {
 pub struct PlainIndex {
     vector_matcher: Rc<RefCell<dyn VectorMatcher>>,
     payload_index: Rc<RefCell<dyn PayloadIndex>>,
+    distance: Distance,
 }
 
 impl PlainIndex {
     pub fn new(
         vector_matcher: Rc<RefCell<dyn VectorMatcher>>,
         payload_index: Rc<RefCell<dyn PayloadIndex>>,
+        distance: Distance,
     ) -> PlainIndex {
         return PlainIndex {
             vector_matcher,
             payload_index,
+            distance,
         };
     }
 }
 
 
 impl Index for PlainIndex {
-    fn search(&self, vector: &Vec<VectorElementType>, filter: Option<&Filter>, top: usize) -> Vec<(PointOffsetType, ScoreType)> {
+    fn search(
+        &self,
+        vector: &Vec<VectorElementType>,
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>
+    ) -> Vec<(PointOffsetType, ScoreType)> {
         match filter {
             Some(filter) => {
                 let filtered_ids = self.payload_index.borrow().query_points(filter);
-                self.vector_matcher.borrow().score_points(vector, &filtered_ids, 0)
+                self.vector_matcher.borrow().score_points(vector, &filtered_ids, 0, &self.distance)
             }
-            None => self.vector_matcher.borrow().score_all(vector, top)
+            None => self.vector_matcher.borrow().score_all(vector, top, &self.distance)
         }.iter().map(ScoredPoint::to_tuple).collect()
     }
 }

@@ -1,6 +1,6 @@
 use thiserror::Error;
 use std::path::Path;
-use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, ScoreType, PayloadKeyType, PayloadType};
+use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, ScoreType, PayloadKeyType, PayloadType, SearchParams};
 use std::result;
 use crate::payload_storage::payload_storage::TheMap;
 
@@ -38,7 +38,9 @@ pub trait SegmentEntry {
     fn search(&self,
               vector: &Vec<VectorElementType>,
               filter: Option<&Filter>,
-              top: usize) -> Vec<(PointIdType, ScoreType)>;
+              top: usize,
+              params: Option<&SearchParams>,
+    ) -> Vec<(PointIdType, ScoreType)>;
 
     fn upsert_point(&mut self, op_num: SeqNumberType, point_id: PointIdType, vector: &Vec<VectorElementType>) -> Result<bool>;
 

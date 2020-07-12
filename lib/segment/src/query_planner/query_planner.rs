@@ -1,4 +1,4 @@
-use crate::types::{VectorElementType, Filter, PointOffsetType, ScoreType};
+use crate::types::{VectorElementType, Filter, PointOffsetType, ScoreType, SearchParams};
 
 /// Similar to `Index`, but should operate with multiple possible indexes + post-filtering
 pub trait QueryPlanner {
@@ -6,5 +6,7 @@ pub trait QueryPlanner {
     fn search(&self,
               vector: &Vec<VectorElementType>,
               filter: Option<&Filter>,
-              top: usize) -> Vec<(PointOffsetType, ScoreType)>;
+              top: usize,
+              params: Option<&SearchParams>,
+    ) -> Vec<(PointOffsetType, ScoreType)>;
 }

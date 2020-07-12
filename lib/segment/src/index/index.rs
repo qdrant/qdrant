@@ -1,4 +1,4 @@
-use crate::types::{Filter, PointOffsetType, ScoreType, VectorElementType};
+use crate::types::{Filter, PointOffsetType, ScoreType, VectorElementType, SearchParams};
 
 /// Trait for vector searching
 pub trait Index {
@@ -6,7 +6,9 @@ pub trait Index {
     fn search(&self,
               vector: &Vec<VectorElementType>,
               filter: Option<&Filter>,
-              top: usize) -> Vec<(PointOffsetType, ScoreType)>;
+              top: usize,
+              params: Option<&SearchParams>,
+    ) -> Vec<(PointOffsetType, ScoreType)>;
 }
 
 

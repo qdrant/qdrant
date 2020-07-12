@@ -1,19 +1,15 @@
 use serde::{Deserialize, Serialize};
 use segment::types::Distance;
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct BaseIndexParams {
-    pub distance: Distance,
-}
+
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type",  content = "options")]
 pub enum Indexes {
-    PlainIndex {
-        params: BaseIndexParams,
-    },
-    HnswIndex {
-        params: BaseIndexParams,
+    Plain {},
+    Hnsw {
         m: usize,
-        ef_construct: usize,
+        ef_construct: usize
     },
 }

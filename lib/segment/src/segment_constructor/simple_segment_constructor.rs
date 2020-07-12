@@ -20,14 +20,7 @@ fn sp<T>(t: T) -> Rc<RefCell<T>> {
 pub fn build_simple_segment(dir: &Path, dim: usize, distance: Distance) -> Segment {
     let id_mapper = SimpleIdMapper::new();
 
-
-    let metric: Box<dyn Metric<VectorElementType>> = match distance {
-        Distance::Cosine => Box::new(CosineMetric {}),
-        Distance::Euclid => unimplemented!(),
-        Distance::Dot => Box::new(DotProductMetric {}),
-    };
-
-    let vector_storage = sp(SimpleVectorStorage::new(metric, dim));
+    let vector_storage = sp(SimpleVectorStorage::new(dim));
     let payload_storage =  sp(SimplePayloadStorage::new());
 
 
@@ -35,7 +28,7 @@ pub fn build_simple_segment(dir: &Path, dim: usize, distance: Distance) -> Segme
         payload_storage.clone(), vector_storage.clone()
     ));
 
-    let index = sp(PlainIndex::new(vector_storage.clone(), payload_index));
+    let index = sp(PlainIndex::new(vector_storage.clone(), payload_index, distance));
 
     let query_planer = SimpleQueryPlanner::new(index);
 

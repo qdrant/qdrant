@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use crate::payload_storage::payload_storage::{PayloadStorage, TheMap};
 use crate::entry::entry_point::{SegmentEntry, Result, OperationError};
-use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, ScoreType, PointOffsetType};
+use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, ScoreType, PointOffsetType, SearchParams};
 use crate::query_planner::query_planner::QueryPlanner;
 
 /// Simple segment implementation
@@ -62,8 +62,10 @@ impl SegmentEntry for Segment {
     fn search(&self,
               vector: &Vec<VectorElementType>,
               filter: Option<&Filter>,
-              top: usize) -> Vec<(PointIdType, ScoreType)> {
-        let internal_result = self.query_planner.borrow().search(vector, filter, top);
+              top: usize,
+              params: Option<&SearchParams>,
+    ) -> Vec<(PointIdType, ScoreType)> {
+        let internal_result = self.query_planner.borrow().search(vector, filter, top, params);
 
 
         let id_mapper = self.id_mapper.borrow();

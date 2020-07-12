@@ -1,41 +1,28 @@
 use super::vector_storage::{VectorStorage, VectorMatcher};
 use crate::spaces::metric::Metric;
-use crate::types::{PointOffsetType, VectorElementType};
+use crate::types::{PointOffsetType, VectorElementType, Distance};
 use std::collections::{BinaryHeap, HashSet};
 use crate::vector_storage::vector_storage::{ScoredPoint, VectorCounter};
+use crate::spaces::simple::{DotProductMetric, CosineMetric};
+use crate::spaces::tools::{mertic_object, peek_top_scores};
 
 pub struct SimpleVectorStorage {
     dim: usize,
     vectors: Vec<Vec<VectorElementType>>,
-    metric: Box<dyn Metric<VectorElementType>>,
     deleted: HashSet<PointOffsetType>,
 }
 
 impl SimpleVectorStorage {
-    pub fn new(metric: Box<dyn Metric<VectorElementType>>, dim: usize) -> SimpleVectorStorage {
+    pub fn new(dim: usize) -> SimpleVectorStorage {
         return SimpleVectorStorage {
             dim,
             vectors: Vec::new(),
-            metric,
             deleted: Default::default()
         };
     }
 }
 
-fn peek_top_scores(scores: Vec<ScoredPoint>, top: usize) -> Vec<ScoredPoint> {
-    if top == 0 {
-        return scores;
-    }
-    let mut heap = BinaryHeap::from(scores);
-    let mut res: Vec<ScoredPoint> = vec![];
-    for _ in 0..top {
-        match heap.pop() {
-            Some(score_point) => res.push(score_point),
-            None => break
-        }
-    }
-    return res;
-}
+
 
 impl VectorStorage for SimpleVectorStorage {
     fn vector_dim(&self) -> usize {
@@ -70,7 +57,10 @@ impl VectorMatcher for SimpleVectorStorage {
         vector: &Vec<VectorElementType>,
         points: &[PointOffsetType],
         top: usize,
+        distance: &Distance,
     ) -> Vec<ScoredPoint> {
+        let metric = mertic_object(distance);
+
         let scores: Vec<ScoredPoint> = points.iter()
             .cloned()
             .filter(|point| !self.deleted.contains(point))
@@ -78,31 +68,35 @@ impl VectorMatcher for SimpleVectorStorage {
                 let other_vector = self.vectors.get(point).unwrap();
                 ScoredPoint {
                     idx: point,
-                    score: self.metric.similarity(vector, other_vector),
+                    score: metric.similarity(vector, other_vector),
                 }
             }).collect();
-        return peek_top_scores(scores, top);
+        return peek_top_scores(&scores, top, distance);
     }
 
 
-    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize) -> Vec<ScoredPoint> {
+    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize, distance: &Distance) -> Vec<ScoredPoint> {
+        let metric = mertic_object(distance);
+
         let scores: Vec<ScoredPoint> = self.vectors.iter()
             .enumerate()
             .filter(|(point, _)| !self.deleted.contains(point))
             .map(|(point, other_vector)| ScoredPoint {
             idx: point,
-            score: self.metric.similarity(vector, other_vector),
+            score: metric.similarity(vector, other_vector),
         }).collect();
-        return peek_top_scores(scores, top);
+        return peek_top_scores(&scores, top, distance);
     }
+
     fn score_internal(
         &self,
         point: PointOffsetType,
         points: &[PointOffsetType],
         top: usize,
+        distance: &Distance
     ) -> Vec<ScoredPoint> {
         let vector = self.get_vector(point).unwrap();
-        return self.score_points(&vector, points, top);
+        return self.score_points(&vector, points, top, distance);
     }
 }
 
@@ -114,9 +108,9 @@ mod tests {
 
     #[test]
     fn test_score_points() {
-        let metric = Box::new(DotProductMetric {});
+        let distance = Distance::Dot;
         let dim = 4;
-        let mut storage = SimpleVectorStorage::new(metric, dim);
+        let mut storage = SimpleVectorStorage::new(dim);
         let vec1 = vec![1.0, 0.0, 1.0, 1.0];
         let vec2 = vec![1.0, 0.0, 1.0, 0.0];
         let vec3 = vec![1.0, 1.0, 1.0, 1.0];
@@ -134,7 +128,12 @@ mod tests {
 
         let query = vec![0.0, 1.0, 1.1, 1.0];
 
-        let closest = storage.score_points(&query, &[0, 1, 2, 3, 4], 2);
+        let closest = storage.score_points(
+            &query,
+            &[0, 1, 2, 3, 4],
+            2,
+            &distance
+        );
 
         println!("closest = {:#?}", closest);
 
@@ -148,7 +147,12 @@ mod tests {
 
         storage.delete(top_idx);
 
-        let closest = storage.score_points(&query, &[0, 1, 2, 3, 4], 2);
+        let closest = storage.score_points(
+            &query,
+            &[0, 1, 2, 3, 4],
+            2,
+            &distance
+        );
 
 
         let top_idx = match closest.get(0) {
