@@ -1,6 +1,6 @@
-use crate::common::index_def::Indexes;
 use serde::{Deserialize, Serialize};
 use segment::types::Distance;
+use collection::operations::index_def::Indexes;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum AliasOperations {

@@ -507,6 +507,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "collection"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "futures",
+ "ordered-float",
+ "segment",
+ "serde 1.0.111",
+ "serde_cbor",
+ "serde_json",
+ "tempdir",
+ "thiserror",
+ "tokio",
+ "wal",
+]
+
+[[package]]
 name = "config"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1479,6 +1496,7 @@ version = "0.1.0"
 dependencies = [
  "actix-rt",
  "actix-web",
+ "collection",
  "config",
  "criterion",
  "env_logger 0.7.1",
@@ -2064,6 +2082,7 @@ dependencies = [
  "memchr 2.3.3",
  "mio",
  "mio-uds",
+ "num_cpus",
  "pin-project-lite",
  "signal-hook-registry",
  "slab",

@@ -1,15 +1,6 @@
-pub mod types;
-mod common;
+use collection::operations::{point_ops, payload_ops};
 
 pub mod collection_ops;
-pub mod payload_ops;
-pub mod point_ops;
-
-
-pub enum CollectionUpdateOperations {
-    PointOperation(point_ops::PointOps),
-    PayloadOperation(payload_ops::PayloadOps),
-}
 
 
 pub enum Operations {

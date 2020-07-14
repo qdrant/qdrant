@@ -3,7 +3,7 @@ use crate::operations::CollectionUpdateOperations;
 use segment::types::{VectorElementType, Filter, PointIdType, ScoreType, SearchParams, Distance};
 use serde::{Deserialize, Serialize};
 use std::result;
-use crate::common::index_def::Indexes;
+use crate::operations::index_def::Indexes;
 
 
 #[derive(Error, Debug)]

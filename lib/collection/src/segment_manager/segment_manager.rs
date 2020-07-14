@@ -1,6 +1,6 @@
-use crate::operations::CollectionUpdateOperations;
-use crate::storage::collection::collection::{OperationResult, CollectionInfo};
 use segment::types::{VectorElementType, Filter, PointIdType, ScoreType, SeqNumberType, SearchParams};
+use crate::collection::{OperationResult, CollectionInfo};
+use crate::operations::CollectionUpdateOperations;
 
 pub trait SegmentManager {
     fn update(&self, op_num: SeqNumberType, operation: CollectionUpdateOperations) -> OperationResult<bool>;

@@ -1,7 +1,7 @@
 [package]
 name = "qdrant"
 version = "0.1.0"
-authors = ["Andrey Vasnetsov <vasnetsov93@gmail.com>"]
+authors = ["Andrey Vasnetsov <andrey@vasnetsov.com>"]
 edition = "2018"
 doctest = false
 
@@ -30,6 +30,7 @@ actix-web = "2.0"
 actix-rt = "1.0"
 
 segment = {path = "lib/segment"}
+collection = {path = "lib/collection"}
 
 
 [workspace]
