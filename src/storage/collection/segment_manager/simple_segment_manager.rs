@@ -21,8 +21,6 @@ struct SimpleSegmentManager {
     segments: RwLock<HashMap<SegmentId, LockedSegment>>,
     max_segments: usize,
     version: SeqNumberType,
-    point_alias_mapping: RwLock<HashMap<PointIdType, SegmentAliasId>>,
-    alias_segment_mapping: RwLock<HashMap<SegmentAliasId, SegmentId>>,
     index_params: Indexes,
     distance: Distance,
 }
@@ -39,7 +37,6 @@ impl SimpleSegmentManager {
             )
     }
 }
-
 
 impl SegmentManager for SimpleSegmentManager {
     fn update(&self, op_num: SeqNumberType, operation: CollectionUpdateOperations) -> OperationResult<bool> {

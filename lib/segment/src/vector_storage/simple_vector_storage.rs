@@ -29,6 +29,10 @@ impl VectorStorage for SimpleVectorStorage {
         self.dim
     }
 
+    fn vector_count(&self) -> usize {
+        self.vectors.len() - self.deleted.len()
+    }
+
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
         if self.deleted.contains(&key) { return None }
         let vec = self.vectors.get(key)?.clone();

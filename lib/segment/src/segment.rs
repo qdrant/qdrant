@@ -159,4 +159,12 @@ impl SegmentEntry for Segment {
         let internal_id = self.lookup_internal_id(point_id)?;
         Ok(self.payload_storage.borrow().payload(internal_id))
     }
+
+    fn has_point(&self, point_id: PointIdType) -> bool {
+        self.id_mapper.borrow().internal_id(point_id).is_some()
+    }
+
+    fn vectors_count(&self) -> usize {
+        self.vector_storage.borrow().vector_count()
+    }
 }

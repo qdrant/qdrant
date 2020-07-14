@@ -58,6 +58,12 @@ pub trait SegmentEntry {
 
     fn payload(&self, point_id: PointIdType) -> Result<TheMap<PayloadKeyType, PayloadType>>;
 
-    // ToDo: Add statistics APIs: num vectors, mem usage
+    /// Check if there is point with `point_id` in this segment.
+    fn has_point(&self, point_id: PointIdType) -> bool;
+
+    /// Return number of vectors in this segment
+    fn vectors_count(&self) -> usize;
+
+    // ToDo: Add statistics APIs: mem usage
 }
 
