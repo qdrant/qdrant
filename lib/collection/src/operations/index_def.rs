@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use segment::types::Distance;
+
 
 
 

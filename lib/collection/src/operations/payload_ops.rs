@@ -1,4 +1,4 @@
-use std::default::Default;
+
 
 use serde;
 use serde::{Deserialize, Serialize};
@@ -100,9 +100,9 @@ mod tests {
 
         match operation {
             PayloadOps::SetPayload {
-                collection,
+                collection: _,
                 payload,
-                points
+                points: _
             } => {
                 assert_eq!(payload.len(), 2);
 

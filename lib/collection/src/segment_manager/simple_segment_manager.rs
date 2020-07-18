@@ -1,7 +1,7 @@
 use std::sync::{RwLock, Arc};
 use std::collections::{HashMap, HashSet};
 use segment::entry::entry_point::SegmentEntry;
-use segment::types::{SeqNumberType, PointIdType, Filter, ScoreType, SearchParams, VectorElementType, Distance, ScoredPoint};
+use segment::types::{SeqNumberType, PointIdType, Filter, SearchParams, VectorElementType, Distance, ScoredPoint};
 use crate::segment_manager::segment_manager::SegmentManager;
 use crate::collection::{OperationResult, CollectionInfo};
 use crate::operations::index_def::Indexes;
@@ -84,7 +84,7 @@ impl SegmentManager for SimpleSegmentManager {
             .read()
             .unwrap()
             .iter()
-            .map(|(id, segment)|
+            .map(|(_id, segment)|
                 SimpleSegmentManager::search_in_segment(segment.clone(), vector, filter, top, params))
             .collect();
 
@@ -154,7 +154,7 @@ mod tests {
         segment2.upsert_point(14, 14, &vec14);
         segment2.upsert_point(15, 15, &vec15);
 
-        let mut threaded_rt1: Runtime = runtime::Builder::new()
+        let threaded_rt1: Runtime = runtime::Builder::new()
             .threaded_scheduler()
             .max_threads(2)
             .build().unwrap();
