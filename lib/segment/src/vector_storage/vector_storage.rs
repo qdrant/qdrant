@@ -4,26 +4,20 @@ use ordered_float::OrderedFloat;
 
 
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub struct ScoredPoint {
+pub struct ScoredPointOffset {
     pub idx: PointOffsetType,
     pub score: ScoreType
 }
 
-impl ScoredPoint {
-    pub fn to_tuple(&self) -> (PointOffsetType, ScoreType) {
-        (self.idx, self.score)
-    }
-}
+impl Eq for ScoredPointOffset {}
 
-impl Eq for ScoredPoint {}
-
-impl Ord for ScoredPoint {
+impl Ord for ScoredPointOffset {
     fn cmp(&self, other: &Self) -> Ordering {
-        Reverse(OrderedFloat(other.score)).cmp(&Reverse(OrderedFloat(self.score)))
+        OrderedFloat(self.score).cmp(&OrderedFloat(other.score))
     }
 }
 
-impl PartialOrd for ScoredPoint {
+impl PartialOrd for ScoredPointOffset {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -52,18 +46,29 @@ pub trait VectorMatcher {
         points: &[PointOffsetType],
         top: usize,
         distance: &Distance
-    ) -> Vec<ScoredPoint>;
+    ) -> Vec<ScoredPointOffset>;
     fn score_all(
         &self,
         vector: &Vec<VectorElementType>,
         top: usize,
         distance: &Distance
-    ) -> Vec<ScoredPoint>;
+    ) -> Vec<ScoredPointOffset>;
     fn score_internal(
         &self,
         point: PointOffsetType,
         points: &[PointOffsetType],
         top: usize,
         distance: &Distance
-    ) -> Vec<ScoredPoint>;
+    ) -> Vec<ScoredPointOffset>;
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ordering() {
+        assert!(ScoredPointOffset { idx: 10, score: 0.9} > ScoredPointOffset { idx: 20, score: 0.6})
+    }
 }

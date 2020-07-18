@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use crate::payload_storage::payload_storage::{PayloadStorage, TheMap};
 use crate::entry::entry_point::{SegmentEntry, Result, OperationError};
-use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, ScoreType, PointOffsetType, SearchParams};
+use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, ScoreType, PointOffsetType, SearchParams, ScoredPoint};
 use crate::query_planner::query_planner::QueryPlanner;
 
 /// Simple segment implementation
@@ -64,18 +64,20 @@ impl SegmentEntry for Segment {
               filter: Option<&Filter>,
               top: usize,
               params: Option<&SearchParams>,
-    ) -> Vec<(PointIdType, ScoreType)> {
+    ) -> Vec<ScoredPoint> {
         let internal_result = self.query_planner.borrow().search(vector, filter, top, params);
 
 
         let id_mapper = self.id_mapper.borrow();
         internal_result.iter()
-            .map(|&(internal_id, score)|
+            .map(|&scored_point_offset|
                 (
-                    id_mapper
-                        .external_id(internal_id)
-                        .unwrap_or_else(|| panic!("Corrupter id_mapper, no external value for {}", internal_id)),
-                    score
+                    ScoredPoint {
+                        idx: id_mapper
+                            .external_id(scored_point_offset.idx)
+                            .unwrap_or_else(|| panic!("Corrupter id_mapper, no external value for {}", scored_point_offset.idx)),
+                        score: scored_point_offset.score,
+                    }
                 )
             ).collect()
     }

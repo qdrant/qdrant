@@ -1,4 +1,4 @@
-use crate::vector_storage::vector_storage::{VectorMatcher, ScoredPoint, VectorCounter};
+use crate::vector_storage::vector_storage::{VectorMatcher, ScoredPointOffset, VectorCounter};
 use crate::index::index::{Index, PayloadIndex};
 use crate::types::{Filter, PointOffsetType, ScoreType, VectorElementType, Distance, SearchParams};
 use crate::payload_storage::payload_storage::{ConditionChecker};
@@ -77,13 +77,13 @@ impl Index for PlainIndex {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>
-    ) -> Vec<(PointOffsetType, ScoreType)> {
+    ) -> Vec<ScoredPointOffset> {
         match filter {
             Some(filter) => {
                 let filtered_ids = self.payload_index.borrow().query_points(filter);
-                self.vector_matcher.borrow().score_points(vector, &filtered_ids, 0, &self.distance)
+                self.vector_matcher.borrow().score_points(vector, &filtered_ids, top, &self.distance)
             }
             None => self.vector_matcher.borrow().score_all(vector, top, &self.distance)
-        }.iter().map(ScoredPoint::to_tuple).collect()
+        }
     }
 }

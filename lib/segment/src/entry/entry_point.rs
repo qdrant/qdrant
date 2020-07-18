@@ -1,6 +1,6 @@
 use thiserror::Error;
 use std::path::Path;
-use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, ScoreType, PayloadKeyType, PayloadType, SearchParams};
+use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, ScoreType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint};
 use std::result;
 use crate::payload_storage::payload_storage::TheMap;
 
@@ -32,7 +32,7 @@ pub type Result<T> = result::Result<T, OperationError>;
 /// Assume, that all operations are idempotent - which means that
 ///     no matter how much time they will consequently executed - storage state will be the same.
 pub trait SegmentEntry {
-    /// Get current update version of the segement
+    /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
 
     fn search(&self,
@@ -40,7 +40,7 @@ pub trait SegmentEntry {
               filter: Option<&Filter>,
               top: usize,
               params: Option<&SearchParams>,
-    ) -> Vec<(PointIdType, ScoreType)>;
+    ) -> Vec<ScoredPoint>;
 
     fn upsert_point(&mut self, op_num: SeqNumberType, point_id: PointIdType, vector: &Vec<VectorElementType>) -> Result<bool>;
 

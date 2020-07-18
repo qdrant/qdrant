@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use std::cmp::{Ordering, Reverse};
+use ordered_float::OrderedFloat;
 
 pub type PointIdType = u64;
 /// Type of point index across all segments
@@ -27,6 +29,28 @@ pub enum Order {
     LargeBetter,
     SmallBetter
 }
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct ScoredPoint {
+    pub idx: PointIdType,
+    pub score: ScoreType
+}
+
+impl Eq for ScoredPoint {}
+
+
+impl Ord for ScoredPoint {
+    fn cmp(&self, other: &Self) -> Ordering {
+        OrderedFloat(self.score).cmp(&OrderedFloat(other.score))
+    }
+}
+
+impl PartialOrd for ScoredPoint {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 
 
 #[derive(Debug, Deserialize, Serialize)]

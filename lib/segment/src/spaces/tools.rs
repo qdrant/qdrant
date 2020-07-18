@@ -1,4 +1,4 @@
-use crate::vector_storage::vector_storage::ScoredPoint;
+use crate::vector_storage::vector_storage::ScoredPointOffset;
 use crate::types::{Distance, Order, distance_order, VectorElementType};
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
@@ -33,33 +33,43 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     }
 }
 
-
-pub fn peek_top_scores(scores: &[ScoredPoint], top: usize, distance: &Distance) -> Vec<ScoredPoint> {
+pub fn peek_top_scores_iterable<I, E: Ord + Clone>(scores: I, top: usize, distance: &Distance) -> Vec<E>
+    where
+        I: Iterator<Item=E>,
+{
     if top == 0 {
-        return scores.to_vec();
+        return scores.collect();
     }
 
     let order = distance_order(&distance);
     let res = match order {
-        Order::LargeBetter => {
+        Order::SmallBetter => {
+            /// If small values is better - PQ should pop-out large values first.
+            /// Hence is should be max-heap
             let mut pq = FixedLengthPriorityQueue::new(top);
             for score_point in scores {
                 pq.push(score_point.clone());
             }
             pq.into_vec()
         }
-        Order::SmallBetter => {
+        Order::LargeBetter => {
             let mut pq = FixedLengthPriorityQueue::new(top);
             for score_point in scores {
                 pq.push(Reverse(score_point.clone()));
             }
             pq.into_vec()
                 .iter()
-                .map(|&x| match x { Reverse(v) => v })
+                .map(|x| match x { Reverse(v) => v.clone() })
                 .collect()
         }
     };
     return res;
+}
+
+
+pub fn peek_top_scores<E: Ord + Clone>(scores: &[E], top: usize, distance: &Distance) -> Vec<E> {
+    return peek_top_scores_iterable(scores.iter().cloned(), top, distance)
+
 }
 
 pub fn mertic_object(distance: &Distance) -> Box<dyn Metric<VectorElementType>> {
@@ -67,5 +77,20 @@ pub fn mertic_object(distance: &Distance) -> Box<dyn Metric<VectorElementType>> 
         Distance::Cosine => Box::new(CosineMetric {}),
         Distance::Euclid => unimplemented!(),
         Distance::Dot => Box::new(DotProductMetric {}),
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_peek_top() {
+        let data = vec![10, 20, 40, 5, 100, 33, 84, 65, 20, 43, 44, 42];
+        let res = peek_top_scores(&data, 3, &Distance::Dot);
+        assert_eq!(res, vec![100, 84, 65]);
+        let res = peek_top_scores(&data, 3, &Distance::Euclid);
+        assert_eq!(res, vec![5, 10, 20]);
     }
 }

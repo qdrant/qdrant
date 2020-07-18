@@ -1,4 +1,5 @@
 use crate::types::{VectorElementType, Filter, PointOffsetType, ScoreType, SearchParams};
+use crate::vector_storage::vector_storage::ScoredPointOffset;
 
 /// Similar to `Index`, but should operate with multiple possible indexes + post-filtering
 pub trait QueryPlanner {
@@ -8,5 +9,5 @@ pub trait QueryPlanner {
               filter: Option<&Filter>,
               top: usize,
               params: Option<&SearchParams>,
-    ) -> Vec<(PointOffsetType, ScoreType)>;
+    ) -> Vec<ScoredPointOffset>;
 }

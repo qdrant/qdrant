@@ -2,7 +2,7 @@ use super::vector_storage::{VectorStorage, VectorMatcher};
 use crate::spaces::metric::Metric;
 use crate::types::{PointOffsetType, VectorElementType, Distance};
 use std::collections::{BinaryHeap, HashSet};
-use crate::vector_storage::vector_storage::{ScoredPoint, VectorCounter};
+use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorCounter};
 use crate::spaces::simple::{DotProductMetric, CosineMetric};
 use crate::spaces::tools::{mertic_object, peek_top_scores};
 
@@ -62,15 +62,15 @@ impl VectorMatcher for SimpleVectorStorage {
         points: &[PointOffsetType],
         top: usize,
         distance: &Distance,
-    ) -> Vec<ScoredPoint> {
+    ) -> Vec<ScoredPointOffset> {
         let metric = mertic_object(distance);
 
-        let scores: Vec<ScoredPoint> = points.iter()
+        let scores: Vec<ScoredPointOffset> = points.iter()
             .cloned()
             .filter(|point| !self.deleted.contains(point))
             .map(|point| {
                 let other_vector = self.vectors.get(point).unwrap();
-                ScoredPoint {
+                ScoredPointOffset {
                     idx: point,
                     score: metric.similarity(vector, other_vector),
                 }
@@ -79,13 +79,13 @@ impl VectorMatcher for SimpleVectorStorage {
     }
 
 
-    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize, distance: &Distance) -> Vec<ScoredPoint> {
+    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize, distance: &Distance) -> Vec<ScoredPointOffset> {
         let metric = mertic_object(distance);
 
-        let scores: Vec<ScoredPoint> = self.vectors.iter()
+        let scores: Vec<ScoredPointOffset> = self.vectors.iter()
             .enumerate()
             .filter(|(point, _)| !self.deleted.contains(point))
-            .map(|(point, other_vector)| ScoredPoint {
+            .map(|(point, other_vector)| ScoredPointOffset {
             idx: point,
             score: metric.similarity(vector, other_vector),
         }).collect();
@@ -98,7 +98,7 @@ impl VectorMatcher for SimpleVectorStorage {
         points: &[PointOffsetType],
         top: usize,
         distance: &Distance
-    ) -> Vec<ScoredPoint> {
+    ) -> Vec<ScoredPointOffset> {
         let vector = self.get_vector(point).unwrap();
         return self.score_points(&vector, points, top, distance);
     }
@@ -115,17 +115,17 @@ mod tests {
         let distance = Distance::Dot;
         let dim = 4;
         let mut storage = SimpleVectorStorage::new(dim);
-        let vec1 = vec![1.0, 0.0, 1.0, 1.0];
-        let vec2 = vec![1.0, 0.0, 1.0, 0.0];
-        let vec3 = vec![1.0, 1.0, 1.0, 1.0];
-        let vec4 = vec![1.0, 1.0, 0.0, 1.0];
-        let vec5 = vec![1.0, 0.0, 0.0, 0.0];
+        let vec0 = vec![1.0, 0.0, 1.0, 1.0];
+        let vec1 = vec![1.0, 0.0, 1.0, 0.0];
+        let vec2 = vec![1.0, 1.0, 1.0, 1.0];
+        let vec3 = vec![1.0, 1.0, 0.0, 1.0];
+        let vec4 = vec![1.0, 0.0, 0.0, 0.0];
 
-        let _id1 = storage.put_vector(&vec1);
-        let id2 = storage.put_vector(&vec2);
-        let _id3 = storage.put_vector(&vec3);
-        let _id4 = storage.put_vector(&vec4);
-        let id5 = storage.put_vector(&vec5);
+        let _id1 = storage.put_vector(&vec0);
+        let id2 = storage.put_vector(&vec1);
+        let _id3 = storage.put_vector(&vec2);
+        let _id4 = storage.put_vector(&vec3);
+        let id5 = storage.put_vector(&vec4);
 
         assert_eq!(id2, 1);
         assert_eq!(id5, 4);

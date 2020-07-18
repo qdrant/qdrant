@@ -1,4 +1,4 @@
-use segment::types::{VectorElementType, Filter, PointIdType, ScoreType, SeqNumberType, SearchParams};
+use segment::types::{VectorElementType, Filter, PointIdType, ScoreType, SeqNumberType, SearchParams, ScoredPoint};
 use crate::collection::{OperationResult, CollectionInfo};
 use crate::operations::CollectionUpdateOperations;
 
@@ -12,5 +12,5 @@ pub trait SegmentManager {
               filter: Option<&Filter>,
               top: usize,
               params: Option<&SearchParams>
-    ) -> Vec<(PointIdType, ScoreType)>;
+    ) -> Vec<ScoredPoint>;
 }

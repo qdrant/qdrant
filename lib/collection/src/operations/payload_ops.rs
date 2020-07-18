@@ -98,7 +98,6 @@ mod tests {
 
         let operation: PayloadOps = serde_json::from_str(query1).unwrap();
 
-        // eprintln!("operation = {:#?}", operation);
         match operation {
             PayloadOps::SetPayload {
                 collection,
