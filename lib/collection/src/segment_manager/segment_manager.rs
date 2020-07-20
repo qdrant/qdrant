@@ -3,7 +3,7 @@ use crate::collection::{OperationResult, CollectionInfo};
 use crate::operations::CollectionUpdateOperations;
 
 pub trait SegmentManager {
-    fn update(&self, op_num: SeqNumberType, operation: CollectionUpdateOperations) -> OperationResult<bool>;
+    fn update(&self, op_num: SeqNumberType, operation: &CollectionUpdateOperations) -> OperationResult<usize>;
 
     fn info(&self) -> OperationResult<CollectionInfo>;
 

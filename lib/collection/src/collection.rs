@@ -7,9 +7,10 @@ use crate::operations::index_def::Indexes;
 
 
 #[derive(Error, Debug)]
+#[error("{0}")]
 pub enum UpdateError {
-    #[error("Vector inserting error: expected dim: {expected_dim}, got {received_dim}")]
-    BadInput { expected_dim: usize, received_dim: usize },
+    #[error("Wrong input: {description}")]
+    BadInput { description:  String },
     #[error("No point with id {missed_point_id} found")]
     NotFound { missed_point_id: PointIdType },
     #[error("Service internal error: {error}")]

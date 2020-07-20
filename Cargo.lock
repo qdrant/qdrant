@@ -513,6 +513,7 @@ dependencies = [
  "criterion",
  "futures",
  "ordered-float",
+ "rand 0.7.3",
  "segment",
  "serde 1.0.111",
  "serde_cbor",

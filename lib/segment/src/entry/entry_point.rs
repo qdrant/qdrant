@@ -16,6 +16,7 @@ pub trait VersionedPersistable {
 
 
 #[derive(Error, Debug)]
+#[error("{0}")]
 pub enum OperationError {
     #[error("Vector inserting error: expected dim: {expected_dim}, got {received_dim}")]
     WrongVector { expected_dim: usize, received_dim: usize },
