@@ -2,9 +2,7 @@ use segment::types::{VectorElementType, Filter, SeqNumberType, SearchParams, Sco
 use crate::collection::{OperationResult, CollectionInfo};
 use crate::operations::CollectionUpdateOperations;
 
-pub trait SegmentManager {
-    fn update(&self, op_num: SeqNumberType, operation: &CollectionUpdateOperations) -> OperationResult<usize>;
-
+pub trait SegmentSearcher {
     fn info(&self) -> OperationResult<CollectionInfo>;
 
     fn search(&self,
@@ -13,4 +11,10 @@ pub trait SegmentManager {
               top: usize,
               params: Option<&SearchParams>
     ) -> Vec<ScoredPoint>;
+}
+
+
+
+pub trait SegmentUpdater {
+    fn update(&self, op_num: SeqNumberType, operation: &CollectionUpdateOperations) -> OperationResult<usize>;
 }
