@@ -62,7 +62,7 @@ pub enum PayloadOps {
     /// Deletes specified Payload if they are assigned
     DeletePayload {
         collection: String,
-        payload: Vec<PayloadKeyType>,
+        keys: Vec<PayloadKeyType>,
         points: Vec<PointIdType>,
     },
     /// Drops all Payload associated with given points.

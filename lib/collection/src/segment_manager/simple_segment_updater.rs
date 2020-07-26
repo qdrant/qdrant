@@ -1,15 +1,15 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockWriteGuard};
 use crate::segment_manager::segment_holder::{SegmentHolder, LockedSegment};
 use crate::segment_manager::segment_managers::SegmentUpdater;
 use crate::operations::CollectionUpdateOperations;
 use crate::collection::{OperationResult, UpdateError};
-use segment::types::{SeqNumberType, PointIdType};
-use segment::entry::entry_point::OperationError;
+use segment::types::{SeqNumberType, PointIdType, PayloadKeyType};
+use segment::entry::entry_point::{OperationError, SegmentEntry, Result};
 use std::collections::{HashSet, HashMap};
 use crate::operations::types::VectorType;
 use rand::Rng;
 use crate::operations::point_ops::PointOps;
-use crate::operations::payload_ops::PayloadOps;
+use crate::operations::payload_ops::{PayloadOps, PayloadInterface, PayloadVariant};
 
 struct SimpleSegmentUpdater {
     segments: Arc<RwLock<SegmentHolder>>,
@@ -28,59 +28,76 @@ impl SimpleSegmentUpdater {
     }
 
 
-    /// Tries to delete points from all segments, returns number of actually deleted points
-    fn delete_points(&self, op_num: SeqNumberType, ids: &Vec<PointIdType>) -> OperationResult<usize> {
-        let mut res: usize = 0;
-        for (idx, segment) in self.segments.read().unwrap().iter() {
+    fn apply_segments<F>(&self, op_num: SeqNumberType, mut f: F) -> OperationResult<usize>
+        where F: FnMut(&mut RwLockWriteGuard<dyn SegmentEntry + 'static>) -> Result<bool>
+    {
+        let mut processed_segments = 0;
+        let segments = self.segments.read().unwrap();
+        for (_idx, segment) in segments.iter() {
             /// Skip this segment if it already have bigger version (WAL recovery related)
             if segment.read().unwrap().version() > op_num { continue; }
-
-            /// Collect deletable points first, we want to lock segment for writing as rare as possible
-            let segment_points = self.segment_points(ids, segment);
-
             let mut write_segment = segment.write().unwrap();
-            for point_id in segment_points {
-                match write_segment.delete_point(op_num, point_id) {
-                    Ok(is_deleted) => res += (is_deleted as usize),
-                    Err(err) => match err {
-                        /// It is ok, if we are recovering from WAL and some changes happened somehow
-                        /// Which might be possible with parallel updates
-                        OperationError::SeqError { .. } => {}
-                        /// No other errors could be handled here
-                        _ => panic!(format!("Unexpected error {}", err)),  //noinspection all
-                    },
+            match f(&mut write_segment) {
+                Ok(is_applied) => processed_segments += (is_applied as usize),
+                Err(err) => match err {
+                    OperationError::WrongVector { .. } => return Err(UpdateError::BadInput { description: format!("{}", err) }),
+                    OperationError::SeqError { .. } => {} /// Ok if recovering from WAL
+                    OperationError::PointIdError { missed_point_id } => return Err(UpdateError::NotFound { missed_point_id }),
+                },
+            }
+        }
+        Ok(processed_segments)
+    }
+
+
+    fn apply_points<F>(&self, op_num: SeqNumberType, ids: &Vec<PointIdType>, mut f: F) -> OperationResult<usize>
+        where F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry + 'static>) -> Result<bool>
+    {
+        let mut applied_points = 0;
+        let segments = self.segments.read().unwrap();
+        for (_idx, segment) in segments.iter() {
+            /// Skip this segment if it already have bigger version (WAL recovery related)
+            if segment.read().unwrap().version() > op_num { continue; }
+            /// Collect affected points first, we want to lock segment for writing as rare as possible
+            let segment_points = self.segment_points(ids, segment);
+            if !segment_points.is_empty() {
+                let mut write_segment = segment.write().unwrap();
+                for point_id in segment_points {
+                    match f(point_id, &mut write_segment) {
+                        Ok(is_applied) => applied_points += (is_applied as usize),
+                        Err(err) => match err {
+                            OperationError::WrongVector { .. } => return Err(UpdateError::BadInput { description: format!("{}", err) }),
+                            OperationError::SeqError { .. } => {} /// Ok if recovering from WAL
+                            OperationError::PointIdError { missed_point_id } => return Err(UpdateError::NotFound { missed_point_id }),
+                        },
+                    }
                 }
             }
         }
-        Ok(res)
+        Ok(applied_points)
+    }
+
+
+    /// Tries to delete points from all segments, returns number of actually deleted points
+    fn delete_points(&self, op_num: SeqNumberType, ids: &Vec<PointIdType>) -> OperationResult<usize> {
+        self.apply_points(op_num, ids, |id, write_segment|
+            write_segment.delete_point(op_num, id),
+        )
     }
 
     /// Checks point id in each segment, update point if found.
     /// All not found points are inserted into random segment.
     /// Returns: number of updated points.
     fn upsert_points(&self, op_num: SeqNumberType, ids: &Vec<PointIdType>, vectors: &Vec<VectorType>) -> OperationResult<usize> {
-        let mut res: usize = 0;
         let mut updated_points: HashSet<PointIdType> = Default::default();
         let points_map: HashMap<PointIdType, &VectorType> = ids.iter().cloned().zip(vectors).collect();
 
         let segments = self.segments.read().unwrap();
 
-        for (_segment_id, segment) in segments.iter() {
-            let segment_points = self.segment_points(ids, segment);
-            let mut write_segment = segment.write().unwrap();
-            for id in segment_points {
-                updated_points.insert(id);
-                match write_segment.upsert_point(op_num, id, points_map[&id]) {
-                    Ok(point_res) => res += (point_res as usize),
-                    Err(err) => match err {
-                        OperationError::WrongVector { expected_dim, received_dim } =>
-                            return Err(UpdateError::BadInput { description: format!("{}", err) }), //noinspection all
-                        OperationError::SeqError { .. } => {} /// Ok if recovering from WAL
-                        OperationError::PointIdError { .. } => panic!(format!("Unexpected error {}", err)), //noinspection all
-                    },
-                }
-            }
-        }
+        let res = self.apply_points(op_num, ids, |id, write_segment| {
+            updated_points.insert(id);
+            write_segment.upsert_point(op_num, id, points_map[&id])
+        })?;
 
         let new_point_ids = ids
             .iter()
@@ -112,8 +129,100 @@ impl SimpleSegmentUpdater {
         }
     }
 
+    fn check_unprocessed_points(points: &Vec<PointIdType>, processed: &HashSet<PointIdType>) -> OperationResult<usize> {
+        let missed_point = points
+            .iter()
+            .cloned()
+            .filter(|p| !processed.contains(p))
+            .next();
+        match missed_point {
+            None => Ok(processed.len()),
+            Some(missed_point) => Err(UpdateError::NotFound { missed_point_id: missed_point }),
+        }
+    }
+
+    fn set_payload(
+        &self,
+        op_num: SeqNumberType,
+        payload: &HashMap<PayloadKeyType, PayloadInterface>,
+        points: &Vec<PointIdType>,
+    ) -> OperationResult<usize> {
+        let mut updated_points: HashSet<PointIdType> = Default::default();
+
+        let res = self.apply_points(op_num, points, |id, write_segment| {
+            updated_points.insert(id);
+            let mut res = true;
+            for (key, payload) in payload {
+                res = write_segment.set_payload(op_num, id, key, payload.to_payload())? && res;
+            }
+            Ok(res)
+        })?;
+
+        SimpleSegmentUpdater::check_unprocessed_points(points, &updated_points)?;
+        Ok(res)
+    }
+
+    fn delete_payload(
+        &self,
+        op_num: SeqNumberType,
+        points: &Vec<PointIdType>,
+        keys: &Vec<PayloadKeyType>,
+    ) -> OperationResult<usize> {
+        let mut updated_points: HashSet<PointIdType> = Default::default();
+        let res = self.apply_points(op_num, points, |id, write_segment| {
+            updated_points.insert(id);
+            let mut res = true;
+            for key in keys {
+                res = write_segment.delete_payload(op_num, id, key)? && res;
+            }
+            Ok(res)
+        })?;
+
+        SimpleSegmentUpdater::check_unprocessed_points(points, &updated_points)?;
+        Ok(res)
+    }
+
+    fn clear_payload(
+        &self,
+        op_num: SeqNumberType,
+        points: &Vec<PointIdType>,
+    ) -> OperationResult<usize> {
+        let mut updated_points: HashSet<PointIdType> = Default::default();
+        let res = self.apply_points(op_num, points, |id, write_segment| {
+            updated_points.insert(id);
+            write_segment.clear_payload(op_num, id)
+        })?;
+
+        SimpleSegmentUpdater::check_unprocessed_points(points, &updated_points)?;
+        Ok(res)
+    }
+
+    fn wipe_payload(
+        &self,
+        op_num: SeqNumberType,
+    ) -> OperationResult<usize> {
+        self.apply_segments(op_num, |segment| segment.wipe_payload(op_num))
+
+    }
+
+
     pub fn process_payload_operation(&self, op_num: SeqNumberType, payload_operation: &PayloadOps) -> OperationResult<usize> {
-        unimplemented!()
+        match payload_operation {
+            PayloadOps::SetPayload {
+                payload,
+                points,
+                ..
+            } => self.set_payload(op_num, payload, points),
+            PayloadOps::DeletePayload {
+                keys,
+                points,
+                ..
+            } => self.delete_payload(op_num, points, keys),
+            PayloadOps::ClearPayload {
+                points, ..
+            } => self.clear_payload(op_num, points),
+            PayloadOps::WipePayload { .. } => self.wipe_payload(op_num),
+        }
     }
 }
 
@@ -124,5 +233,34 @@ impl SegmentUpdater for SimpleSegmentUpdater {
             CollectionUpdateOperations::PointOperation(point_operation) => self.process_point_operation(op_num, point_operation),
             CollectionUpdateOperations::PayloadOperation(payload_operation) => self.process_payload_operation(op_num, payload_operation),
         }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::segment_manager::fixtures::build_test_holder;
+
+    #[test]
+    fn test_insert_points() {
+        let updater = SimpleSegmentUpdater {
+            segments: Arc::new(RwLock::new(build_test_holder()))
+        };
+
+        let mut payload: HashMap<PayloadKeyType, PayloadInterface> = Default::default();
+
+        payload.insert(
+            "color".to_string(),
+            PayloadInterface::Keyword(PayloadVariant::Value("red".to_string())),
+        );
+
+        let points = vec![1, 2, 3];
+
+        updater.process_payload_operation(100, &PayloadOps::SetPayload {
+            collection: "".to_string(),
+            payload,
+            points,
+        });
     }
 }
