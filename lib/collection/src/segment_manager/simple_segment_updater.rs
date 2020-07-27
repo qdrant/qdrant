@@ -9,7 +9,7 @@ use std::collections::{HashSet, HashMap};
 use crate::operations::types::VectorType;
 
 use crate::operations::point_ops::PointOps;
-use crate::operations::payload_ops::{PayloadOps, PayloadInterface};
+use crate::operations::payload_ops::{PayloadOps, PayloadInterface, PayloadVariant};
 
 struct SimpleSegmentUpdater {
     segments: Arc<RwLock<SegmentHolder>>,

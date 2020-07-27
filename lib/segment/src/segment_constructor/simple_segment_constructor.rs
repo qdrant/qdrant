@@ -45,7 +45,7 @@ pub fn build_simple_segment(_dir: &Path, dim: usize, distance: Distance) -> Segm
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entry::entry_point::OperationError;
+    use crate::entry::entry_point::{OperationError, SegmentEntry};
     use crate::types::PayloadType;
 
     #[test]
