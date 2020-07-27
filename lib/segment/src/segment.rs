@@ -109,11 +109,12 @@ impl SegmentEntry for Segment {
 
     fn delete_point(&mut self, op_num: SeqNumberType, point_id: PointIdType) -> Result<bool> {
         self.track_version(op_num)?;
-        match self.id_mapper.borrow().internal_id(point_id) {
+        let mut mapper = self.id_mapper.borrow_mut();
+        let internal_id =  mapper.internal_id(point_id);
+        match internal_id {
             Some(internal_id) => {
                 self.vector_storage.borrow_mut().delete(internal_id);
-                self.id_mapper.borrow_mut().drop(point_id);
-
+                mapper.drop(point_id);
                 Ok(true)
             }
             None => Ok(false)

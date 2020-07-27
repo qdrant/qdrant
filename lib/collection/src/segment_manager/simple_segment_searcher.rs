@@ -14,10 +14,10 @@ use crate::operations::types::Record;
 ///  - rebuild segment for memory optimization purposes
 ///  - Holds information regarding id mapping to segments
 ///
-struct SimpleSegmentSearcher {
-    segments: Arc<RwLock<SegmentHolder>>,
-    distance: Distance,
-    runtime_handle: Handle,
+pub struct SimpleSegmentSearcher {
+    pub segments: Arc<RwLock<SegmentHolder>>,
+    pub distance: Distance,
+    pub runtime_handle: Handle,
 }
 
 impl SimpleSegmentSearcher {

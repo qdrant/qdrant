@@ -183,13 +183,68 @@ impl SegmentUpdater for SimpleSegmentUpdater {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::segment_manager::fixtures::build_test_holder;
+    use crate::segment_manager::fixtures::{build_test_holder, build_searcher};
+    use crate::segment_manager::segment_managers::SegmentSearcher;
 
     #[test]
-    fn test_insert_points() {
-        let holder = Arc::new(RwLock::new(build_test_holder()));
+    fn test_point_ops() {
+        let searcher = build_searcher();
+
         let updater = SimpleSegmentUpdater {
-            segments: holder.clone()
+            segments: searcher.segments.clone()
+        };
+        let points = vec![1, 500];
+
+        let vectors = vec![
+            vec![2., 2., 2., 2.],
+            vec![2., 0., 2., 0.],
+        ];
+
+        let res = updater.upsert_points(
+            100,
+            &points,
+            &vectors,
+        );
+
+        match res {
+            Ok(updated) => assert_eq!(updated, 1),
+            Err(_) => assert!(false),
+        };
+
+        let records = searcher.retrieve(&vec![1, 2, 500], true, true);
+
+        assert_eq!(records.len(), 3);
+
+        for record in records {
+            let v = record.vector.unwrap();
+
+            if record.id == 1 {
+                assert_eq!(&v, &vec![2., 2., 2., 2.])
+            }
+            if record.id == 500 {
+                assert_eq!(&v, &vec![2., 0., 2., 0.])
+            }
+        }
+
+        updater.delete_points(101, &vec![500]);
+
+        let records = searcher.retrieve(&vec![1, 2, 500], true, true);
+
+        for record in records {
+            let v = record.vector.unwrap();
+
+            if record.id == 500 {
+                assert!(false)
+            }
+        }
+    }
+
+    #[test]
+    fn test_payload_ops() {
+        let searcher = build_searcher();
+
+        let updater = SimpleSegmentUpdater {
+            segments: searcher.segments.clone()
         };
 
         let mut payload: HashMap<PayloadKeyType, PayloadInterface> = Default::default();
@@ -204,11 +259,39 @@ mod tests {
         updater.process_payload_operation(100, &PayloadOps::SetPayload {
             collection: "".to_string(),
             payload,
-            points,
+            points: points.clone(),
         });
 
+        let res = searcher.retrieve(&points, true, false);
+
+        assert_eq!(res.len(), 3);
+
+        match res.get(0) {
+            None => assert!(false),
+            Some(r) => match &r.payload {
+                None => assert!(false, "No payload assigned"),
+                Some(payload) => {
+                    assert!(payload.contains_key("color"))
+                }
+            },
+        };
+
+        /// Test payload delete
+
+        updater.delete_payload(101, &vec![3], &vec!["color".to_string(), "empty".to_string()]);
+        let res = searcher.retrieve(&vec![3], true, false);
+        assert_eq!(res.len(), 1);
+        assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
+
+        /// Test clear payload
+
+        let res = searcher.retrieve(&vec![2], true, false);
+        assert_eq!(res.len(), 1);
+        assert!(res[0].payload.as_ref().unwrap().contains_key("color"));
+
+        updater.clear_payload(102, &vec![2]);
+        let res = searcher.retrieve(&vec![2], true, false);
+        assert_eq!(res.len(), 1);
+        assert!(!res[0].payload.as_ref().unwrap().contains_key("color"))
     }
-
-
-    // ToDo: More tests
 }

@@ -4,6 +4,10 @@ use segment::segment_constructor::simple_segment_constructor::build_simple_segme
 use std::path::Path;
 use segment::types::Distance;
 use crate::segment_manager::segment_holder::SegmentHolder;
+use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
+use tokio::runtime::Runtime;
+use tokio::runtime;
+use std::sync::{RwLock, Arc};
 
 pub fn build_segment_1() -> Segment {
     let tmp_path = Path::new("/tmp/qdrant/segment");
@@ -60,3 +64,21 @@ pub fn build_test_holder() -> SegmentHolder {
 
     return holder;
 }
+
+pub fn build_searcher() -> SimpleSegmentSearcher {
+    let segment_holder = build_test_holder();
+
+    let threaded_rt1: Runtime = runtime::Builder::new()
+        .threaded_scheduler()
+        .max_threads(2)
+        .build().unwrap();
+
+    let searcher = SimpleSegmentSearcher::new(
+        Arc::new(RwLock::new(segment_holder)),
+        threaded_rt1.handle().clone(),
+        Distance::Dot,
+    );
+
+    searcher
+}
+
