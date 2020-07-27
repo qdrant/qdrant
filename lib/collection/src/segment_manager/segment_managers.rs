@@ -1,6 +1,7 @@
-use segment::types::{VectorElementType, Filter, SeqNumberType, SearchParams, ScoredPoint};
+use segment::types::{VectorElementType, Filter, SeqNumberType, SearchParams, ScoredPoint, PointIdType, PayloadKeyType, PayloadType, TheMap};
 use crate::collection::{OperationResult, CollectionInfo};
 use crate::operations::CollectionUpdateOperations;
+use crate::operations::types::Record;
 
 pub trait SegmentSearcher {
     fn info(&self) -> OperationResult<CollectionInfo>;
@@ -11,6 +12,13 @@ pub trait SegmentSearcher {
               top: usize,
               params: Option<&SearchParams>
     ) -> Vec<ScoredPoint>;
+
+    fn retrieve(
+        &self,
+        points: &Vec<PointIdType>,
+        with_payload: bool,
+        with_vector: bool
+    ) -> Vec<Record>;
 }
 
 

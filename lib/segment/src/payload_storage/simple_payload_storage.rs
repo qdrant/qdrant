@@ -1,5 +1,5 @@
-use crate::payload_storage::payload_storage::{PayloadStorage, TheMap};
-use crate::types::{PayloadKeyType, PayloadType, PointOffsetType};
+use crate::payload_storage::payload_storage::{PayloadStorage};
+use crate::types::{PayloadKeyType, PayloadType, PointOffsetType, TheMap};
 use std::mem;
 use std::collections::{HashMap, HashSet};
 

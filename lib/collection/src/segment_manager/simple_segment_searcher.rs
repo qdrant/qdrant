@@ -1,12 +1,13 @@
 use crate::segment_manager::segment_holder::{SegmentHolder, LockedSegment};
 use std::sync::{RwLock, Arc};
-use crate::segment_manager::segment_managers::SegmentSearcher;
+use crate::segment_manager::segment_managers::{SegmentSearcher};
 use crate::collection::{OperationResult, CollectionInfo};
-use segment::types::{Filter, SearchParams, ScoredPoint, Distance, VectorElementType, PointIdType};
+use segment::types::{Filter, SearchParams, ScoredPoint, Distance, VectorElementType, PointIdType, SeqNumberType};
 use tokio::runtime::Handle;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use segment::spaces::tools::peek_top_scores_iterable;
 use futures::future::try_join_all;
+use crate::operations::types::Record;
 
 /// Simple implementation of segment manager
 ///  - owens segments
@@ -79,6 +80,24 @@ impl SegmentSearcher for SimpleSegmentSearcher {
             &self.distance,
         )
     }
+
+    fn retrieve(&self, points: &Vec<PointIdType>, with_payload: bool, with_vector: bool) -> Vec<Record> {
+        let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
+        let mut point_records: HashMap<PointIdType, Record> = Default::default();
+        self.segments.read().unwrap().read_points(points, |id, segment| {
+            /// If this point was not found yet or this segment have later version
+            if !point_version.contains_key(&id) || point_version[&id] < segment.version() {
+                point_records.insert(id, Record {
+                    id,
+                    payload: if with_payload { Some(segment.payload(id)?) } else { None },
+                    vector: if with_vector { Some(segment.vector(id)?) } else { None },
+                });
+                point_version.insert(id, segment.version());
+            }
+            Ok(true)
+        });
+        point_records.into_iter().map(|(_, r)| r).collect()
+    }
 }
 
 
@@ -99,7 +118,7 @@ mod tests {
             .build().unwrap();
 
 
-        let manager = SimpleSegmentSearcher::new(
+        let searcher = SimpleSegmentSearcher::new(
             Arc::new(RwLock::new(segment_holder)),
             threaded_rt1.handle().clone(),
             Distance::Dot,
@@ -107,7 +126,7 @@ mod tests {
 
         let query = vec![1.0, 1.0, 1.0, 1.0];
 
-        let result = manager.search(
+        let result = searcher.search(
             &query,
             None,
             5,
@@ -120,5 +139,25 @@ mod tests {
 
         assert!(result[0].idx == 3 || result[0].idx == 11);
         assert!(result[1].idx == 3 || result[1].idx == 11);
+    }
+
+    #[test]
+    fn test_retrieve() {
+        let segment_holder = build_test_holder();
+
+        let threaded_rt1: Runtime = runtime::Builder::new()
+            .threaded_scheduler()
+            .max_threads(2)
+            .build().unwrap();
+
+        let searcher = SimpleSegmentSearcher::new(
+            Arc::new(RwLock::new(segment_holder)),
+            threaded_rt1.handle().clone(),
+            Distance::Dot,
+        );
+
+        let records = searcher.retrieve(&vec![1,2,3], true, true);
+
+        assert_eq!(records.len(), 3);
     }
 }

@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
-use crate::types::{PointOffsetType, PayloadKeyType, PayloadType, Filter};
+use crate::types::{PointOffsetType, PayloadKeyType, PayloadType, Filter, TheMap};
 
-
-pub type TheMap<K, V> = BTreeMap<K, V>;
 
 /// Trait for payload data storage. Should allow filter checks
 pub trait PayloadStorage {

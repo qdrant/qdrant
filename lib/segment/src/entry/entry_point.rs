@@ -1,8 +1,7 @@
 use thiserror::Error;
 use std::path::Path;
-use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, ScoreType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint};
+use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, ScoreType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap};
 use std::result;
-use crate::payload_storage::payload_storage::TheMap;
 
 
 /// Trait for versionable & saveable objects.

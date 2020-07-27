@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::cmp::{Ordering, Reverse};
 use ordered_float::OrderedFloat;
+use std::collections::BTreeMap;
 
 pub type PointIdType = u64;
 /// Type of point index across all segments
@@ -212,3 +213,6 @@ mod tests {
         }
     }
 }
+
+pub type TheMap<K, V> = BTreeMap<K, V>;
+

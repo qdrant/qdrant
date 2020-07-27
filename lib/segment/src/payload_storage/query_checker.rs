@@ -1,5 +1,5 @@
-use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage, TheMap};
-use crate::types::{Filter, PayloadKeyType, PayloadType, Condition, GeoBoundingBox, Range, Match};
+use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage};
+use crate::types::{Filter, PayloadKeyType, PayloadType, Condition, GeoBoundingBox, Range, Match, TheMap};
 
 
 fn match_payload(payload: &PayloadType, condition_match: &Match) -> bool {

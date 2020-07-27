@@ -1,9 +1,11 @@
-use std::sync::{RwLock, Arc, RwLockReadGuard};
+use std::sync::{RwLock, Arc, RwLockReadGuard, RwLockWriteGuard};
 use std::collections::HashMap;
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{OperationError, SegmentEntry, Result};
 use std::collections::hash_map::{Iter};
 use rand::{thread_rng, Rng};
 use rand::seq::SliceRandom;
+use segment::types::{PointIdType, SeqNumberType};
+use crate::collection::{OperationResult, UpdateError};
 
 
 pub type SegmentId = usize;
@@ -58,6 +60,88 @@ impl<'s> SegmentHolder {
     pub fn random_segment(&self) -> Option<&LockedSegment> {
         let segments: Vec<_> = self.segments.values().collect();
         segments.choose(&mut rand::thread_rng()).cloned()
+    }
+
+    /// Selects point ids, which is stored in this segment
+    fn segment_points(&self, ids: &Vec<PointIdType>, segment: &LockedSegment) -> Vec<PointIdType> {
+        let read_segment = segment.read().unwrap();
+        ids
+            .iter()
+            .cloned()
+            .filter(|id| read_segment.has_point(*id))
+            .collect()
+    }
+
+
+    pub fn apply_segments<F>(&self, op_num: SeqNumberType, mut f: F) -> OperationResult<usize>
+        where F: FnMut(&mut RwLockWriteGuard<dyn SegmentEntry + 'static>) -> Result<bool>
+    {
+        let mut processed_segments = 0;
+        for (_idx, segment) in self.segments.iter() {
+            /// Skip this segment if it already have bigger version (WAL recovery related)
+            if segment.read().unwrap().version() > op_num { continue; }
+            let mut write_segment = segment.write().unwrap();
+            match f(&mut write_segment) {
+                Ok(is_applied) => processed_segments += (is_applied as usize),
+                Err(err) => match err {
+                    OperationError::WrongVector { .. } => return Err(UpdateError::BadInput { description: format!("{}", err) }),
+                    OperationError::SeqError { .. } => {} /// Ok if recovering from WAL
+                    OperationError::PointIdError { missed_point_id } => return Err(UpdateError::NotFound { missed_point_id }),
+                },
+            }
+        }
+        Ok(processed_segments)
+    }
+
+
+    pub fn apply_points<F>(&self, op_num: SeqNumberType, ids: &Vec<PointIdType>, mut f: F) -> OperationResult<usize>
+        where F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry + 'static>) -> Result<bool>
+    {
+        let mut applied_points = 0;
+        for (_idx, segment) in self.segments.iter() {
+            /// Skip this segment if it already have bigger version (WAL recovery related)
+            if segment.read().unwrap().version() > op_num { continue; }
+            /// Collect affected points first, we want to lock segment for writing as rare as possible
+            let segment_points = self.segment_points(ids, segment);
+            if !segment_points.is_empty() {
+                let mut write_segment = segment.write().unwrap();
+                for point_id in segment_points {
+                    match f(point_id, &mut write_segment) {
+                        Ok(is_applied) => applied_points += (is_applied as usize),
+                        Err(err) => match err {
+                            OperationError::WrongVector { .. } => return Err(UpdateError::BadInput { description: format!("{}", err) }),
+                            OperationError::SeqError { .. } => {} /// Ok if recovering from WAL
+                            OperationError::PointIdError { missed_point_id } => return Err(UpdateError::NotFound { missed_point_id }),
+                        },
+                    }
+                }
+            }
+        }
+        Ok(applied_points)
+    }
+
+    pub fn read_points<F>(&self, ids: &Vec<PointIdType>, mut f: F) -> OperationResult<usize>
+        where F: FnMut(PointIdType, &RwLockReadGuard<dyn SegmentEntry + 'static>) -> Result<bool>
+    {
+        let mut read_points = 0;
+        for (_idx, segment) in self.segments.iter() {
+            let read_segment = segment.read().unwrap();
+            for point in ids
+                .iter()
+                .cloned()
+                .filter(|id| read_segment.has_point(*id))
+            {
+                match f(point, &read_segment) {
+                    Ok(is_ok) => read_points += (is_ok as usize),
+                    Err(err) => match err {
+                        OperationError::WrongVector { .. } => return Err(UpdateError::BadInput { description: format!("{}", err) }),
+                        OperationError::SeqError { .. } => {} /// Ok if recovering from WAL
+                        OperationError::PointIdError { missed_point_id } => return Err(UpdateError::NotFound { missed_point_id }),
+                    },
+                }
+            }
+        }
+        Ok(read_points)
     }
 }
 

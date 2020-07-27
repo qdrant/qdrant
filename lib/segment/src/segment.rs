@@ -2,9 +2,9 @@ use crate::id_mapper::id_mapper::IdMapper;
 use crate::vector_storage::vector_storage::VectorStorage;
 use std::cell::RefCell;
 use std::rc::Rc;
-use crate::payload_storage::payload_storage::{PayloadStorage, TheMap};
+use crate::payload_storage::payload_storage::{PayloadStorage};
 use crate::entry::entry_point::{SegmentEntry, Result, OperationError};
-use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, ScoreType, PointOffsetType, SearchParams, ScoredPoint};
+use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, ScoreType, PointOffsetType, SearchParams, ScoredPoint, TheMap};
 use crate::query_planner::query_planner::QueryPlanner;
 
 /// Simple segment implementation
