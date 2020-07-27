@@ -1,7 +1,7 @@
 use crate::payload_storage::payload_storage::{PayloadStorage};
 use crate::types::{PayloadKeyType, PayloadType, PointOffsetType, TheMap};
-use std::mem;
-use std::collections::{HashMap, HashSet};
+
+use std::collections::{HashMap};
 
 pub struct SimplePayloadStorage {
     payload: HashMap<PointOffsetType, TheMap<PayloadKeyType, PayloadType>>,

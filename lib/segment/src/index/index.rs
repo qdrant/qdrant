@@ -1,4 +1,4 @@
-use crate::types::{Filter, PointOffsetType, ScoreType, VectorElementType, SearchParams};
+use crate::types::{Filter, PointOffsetType, VectorElementType, SearchParams};
 use crate::vector_storage::vector_storage::ScoredPointOffset;
 
 /// Trait for vector searching

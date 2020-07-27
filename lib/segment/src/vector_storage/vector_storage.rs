@@ -1,5 +1,5 @@
 use crate::types::{PointOffsetType, ScoreType, VectorElementType, Distance};
-use std::cmp::{Ordering, Reverse};
+use std::cmp::{Ordering};
 use ordered_float::OrderedFloat;
 
 

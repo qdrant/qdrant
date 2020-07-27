@@ -1,4 +1,4 @@
-use crate::vector_storage::vector_storage::ScoredPointOffset;
+
 use crate::types::{Distance, Order, distance_order, VectorElementType};
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;

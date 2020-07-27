@@ -4,20 +4,20 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use crate::id_mapper::simple_id_mapper::SimpleIdMapper;
 use crate::vector_storage::simple_vector_storage::SimpleVectorStorage;
-use crate::types::{Distance, VectorElementType};
-use crate::spaces::simple::{DotProductMetric, CosineMetric};
-use crate::spaces::metric::Metric;
+use crate::types::{Distance};
+
+
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::query_planner::simple_query_planner::SimpleQueryPlanner;
 use crate::index::plain_index::{PlainIndex, PlainPayloadIndex};
-use crate::entry::entry_point::SegmentEntry;
+
 
 
 fn sp<T>(t: T) -> Rc<RefCell<T>> {
     return Rc::new(RefCell::new(t))
 }
 
-pub fn build_simple_segment(dir: &Path, dim: usize, distance: Distance) -> Segment {
+pub fn build_simple_segment(_dir: &Path, dim: usize, distance: Distance) -> Segment {
     let id_mapper = SimpleIdMapper::new();
 
     let vector_storage = sp(SimpleVectorStorage::new(dim));
@@ -51,7 +51,7 @@ mod tests {
     #[test]
     fn test_create_simple_segment() {
         let tmp_path = Path::new("/tmp/qdrant/segment");
-        let mut segment = build_simple_segment(tmp_path, 100, Distance::Dot);
+        let segment = build_simple_segment(tmp_path, 100, Distance::Dot);
         eprintln!(" = {:?}", segment.version);
     }
 

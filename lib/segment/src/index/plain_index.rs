@@ -1,6 +1,6 @@
 use crate::vector_storage::vector_storage::{VectorMatcher, ScoredPointOffset, VectorCounter};
 use crate::index::index::{Index, PayloadIndex};
-use crate::types::{Filter, PointOffsetType, ScoreType, VectorElementType, Distance, SearchParams};
+use crate::types::{Filter, VectorElementType, Distance, SearchParams};
 use crate::payload_storage::payload_storage::{ConditionChecker};
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -76,7 +76,7 @@ impl Index for PlainIndex {
         vector: &Vec<VectorElementType>,
         filter: Option<&Filter>,
         top: usize,
-        params: Option<&SearchParams>
+        _params: Option<&SearchParams>
     ) -> Vec<ScoredPointOffset> {
         match filter {
             Some(filter) => {

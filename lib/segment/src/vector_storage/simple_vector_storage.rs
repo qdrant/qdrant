@@ -1,9 +1,9 @@
 use super::vector_storage::{VectorStorage, VectorMatcher};
 use crate::spaces::metric::Metric;
 use crate::types::{PointOffsetType, VectorElementType, Distance};
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::{HashSet};
 use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorCounter};
-use crate::spaces::simple::{DotProductMetric, CosineMetric};
+
 use crate::spaces::tools::{mertic_object, peek_top_scores};
 
 pub struct SimpleVectorStorage {
@@ -108,7 +108,7 @@ impl VectorMatcher for SimpleVectorStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spaces::simple::DotProductMetric;
+    
 
     #[test]
     fn test_score_points() {
@@ -159,7 +159,7 @@ mod tests {
         );
 
 
-        let top_idx = match closest.get(0) {
+        let _top_idx = match closest.get(0) {
             Some(scored_point) => {
                 assert_ne!(scored_point.idx, 2);
             },
