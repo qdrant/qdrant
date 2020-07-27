@@ -1,5 +1,5 @@
-use std::sync::{Arc, RwLock, RwLockWriteGuard};
-use crate::segment_manager::segment_holder::{SegmentHolder, LockedSegment};
+use std::sync::{Arc, RwLock};
+use crate::segment_manager::segment_holder::{SegmentHolder};
 use crate::segment_manager::segment_managers::SegmentUpdater;
 use crate::operations::CollectionUpdateOperations;
 use crate::collection::{OperationResult, UpdateError};
@@ -7,9 +7,9 @@ use segment::types::{SeqNumberType, PointIdType, PayloadKeyType};
 use segment::entry::entry_point::{OperationError, SegmentEntry, Result};
 use std::collections::{HashSet, HashMap};
 use crate::operations::types::VectorType;
-use rand::Rng;
+
 use crate::operations::point_ops::PointOps;
-use crate::operations::payload_ops::{PayloadOps, PayloadInterface, PayloadVariant};
+use crate::operations::payload_ops::{PayloadOps, PayloadInterface};
 
 struct SimpleSegmentUpdater {
     segments: Arc<RwLock<SegmentHolder>>,
@@ -183,7 +183,7 @@ impl SegmentUpdater for SimpleSegmentUpdater {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::segment_manager::fixtures::{build_test_holder, build_searcher};
+    use crate::segment_manager::fixtures::{build_searcher};
     use crate::segment_manager::segment_managers::SegmentSearcher;
 
     #[test]
@@ -231,7 +231,7 @@ mod tests {
         let records = searcher.retrieve(&vec![1, 2, 500], true, true);
 
         for record in records {
-            let v = record.vector.unwrap();
+            let _v = record.vector.unwrap();
 
             if record.id == 500 {
                 assert!(false)

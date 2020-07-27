@@ -1,7 +1,7 @@
 use std::sync::{RwLock, Arc, RwLockReadGuard, RwLockWriteGuard};
 use std::collections::HashMap;
 use segment::entry::entry_point::{OperationError, SegmentEntry, Result};
-use std::collections::hash_map::{Iter};
+
 use rand::{thread_rng, Rng};
 use rand::seq::SliceRandom;
 use segment::types::{PointIdType, SeqNumberType};
@@ -82,7 +82,7 @@ impl<'s> SegmentHolder {
             if segment.read().unwrap().version() > op_num { continue; }
             let mut write_segment = segment.write().unwrap();
             match f(&mut write_segment) {
-                Ok(is_applied) => processed_segments += (is_applied as usize),
+                Ok(is_applied) => processed_segments += is_applied as usize,
                 Err(err) => match err {
                     OperationError::WrongVector { .. } => return Err(UpdateError::BadInput { description: format!("{}", err) }),
                     OperationError::SeqError { .. } => {} /// Ok if recovering from WAL
@@ -107,7 +107,7 @@ impl<'s> SegmentHolder {
                 let mut write_segment = segment.write().unwrap();
                 for point_id in segment_points {
                     match f(point_id, &mut write_segment) {
-                        Ok(is_applied) => applied_points += (is_applied as usize),
+                        Ok(is_applied) => applied_points += is_applied as usize,
                         Err(err) => match err {
                             OperationError::WrongVector { .. } => return Err(UpdateError::BadInput { description: format!("{}", err) }),
                             OperationError::SeqError { .. } => {} /// Ok if recovering from WAL
@@ -132,7 +132,7 @@ impl<'s> SegmentHolder {
                 .filter(|id| read_segment.has_point(*id))
             {
                 match f(point, &read_segment) {
-                    Ok(is_ok) => read_points += (is_ok as usize),
+                    Ok(is_ok) => read_points += is_ok as usize,
                     Err(err) => match err {
                         OperationError::WrongVector { .. } => return Err(UpdateError::BadInput { description: format!("{}", err) }),
                         OperationError::SeqError { .. } => {} /// Ok if recovering from WAL
@@ -151,7 +151,7 @@ mod tests {
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
     use segment::types::Distance;
     use std::path::Path;
-    use segment::segment::Segment;
+    
     use crate::segment_manager::fixtures::{build_segment_1, build_segment_2};
 
 
@@ -168,9 +168,9 @@ mod tests {
         assert_ne!(sid1, sid2);
 
         let tmp_path = Path::new("/tmp/qdrant/segment");
-        let mut segment3 = build_simple_segment(tmp_path, 4, Distance::Dot);
+        let segment3 = build_simple_segment(tmp_path, 4, Distance::Dot);
 
-        let sid3 = holder.swap(segment3, &vec![sid1, sid2]);
+        let _sid3 = holder.swap(segment3, &vec![sid1, sid2]);
     }
 }
 

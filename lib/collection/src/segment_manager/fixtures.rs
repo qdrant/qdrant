@@ -59,8 +59,8 @@ pub fn build_test_holder() -> SegmentHolder {
 
     let mut holder = SegmentHolder::new();
 
-    let sid1 = holder.add(segment1);
-    let sid2 = holder.add(segment2);
+    let _sid1 = holder.add(segment1);
+    let _sid2 = holder.add(segment2);
 
     return holder;
 }
