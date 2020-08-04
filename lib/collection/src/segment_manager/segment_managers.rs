@@ -1,7 +1,7 @@
 use segment::types::{VectorElementType, Filter, SeqNumberType, SearchParams, ScoredPoint, PointIdType};
-use crate::collection::{OperationResult, CollectionInfo};
+use crate::collection::{OperationResult};
 use crate::operations::CollectionUpdateOperations;
-use crate::operations::types::Record;
+use crate::operations::types::{Record, CollectionInfo};
 
 pub trait SegmentSearcher {
     fn info(&self) -> OperationResult<CollectionInfo>;
@@ -11,18 +11,28 @@ pub trait SegmentSearcher {
               filter: Option<&Filter>,
               top: usize,
               params: Option<&SearchParams>
-    ) -> Vec<ScoredPoint>;
+    ) -> OperationResult<Vec<ScoredPoint>>;
 
     fn retrieve(
         &self,
         points: &Vec<PointIdType>,
         with_payload: bool,
         with_vector: bool
-    ) -> Vec<Record>;
+    ) -> OperationResult<Vec<Record>>;
 }
-
 
 
 pub trait SegmentUpdater {
     fn update(&self, op_num: SeqNumberType, operation: &CollectionUpdateOperations) -> OperationResult<usize>;
+}
+
+
+pub trait SegmentOptimizer {
+    /// Checks if segment optimization is required
+    fn check_condition(&self) -> bool;
+
+    /// Performs optimization of collections's segments, including:
+    ///     - Segment rebuilding
+    ///     - Segment joining
+    fn optimize(&self);
 }

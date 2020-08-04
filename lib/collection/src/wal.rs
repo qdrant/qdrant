@@ -2,7 +2,7 @@ extern crate serde_cbor;
 extern crate wal;
 
 use std::marker::PhantomData;
-use std::result;
+use std::{result, iter};
 
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
@@ -12,11 +12,14 @@ use wal::WalOptions;
 
 
 #[derive(Error, Debug)]
+#[error("{0}")]
 pub enum WalError {
-    #[error("WAL init error")]
+    #[error("Can't init WAL: {0}")]
     InitWalError(String),
-    #[error("WAL writing error")]
+    #[error("Can't write WAL: {0}")]
     WriteWalError(String),
+    #[error("Can't truncate WAL: {0}")]
+    TruncateWalError(String),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -45,14 +48,14 @@ impl<'s, R: DeserializeOwned + Serialize> SerdeWal<R> {
         let binary_entity = serde_cbor::to_vec(&entity).unwrap();
         self.wal
             .append(&binary_entity)
-            .map_err(|err| WalError::WriteWalError(format!("Can't append to WAL: {:?}", err)))
+            .map_err(|err| WalError::WriteWalError(format!("{:?}", err)))
     }
 
     pub fn read(&'s self, start_from: u64) -> impl Iterator<Item = (u64, R)> + 's {
         let first_index = self.wal.first_index();
         let num_entries = self.wal.num_entries();
-        let iter = (first_index..(first_index + num_entries))
-            .skip_while(move |&idx| idx < start_from)
+
+        let iter = (start_from..(first_index + num_entries))
             .map(move |idx| {
                 let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
                 let record: R = serde_cbor::from_slice(&record_bin)
@@ -64,7 +67,7 @@ impl<'s, R: DeserializeOwned + Serialize> SerdeWal<R> {
     }
 
     pub fn ack(&mut self, until_index: u64) -> Result<()> {
-        self.wal.prefix_truncate(until_index).map_err(|err| WalError::WriteWalError(format!("Can't truncate WA:: {:?}", err)))
+        self.wal.prefix_truncate(until_index).map_err(|err| WalError::TruncateWalError(format!("{:?}", err)))
     }
 }
 

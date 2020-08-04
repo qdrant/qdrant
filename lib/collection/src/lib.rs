@@ -1,3 +1,4 @@
+mod update_handler;
 pub mod operations;
 pub mod collection;
 mod segment_manager;

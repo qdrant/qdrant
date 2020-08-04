@@ -40,7 +40,7 @@ pub trait SegmentEntry {
               filter: Option<&Filter>,
               top: usize,
               params: Option<&SearchParams>,
-    ) -> Vec<ScoredPoint>;
+    ) -> Result<Vec<ScoredPoint>>;
 
     fn upsert_point(&mut self, op_num: SeqNumberType, point_id: PointIdType, vector: &Vec<VectorElementType>) -> Result<bool>;
 

@@ -65,12 +65,20 @@ impl SegmentEntry for Segment {
               filter: Option<&Filter>,
               top: usize,
               params: Option<&SearchParams>,
-    ) -> Vec<ScoredPoint> {
+    ) -> Result<Vec<ScoredPoint>> {
+        let expected_vector_dim = self.vector_storage.borrow().vector_dim();
+        if expected_vector_dim != vector.len() {
+            return Err(OperationError::WrongVector {
+                expected_dim: expected_vector_dim,
+                received_dim: vector.len()
+            })
+        }
+
         let internal_result = self.query_planner.borrow().search(vector, filter, top, params);
 
 
         let id_mapper = self.id_mapper.borrow();
-        internal_result.iter()
+        let res = internal_result.iter()
             .map(|&scored_point_offset|
                 (
                     ScoredPoint {
@@ -80,7 +88,8 @@ impl SegmentEntry for Segment {
                         score: scored_point_offset.score,
                     }
                 )
-            ).collect()
+            ).collect();
+        return Ok(res);
     }
 
     fn upsert_point(&mut self, op_num: SeqNumberType, point_id: PointIdType, vector: &Vec<VectorElementType>) -> Result<bool> {
@@ -110,7 +119,7 @@ impl SegmentEntry for Segment {
     fn delete_point(&mut self, op_num: SeqNumberType, point_id: PointIdType) -> Result<bool> {
         self.track_version(op_num)?;
         let mut mapper = self.id_mapper.borrow_mut();
-        let internal_id =  mapper.internal_id(point_id);
+        let internal_id = mapper.internal_id(point_id);
         match internal_id {
             Some(internal_id) => {
                 self.vector_storage.borrow_mut().delete(internal_id);

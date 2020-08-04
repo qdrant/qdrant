@@ -19,11 +19,11 @@ pub fn build_segment_1() -> Segment {
     let vec4 = vec![1.0, 1.0, 0.0, 1.0];
     let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
-    segment1.upsert_point(1, 1, &vec1);
-    segment1.upsert_point(2, 2, &vec2);
-    segment1.upsert_point(3, 3, &vec3);
-    segment1.upsert_point(4, 4, &vec4);
-    segment1.upsert_point(5, 5, &vec5);
+    segment1.upsert_point(1, 1, &vec1).unwrap();
+    segment1.upsert_point(2, 2, &vec2).unwrap();
+    segment1.upsert_point(3, 3, &vec3).unwrap();
+    segment1.upsert_point(4, 4, &vec4).unwrap();
+    segment1.upsert_point(5, 5, &vec5).unwrap();
 
     return segment1;
 }
@@ -41,14 +41,14 @@ pub fn build_segment_2() -> Segment {
     let vec14 = vec![1.0, 0.0, 0.0, 1.0];
     let vec15 = vec![1.0, 1.0, 0.0, 0.0];
 
-    segment2.upsert_point(7, 4, &vec4);
-    segment2.upsert_point(8, 5, &vec5);
+    segment2.upsert_point(7, 4, &vec4).unwrap();
+    segment2.upsert_point(8, 5, &vec5).unwrap();
 
-    segment2.upsert_point(11, 11, &vec11);
-    segment2.upsert_point(12, 12, &vec12);
-    segment2.upsert_point(13, 13, &vec13);
-    segment2.upsert_point(14, 14, &vec14);
-    segment2.upsert_point(15, 15, &vec15);
+    segment2.upsert_point(11, 11, &vec11).unwrap();
+    segment2.upsert_point(12, 12, &vec12).unwrap();
+    segment2.upsert_point(13, 13, &vec13).unwrap();
+    segment2.upsert_point(14, 14, &vec14).unwrap();
+    segment2.upsert_point(15, 15, &vec15).unwrap();
 
     return segment2;
 }

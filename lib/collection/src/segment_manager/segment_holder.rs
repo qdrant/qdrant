@@ -5,7 +5,7 @@ use segment::entry::entry_point::{OperationError, SegmentEntry, Result};
 use rand::{thread_rng, Rng};
 use rand::seq::SliceRandom;
 use segment::types::{PointIdType, SeqNumberType};
-use crate::collection::{OperationResult, UpdateError};
+use crate::collection::{OperationResult, CollectionError};
 
 
 pub type SegmentId = usize;
@@ -84,9 +84,9 @@ impl<'s> SegmentHolder {
             match f(&mut write_segment) {
                 Ok(is_applied) => processed_segments += is_applied as usize,
                 Err(err) => match err {
-                    OperationError::WrongVector { .. } => return Err(UpdateError::BadInput { description: format!("{}", err) }),
+                    OperationError::WrongVector { .. } => return Err(CollectionError::BadInput { description: format!("{}", err) }),
                     OperationError::SeqError { .. } => {} /// Ok if recovering from WAL
-                    OperationError::PointIdError { missed_point_id } => return Err(UpdateError::NotFound { missed_point_id }),
+                    OperationError::PointIdError { missed_point_id } => return Err(CollectionError::NotFound { missed_point_id }),
                 },
             }
         }
@@ -109,9 +109,9 @@ impl<'s> SegmentHolder {
                     match f(point_id, &mut write_segment) {
                         Ok(is_applied) => applied_points += is_applied as usize,
                         Err(err) => match err {
-                            OperationError::WrongVector { .. } => return Err(UpdateError::BadInput { description: format!("{}", err) }),
+                            OperationError::WrongVector { .. } => return Err(CollectionError::BadInput { description: format!("{}", err) }),
                             OperationError::SeqError { .. } => {} /// Ok if recovering from WAL
-                            OperationError::PointIdError { missed_point_id } => return Err(UpdateError::NotFound { missed_point_id }),
+                            OperationError::PointIdError { missed_point_id } => return Err(CollectionError::NotFound { missed_point_id }),
                         },
                     }
                 }
@@ -134,9 +134,9 @@ impl<'s> SegmentHolder {
                 match f(point, &read_segment) {
                     Ok(is_ok) => read_points += is_ok as usize,
                     Err(err) => match err {
-                        OperationError::WrongVector { .. } => return Err(UpdateError::BadInput { description: format!("{}", err) }),
+                        OperationError::WrongVector { .. } => return Err(CollectionError::BadInput { description: format!("{}", err) }),
                         OperationError::SeqError { .. } => {} /// Ok if recovering from WAL
-                        OperationError::PointIdError { missed_point_id } => return Err(UpdateError::NotFound { missed_point_id }),
+                        OperationError::PointIdError { missed_point_id } => return Err(CollectionError::NotFound { missed_point_id }),
                     },
                 }
             }

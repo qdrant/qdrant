@@ -1,13 +1,14 @@
 use crate::segment_manager::segment_holder::{SegmentHolder, LockedSegment};
 use std::sync::{RwLock, Arc};
 use crate::segment_manager::segment_managers::{SegmentSearcher};
-use crate::collection::{OperationResult, CollectionInfo};
+use crate::collection::{OperationResult, CollectionError};
 use segment::types::{Filter, SearchParams, ScoredPoint, Distance, VectorElementType, PointIdType, SeqNumberType};
 use tokio::runtime::Handle;
 use std::collections::{HashSet, HashMap};
 use segment::spaces::tools::peek_top_scores_iterable;
 use futures::future::try_join_all;
-use crate::operations::types::Record;
+use crate::operations::types::{Record, CollectionInfo};
+use segment::entry::entry_point::OperationError;
 
 /// Simple implementation of segment manager
 ///  - owens segments
@@ -35,10 +36,15 @@ impl SimpleSegmentSearcher {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-    ) -> Result<Vec<ScoredPoint>, String> {
+    ) -> OperationResult<Vec<ScoredPoint>> {
         segment.read()
-            .or(Err("Unable to unlock segment".to_owned()))
-            .and_then(|s| Ok(s.search(vector, filter, top, params)))
+            .or(Err(CollectionError::ServiceError { error: "Unable to unlock segment".to_owned() }))
+            .and_then(|s|
+                s.search(vector, filter, top, params).map_err(|err| match err {
+                    OperationError::WrongVector { .. } => CollectionError::BadInput { description: format!("{}", err) },
+                    _ => CollectionError::ServiceError { error: format!("{}", err) },
+                })
+            )
     }
 }
 
@@ -53,20 +59,24 @@ impl SegmentSearcher for SimpleSegmentSearcher {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-    ) -> Vec<ScoredPoint> {
+    ) -> OperationResult<Vec<ScoredPoint>> {
+
         let searches: Vec<_> = self.segments
             .read()
             .unwrap()
             .iter()
             .map(|(_id, segment)|
                 SimpleSegmentSearcher::search_in_segment(segment.clone(), vector, filter, top, params))
+            // .map(|f| self.runtime_handle.spawn(f))
             .collect();
 
+
         let all_searches = try_join_all(searches);
-        let all_search_results: Vec<Vec<ScoredPoint>> = self.runtime_handle.block_on(all_searches).unwrap();
+        let all_search_results = self.runtime_handle.block_on(all_searches)?;
+
         let mut seen_idx: HashSet<PointIdType> = HashSet::new();
 
-        peek_top_scores_iterable(
+        let top_scores = peek_top_scores_iterable(
             all_search_results
                 .iter()
                 .flatten()
@@ -78,12 +88,15 @@ impl SegmentSearcher for SimpleSegmentSearcher {
                 .cloned(),
             top,
             &self.distance,
-        )
+        );
+
+        Ok(top_scores)
     }
 
-    fn retrieve(&self, points: &Vec<PointIdType>, with_payload: bool, with_vector: bool) -> Vec<Record> {
+    fn retrieve(&self, points: &Vec<PointIdType>, with_payload: bool, with_vector: bool) -> OperationResult<Vec<Record>> {
         let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut point_records: HashMap<PointIdType, Record> = Default::default();
+
         self.segments.read().unwrap().read_points(points, |id, segment| {
             /// If this point was not found yet or this segment have later version
             if !point_version.contains_key(&id) || point_version[&id] < segment.version() {
@@ -95,8 +108,8 @@ impl SegmentSearcher for SimpleSegmentSearcher {
                 point_version.insert(id, segment.version());
             }
             Ok(true)
-        });
-        point_records.into_iter().map(|(_, r)| r).collect()
+        })?;
+        Ok(point_records.into_iter().map(|(_, r)| r).collect())
     }
 }
 
@@ -156,7 +169,7 @@ mod tests {
             Distance::Dot,
         );
 
-        let records = searcher.retrieve(&vec![1,2,3], true, true);
+        let records = searcher.retrieve(&vec![1, 2, 3], true, true);
 
         assert_eq!(records.len(), 3);
     }

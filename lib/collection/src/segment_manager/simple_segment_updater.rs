@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 use crate::segment_manager::segment_holder::{SegmentHolder};
 use crate::segment_manager::segment_managers::SegmentUpdater;
 use crate::operations::CollectionUpdateOperations;
-use crate::collection::{OperationResult, UpdateError};
+use crate::collection::{OperationResult, CollectionError};
 use segment::types::{SeqNumberType, PointIdType, PayloadKeyType};
 use segment::entry::entry_point::{OperationError, SegmentEntry, Result};
 use std::collections::{HashSet, HashMap};
@@ -25,7 +25,7 @@ impl SimpleSegmentUpdater {
             .next();
         match missed_point {
             None => Ok(processed.len()),
-            Some(missed_point) => Err(UpdateError::NotFound { missed_point_id: missed_point }),
+            Some(missed_point) => Err(CollectionError::NotFound { missed_point_id: missed_point }),
         }
     }
 
@@ -59,7 +59,7 @@ impl SimpleSegmentUpdater {
 
         let write_segment = segments.random_segment();
         return match write_segment {
-            None => Err(UpdateError::ServiceError { error: "No segments exists, expected at least one".to_string() }),
+            None => Err(CollectionError::ServiceError { error: "No segments exists, expected at least one".to_string() }),
             Some(segment) => {
                 let mut write_segment = segment.write().unwrap();
                 for point_id in new_point_ids {

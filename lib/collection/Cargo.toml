@@ -22,6 +22,7 @@ ordered-float = "1.0"
 
 tokio = {version = "0.2.21", features = ["rt-threaded"]}
 futures = "0.3.5"
+crossbeam-channel = "0.4.3"
 
 segment = {path = "../segment"}
 
