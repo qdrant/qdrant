@@ -2,7 +2,7 @@ extern crate serde_cbor;
 extern crate wal;
 
 use std::marker::PhantomData;
-use std::{result, iter};
+use std::result;
 
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;

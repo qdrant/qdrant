@@ -61,9 +61,12 @@ impl SimpleSegmentUpdater {
         return match write_segment {
             None => Err(CollectionError::ServiceError { error: "No segments exists, expected at least one".to_string() }),
             Some(segment) => {
-                let mut write_segment = segment.write().unwrap();
+                let mut write_segment = segment.0.write().unwrap();
                 for point_id in new_point_ids {
-                    write_segment.upsert_point(op_num, point_id, points_map[&point_id]);
+                    match write_segment.upsert_point(op_num, point_id, points_map[&point_id]) {
+                        Ok(_) => {},
+                        Err(err) => panic!("Internal error"),  // ToDo: Implement From for OperationError and CollectionError
+                    }
                 }
                 Ok(res)
             }
@@ -211,7 +214,7 @@ mod tests {
             Err(_) => assert!(false),
         };
 
-        let records = searcher.retrieve(&vec![1, 2, 500], true, true);
+        let records = searcher.retrieve(&vec![1, 2, 500], true, true).unwrap();
 
         assert_eq!(records.len(), 3);
 
@@ -226,9 +229,9 @@ mod tests {
             }
         }
 
-        updater.delete_points(101, &vec![500]);
+        updater.delete_points(101, &vec![500]).unwrap();
 
-        let records = searcher.retrieve(&vec![1, 2, 500], true, true);
+        let records = searcher.retrieve(&vec![1, 2, 500], true, true).unwrap();
 
         for record in records {
             let _v = record.vector.unwrap();
@@ -260,9 +263,9 @@ mod tests {
             collection: "".to_string(),
             payload,
             points: points.clone(),
-        });
+        }).unwrap();
 
-        let res = searcher.retrieve(&points, true, false);
+        let res = searcher.retrieve(&points, true, false).unwrap();
 
         assert_eq!(res.len(), 3);
 
@@ -278,19 +281,19 @@ mod tests {
 
         /// Test payload delete
 
-        updater.delete_payload(101, &vec![3], &vec!["color".to_string(), "empty".to_string()]);
-        let res = searcher.retrieve(&vec![3], true, false);
+        updater.delete_payload(101, &vec![3], &vec!["color".to_string(), "empty".to_string()]).unwrap();
+        let res = searcher.retrieve(&vec![3], true, false).unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
 
         /// Test clear payload
 
-        let res = searcher.retrieve(&vec![2], true, false);
+        let res = searcher.retrieve(&vec![2], true, false).unwrap();
         assert_eq!(res.len(), 1);
         assert!(res[0].payload.as_ref().unwrap().contains_key("color"));
 
-        updater.clear_payload(102, &vec![2]);
-        let res = searcher.retrieve(&vec![2], true, false);
+        updater.clear_payload(102, &vec![2]).unwrap();
+        let res = searcher.retrieve(&vec![2], true, false).unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"))
     }

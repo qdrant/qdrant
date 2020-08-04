@@ -1,4 +1,4 @@
-use segment::types::{VectorElementType, PointIdType, TheMap, PayloadKeyType, PayloadType, Distance, SeqNumberType};
+use segment::types::{VectorElementType, PointIdType, TheMap, PayloadKeyType, PayloadType, Distance, SeqNumberType, Filter, SearchParams};
 use serde;
 use serde::{Deserialize, Serialize};
 use crate::operations::index_def::Indexes;
@@ -40,3 +40,16 @@ pub struct UpdateResult {
     pub operation_id: SeqNumberType,
     pub status: UpdateStatus
 }
+
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct SearchRequest {
+    pub vector: Vec<VectorElementType>,
+    pub filter: Option<Filter>,
+    pub params: Option<SearchParams>,
+    pub top: usize,
+}
+
+
+

@@ -1,23 +1,22 @@
 use segment::types::{VectorElementType, Filter, SeqNumberType, SearchParams, ScoredPoint, PointIdType};
 use crate::collection::{OperationResult};
 use crate::operations::CollectionUpdateOperations;
-use crate::operations::types::{Record, CollectionInfo};
+use crate::operations::types::{Record, CollectionInfo, SearchRequest};
+use std::sync::Arc;
 
 pub trait SegmentSearcher {
     fn info(&self) -> OperationResult<CollectionInfo>;
 
     fn search(&self,
-              vector: &Vec<VectorElementType>,
-              filter: Option<&Filter>,
-              top: usize,
-              params: Option<&SearchParams>
+              // Request is supposed to be a read only, that is why no mutex used
+              request: Arc<SearchRequest>,
     ) -> OperationResult<Vec<ScoredPoint>>;
 
     fn retrieve(
         &self,
         points: &Vec<PointIdType>,
         with_payload: bool,
-        with_vector: bool
+        with_vector: bool,
     ) -> OperationResult<Vec<Record>>;
 }
 

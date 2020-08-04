@@ -4,14 +4,14 @@ use segment::types::{VectorElementType, Filter, PointIdType, ScoreType, SearchPa
 use serde::{Deserialize, Serialize};
 use std::result;
 use crate::operations::index_def::Indexes;
-use crate::operations::types::{Record, CollectionInfo, UpdateResult, UpdateStatus};
+use crate::operations::types::{Record, CollectionInfo, UpdateResult, UpdateStatus, SearchRequest};
 use std::sync::{Arc, RwLock, Mutex, Condvar};
 use crate::wal::SerdeWal;
 use crossbeam_channel::Sender;
 use crate::segment_manager::segment_managers::SegmentSearcher;
 
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 #[error("{0}")]
 pub enum CollectionError {
     #[error("Wrong input: {description}")]
@@ -66,13 +66,8 @@ impl Collection {
         return self.searcher.info();
     }
 
-    pub fn search(&self,
-                  vector: &Vec<VectorElementType>,
-                  filter: Option<&Filter>,
-                  top: usize,
-                  params: Option<&SearchParams>,
-    ) -> OperationResult<Vec<ScoredPoint>> {
-        return self.searcher.search(vector, filter, top, params);
+    pub fn search(&self, request: Arc<SearchRequest>) -> OperationResult<Vec<ScoredPoint>> {
+        return self.searcher.search(request);
     }
 
     pub fn retrieve(

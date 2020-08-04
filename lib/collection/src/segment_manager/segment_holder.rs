@@ -10,8 +10,10 @@ use crate::collection::{OperationResult, CollectionError};
 
 pub type SegmentId = usize;
 
-pub type LockedSegment = Arc<RwLock<dyn SegmentEntry>>;
+pub struct LockedSegment(pub Arc<RwLock<dyn SegmentEntry>>);
 
+unsafe impl Sync for LockedSegment {}
+unsafe impl Send for LockedSegment {}
 
 pub struct SegmentHolder {
     segments: HashMap<SegmentId, LockedSegment>,
@@ -40,7 +42,7 @@ impl<'s> SegmentHolder {
     /// Add new segment to storage
     pub fn add<E: SegmentEntry + 'static>(&mut self, segment: E) -> SegmentId {
         let key = self.generate_new_key();
-        self.segments.insert(key, Arc::new(RwLock::new(segment)));
+        self.segments.insert(key, LockedSegment(Arc::new(RwLock::new(segment))));
         return key;
     }
 
@@ -64,7 +66,7 @@ impl<'s> SegmentHolder {
 
     /// Selects point ids, which is stored in this segment
     fn segment_points(&self, ids: &Vec<PointIdType>, segment: &LockedSegment) -> Vec<PointIdType> {
-        let read_segment = segment.read().unwrap();
+        let read_segment = segment.0.read().unwrap();
         ids
             .iter()
             .cloned()
@@ -79,8 +81,8 @@ impl<'s> SegmentHolder {
         let mut processed_segments = 0;
         for (_idx, segment) in self.segments.iter() {
             /// Skip this segment if it already have bigger version (WAL recovery related)
-            if segment.read().unwrap().version() > op_num { continue; }
-            let mut write_segment = segment.write().unwrap();
+            if segment.0.read().unwrap().version() > op_num { continue; }
+            let mut write_segment = segment.0.write().unwrap();
             match f(&mut write_segment) {
                 Ok(is_applied) => processed_segments += is_applied as usize,
                 Err(err) => match err {
@@ -100,11 +102,11 @@ impl<'s> SegmentHolder {
         let mut applied_points = 0;
         for (_idx, segment) in self.segments.iter() {
             /// Skip this segment if it already have bigger version (WAL recovery related)
-            if segment.read().unwrap().version() > op_num { continue; }
+            if segment.0.read().unwrap().version() > op_num { continue; }
             /// Collect affected points first, we want to lock segment for writing as rare as possible
             let segment_points = self.segment_points(ids, segment);
             if !segment_points.is_empty() {
-                let mut write_segment = segment.write().unwrap();
+                let mut write_segment = segment.0.write().unwrap();
                 for point_id in segment_points {
                     match f(point_id, &mut write_segment) {
                         Ok(is_applied) => applied_points += is_applied as usize,
@@ -125,7 +127,7 @@ impl<'s> SegmentHolder {
     {
         let mut read_points = 0;
         for (_idx, segment) in self.segments.iter() {
-            let read_segment = segment.read().unwrap();
+            let read_segment = segment.0.read().unwrap();
             for point in ids
                 .iter()
                 .cloned()

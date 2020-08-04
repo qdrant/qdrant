@@ -7,8 +7,8 @@ use tokio::runtime::Handle;
 use std::collections::{HashSet, HashMap};
 use segment::spaces::tools::peek_top_scores_iterable;
 use futures::future::try_join_all;
-use crate::operations::types::{Record, CollectionInfo};
-use segment::entry::entry_point::OperationError;
+use crate::operations::types::{Record, CollectionInfo, SearchRequest};
+use segment::entry::entry_point::{OperationError, SegmentEntry};
 
 /// Simple implementation of segment manager
 ///  - owens segments
@@ -32,15 +32,17 @@ impl SimpleSegmentSearcher {
 
     pub async fn search_in_segment(
         segment: LockedSegment,
-        vector: &Vec<VectorElementType>,
-        filter: Option<&Filter>,
-        top: usize,
-        params: Option<&SearchParams>,
+        request: Arc<SearchRequest>,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        segment.read()
+        segment.0.read()
             .or(Err(CollectionError::ServiceError { error: "Unable to unlock segment".to_owned() }))
             .and_then(|s|
-                s.search(vector, filter, top, params).map_err(|err| match err {
+                s.search(
+                    &request.vector,
+                    request.filter.as_ref(),
+                    request.top,
+                    request.params.as_ref(),
+                ).map_err(|err| match err {
                     OperationError::WrongVector { .. } => CollectionError::BadInput { description: format!("{}", err) },
                     _ => CollectionError::ServiceError { error: format!("{}", err) },
                 })
@@ -55,38 +57,56 @@ impl SegmentSearcher for SimpleSegmentSearcher {
 
     fn search(
         &self,
-        vector: &Vec<VectorElementType>,
-        filter: Option<&Filter>,
-        top: usize,
-        params: Option<&SearchParams>,
+        request: Arc<SearchRequest>,
     ) -> OperationResult<Vec<ScoredPoint>> {
 
-        let searches: Vec<_> = self.segments
-            .read()
-            .unwrap()
+        // SimpleSegmentSearcher::search_in_segment(
+        //     local_segment,
+        //     *local_vector_arc,
+        //     *local_filter_arc,
+        //     top,
+        //     *local_params_arc)
+
+        let segments = self.segments.read().unwrap();
+
+        let searches: Vec<_> = segments
             .iter()
-            .map(|(_id, segment)|
-                SimpleSegmentSearcher::search_in_segment(segment.clone(), vector, filter, top, params))
-            // .map(|f| self.runtime_handle.spawn(f))
+            .map(|(_id, segment)| {
+                let segment_clone = LockedSegment(segment.0.clone());
+                SimpleSegmentSearcher::search_in_segment(segment_clone, request.clone())
+            })
+            .map(|f| self.runtime_handle.spawn(f))
             .collect();
 
 
         let all_searches = try_join_all(searches);
-        let all_search_results = self.runtime_handle.block_on(all_searches)?;
+        let all_search_results = self.runtime_handle.block_on(all_searches);
+
+        let all_search_results: Vec<OperationResult<Vec<ScoredPoint>>> = match all_search_results {
+            Ok(x) => x,
+            Err(err) => return Err(CollectionError::ServiceError { error: format!("{}", err) }),
+        };
+
+        match all_search_results.iter()
+            .filter_map(|res| res.to_owned().err())
+            .next() {
+            None => {},
+            Some(error) => return Err(error),
+        }
 
         let mut seen_idx: HashSet<PointIdType> = HashSet::new();
 
         let top_scores = peek_top_scores_iterable(
             all_search_results
-                .iter()
+                .into_iter()
+                .map(|x| x.unwrap())
                 .flatten()
                 .filter(|scored| {
                     let res = seen_idx.contains(&scored.idx);
                     seen_idx.insert(scored.idx);
                     !res
-                })
-                .cloned(),
-            top,
+                }),
+            request.top,
             &self.distance,
         );
 
@@ -139,12 +159,14 @@ mod tests {
 
         let query = vec![1.0, 1.0, 1.0, 1.0];
 
-        let result = searcher.search(
-            &query,
-            None,
-            5,
-            None,
-        );
+        let req = Arc::new(SearchRequest {
+            vector: query,
+            filter: None,
+            params: None,
+            top: 5,
+        });
+
+        let result = searcher.search(req).unwrap();
 
         // eprintln!("result = {:?}", &result);
 
@@ -169,7 +191,7 @@ mod tests {
             Distance::Dot,
         );
 
-        let records = searcher.retrieve(&vec![1, 2, 3], true, true);
+        let records = searcher.retrieve(&vec![1, 2, 3], true, true).unwrap();
 
         assert_eq!(records.len(), 3);
     }
