@@ -38,13 +38,8 @@ impl Segment {
         new_internal_index
     }
 
-    fn track_version(&mut self, op_num: SeqNumberType) -> Result<bool> {
-        return if self.version > op_num {
-            Err(OperationError::SeqError { current_state: self.version, operation_num: op_num })
-        } else {
-            self.version = op_num;
-            Ok(true)
-        };
+    fn skip_by_version(&mut self, op_num: SeqNumberType) -> bool {
+        return self.version > op_num;
     }
 
     fn lookup_internal_id(&self, point_id: PointIdType) -> Result<PointOffsetType> {
@@ -70,8 +65,8 @@ impl SegmentEntry for Segment {
         if expected_vector_dim != vector.len() {
             return Err(OperationError::WrongVector {
                 expected_dim: expected_vector_dim,
-                received_dim: vector.len()
-            })
+                received_dim: vector.len(),
+            });
         }
 
         let internal_result = self.query_planner.borrow().search(vector, filter, top, params);
@@ -93,7 +88,7 @@ impl SegmentEntry for Segment {
     }
 
     fn upsert_point(&mut self, op_num: SeqNumberType, point_id: PointIdType, vector: &Vec<VectorElementType>) -> Result<bool> {
-        self.track_version(op_num)?;
+        if self.skip_by_version(op_num) { return Ok(false); }
 
         let vector_dim = self.vector_storage.borrow().vector_dim();
         if vector_dim != vector.len() {
@@ -117,7 +112,7 @@ impl SegmentEntry for Segment {
     }
 
     fn delete_point(&mut self, op_num: SeqNumberType, point_id: PointIdType) -> Result<bool> {
-        self.track_version(op_num)?;
+        if self.skip_by_version(op_num) { return Ok(false); };
         let mut mapper = self.id_mapper.borrow_mut();
         let internal_id = mapper.internal_id(point_id);
         match internal_id {
@@ -136,28 +131,28 @@ impl SegmentEntry for Segment {
                    key: &PayloadKeyType,
                    payload: PayloadType,
     ) -> Result<bool> {
-        self.track_version(op_num)?;
+        if self.skip_by_version(op_num) { return Ok(false); };
         let internal_id = self.lookup_internal_id(point_id)?;
         self.payload_storage.borrow_mut().assign(internal_id, key, payload);
         Ok(true)
     }
 
     fn delete_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, key: &PayloadKeyType) -> Result<bool> {
-        self.track_version(op_num)?;
+        if self.skip_by_version(op_num) { return Ok(false); };
         let internal_id = self.lookup_internal_id(point_id)?;
         self.payload_storage.borrow_mut().delete(internal_id, key);
         Ok(true)
     }
 
     fn clear_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType) -> Result<bool> {
-        self.track_version(op_num)?;
+        if self.skip_by_version(op_num) { return Ok(false); };
         let internal_id = self.lookup_internal_id(point_id)?;
         self.payload_storage.borrow_mut().drop(internal_id);
         Ok(true)
     }
 
     fn wipe_payload(&mut self, op_num: SeqNumberType) -> Result<bool> {
-        self.track_version(op_num)?;
+        if self.skip_by_version(op_num) { return Ok(false); };
         self.payload_storage.borrow_mut().wipe();
         Ok(true)
     }

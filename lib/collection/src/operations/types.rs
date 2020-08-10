@@ -12,17 +12,22 @@ pub type VectorType = Vec<VectorElementType>;
 pub struct Record {
     pub id: PointIdType,
     pub payload: Option<TheMap<PayloadKeyType, PayloadType>>,
-    pub vector: Option<Vec<VectorElementType>>
+    pub vector: Option<Vec<VectorElementType>>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CollectionConfig {
+    pub vector_size: usize,
+    pub index: Indexes,
+    pub distance: Distance,
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CollectionInfo {
-    vectors_count: usize,
-    segments_count: usize,
-    data_size: usize,
-    index: Indexes,
-    distance: Distance
+    pub vectors_count: usize,
+    pub segments_count: usize,
+    pub data_size: usize,
+    pub config: CollectionConfig,
 }
 
 
@@ -30,7 +35,7 @@ pub struct CollectionInfo {
 #[serde(rename_all = "snake_case")]
 pub enum UpdateStatus {
     Acknowledged,
-    Completed
+    Completed,
 }
 
 
@@ -38,7 +43,7 @@ pub enum UpdateStatus {
 #[serde(rename_all = "snake_case")]
 pub struct UpdateResult {
     pub operation_id: SeqNumberType,
-    pub status: UpdateStatus
+    pub status: UpdateStatus,
 }
 
 

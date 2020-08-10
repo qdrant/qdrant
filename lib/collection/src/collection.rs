@@ -5,10 +5,13 @@ use serde::{Deserialize, Serialize};
 use std::result;
 use crate::operations::index_def::Indexes;
 use crate::operations::types::{Record, CollectionInfo, UpdateResult, UpdateStatus, SearchRequest};
-use std::sync::{Arc, RwLock, Mutex, Condvar};
-use crate::wal::SerdeWal;
+use std::sync::{Arc, RwLock, Mutex, Condvar, PoisonError};
+use crate::wal::{SerdeWal, WalError};
 use crossbeam_channel::Sender;
-use crate::segment_manager::segment_managers::SegmentSearcher;
+use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
+use segment::entry::entry_point::OperationError;
+use tokio::task::JoinError;
+use tokio::runtime::Handle;
 
 
 #[derive(Error, Debug, Clone)]
@@ -24,16 +27,41 @@ pub enum CollectionError {
     BadRequest { description: String },
 }
 
+impl From<OperationError> for CollectionError {
+    fn from(err: OperationError) -> Self {
+        match err {
+            OperationError::WrongVector { .. } => Self::BadInput { description: format!("{}", err)},
+            OperationError::PointIdError { missed_point_id } => Self::NotFound { missed_point_id },
+        }
+    }
+}
+
+impl From<JoinError> for CollectionError {
+    fn from(err: JoinError) -> Self {
+        Self::ServiceError { error: format!("{}", err) }
+    }
+}
+
+impl<T> From<PoisonError<T>> for CollectionError {
+    fn from(err: PoisonError<T>) -> Self {
+        Self::ServiceError { error: format!("{}", err) }
+    }
+}
+
+impl From<WalError> for CollectionError {
+    fn from(err: WalError) -> Self {
+        Self::ServiceError { error: format!("{}", err) }
+    }
+}
 
 pub type OperationResult<T> = result::Result<T, CollectionError>;
 
 pub struct Collection {
-    wal: Arc<RwLock<SerdeWal<CollectionUpdateOperations>>>,
-    /// Channel to notify updater on new operations
-    notify_operation: Sender<SeqNumberType>,
-    /// Condition value, used for waiting for operation processing
-    processed_operation: Arc<(Mutex<SeqNumberType>, Condvar)>,
-    searcher: Arc<Box<dyn SegmentSearcher>>,
+    pub wal: Arc<RwLock<SerdeWal<CollectionUpdateOperations>>>,
+    pub searcher: Arc<dyn SegmentSearcher>,
+    /// updater is under mutex because we want only one updating process simultaneously
+    pub updater: Arc<dyn SegmentUpdater + Sync + Send>,
+    pub runtime_handle: Handle,
 }
 
 
@@ -43,22 +71,18 @@ impl Collection {
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
     pub fn update(&self, operation: CollectionUpdateOperations, wait: bool) -> OperationResult<UpdateResult> {
-        let operation_id = match self.wal.write().unwrap().write(&operation) {
-            Ok(operation_id) => operation_id,
-            Err(err) => return Err(
-                CollectionError::ServiceError {
-                    error: format!("{}", err)
-                }),
+        let operation_id = self.wal.write().unwrap().write(&operation)?;
+
+        let upd = self.updater.clone();
+        let update_future = async move {
+            upd.update(operation_id, &operation)
         };
-        self.notify_operation.send(operation_id).unwrap();
+        let update_handler = self.runtime_handle.spawn(update_future);
+
         if !wait {
             return Ok(UpdateResult { operation_id, status: UpdateStatus::Acknowledged });
         }
-
-        let (applied_operation, condvar) = &*self.processed_operation.clone();
-
-        condvar.wait_while(applied_operation.lock().unwrap(), |x| *x < operation_id);
-
+        let _res: usize = self.runtime_handle.block_on(update_handler)??;
         Ok(UpdateResult { operation_id, status: UpdateStatus::Completed })
     }
 
@@ -80,3 +104,20 @@ impl Collection {
     }
 }
 
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_collection_updater() {
+
+        Collection {
+            wal: Arc::new(RwLock::new( SerdeWal::<CollectionUpdateOperations>::new())),
+            searcher: Arc::new(()),
+            updater: Arc::new(()),
+            runtime_handle: ()
+        }
+    }
+}

@@ -13,6 +13,7 @@ pub type SegmentId = usize;
 pub struct LockedSegment(pub Arc<RwLock<dyn SegmentEntry>>);
 
 unsafe impl Sync for LockedSegment {}
+
 unsafe impl Send for LockedSegment {}
 
 pub struct SegmentHolder {
@@ -83,14 +84,9 @@ impl<'s> SegmentHolder {
             /// Skip this segment if it already have bigger version (WAL recovery related)
             if segment.0.read().unwrap().version() > op_num { continue; }
             let mut write_segment = segment.0.write().unwrap();
-            match f(&mut write_segment) {
-                Ok(is_applied) => processed_segments += is_applied as usize,
-                Err(err) => match err {
-                    OperationError::WrongVector { .. } => return Err(CollectionError::BadInput { description: format!("{}", err) }),
-                    OperationError::SeqError { .. } => {} /// Ok if recovering from WAL
-                    OperationError::PointIdError { missed_point_id } => return Err(CollectionError::NotFound { missed_point_id }),
-                },
-            }
+
+            let is_applied = f(&mut write_segment)?;
+            processed_segments += is_applied as usize;
         }
         Ok(processed_segments)
     }
@@ -108,14 +104,8 @@ impl<'s> SegmentHolder {
             if !segment_points.is_empty() {
                 let mut write_segment = segment.0.write().unwrap();
                 for point_id in segment_points {
-                    match f(point_id, &mut write_segment) {
-                        Ok(is_applied) => applied_points += is_applied as usize,
-                        Err(err) => match err {
-                            OperationError::WrongVector { .. } => return Err(CollectionError::BadInput { description: format!("{}", err) }),
-                            OperationError::SeqError { .. } => {} /// Ok if recovering from WAL
-                            OperationError::PointIdError { missed_point_id } => return Err(CollectionError::NotFound { missed_point_id }),
-                        },
-                    }
+                    let is_applied = f(point_id, &mut write_segment)?;
+                    applied_points += is_applied as usize;
                 }
             }
         }
@@ -133,14 +123,8 @@ impl<'s> SegmentHolder {
                 .cloned()
                 .filter(|id| read_segment.has_point(*id))
             {
-                match f(point, &read_segment) {
-                    Ok(is_ok) => read_points += is_ok as usize,
-                    Err(err) => match err {
-                        OperationError::WrongVector { .. } => return Err(CollectionError::BadInput { description: format!("{}", err) }),
-                        OperationError::SeqError { .. } => {} /// Ok if recovering from WAL
-                        OperationError::PointIdError { missed_point_id } => return Err(CollectionError::NotFound { missed_point_id }),
-                    },
-                }
+                let is_ok = f(point, &read_segment)?;
+                read_points += is_ok as usize;
             }
         }
         Ok(read_points)
@@ -153,7 +137,7 @@ mod tests {
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
     use segment::types::Distance;
     use std::path::Path;
-    
+
     use crate::segment_manager::fixtures::{build_segment_1, build_segment_2};
 
 

@@ -19,8 +19,6 @@ pub trait VersionedPersistable {
 pub enum OperationError {
     #[error("Vector inserting error: expected dim: {expected_dim}, got {received_dim}")]
     WrongVector { expected_dim: usize, received_dim: usize },
-    #[error("Wrong operation ordering: segment state:{current_state}, operation: {operation_num}")]
-    SeqError { current_state: SeqNumberType, operation_num: SeqNumberType},
     #[error("No point with id {missed_point_id} found")]
     PointIdError { missed_point_id: PointIdType }
 }

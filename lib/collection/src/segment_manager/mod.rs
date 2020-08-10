@@ -1,6 +1,6 @@
-mod simple_segment_updater;
+pub mod simple_segment_updater;
 mod fixtures;
-mod simple_segment_searcher;
+pub mod simple_segment_searcher;
 pub mod segment_holder;
 // pub mod simple_segment_manager;
 pub mod segment_managers;

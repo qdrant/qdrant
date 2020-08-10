@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, Mutex};
 use crate::segment_manager::segment_holder::{SegmentHolder};
 use crate::segment_manager::segment_managers::SegmentUpdater;
 use crate::operations::CollectionUpdateOperations;
@@ -11,12 +11,21 @@ use crate::operations::types::VectorType;
 use crate::operations::point_ops::PointOps;
 use crate::operations::payload_ops::{PayloadOps, PayloadInterface, PayloadVariant};
 
-struct SimpleSegmentUpdater {
+pub struct SimpleSegmentUpdater {
     segments: Arc<RwLock<SegmentHolder>>,
+    update_lock: Mutex<bool>
 }
 
 
 impl SimpleSegmentUpdater {
+
+    pub fn new(segments: Arc<RwLock<SegmentHolder>>) -> Self {
+        SimpleSegmentUpdater {
+            segments,
+            update_lock: Mutex::new(false)
+        }
+    }
+
     fn check_unprocessed_points(points: &Vec<PointIdType>, processed: &HashSet<PointIdType>) -> OperationResult<usize> {
         let missed_point = points
             .iter()
@@ -63,10 +72,7 @@ impl SimpleSegmentUpdater {
             Some(segment) => {
                 let mut write_segment = segment.0.write().unwrap();
                 for point_id in new_point_ids {
-                    match write_segment.upsert_point(op_num, point_id, points_map[&point_id]) {
-                        Ok(_) => {},
-                        Err(err) => panic!("Internal error"),  // ToDo: Implement From for OperationError and CollectionError
-                    }
+                    write_segment.upsert_point(op_num, point_id, points_map[&point_id])?;
                 }
                 Ok(res)
             }
@@ -175,6 +181,8 @@ impl SimpleSegmentUpdater {
 
 impl SegmentUpdater for SimpleSegmentUpdater {
     fn update(&self, op_num: SeqNumberType, operation: &CollectionUpdateOperations) -> OperationResult<usize> {
+        /// Allow only one update at a time, ensure no data races between segments.
+        let _lock = self.update_lock.lock().unwrap();
         match operation {
             CollectionUpdateOperations::PointOperation(point_operation) => self.process_point_operation(op_num, point_operation),
             CollectionUpdateOperations::PayloadOperation(payload_operation) => self.process_payload_operation(op_num, payload_operation),
@@ -194,7 +202,8 @@ mod tests {
         let searcher = build_searcher();
 
         let updater = SimpleSegmentUpdater {
-            segments: searcher.segments.clone()
+            segments: searcher.segments.clone(),
+            update_lock: Mutex::new(false)
         };
         let points = vec![1, 500];
 
@@ -247,7 +256,8 @@ mod tests {
         let searcher = build_searcher();
 
         let updater = SimpleSegmentUpdater {
-            segments: searcher.segments.clone()
+            segments: searcher.segments.clone(),
+            update_lock: Mutex::new(false)
         };
 
         let mut payload: HashMap<PayloadKeyType, PayloadInterface> = Default::default();

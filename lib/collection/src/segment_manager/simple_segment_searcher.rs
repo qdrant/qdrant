@@ -34,19 +34,17 @@ impl SimpleSegmentSearcher {
         segment: LockedSegment,
         request: Arc<SearchRequest>,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        segment.0.read()
-            .or(Err(CollectionError::ServiceError { error: "Unable to unlock segment".to_owned() }))
-            .and_then(|s|
-                s.search(
-                    &request.vector,
-                    request.filter.as_ref(),
-                    request.top,
-                    request.params.as_ref(),
-                ).map_err(|err| match err {
-                    OperationError::WrongVector { .. } => CollectionError::BadInput { description: format!("{}", err) },
-                    _ => CollectionError::ServiceError { error: format!("{}", err) },
-                })
-            )
+        let segment = segment.0.read()
+            .or(Err(CollectionError::ServiceError { error: "Unable to unlock segment".to_owned() }))?;
+
+        let res = segment.search(
+            &request.vector,
+            request.filter.as_ref(),
+            request.top,
+            request.params.as_ref(),
+        )?;
+
+        Ok(res)
     }
 }
 
@@ -59,38 +57,24 @@ impl SegmentSearcher for SimpleSegmentSearcher {
         &self,
         request: Arc<SearchRequest>,
     ) -> OperationResult<Vec<ScoredPoint>> {
-
-        // SimpleSegmentSearcher::search_in_segment(
-        //     local_segment,
-        //     *local_vector_arc,
-        //     *local_filter_arc,
-        //     top,
-        //     *local_params_arc)
-
         let segments = self.segments.read().unwrap();
 
         let searches: Vec<_> = segments
             .iter()
-            .map(|(_id, segment)| {
-                let segment_clone = LockedSegment(segment.0.clone());
-                SimpleSegmentSearcher::search_in_segment(segment_clone, request.clone())
-            })
+            .map(|(_id, segment)|
+                SimpleSegmentSearcher::search_in_segment(LockedSegment(segment.0.clone()), request.clone())
+            )
             .map(|f| self.runtime_handle.spawn(f))
             .collect();
 
 
         let all_searches = try_join_all(searches);
-        let all_search_results = self.runtime_handle.block_on(all_searches);
-
-        let all_search_results: Vec<OperationResult<Vec<ScoredPoint>>> = match all_search_results {
-            Ok(x) => x,
-            Err(err) => return Err(CollectionError::ServiceError { error: format!("{}", err) }),
-        };
+        let all_search_results = self.runtime_handle.block_on(all_searches)?;
 
         match all_search_results.iter()
             .filter_map(|res| res.to_owned().err())
             .next() {
-            None => {},
+            None => {}
             Some(error) => return Err(error),
         }
 
