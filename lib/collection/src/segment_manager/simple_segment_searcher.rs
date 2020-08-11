@@ -2,13 +2,12 @@ use crate::segment_manager::segment_holder::{SegmentHolder, LockedSegment};
 use std::sync::{RwLock, Arc};
 use crate::segment_manager::segment_managers::{SegmentSearcher};
 use crate::collection::{OperationResult, CollectionError};
-use segment::types::{Filter, SearchParams, ScoredPoint, Distance, VectorElementType, PointIdType, SeqNumberType};
+use segment::types::{ScoredPoint, Distance, PointIdType, SeqNumberType};
 use tokio::runtime::Handle;
 use std::collections::{HashSet, HashMap};
 use segment::spaces::tools::peek_top_scores_iterable;
 use futures::future::try_join_all;
 use crate::operations::types::{Record, CollectionInfo, SearchRequest};
-use segment::entry::entry_point::{OperationError, SegmentEntry};
 
 /// Simple implementation of segment manager
 ///  - owens segments
@@ -102,7 +101,7 @@ impl SegmentSearcher for SimpleSegmentSearcher {
         let mut point_records: HashMap<PointIdType, Record> = Default::default();
 
         self.segments.read().unwrap().read_points(points, |id, segment| {
-            /// If this point was not found yet or this segment have later version
+            // If this point was not found yet or this segment have later version
             if !point_version.contains_key(&id) || point_version[&id] < segment.version() {
                 point_records.insert(id, Record {
                     id,

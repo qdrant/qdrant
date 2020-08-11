@@ -65,7 +65,7 @@ pub fn build_test_holder() -> SegmentHolder {
     return holder;
 }
 
-pub fn build_searcher() -> SimpleSegmentSearcher {
+pub fn build_searcher() -> (Runtime, SimpleSegmentSearcher) {
     let segment_holder = build_test_holder();
 
     let threaded_rt1: Runtime = runtime::Builder::new()
@@ -79,6 +79,6 @@ pub fn build_searcher() -> SimpleSegmentSearcher {
         Distance::Dot,
     );
 
-    searcher
+    (threaded_rt1, searcher)
 }
 

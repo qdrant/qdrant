@@ -1,4 +1,4 @@
-use segment::types::{VectorElementType, Filter, SeqNumberType, SearchParams, ScoredPoint, PointIdType};
+use segment::types::{SeqNumberType, ScoredPoint, PointIdType};
 use crate::collection::{OperationResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::types::{Record, CollectionInfo, SearchRequest};

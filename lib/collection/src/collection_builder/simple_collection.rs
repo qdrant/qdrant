@@ -23,7 +23,7 @@ pub fn build_simple_collection(
 ) -> OperationResult<Collection> {
     let mut segment_holder = SegmentHolder::new();
 
-    for sid in 0..num_segments {
+    for _sid in 0..num_segments {
         let segment = build_simple_segment(segment_path, config.vector_size, config.distance.clone());
         segment_holder.add(segment);
     }
@@ -49,3 +49,4 @@ pub fn build_simple_collection(
 
     Ok(collection)
 }
+

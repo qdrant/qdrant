@@ -1,17 +1,15 @@
 use thiserror::Error;
 use crate::operations::CollectionUpdateOperations;
-use segment::types::{VectorElementType, Filter, PointIdType, ScoreType, SearchParams, Distance, SeqNumberType, ScoredPoint};
-use serde::{Deserialize, Serialize};
+use segment::types::{PointIdType, ScoredPoint};
 use std::result;
-use crate::operations::index_def::Indexes;
 use crate::operations::types::{Record, CollectionInfo, UpdateResult, UpdateStatus, SearchRequest};
-use std::sync::{Arc, RwLock, Mutex, Condvar, PoisonError};
+use std::sync::{Arc, RwLock, PoisonError};
 use crate::wal::{SerdeWal, WalError};
-use crossbeam_channel::Sender;
 use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
 use segment::entry::entry_point::OperationError;
 use tokio::task::JoinError;
 use tokio::runtime::Handle;
+use std::future::Future;
 
 
 #[derive(Error, Debug, Clone)]
@@ -71,9 +69,11 @@ impl Collection {
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
     pub fn update(&self, operation: CollectionUpdateOperations, wait: bool) -> OperationResult<UpdateResult> {
+
         let operation_id = self.wal.write().unwrap().write(&operation)?;
 
         let upd = self.updater.clone();
+
         let update_future = async move {
             upd.update(operation_id, &operation)
         };
@@ -82,6 +82,7 @@ impl Collection {
         if !wait {
             return Ok(UpdateResult { operation_id, status: UpdateStatus::Acknowledged });
         }
+
         let _res: usize = self.runtime_handle.block_on(update_handler)??;
         Ok(UpdateResult { operation_id, status: UpdateStatus::Completed })
     }
@@ -101,23 +102,5 @@ impl Collection {
         with_vector: bool,
     ) -> OperationResult<Vec<Record>> {
         return self.searcher.retrieve(points, with_payload, with_vector);
-    }
-}
-
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_collection_updater() {
-
-        Collection {
-            wal: Arc::new(RwLock::new( SerdeWal::<CollectionUpdateOperations>::new())),
-            searcher: Arc::new(()),
-            updater: Arc::new(()),
-            runtime_handle: ()
-        }
     }
 }

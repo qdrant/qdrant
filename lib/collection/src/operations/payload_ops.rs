@@ -6,10 +6,6 @@ use segment::types::{PointIdType, PayloadKeyType, PayloadType, GeoPoint};
 use std::collections::HashMap;
 
 
-fn default_as_false() -> bool {
-    false
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]

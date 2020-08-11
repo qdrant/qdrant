@@ -1,1 +1,1 @@
-mod simple_collection;
+pub mod simple_collection;

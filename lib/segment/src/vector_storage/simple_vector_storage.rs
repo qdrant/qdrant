@@ -1,5 +1,4 @@
 use super::vector_storage::{VectorStorage, VectorMatcher};
-use crate::spaces::metric::Metric;
 use crate::types::{PointOffsetType, VectorElementType, Distance};
 use std::collections::{HashSet};
 use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorCounter};

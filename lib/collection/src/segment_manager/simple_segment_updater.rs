@@ -4,12 +4,11 @@ use crate::segment_manager::segment_managers::SegmentUpdater;
 use crate::operations::CollectionUpdateOperations;
 use crate::collection::{OperationResult, CollectionError};
 use segment::types::{SeqNumberType, PointIdType, PayloadKeyType};
-use segment::entry::entry_point::{OperationError, SegmentEntry, Result};
 use std::collections::{HashSet, HashMap};
 use crate::operations::types::VectorType;
 
 use crate::operations::point_ops::PointOps;
-use crate::operations::payload_ops::{PayloadOps, PayloadInterface, PayloadVariant};
+use crate::operations::payload_ops::{PayloadOps, PayloadInterface};
 
 pub struct SimpleSegmentUpdater {
     segments: Arc<RwLock<SegmentHolder>>,
@@ -51,6 +50,12 @@ impl SimpleSegmentUpdater {
     /// All not found points are inserted into random segment.
     /// Returns: number of updated points.
     fn upsert_points(&self, op_num: SeqNumberType, ids: &Vec<PointIdType>, vectors: &Vec<VectorType>) -> OperationResult<usize> {
+        if ids.len() != vectors.len() {
+            return Err(CollectionError::BadInput {
+                description: format!("Amount of ids ({}) and vectors ({}) does not match",ids.len(), vectors.len())
+            })
+        }
+
         let mut updated_points: HashSet<PointIdType> = Default::default();
         let points_map: HashMap<PointIdType, &VectorType> = ids.iter().cloned().zip(vectors).collect();
 
@@ -181,8 +186,8 @@ impl SimpleSegmentUpdater {
 
 impl SegmentUpdater for SimpleSegmentUpdater {
     fn update(&self, op_num: SeqNumberType, operation: &CollectionUpdateOperations) -> OperationResult<usize> {
-        /// Allow only one update at a time, ensure no data races between segments.
-        let _lock = self.update_lock.lock().unwrap();
+        // Allow only one update at a time, ensure no data races between segments.
+        // let _lock = self.update_lock.lock().unwrap();
         match operation {
             CollectionUpdateOperations::PointOperation(point_operation) => self.process_point_operation(op_num, point_operation),
             CollectionUpdateOperations::PayloadOperation(payload_operation) => self.process_payload_operation(op_num, payload_operation),
@@ -196,10 +201,11 @@ mod tests {
     use super::*;
     use crate::segment_manager::fixtures::{build_searcher};
     use crate::segment_manager::segment_managers::SegmentSearcher;
+    use crate::operations::payload_ops::PayloadVariant;
 
     #[test]
     fn test_point_ops() {
-        let searcher = build_searcher();
+        let (_rt, searcher) = build_searcher();
 
         let updater = SimpleSegmentUpdater {
             segments: searcher.segments.clone(),
@@ -253,7 +259,7 @@ mod tests {
 
     #[test]
     fn test_payload_ops() {
-        let searcher = build_searcher();
+        let (_rt, searcher) = build_searcher();
 
         let updater = SimpleSegmentUpdater {
             segments: searcher.segments.clone(),

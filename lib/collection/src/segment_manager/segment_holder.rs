@@ -1,11 +1,11 @@
 use std::sync::{RwLock, Arc, RwLockReadGuard, RwLockWriteGuard};
 use std::collections::HashMap;
-use segment::entry::entry_point::{OperationError, SegmentEntry, Result};
+use segment::entry::entry_point::{SegmentEntry, Result};
 
 use rand::{thread_rng, Rng};
 use rand::seq::SliceRandom;
 use segment::types::{PointIdType, SeqNumberType};
-use crate::collection::{OperationResult, CollectionError};
+use crate::collection::OperationResult;
 
 
 pub type SegmentId = usize;
@@ -81,7 +81,7 @@ impl<'s> SegmentHolder {
     {
         let mut processed_segments = 0;
         for (_idx, segment) in self.segments.iter() {
-            /// Skip this segment if it already have bigger version (WAL recovery related)
+            // Skip this segment if it already have bigger version (WAL recovery related)
             if segment.0.read().unwrap().version() > op_num { continue; }
             let mut write_segment = segment.0.write().unwrap();
 
@@ -97,9 +97,9 @@ impl<'s> SegmentHolder {
     {
         let mut applied_points = 0;
         for (_idx, segment) in self.segments.iter() {
-            /// Skip this segment if it already have bigger version (WAL recovery related)
+            // Skip this segment if it already have bigger version (WAL recovery related)
             if segment.0.read().unwrap().version() > op_num { continue; }
-            /// Collect affected points first, we want to lock segment for writing as rare as possible
+            // Collect affected points first, we want to lock segment for writing as rare as possible
             let segment_points = self.segment_points(ids, segment);
             if !segment_points.is_empty() {
                 let mut write_segment = segment.0.write().unwrap();

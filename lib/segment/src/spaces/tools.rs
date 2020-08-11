@@ -44,8 +44,8 @@ pub fn peek_top_scores_iterable<I, E: Ord + Clone>(scores: I, top: usize, distan
     let order = distance_order(&distance);
     let res = match order {
         Order::SmallBetter => {
-            /// If small values is better - PQ should pop-out large values first.
-            /// Hence is should be max-heap
+            // If small values is better - PQ should pop-out large values first.
+            // Hence is should be max-heap
             let mut pq = FixedLengthPriorityQueue::new(top);
             for score_point in scores {
                 pq.push(score_point.clone());
