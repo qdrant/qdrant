@@ -46,7 +46,7 @@ pub trait VectorMatcher {
         vector: &Vec<VectorElementType>,
         points: &[PointOffsetType],
         top: usize,
-        distance: &Distance
+        distance: &Distance,
     ) -> Vec<ScoredPointOffset>;
     fn score_all(
         &self,

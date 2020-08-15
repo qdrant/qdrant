@@ -1,17 +1,26 @@
 use crate::payload_storage::payload_storage::{PayloadStorage};
-use crate::types::{PayloadKeyType, PayloadType, PointOffsetType, TheMap};
+use crate::types::{PayloadKeyType, PayloadType, PointOffsetType, TheMap, PointIdType};
 
 use std::collections::{HashMap};
+use std::rc::Rc;
+use std::cell::RefCell;
+use crate::id_mapper::id_mapper::IdMapper;
 
 pub struct SimplePayloadStorage {
     payload: HashMap<PointOffsetType, TheMap<PayloadKeyType, PayloadType>>,
+    id_mapper: Rc<RefCell<dyn IdMapper>>,
 }
 
 
 impl SimplePayloadStorage {
-    pub fn new() -> Self {
+    pub fn point_external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
+        self.id_mapper.borrow().external_id(internal_id)
+    }
+
+    pub fn new(id_mapper: Rc<RefCell<dyn IdMapper>>) -> Self {
         SimplePayloadStorage {
             payload: Default::default(),
+            id_mapper
         }
     }
 }

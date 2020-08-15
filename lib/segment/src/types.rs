@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::cmp::{Ordering};
 use ordered_float::OrderedFloat;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 pub type PointIdType = u64;
 /// Type of point index across all segments
@@ -130,6 +130,7 @@ pub enum Condition {
     Match(Match),
     Range(Range),
     GeoBoundingBox(GeoBoundingBox),
+    HasId(HashSet<PointIdType>)
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -162,7 +163,7 @@ mod tests {
                 integer: None,
             })]),
             must_not: None,
-            should: None,
+            should: None
         };
         let json = serde_json::to_string_pretty(&filter).unwrap();
         println!("{}", json)
@@ -182,6 +183,9 @@ mod tests {
                {
                    "filter": {
                        "must_not": [
+                           {
+                                "has_id": [1, 2, 3, 4, 5, 6]
+                           },
                            {
                                 "geo_bounding_box": {
                                     "key": "geo_field",
@@ -211,7 +215,7 @@ mod tests {
             Some(Condition::Filter(f)) => {
                 let must_not = &f.must_not;
                 match must_not {
-                    Some(v) => assert_eq!(v.len(), 1),
+                    Some(v) => assert_eq!(v.len(), 2),
                     None => assert!(false, "Filter expected"),
                 }
             }

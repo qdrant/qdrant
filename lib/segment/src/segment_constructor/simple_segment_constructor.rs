@@ -18,10 +18,10 @@ fn sp<T>(t: T) -> Rc<RefCell<T>> {
 }
 
 pub fn build_simple_segment(_dir: &Path, dim: usize, distance: Distance) -> Segment {
-    let id_mapper = SimpleIdMapper::new();
+    let id_mapper = sp(SimpleIdMapper::new());
 
     let vector_storage = sp(SimpleVectorStorage::new(dim));
-    let payload_storage =  sp(SimplePayloadStorage::new());
+    let payload_storage =  sp(SimplePayloadStorage::new(id_mapper.clone()));
 
 
     let payload_index = sp(PlainPayloadIndex::new(
@@ -34,7 +34,7 @@ pub fn build_simple_segment(_dir: &Path, dim: usize, distance: Distance) -> Segm
 
     return Segment {
         version: 0,
-        id_mapper: sp(id_mapper),
+        id_mapper: id_mapper.clone(),
         vector_storage,
         payload_storage: payload_storage.clone(),
         query_planner: sp(query_planer),
@@ -77,11 +77,11 @@ mod tests {
             Ok(_) => assert!(false, "Operation with wrong vector should fail")
         };
 
-        segment.upsert_point(2, 1, &vec1);
-        segment.upsert_point(2, 2, &vec2);
-        segment.upsert_point(2, 3, &vec3);
-        segment.upsert_point(2, 4, &vec4);
-        segment.upsert_point(2, 5, &vec5);
+        segment.upsert_point(2, 1, &vec1).unwrap();
+        segment.upsert_point(2, 2, &vec2).unwrap();
+        segment.upsert_point(2, 3, &vec3).unwrap();
+        segment.upsert_point(2, 4, &vec4).unwrap();
+        segment.upsert_point(2, 5, &vec5).unwrap();
 
         let payload_key = "color".to_string();
 
@@ -93,7 +93,7 @@ mod tests {
                 "red".to_owned(),
                 "green".to_owned()
             ])
-        );
+        ).unwrap();
 
         segment.set_payload(
             3,
@@ -103,7 +103,7 @@ mod tests {
                 "red".to_owned(),
                 "blue".to_owned()
             ])
-        );
+        ).unwrap();
 
         segment.set_payload(
             3,
@@ -113,7 +113,7 @@ mod tests {
                 "red".to_owned(),
                 "yellow".to_owned()
             ])
-        );
+        ).unwrap();
 
         segment.set_payload(
             3,
@@ -123,14 +123,14 @@ mod tests {
                 "red".to_owned(),
                 "green".to_owned()
             ])
-        );
+        ).unwrap();
 
         // Replace vectors
-        segment.upsert_point(4, 1, &vec1);
-        segment.upsert_point(5, 2, &vec2);
-        segment.upsert_point(6, 3, &vec3);
-        segment.upsert_point(7, 4, &vec4);
-        segment.upsert_point(8, 5, &vec5);
+        segment.upsert_point(4, 1, &vec1).unwrap();
+        segment.upsert_point(5, 2, &vec2).unwrap();
+        segment.upsert_point(6, 3, &vec3).unwrap();
+        segment.upsert_point(7, 4, &vec4).unwrap();
+        segment.upsert_point(8, 5, &vec5).unwrap();
 
 
     }

@@ -1,5 +1,6 @@
 use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage};
-use crate::types::{Filter, PayloadKeyType, PayloadType, Condition, GeoBoundingBox, Range, Match, TheMap};
+use crate::types::{Filter, PayloadKeyType, PayloadType, Condition, GeoBoundingBox, Range, Match, TheMap, PointOffsetType, PointIdType};
+use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 
 
 fn match_payload(payload: &PayloadType, condition_match: &Match) -> bool {
@@ -52,35 +53,38 @@ fn match_geo(
 }
 
 
-fn check_condition(payload: &TheMap<PayloadKeyType, PayloadType>, condition: &Condition) -> bool {
+fn check_condition(point_id: PointIdType, payload: &TheMap<PayloadKeyType, PayloadType>, condition: &Condition) -> bool {
     match condition {
-        Condition::Filter(filter) => check_filter(payload, filter),
+        Condition::Filter(filter) => check_filter(point_id, payload, filter),
         Condition::Match(condition_match) => {
             payload.get(&condition_match.key)
                 .map(|p| match_payload(p, condition_match))
                 .unwrap_or(false)
-        }
+        },
         Condition::Range(range) => {
             payload.get(&range.key)
                 .map(|p| match_range(p, range))
                 .unwrap_or(false)
-        }
+        },
         Condition::GeoBoundingBox(geo_bounding_box) => {
             payload.get(&geo_bounding_box.key)
                 .map(|p| match_geo(p, geo_bounding_box))
                 .unwrap_or(false)
+        },
+        Condition::HasId(ids) => {
+            ids.contains(&point_id)
         }
     }
 }
 
-fn check_filter(payload: &TheMap<PayloadKeyType, PayloadType>, filter: &Filter) -> bool {
-    return check_should(payload, &filter.should)
-        && check_must(payload, &filter.must)
-        && check_must_not(payload, &filter.must_not);
+fn check_filter(point_id: PointIdType, payload: &TheMap<PayloadKeyType, PayloadType>, filter: &Filter) -> bool {
+    return check_should(point_id, payload, &filter.should)
+        && check_must(point_id, payload, &filter.must)
+        && check_must_not(point_id, payload, &filter.must_not);
 }
 
-fn check_should(payload: &TheMap<PayloadKeyType, PayloadType>, should: &Option<Vec<Condition>>) -> bool {
-    let check = |x| check_condition(payload, x);
+fn check_should(point_id: PointIdType, payload: &TheMap<PayloadKeyType, PayloadType>, should: &Option<Vec<Condition>>) -> bool {
+    let check = |x| check_condition(point_id, payload, x);
     match should {
         None => true,
         Some(conditions) => conditions.iter().any(check)
@@ -88,28 +92,28 @@ fn check_should(payload: &TheMap<PayloadKeyType, PayloadType>, should: &Option<V
 }
 
 
-fn check_must(payload: &TheMap<PayloadKeyType, PayloadType>, must: &Option<Vec<Condition>>) -> bool {
-    let check = |x| check_condition(payload, x);
+fn check_must(point_id: PointIdType, payload: &TheMap<PayloadKeyType, PayloadType>, must: &Option<Vec<Condition>>) -> bool {
+    let check = |x| check_condition(point_id, payload, x);
     match must {
         None => true,
         Some(conditions) => conditions.iter().all(check)
     }
 }
 
-fn check_must_not(payload: &TheMap<PayloadKeyType, PayloadType>, must: &Option<Vec<Condition>>) -> bool {
-    let check = |x| !check_condition(payload, x);
+fn check_must_not(point_id: PointIdType, payload: &TheMap<PayloadKeyType, PayloadType>, must: &Option<Vec<Condition>>) -> bool {
+    let check = |x| !check_condition(point_id, payload, x);
     match must {
         None => true,
         Some(conditions) => conditions.iter().all(check)
     }
 }
 
-impl<T> ConditionChecker for T
-    where T: PayloadStorage
+impl ConditionChecker for SimplePayloadStorage
 {
-    fn check(&self, point_id: usize, query: &Filter) -> bool {
+    fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
+        let external_id = self.point_external_id(point_id).unwrap();
         let payload = self.payload(point_id);
-        return check_filter(&payload, query);
+        return check_filter(external_id, &payload, query);
     }
 }
 
@@ -118,6 +122,7 @@ mod tests {
     use super::*;
     use crate::types::PayloadType;
     use crate::types::GeoPoint;
+    use std::collections::HashSet;
 
     #[test]
     fn test_condition_checker() {
@@ -173,42 +178,42 @@ mod tests {
             must: Some(vec![match_red.clone()]),
             must_not: None,
         };
-        assert!(check_filter(&payload, &query));
+        assert!(check_filter(0, &payload, &query));
 
         let query = Filter {
             should: None,
             must: Some(vec![match_blue.clone()]),
             must_not: None,
         };
-        assert!(!check_filter(&payload, &query));
+        assert!(!check_filter(0, &payload, &query));
 
         let query = Filter {
             should: None,
             must: None,
             must_not: Some(vec![match_blue.clone()]),
         };
-        assert!(check_filter(&payload, &query));
+        assert!(check_filter(0, &payload, &query));
 
         let query = Filter {
             should: None,
             must: None,
             must_not: Some(vec![match_red.clone()]),
         };
-        assert!(!check_filter(&payload, &query));
+        assert!(!check_filter(0, &payload, &query));
 
         let query = Filter {
             should: Some(vec![match_red.clone(), match_blue.clone()]),
             must: Some(vec![with_delivery.clone(), in_berlin.clone()]),
             must_not: None,
         };
-        assert!(check_filter(&payload, &query));
+        assert!(check_filter(0, &payload, &query));
 
         let query = Filter {
             should: Some(vec![match_red.clone(), match_blue.clone()]),
             must: Some(vec![with_delivery.clone(), in_moscow.clone()]),
             must_not: None,
         };
-        assert!(!check_filter(&payload, &query));
+        assert!(!check_filter(0, &payload, &query));
 
         let query = Filter {
             should: Some(vec![
@@ -226,7 +231,7 @@ mod tests {
             must: None,
             must_not: None,
         };
-        assert!(!check_filter(&payload, &query));
+        assert!(!check_filter(0, &payload, &query));
 
         let query = Filter {
             should: Some(vec![
@@ -244,7 +249,7 @@ mod tests {
             must: None,
             must_not: None,
         };
-        assert!(check_filter(&payload, &query));
+        assert!(check_filter(0, &payload, &query));
 
 
         let query = Filter {
@@ -252,6 +257,36 @@ mod tests {
             must: None,
             must_not: Some(vec![with_bad_rating.clone()]),
         };
-        assert!(!check_filter(&payload, &query));
+        assert!(!check_filter(0, &payload, &query));
+
+
+        let ids: HashSet<_> = vec![1,2,3].into_iter().collect();
+
+
+        let query = Filter {
+            should: None,
+            must: None,
+            must_not: Some(vec![Condition::HasId(ids)]),
+        };
+        assert!(!check_filter(2, &payload, &query));
+
+        let ids: HashSet<_> = vec![1,2,3].into_iter().collect();
+
+
+        let query = Filter {
+            should: None,
+            must: None,
+            must_not: Some(vec![Condition::HasId(ids)]),
+        };
+        assert!(check_filter(10, &payload, &query));
+
+        let ids: HashSet<_> = vec![1,2,3].into_iter().collect();
+
+        let query = Filter {
+            should: None,
+            must: Some(vec![Condition::HasId(ids)]),
+            must_not: None,
+        };
+        assert!(check_filter(2, &payload, &query));
     }
 }
