@@ -38,6 +38,7 @@ pub fn build_simple_segment(_dir: &Path, dim: usize, distance: Distance) -> Segm
         vector_storage,
         payload_storage: payload_storage.clone(),
         query_planner: sp(query_planer),
+        appendable_flag: true
     };
 }
 

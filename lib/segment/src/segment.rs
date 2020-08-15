@@ -15,6 +15,7 @@ pub struct Segment {
     pub payload_storage: Rc<RefCell<dyn PayloadStorage>>,
     /// User for writing only here.
     pub query_planner: Rc<RefCell<dyn QueryPlanner>>,
+    pub appendable_flag: bool
 }
 
 
@@ -54,6 +55,10 @@ impl Segment {
 
 impl SegmentEntry for Segment {
     fn version(&self) -> SeqNumberType { self.version }
+
+    fn is_appendable(&self) -> bool {
+        return self.appendable_flag
+    }
 
     fn search(&self,
               vector: &Vec<VectorElementType>,

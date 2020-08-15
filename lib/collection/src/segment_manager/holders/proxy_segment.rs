@@ -32,6 +32,10 @@ impl SegmentEntry for ProxySegment {
         )
     }
 
+    fn is_appendable(&self) -> bool {
+        return false
+    }
+
     fn search(&self, vector: &Vec<VectorElementType>, filter: Option<&Filter>, top: usize, params: Option<&SearchParams>) -> Result<Vec<ScoredPoint>> {
         let mut wrapped_result = self.wrapped_segment.0.read().unwrap().search(
             vector,
