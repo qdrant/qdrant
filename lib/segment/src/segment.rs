@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use crate::payload_storage::payload_storage::{PayloadStorage};
 use crate::entry::entry_point::{SegmentEntry, Result, OperationError};
-use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap};
+use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentStats};
 use crate::query_planner::query_planner::QueryPlanner;
 
 /// Simple segment implementation
@@ -173,5 +173,14 @@ impl SegmentEntry for Segment {
 
     fn vectors_count(&self) -> usize {
         self.vector_storage.borrow().vector_count()
+    }
+
+    fn info(&self) -> SegmentStats {
+        SegmentStats {
+            num_vectors: self.vectors_count(),
+            num_deleted_vectors: self.vector_storage.borrow().deleted_count(),
+            ram_usage_bytes: 0, // ToDo: Implement
+            disk_usage_bytes: 0  // ToDo: Implement
+        }
     }
 }

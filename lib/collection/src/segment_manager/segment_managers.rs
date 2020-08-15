@@ -28,7 +28,7 @@ pub trait SegmentUpdater {
 
 pub trait SegmentOptimizer {
     /// Checks if segment optimization is required
-    fn check_condition(&self) -> bool;
+    fn check_condition(&self, op_num: SeqNumberType) -> bool;
 
     /// Performs optimization of collections's segments, including:
     ///     - Segment rebuilding

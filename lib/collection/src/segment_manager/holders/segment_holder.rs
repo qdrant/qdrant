@@ -12,6 +12,8 @@ pub type SegmentId = usize;
 
 pub struct LockedSegment(pub Arc<RwLock<dyn SegmentEntry>>);
 
+impl LockedSegment {}
+
 unsafe impl Sync for LockedSegment {}
 
 unsafe impl Send for LockedSegment {}

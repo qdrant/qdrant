@@ -1,6 +1,6 @@
 use thiserror::Error;
 use crate::operations::CollectionUpdateOperations;
-use segment::types::{PointIdType, ScoredPoint};
+use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
 use std::result;
 use crate::operations::types::{Record, CollectionInfo, UpdateResult, UpdateStatus, SearchRequest};
 use std::sync::{Arc, RwLock, PoisonError};
@@ -10,6 +10,8 @@ use segment::entry::entry_point::OperationError;
 use tokio::task::JoinError;
 use tokio::runtime::Handle;
 use std::future::Future;
+use futures::TryFutureExt;
+use crossbeam_channel::Sender;
 
 
 #[derive(Error, Debug, Clone)]
@@ -60,6 +62,7 @@ pub struct Collection {
     /// updater is under mutex because we want only one updating process simultaneously
     pub updater: Arc<dyn SegmentUpdater + Sync + Send>,
     pub runtime_handle: Handle,
+    pub update_sender: Sender<SeqNumberType>
 }
 
 
@@ -73,9 +76,11 @@ impl Collection {
         let operation_id = self.wal.write().unwrap().write(&operation)?;
 
         let upd = self.updater.clone();
-
+        let sndr = self.update_sender.clone();
         let update_future = async move {
-            upd.update(operation_id, &operation)
+            let res = upd.update(operation_id, &operation);
+            sndr.send(operation_id);
+            res
         };
         let update_handler = self.runtime_handle.spawn(update_future);
 

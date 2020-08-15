@@ -1,4 +1,4 @@
-use crate::segment_manager::segment_holder::{SegmentHolder, LockedSegment};
+use crate::segment_manager::holders::segment_holder::{SegmentHolder, LockedSegment};
 use std::sync::{RwLock, Arc};
 use crate::segment_manager::segment_managers::{SegmentSearcher};
 use crate::collection::{OperationResult, CollectionError};

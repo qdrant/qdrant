@@ -3,7 +3,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use std::path::Path;
 use segment::types::Distance;
-use crate::segment_manager::segment_holder::SegmentHolder;
+use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
 use tokio::runtime::Runtime;
 use tokio::runtime;

@@ -17,24 +17,22 @@ pub type TagType = u64;
 pub type VectorElementType = f64;
 
 /// Type of internal tags, build from payload
-
-
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub enum Distance {
     Cosine,
     Euclid,
-    Dot
+    Dot,
 }
 
 pub enum Order {
     LargeBetter,
-    SmallBetter
+    SmallBetter,
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct ScoredPoint {
     pub idx: PointIdType,
-    pub score: ScoreType
+    pub score: ScoreType,
 }
 
 impl Eq for ScoredPoint {}
@@ -52,6 +50,14 @@ impl PartialOrd for ScoredPoint {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct SegmentStats {
+    pub num_vectors: usize,
+    pub num_deleted_vectors: usize,
+    pub ram_usage_bytes: usize,
+    pub disk_usage_bytes: usize
+}
 
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -81,7 +87,7 @@ pub struct GeoPoint {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
-#[serde(tag = "type",  content = "value")]
+#[serde(tag = "type", content = "value")]
 pub enum PayloadType {
     Keyword(Vec<String>),
     Integer(Vec<i64>),
@@ -156,7 +162,7 @@ mod tests {
                 integer: None,
             })]),
             must_not: None,
-            should: None
+            should: None,
         };
         let json = serde_json::to_string_pretty(&filter).unwrap();
         println!("{}", json)

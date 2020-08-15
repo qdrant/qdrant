@@ -1,5 +1,5 @@
 use std::sync::{Arc, RwLock, Mutex};
-use crate::segment_manager::segment_holder::{SegmentHolder};
+use crate::segment_manager::holders::segment_holder::{SegmentHolder};
 use crate::segment_manager::segment_managers::SegmentUpdater;
 use crate::operations::CollectionUpdateOperations;
 use crate::collection::{OperationResult, CollectionError};

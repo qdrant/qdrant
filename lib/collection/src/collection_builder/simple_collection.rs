@@ -1,5 +1,5 @@
 use crate::collection::{Collection, OperationResult};
-use crate::segment_manager::segment_holder::SegmentHolder;
+use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use std::path::Path;
 use crate::operations::types::CollectionConfig;
@@ -10,6 +10,7 @@ use std::sync::{Arc, RwLock};
 use tokio::runtime::Handle;
 use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
 use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
+use crossbeam_channel::unbounded;
 
 
 pub fn build_simple_collection(
@@ -40,11 +41,14 @@ pub fn build_simple_collection(
 
     let updater = SimpleSegmentUpdater::new(segment_holder.clone());
 
+    let (tx, rx) = unbounded();
+
     let collection = Collection {
         wal: Arc::new(RwLock::new(wal)),
         searcher: Arc::new(searcher),
         updater: Arc::new(updater),
         runtime_handle: update_runtime,
+        update_sender: tx
     };
 
     Ok(collection)

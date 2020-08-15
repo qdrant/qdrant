@@ -1,6 +1,6 @@
 use thiserror::Error;
 use std::path::Path;
-use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap};
+use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentStats};
 use std::result;
 
 
@@ -62,6 +62,7 @@ pub trait SegmentEntry {
     /// Return number of vectors in this segment
     fn vectors_count(&self) -> usize;
 
-    // ToDo: Add statistics APIs: mem usage
+    fn info(&self) -> SegmentStats;
+
 }
 
