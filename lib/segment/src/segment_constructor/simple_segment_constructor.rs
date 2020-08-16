@@ -1,7 +1,6 @@
 use crate::segment::Segment;
 use std::path::Path;
-use std::rc::Rc;
-use std::cell::RefCell;
+
 use crate::id_mapper::simple_id_mapper::SimpleIdMapper;
 use crate::vector_storage::simple_vector_storage::SimpleVectorStorage;
 use crate::types::{Distance};
@@ -10,11 +9,12 @@ use crate::types::{Distance};
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::query_planner::simple_query_planner::SimpleQueryPlanner;
 use crate::index::plain_index::{PlainIndex, PlainPayloadIndex};
+use std::sync::Arc;
+use atomic_refcell::AtomicRefCell;
 
 
-
-fn sp<T>(t: T) -> Rc<RefCell<T>> {
-    return Rc::new(RefCell::new(t))
+fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> {
+    return Arc::new(AtomicRefCell::new(t))
 }
 
 pub fn build_simple_segment(_dir: &Path, dim: usize, distance: Distance) -> Segment {

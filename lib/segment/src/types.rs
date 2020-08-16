@@ -56,7 +56,7 @@ pub struct SegmentStats {
     pub num_vectors: usize,
     pub num_deleted_vectors: usize,
     pub ram_usage_bytes: usize,
-    pub disk_usage_bytes: usize
+    pub disk_usage_bytes: usize,
 }
 
 
@@ -130,7 +130,7 @@ pub enum Condition {
     Match(Match),
     Range(Range),
     GeoBoundingBox(GeoBoundingBox),
-    HasId(HashSet<PointIdType>)
+    HasId(HashSet<PointIdType>),
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -140,6 +140,25 @@ pub struct Filter {
     pub must: Option<Vec<Condition>>,
     pub must_not: Option<Vec<Condition>>,
 }
+
+impl Filter {
+    pub fn new_must(condition: Condition) -> Self {
+        Filter {
+            should: None,
+            must: Some(vec![condition]),
+            must_not: None,
+        }
+    }
+
+    pub fn new_must_not(condition: Condition) -> Self {
+        Filter {
+            should: None,
+            must: None,
+            must_not: Some(vec![condition]),
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -163,7 +182,7 @@ mod tests {
                 integer: None,
             })]),
             must_not: None,
-            should: None
+            should: None,
         };
         let json = serde_json::to_string_pretty(&filter).unwrap();
         println!("{}", json)

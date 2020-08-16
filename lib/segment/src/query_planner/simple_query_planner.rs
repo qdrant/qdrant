@@ -1,12 +1,13 @@
 use crate::index::index::Index;
 use crate::query_planner::query_planner::QueryPlanner;
 use crate::types::{Filter, VectorElementType, SearchParams};
-use std::rc::Rc;
-use std::cell::RefCell;
+
 use crate::vector_storage::vector_storage::ScoredPointOffset;
+use atomic_refcell::AtomicRefCell;
+use std::sync::Arc;
 
 pub struct SimpleQueryPlanner {
-    index: Rc<RefCell<dyn Index>>
+    index: Arc<AtomicRefCell<dyn Index>>
 }
 
 impl QueryPlanner for SimpleQueryPlanner {
@@ -21,7 +22,7 @@ impl QueryPlanner for SimpleQueryPlanner {
 }
 
 impl SimpleQueryPlanner {
-    pub fn new(index: Rc<RefCell<dyn Index>>) -> Self {
+    pub fn new(index: Arc<AtomicRefCell<dyn Index>>) -> Self {
         SimpleQueryPlanner {
             index
         }

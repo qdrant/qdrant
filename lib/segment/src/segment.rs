@@ -1,21 +1,21 @@
 use crate::id_mapper::id_mapper::IdMapper;
 use crate::vector_storage::vector_storage::VectorStorage;
-use std::cell::RefCell;
-use std::rc::Rc;
 use crate::payload_storage::payload_storage::{PayloadStorage};
 use crate::entry::entry_point::{SegmentEntry, Result, OperationError};
 use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentStats};
 use crate::query_planner::query_planner::QueryPlanner;
+use std::sync::Arc;
+use atomic_refcell::AtomicRefCell;
 
 /// Simple segment implementation
 pub struct Segment {
     pub version: SeqNumberType,
-    pub id_mapper: Rc<RefCell<dyn IdMapper>>,
-    pub vector_storage: Rc<RefCell<dyn VectorStorage>>,
-    pub payload_storage: Rc<RefCell<dyn PayloadStorage>>,
+    pub id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
+    pub vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
+    pub payload_storage: Arc<AtomicRefCell<dyn PayloadStorage>>,
     /// User for writing only here.
-    pub query_planner: Rc<RefCell<dyn QueryPlanner>>,
-    pub appendable_flag: bool
+    pub query_planner: Arc<AtomicRefCell<dyn QueryPlanner>>,
+    pub appendable_flag: bool,
 }
 
 
@@ -57,7 +57,7 @@ impl SegmentEntry for Segment {
     fn version(&self) -> SeqNumberType { self.version }
 
     fn is_appendable(&self) -> bool {
-        return self.appendable_flag
+        return self.appendable_flag;
     }
 
     fn search(&self,
@@ -130,6 +130,17 @@ impl SegmentEntry for Segment {
         }
     }
 
+    fn set_full_payload(&mut self,
+                        op_num: SeqNumberType,
+                        point_id: PointIdType,
+                        full_payload: TheMap<PayloadKeyType, PayloadType>,
+    ) -> Result<bool> {
+        if self.skip_by_version(op_num) { return Ok(false); };
+        let internal_id = self.lookup_internal_id(point_id)?;
+        self.payload_storage.borrow_mut().assign_all(internal_id, full_payload);
+        Ok(true)
+    }
+
     fn set_payload(&mut self,
                    op_num: SeqNumberType,
                    point_id: PointIdType,
@@ -185,7 +196,7 @@ impl SegmentEntry for Segment {
             num_vectors: self.vectors_count(),
             num_deleted_vectors: self.vector_storage.borrow().deleted_count(),
             ram_usage_bytes: 0, // ToDo: Implement
-            disk_usage_bytes: 0  // ToDo: Implement
+            disk_usage_bytes: 0,  // ToDo: Implement
         }
     }
 }

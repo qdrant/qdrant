@@ -2,19 +2,20 @@ use crate::vector_storage::vector_storage::{VectorMatcher, ScoredPointOffset, Ve
 use crate::index::index::{Index, PayloadIndex};
 use crate::types::{Filter, VectorElementType, Distance, SearchParams};
 use crate::payload_storage::payload_storage::{ConditionChecker};
-use std::rc::Rc;
-use std::cell::RefCell;
+
+use std::sync::Arc;
+use atomic_refcell::AtomicRefCell;
 
 
 pub struct PlainPayloadIndex {
-    condition_checker: Rc<RefCell<dyn ConditionChecker>>,
-    vector_counter: Rc<RefCell<dyn VectorCounter>>,
+    condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+    vector_counter: Arc<AtomicRefCell<dyn VectorCounter>>,
 }
 
 
 impl PlainPayloadIndex {
-    pub fn new(condition_checker: Rc<RefCell<dyn ConditionChecker>>,
-               vector_counter: Rc<RefCell<dyn VectorCounter>>) -> Self {
+    pub fn new(condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+               vector_counter: Arc<AtomicRefCell<dyn VectorCounter>>) -> Self {
         PlainPayloadIndex {
             condition_checker,
             vector_counter,
@@ -50,15 +51,15 @@ impl PayloadIndex for PlainPayloadIndex {
 
 
 pub struct PlainIndex {
-    vector_matcher: Rc<RefCell<dyn VectorMatcher>>,
-    payload_index: Rc<RefCell<dyn PayloadIndex>>,
+    vector_matcher:Arc<AtomicRefCell<dyn VectorMatcher>>,
+    payload_index:Arc<AtomicRefCell<dyn PayloadIndex>>,
     distance: Distance,
 }
 
 impl PlainIndex {
     pub fn new(
-        vector_matcher: Rc<RefCell<dyn VectorMatcher>>,
-        payload_index: Rc<RefCell<dyn PayloadIndex>>,
+        vector_matcher:Arc<AtomicRefCell<dyn VectorMatcher>>,
+        payload_index:Arc<AtomicRefCell<dyn PayloadIndex>>,
         distance: Distance,
     ) -> PlainIndex {
         return PlainIndex {
