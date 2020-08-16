@@ -19,6 +19,10 @@ impl QueryPlanner for SimpleQueryPlanner {
     ) -> Vec<ScoredPointOffset> {
         self.index.borrow().search(vector, filter, top, params)
     }
+
+    fn build_index(&mut self) {
+        self.index.borrow_mut().build_index();
+    }
 }
 
 impl SimpleQueryPlanner {

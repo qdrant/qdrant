@@ -87,4 +87,8 @@ impl Index for PlainIndex {
             None => self.vector_matcher.borrow().score_all(vector, top, &self.distance)
         }
     }
+
+    fn build_index(&mut self) {
+        // Do nothing
+    }
 }

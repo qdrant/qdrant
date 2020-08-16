@@ -1,5 +1,5 @@
+pub mod optimizers;
 pub mod holders;
-pub mod simple_segment_optimizer;
 pub mod simple_segment_updater;
 mod fixtures;
 pub mod simple_segment_searcher;

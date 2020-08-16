@@ -16,6 +16,10 @@ impl LockedSegment {
     pub fn new<T: SegmentEntry + 'static>(segment: T) -> Self {
         LockedSegment(Arc::new(RwLock::new(segment)))
     }
+
+    pub fn mk_copy(&self) -> Self {
+        LockedSegment(self.0.clone())
+    }
 }
 
 unsafe impl Sync for LockedSegment {}
@@ -159,8 +163,7 @@ mod tests {
 
         assert_ne!(sid1, sid2);
 
-        let tmp_path = Path::new("/tmp/qdrant/segment");
-        let segment3 = build_simple_segment(tmp_path, 4, Distance::Dot);
+        let segment3 = build_simple_segment(4, Distance::Dot);
 
         let _sid3 = holder.swap(segment3, &vec![sid1, sid2]);
     }

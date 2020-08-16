@@ -5,8 +5,7 @@ use segment::types::{Distance, PayloadType};
 use segment::entry::entry_point::SegmentEntry;
 
 pub fn empty_segment() -> Segment {
-    let tmp_path = Path::new("/tmp/qdrant/segment");
-    let segment = build_simple_segment(tmp_path, 4, Distance::Dot);
+    let segment = build_simple_segment(4, Distance::Dot);
     return segment;
 }
 

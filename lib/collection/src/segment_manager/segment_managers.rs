@@ -33,5 +33,5 @@ pub trait SegmentOptimizer {
     /// Performs optimization of collections's segments, including:
     ///     - Segment rebuilding
     ///     - Segment joining
-    fn optimize(&self);
+    fn optimize(&self) -> OperationResult<bool>;
 }

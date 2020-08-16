@@ -43,9 +43,7 @@ impl UpdateHandler {
             match recv_res {
                 Ok(operation_id) => {
                     for optimizer in optimizers.iter() {
-                        if optimizer.check_condition(operation_id) {
-                            optimizer.optimize()
-                        }
+                        optimizer.optimize();
                     }
                 },
                 Err(_) => break, // Transmitter was destroyed

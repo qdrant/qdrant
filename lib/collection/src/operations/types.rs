@@ -15,7 +15,7 @@ pub struct Record {
     pub vector: Option<Vec<VectorElementType>>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct CollectionConfig {
     pub vector_size: usize,
     pub index: Indexes,

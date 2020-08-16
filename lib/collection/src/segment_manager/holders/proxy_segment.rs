@@ -1,17 +1,5 @@
 use segment::entry::entry_point::{SegmentEntry, Result};
-use segment::types::{
-    Filter,
-    Condition,
-    SearchParams,
-    ScoredPoint,
-    PayloadKeyType,
-    PayloadType,
-    TheMap,
-    SeqNumberType,
-    VectorElementType,
-    PointIdType,
-    SegmentStats,
-};
+use segment::types::{Filter, Condition, SearchParams, ScoredPoint, PayloadKeyType, PayloadType, TheMap, SeqNumberType, VectorElementType, PointIdType, SegmentInfo, SegmentType};
 use std::cmp::max;
 use crate::segment_manager::holders::segment_holder::LockedSegment;
 use std::collections::HashSet;
@@ -74,10 +62,6 @@ impl SegmentEntry for ProxySegment {
             self.wrapped_segment.0.read().unwrap().version(),
             self.proxy_segment.0.read().unwrap().version(),
         )
-    }
-
-    fn is_appendable(&self) -> bool {
-        return false;
     }
 
     fn search(&self, vector: &Vec<VectorElementType>, filter: Option<&Filter>, top: usize, params: Option<&SearchParams>) -> Result<Vec<ScoredPoint>> {
@@ -214,15 +198,17 @@ impl SegmentEntry for ProxySegment {
         count
     }
 
-    fn info(&self) -> SegmentStats {
+    fn info(&self) -> SegmentInfo {
         let wrapped_info = self.wrapped_segment.0.read().unwrap().info();
         let write_info = self.proxy_segment.0.read().unwrap().info();
 
-        return SegmentStats {
+        return SegmentInfo {
+            segment_type: SegmentType::Special,
             num_vectors: self.vectors_count(),
             num_deleted_vectors: write_info.num_deleted_vectors,
             ram_usage_bytes: wrapped_info.ram_usage_bytes + write_info.ram_usage_bytes,
             disk_usage_bytes: wrapped_info.disk_usage_bytes + write_info.disk_usage_bytes,
+            is_appendable: false
         };
     }
 }

@@ -2,7 +2,7 @@ use crate::id_mapper::id_mapper::IdMapper;
 use crate::vector_storage::vector_storage::VectorStorage;
 use crate::payload_storage::payload_storage::{PayloadStorage};
 use crate::entry::entry_point::{SegmentEntry, Result, OperationError};
-use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentStats};
+use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentType};
 use crate::query_planner::query_planner::QueryPlanner;
 use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
@@ -16,6 +16,7 @@ pub struct Segment {
     /// User for writing only here.
     pub query_planner: Arc<AtomicRefCell<dyn QueryPlanner>>,
     pub appendable_flag: bool,
+    pub segment_type: SegmentType
 }
 
 
@@ -60,10 +61,6 @@ impl Segment {
 
 impl SegmentEntry for Segment {
     fn version(&self) -> SeqNumberType { self.version }
-
-    fn is_appendable(&self) -> bool {
-        return self.appendable_flag;
-    }
 
     fn search(&self,
               vector: &Vec<VectorElementType>,
@@ -190,12 +187,14 @@ impl SegmentEntry for Segment {
         self.vector_storage.borrow().vector_count()
     }
 
-    fn info(&self) -> SegmentStats {
-        SegmentStats {
+    fn info(&self) -> SegmentInfo {
+        SegmentInfo {
+            segment_type: self.segment_type,
             num_vectors: self.vectors_count(),
             num_deleted_vectors: self.vector_storage.borrow().deleted_count(),
             ram_usage_bytes: 0, // ToDo: Implement
             disk_usage_bytes: 0,  // ToDo: Implement
+            is_appendable: self.appendable_flag
         }
     }
 }

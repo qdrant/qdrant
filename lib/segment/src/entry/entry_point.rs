@@ -1,6 +1,6 @@
 use thiserror::Error;
 use std::path::Path;
-use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentStats};
+use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentInfo};
 use std::result;
 
 
@@ -33,9 +33,6 @@ pub trait SegmentEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
 
-    /// Defines if it is possible to dynamically add new points to this segment or not
-    fn is_appendable(&self) -> bool;
-
     fn search(&self,
               vector: &Vec<VectorElementType>,
               filter: Option<&Filter>,
@@ -65,7 +62,7 @@ pub trait SegmentEntry {
     /// Return number of vectors in this segment
     fn vectors_count(&self) -> usize;
 
-    fn info(&self) -> SegmentStats;
+    fn info(&self) -> SegmentInfo;
 
 }
 

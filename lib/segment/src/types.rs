@@ -17,7 +17,7 @@ pub type TagType = u64;
 pub type VectorElementType = f64;
 
 /// Type of internal tags, build from payload
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
 pub enum Distance {
     Cosine,
     Euclid,
@@ -50,13 +50,27 @@ impl PartialOrd for ScoredPoint {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SegmentType {
+    /// Segment cheap insert & delete operations
+    Plain,
+    /// Segment with some sort of index built. Optimized for search, appending new points will require reindexing
+    Indexed,
+    /// Some index which you better don't touch
+    Special
+}
+
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub struct SegmentStats {
+pub struct SegmentInfo {
+    pub segment_type: SegmentType,
     pub num_vectors: usize,
     pub num_deleted_vectors: usize,
     pub ram_usage_bytes: usize,
     pub disk_usage_bytes: usize,
+    pub is_appendable: bool
 }
 
 

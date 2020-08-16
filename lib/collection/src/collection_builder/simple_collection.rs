@@ -16,7 +16,7 @@ use crate::update_handler::update_handler::{UpdateHandler, Optimizer};
 
 pub fn build_simple_collection(
     num_segments: usize, // from config
-    segment_path: &Path, // from service
+    _segment_path: &Path, // from service
     wal_path: &Path,  // from config
     wal_options: &WalOptions,  // from config
     config: &CollectionConfig,  //  from user
@@ -27,7 +27,7 @@ pub fn build_simple_collection(
     let mut segment_holder = SegmentHolder::new();
 
     for _sid in 0..num_segments {
-        let segment = build_simple_segment(segment_path, config.vector_size, config.distance.clone());
+        let segment = build_simple_segment(config.vector_size, config.distance.clone());
         segment_holder.add(segment);
     }
 

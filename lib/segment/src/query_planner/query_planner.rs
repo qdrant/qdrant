@@ -10,4 +10,8 @@ pub trait QueryPlanner {
               top: usize,
               params: Option<&SearchParams>,
     ) -> Vec<ScoredPointOffset>;
+
+
+    /// Force internal index rebuild.
+    fn build_index(&mut self);
 }
