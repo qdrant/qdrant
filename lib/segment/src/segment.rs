@@ -40,7 +40,12 @@ impl Segment {
     }
 
     fn skip_by_version(&mut self, op_num: SeqNumberType) -> bool {
-        return self.version > op_num;
+        return if self.version > op_num {
+            true
+        } else {
+            self.version = op_num;
+            false
+        }
     }
 
     fn lookup_internal_id(&self, point_id: PointIdType) -> Result<PointOffsetType> {
@@ -164,12 +169,6 @@ impl SegmentEntry for Segment {
         if self.skip_by_version(op_num) { return Ok(false); };
         let internal_id = self.lookup_internal_id(point_id)?;
         self.payload_storage.borrow_mut().drop(internal_id);
-        Ok(true)
-    }
-
-    fn wipe_payload(&mut self, op_num: SeqNumberType) -> Result<bool> {
-        if self.skip_by_version(op_num) { return Ok(false); };
-        self.payload_storage.borrow_mut().wipe();
         Ok(true)
     }
 

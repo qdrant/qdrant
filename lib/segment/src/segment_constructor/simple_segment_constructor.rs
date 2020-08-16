@@ -133,6 +133,11 @@ mod tests {
         segment.upsert_point(8, 5, &vec5).unwrap();
 
 
+        assert_eq!(segment.version(), 8);
+
+        let declined = segment.upsert_point(3, 5, &vec5).unwrap();
+        // Should not be processed due to operation number
+        assert!(!declined);
     }
 
     // ToDo: More tests

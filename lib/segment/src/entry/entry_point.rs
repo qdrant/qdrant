@@ -55,8 +55,6 @@ pub trait SegmentEntry {
 
     fn clear_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType) -> Result<bool>;
 
-    fn wipe_payload(&mut self, op_num: SeqNumberType) -> Result<bool>;
-
     fn vector(&self, point_id: PointIdType) -> Result<Vec<VectorElementType>>;
 
     fn payload(&self, point_id: PointIdType) -> Result<TheMap<PayloadKeyType, PayloadType>>;

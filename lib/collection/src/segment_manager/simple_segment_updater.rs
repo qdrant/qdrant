@@ -144,13 +144,6 @@ impl SimpleSegmentUpdater {
         Ok(res)
     }
 
-    fn wipe_payload(
-        &self,
-        op_num: SeqNumberType,
-    ) -> OperationResult<usize> {
-        self.segments.read().unwrap().apply_segments(op_num, |segment| segment.wipe_payload(op_num))
-    }
-
     pub fn process_point_operation(&self, op_num: SeqNumberType, point_operation: &PointOps) -> OperationResult<usize> {
         match point_operation {
             PointOps::UpsertPoints {
@@ -178,7 +171,6 @@ impl SimpleSegmentUpdater {
             PayloadOps::ClearPayload {
                 points, ..
             } => self.clear_payload(op_num, points),
-            PayloadOps::WipePayload { .. } => self.wipe_payload(op_num),
         }
     }
 }

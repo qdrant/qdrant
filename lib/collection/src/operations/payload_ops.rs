@@ -65,10 +65,6 @@ pub enum PayloadOps {
     ClearPayload {
         collection: String,
         points: Vec<PointIdType>,
-    },
-    /// Drops all Payload in given collection.
-    WipePayload {
-        collection: String,
     }
 }
 
@@ -114,6 +110,5 @@ mod tests {
             },
             _ => assert!(false, "Wrong operation"),
         }
-
     }
 }
