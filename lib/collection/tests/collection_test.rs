@@ -14,10 +14,6 @@ use std::sync::Arc;
 fn test_collection_updater() {
     let (_rt, _tmp1, _tmp2, collection) = simple_collection_fixture();
 
-    println!("here test_collection_updater");
-
-    stdout().flush();
-
     let insert_points = CollectionUpdateOperations::PointOperation(
         PointOps::UpsertPoints {
             collection: "this".to_string(),

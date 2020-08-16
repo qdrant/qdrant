@@ -2,16 +2,22 @@ use segment::segment::Segment;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use std::path::Path;
-use segment::types::Distance;
+use segment::types::{Distance, PayloadType};
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
 use tokio::runtime::Runtime;
 use tokio::runtime;
 use std::sync::{RwLock, Arc};
 
-pub fn build_segment_1() -> Segment {
+
+pub fn empty_segment() -> Segment {
     let tmp_path = Path::new("/tmp/qdrant/segment");
-    let mut segment1 = build_simple_segment(tmp_path, 4, Distance::Dot);
+    let segment = build_simple_segment(tmp_path, 4, Distance::Dot);
+    return segment;
+}
+
+pub fn build_segment_1() -> Segment {
+    let mut segment1 = empty_segment();
 
     let vec1 = vec![1.0, 0.0, 1.0, 1.0];
     let vec2 = vec![1.0, 0.0, 1.0, 0.0];
@@ -25,12 +31,23 @@ pub fn build_segment_1() -> Segment {
     segment1.upsert_point(4, 4, &vec4).unwrap();
     segment1.upsert_point(5, 5, &vec5).unwrap();
 
+    let payload_key = "color".to_owned();
+
+    let payload_option1 = PayloadType::Keyword(vec!["red".to_owned()]);
+    let payload_option2 = PayloadType::Keyword(vec!["red".to_owned(), "blue".to_owned()]);
+    let payload_option3 = PayloadType::Keyword(vec!["blue".to_owned()]);
+
+    segment1.set_payload(6, 1, &payload_key, payload_option1.clone()).unwrap();
+    segment1.set_payload(6, 2, &payload_key, payload_option1.clone()).unwrap();
+    segment1.set_payload(6, 3, &payload_key, payload_option3.clone()).unwrap();
+    segment1.set_payload(6, 4, &payload_key, payload_option2.clone()).unwrap();
+    segment1.set_payload(6, 5, &payload_key, payload_option2.clone()).unwrap();
+
     return segment1;
 }
 
 pub fn build_segment_2() -> Segment {
-    let tmp_path = Path::new("/tmp/qdrant/segment");
-    let mut segment2 = build_simple_segment(tmp_path, 4, Distance::Dot);
+    let mut segment2 = empty_segment();
 
     let vec4 = vec![1.0, 1.0, 0.0, 1.0];
     let vec5 = vec![1.0, 0.0, 0.0, 0.0];

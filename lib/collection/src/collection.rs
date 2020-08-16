@@ -9,9 +9,8 @@ use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
 use segment::entry::entry_point::OperationError;
 use tokio::task::JoinError;
 use tokio::runtime::Handle;
-use std::future::Future;
-use futures::TryFutureExt;
-use crossbeam_channel::Sender;
+use crossbeam_channel::{Sender, SendError};
+use crate::update_handler::update_handler::UpdateHandler;
 
 
 #[derive(Error, Debug, Clone)]
@@ -54,12 +53,18 @@ impl From<WalError> for CollectionError {
     }
 }
 
+impl<T> From<SendError<T>> for CollectionError {
+    fn from(_err: SendError<T>) -> Self {
+        Self::ServiceError { error: format!("Can't reach one of the workers") }
+    }
+}
+
 pub type OperationResult<T> = result::Result<T, CollectionError>;
 
 pub struct Collection {
     pub wal: Arc<RwLock<SerdeWal<CollectionUpdateOperations>>>,
     pub searcher: Arc<dyn SegmentSearcher>,
-    /// updater is under mutex because we want only one updating process simultaneously
+    pub update_handler: Arc<UpdateHandler>,
     pub updater: Arc<dyn SegmentUpdater + Sync + Send>,
     pub runtime_handle: Handle,
     pub update_sender: Sender<SeqNumberType>
@@ -79,7 +84,7 @@ impl Collection {
         let sndr = self.update_sender.clone();
         let update_future = async move {
             let res = upd.update(operation_id, &operation);
-            sndr.send(operation_id);
+            sndr.send(operation_id)?;
             res
         };
         let update_handler = self.runtime_handle.spawn(update_future);

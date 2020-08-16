@@ -11,6 +11,7 @@ use tokio::runtime::Handle;
 use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
 use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
 use crossbeam_channel::unbounded;
+use crate::update_handler::update_handler::{UpdateHandler, Optimizer};
 
 
 pub fn build_simple_collection(
@@ -21,6 +22,7 @@ pub fn build_simple_collection(
     config: &CollectionConfig,  //  from user
     search_runtime: Handle,  // from service
     update_runtime: Handle,  // from service
+    optimizers: Arc<Vec<Box<Optimizer>>>,
 ) -> OperationResult<Collection> {
     let mut segment_holder = SegmentHolder::new();
 
@@ -43,9 +45,16 @@ pub fn build_simple_collection(
 
     let (tx, rx) = unbounded();
 
+    let update_handler = Arc::new(UpdateHandler::new(
+        optimizers,
+        rx,
+        update_runtime.clone()
+    ));
+
     let collection = Collection {
         wal: Arc::new(RwLock::new(wal)),
         searcher: Arc::new(searcher),
+        update_handler,
         updater: Arc::new(updater),
         runtime_handle: update_runtime,
         update_sender: tx

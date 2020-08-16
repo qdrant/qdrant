@@ -12,7 +12,11 @@ pub type SegmentId = usize;
 
 pub struct LockedSegment(pub Arc<RwLock<dyn SegmentEntry>>);
 
-impl LockedSegment {}
+impl LockedSegment {
+    pub fn new<T: SegmentEntry + 'static>(segment: T) -> Self {
+        LockedSegment(Arc::new(RwLock::new(segment)))
+    }
+}
 
 unsafe impl Sync for LockedSegment {}
 

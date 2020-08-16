@@ -287,14 +287,14 @@ mod tests {
             },
         };
 
-        /// Test payload delete
+        // Test payload delete
 
         updater.delete_payload(101, &vec![3], &vec!["color".to_string(), "empty".to_string()]).unwrap();
         let res = searcher.retrieve(&vec![3], true, false).unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
 
-        /// Test clear payload
+        // Test clear payload
 
         let res = searcher.retrieve(&vec![2], true, false).unwrap();
         assert_eq!(res.len(), 1);

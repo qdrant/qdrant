@@ -4,7 +4,7 @@ use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use std::time::Duration;
 use segment::types::SeqNumberType;
 
-struct SimpleSegmentOptimizer {
+pub struct SimpleSegmentOptimizer {
     segments: Arc<RwLock<SegmentHolder>>,
     optimize_delay_operations: usize,
     optimize_delay_time: Duration,

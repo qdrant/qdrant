@@ -1,7 +1,1 @@
-mod update_handler;
-
-
-
-pub trait SegmentRebuilder {
-
-}
+pub mod update_handler;
