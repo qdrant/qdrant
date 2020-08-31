@@ -43,6 +43,10 @@ impl<'s> SegmentHolder {
         self.segments.iter()
     }
 
+    pub fn len(&self) -> usize {
+        self.segments.len()
+    }
+
     fn generate_new_key(&self) -> SegmentId {
         let key = thread_rng().gen::<SegmentId>();
         return if self.segments.contains_key(&key) {
