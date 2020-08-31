@@ -1,5 +1,4 @@
 use segment::segment::Segment;
-use std::path::Path;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{Distance, PayloadType};
 use segment::entry::entry_point::SegmentEntry;

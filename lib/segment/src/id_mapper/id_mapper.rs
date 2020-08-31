@@ -12,4 +12,7 @@ pub trait IdMapper {
 
     /// Drop mapping
     fn drop(&mut self, external_id: PointIdType);
+
+    /// Iterate over all external ids
+    fn iter_external(&self) -> Box<dyn Iterator<Item=PointIdType> + '_>;
 }

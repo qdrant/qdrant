@@ -45,5 +45,9 @@ impl IdMapper for SimpleIdMapper {
             None => None
         };
     }
+
+    fn iter_external(&self) -> Box<dyn Iterator<Item=PointIdType> + '_> {
+        Box::new(self.external_to_internal.keys().cloned())
+    }
 }
 

@@ -1,5 +1,4 @@
 use crate::segment::Segment;
-use std::path::Path;
 
 use crate::id_mapper::simple_id_mapper::SimpleIdMapper;
 use crate::vector_storage::simple_vector_storage::SimpleVectorStorage;

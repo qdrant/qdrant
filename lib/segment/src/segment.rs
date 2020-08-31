@@ -5,7 +5,9 @@ use crate::entry::entry_point::{SegmentEntry, Result, OperationError};
 use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentType};
 use crate::query_planner::query_planner::QueryPlanner;
 use std::sync::Arc;
-use atomic_refcell::AtomicRefCell;
+use atomic_refcell::{AtomicRefCell};
+use std::cmp;
+
 
 /// Simple segment implementation
 pub struct Segment {
@@ -16,11 +18,36 @@ pub struct Segment {
     /// User for writing only here.
     pub query_planner: Arc<AtomicRefCell<dyn QueryPlanner>>,
     pub appendable_flag: bool,
-    pub segment_type: SegmentType
+    pub segment_type: SegmentType,
 }
 
 
 impl Segment {
+    /// Update current segment with all (not deleted) vectors and payload form `other` segment
+    /// Perform index building at the end of update
+    pub fn update_from(&mut self, other: &dyn SegmentEntry) {
+        self.version = cmp::max(self.version, other.version());
+        for other_external_id in other.iter_points() {
+            self.upsert_point(
+                self.version,
+                other_external_id,
+                &other.vector(other_external_id).unwrap()).unwrap();
+
+            self.set_full_payload(
+                self.version,
+                other_external_id,
+                other.payload(other_external_id).unwrap(),
+            ).unwrap();
+        }
+    }
+
+
+    /// Launch index rebuilding on a whole segment data
+    pub fn build_index(&mut self) {
+        self.query_planner.borrow_mut().build_index();
+    }
+
+
     fn update_vector(&mut self,
                      old_iternal_id: PointOffsetType,
                      vector: &Vec<VectorElementType>,
@@ -46,7 +73,7 @@ impl Segment {
         } else {
             self.version = op_num;
             false
-        }
+        };
     }
 
     fn lookup_internal_id(&self, point_id: PointIdType) -> Result<PointOffsetType> {
@@ -94,7 +121,8 @@ impl SegmentEntry for Segment {
         return Ok(res);
     }
 
-    fn upsert_point(&mut self, op_num: SeqNumberType, point_id: PointIdType, vector: &Vec<VectorElementType>) -> Result<bool> {
+    fn upsert_point(&mut self, op_num: SeqNumberType, point_id: PointIdType, vector: &Vec<VectorElementType>,
+    ) -> Result<bool> {
         if self.skip_by_version(op_num) { return Ok(false); }
 
         let vector_dim = self.vector_storage.borrow().vector_dim();
@@ -179,6 +207,14 @@ impl SegmentEntry for Segment {
         Ok(self.payload_storage.borrow().payload(internal_id))
     }
 
+    fn iter_points(&self) -> Box<dyn Iterator<Item=PointIdType> + '_> {
+        // Sorry for that, but I didn't find any way easier.
+        // If you try simply return iterator - it won't work because AtomicRef should exist
+        // If you try to make callback instead - you won't be able to create <dyn SegmentEntry>
+        // Attempt to create return borrowed value along with iterator failed because of insane lifetimes
+        unsafe { self.id_mapper.as_ptr().as_ref().unwrap().iter_external() }
+    }
+
     fn has_point(&self, point_id: PointIdType) -> bool {
         self.id_mapper.borrow().internal_id(point_id).is_some()
     }
@@ -194,7 +230,7 @@ impl SegmentEntry for Segment {
             num_deleted_vectors: self.vector_storage.borrow().deleted_count(),
             ram_usage_bytes: 0, // ToDo: Implement
             disk_usage_bytes: 0,  // ToDo: Implement
-            is_appendable: self.appendable_flag
+            is_appendable: self.appendable_flag,
         }
     }
 }

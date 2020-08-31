@@ -30,6 +30,8 @@ pub struct SegmentHolder {
     segments: HashMap<SegmentId, LockedSegment>,
 }
 
+pub type LockerSegmentHolder = Arc<RwLock<SegmentHolder>>;
+
 impl<'s> SegmentHolder {
     pub fn new() -> Self {
         SegmentHolder {
@@ -54,6 +56,13 @@ impl<'s> SegmentHolder {
     pub fn add<E: SegmentEntry + 'static>(&mut self, segment: E) -> SegmentId {
         let key = self.generate_new_key();
         self.segments.insert(key, LockedSegment(Arc::new(RwLock::new(segment))));
+        return key;
+    }
+
+    /// Add new segment to storage which is already LockedSegment
+    pub fn add_locked(&mut self, segment: LockedSegment) -> SegmentId {
+        let key = self.generate_new_key();
+        self.segments.insert(key, segment);
         return key;
     }
 

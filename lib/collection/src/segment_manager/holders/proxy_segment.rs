@@ -5,15 +5,16 @@ use crate::segment_manager::holders::segment_holder::LockedSegment;
 use std::collections::HashSet;
 use std::sync::{Arc, RwLock};
 
+type LockedRmSet = Arc<RwLock<HashSet<PointIdType>>>;
 
 /// This object is a wrapper around read-only segment.
 /// It could be used to provide all read and write operations while wrapped segment is being optimized (i.e. not available for writing)
 /// It writes all changed records into a temporary `write_segment` and keeps track on changed points
 pub struct ProxySegment {
-    pub proxy_segment: LockedSegment,
+    pub write_segment: LockedSegment,
     pub wrapped_segment: LockedSegment,
     /// Points which should not longer used from wrapped_segment
-    deleted_points: Arc<RwLock<HashSet<PointIdType>>>,
+    deleted_points: LockedRmSet,
 }
 
 unsafe impl Sync for ProxySegment {}
@@ -21,11 +22,11 @@ unsafe impl Sync for ProxySegment {}
 unsafe impl Send for ProxySegment {}
 
 impl ProxySegment {
-    pub fn new(segment: LockedSegment, write_segment: LockedSegment) -> Self {
+    pub fn new(segment: LockedSegment, write_segment: LockedSegment, deleted_points: LockedRmSet) -> Self {
         ProxySegment {
-            proxy_segment: write_segment,
+            write_segment,
             wrapped_segment: segment,
-            deleted_points: Arc::new(RwLock::new(Default::default())),
+            deleted_points,
         }
     }
 
@@ -38,7 +39,7 @@ impl ProxySegment {
         let mut deleted_points = self.deleted_points.write().unwrap();
         deleted_points.insert(point_id);
 
-        let mut write_segment = self.proxy_segment.0.write().unwrap();
+        let mut write_segment = self.write_segment.0.write().unwrap();
 
         write_segment.upsert_point(op_num, point_id, &vector)?;
         write_segment.set_full_payload(op_num, point_id, payload)?;
@@ -60,7 +61,7 @@ impl SegmentEntry for ProxySegment {
     fn version(&self) -> SeqNumberType {
         max(
             self.wrapped_segment.0.read().unwrap().version(),
-            self.proxy_segment.0.read().unwrap().version(),
+            self.write_segment.0.read().unwrap().version(),
         )
     }
 
@@ -69,7 +70,7 @@ impl SegmentEntry for ProxySegment {
 
         // Some point might be deleted after temporary segment creation
         // We need to prevent them from being found by search request
-        // That is why we need to
+        // That is why we need to pass additional filter for deleted points
         let do_update_filter = !deleted_points.is_empty();
         let mut wrapped_result = if do_update_filter {
             // ToDo: Come up with better way to pass deleted points into Filter
@@ -111,7 +112,7 @@ impl SegmentEntry for ProxySegment {
             )?
         };
 
-        let mut write_result = self.proxy_segment.0.read().unwrap().search(
+        let mut write_result = self.write_segment.0.read().unwrap().search(
             vector,
             filter,
             top,
@@ -125,7 +126,7 @@ impl SegmentEntry for ProxySegment {
     fn upsert_point(&mut self, op_num: SeqNumberType, point_id: PointIdType, vector: &Vec<VectorElementType>) -> Result<bool> {
         if self.version() > op_num { return Ok(false); }
         self.move_if_exists(op_num, point_id)?;
-        self.proxy_segment.0.write().unwrap().upsert_point(op_num, point_id, vector)
+        self.write_segment.0.write().unwrap().upsert_point(op_num, point_id, vector)
     }
 
     fn delete_point(&mut self, op_num: SeqNumberType, point_id: PointIdType) -> Result<bool> {
@@ -135,7 +136,7 @@ impl SegmentEntry for ProxySegment {
             self.deleted_points.write().unwrap().insert(point_id);
             was_deleted = true;
         }
-        let mut write_segment = self.proxy_segment.0.write().unwrap();
+        let mut write_segment = self.write_segment.0.write().unwrap();
         let was_deleted_in_writable = write_segment.delete_point(op_num, point_id)?;
 
         Ok(was_deleted || was_deleted_in_writable)
@@ -145,30 +146,30 @@ impl SegmentEntry for ProxySegment {
         if self.version() > op_num { return Ok(false); }
         self.move_if_exists(op_num, point_id)?;
 
-        self.proxy_segment.0.write().unwrap().set_full_payload(op_num, point_id, full_payload)
+        self.write_segment.0.write().unwrap().set_full_payload(op_num, point_id, full_payload)
     }
 
     fn set_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, key: &PayloadKeyType, payload: PayloadType) -> Result<bool> {
         if self.version() > op_num { return Ok(false); }
         self.move_if_exists(op_num, point_id)?;
-        self.proxy_segment.0.write().unwrap().set_payload(op_num, point_id, key, payload)
+        self.write_segment.0.write().unwrap().set_payload(op_num, point_id, key, payload)
     }
 
     fn delete_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, key: &PayloadKeyType) -> Result<bool> {
         if self.version() > op_num { return Ok(false); }
         self.move_if_exists(op_num, point_id)?;
-        self.proxy_segment.0.write().unwrap().delete_payload(op_num, point_id, key)
+        self.write_segment.0.write().unwrap().delete_payload(op_num, point_id, key)
     }
 
     fn clear_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType) -> Result<bool> {
         if self.version() > op_num { return Ok(false); }
         self.move_if_exists(op_num, point_id)?;
-        self.proxy_segment.0.write().unwrap().clear_payload(op_num, point_id)
+        self.write_segment.0.write().unwrap().clear_payload(op_num, point_id)
     }
 
     fn vector(&self, point_id: PointIdType) -> Result<Vec<VectorElementType>> {
         return if self.deleted_points.read().unwrap().contains(&point_id) {
-            self.proxy_segment.0.read().unwrap().vector(point_id)
+            self.write_segment.0.read().unwrap().vector(point_id)
         } else {
             self.wrapped_segment.0.read().unwrap().vector(point_id)
         };
@@ -176,15 +177,22 @@ impl SegmentEntry for ProxySegment {
 
     fn payload(&self, point_id: PointIdType) -> Result<TheMap<PayloadKeyType, PayloadType>> {
         return if self.deleted_points.read().unwrap().contains(&point_id) {
-            self.proxy_segment.0.read().unwrap().payload(point_id)
+            self.write_segment.0.read().unwrap().payload(point_id)
         } else {
             self.wrapped_segment.0.read().unwrap().payload(point_id)
         };
     }
 
+    /// Not implemented for proxy
+    fn iter_points(&self) -> Box<dyn Iterator<Item=u64> + '_> {
+        // iter_points is not available for Proxy implementation
+        // Due to internal locks it is almost impossible to return iterator with proper owning, lifetimes, e.t.c.
+        unimplemented!()
+    }
+
     fn has_point(&self, point_id: PointIdType) -> bool {
         return if self.deleted_points.read().unwrap().contains(&point_id) {
-            self.proxy_segment.0.read().unwrap().has_point(point_id)
+            self.write_segment.0.read().unwrap().has_point(point_id)
         } else {
             self.wrapped_segment.0.read().unwrap().has_point(point_id)
         };
@@ -194,13 +202,13 @@ impl SegmentEntry for ProxySegment {
         let mut count = 0;
         count += self.wrapped_segment.0.read().unwrap().vectors_count();
         count -= self.deleted_points.read().unwrap().len();
-        count += self.proxy_segment.0.read().unwrap().vectors_count();
+        count += self.write_segment.0.read().unwrap().vectors_count();
         count
     }
 
     fn info(&self) -> SegmentInfo {
         let wrapped_info = self.wrapped_segment.0.read().unwrap().info();
-        let write_info = self.proxy_segment.0.read().unwrap().info();
+        let write_info = self.write_segment.0.read().unwrap().info();
 
         return SegmentInfo {
             segment_type: SegmentType::Special,
@@ -223,7 +231,9 @@ mod tests {
     fn test_writing() {
         let original_segment = LockedSegment::new(build_segment_1());
         let write_segment = LockedSegment::new(empty_segment());
-        let mut proxy_segment = ProxySegment::new(original_segment, write_segment);
+        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+
+        let mut proxy_segment = ProxySegment::new(original_segment, write_segment, deleted_points);
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment.upsert_point(100, 4, &vec4).unwrap();
@@ -250,12 +260,12 @@ mod tests {
         assert!(seen_points.contains(&6));
         assert!(!seen_points.contains(&1));
 
-        assert!(!proxy_segment.proxy_segment.0.read().unwrap().has_point(2));
+        assert!(!proxy_segment.write_segment.0.read().unwrap().has_point(2));
 
         let payload_key = "color".to_owned();
-        proxy_segment.delete_payload(103, 2, &payload_key);
+        proxy_segment.delete_payload(103, 2, &payload_key).unwrap();
 
-        assert!(proxy_segment.proxy_segment.0.read().unwrap().has_point(2))
+        assert!(proxy_segment.write_segment.0.read().unwrap().has_point(2))
 
     }
 }

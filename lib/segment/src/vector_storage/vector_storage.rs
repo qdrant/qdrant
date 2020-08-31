@@ -34,10 +34,7 @@ pub trait VectorStorage {
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>>;
     fn put_vector(&mut self, vector: &Vec<VectorElementType>) -> PointOffsetType;
     fn delete(&mut self, key: PointOffsetType);
-}
-
-pub trait VectorCounter {
-    fn vector_count(&self) -> PointOffsetType;
+    fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
 }
 
 pub trait VectorMatcher {

@@ -60,17 +60,17 @@ fn check_condition(point_id: PointIdType, payload: &TheMap<PayloadKeyType, Paylo
             payload.get(&condition_match.key)
                 .map(|p| match_payload(p, condition_match))
                 .unwrap_or(false)
-        },
+        }
         Condition::Range(range) => {
             payload.get(&range.key)
                 .map(|p| match_range(p, range))
                 .unwrap_or(false)
-        },
+        }
         Condition::GeoBoundingBox(geo_bounding_box) => {
             payload.get(&geo_bounding_box.key)
                 .map(|p| match_geo(p, geo_bounding_box))
                 .unwrap_or(false)
-        },
+        }
         Condition::HasId(ids) => {
             ids.contains(&point_id)
         }
@@ -111,7 +111,10 @@ fn check_must_not(point_id: PointIdType, payload: &TheMap<PayloadKeyType, Payloa
 impl ConditionChecker for SimplePayloadStorage
 {
     fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
-        let external_id = self.point_external_id(point_id).unwrap();
+        let external_id = match self.point_external_id(point_id) {
+            None => return false,
+            Some(id) => id,
+        };
         let payload = self.payload(point_id);
         return check_filter(external_id, &payload, query);
     }
@@ -165,12 +168,12 @@ mod tests {
             bottom_right: GeoPoint { lon: 38.2532, lat: 55.317 },
         });
 
-        let with_bad_rating = Condition::Range(Range{
+        let with_bad_rating = Condition::Range(Range {
             key: "rating".to_string(),
             lt: None,
             gt: None,
             gte: None,
-            lte: Some(5.)
+            lte: Some(5.),
         });
 
         let query = Filter {
@@ -260,7 +263,7 @@ mod tests {
         assert!(!check_filter(0, &payload, &query));
 
 
-        let ids: HashSet<_> = vec![1,2,3].into_iter().collect();
+        let ids: HashSet<_> = vec![1, 2, 3].into_iter().collect();
 
 
         let query = Filter {
@@ -270,7 +273,7 @@ mod tests {
         };
         assert!(!check_filter(2, &payload, &query));
 
-        let ids: HashSet<_> = vec![1,2,3].into_iter().collect();
+        let ids: HashSet<_> = vec![1, 2, 3].into_iter().collect();
 
 
         let query = Filter {
@@ -280,7 +283,7 @@ mod tests {
         };
         assert!(check_filter(10, &payload, &query));
 
-        let ids: HashSet<_> = vec![1,2,3].into_iter().collect();
+        let ids: HashSet<_> = vec![1, 2, 3].into_iter().collect();
 
         let query = Filter {
             should: None,

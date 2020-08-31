@@ -56,6 +56,8 @@ pub trait SegmentEntry {
 
     fn payload(&self, point_id: PointIdType) -> Result<TheMap<PayloadKeyType, PayloadType>>;
 
+    fn iter_points(&self) -> Box<dyn Iterator<Item=PointIdType> + '_>;
+
     /// Check if there is point with `point_id` in this segment.
     fn has_point(&self, point_id: PointIdType) -> bool;
 

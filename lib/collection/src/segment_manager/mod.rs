@@ -1,6 +1,8 @@
 pub mod optimizers;
 pub mod holders;
 pub mod simple_segment_updater;
+
+#[allow(dead_code)]
 mod fixtures;
 pub mod simple_segment_searcher;
 // pub mod simple_segment_manager;

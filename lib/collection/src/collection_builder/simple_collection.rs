@@ -48,7 +48,8 @@ pub fn build_simple_collection(
     let update_handler = Arc::new(UpdateHandler::new(
         optimizers,
         rx,
-        update_runtime.clone()
+        update_runtime.clone(),
+        segment_holder.clone()
     ));
 
     let collection = Collection {

@@ -1,7 +1,7 @@
 use super::vector_storage::{VectorStorage, VectorMatcher};
 use crate::types::{PointOffsetType, VectorElementType, Distance};
 use std::collections::{HashSet};
-use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorCounter};
+use crate::vector_storage::vector_storage::{ScoredPointOffset};
 
 use crate::spaces::tools::{mertic_object, peek_top_scores};
 
@@ -50,11 +50,11 @@ impl VectorStorage for SimpleVectorStorage {
     fn delete(&mut self, key: usize) {
         self.deleted.insert(key);
     }
-}
 
-impl VectorCounter for SimpleVectorStorage {
-    fn vector_count(&self) -> PointOffsetType {
-        return self.vectors.len();
+    fn iter_ids(&self) -> Box<dyn Iterator<Item=usize> + '_> {
+        let iter = (0..self.vectors.len())
+            .filter(move |id| !self.deleted.contains(id));
+        return Box::new(iter);
     }
 }
 
@@ -142,8 +142,6 @@ mod tests {
             &distance
         );
 
-        println!("closest = {:#?}", closest);
-
         let top_idx = match closest.get(0) {
             Some(scored_point) => {
                 assert_eq!(scored_point.idx, 2);
@@ -169,5 +167,11 @@ mod tests {
             None => { assert!(false, "No close vector found!")}
         };
 
+        let all_ids1: Vec<_> = storage.iter_ids().collect();
+        let all_ids2: Vec<_> = storage.iter_ids().collect();
+
+        assert_eq!(all_ids1, all_ids2);
+
+        assert!(!all_ids1.contains(&top_idx))
     }
 }

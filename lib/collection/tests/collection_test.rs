@@ -1,12 +1,10 @@
 mod common;
 
-use collection::collection::Collection;
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::PointOps;
 
 use crate::common::simple_collection_fixture;
 use collection::operations::types::{UpdateStatus, SearchRequest};
-use std::io::{stdout, Write};
 use std::sync::Arc;
 
 

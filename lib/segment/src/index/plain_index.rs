@@ -1,4 +1,4 @@
-use crate::vector_storage::vector_storage::{VectorMatcher, ScoredPointOffset, VectorCounter};
+use crate::vector_storage::vector_storage::{VectorMatcher, ScoredPointOffset, VectorStorage};
 use crate::index::index::{Index, PayloadIndex};
 use crate::types::{Filter, VectorElementType, Distance, SearchParams};
 use crate::payload_storage::payload_storage::{ConditionChecker};
@@ -9,16 +9,16 @@ use atomic_refcell::AtomicRefCell;
 
 pub struct PlainPayloadIndex {
     condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
-    vector_counter: Arc<AtomicRefCell<dyn VectorCounter>>,
+    vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
 }
 
 
 impl PlainPayloadIndex {
     pub fn new(condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
-               vector_counter: Arc<AtomicRefCell<dyn VectorCounter>>) -> Self {
+               vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>) -> Self {
         PlainPayloadIndex {
             condition_checker,
-            vector_counter,
+            vector_storage,
         }
     }
 }
@@ -26,9 +26,8 @@ impl PlainPayloadIndex {
 impl PayloadIndex for PlainPayloadIndex {
     fn estimate_cardinality(&self, query: &Filter) -> (usize, usize) {
         let mut matched_points = 0;
-        let vector_count = self.vector_counter.borrow().vector_count();
         let condition_checker = self.condition_checker.borrow();
-        for i in 0..vector_count {
+        for i in self.vector_storage.borrow().iter_ids() {
             if condition_checker.check(i, query) {
                 matched_points += 1;
             }
@@ -38,9 +37,8 @@ impl PayloadIndex for PlainPayloadIndex {
 
     fn query_points(&self, query: &Filter) -> Vec<usize> {
         let mut matched_points = vec![];
-        let vector_count = self.vector_counter.borrow().vector_count();
         let condition_checker = self.condition_checker.borrow();
-        for i in 0..vector_count {
+        for i in self.vector_storage.borrow().iter_ids() {
             if condition_checker.check(i, query) {
                 matched_points.push(i);
             }

@@ -36,5 +36,14 @@ mod tests {
 
         let best_match = res.get(0).expect("Non-empty result");
         assert_ne!(best_match.idx, 3);
+
+
+        let point_ids1: Vec<_> = segment.iter_points().collect();
+        let point_ids2: Vec<_> = segment.iter_points().collect();
+
+        assert!(!point_ids1.is_empty());
+        assert!(!point_ids2.is_empty());
+
+        assert_eq!(&point_ids1, &point_ids2)
     }
 }

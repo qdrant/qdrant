@@ -1,5 +1,5 @@
-use crate::segment_manager::holders::segment_holder::{SegmentHolder, LockedSegment};
-use std::sync::{RwLock, Arc};
+use crate::segment_manager::holders::segment_holder::{LockedSegment, LockerSegmentHolder};
+use std::sync::Arc;
 use crate::segment_manager::segment_managers::{SegmentSearcher};
 use crate::collection::{OperationResult, CollectionError};
 use segment::types::{ScoredPoint, Distance, PointIdType, SeqNumberType};
@@ -15,13 +15,13 @@ use crate::operations::types::{Record, CollectionInfo, SearchRequest};
 ///  - Holds information regarding id mapping to segments
 ///
 pub struct SimpleSegmentSearcher {
-    pub segments: Arc<RwLock<SegmentHolder>>,
+    pub segments: LockerSegmentHolder,
     pub distance: Distance,
     pub runtime_handle: Handle,
 }
 
 impl SimpleSegmentSearcher {
-    pub fn new(segments: Arc<RwLock<SegmentHolder>>, runtime_handle: Handle, distance: Distance) -> Self {
+    pub fn new(segments: LockerSegmentHolder, runtime_handle: Handle, distance: Distance) -> Self {
         return SimpleSegmentSearcher {
             segments,
             distance,
@@ -123,6 +123,7 @@ mod tests {
     use tokio::runtime::Runtime;
     use tokio::runtime;
     use crate::segment_manager::fixtures::build_test_holder;
+    use std::sync::RwLock;
 
     #[test]
     fn test_segments_search() {
