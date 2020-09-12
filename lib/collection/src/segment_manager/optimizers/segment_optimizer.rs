@@ -1,6 +1,6 @@
 use segment::types::{PointIdType};
 use crate::collection::OperationResult;
-use crate::segment_manager::holders::segment_holder::{SegmentId, LockedSegment, LockerSegmentHolder};
+use crate::segment_manager::holders::segment_holder::{SegmentId, LockedSegment, LockedSegmentHolder};
 use std::sync::{Arc, RwLock};
 use segment::segment::Segment;
 use std::collections::HashSet;
@@ -9,7 +9,7 @@ use segment::entry::entry_point::SegmentEntry;
 
 pub trait SegmentOptimizer {
     /// Checks if segment optimization is required
-    fn check_condition(&self, segments: LockerSegmentHolder) -> Vec<SegmentId>;
+    fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId>;
 
     /// Build temp segment
     fn temp_segment(&self) -> LockedSegment;
@@ -21,7 +21,7 @@ pub trait SegmentOptimizer {
     /// Performs optimization of collections's segments, including:
     ///     - Segment rebuilding
     ///     - Segment joining
-    fn optimize(&self, segments: LockerSegmentHolder, ids: Vec<SegmentId>) -> OperationResult<bool> {
+    fn optimize(&self, segments: LockedSegmentHolder, ids: Vec<SegmentId>) -> OperationResult<bool> {
         let tmp_segment = self.temp_segment();
 
         let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));

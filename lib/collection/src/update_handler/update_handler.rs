@@ -4,13 +4,13 @@ use std::sync::{Arc};
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 use crate::segment_manager::optimizers::segment_optimizer::SegmentOptimizer;
-use crate::segment_manager::holders::segment_holder::{LockerSegmentHolder};
+use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder};
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
 pub struct UpdateHandler {
     optimizers: Arc<Vec<Box<Optimizer>>>,
-    segments: LockerSegmentHolder,
+    segments: LockedSegmentHolder,
     receiver: Receiver<SeqNumberType>,
     worker: Option<JoinHandle<()>>,
     runtime_handle: Handle,
@@ -22,7 +22,7 @@ impl UpdateHandler {
         optimizers: Arc<Vec<Box<Optimizer>>>,
         receiver: Receiver<SeqNumberType>,
         runtime_handle: Handle,
-        segments: LockerSegmentHolder,
+        segments: LockedSegmentHolder,
     ) -> UpdateHandler {
         let mut handler = UpdateHandler {
             optimizers,
@@ -47,7 +47,7 @@ impl UpdateHandler {
     async fn worker_fn(
         optimizers: Arc<Vec<Box<Optimizer>>>,
         receiver: Receiver<SeqNumberType>,
-        segments: LockerSegmentHolder,
+        segments: LockedSegmentHolder,
     ) -> () {
         loop {
             let recv_res = receiver.recv();

@@ -1,6 +1,6 @@
 use crate::operations::types::CollectionConfig;
 use crate::segment_manager::optimizers::segment_optimizer::SegmentOptimizer;
-use crate::segment_manager::holders::segment_holder::{LockerSegmentHolder, SegmentId, LockedSegment};
+use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId, LockedSegment};
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::segment::Segment;
 use crate::operations::index_def::Indexes;
@@ -15,7 +15,7 @@ pub struct MergeOptimizer {
 
 
 impl SegmentOptimizer for MergeOptimizer {
-    fn check_condition(&self, segments: LockerSegmentHolder) -> Vec<SegmentId> {
+    fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId> {
         let read_segments = segments.read().unwrap();
 
         if read_segments.len() <= self.max_segments {

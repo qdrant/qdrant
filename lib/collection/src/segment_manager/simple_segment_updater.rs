@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use crate::segment_manager::holders::segment_holder::LockerSegmentHolder;
+use crate::segment_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::segment_manager::segment_managers::SegmentUpdater;
 use crate::operations::CollectionUpdateOperations;
 use crate::collection::{OperationResult, CollectionError};
@@ -11,14 +11,14 @@ use crate::operations::point_ops::PointOps;
 use crate::operations::payload_ops::{PayloadOps, PayloadInterface};
 
 pub struct SimpleSegmentUpdater {
-    segments: LockerSegmentHolder,
+    segments: LockedSegmentHolder,
     update_lock: Mutex<bool>
 }
 
 
 impl SimpleSegmentUpdater {
 
-    pub fn new(segments: LockerSegmentHolder) -> Self {
+    pub fn new(segments: LockedSegmentHolder) -> Self {
         SimpleSegmentUpdater {
             segments,
             update_lock: Mutex::new(false)

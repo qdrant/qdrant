@@ -1,4 +1,4 @@
-use crate::segment_manager::holders::segment_holder::{SegmentId, LockedSegment, LockerSegmentHolder};
+use crate::segment_manager::holders::segment_holder::{SegmentId, LockedSegment, LockedSegmentHolder};
 use segment::types::{SegmentType};
 use ordered_float::OrderedFloat;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -15,7 +15,7 @@ pub struct VacuumOptimizer {
 
 
 impl VacuumOptimizer {
-    fn worst_segment(&self, segments: LockerSegmentHolder) -> Option<(SegmentId, LockedSegment)> {
+    fn worst_segment(&self, segments: LockedSegmentHolder) -> Option<(SegmentId, LockedSegment)> {
         segments.read().unwrap().iter()
             .map(|(idx, segment)| (*idx, segment.0.read().unwrap().info()))
             .filter(|(_, info)| info.segment_type != SegmentType::Special)
@@ -29,7 +29,7 @@ impl VacuumOptimizer {
 
 
 impl SegmentOptimizer for VacuumOptimizer {
-    fn check_condition(&self, segments: LockerSegmentHolder) -> Vec<SegmentId> {
+    fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId> {
         match self.worst_segment(segments) {
             None => vec![],
             Some((segment_id, _segment)) => vec![segment_id],

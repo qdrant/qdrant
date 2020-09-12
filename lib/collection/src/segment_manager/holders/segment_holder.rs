@@ -30,7 +30,7 @@ pub struct SegmentHolder {
     segments: HashMap<SegmentId, LockedSegment>,
 }
 
-pub type LockerSegmentHolder = Arc<RwLock<SegmentHolder>>;
+pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
 
 impl<'s> SegmentHolder {
     pub fn new() -> Self {
