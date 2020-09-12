@@ -26,3 +26,4 @@ crossbeam-channel = "0.4.3"
 
 segment = {path = "../segment"}
 
+itertools = "0.9"

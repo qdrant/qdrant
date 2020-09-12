@@ -1,16 +1,34 @@
 use segment::segment::Segment;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, PayloadType};
+use segment::types::{Distance, PayloadType, SeqNumberType};
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
 use tokio::runtime::Runtime;
 use tokio::runtime;
 use std::sync::{RwLock, Arc};
+use rand::Rng;
 
 pub fn empty_segment() -> Segment {
     let segment = build_simple_segment( 4, Distance::Dot);
     return segment;
+}
+
+
+pub fn random_segment(opnum: SeqNumberType, num_vectors: u64, dim: usize) -> Segment {
+    let mut segment = build_simple_segment(dim, Distance::Dot);
+    let mut rnd = rand::thread_rng();
+
+    for _ in 0..num_vectors {
+        let random_vector: Vec<_> = (0..dim).map(|_| rnd.gen_range(0.0, 1.0)).collect();
+        segment.upsert_point(
+            opnum,
+            rnd.gen_range(1, 100_000_000),
+            &random_vector
+        ).unwrap();
+    }
+
+    segment
 }
 
 pub fn build_segment_1() -> Segment {
