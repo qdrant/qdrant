@@ -1,7 +1,6 @@
 pub mod types;
 pub mod point_ops;
 pub mod payload_ops;
-pub mod index_def;
 
 use serde::{Deserialize, Serialize};
 

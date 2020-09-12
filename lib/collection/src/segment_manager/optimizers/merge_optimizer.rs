@@ -1,21 +1,20 @@
-use crate::operations::types::CollectionConfig;
 use crate::segment_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId, LockedSegment};
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::segment::Segment;
-use crate::operations::index_def::Indexes;
-use segment::types::SegmentType;
+use segment::types::{SegmentType, SegmentConfig};
 
 use itertools::Itertools;
+use segment::segment_constructor::segment_constructor::build_segment;
 
 
 pub struct MergeOptimizer {
     max_segments: usize,
-    config: CollectionConfig,
+    config: SegmentConfig,
 }
 
 impl MergeOptimizer {
-    pub fn new(max_segments: usize, config: CollectionConfig) -> Self {
+    pub fn new(max_segments: usize, config: SegmentConfig) -> Self {
         return MergeOptimizer {max_segments, config}
     }
 }
@@ -47,12 +46,7 @@ impl SegmentOptimizer for MergeOptimizer {
     }
 
     fn optimized_segment(&self) -> Segment {
-        match self.config.index {
-            Indexes::Plain { .. } => {
-                build_simple_segment(self.config.vector_size, self.config.distance)
-            }
-            Indexes::Hnsw { .. } => unimplemented!(),
-        }
+        build_segment(&self.config)
     }
 }
 
@@ -62,7 +56,7 @@ mod tests {
     use super::*;
     use crate::segment_manager::fixtures::{random_segment};
     use crate::segment_manager::holders::segment_holder::SegmentHolder;
-    use segment::types::Distance;
+    use segment::types::{Distance, Indexes};
     use std::sync::{Arc, RwLock};
 
     #[test]
@@ -85,10 +79,11 @@ mod tests {
         other_segment_ids.push(holder.add(random_segment(100, 20, 4)));
 
 
-        let merge_optimizer = MergeOptimizer::new(5, CollectionConfig {
+        let merge_optimizer = MergeOptimizer::new(5, SegmentConfig {
             vector_size: 4,
             index: Indexes::Plain {},
-            distance: Distance::Dot
+            distance: Distance::Dot,
+            storage_path: "".to_string()
         });
 
         let locked_holder = Arc::new(RwLock::new(holder));

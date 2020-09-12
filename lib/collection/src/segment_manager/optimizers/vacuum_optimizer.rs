@@ -1,23 +1,22 @@
 use crate::segment_manager::holders::segment_holder::{SegmentId, LockedSegment, LockedSegmentHolder};
-use segment::types::{SegmentType};
+use segment::types::{SegmentType, SegmentConfig};
 use ordered_float::OrderedFloat;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use crate::operations::types::CollectionConfig;
-use crate::operations::index_def::Indexes;
 use crate::segment_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use segment::segment::Segment;
+use segment::segment_constructor::segment_constructor::build_segment;
 
 pub struct VacuumOptimizer {
     deleted_threshold: f64,
     min_vectors_number: usize,
-    config: CollectionConfig,
+    config: SegmentConfig,
 }
 
 
 impl VacuumOptimizer {
     pub fn new(deleted_threshold: f64,
                min_vectors_number: usize,
-               config: CollectionConfig) -> Self {
+               config: SegmentConfig) -> Self {
         VacuumOptimizer {
             deleted_threshold,
             min_vectors_number,
@@ -29,8 +28,7 @@ impl VacuumOptimizer {
         segments.read().unwrap().iter()
             .map(|(idx, segment)| (*idx, segment.0.read().unwrap().info()))
             .filter(|(_, info)| info.segment_type != SegmentType::Special)
-            .filter(|(_, info)| info.num_vectors < self.min_vectors_number)
-            .filter(|(_, info)| info.num_vectors < self.min_vectors_number)
+            .filter(|(_, info)| info.num_vectors > self.min_vectors_number)
             .filter(|(_, info)| info.num_deleted_vectors as f64 / info.num_vectors as f64 > self.deleted_threshold)
             .max_by_key(|(_, info)| OrderedFloat(info.num_deleted_vectors as f64 / info.num_vectors as f64))
             .and_then(|(idx, _)| Some((idx, segments.read().unwrap().get(idx).unwrap().mk_copy())))
@@ -51,12 +49,7 @@ impl SegmentOptimizer for VacuumOptimizer {
     }
 
     fn optimized_segment(&self) -> Segment {
-        match self.config.index {
-            Indexes::Plain { .. } => {
-                build_simple_segment(self.config.vector_size, self.config.distance)
-            }
-            Indexes::Hnsw { .. } => unimplemented!(),
-        }
+        build_segment(&self.config)
     }
 }
 
@@ -69,7 +62,7 @@ mod tests {
     use itertools::Itertools;
     use rand::Rng;
     use std::sync::{RwLock, Arc};
-    use segment::types::Distance;
+    use segment::types::{Distance, Indexes};
 
     #[test]
     fn test_vacuum_conditions() {
@@ -96,10 +89,11 @@ mod tests {
         let vacuum_optimizer = VacuumOptimizer::new(
             0.2,
             50,
-            CollectionConfig {
+            SegmentConfig {
                 vector_size: 4,
                 index: Indexes::Plain {},
                 distance: Distance::Dot,
+                storage_path: "".to_string()
             },
         );
 

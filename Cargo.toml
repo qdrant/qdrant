@@ -14,11 +14,13 @@ criterion = "0.3"
 
 [dependencies]
 
+num_cpus = "1.0"
 thiserror = "1.0"
 log = "0.4"
 env_logger = "0.7.1"
 rand = "0.7.3"
 wal = { git = "https://github.com/generall/wal.git" }
+tokio = {version = "0.2.21", features = ["rt-threaded"]}
 serde = { version = "~1.0", features = ["derive"] }
 serde_yaml = "~0.8"
 serde_json = "~1.0"
@@ -31,6 +33,7 @@ actix-rt = "1.0"
 
 segment = {path = "lib/segment"}
 collection = {path = "lib/collection"}
+
 
 
 [workspace]

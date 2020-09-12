@@ -1,3 +1,5 @@
+pub mod errors;
+
 use collection::operations::{point_ops, payload_ops};
 
 pub mod collection_ops;

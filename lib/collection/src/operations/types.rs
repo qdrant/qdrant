@@ -1,7 +1,6 @@
-use segment::types::{VectorElementType, PointIdType, TheMap, PayloadKeyType, PayloadType, Distance, SeqNumberType, Filter, SearchParams};
+use segment::types::{VectorElementType, PointIdType, TheMap, PayloadKeyType, PayloadType, SeqNumberType, Filter, SearchParams, SegmentConfig};
 use serde;
 use serde::{Deserialize, Serialize};
-use crate::operations::index_def::Indexes;
 
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
@@ -15,19 +14,12 @@ pub struct Record {
     pub vector: Option<Vec<VectorElementType>>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct CollectionConfig {
-    pub vector_size: usize,
-    pub index: Indexes,
-    pub distance: Distance,
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CollectionInfo {
     pub vectors_count: usize,
     pub segments_count: usize,
     pub data_size: usize,
-    pub config: CollectionConfig,
+    pub config: SegmentConfig,
 }
 
 

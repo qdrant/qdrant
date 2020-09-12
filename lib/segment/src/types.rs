@@ -58,7 +58,7 @@ pub enum SegmentType {
     /// Segment with some sort of index built. Optimized for search, appending new points will require reindexing
     Indexed,
     /// Some index which you better don't touch
-    Special
+    Special,
 }
 
 
@@ -70,7 +70,7 @@ pub struct SegmentInfo {
     pub num_deleted_vectors: usize,
     pub ram_usage_bytes: usize,
     pub disk_usage_bytes: usize,
-    pub is_appendable: bool
+    pub is_appendable: bool,
 }
 
 
@@ -89,6 +89,32 @@ pub fn distance_order(distance: &Distance) -> Order {
         Distance::Euclid => Order::SmallBetter,
         Distance::Dot => Order::LargeBetter,
     }
+}
+
+#[derive(Debug, Deserialize, Serialize, Copy, Clone)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type",  content = "options")]
+pub enum Indexes {
+    Plain {},
+    Hnsw {
+        m: usize,
+        ef_construct: usize
+    },
+}
+
+impl Default for Indexes {
+    fn default() -> Self {
+        Indexes::Plain {}
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct SegmentConfig {
+    pub vector_size: usize,
+    pub index: Indexes,
+    pub distance: Distance,
+    pub storage_path: String,
 }
 
 

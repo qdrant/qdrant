@@ -1519,6 +1519,7 @@ dependencies = [
  "criterion",
  "env_logger 0.7.1",
  "log 0.4.8",
+ "num_cpus",
  "rand 0.7.3",
  "segment",
  "serde 1.0.111",
@@ -1527,6 +1528,7 @@ dependencies = [
  "serde_yaml",
  "tempdir",
  "thiserror",
+ "tokio",
  "wal",
 ]
 

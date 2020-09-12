@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
-use segment::types::Distance;
-use collection::operations::index_def::Indexes;
+use segment::types::{Distance, Indexes};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum AliasOperations {
@@ -26,11 +25,6 @@ pub enum CollectionOps {
         dim: usize,
         distance: Distance,
         index: Option<Indexes>,
-    },
-    /// Force construct specified index
-    ConstructIndex {
-        collection_name: String,
-        index: Indexes,
     },
     /// Drop collection
     DeleteCollection {
