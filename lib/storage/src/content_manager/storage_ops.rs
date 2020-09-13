@@ -18,7 +18,7 @@ pub enum AliasOperations {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CollectionOps {
+pub enum StorageOps {
     /// Create new collection and (optionally) specify index params
     CreateCollection {
         collection_name: String,

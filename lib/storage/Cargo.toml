@@ -1,0 +1,22 @@
+[package]
+name = "storage"
+version = "0.1.0"
+authors = ["Andrey Vasnetsov <vasnetsov93@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+sled = "0.34"
+num_cpus = "1.0"
+thiserror = "1.0"
+rand = "0.7.3"
+wal = { git = "https://github.com/generall/wal.git" }
+tokio = {version = "0.2.21", features = ["rt-threaded"]}
+serde = { version = "~1.0", features = ["derive"] }
+
+
+
+segment = {path = "../segment"}
+collection = {path = "../collection"}

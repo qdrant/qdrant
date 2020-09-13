@@ -1,30 +1,7 @@
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
 use std::env;
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct StorageConfig {
-    pub storage_path: String,
-    pub wal_path: String,
-    pub wal_capacity_mb: usize,
-    pub wal_segments_ahead: usize,
-}
-
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct PerformanceConfig {
-    pub max_search_threads: usize,
-    pub max_optimize_threads: usize,
-}
-
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct OptimizersConfig {
-    pub deleted_threshold: f64,
-    pub vacuum_min_vector_number: usize,
-    pub max_segment_number: usize,
-}
-
+use storage::types::StorageConfig;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServiceConfig {
@@ -39,8 +16,6 @@ pub struct Settings {
     pub log_level: String,
     pub storage: StorageConfig,
     pub service: ServiceConfig,
-    pub performance: PerformanceConfig,
-    pub optimizers: OptimizersConfig,
 }
 
 impl Settings {

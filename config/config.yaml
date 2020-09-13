@@ -1,20 +1,19 @@
-
 storage:
   storage_path: ./storage
-  wal_path: ./wal_log
-  wal_capacity_mb: 32
-  wal_segments_ahead: 0
+  wal:
+    wal_capacity_mb: 32
+    wal_segments_ahead: 0
 
 
-performance:
-  max_search_threads: 0  # Number of parallel threads used for search operations. If 0 - auto selection.
-  max_optimize_threads: 0 # Number of parallel threads used for index optimization. If 0 - auto selection.
+  performance:
+    max_search_threads: 0  # Number of parallel threads used for search operations. If 0 - auto selection.
+    max_optimize_threads: 0 # Number of parallel threads used for index optimization. If 0 - auto selection.
 
 
-optimizers:
-  deleted_threshold: 0.2 # The minimal fraction of deleted vectors in a segment, required to perform segment optimization
-  vacuum_min_vector_number: 1000 # The minimal number of vectors in a segment, required to perform segment optimization
-  max_segment_number: 5 # If the number of segments exceeds this value, the optimizer will merge the smallest segments.
+  optimizers:
+    deleted_threshold: 0.2 # The minimal fraction of deleted vectors in a segment, required to perform segment optimization
+    vacuum_min_vector_number: 1000 # The minimal number of vectors in a segment, required to perform segment optimization
+    max_segment_number: 5 # If the number of segments exceeds this value, the optimizer will merge the smallest segments.
 
 service:
   host: 0.0.0.0

@@ -31,8 +31,11 @@ config = "~0.10.1"
 actix-web = "2.0"
 actix-rt = "1.0"
 
+sled = "0.34"
+
 segment = {path = "lib/segment"}
 collection = {path = "lib/collection"}
+storage = {path = "lib/storage"}
 
 
 
