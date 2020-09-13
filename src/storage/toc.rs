@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock};
 use collection::collection::Collection;
 use std::collections::HashMap;
-use crate::operations::collection_ops::CollectionOps;
+use crate::operations::collection_ops::{CollectionOps, AliasOperations};
 use wal::WalOptions;
 use crate::settings::{StorageConfig, Settings, OptimizersConfig};
 use tokio::runtime::Runtime;
@@ -131,7 +131,7 @@ impl TableOfContent {
                     &segment_config,
                     self.search_runtime.handle().clone(),
                     self.optimization_runtime.handle().clone(),
-                    optimizers
+                    optimizers,
                 )?;
 
                 let mut write_collections = self.collections.write().unwrap();
@@ -146,8 +146,27 @@ impl TableOfContent {
                 }
                 Ok(removed)
             }
-            CollectionOps::ChangeAliases { .. } => {
-                unimplemented!() // ToDo
+            CollectionOps::ChangeAliases { actions } => {
+                let mut write_aliases = self.aliases.write().unwrap();
+                for action in actions {
+                    match action {
+                        AliasOperations::CreateAlias { collection_name, alias_name } => {
+                            self.validate_collection_name(&collection_name)?;
+                            write_aliases.insert(alias_name, collection_name);
+                        }
+                        AliasOperations::DeleteAlias { alias_name } => {
+                            write_aliases.remove(&alias_name);
+                        }
+                        AliasOperations::RenameAlias { old_alias_name, new_alias_name } => {
+                            if !write_aliases.contains_key(&old_alias_name) {
+                                return Err(ServiceError::NotFound { description: format!("Alias {} does not exists!", old_alias_name)})
+                            }
+                            let collection_name = write_aliases.remove(&old_alias_name).unwrap();
+                            write_aliases.insert(new_alias_name, collection_name);
+                        }
+                    };
+                }
+                Ok(true)
             }
         }
     }
