@@ -268,7 +268,6 @@ mod tests {
         let points = vec![1, 2, 3];
 
         updater.process_payload_operation(100, &PayloadOps::SetPayload {
-            collection: "".to_string(),
             payload,
             points: points.clone(),
         }).unwrap();

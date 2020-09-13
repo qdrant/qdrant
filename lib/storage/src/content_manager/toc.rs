@@ -14,21 +14,23 @@ use collection::collection_builder::collection_builder::build_collection;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::storage_ops::{AliasOperations, StorageOps};
 use crate::types::StorageConfig;
+use sled::Db;
+use sled::transaction::UnabortableTransactionError;
+use std::str::{from_utf8_unchecked, from_utf8};
 
 
 struct TableOfContent {
-    collections: Arc<RwLock<HashMap<String, Collection>>>,
-    aliases: Arc<RwLock<HashMap<String, String>>>,
+    collections: Arc<RwLock<HashMap<String, Arc<Collection>>>>,
     storage_config: StorageConfig,
     search_runtime: Runtime,
     optimization_runtime: Runtime,
+    alias_persistence: Db,
 }
 
 
 impl TableOfContent {
     pub fn new(
-        collections: HashMap<String, Collection>,
-        aliases: HashMap<String, String>,
+        collections: HashMap<String, Arc<Collection>>,
         storage_config: &StorageConfig,
     ) -> Self {
         let mut search_threads = storage_config.performance.max_search_threads;
@@ -54,12 +56,18 @@ impl TableOfContent {
             .build().unwrap();
 
 
+        let alias_path = Path::new(&storage_config.storage_path)
+            .join("aliases.sled");
+
+        let alias_persistence = sled::open(alias_path.as_path()).unwrap();
+
+
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
-            aliases: Arc::new(RwLock::new(aliases)),
             storage_config: storage_config.clone(),
             search_runtime,
             optimization_runtime,
+            alias_persistence,
         }
     }
 
@@ -149,7 +157,7 @@ impl TableOfContent {
                 )?;
 
                 let mut write_collections = self.collections.write().unwrap();
-                write_collections.insert(collection_name, segment);
+                write_collections.insert(collection_name, Arc::new(segment));
                 Ok(true)
             }
             StorageOps::DeleteCollection { collection_name } => {
@@ -164,27 +172,58 @@ impl TableOfContent {
                 Ok(removed)
             }
             StorageOps::ChangeAliases { actions } => {
-                let mut write_aliases = self.aliases.write().unwrap();
                 for action in actions {
                     match action {
                         AliasOperations::CreateAlias { collection_name, alias_name } => {
                             self.validate_collection_name(&collection_name)?;
-                            write_aliases.insert(alias_name, collection_name);
+                            self.alias_persistence.insert(alias_name.as_bytes(), collection_name.as_bytes())?;
                         }
                         AliasOperations::DeleteAlias { alias_name } => {
-                            write_aliases.remove(&alias_name);
+                            self.alias_persistence.remove(alias_name.as_bytes())?;
                         }
                         AliasOperations::RenameAlias { old_alias_name, new_alias_name } => {
-                            if !write_aliases.contains_key(&old_alias_name) {
+                            if !self.alias_persistence.contains_key(old_alias_name.as_bytes())? {
                                 return Err(StorageError::NotFound { description: format!("Alias {} does not exists!", old_alias_name) });
                             }
-                            let collection_name = write_aliases.remove(&old_alias_name).unwrap();
-                            write_aliases.insert(new_alias_name, collection_name);
+
+                            let transaction_res = self.alias_persistence.transaction(|tx_db| {
+                                let collection = tx_db
+                                    .remove(old_alias_name.as_bytes())?
+                                    .ok_or(UnabortableTransactionError::Conflict)?;
+
+                                tx_db.insert(new_alias_name.as_bytes(), collection)?;
+                                Ok(())
+                            });
+                            transaction_res?;
                         }
                     };
                 }
+                self.alias_persistence.flush()?;
                 Ok(true)
             }
         }
+    }
+
+    fn resolve_name(&self, collection_name: String) -> Result<String, StorageError> {
+
+        let alias_collection_name = self.alias_persistence
+            .get(collection_name.as_bytes())?;
+
+        let resolved_name = match alias_collection_name {
+            None => collection_name,
+            Some(resolved_alias) => {
+                from_utf8(&resolved_alias).unwrap().to_string()
+            },
+        };
+
+        self.validate_collection_name(&resolved_name)?;
+
+        Ok(resolved_name)
+    }
+
+    pub fn get_collection(&self, collection_name: String) -> Result<Arc<Collection>, StorageError> {
+        let read_collection = self.collections.read().unwrap();
+        let real_collection_name = self.resolve_name(collection_name)?;
+        Ok(read_collection.get(&real_collection_name).unwrap().clone())
     }
 }

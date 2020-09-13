@@ -51,19 +51,16 @@ impl PayloadInterface {
 pub enum PayloadOps {
     /// Overrides
     SetPayload {
-        collection: String,
         payload: HashMap<PayloadKeyType, PayloadInterface>,
         points: Vec<PointIdType>,
     },
     /// Deletes specified Payload if they are assigned
     DeletePayload {
-        collection: String,
         keys: Vec<PayloadKeyType>,
         points: Vec<PointIdType>,
     },
     /// Drops all Payload associated with given points.
     ClearPayload {
-        collection: String,
         points: Vec<PointIdType>,
     }
 }
@@ -78,7 +75,6 @@ mod tests {
         let query1 = r#"
         {
             "set_payload": {
-                "collection": "my_collection",
                 "points": [1, 2, 3],
                 "payload": {
                     "key1": {"type": "keyword", "value": "hello"},
@@ -92,7 +88,6 @@ mod tests {
 
         match operation {
             PayloadOps::SetPayload {
-                collection: _,
                 payload,
                 points: _
             } => {

@@ -14,7 +14,6 @@ fn test_collection_updater() {
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         PointOps::UpsertPoints {
-            collection: "this".to_string(),
             ids: vec![0, 1, 2, 3, 4],
             vectors: vec![
                 vec![1.0, 0.0, 1.0, 1.0],

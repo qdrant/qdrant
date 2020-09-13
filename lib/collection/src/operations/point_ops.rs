@@ -7,13 +7,11 @@ use crate::operations::types::VectorType;
 pub enum PointOps {
     /// Insert or update points
     UpsertPoints {
-        collection: String,
         ids: Vec<PointIdType>,
         vectors: Vec<VectorType>,
     },
     /// Delete point if exists
     DeletePoints {
-        collection: String,
         ids: Vec<PointIdType>,
     },
 }

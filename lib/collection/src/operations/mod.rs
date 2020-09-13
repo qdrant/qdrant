@@ -22,7 +22,6 @@ mod tests {
     fn test_deserialize() {
         let op = CollectionUpdateOperations::PayloadOperation(
             payload_ops::PayloadOps::ClearPayload {
-                collection: "col1".to_string(),
                 points: vec![1, 2, 3],
             }
         );
