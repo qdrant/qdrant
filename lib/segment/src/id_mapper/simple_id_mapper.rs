@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use crate::types::{PointOffsetType, PointIdType};
 use crate::id_mapper::id_mapper::IdMapper;
+use crate::entry::entry_point::OperationResult;
 
 pub struct SimpleIdMapper {
     internal_to_external: HashMap<PointOffsetType, PointIdType>,
@@ -33,17 +34,19 @@ impl IdMapper for SimpleIdMapper {
         }
     }
 
-    fn set_link(&mut self, external_id: PointIdType, internal_id: PointOffsetType) {
+    fn set_link(&mut self, external_id: PointIdType, internal_id: PointOffsetType) -> OperationResult<()> {
         self.external_to_internal.insert(external_id, internal_id);
         self.internal_to_external.insert(internal_id, external_id);
+        Ok(())
     }
 
-    fn drop(&mut self, external_id: PointIdType) {
+    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
         let internal_id = self.external_to_internal.remove(&external_id);
         match internal_id {
             Some(x) => self.internal_to_external.remove(&x),
             None => None
         };
+        Ok(())
     }
 
     fn iter_external(&self) -> Box<dyn Iterator<Item=PointIdType> + '_> {

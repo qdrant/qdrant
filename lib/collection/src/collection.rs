@@ -31,6 +31,7 @@ impl From<OperationError> for CollectionError {
         match err {
             OperationError::WrongVector { .. } => Self::BadInput { description: format!("{}", err)},
             OperationError::PointIdError { missed_point_id } => Self::NotFound { missed_point_id },
+            OperationError::ServiceError { description: _ } => Self::ServiceError { error: description }
         }
     }
 }

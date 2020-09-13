@@ -2,6 +2,7 @@ use thiserror::Error;
 use std::path::Path;
 use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentInfo};
 use std::result;
+use sled::Error;
 
 
 /// Trait for versionable & saveable objects.
@@ -20,10 +21,21 @@ pub enum OperationError {
     #[error("Vector inserting error: expected dim: {expected_dim}, got {received_dim}")]
     WrongVector { expected_dim: usize, received_dim: usize },
     #[error("No point with id {missed_point_id} found")]
-    PointIdError { missed_point_id: PointIdType }
+    PointIdError { missed_point_id: PointIdType },
+    #[error("Service runtime error: {description}")]
+    ServiceError { description: String }
+}
+
+
+impl From<Error> for OperationError {
+    fn from(err: Error) -> Self {
+        OperationError::ServiceError { description: format!("persistence error: {:?}", err) }
+    }
 }
 
 pub type Result<T> = result::Result<T, OperationError>;
+
+pub type OperationResult<T> = result::Result<T, OperationError>;
 
 
 /// Define all operations which can be performed with Segment.

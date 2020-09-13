@@ -142,7 +142,7 @@ impl SegmentEntry for Segment {
                 (false, self.vector_storage.borrow_mut().put_vector(vector))
         };
 
-        self.id_mapper.borrow_mut().set_link(point_id, new_index);
+        self.id_mapper.borrow_mut().set_link(point_id, new_index)?;
         Ok(was_replaced)
     }
 
@@ -153,7 +153,7 @@ impl SegmentEntry for Segment {
         match internal_id {
             Some(internal_id) => {
                 self.vector_storage.borrow_mut().delete(internal_id);
-                mapper.drop(point_id);
+                mapper.drop(point_id)?;
                 Ok(true)
             }
             None => Ok(false)
