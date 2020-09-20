@@ -93,12 +93,12 @@ pub fn distance_order(distance: &Distance) -> Order {
 
 #[derive(Debug, Deserialize, Serialize, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
-#[serde(tag = "type",  content = "options")]
+#[serde(tag = "type", content = "options")]
 pub enum Indexes {
     Plain {},
     Hnsw {
         m: usize,
-        ef_construct: usize
+        ef_construct: usize,
     },
 }
 
@@ -114,9 +114,14 @@ pub struct SegmentConfig {
     pub vector_size: usize,
     pub index: Indexes,
     pub distance: Distance,
-    pub storage_path: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct SegmentState {
+    pub version: SeqNumberType,
+    pub config: SegmentConfig,
+}
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]

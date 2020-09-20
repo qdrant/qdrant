@@ -219,6 +219,14 @@ impl SegmentEntry for ProxySegment {
             is_appendable: false
         };
     }
+
+    fn flush(&self) -> Result<u64> {
+       Ok(self.wrapped_segment.0.read().unwrap().version())
+    }
+
+    fn drop(self) -> Result<()> {
+        unimplemented!();
+    }
 }
 
 
@@ -226,11 +234,13 @@ impl SegmentEntry for ProxySegment {
 mod tests {
     use super::*;
     use crate::segment_manager::fixtures::{build_segment_1, empty_segment};
+    use tempdir::TempDir;
 
     #[test]
     fn test_writing() {
-        let original_segment = LockedSegment::new(build_segment_1());
-        let write_segment = LockedSegment::new(empty_segment());
+        let dir = TempDir::new("segment_dir").unwrap();
+        let original_segment = LockedSegment::new(build_segment_1(dir.path()));
+        let write_segment = LockedSegment::new(empty_segment(dir.path()));
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
 
         let mut proxy_segment = ProxySegment::new(original_segment, write_segment, deleted_points);

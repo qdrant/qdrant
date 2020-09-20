@@ -7,7 +7,7 @@ use tokio::runtime;
 use num_cpus;
 use std::cmp::max;
 use segment::types::SegmentConfig;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs::{create_dir_all, remove_dir_all};
 use collection::collection_builder::optimizers_builder::build_optimizers;
 use collection::collection_builder::collection_builder::build_collection;
@@ -71,38 +71,21 @@ impl TableOfContent {
         }
     }
 
-    fn collection_storage_path(&self, collection_name: &str) -> Result<(String, String), StorageError> {
-        let path = Path::new(&self.storage_config.storage_path)
+    fn get_collection_path(&self, collection_name: &str) -> PathBuf {
+        Path::new(&self.storage_config.storage_path)
             .join("collections")
-            .join(collection_name);
+            .join(collection_name)
+    }
 
-        let path_str = path.to_str()
-            .ok_or_else(|| StorageError::ServiceError {
-                description: format!("Invalid collection name {}", collection_name)
-            })?;
+    fn create_collection_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
+        let path = self.get_collection_path(collection_name);
 
         create_dir_all(&path)
             .or_else(|err| Err(StorageError::ServiceError {
-                description: format!("Can't create collection directory {} Error: {}", path_str, err)
+                description: format!("Can't create directory for collection {}. Error: {}", collection_name, err)
             }))?;
 
-        let wal_path = Path::new(&self.storage_config.storage_path)
-            .join("collections")
-            .join(collection_name)
-            .join("wal");
-
-        let wal_path_str = wal_path.to_str()
-            .ok_or_else(|| StorageError::ServiceError {
-                description: format!("Invalid collection name {}", collection_name)
-            })?;
-
-        create_dir_all(&wal_path)
-            .or_else(|err| Err(StorageError::ServiceError {
-                description: format!("Can't create collection directory {} Error: {}", wal_path_str, err)
-            }))?;
-
-
-        Ok((path_str.to_string(), wal_path_str.to_string()))
+        Ok(path)
     }
 
     fn validate_collection_name(&self, collection_name: &str) -> Result<(), StorageError> {
@@ -131,16 +114,17 @@ impl TableOfContent {
                     segment_queue_len: self.storage_config.wal.wal_segments_ahead,
                 };
 
-                let (collection_path, wal_path) = self.collection_storage_path(&collection_name)?;
+                let collection_path = self.create_collection_path(&collection_name)?;
+
 
                 let segment_config = SegmentConfig {
                     vector_size: dim,
                     index: index.unwrap_or(Default::default()),
                     distance,
-                    storage_path: collection_path,
                 };
 
                 let optimizers = build_optimizers(
+                    &collection_path,
                     segment_config.clone(),
                     self.storage_config.optimizers.deleted_threshold,
                     self.storage_config.optimizers.vacuum_min_vector_number,
@@ -148,7 +132,7 @@ impl TableOfContent {
                 );
 
                 let segment = build_collection(
-                    Path::new(&wal_path),
+                    Path::new(&collection_path),
                     &wal_options,
                     &segment_config,
                     self.search_runtime.handle().clone(),
@@ -163,7 +147,7 @@ impl TableOfContent {
             StorageOps::DeleteCollection { collection_name } => {
                 let removed = self.collections.write().unwrap().remove(&collection_name).is_some();
                 if removed {
-                    let (path, _wal_path) = self.collection_storage_path(&collection_name)?;
+                    let path = self.get_collection_path(&collection_name);
                     remove_dir_all(path).or_else(
                         |err| Err(StorageError::ServiceError {
                             description: format!("Can't delete collection {}, error: {}", collection_name, err)
@@ -205,7 +189,6 @@ impl TableOfContent {
     }
 
     fn resolve_name(&self, collection_name: String) -> Result<String, StorageError> {
-
         let alias_collection_name = self.alias_persistence
             .get(collection_name.as_bytes())?;
 
@@ -213,7 +196,7 @@ impl TableOfContent {
             None => collection_name,
             Some(resolved_alias) => {
                 from_utf8(&resolved_alias).unwrap().to_string()
-            },
+            }
         };
 
         self.validate_collection_name(&resolved_name)?;

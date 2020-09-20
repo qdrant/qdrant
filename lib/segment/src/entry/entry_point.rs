@@ -3,6 +3,8 @@ use std::path::Path;
 use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentInfo};
 use std::result;
 use sled::Error;
+use std::io::Error as IoError;
+use atomicwrites::Error as AtomicIoError;
 
 
 /// Trait for versionable & saveable objects.
@@ -23,9 +25,25 @@ pub enum OperationError {
     #[error("No point with id {missed_point_id} found")]
     PointIdError { missed_point_id: PointIdType },
     #[error("Service runtime error: {description}")]
-    ServiceError { description: String }
+    ServiceError { description: String },
 }
 
+impl<E> From<AtomicIoError<E>> for OperationError {
+    fn from(err: AtomicIoError<E>) -> Self {
+        match err {
+            AtomicIoError::Internal(io_err) => OperationError::from(io_err),
+            AtomicIoError::User(_user_err) => OperationError::ServiceError {
+                description: format!("Unknown atomic write error")
+            },
+        }
+    }
+}
+
+impl From<IoError> for OperationError {
+    fn from(err: IoError) -> Self {
+        OperationError::ServiceError { description: format!("{}", err) }
+    }
+}
 
 impl From<Error> for OperationError {
     fn from(err: Error) -> Self {
@@ -38,7 +56,7 @@ pub type Result<T> = result::Result<T, OperationError>;
 pub type OperationResult<T> = result::Result<T, OperationError>;
 
 
-/// Define all operations which can be performed with Segment.
+/// Define all operations which can be performed with Segment or Segment-like entity.
 /// Assume, that all operations are idempotent - which means that
 ///     no matter how much time they will consequently executed - storage state will be the same.
 pub trait SegmentEntry {
@@ -56,7 +74,7 @@ pub trait SegmentEntry {
 
     fn delete_point(&mut self, op_num: SeqNumberType, point_id: PointIdType) -> Result<bool>;
 
-    fn set_full_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, full_payload: TheMap<PayloadKeyType, PayloadType>)-> Result<bool>;
+    fn set_full_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, full_payload: TheMap<PayloadKeyType, PayloadType>) -> Result<bool>;
 
     fn set_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, key: &PayloadKeyType, payload: PayloadType) -> Result<bool>;
 
@@ -78,5 +96,11 @@ pub trait SegmentEntry {
 
     fn info(&self) -> SegmentInfo;
 
+    /// Flushes current segment state into a persistent storage, if possible
+    /// Returns maximum version number which is guaranteed to be persisted.
+    fn flush(&self) -> Result<SeqNumberType>;
+
+    /// Removes all persisted data and forces to destroy segment
+    fn drop(self) -> Result<()>;
 }
 

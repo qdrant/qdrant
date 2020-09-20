@@ -2,16 +2,24 @@ use crate::id_mapper::id_mapper::IdMapper;
 use crate::vector_storage::vector_storage::VectorStorage;
 use crate::payload_storage::payload_storage::{PayloadStorage};
 use crate::entry::entry_point::{SegmentEntry, Result, OperationError};
-use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentType};
+use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentType, SegmentConfig, SegmentState};
 use crate::query_planner::query_planner::QueryPlanner;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use atomic_refcell::{AtomicRefCell};
 use std::cmp;
+use std::path::PathBuf;
+use std::fs::{remove_dir_all};
+use std::io::Write;
+use atomicwrites::{AtomicFile, AllowOverwrite};
 
+
+pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
 /// Simple segment implementation
 pub struct Segment {
     pub version: SeqNumberType,
+    pub persisted_version: Arc<Mutex<SeqNumberType>>,
+    pub current_path: PathBuf,
     pub id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
     pub vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     pub payload_storage: Arc<AtomicRefCell<dyn PayloadStorage>>,
@@ -19,6 +27,7 @@ pub struct Segment {
     pub query_planner: Arc<AtomicRefCell<dyn QueryPlanner>>,
     pub appendable_flag: bool,
     pub segment_type: SegmentType,
+    pub segment_config: SegmentConfig,
 }
 
 
@@ -51,8 +60,8 @@ impl Segment {
     fn update_vector(&mut self,
                      old_iternal_id: PointOffsetType,
                      vector: &Vec<VectorElementType>,
-    ) -> PointOffsetType {
-        let payload = self.payload_storage.borrow_mut().drop(old_iternal_id);
+    ) -> Result<PointOffsetType> {
+        let payload = self.payload_storage.borrow_mut().drop(old_iternal_id)?;
         let new_internal_index = {
             let mut vector_storage = self.vector_storage.borrow_mut();
             vector_storage.delete(old_iternal_id);
@@ -61,10 +70,10 @@ impl Segment {
         match payload {
             Some(payload) => self.payload_storage
                 .borrow_mut()
-                .assign_all(new_internal_index, payload),
+                .assign_all(new_internal_index, payload)?,
             None => ()
         }
-        new_internal_index
+        Ok(new_internal_index)
     }
 
     fn skip_by_version(&mut self, op_num: SeqNumberType) -> bool {
@@ -82,6 +91,23 @@ impl Segment {
             Some(internal_id) => Ok(internal_id),
             None => Err(OperationError::PointIdError { missed_point_id: point_id })
         }
+    }
+
+    fn get_state(&self) -> SegmentState {
+        SegmentState {
+            version: self.version,
+            config: self.segment_config.clone(),
+        }
+    }
+
+    fn save_state(&self, state: &SegmentState) -> Result<()> {
+        let state_path = self.current_path.join(SEGMENT_STATE_FILE);
+        let af = AtomicFile::new(state_path, AllowOverwrite);
+        let state_bytes = serde_json::to_vec(state).unwrap();
+        af.write(|f| {
+            f.write_all(&state_bytes)
+        })?;
+        Ok(())
     }
 }
 
@@ -137,7 +163,7 @@ impl SegmentEntry for Segment {
 
         let (was_replaced, new_index) = match stored_internal_point {
             Some(existing_internal_id) =>
-                (true, self.update_vector(existing_internal_id, vector)),
+                (true, self.update_vector(existing_internal_id, vector)?),
             None =>
                 (false, self.vector_storage.borrow_mut().put_vector(vector))
         };
@@ -167,7 +193,7 @@ impl SegmentEntry for Segment {
     ) -> Result<bool> {
         if self.skip_by_version(op_num) { return Ok(false); };
         let internal_id = self.lookup_internal_id(point_id)?;
-        self.payload_storage.borrow_mut().assign_all(internal_id, full_payload);
+        self.payload_storage.borrow_mut().assign_all(internal_id, full_payload)?;
         Ok(true)
     }
 
@@ -179,21 +205,21 @@ impl SegmentEntry for Segment {
     ) -> Result<bool> {
         if self.skip_by_version(op_num) { return Ok(false); };
         let internal_id = self.lookup_internal_id(point_id)?;
-        self.payload_storage.borrow_mut().assign(internal_id, key, payload);
+        self.payload_storage.borrow_mut().assign(internal_id, key, payload)?;
         Ok(true)
     }
 
     fn delete_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, key: &PayloadKeyType) -> Result<bool> {
         if self.skip_by_version(op_num) { return Ok(false); };
         let internal_id = self.lookup_internal_id(point_id)?;
-        self.payload_storage.borrow_mut().delete(internal_id, key);
+        self.payload_storage.borrow_mut().delete(internal_id, key)?;
         Ok(true)
     }
 
     fn clear_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType) -> Result<bool> {
         if self.skip_by_version(op_num) { return Ok(false); };
         let internal_id = self.lookup_internal_id(point_id)?;
-        self.payload_storage.borrow_mut().drop(internal_id);
+        self.payload_storage.borrow_mut().drop(internal_id)?;
         Ok(true)
     }
 
@@ -232,5 +258,26 @@ impl SegmentEntry for Segment {
             disk_usage_bytes: 0,  // ToDo: Implement
             is_appendable: self.appendable_flag,
         }
+    }
+
+    fn flush(&self) -> Result<SeqNumberType> {
+        let persisted_version = self.persisted_version.lock().unwrap();
+        if *persisted_version == self.version {
+            return Ok(*persisted_version)
+        }
+
+        let state = self.get_state();
+
+        self.id_mapper.borrow().flush()?;
+        self.payload_storage.borrow().flush()?;
+        self.vector_storage.borrow().flush()?;
+
+        self.save_state(&state)?;
+
+        Ok(state.version)
+    }
+
+    fn drop(self) -> Result<()> {
+        Ok(remove_dir_all(self.current_path)?)
     }
 }

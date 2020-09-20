@@ -1,6 +1,7 @@
 use crate::types::{PointOffsetType, ScoreType, VectorElementType, Distance};
 use std::cmp::{Ordering};
 use ordered_float::OrderedFloat;
+use crate::entry::entry_point::OperationResult;
 
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -35,6 +36,7 @@ pub trait VectorStorage {
     fn put_vector(&mut self, vector: &Vec<VectorElementType>) -> PointOffsetType;
     fn delete(&mut self, key: PointOffsetType);
     fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
+    fn flush(&self) -> OperationResult<usize>;
 }
 
 pub trait VectorMatcher {

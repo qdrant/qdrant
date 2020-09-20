@@ -7,10 +7,14 @@ mod tests {
     use segment::entry::entry_point::SegmentEntry;
     use std::collections::HashSet;
     use segment::types::{Filter, Condition};
+    use tempdir::TempDir;
 
     #[test]
     fn test_point_exclusion() {
-        let segment = build_segment_1();
+
+        let dir = TempDir::new("segment_dir").unwrap();
+
+        let segment = build_segment_1(dir.path());
 
         assert!(segment.has_point(3));
 

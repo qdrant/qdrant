@@ -1,6 +1,9 @@
-use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage};
+use crate::payload_storage::payload_storage::{ConditionChecker};
 use crate::types::{Filter, PayloadKeyType, PayloadType, Condition, GeoBoundingBox, Range, Match, TheMap, PointOffsetType, PointIdType};
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
+use std::sync::Arc;
+use atomic_refcell::AtomicRefCell;
+use crate::id_mapper::id_mapper::IdMapper;
 
 
 fn match_payload(payload: &PayloadType, condition_match: &Match) -> bool {
@@ -108,15 +111,36 @@ fn check_must_not(point_id: PointIdType, payload: &TheMap<PayloadKeyType, Payloa
     }
 }
 
-impl ConditionChecker for SimplePayloadStorage
+
+pub struct SimpleConditionChecker {
+    payload_storage: Arc<AtomicRefCell<SimplePayloadStorage>>,
+    id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
+}
+
+impl SimpleConditionChecker {
+    pub fn new(payload_storage: Arc<AtomicRefCell<SimplePayloadStorage>>,
+               id_mapper: Arc<AtomicRefCell<dyn IdMapper>>) -> Self {
+        SimpleConditionChecker {
+            payload_storage,
+            id_mapper,
+        }
+    }
+}
+
+
+impl ConditionChecker for SimpleConditionChecker
 {
     fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
-        let external_id = match self.point_external_id(point_id) {
+        let external_id = match self.id_mapper.borrow().external_id(point_id) {
             None => return false,
             Some(id) => id,
         };
-        let payload = self.payload(point_id);
-        return check_filter(external_id, &payload, query);
+        let payload_storage_guard = self.payload_storage.borrow();
+
+        return match payload_storage_guard.payload_ptr(point_id) {
+            None => check_filter(external_id, &TheMap::new(), query),
+            Some(x) => check_filter(external_id, x, query),
+        };
     }
 }
 

@@ -194,10 +194,14 @@ mod tests {
     use crate::segment_manager::fixtures::{build_searcher};
     use crate::segment_manager::segment_managers::SegmentSearcher;
     use crate::operations::payload_ops::PayloadVariant;
+    use tempdir::TempDir;
 
     #[test]
     fn test_point_ops() {
-        let (_rt, searcher) = build_searcher();
+
+        let dir = TempDir::new("segment_dir").unwrap();
+
+        let (_rt, searcher) = build_searcher(dir.path());
 
         let updater = SimpleSegmentUpdater {
             segments: searcher.segments.clone(),
@@ -251,7 +255,8 @@ mod tests {
 
     #[test]
     fn test_payload_ops() {
-        let (_rt, searcher) = build_searcher();
+        let dir = TempDir::new("segment_dir").unwrap();
+        let (_rt, searcher) = build_searcher(dir.path());
 
         let updater = SimpleSegmentUpdater {
             segments: searcher.segments.clone(),

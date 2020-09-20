@@ -124,10 +124,13 @@ mod tests {
     use tokio::runtime;
     use crate::segment_manager::fixtures::build_test_holder;
     use std::sync::RwLock;
+    use tempdir::TempDir;
 
     #[test]
     fn test_segments_search() {
-        let segment_holder = build_test_holder();
+        let dir = TempDir::new("segment_dir").unwrap();
+
+        let segment_holder = build_test_holder(dir.path());
 
         let threaded_rt1: Runtime = runtime::Builder::new()
             .threaded_scheduler()
@@ -162,7 +165,8 @@ mod tests {
 
     #[test]
     fn test_retrieve() {
-        let segment_holder = build_test_holder();
+        let dir = TempDir::new("segment_dir").unwrap();
+        let segment_holder = build_test_holder(dir.path());
 
         let threaded_rt1: Runtime = runtime::Builder::new()
             .threaded_scheduler()

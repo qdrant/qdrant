@@ -8,15 +8,16 @@ use tokio::runtime::Runtime;
 use tokio::runtime;
 use std::sync::{RwLock, Arc};
 use rand::Rng;
+use std::path::Path;
 
-pub fn empty_segment() -> Segment {
-    let segment = build_simple_segment( 4, Distance::Dot);
+pub fn empty_segment(path: &Path) -> Segment {
+    let segment = build_simple_segment(path,  4, Distance::Dot).unwrap();
     return segment;
 }
 
 
-pub fn random_segment(opnum: SeqNumberType, num_vectors: u64, dim: usize) -> Segment {
-    let mut segment = build_simple_segment(dim, Distance::Dot);
+pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: usize) -> Segment {
+    let mut segment = build_simple_segment(path, dim, Distance::Dot).unwrap();
     let mut rnd = rand::thread_rng();
 
     for _ in 0..num_vectors {
@@ -27,12 +28,11 @@ pub fn random_segment(opnum: SeqNumberType, num_vectors: u64, dim: usize) -> Seg
             &random_vector
         ).unwrap();
     }
-
     segment
 }
 
-pub fn build_segment_1() -> Segment {
-    let mut segment1 = empty_segment();
+pub fn build_segment_1(path: &Path) -> Segment {
+    let mut segment1 = empty_segment(path);
 
     let vec1 = vec![1.0, 0.0, 1.0, 1.0];
     let vec2 = vec![1.0, 0.0, 1.0, 0.0];
@@ -61,8 +61,8 @@ pub fn build_segment_1() -> Segment {
     return segment1;
 }
 
-pub fn build_segment_2() -> Segment {
-    let mut segment2 = empty_segment();
+pub fn build_segment_2(path: &Path) -> Segment {
+    let mut segment2 = empty_segment(path);
 
     let vec4 = vec![1.0, 1.0, 0.0, 1.0];
     let vec5 = vec![1.0, 0.0, 0.0, 0.0];
@@ -85,9 +85,9 @@ pub fn build_segment_2() -> Segment {
     return segment2;
 }
 
-pub fn build_test_holder() -> SegmentHolder {
-    let segment1 = build_segment_1();
-    let segment2 = build_segment_2();
+pub fn build_test_holder(path: &Path) -> SegmentHolder {
+    let segment1 = build_segment_1(path);
+    let segment2 = build_segment_2(path);
 
     let mut holder = SegmentHolder::new();
 
@@ -97,8 +97,8 @@ pub fn build_test_holder() -> SegmentHolder {
     return holder;
 }
 
-pub fn build_searcher() -> (Runtime, SimpleSegmentSearcher) {
-    let segment_holder = build_test_holder();
+pub fn build_searcher(path: &Path) -> (Runtime, SimpleSegmentSearcher) {
+    let segment_holder = build_test_holder(path);
 
     let threaded_rt1: Runtime = runtime::Builder::new()
         .threaded_scheduler()

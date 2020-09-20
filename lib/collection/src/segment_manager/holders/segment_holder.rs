@@ -162,12 +162,14 @@ mod tests {
     use std::path::Path;
 
     use crate::segment_manager::fixtures::{build_segment_1, build_segment_2};
+    use tempdir::TempDir;
 
 
     #[test]
     fn test_add_and_swap() {
-        let segment1 = build_segment_1();
-        let segment2 = build_segment_2();
+        let dir = TempDir::new("segment_dir").unwrap();
+        let segment1 = build_segment_1(dir.path());
+        let segment2 = build_segment_2(dir.path());
 
         let mut holder = SegmentHolder::new();
 
@@ -176,7 +178,7 @@ mod tests {
 
         assert_ne!(sid1, sid2);
 
-        let segment3 = build_simple_segment(4, Distance::Dot);
+        let segment3 = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
 
         let _sid3 = holder.swap(segment3, &vec![sid1, sid2]);
     }

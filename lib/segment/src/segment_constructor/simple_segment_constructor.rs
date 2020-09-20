@@ -1,45 +1,27 @@
 use crate::segment::Segment;
 
-use crate::id_mapper::simple_id_mapper::SimpleIdMapper;
-use crate::vector_storage::simple_vector_storage::SimpleVectorStorage;
-use crate::types::{Distance, SegmentType};
+use crate::types::{Distance, SegmentConfig, Indexes};
+
+use std::path::Path;
+use crate::segment_constructor::segment_constructor::build_segment;
+use crate::entry::entry_point::OperationResult;
 
 
-use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
-use crate::query_planner::simple_query_planner::SimpleQueryPlanner;
-use crate::index::plain_index::{PlainIndex, PlainPayloadIndex};
-use std::sync::Arc;
-use atomic_refcell::AtomicRefCell;
-
-
-fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> {
-    return Arc::new(AtomicRefCell::new(t))
-}
-
-pub fn build_simple_segment(dim: usize, distance: Distance) -> Segment {
-    let id_mapper = sp(SimpleIdMapper::new());
-
-    let vector_storage = sp(SimpleVectorStorage::new(dim));
-    let payload_storage =  sp(SimplePayloadStorage::new(id_mapper.clone()));
-
-
-    let payload_index = sp(PlainPayloadIndex::new(
-        payload_storage.clone(), vector_storage.clone()
-    ));
-
-    let index = sp(PlainIndex::new(vector_storage.clone(), payload_index, distance));
-
-    let query_planer = SimpleQueryPlanner::new(index);
-
-    return Segment {
-        version: 0,
-        id_mapper: id_mapper.clone(),
-        vector_storage,
-        payload_storage: payload_storage.clone(),
-        query_planner: sp(query_planer),
-        appendable_flag: true,
-        segment_type: SegmentType::Plain
-    };
+/// Build new segment with plain index in given directory
+///
+/// # Arguments
+///
+/// * `path` - path to collection`s segment directory
+///
+pub fn build_simple_segment(path: &Path, dim: usize, distance: Distance) -> OperationResult<Segment> {
+    build_segment(
+        path,
+        &SegmentConfig {
+            vector_size: dim,
+            index: Indexes::Plain {},
+            distance,
+        },
+    )
 }
 
 
@@ -48,16 +30,19 @@ mod tests {
     use super::*;
     use crate::entry::entry_point::{OperationError, SegmentEntry};
     use crate::types::PayloadType;
+    use tempdir::TempDir;
 
     #[test]
     fn test_create_simple_segment() {
-        let segment = build_simple_segment( 100, Distance::Dot);
+        let dir = TempDir::new("segment_dir").unwrap();
+        let segment = build_simple_segment(dir.path(), 100, Distance::Dot).unwrap();
         eprintln!(" = {:?}", segment.version);
     }
 
     #[test]
     fn test_add_and_search() {
-        let mut segment = build_simple_segment( 4, Distance::Dot);
+        let dir = TempDir::new("segment_dir").unwrap();
+        let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
 
         let wrong_vec = vec![1.0, 1.0, 1.0];
 
@@ -90,7 +75,7 @@ mod tests {
             PayloadType::Keyword(vec![
                 "red".to_owned(),
                 "green".to_owned()
-            ])
+            ]),
         ).unwrap();
 
         segment.set_payload(
@@ -100,7 +85,7 @@ mod tests {
             PayloadType::Keyword(vec![
                 "red".to_owned(),
                 "blue".to_owned()
-            ])
+            ]),
         ).unwrap();
 
         segment.set_payload(
@@ -110,7 +95,7 @@ mod tests {
             PayloadType::Keyword(vec![
                 "red".to_owned(),
                 "yellow".to_owned()
-            ])
+            ]),
         ).unwrap();
 
         segment.set_payload(
@@ -120,7 +105,7 @@ mod tests {
             PayloadType::Keyword(vec![
                 "red".to_owned(),
                 "green".to_owned()
-            ])
+            ]),
         ).unwrap();
 
         // Replace vectors

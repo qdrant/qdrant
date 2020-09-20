@@ -4,6 +4,7 @@ use std::collections::{HashSet};
 use crate::vector_storage::vector_storage::{ScoredPointOffset};
 
 use crate::spaces::tools::{mertic_object, peek_top_scores};
+use crate::entry::entry_point::OperationResult;
 
 pub struct SimpleVectorStorage {
     dim: usize,
@@ -55,6 +56,10 @@ impl VectorStorage for SimpleVectorStorage {
         let iter = (0..self.vectors.len())
             .filter(move |id| !self.deleted.contains(id));
         return Box::new(iter);
+    }
+
+    fn flush(&self) -> OperationResult<usize> {
+        unimplemented!()
     }
 }
 

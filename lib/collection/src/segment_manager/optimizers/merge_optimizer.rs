@@ -6,16 +6,19 @@ use segment::types::{SegmentType, SegmentConfig};
 
 use itertools::Itertools;
 use segment::segment_constructor::segment_constructor::build_segment;
+use std::path::PathBuf;
+use crate::collection::OperationResult;
 
 
 pub struct MergeOptimizer {
     max_segments: usize,
+    segments_path: PathBuf,
     config: SegmentConfig,
 }
 
 impl MergeOptimizer {
-    pub fn new(max_segments: usize, config: SegmentConfig) -> Self {
-        return MergeOptimizer {max_segments, config}
+    pub fn new(max_segments: usize, segments_path: PathBuf, config: SegmentConfig) -> Self {
+        return MergeOptimizer { max_segments, segments_path, config };
     }
 }
 
@@ -25,7 +28,7 @@ impl SegmentOptimizer for MergeOptimizer {
         let read_segments = segments.read().unwrap();
 
         if read_segments.len() <= self.max_segments {
-            return vec![]
+            return vec![];
         }
 
         // Find top-3 smallest segments to join.
@@ -41,12 +44,16 @@ impl SegmentOptimizer for MergeOptimizer {
             .collect()
     }
 
-    fn temp_segment(&self) -> LockedSegment {
-        LockedSegment::new(build_simple_segment(self.config.vector_size, self.config.distance))
+    fn temp_segment(&self) -> OperationResult<LockedSegment> {
+        Ok(LockedSegment::new(build_simple_segment(
+            self.segments_path.as_path(),
+            self.config.vector_size,
+            self.config.distance,
+        )?))
     }
 
-    fn optimized_segment(&self) -> Segment {
-        build_segment(&self.config)
+    fn optimized_segment(&self) -> OperationResult<Segment> {
+        Ok(build_segment(self.segments_path.as_path(), &self.config)?)
     }
 }
 
@@ -58,39 +65,41 @@ mod tests {
     use crate::segment_manager::holders::segment_holder::SegmentHolder;
     use segment::types::{Distance, Indexes};
     use std::sync::{Arc, RwLock};
+    use tempdir::TempDir;
 
     #[test]
     fn test_merge_optimizer() {
+        let dir = TempDir::new("segment_dir").unwrap();
+
         let mut holder = SegmentHolder::new();
 
 
         let mut segments_to_merge = vec![];
 
-        segments_to_merge.push(holder.add(random_segment(100, 3, 4)));
-        segments_to_merge.push(holder.add(random_segment(100, 3, 4)));
-        segments_to_merge.push(holder.add(random_segment(100, 3, 4)));
+        segments_to_merge.push(holder.add(random_segment(dir.path(), 100, 3, 4)));
+        segments_to_merge.push(holder.add(random_segment(dir.path(), 100, 3, 4)));
+        segments_to_merge.push(holder.add(random_segment(dir.path(), 100, 3, 4)));
 
 
         let mut other_segment_ids: Vec<SegmentId> = vec![];
 
-        other_segment_ids.push(holder.add(random_segment(100, 20, 4)));
-        other_segment_ids.push(holder.add(random_segment(100, 20, 4)));
-        other_segment_ids.push(holder.add(random_segment(100, 20, 4)));
-        other_segment_ids.push(holder.add(random_segment(100, 20, 4)));
+        other_segment_ids.push(holder.add(random_segment(dir.path(), 100, 20, 4)));
+        other_segment_ids.push(holder.add(random_segment(dir.path(), 100, 20, 4)));
+        other_segment_ids.push(holder.add(random_segment(dir.path(), 100, 20, 4)));
+        other_segment_ids.push(holder.add(random_segment(dir.path(), 100, 20, 4)));
 
 
-        let merge_optimizer = MergeOptimizer::new(5, SegmentConfig {
+        let merge_optimizer = MergeOptimizer::new(5, dir.path().to_owned(), SegmentConfig {
             vector_size: 4,
             index: Indexes::Plain {},
             distance: Distance::Dot,
-            storage_path: "".to_string()
         });
 
         let locked_holder = Arc::new(RwLock::new(holder));
 
         let suggested_for_merge = merge_optimizer.check_condition(locked_holder.clone());
 
-        assert_eq!(suggested_for_merge.len(),  3);
+        assert_eq!(suggested_for_merge.len(), 3);
 
         for segment_in in suggested_for_merge.iter() {
             assert!(segments_to_merge.contains(&segment_in));

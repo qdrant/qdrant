@@ -5,10 +5,13 @@ use segment::segment_constructor::simple_segment_constructor::build_simple_segme
 use crate::segment_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_constructor::build_segment;
+use std::path::PathBuf;
+use crate::collection::OperationResult;
 
 pub struct VacuumOptimizer {
     deleted_threshold: f64,
     min_vectors_number: usize,
+    segments_path: PathBuf,
     config: SegmentConfig,
 }
 
@@ -16,10 +19,12 @@ pub struct VacuumOptimizer {
 impl VacuumOptimizer {
     pub fn new(deleted_threshold: f64,
                min_vectors_number: usize,
+               segments_path: PathBuf,
                config: SegmentConfig) -> Self {
         VacuumOptimizer {
             deleted_threshold,
             min_vectors_number,
+            segments_path,
             config,
         }
     }
@@ -44,12 +49,16 @@ impl SegmentOptimizer for VacuumOptimizer {
         }
     }
 
-    fn temp_segment(&self) -> LockedSegment {
-        LockedSegment::new(build_simple_segment(self.config.vector_size, self.config.distance))
+    fn temp_segment(&self) -> OperationResult<LockedSegment> {
+        Ok(LockedSegment::new(build_simple_segment(
+            self.segments_path.as_path(),
+            self.config.vector_size,
+            self.config.distance,
+        )?))
     }
 
-    fn optimized_segment(&self) -> Segment {
-        build_segment(&self.config)
+    fn optimized_segment(&self) -> OperationResult<Segment> {
+        Ok(build_segment(self.segments_path.as_path(), &self.config)?)
     }
 }
 
@@ -63,11 +72,13 @@ mod tests {
     use rand::Rng;
     use std::sync::{RwLock, Arc};
     use segment::types::{Distance, Indexes};
+    use tempdir::TempDir;
 
     #[test]
     fn test_vacuum_conditions() {
+        let dir = TempDir::new("segment_dir").unwrap();
         let mut holder = SegmentHolder::new();
-        let segment_id = holder.add(random_segment(100, 200, 4));
+        let segment_id = holder.add(random_segment(dir.path(),100, 200, 4));
 
         let segment = holder.get(segment_id).unwrap();
 
@@ -89,11 +100,11 @@ mod tests {
         let vacuum_optimizer = VacuumOptimizer::new(
             0.2,
             50,
+            dir.path().to_owned(),
             SegmentConfig {
                 vector_size: 4,
                 index: Indexes::Plain {},
                 distance: Distance::Dot,
-                storage_path: "".to_string()
             },
         );
 
@@ -118,6 +129,5 @@ mod tests {
         let segment_guard = optimized_segment.0.read().unwrap();
 
         assert_eq!(segment_guard.vectors_count(), 200 - segment_points_to_delete.len());
-
     }
 }

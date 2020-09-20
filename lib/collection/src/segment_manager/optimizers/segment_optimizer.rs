@@ -12,17 +12,17 @@ pub trait SegmentOptimizer {
     fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId>;
 
     /// Build temp segment
-    fn temp_segment(&self) -> LockedSegment;
+    fn temp_segment(&self) -> OperationResult<LockedSegment>;
 
     /// Build optimized segment
-    fn optimized_segment(&self) -> Segment;
+    fn optimized_segment(&self) -> OperationResult<Segment>;
 
 
     /// Performs optimization of collections's segments, including:
     ///     - Segment rebuilding
     ///     - Segment joining
     fn optimize(&self, segments: LockedSegmentHolder, ids: Vec<SegmentId>) -> OperationResult<bool> {
-        let tmp_segment = self.temp_segment();
+        let tmp_segment = self.temp_segment()?;
 
         let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
 
@@ -50,7 +50,7 @@ pub trait SegmentOptimizer {
                 .collect()
         };
 
-        let mut optimized_segment = self.optimized_segment();
+        let mut optimized_segment = self.optimized_segment()?;
 
 
         // ---- SLOW PART -----

@@ -2,14 +2,15 @@ use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{Distance, PayloadType};
 use segment::entry::entry_point::SegmentEntry;
+use std::path::Path;
 
-pub fn empty_segment() -> Segment {
-    let segment = build_simple_segment(4, Distance::Dot);
+pub fn empty_segment(path: &Path) -> Segment {
+    let segment = build_simple_segment(path, 4, Distance::Dot).unwrap();
     return segment;
 }
 
-pub fn build_segment_1() -> Segment {
-    let mut segment1 = empty_segment();
+pub fn build_segment_1(path: &Path) -> Segment {
+    let mut segment1 = empty_segment(path);
 
     let vec1 = vec![1.0, 0.0, 1.0, 1.0];
     let vec2 = vec![1.0, 0.0, 1.0, 0.0];
