@@ -69,7 +69,7 @@ pub trait SegmentOptimizer {
                 point_id,
             ).unwrap();
         }
-        optimized_segment.build_index();
+        optimized_segment.finish_building();
         // ---- SLOW PART ENDS HERE -----
 
         { // This block locks all operations with collection. It should be fast

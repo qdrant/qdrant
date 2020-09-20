@@ -5,6 +5,7 @@ use crate::payload_storage::payload_storage::{ConditionChecker};
 
 use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
+use crate::entry::entry_point::OperationResult;
 
 
 pub struct PlainPayloadIndex {
@@ -86,7 +87,7 @@ impl Index for PlainIndex {
         }
     }
 
-    fn build_index(&mut self) {
-        // Do nothing
+    fn build_index(&mut self) -> OperationResult<()>  {
+        Ok(())
     }
 }

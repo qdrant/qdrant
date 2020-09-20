@@ -33,8 +33,9 @@ pub trait VectorStorage {
     fn vector_count(&self) -> usize;
     fn deleted_count(&self) -> usize; /// Number of vectors, marked as deleted but still stored
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>>;
-    fn put_vector(&mut self, vector: &Vec<VectorElementType>) -> PointOffsetType;
-    fn delete(&mut self, key: PointOffsetType);
+    fn put_vector(&mut self, vector: &Vec<VectorElementType>) -> OperationResult<PointOffsetType>;
+    fn commit(&mut self) -> OperationResult<()>;
+    fn delete(&mut self, key: PointOffsetType) -> OperationResult<()>;
     fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
     fn flush(&self) -> OperationResult<usize>;
 }

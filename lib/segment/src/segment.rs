@@ -52,8 +52,10 @@ impl Segment {
 
 
     /// Launch index rebuilding on a whole segment data
-    pub fn build_index(&mut self) {
-        self.query_planner.borrow_mut().build_index();
+    pub fn finish_building(&mut self) -> Result<()> {
+        self.vector_storage.borrow_mut().commit()?;
+        self.query_planner.borrow_mut().build_index()?;
+        Ok(())
     }
 
 
@@ -64,8 +66,8 @@ impl Segment {
         let payload = self.payload_storage.borrow_mut().drop(old_iternal_id)?;
         let new_internal_index = {
             let mut vector_storage = self.vector_storage.borrow_mut();
-            vector_storage.delete(old_iternal_id);
-            vector_storage.put_vector(vector)
+            vector_storage.delete(old_iternal_id)?;
+            vector_storage.put_vector(vector)?
         };
         match payload {
             Some(payload) => self.payload_storage
@@ -165,7 +167,7 @@ impl SegmentEntry for Segment {
             Some(existing_internal_id) =>
                 (true, self.update_vector(existing_internal_id, vector)?),
             None =>
-                (false, self.vector_storage.borrow_mut().put_vector(vector))
+                (false, self.vector_storage.borrow_mut().put_vector(vector)?)
         };
 
         self.id_mapper.borrow_mut().set_link(point_id, new_index)?;
@@ -178,7 +180,7 @@ impl SegmentEntry for Segment {
         let internal_id = mapper.internal_id(point_id);
         match internal_id {
             Some(internal_id) => {
-                self.vector_storage.borrow_mut().delete(internal_id);
+                self.vector_storage.borrow_mut().delete(internal_id)?;
                 mapper.drop(point_id)?;
                 Ok(true)
             }
@@ -263,7 +265,7 @@ impl SegmentEntry for Segment {
     fn flush(&self) -> Result<SeqNumberType> {
         let persisted_version = self.persisted_version.lock().unwrap();
         if *persisted_version == self.version {
-            return Ok(*persisted_version)
+            return Ok(*persisted_version);
         }
 
         let state = self.get_state();

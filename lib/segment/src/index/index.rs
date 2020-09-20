@@ -1,5 +1,6 @@
 use crate::types::{Filter, PointOffsetType, VectorElementType, SearchParams};
 use crate::vector_storage::vector_storage::ScoredPointOffset;
+use crate::entry::entry_point::OperationResult;
 
 /// Trait for vector searching
 pub trait Index {
@@ -13,7 +14,7 @@ pub trait Index {
 
 
     /// Force internal index rebuild.
-    fn build_index(&mut self);
+    fn build_index(&mut self) -> OperationResult<()> ;
 }
 
 

@@ -5,6 +5,7 @@ use crate::types::{Filter, VectorElementType, SearchParams};
 use crate::vector_storage::vector_storage::ScoredPointOffset;
 use atomic_refcell::AtomicRefCell;
 use std::sync::Arc;
+use crate::entry::entry_point::OperationResult;
 
 pub struct SimpleQueryPlanner {
     index: Arc<AtomicRefCell<dyn Index>>
@@ -20,8 +21,8 @@ impl QueryPlanner for SimpleQueryPlanner {
         self.index.borrow().search(vector, filter, top, params)
     }
 
-    fn build_index(&mut self) {
-        self.index.borrow_mut().build_index();
+    fn build_index(&mut self) -> OperationResult<()> {
+        self.index.borrow_mut().build_index()
     }
 }
 
