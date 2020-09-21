@@ -3,7 +3,7 @@ use crate::operations::CollectionUpdateOperations;
 use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
 use std::result;
 use crate::operations::types::{Record, CollectionInfo, UpdateResult, UpdateStatus, SearchRequest};
-use std::sync::{Arc, RwLock, PoisonError};
+use std::sync::Arc;
 use crate::wal::{SerdeWal, WalError};
 use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
 use segment::entry::entry_point::OperationError;
@@ -11,6 +11,7 @@ use tokio::task::JoinError;
 use tokio::runtime::Handle;
 use crossbeam_channel::{Sender, SendError};
 use crate::update_handler::update_handler::UpdateHandler;
+use parking_lot::RwLock;
 
 
 #[derive(Error, Debug, Clone)]
@@ -38,12 +39,6 @@ impl From<OperationError> for CollectionError {
 
 impl From<JoinError> for CollectionError {
     fn from(err: JoinError) -> Self {
-        Self::ServiceError { error: format!("{}", err) }
-    }
-}
-
-impl<T> From<PoisonError<T>> for CollectionError {
-    fn from(err: PoisonError<T>) -> Self {
         Self::ServiceError { error: format!("{}", err) }
     }
 }
@@ -79,7 +74,7 @@ impl Collection {
     /// Explicitly waits for result to be updated.
     pub fn update(&self, operation: CollectionUpdateOperations, wait: bool) -> OperationResult<UpdateResult> {
 
-        let operation_id = self.wal.write().unwrap().write(&operation)?;
+        let operation_id = self.wal.write().write(&operation)?;
 
         let upd = self.updater.clone();
         let sndr = self.update_sender.clone();

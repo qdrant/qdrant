@@ -1,4 +1,5 @@
-use std::sync::{RwLock, Arc, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::{RwLock, RwLockWriteGuard, RwLockReadGuard};
+
 use std::collections::HashMap;
 use segment::entry::entry_point::{SegmentEntry, Result};
 
@@ -6,21 +7,53 @@ use rand::{thread_rng, Rng};
 use rand::seq::SliceRandom;
 use segment::types::{PointIdType, SeqNumberType};
 use crate::collection::OperationResult;
+use std::sync::Arc;
+use segment::segment::Segment;
+use crate::segment_manager::holders::proxy_segment::ProxySegment;
 
 
 pub type SegmentId = usize;
 
-pub struct LockedSegment(pub Arc<RwLock<dyn SegmentEntry>>);
+pub enum LockedSegment {
+    Original(Arc<RwLock<Segment>>),
+    Proxy(Arc<RwLock<ProxySegment>>),
+}
+
 
 impl LockedSegment {
-    pub fn new<T: SegmentEntry + 'static>(segment: T) -> Self {
-        LockedSegment(Arc::new(RwLock::new(segment)))
+    pub fn new<T>(segment: T) -> Self where T: Into<LockedSegment> {
+        segment.into()
     }
 
     pub fn mk_copy(&self) -> Self {
-        LockedSegment(self.0.clone())
+        match self {
+            LockedSegment::Original(x) => LockedSegment::Original(x.clone()),
+            LockedSegment::Proxy(x) => LockedSegment::Proxy(x.clone()),
+        }
+    }
+
+    pub fn get(&self) -> Arc<RwLock<dyn SegmentEntry>> {
+        return match self {
+            LockedSegment::Original(segment) => segment.clone(),
+            LockedSegment::Proxy(proxy) => proxy.clone()
+        };
+    }
+
+}
+
+
+impl From<Segment> for LockedSegment {
+    fn from(s: Segment) -> Self {
+        LockedSegment::Original(Arc::new(RwLock::new(s)))
     }
 }
+
+impl From<ProxySegment> for LockedSegment {
+    fn from(s: ProxySegment) -> Self {
+        LockedSegment::Proxy(Arc::new(RwLock::new(s)))
+    }
+}
+
 
 unsafe impl Sync for LockedSegment {}
 
@@ -57,9 +90,9 @@ impl<'s> SegmentHolder {
     }
 
     /// Add new segment to storage
-    pub fn add<E: SegmentEntry + 'static>(&mut self, segment: E) -> SegmentId {
+    pub fn add<T>(&mut self, segment: T) -> SegmentId where T: Into<LockedSegment> {
         let key = self.generate_new_key();
-        self.segments.insert(key, LockedSegment(Arc::new(RwLock::new(segment))));
+        self.segments.insert(key, segment.into());
         return key;
     }
 
@@ -71,7 +104,7 @@ impl<'s> SegmentHolder {
     }
 
     /// Replace old segments with a new one
-    pub fn swap<E: SegmentEntry + 'static>(&mut self, segment: E, remove_ids: &Vec<SegmentId>) -> SegmentId {
+    pub fn swap<T>(&mut self, segment: T, remove_ids: &Vec<SegmentId>) -> SegmentId where T: Into<LockedSegment> {
         let new_id = self.add(segment);
         for remove_id in remove_ids {
             self.segments.remove(remove_id);
@@ -90,11 +123,12 @@ impl<'s> SegmentHolder {
 
     /// Selects point ids, which is stored in this segment
     fn segment_points(&self, ids: &Vec<PointIdType>, segment: &LockedSegment) -> Vec<PointIdType> {
-        let read_segment = segment.0.read().unwrap();
+        let segment_arc = segment.get();
+        let entry = segment_arc.read();
         ids
             .iter()
             .cloned()
-            .filter(|id| read_segment.has_point(*id))
+            .filter(|id| entry.has_point(*id))
             .collect()
     }
 
@@ -105,10 +139,9 @@ impl<'s> SegmentHolder {
         let mut processed_segments = 0;
         for (_idx, segment) in self.segments.iter() {
             // Skip this segment if it already have bigger version (WAL recovery related)
-            if segment.0.read().unwrap().version() > op_num { continue; }
-            let mut write_segment = segment.0.write().unwrap();
+            if segment.get().read().version() > op_num { continue; }
 
-            let is_applied = f(&mut write_segment)?;
+            let is_applied = f(&mut segment.get().write())?;
             processed_segments += is_applied as usize;
         }
         Ok(processed_segments)
@@ -116,16 +149,17 @@ impl<'s> SegmentHolder {
 
 
     pub fn apply_points<F>(&self, op_num: SeqNumberType, ids: &Vec<PointIdType>, mut f: F) -> OperationResult<usize>
-        where F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry + 'static>) -> Result<bool>
+        where F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> Result<bool>
     {
         let mut applied_points = 0;
         for (_idx, segment) in self.segments.iter() {
             // Skip this segment if it already have bigger version (WAL recovery related)
-            if segment.0.read().unwrap().version() > op_num { continue; }
+            if segment.get().read().version() > op_num { continue; }
             // Collect affected points first, we want to lock segment for writing as rare as possible
             let segment_points = self.segment_points(ids, segment);
             if !segment_points.is_empty() {
-                let mut write_segment = segment.0.write().unwrap();
+                let segment_arc = segment.get();
+                let mut write_segment = segment_arc.write();
                 for point_id in segment_points {
                     let is_applied = f(point_id, &mut write_segment)?;
                     applied_points += is_applied as usize;
@@ -136,11 +170,12 @@ impl<'s> SegmentHolder {
     }
 
     pub fn read_points<F>(&self, ids: &Vec<PointIdType>, mut f: F) -> OperationResult<usize>
-        where F: FnMut(PointIdType, &RwLockReadGuard<dyn SegmentEntry + 'static>) -> Result<bool>
+        where F: FnMut(PointIdType, &RwLockReadGuard<dyn SegmentEntry>) -> Result<bool>
     {
         let mut read_points = 0;
         for (_idx, segment) in self.segments.iter() {
-            let read_segment = segment.0.read().unwrap();
+            let segment_arc = segment.get();
+            let read_segment = segment_arc.read();
             for point in ids
                 .iter()
                 .cloned()
@@ -159,7 +194,6 @@ mod tests {
     use super::*;
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
     use segment::types::Distance;
-    use std::path::Path;
 
     use crate::segment_manager::fixtures::{build_segment_1, build_segment_2};
     use tempdir::TempDir;

@@ -30,13 +30,13 @@ impl VacuumOptimizer {
     }
 
     fn worst_segment(&self, segments: LockedSegmentHolder) -> Option<(SegmentId, LockedSegment)> {
-        segments.read().unwrap().iter()
-            .map(|(idx, segment)| (*idx, segment.0.read().unwrap().info()))
+        segments.read().iter()
+            .map(|(idx, segment)| (*idx, segment.get().read().info()))
             .filter(|(_, info)| info.segment_type != SegmentType::Special)
             .filter(|(_, info)| info.num_vectors > self.min_vectors_number)
             .filter(|(_, info)| info.num_deleted_vectors as f64 / info.num_vectors as f64 > self.deleted_threshold)
             .max_by_key(|(_, info)| OrderedFloat(info.num_deleted_vectors as f64 / info.num_vectors as f64))
-            .and_then(|(idx, _)| Some((idx, segments.read().unwrap().get(idx).unwrap().mk_copy())))
+            .and_then(|(idx, _)| Some((idx, segments.read().get(idx).unwrap().mk_copy())))
     }
 }
 
@@ -70,29 +70,29 @@ mod tests {
     use crate::segment_manager::fixtures::random_segment;
     use itertools::Itertools;
     use rand::Rng;
-    use std::sync::{RwLock, Arc};
+    use std::sync::Arc;
     use segment::types::{Distance, Indexes};
     use tempdir::TempDir;
+    use parking_lot::RwLock;
 
     #[test]
     fn test_vacuum_conditions() {
         let dir = TempDir::new("segment_dir").unwrap();
         let mut holder = SegmentHolder::new();
-        let segment_id = holder.add(random_segment(dir.path(),100, 200, 4));
+        let segment_id = holder.add(random_segment(dir.path(), 100, 200, 4));
 
         let segment = holder.get(segment_id).unwrap();
 
         let mut rnd = rand::thread_rng();
 
-        let segment_points_to_delete = segment.0
+        let segment_points_to_delete = segment.get()
             .read()
-            .unwrap()
             .iter_points()
             .filter(|_| rnd.gen_bool(0.5)).
             collect_vec();
 
         for point_id in segment_points_to_delete.iter() {
-            segment.0.write().unwrap().delete_point(101, *point_id).unwrap();
+            segment.get().write().delete_point(101, *point_id).unwrap();
         }
 
         let locked_holder = Arc::new(RwLock::new(holder));
@@ -115,7 +115,7 @@ mod tests {
         vacuum_optimizer.optimize(locked_holder.clone(), suggested_to_optimize).unwrap();
 
         let after_optimization_segments = locked_holder
-            .read().unwrap()
+            .read()
             .iter()
             .map(|(x, _)| *x)
             .collect_vec();
@@ -124,9 +124,10 @@ mod tests {
 
         let optimized_segment_id = *after_optimization_segments.get(0).unwrap();
 
-        let holder_guard = locked_holder.read().unwrap();
+        let holder_guard = locked_holder.read();
         let optimized_segment = holder_guard.get(optimized_segment_id).unwrap();
-        let segment_guard = optimized_segment.0.read().unwrap();
+        let segment_arc = optimized_segment.get();
+        let segment_guard = segment_arc.read();
 
         assert_eq!(segment_guard.vectors_count(), 200 - segment_points_to_delete.len());
     }

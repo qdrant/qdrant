@@ -39,7 +39,7 @@ impl SimpleSegmentUpdater {
 
     /// Tries to delete points from all segments, returns number of actually deleted points
     fn delete_points(&self, op_num: SeqNumberType, ids: &Vec<PointIdType>) -> OperationResult<usize> {
-        self.segments.read().unwrap()
+        self.segments.read()
             .apply_points(op_num, ids, |id, write_segment|
                 write_segment.delete_point(op_num, id),
             )
@@ -59,7 +59,7 @@ impl SimpleSegmentUpdater {
         let mut updated_points: HashSet<PointIdType> = Default::default();
         let points_map: HashMap<PointIdType, &VectorType> = ids.iter().cloned().zip(vectors).collect();
 
-        let segments = self.segments.read().unwrap();
+        let segments = self.segments.read();
 
         let res = segments.apply_points(op_num, ids, |id, write_segment| {
             updated_points.insert(id);
@@ -75,7 +75,8 @@ impl SimpleSegmentUpdater {
         return match write_segment {
             None => Err(CollectionError::ServiceError { error: "No segments exists, expected at least one".to_string() }),
             Some(segment) => {
-                let mut write_segment = segment.0.write().unwrap();
+                let segment_arc = segment.get();
+                let mut write_segment = segment_arc.write();
                 for point_id in new_point_ids {
                     write_segment.upsert_point(op_num, point_id, points_map[&point_id])?;
                 }
@@ -92,7 +93,7 @@ impl SimpleSegmentUpdater {
     ) -> OperationResult<usize> {
         let mut updated_points: HashSet<PointIdType> = Default::default();
 
-        let res = self.segments.read().unwrap().apply_points(op_num, points, |id, write_segment| {
+        let res = self.segments.read().apply_points(op_num, points, |id, write_segment| {
             updated_points.insert(id);
             let mut res = true;
             for (key, payload) in payload {
@@ -113,7 +114,7 @@ impl SimpleSegmentUpdater {
     ) -> OperationResult<usize> {
         let mut updated_points: HashSet<PointIdType> = Default::default();
         let res = self.segments
-            .read().unwrap()
+            .read()
             .apply_points(op_num, points, |id, write_segment| {
                 updated_points.insert(id);
                 let mut res = true;
@@ -134,7 +135,7 @@ impl SimpleSegmentUpdater {
     ) -> OperationResult<usize> {
         let mut updated_points: HashSet<PointIdType> = Default::default();
         let res = self.segments
-            .read().unwrap()
+            .read()
             .apply_points(op_num, points, |id, write_segment| {
                 updated_points.insert(id);
                 write_segment.clear_payload(op_num, id)

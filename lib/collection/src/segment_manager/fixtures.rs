@@ -6,9 +6,10 @@ use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
 use tokio::runtime::Runtime;
 use tokio::runtime;
-use std::sync::{RwLock, Arc};
+use std::sync::Arc;
 use rand::Rng;
 use std::path::Path;
+use parking_lot::RwLock;
 
 pub fn empty_segment(path: &Path) -> Segment {
     let segment = build_simple_segment(path,  4, Distance::Dot).unwrap();

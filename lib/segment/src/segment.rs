@@ -34,19 +34,26 @@ pub struct Segment {
 impl Segment {
     /// Update current segment with all (not deleted) vectors and payload form `other` segment
     /// Perform index building at the end of update
-    pub fn update_from(&mut self, other: &dyn SegmentEntry) {
+    pub fn update_from(&mut self, other: &Segment) {
         self.version = cmp::max(self.version, other.version());
-        for other_external_id in other.iter_points() {
-            self.upsert_point(
-                self.version,
-                other_external_id,
-                &other.vector(other_external_id).unwrap()).unwrap();
 
-            self.set_full_payload(
-                self.version,
-                other_external_id,
-                other.payload(other_external_id).unwrap(),
-            ).unwrap();
+        // let other_id_mapper = other.id_mapper.borrow();
+        // let other_vector_storage = other.vector_storage.borrow();
+        // let other_payload_storage = other.payload_storage.borrow();
+
+        for other_external_id in other.iter_points() {
+            if !self.has_point(other_external_id) {
+                self.upsert_point(
+                    self.version,
+                    other_external_id,
+                    &other.vector(other_external_id).unwrap()).unwrap();
+
+                self.set_full_payload(
+                    self.version,
+                    other_external_id,
+                    other.payload(other_external_id).unwrap(),
+                ).unwrap();
+            }
         }
     }
 

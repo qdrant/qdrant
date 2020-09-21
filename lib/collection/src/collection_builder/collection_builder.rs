@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::wal::SerdeWal;
 use crate::operations::CollectionUpdateOperations;
 use wal::WalOptions;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use tokio::runtime::Handle;
 use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
 use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
@@ -13,6 +13,7 @@ use crossbeam_channel::unbounded;
 use crate::update_handler::update_handler::{UpdateHandler, Optimizer};
 use segment::types::SegmentConfig;
 use std::fs::create_dir_all;
+use parking_lot::RwLock;
 
 const DEFAULT_SEGMENT_NUMBER: usize = 5;
 

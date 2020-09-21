@@ -551,6 +551,7 @@ dependencies = [
  "futures",
  "itertools",
  "ordered-float",
+ "parking_lot 0.11.0",
  "rand 0.7.3",
  "segment",
  "serde 1.0.111",

@@ -1,7 +1,7 @@
 use crate::segment_manager::holders::segment_holder::{LockedSegment, LockedSegmentHolder};
 use std::sync::Arc;
 use crate::segment_manager::segment_managers::{SegmentSearcher};
-use crate::collection::{OperationResult, CollectionError};
+use crate::collection::OperationResult;
 use segment::types::{ScoredPoint, Distance, PointIdType, SeqNumberType};
 use tokio::runtime::Handle;
 use std::collections::{HashSet, HashMap};
@@ -33,10 +33,8 @@ impl SimpleSegmentSearcher {
         segment: LockedSegment,
         request: Arc<SearchRequest>,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        let segment = segment.0.read()
-            .or(Err(CollectionError::ServiceError { error: "Unable to unlock segment".to_owned() }))?;
 
-        let res = segment.search(
+        let res = segment.get().read().search(
             &request.vector,
             request.filter.as_ref(),
             request.top,
@@ -56,12 +54,12 @@ impl SegmentSearcher for SimpleSegmentSearcher {
         &self,
         request: Arc<SearchRequest>,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        let segments = self.segments.read().unwrap();
+        let segments = self.segments.read();
 
         let searches: Vec<_> = segments
             .iter()
             .map(|(_id, segment)|
-                SimpleSegmentSearcher::search_in_segment(LockedSegment(segment.0.clone()), request.clone())
+                SimpleSegmentSearcher::search_in_segment(segment.mk_copy(), request.clone())
             )
             .map(|f| self.runtime_handle.spawn(f))
             .collect();
@@ -100,7 +98,7 @@ impl SegmentSearcher for SimpleSegmentSearcher {
         let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut point_records: HashMap<PointIdType, Record> = Default::default();
 
-        self.segments.read().unwrap().read_points(points, |id, segment| {
+        self.segments.read().read_points(points, |id, segment| {
             // If this point was not found yet or this segment have later version
             if !point_version.contains_key(&id) || point_version[&id] < segment.version() {
                 point_records.insert(id, Record {
@@ -123,8 +121,8 @@ mod tests {
     use tokio::runtime::Runtime;
     use tokio::runtime;
     use crate::segment_manager::fixtures::build_test_holder;
-    use std::sync::RwLock;
     use tempdir::TempDir;
+    use parking_lot::RwLock;
 
     #[test]
     fn test_segments_search() {

@@ -25,7 +25,7 @@ impl MergeOptimizer {
 
 impl SegmentOptimizer for MergeOptimizer {
     fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId> {
-        let read_segments = segments.read().unwrap();
+        let read_segments = segments.read();
 
         if read_segments.len() <= self.max_segments {
             return vec![];
@@ -35,7 +35,7 @@ impl SegmentOptimizer for MergeOptimizer {
         // We need 3 segments because in this case we can guarantee that total segments number will be less
 
         read_segments.iter()
-            .map(|(idx, segment)| (*idx, segment.0.read().unwrap().info()))
+            .map(|(idx, segment)| (*idx, segment.get().read().info()))
             .filter(|(_, info)| info.segment_type != SegmentType::Special)
             .map(|(idx, info)| (idx, info.num_vectors))
             .sorted_by_key(|(_, size)| *size)
@@ -64,8 +64,9 @@ mod tests {
     use crate::segment_manager::fixtures::{random_segment};
     use crate::segment_manager::holders::segment_holder::SegmentHolder;
     use segment::types::{Distance, Indexes};
-    use std::sync::{Arc, RwLock};
+    use std::sync::{Arc};
     use tempdir::TempDir;
+    use parking_lot::RwLock;
 
     #[test]
     fn test_merge_optimizer() {
@@ -109,7 +110,7 @@ mod tests {
 
 
         let after_optimization_segments = locked_holder
-            .read().unwrap()
+            .read()
             .iter()
             .map(|(x, _)| *x)
             .collect_vec();
@@ -123,9 +124,9 @@ mod tests {
 
         for segment_id in after_optimization_segments {
             if !other_segment_ids.contains(&segment_id) {
-                let holder_guard = locked_holder.read().unwrap();
+                let holder_guard = locked_holder.read();
                 let new_segment = holder_guard.get(segment_id).unwrap();
-                assert_eq!(new_segment.0.read().unwrap().vectors_count(), 3 * 3);
+                assert_eq!(new_segment.get().read().vectors_count(), 3 * 3);
             }
         }
     }
