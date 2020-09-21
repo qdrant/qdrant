@@ -6,20 +6,65 @@ use crate::vector_storage::vector_storage::{ScoredPointOffset};
 use crate::spaces::tools::{mertic_object, peek_top_scores};
 use crate::entry::entry_point::OperationResult;
 use std::ops::Range;
+use std::path::Path;
+use sled::Db;
+use serde::{Deserialize, Serialize};
 
 pub struct SimpleVectorStorage {
     dim: usize,
     vectors: Vec<Vec<VectorElementType>>,
     deleted: HashSet<PointOffsetType>,
+    store: Db,
 }
 
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct StoredRecord {
+    pub deleted: bool,
+    pub vector: Vec<VectorElementType>,
+}
+
+
 impl SimpleVectorStorage {
-    pub fn new(dim: usize) -> SimpleVectorStorage {
+    pub fn open(path: &Path, dim: usize) -> Self {
+        let mut vectors: Vec<Vec<VectorElementType>> = vec![];
+        let mut deleted: HashSet<PointOffsetType> = HashSet::new();
+
+        let store = sled::open(path).unwrap();
+
+        vectors.resize(store.len(), vec![]);
+
+        for record in store.iter() {
+            let (key, val) = record.unwrap();
+            let point_id: PointOffsetType = bincode::deserialize(&key).unwrap();
+            let stored_record: StoredRecord = bincode::deserialize(&val).unwrap();
+            if stored_record.deleted {
+                deleted.insert(point_id);
+            }
+            vectors.insert(point_id, stored_record.vector.clone());
+        }
+
         return SimpleVectorStorage {
             dim,
-            vectors: Vec::new(),
-            deleted: Default::default(),
+            vectors,
+            deleted,
+            store,
         };
+    }
+
+    fn update_stored(&self, point_id: PointOffsetType) -> OperationResult<()> {
+        let v = self.vectors.get(point_id).unwrap();
+
+        let record = StoredRecord {
+            deleted: self.deleted.contains(&point_id),
+            vector: v.clone(), // ToDo: try to reduce number of vector copies
+        };
+        self.store.insert(
+            bincode::serialize(&point_id).unwrap(),
+            bincode::serialize(&record).unwrap()
+        )?;
+
+        Ok(())
     }
 }
 
@@ -46,11 +91,22 @@ impl VectorStorage for SimpleVectorStorage {
     fn put_vector(&mut self, vector: &Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
         assert_eq!(self.dim, vector.len());
         self.vectors.push(vector.clone());
+        self.update_stored(self.vectors.len() - 1)?;
         return Ok(self.vectors.len() - 1);
     }
 
-    fn delete(&mut self, key: usize) -> OperationResult<()> {
+    fn update_from(&mut self, other: &dyn VectorStorage) -> OperationResult<Range<PointOffsetType>> {
+        let start_index = self.vectors.len();
+        for id in other.iter_ids() {
+            self.put_vector(&other.get_vector(id).unwrap())?;
+        }
+        let end_index = self.vectors.len();
+        return Ok(start_index..end_index);
+    }
+
+    fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
         self.deleted.insert(key);
+        self.update_stored(key)?;
         Ok(())
     }
 
@@ -61,16 +117,7 @@ impl VectorStorage for SimpleVectorStorage {
     }
 
     fn flush(&self) -> OperationResult<usize> {
-        unimplemented!()
-    }
-
-    fn update_from(&mut self, other: &dyn VectorStorage) -> OperationResult<Range<PointOffsetType>> {
-        let start_index = self.vectors.len();
-        for id in other.iter_ids() {
-            self.put_vector(&other.get_vector(id).unwrap());
-        }
-        let end_index = self.vectors.len();
-        return Ok(start_index..end_index)
+        Ok(self.store.flush()?)
     }
 }
 
@@ -127,13 +174,16 @@ impl VectorMatcher for SimpleVectorStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempdir::TempDir;
 
 
     #[test]
     fn test_score_points() {
+
+        let dir = TempDir::new("storage_dir").unwrap();
         let distance = Distance::Dot;
         let dim = 4;
-        let mut storage = SimpleVectorStorage::new(dim);
+        let mut storage = SimpleVectorStorage::open(dir.path(), dim);
         let vec0 = vec![1.0, 0.0, 1.0, 1.0];
         let vec1 = vec![1.0, 0.0, 1.0, 0.0];
         let vec2 = vec![1.0, 1.0, 1.0, 1.0];

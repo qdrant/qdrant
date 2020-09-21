@@ -25,7 +25,7 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
 
     let id_mapper = sp(SimpleIdMapper::open(mapper_path.as_path()));
 
-    let vector_storage = sp(SimpleVectorStorage::new(config.vector_size));
+    let vector_storage = sp(SimpleVectorStorage::open(vector_storage_path.as_path(), config.vector_size));
     let payload_storage = sp(SimplePayloadStorage::open(payload_storage_path.as_path()));
 
 
