@@ -34,33 +34,29 @@ pub struct Segment {
 impl Segment {
     /// Update current segment with all (not deleted) vectors and payload form `other` segment
     /// Perform index building at the end of update
-    pub fn update_from(&mut self, other: &Segment) {
+    pub fn update_from(&mut self, other: &Segment) -> Result<()> {
         self.version = cmp::max(self.version, other.version());
 
-        // let other_id_mapper = other.id_mapper.borrow();
-        // let other_vector_storage = other.vector_storage.borrow();
-        // let other_payload_storage = other.payload_storage.borrow();
+        let other_id_mapper = other.id_mapper.borrow();
+        let other_vector_storage = other.vector_storage.borrow();
+        let other_payload_storage = other.payload_storage.borrow();
 
-        for other_external_id in other.iter_points() {
-            if !self.has_point(other_external_id) {
-                self.upsert_point(
-                    self.version,
-                    other_external_id,
-                    &other.vector(other_external_id).unwrap()).unwrap();
+        let new_internal_range = self.vector_storage.borrow_mut().update_from(&*other_vector_storage)?;
 
-                self.set_full_payload(
-                    self.version,
-                    other_external_id,
-                    other.payload(other_external_id).unwrap(),
-                ).unwrap();
-            }
+        let mut id_mapper = self.id_mapper.borrow_mut();
+        let mut payload_storage = self.payload_storage.borrow_mut();
+
+        for (new_internal_id, old_internal_id) in new_internal_range.zip(other.vector_storage.borrow().iter_ids()) {
+            let other_external_id = other_id_mapper.external_id(old_internal_id).unwrap();
+            id_mapper.set_link(other_external_id, new_internal_id)?;
+            payload_storage.assign_all(new_internal_id, other_payload_storage.payload(old_internal_id))?;
         }
+        Ok(())
     }
 
 
     /// Launch index rebuilding on a whole segment data
     pub fn finish_building(&mut self) -> Result<()> {
-        self.vector_storage.borrow_mut().commit()?;
         self.query_planner.borrow_mut().build_index()?;
         Ok(())
     }

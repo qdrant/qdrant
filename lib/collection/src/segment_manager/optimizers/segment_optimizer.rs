@@ -59,7 +59,7 @@ pub trait SegmentOptimizer {
             match segment {
                 LockedSegment::Original(segment_arc) => {
                     let segment_guard = segment_arc.read();
-                    optimized_segment.update_from(&segment_guard);
+                    optimized_segment.update_from(&segment_guard)?;
                 },
                 LockedSegment::Proxy(_) => panic!("Attempt to optimize segment which is already currently under optimization. Should never happen"),
             }

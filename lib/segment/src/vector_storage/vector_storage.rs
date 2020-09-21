@@ -2,6 +2,7 @@ use crate::types::{PointOffsetType, ScoreType, VectorElementType, Distance};
 use std::cmp::{Ordering};
 use ordered_float::OrderedFloat;
 use crate::entry::entry_point::OperationResult;
+use std::ops::Range;
 
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -34,10 +35,7 @@ pub trait VectorStorage {
     fn deleted_count(&self) -> usize; /// Number of vectors, marked as deleted but still stored
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>>;
     fn put_vector(&mut self, vector: &Vec<VectorElementType>) -> OperationResult<PointOffsetType>;
-
-    /// Makes sure that all changes are applied and used by this storage.
-    /// Useful large indexed storages during index rebuilding.
-    fn commit(&mut self) -> OperationResult<()>;
+    fn update_from(&mut self, other: &dyn VectorStorage) -> OperationResult<Range<PointOffsetType>>;
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()>;
     fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
     fn flush(&self) -> OperationResult<usize>;

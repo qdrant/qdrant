@@ -5,6 +5,7 @@ use crate::vector_storage::vector_storage::{ScoredPointOffset};
 
 use crate::spaces::tools::{mertic_object, peek_top_scores};
 use crate::entry::entry_point::OperationResult;
+use std::ops::Range;
 
 pub struct SimpleVectorStorage {
     dim: usize,
@@ -48,10 +49,6 @@ impl VectorStorage for SimpleVectorStorage {
         return Ok(self.vectors.len() - 1);
     }
 
-    fn commit(&mut self) -> OperationResult<()> {
-        Ok(())
-    }
-
     fn delete(&mut self, key: usize) -> OperationResult<()> {
         self.deleted.insert(key);
         Ok(())
@@ -65,6 +62,15 @@ impl VectorStorage for SimpleVectorStorage {
 
     fn flush(&self) -> OperationResult<usize> {
         unimplemented!()
+    }
+
+    fn update_from(&mut self, other: &dyn VectorStorage) -> OperationResult<Range<PointOffsetType>> {
+        let start_index = self.vectors.len();
+        for id in other.iter_ids() {
+            self.put_vector(&other.get_vector(id).unwrap());
+        }
+        let end_index = self.vectors.len();
+        return Ok(start_index..end_index)
     }
 }
 

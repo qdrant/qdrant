@@ -71,7 +71,7 @@ mod tests {
     use itertools::Itertools;
     use rand::Rng;
     use std::sync::Arc;
-    use segment::types::{Distance, Indexes};
+    use segment::types::{Distance, Indexes, PayloadType};
     use tempdir::TempDir;
     use parking_lot::RwLock;
 
@@ -93,6 +93,36 @@ mod tests {
 
         for point_id in segment_points_to_delete.iter() {
             segment.get().write().delete_point(101, *point_id).unwrap();
+        }
+
+        let segment_points_to_assign1 = segment.get()
+            .read()
+            .iter_points()
+            .filter(|_| rnd.gen_bool(0.05)).
+            collect_vec();
+
+        let segment_points_to_assign2 = segment.get()
+            .read()
+            .iter_points()
+            .filter(|_| rnd.gen_bool(0.05)).
+            collect_vec();
+
+        for point_id in segment_points_to_assign1.iter() {
+            segment.get().write().set_payload(
+                102,
+                *point_id,
+                &"color".to_string(),
+                PayloadType::Keyword(vec!["red".to_string()]),
+            ).unwrap();
+        }
+
+        for point_id in segment_points_to_assign2.iter() {
+            segment.get().write().set_payload(
+                102,
+                *point_id,
+                &"size".to_string(),
+                PayloadType::Float(vec![0.42]),
+            ).unwrap();
         }
 
         let locked_holder = Arc::new(RwLock::new(holder));
@@ -130,5 +160,18 @@ mod tests {
         let segment_guard = segment_arc.read();
 
         assert_eq!(segment_guard.vectors_count(), 200 - segment_points_to_delete.len());
+
+
+        for point_id in segment_points_to_assign1.iter() {
+            assert!(segment_guard.has_point(*point_id));
+            let payload = segment_guard.payload(*point_id).unwrap().get(&"color".to_string()).unwrap().clone();
+
+            match payload {
+                PayloadType::Keyword(x) => assert_eq!(x.get(0).unwrap(), &"red".to_string()),
+                PayloadType::Integer(_) => assert!(false),
+                PayloadType::Float(_) => assert!(false),
+                PayloadType::Geo(_) => assert!(false),
+            }
+        }
     }
 }
