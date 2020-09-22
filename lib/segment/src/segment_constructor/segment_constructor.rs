@@ -18,14 +18,14 @@ use std::io::Read;
 fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> { Arc::new(AtomicRefCell::new(t)) }
 
 
-fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentConfig) -> Segment {
+fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentConfig) -> OperationResult<Segment> {
     let mapper_path = segment_path.join("id_mapper");
     let payload_storage_path = segment_path.join("payload_storage");
     let vector_storage_path = segment_path.join("vector_storage");
 
     let id_mapper = sp(SimpleIdMapper::open(mapper_path.as_path()));
 
-    let vector_storage = sp(SimpleVectorStorage::open(vector_storage_path.as_path(), config.vector_size));
+    let vector_storage = sp(SimpleVectorStorage::open(vector_storage_path.as_path(), config.vector_size)?);
     let payload_storage = sp(SimplePayloadStorage::open(payload_storage_path.as_path()));
 
 
@@ -50,7 +50,7 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
 
     let query_planer = SimpleQueryPlanner::new(index);
 
-    return Segment {
+    return Ok(Segment {
         version,
         persisted_version: Arc::new(Mutex::new(version)),
         current_path: segment_path.to_owned(),
@@ -61,7 +61,7 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
         appendable_flag: appendable,
         segment_type,
         segment_config: config.clone(),
-    };
+    });
 }
 
 
@@ -78,7 +78,7 @@ pub fn load_segment(path: &Path) -> OperationResult<Segment> {
         })
     })?;
 
-    Ok(create_segment(segment_state.version, path, &segment_state.config))
+    create_segment(segment_state.version, path, &segment_state.config)
 }
 
 
@@ -97,6 +97,6 @@ pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Seg
     create_dir_all(&segment_path)?;
 
 
-    Ok(create_segment(0, segment_path.as_path(), config))
+    create_segment(0, segment_path.as_path(), config)
 }
 

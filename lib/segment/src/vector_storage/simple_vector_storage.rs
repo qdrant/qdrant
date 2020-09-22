@@ -26,16 +26,16 @@ struct StoredRecord {
 
 
 impl SimpleVectorStorage {
-    pub fn open(path: &Path, dim: usize) -> Self {
+    pub fn open(path: &Path, dim: usize) -> OperationResult<Self> {
         let mut vectors: Vec<Vec<VectorElementType>> = vec![];
         let mut deleted: HashSet<PointOffsetType> = HashSet::new();
 
-        let store = sled::open(path).unwrap();
+        let store = sled::open(path)?;
 
         vectors.resize(store.len(), vec![]);
 
         for record in store.iter() {
-            let (key, val) = record.unwrap();
+            let (key, val) = record?;
             let point_id: PointOffsetType = bincode::deserialize(&key).unwrap();
             let stored_record: StoredRecord = bincode::deserialize(&val).unwrap();
             if stored_record.deleted {
@@ -44,12 +44,12 @@ impl SimpleVectorStorage {
             vectors.insert(point_id, stored_record.vector.clone());
         }
 
-        return SimpleVectorStorage {
+        return Ok(SimpleVectorStorage {
             dim,
             vectors,
             deleted,
             store,
-        };
+        });
     }
 
     fn update_stored(&self, point_id: PointOffsetType) -> OperationResult<()> {
@@ -183,7 +183,7 @@ mod tests {
         let dir = TempDir::new("storage_dir").unwrap();
         let distance = Distance::Dot;
         let dim = 4;
-        let mut storage = SimpleVectorStorage::open(dir.path(), dim);
+        let mut storage = SimpleVectorStorage::open(dir.path(), dim).unwrap();
         let vec0 = vec![1.0, 0.0, 1.0, 1.0];
         let vec1 = vec![1.0, 0.0, 1.0, 0.0];
         let vec2 = vec![1.0, 1.0, 1.0, 1.0];

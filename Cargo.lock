@@ -1311,6 +1311,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "memmap"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6585fd95e7bb50d6cc31e20d4cf9afb4e2ba16c5846fc76793f11218da9c475b"
+dependencies = [
+ "libc",
+ "winapi 0.3.8",
+]
+
+[[package]]
 name = "memoffset"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1883,6 +1893,7 @@ dependencies = [
  "atomic_refcell",
  "atomicwrites",
  "bincode",
+ "memmap 0.7.0",
  "ordered-float",
  "serde 1.0.111",
  "serde_cbor",
@@ -2405,7 +2416,7 @@ dependencies = [
  "eventual",
  "fs2 0.2.5",
  "log 0.3.9",
- "memmap",
+ "memmap 0.2.3",
  "rand 0.3.23",
  "rustc-serialize",
  "time",
