@@ -1,12 +1,13 @@
-use crate::vector_storage::vector_storage::VectorStorage;
+use crate::vector_storage::vector_storage::{VectorStorage, VectorMatcher, ScoredPointOffset};
 use crate::entry::entry_point::OperationResult;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::fs::{File, OpenOptions};
 use memmap::{MmapOptions, Mmap, MmapMut};
 use std::mem::{size_of, transmute};
-use crate::types::{VectorElementType, PointOffsetType};
+use crate::types::{VectorElementType, PointOffsetType, Distance};
 use std::io::Write;
+use crate::spaces::tools::{mertic_object, peek_top_scores};
 
 pub struct MemmapVectorStorage {
     dim: usize,
@@ -96,9 +97,8 @@ impl MemmapVectorStorage {
 
     fn data_offset(&self, key: PointOffsetType) -> Option<usize> {
         let vector_data_length = self.dim * size_of::<VectorElementType>();
-        let max_offset = vector_data_length * self.num_vectors;
         let offset = key * vector_data_length + HEADER_SIZE;
-        if offset + vector_data_length > max_offset {
+        if key >= self.num_vectors {
             return None;
         }
         Some(offset)
@@ -108,10 +108,14 @@ impl MemmapVectorStorage {
         self.dim * size_of::<VectorElementType>()
     }
 
-    fn raw_vector(&self, offset: usize) -> &[VectorElementType] {
+    fn raw_vector_offset(&self, offset: usize) -> &[VectorElementType] {
         let byte_slice = &self.mmap.as_ref().unwrap()[offset..(offset + self.raw_size())];
         let arr: &[VectorElementType] = unsafe { transmute(byte_slice) };
         return &arr[0..self.dim];
+    }
+
+    fn raw_vector(&self, key: PointOffsetType) -> Option<&[VectorElementType]> {
+        self.data_offset(key).map(|offset| self.raw_vector_offset(offset))
     }
 
     fn deleted(&self, key: PointOffsetType) -> Option<bool> {
@@ -137,7 +141,7 @@ impl VectorStorage for MemmapVectorStorage {
         match self.deleted(key) {
             None => None,
             Some(false) => self.data_offset(key).map(|offset| {
-                self.raw_vector(offset).to_vec()
+                self.raw_vector_offset(offset).to_vec()
             }),
             Some(true) => None
         }
@@ -220,6 +224,55 @@ impl VectorStorage for MemmapVectorStorage {
 }
 
 
+impl VectorMatcher for MemmapVectorStorage {
+    fn score_points(
+        &self, vector: &Vec<VectorElementType>,
+        points: &[PointOffsetType],
+        top: usize,
+        distance: &Distance,
+    ) -> Vec<ScoredPointOffset> {
+        let metric = mertic_object(distance);
+
+        let scores: Vec<ScoredPointOffset> = points.iter()
+            .cloned()
+            .filter(|point| !self.deleted(*point).unwrap_or(true))
+            .map(|point| {
+                let other_vector = self.raw_vector(point).unwrap();
+                ScoredPointOffset {
+                    idx: point,
+                    score: metric.similarity(vector, other_vector),
+                }
+            }).collect();
+        return peek_top_scores(&scores, top, distance);
+    }
+
+    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize, distance: &Distance) -> Vec<ScoredPointOffset> {
+        let metric = mertic_object(distance);
+
+        let scores: Vec<ScoredPointOffset> = self.iter_ids()
+            .map(|point| {
+                let other_vector = self.raw_vector(point).unwrap();
+                ScoredPointOffset {
+                    idx: point,
+                    score: metric.similarity(vector, other_vector),
+                }
+            }).collect();
+
+        return peek_top_scores(&scores, top, distance);
+    }
+
+    fn score_internal(
+        &self,
+        point: PointOffsetType,
+        points: &[PointOffsetType],
+        top: usize,
+        distance: &Distance,
+    ) -> Vec<ScoredPointOffset> {
+        let vector = self.get_vector(point).unwrap();
+        return self.score_points(&vector, points, top, distance);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,6 +325,19 @@ mod tests {
         let stored_ids: Vec<PointOffsetType> = storage.iter_ids().collect();
 
         assert_eq!(stored_ids, vec![0, 1, 3, 4]);
+
+
+        let res = storage.score_all(&vec3, 2, &Distance::Dot);
+
+        assert_eq!(res.len(), 2);
+
+        assert_ne!(res[0].idx, 2);
+
+        let res = storage.score_points(
+            &vec3, &vec![0, 1, 2, 3, 4], 2, &Distance::Dot);
+
+        assert_eq!(res.len(), 2);
+        assert_ne!(res[0].idx, 2);
     }
 
 
