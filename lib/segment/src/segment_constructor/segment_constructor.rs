@@ -4,7 +4,7 @@ use crate::vector_storage::simple_vector_storage::SimpleVectorStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::index::plain_index::{PlainPayloadIndex, PlainIndex};
 use crate::query_planner::simple_query_planner::SimpleQueryPlanner;
-use crate::types::{SegmentType, SegmentConfig, Indexes, SegmentState, SeqNumberType};
+use crate::types::{SegmentType, SegmentConfig, Indexes, SegmentState, SeqNumberType, StorageType};
 use std::sync::{Arc, Mutex};
 use atomic_refcell::AtomicRefCell;
 use crate::payload_storage::query_checker::SimpleConditionChecker;
@@ -13,6 +13,8 @@ use uuid::Uuid;
 use std::fs::{File, create_dir_all};
 use crate::entry::entry_point::{OperationResult, OperationError};
 use std::io::Read;
+use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
+use crate::vector_storage::vector_storage::VectorStorage;
 
 
 fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> { Arc::new(AtomicRefCell::new(t)) }
@@ -25,7 +27,12 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
 
     let id_mapper = sp(SimpleIdMapper::open(mapper_path.as_path()));
 
-    let vector_storage = sp(SimpleVectorStorage::open(vector_storage_path.as_path(), config.vector_size)?);
+
+    let vector_storage: Arc<AtomicRefCell<dyn VectorStorage>> = match config.storage_type {
+        StorageType::InMemory => sp(SimpleVectorStorage::open(vector_storage_path.as_path(), config.vector_size)?),
+        StorageType::Mmap => sp(MemmapVectorStorage::open(vector_storage_path.as_path(), config.vector_size)?),
+    };
+
     let payload_storage = sp(SimplePayloadStorage::open(payload_storage_path.as_path()));
 
 
@@ -43,9 +50,11 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
         Indexes::Hnsw { .. } => unimplemented!(),
     });
 
-    let (segment_type, appendable) = match config.index {
-        Indexes::Plain { .. } => (SegmentType::Plain, true),
-        Indexes::Hnsw { .. } => (SegmentType::Indexed, false),
+    let appendable = config.index == Indexes::Plain {} && config.storage_type == StorageType::InMemory;
+
+    let segment_type = match config.index {
+        Indexes::Plain { .. } => SegmentType::Plain,
+        Indexes::Hnsw { .. } => SegmentType::Indexed,
     };
 
     let query_planer = SimpleQueryPlanner::new(index);

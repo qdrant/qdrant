@@ -1,5 +1,5 @@
 use segment::entry::entry_point::{SegmentEntry, Result};
-use segment::types::{Filter, Condition, SearchParams, ScoredPoint, PayloadKeyType, PayloadType, TheMap, SeqNumberType, VectorElementType, PointIdType, SegmentInfo, SegmentType};
+use segment::types::{Filter, Condition, SearchParams, ScoredPoint, PayloadKeyType, PayloadType, TheMap, SeqNumberType, VectorElementType, PointIdType, SegmentInfo, SegmentType, SegmentConfig};
 use std::cmp::max;
 use crate::segment_manager::holders::segment_holder::LockedSegment;
 use std::collections::HashSet;
@@ -217,6 +217,10 @@ impl SegmentEntry for ProxySegment {
             disk_usage_bytes: wrapped_info.disk_usage_bytes + write_info.disk_usage_bytes,
             is_appendable: false
         };
+    }
+
+    fn config(&self) -> SegmentConfig {
+        self.wrapped_segment.get().read().config()
     }
 
     fn flush(&self) -> Result<u64> {

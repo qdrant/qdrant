@@ -16,7 +16,7 @@ pub trait SegmentOptimizer {
     fn temp_segment(&self) -> OperationResult<LockedSegment>;
 
     /// Build optimized segment
-    fn optimized_segment(&self) -> OperationResult<Segment>;
+    fn optimized_segment(&self, optimizing_segments: &Vec<LockedSegment>) -> OperationResult<Segment>;
 
 
     /// Performs optimization of collections's segments, including:
@@ -35,6 +35,8 @@ pub trait SegmentOptimizer {
                 .collect()
         };
 
+        let mut optimized_segment = self.optimized_segment(&optimizing_segments)?;
+
         let proxies: Vec<_> = optimizing_segments.iter()
             .map(|sg| ProxySegment::new(
                 sg.mk_copy(),
@@ -50,9 +52,6 @@ pub trait SegmentOptimizer {
                 .map(|(proxy, idx)| write_segments.swap(proxy, &vec![idx]))
                 .collect()
         };
-
-        let mut optimized_segment = self.optimized_segment()?;
-
 
         // ---- SLOW PART -----
         for segment in optimizing_segments {

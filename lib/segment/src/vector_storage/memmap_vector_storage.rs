@@ -1,4 +1,4 @@
-use crate::vector_storage::vector_storage::{VectorStorage, VectorMatcher, ScoredPointOffset};
+use crate::vector_storage::vector_storage::{VectorStorage, ScoredPointOffset};
 use crate::entry::entry_point::OperationResult;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -221,10 +221,7 @@ impl VectorStorage for MemmapVectorStorage {
         self.deleted_mmap.as_ref().unwrap().flush()?;
         Ok(0)
     }
-}
 
-
-impl VectorMatcher for MemmapVectorStorage {
     fn score_points(
         &self, vector: &Vec<VectorElementType>,
         points: &[PointOffsetType],

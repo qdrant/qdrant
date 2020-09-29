@@ -1,6 +1,6 @@
 use thiserror::Error;
 use std::path::Path;
-use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentInfo};
+use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentConfig};
 use std::result;
 use sled::Error;
 use std::io::Error as IoError;
@@ -94,7 +94,11 @@ pub trait SegmentEntry {
     /// Return number of vectors in this segment
     fn vectors_count(&self) -> usize;
 
+    /// Get current stats of the segment
     fn info(&self) -> SegmentInfo;
+
+    /// Get segment configuration
+    fn config(&self) -> SegmentConfig;
 
     /// Flushes current segment state into a persistent storage, if possible
     /// Returns maximum version number which is guaranteed to be persisted.

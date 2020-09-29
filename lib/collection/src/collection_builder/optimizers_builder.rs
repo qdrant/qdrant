@@ -11,23 +11,26 @@ pub fn build_optimizers(
     deleted_threshold: f64,
     vacuum_min_vector_number: usize,
     max_segment_number: usize,
+    memmap_threshold: usize,
+    indexing_threshold: usize,
 ) -> Arc<Vec<Box<Optimizer>>> {
-
     let segments_path = collection_path.join("segments");
 
     Arc::new(vec![
         Box::new(
             MergeOptimizer::new(
                 max_segment_number,
+                memmap_threshold,
+                indexing_threshold,
                 segments_path.clone(),
-                segment_config.clone()
+                segment_config.clone(),
             )
         ),
         Box::new(VacuumOptimizer::new(
             deleted_threshold,
             vacuum_min_vector_number,
             segments_path.clone(),
-            segment_config
+            segment_config,
         ))
     ])
 }

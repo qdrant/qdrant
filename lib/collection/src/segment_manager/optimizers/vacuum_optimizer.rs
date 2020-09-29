@@ -57,8 +57,10 @@ impl SegmentOptimizer for VacuumOptimizer {
         )?))
     }
 
-    fn optimized_segment(&self) -> OperationResult<Segment> {
-        Ok(build_segment(self.segments_path.as_path(), &self.config)?)
+    fn optimized_segment(&self, optimizing_segments: &Vec<LockedSegment>) -> OperationResult<Segment> {
+        let optimizing_segment = optimizing_segments.get(0).unwrap();
+        let config = optimizing_segment.get().read().config();
+        Ok(build_segment(self.segments_path.as_path(), &config)?)
     }
 }
 
@@ -71,7 +73,7 @@ mod tests {
     use itertools::Itertools;
     use rand::Rng;
     use std::sync::Arc;
-    use segment::types::{Distance, Indexes, PayloadType};
+    use segment::types::{Distance, Indexes, PayloadType, StorageType};
     use tempdir::TempDir;
     use parking_lot::RwLock;
 
@@ -135,6 +137,7 @@ mod tests {
                 vector_size: 4,
                 index: Indexes::Plain {},
                 distance: Distance::Dot,
+                storage_type: StorageType::InMemory
             },
         );
 

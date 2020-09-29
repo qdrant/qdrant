@@ -91,7 +91,7 @@ pub fn distance_order(distance: &Distance) -> Order {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Copy, Clone)]
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum Indexes {
@@ -108,12 +108,29 @@ impl Default for Indexes {
     }
 }
 
+
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type", content = "options")]
+pub enum StorageType {
+    InMemory,
+    Mmap,
+}
+
+impl Default for StorageType {
+    fn default() -> Self {
+        StorageType::InMemory
+    }
+}
+
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     pub vector_size: usize,
     pub index: Indexes,
     pub distance: Distance,
+    pub storage_type: StorageType
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

@@ -20,6 +20,7 @@ pub fn build_simple_segment(path: &Path, dim: usize, distance: Distance) -> Oper
             vector_size: dim,
             index: Indexes::Plain {},
             distance,
+            storage_type: Default::default()
         },
     )
 }

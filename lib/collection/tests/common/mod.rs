@@ -23,6 +23,7 @@ pub fn simple_collection_fixture() -> (Runtime, TempDir, TempDir, Collection) {
             ef_construct: 128,
         },
         distance: Distance::Dot,
+        storage_type: Default::default()
     };
 
 

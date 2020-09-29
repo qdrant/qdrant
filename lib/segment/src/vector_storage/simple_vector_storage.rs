@@ -1,4 +1,4 @@
-use super::vector_storage::{VectorStorage, VectorMatcher};
+use super::vector_storage::VectorStorage;
 use crate::types::{PointOffsetType, VectorElementType, Distance};
 use std::collections::{HashSet};
 use crate::vector_storage::vector_storage::{ScoredPointOffset};
@@ -119,9 +119,7 @@ impl VectorStorage for SimpleVectorStorage {
     fn flush(&self) -> OperationResult<usize> {
         Ok(self.store.flush()?)
     }
-}
 
-impl VectorMatcher for SimpleVectorStorage {
     fn score_points(
         &self,
         vector: &Vec<VectorElementType>,

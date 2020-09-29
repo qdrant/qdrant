@@ -2,7 +2,7 @@ use crate::segment_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId, LockedSegment};
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::segment::Segment;
-use segment::types::{SegmentType, SegmentConfig};
+use segment::types::{SegmentType, SegmentConfig, StorageType, Indexes};
 
 use itertools::Itertools;
 use segment::segment_constructor::segment_constructor::build_segment;
@@ -12,13 +12,19 @@ use crate::collection::OperationResult;
 
 pub struct MergeOptimizer {
     max_segments: usize,
+    memmap_threshold: usize,
+    indexing_threshold: usize,
     segments_path: PathBuf,
     config: SegmentConfig,
 }
 
 impl MergeOptimizer {
-    pub fn new(max_segments: usize, segments_path: PathBuf, config: SegmentConfig) -> Self {
-        return MergeOptimizer { max_segments, segments_path, config };
+    pub fn new(
+        max_segments: usize,
+        memmap_threshold: usize,
+        indexing_threshold: usize,
+        segments_path: PathBuf, config: SegmentConfig) -> Self {
+        return MergeOptimizer { max_segments, memmap_threshold, indexing_threshold, segments_path, config };
     }
 }
 
@@ -52,8 +58,21 @@ impl SegmentOptimizer for MergeOptimizer {
         )?))
     }
 
-    fn optimized_segment(&self) -> OperationResult<Segment> {
-        Ok(build_segment(self.segments_path.as_path(), &self.config)?)
+    fn optimized_segment(&self, optimizing_segments: &Vec<LockedSegment>) -> OperationResult<Segment> {
+        let total_vectors: usize = optimizing_segments.iter()
+            .map(|s| s.get().read().info().num_vectors).sum();
+
+        let mut optimized_config = self.config.clone();
+
+        if total_vectors < self.memmap_threshold {
+            optimized_config.storage_type = StorageType::InMemory;
+        }
+
+        if total_vectors < self.indexing_threshold {
+            optimized_config.index = Indexes::Plain {};
+        }
+
+        Ok(build_segment(self.segments_path.as_path(), &optimized_config)?)
     }
 }
 
@@ -90,11 +109,16 @@ mod tests {
         other_segment_ids.push(holder.add(random_segment(dir.path(), 100, 20, 4)));
 
 
-        let merge_optimizer = MergeOptimizer::new(5, dir.path().to_owned(), SegmentConfig {
-            vector_size: 4,
-            index: Indexes::Plain {},
-            distance: Distance::Dot,
-        });
+        let merge_optimizer = MergeOptimizer::new(
+            5,
+            10000,
+            100000,
+            dir.path().to_owned(), SegmentConfig {
+                vector_size: 4,
+                index: Indexes::Plain {},
+                distance: Distance::Dot,
+                storage_type: Default::default(),
+            });
 
         let locked_holder = Arc::new(RwLock::new(holder));
 

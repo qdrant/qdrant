@@ -265,6 +265,10 @@ impl SegmentEntry for Segment {
         }
     }
 
+    fn config(&self) -> SegmentConfig {
+        self.segment_config.clone()
+    }
+
     fn flush(&self) -> Result<SeqNumberType> {
         let persisted_version = self.persisted_version.lock().unwrap();
         if *persisted_version == self.version {

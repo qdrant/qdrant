@@ -13,6 +13,8 @@ pub struct OptimizersConfig {
     pub deleted_threshold: f64,
     pub vacuum_min_vector_number: usize,
     pub max_segment_number: usize,
+    pub memmap_threshold: usize,
+    pub indexing_threshold: usize
 }
 
 

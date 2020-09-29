@@ -6,7 +6,7 @@ use tokio::runtime::Runtime;
 use tokio::runtime;
 use num_cpus;
 use std::cmp::max;
-use segment::types::SegmentConfig;
+use segment::types::{SegmentConfig, StorageType};
 use std::path::{Path, PathBuf};
 use std::fs::{create_dir_all, remove_dir_all};
 use collection::collection_builder::optimizers_builder::build_optimizers;
@@ -121,6 +121,7 @@ impl TableOfContent {
                     vector_size: dim,
                     index: index.unwrap_or(Default::default()),
                     distance,
+                    storage_type: Default::default()
                 };
 
                 let optimizers = build_optimizers(
@@ -129,6 +130,8 @@ impl TableOfContent {
                     self.storage_config.optimizers.deleted_threshold,
                     self.storage_config.optimizers.vacuum_min_vector_number,
                     self.storage_config.optimizers.max_segment_number,
+                    self.storage_config.optimizers.memmap_threshold,
+                    self.storage_config.optimizers.indexing_threshold,
                 );
 
                 let segment = build_collection(

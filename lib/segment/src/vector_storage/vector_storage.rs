@@ -39,9 +39,7 @@ pub trait VectorStorage {
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()>;
     fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
     fn flush(&self) -> OperationResult<usize>;
-}
 
-pub trait VectorMatcher {
     fn score_points(
         &self,
         vector: &Vec<VectorElementType>,
