@@ -290,7 +290,7 @@ impl SegmentEntry for Segment {
         Ok(state.version)
     }
 
-    fn drop(self) -> Result<()> {
-        Ok(remove_dir_all(self.current_path)?)
+    fn drop_data(&mut self) -> Result<()> {
+        Ok(remove_dir_all(&self.current_path)?)
     }
 }

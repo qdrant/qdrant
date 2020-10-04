@@ -1,5 +1,4 @@
 use collection::collection_builder::collection_builder::build_collection;
-use tempdir::TempDir;
 use wal::WalOptions;
 use collection::collection::Collection;
 use segment::types::{Distance, SegmentConfig, Indexes};

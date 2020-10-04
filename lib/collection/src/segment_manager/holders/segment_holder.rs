@@ -39,6 +39,11 @@ impl LockedSegment {
             LockedSegment::Proxy(proxy) => proxy.clone()
         };
     }
+
+    pub fn drop_data(self) -> Result<()> {
+        self.get().write().drop_data()?;
+        Ok(())
+    }
 }
 
 
@@ -104,12 +109,19 @@ impl<'s> SegmentHolder {
     }
 
     /// Replace old segments with a new one
-    pub fn swap<T>(&mut self, segment: T, remove_ids: &Vec<SegmentId>) -> SegmentId where T: Into<LockedSegment> {
+    pub fn swap<T>(&mut self, segment: T, remove_ids: &Vec<SegmentId>, drop_data: bool) -> OperationResult<SegmentId> where T: Into<LockedSegment> {
         let new_id = self.add(segment);
         for remove_id in remove_ids {
-            self.segments.remove(remove_id);
+            let removed_segment = self.segments.remove(remove_id);
+
+            if drop_data {
+                match removed_segment {
+                    None => {}
+                    Some(segment) => segment.drop_data()?,
+                }
+            }
         }
-        return new_id;
+        return Ok(new_id);
     }
 
     pub fn get(&self, id: SegmentId) -> Option<&LockedSegment> {
@@ -225,7 +237,7 @@ mod tests {
 
         let segment3 = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
 
-        let _sid3 = holder.swap(segment3, &vec![sid1, sid2]);
+        let _sid3 = holder.swap(segment3, &vec![sid1, sid2], true).unwrap();
     }
 }
 

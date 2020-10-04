@@ -65,8 +65,8 @@ impl UpdateHandler {
         flush_timeout_sec: u64
     ) -> () {
         let flush_timeout = Duration::from_secs(flush_timeout_sec);
+        let mut last_flushed = Instant::now();
         loop {
-            let mut last_flushed = Instant::now();
             let recv_res = receiver.recv();
             match recv_res {
                 Ok(_operation_id) => {

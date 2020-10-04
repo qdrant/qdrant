@@ -227,8 +227,9 @@ impl SegmentEntry for ProxySegment {
        Ok(self.wrapped_segment.get().read().version())
     }
 
-    fn drop(self) -> Result<()> {
-        unimplemented!();
+    fn drop_data(&mut self) -> Result<()> {
+        self.wrapped_segment.get().write().drop_data()?;
+        Ok(())
     }
 }
 

@@ -105,6 +105,6 @@ pub trait SegmentEntry {
     fn flush(&self) -> Result<SeqNumberType>;
 
     /// Removes all persisted data and forces to destroy segment
-    fn drop(self) -> Result<()>;
+    fn drop_data(&mut self) -> Result<()>;
 }
 

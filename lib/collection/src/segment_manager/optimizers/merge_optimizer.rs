@@ -130,8 +130,15 @@ mod tests {
             assert!(segments_to_merge.contains(&segment_in));
         }
 
-        merge_optimizer.optimize(locked_holder.clone(), suggested_for_merge).unwrap();
+        let old_path =segments_to_merge.iter()
+            .map(|sid| {
+                match locked_holder.read().get(*sid).unwrap() {
+                    LockedSegment::Original(x) => x.read().current_path.clone(),
+                    LockedSegment::Proxy(_) => panic!("Not expected"),
+                }
+            }).collect_vec();
 
+        merge_optimizer.optimize(locked_holder.clone(), suggested_for_merge).unwrap();
 
         let after_optimization_segments = locked_holder
             .read()
@@ -139,13 +146,16 @@ mod tests {
             .map(|(x, _)| *x)
             .collect_vec();
 
+
+        // Check proper number of segments after optimization
         assert_eq!(after_optimization_segments.len(), 5);
 
+        // Check other segments are untouched
         for segment_id in other_segment_ids.iter() {
             assert!(after_optimization_segments.contains(&segment_id))
         }
 
-
+        // Check new optimized segment have all vectors in it
         for segment_id in after_optimization_segments {
             if !other_segment_ids.contains(&segment_id) {
                 let holder_guard = locked_holder.read();
@@ -153,5 +163,8 @@ mod tests {
                 assert_eq!(new_segment.get().read().vectors_count(), 3 * 3);
             }
         }
+
+        // Check if optimized segments removed from disk
+        old_path.into_iter().for_each(|x| assert!(!x.exists()));
     }
 }

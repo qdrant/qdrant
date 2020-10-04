@@ -49,7 +49,7 @@ pub trait SegmentOptimizer {
             let mut write_segments = segments.write();
             proxies.into_iter()
                 .zip(ids.iter().cloned())
-                .map(|(proxy, idx)| write_segments.swap(proxy, &vec![idx]))
+                .map(|(proxy, idx)| write_segments.swap(proxy, &vec![idx], false).unwrap())
                 .collect()
         };
 
@@ -87,13 +87,13 @@ pub trait SegmentOptimizer {
                     *point_id,
                 ).unwrap();
             }
-            write_segments.swap(optimized_segment, &proxy_ids);
+            write_segments.swap(optimized_segment, &proxy_ids, true)?;
             if tmp_segment.get().read().vectors_count() > 0 { // Do not add temporary segment if no points changed
                 write_segments.add_locked(tmp_segment);
+            } else {
+                tmp_segment.drop_data()?;
             }
         }
-
-
         Ok(true)
     }
 }

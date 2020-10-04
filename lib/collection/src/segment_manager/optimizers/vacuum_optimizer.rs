@@ -85,6 +85,11 @@ mod tests {
 
         let segment = holder.get(segment_id).unwrap();
 
+        let original_segment_path = match segment {
+            LockedSegment::Original(s) => s.read().current_path.clone(),
+            LockedSegment::Proxy(_) => panic!("Not expected"),
+        };
+
         let mut rnd = rand::thread_rng();
 
         let segment_points_to_delete = segment.get()
@@ -137,12 +142,14 @@ mod tests {
                 vector_size: 4,
                 index: Indexes::Plain {},
                 distance: Distance::Dot,
-                storage_type: StorageType::InMemory
+                storage_type: StorageType::InMemory,
             },
         );
 
         let suggested_to_optimize = vacuum_optimizer.check_condition(locked_holder.clone());
 
+
+        // Check that only one segment is selected for optimization
         assert_eq!(suggested_to_optimize.len(), 1);
 
         vacuum_optimizer.optimize(locked_holder.clone(), suggested_to_optimize).unwrap();
@@ -153,6 +160,8 @@ mod tests {
             .map(|(x, _)| *x)
             .collect_vec();
 
+
+        // Check only one new segment
         assert_eq!(after_optimization_segments.len(), 1);
 
         let optimized_segment_id = *after_optimization_segments.get(0).unwrap();
@@ -162,9 +171,12 @@ mod tests {
         let segment_arc = optimized_segment.get();
         let segment_guard = segment_arc.read();
 
+
+        // Check new segment have proper amount of points
         assert_eq!(segment_guard.vectors_count(), 200 - segment_points_to_delete.len());
 
 
+        // Check payload is preserved in optimized segment
         for point_id in segment_points_to_assign1.iter() {
             assert!(segment_guard.has_point(*point_id));
             let payload = segment_guard.payload(*point_id).unwrap().get(&"color".to_string()).unwrap().clone();
@@ -176,5 +188,8 @@ mod tests {
                 PayloadType::Geo(_) => assert!(false),
             }
         }
+
+        // Check old segment data is removed from disk
+        assert!(!original_segment_path.exists());
     }
 }

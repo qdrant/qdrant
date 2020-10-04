@@ -12,8 +12,6 @@ use segment::types::PayloadKeyType;
 use collection::collection_builder::collection_loader::load_collection;
 use wal::WalOptions;
 use tokio::runtime::Runtime;
-use std::thread::sleep;
-use std::time::Duration;
 use tempdir::TempDir;
 use tokio::runtime;
 
@@ -71,7 +69,7 @@ fn test_collection_loading() {
     let collection_dir = TempDir::new("collection").unwrap();
 
     {
-        let (rt, collection) = simple_collection_fixture(collection_dir.path());
+        let (_rt, collection) = simple_collection_fixture(collection_dir.path());
 
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOps::UpsertPoints {
@@ -86,7 +84,7 @@ fn test_collection_loading() {
             }
         );
 
-        let insert_result = collection.update(insert_points, true).unwrap();
+        collection.update(insert_points, true).unwrap();
 
         let mut payload: HashMap<PayloadKeyType, PayloadInterface> = Default::default();
 
