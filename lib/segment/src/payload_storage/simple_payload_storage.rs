@@ -21,8 +21,9 @@ impl SimplePayloadStorage {
 
         for record in store.iter() {
             let (key, val) = record.unwrap();
-            let point_id: PointOffsetType = bincode::deserialize(&key).unwrap();
-            let payload: TheMap<PayloadKeyType, PayloadType> = bincode::deserialize(&val).unwrap();
+
+            let point_id: PointOffsetType = serde_cbor::from_slice(&key).unwrap();
+            let payload: TheMap<PayloadKeyType, PayloadType> = serde_cbor::from_slice(&val).unwrap();
             payload_map.insert(point_id, payload);
         }
 
@@ -34,10 +35,10 @@ impl SimplePayloadStorage {
 
     fn update_storage(&self, point_id: &PointOffsetType) -> OperationResult<()> {
         match self.payload.get(point_id) {
-            None => self.store.remove(bincode::serialize(&point_id).unwrap())?,
+            None => self.store.remove(serde_cbor::to_vec(&point_id).unwrap())?,
             Some(payload) => self.store.insert(
-                bincode::serialize(&point_id).unwrap(),
-                bincode::serialize(payload).unwrap(),
+                serde_cbor::to_vec(&point_id).unwrap(),
+                serde_cbor::to_vec(payload).unwrap(),
             )?,
         };
         Ok(())

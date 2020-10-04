@@ -10,6 +10,7 @@ use crate::collection::OperationResult;
 use std::sync::Arc;
 use segment::segment::Segment;
 use crate::segment_manager::holders::proxy_segment::ProxySegment;
+use std::cmp::min;
 
 
 pub type SegmentId = usize;
@@ -38,7 +39,6 @@ impl LockedSegment {
             LockedSegment::Proxy(proxy) => proxy.clone()
         };
     }
-
 }
 
 
@@ -186,6 +186,17 @@ impl<'s> SegmentHolder {
             }
         }
         Ok(read_points)
+    }
+
+
+    /// Flushes all segments and returns maximum persisted version
+    pub fn flush_all(&self) -> OperationResult<SeqNumberType> {
+        let mut persisted_version: SeqNumberType = SeqNumberType::MAX;
+        for (_idx, segment) in self.segments.iter() {
+            let segment_version = segment.get().read().flush()?;
+            persisted_version = min(persisted_version, segment_version)
+        }
+        Ok(persisted_version)
     }
 }
 

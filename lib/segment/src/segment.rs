@@ -114,6 +114,10 @@ impl Segment {
         })?;
         Ok(())
     }
+
+    pub fn save_current_state(&self) -> Result<()> {
+        self.save_state(&self.get_state())
+    }
 }
 
 

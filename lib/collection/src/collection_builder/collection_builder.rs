@@ -13,9 +13,53 @@ use crossbeam_channel::unbounded;
 use crate::update_handler::update_handler::{UpdateHandler, Optimizer};
 use segment::types::SegmentConfig;
 use std::fs::create_dir_all;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, Mutex};
 
 const DEFAULT_SEGMENT_NUMBER: usize = 5;
+
+
+pub fn construct_collection(
+    segment_holder: SegmentHolder,
+    wal: SerdeWal<CollectionUpdateOperations>,
+    search_runtime: Handle,  // from service
+    optimize_runtime: Handle,  // from service
+    optimizers: Arc<Vec<Box<Optimizer>>>,
+    flush_interval_sec: u64,
+) -> Collection {
+    let segment_holder = Arc::new(RwLock::new(segment_holder));
+
+
+    let locked_wal = Arc::new(Mutex::new(wal));
+
+    let searcher = SimpleSegmentSearcher::new(
+        segment_holder.clone(),
+        search_runtime,
+    );
+
+    let updater = SimpleSegmentUpdater::new(segment_holder.clone());
+
+    let (tx, rx) = unbounded();
+
+    let update_handler = Arc::new(UpdateHandler::new(
+        optimizers,
+        rx,
+        optimize_runtime.clone(),
+        segment_holder.clone(),
+        locked_wal.clone(),
+        flush_interval_sec,
+    ));
+
+    let collection = Collection {
+        wal: locked_wal,
+        searcher: Arc::new(searcher),
+        update_handler,
+        updater: Arc::new(updater),
+        runtime_handle: optimize_runtime,
+        update_sender: tx,
+    };
+
+    return collection;
+}
 
 
 /// Creates new empty collection with given configuration
@@ -26,6 +70,7 @@ pub fn build_collection(
     search_runtime: Handle,  // from service
     optimize_runtime: Handle,  // from service
     optimizers: Arc<Vec<Box<Optimizer>>>,
+    flush_interval_sec: u64,
 ) -> OperationResult<Collection> {
     let wal_path = collection_path
         .join("wal");
@@ -52,35 +97,17 @@ pub fn build_collection(
         segment_holder.add(segment);
     }
 
-    let segment_holder = Arc::new(RwLock::new(segment_holder));
-
     let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(wal_path.to_str().unwrap(), wal_options)?;
 
-    let searcher = SimpleSegmentSearcher::new(
-        segment_holder.clone(),
+
+    let collection = construct_collection(
+        segment_holder,
+        wal,
         search_runtime,
-        segment_config.distance.clone(),
-    );
-
-    let updater = SimpleSegmentUpdater::new(segment_holder.clone());
-
-    let (tx, rx) = unbounded();
-
-    let update_handler = Arc::new(UpdateHandler::new(
+        optimize_runtime,
         optimizers,
-        rx,
-        optimize_runtime.clone(),
-        segment_holder.clone(),
-    ));
-
-    let collection = Collection {
-        wal: Arc::new(RwLock::new(wal)),
-        searcher: Arc::new(searcher),
-        update_handler,
-        updater: Arc::new(updater),
-        runtime_handle: optimize_runtime,
-        update_sender: tx,
-    };
+        flush_interval_sec,
+    );
 
     Ok(collection)
 }

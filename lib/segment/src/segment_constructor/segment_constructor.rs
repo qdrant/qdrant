@@ -105,7 +105,9 @@ pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Seg
 
     create_dir_all(&segment_path)?;
 
+    let segment = create_segment(0, segment_path.as_path(), config)?;
+    segment.save_current_state()?;
 
-    create_segment(0, segment_path.as_path(), config)
+    Ok(segment)
 }
 

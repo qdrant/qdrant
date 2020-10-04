@@ -109,7 +109,6 @@ pub fn build_searcher(path: &Path) -> (Runtime, SimpleSegmentSearcher) {
     let searcher = SimpleSegmentSearcher::new(
         Arc::new(RwLock::new(segment_holder)),
         threaded_rt1.handle().clone(),
-        Distance::Dot,
     );
 
     (threaded_rt1, searcher)

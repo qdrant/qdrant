@@ -20,13 +20,15 @@ thiserror = "1.0"
 serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"
 serde_cbor = "0.11.1"
+rmp-serde = "~0.14"
 wal = { git = "https://github.com/generall/wal.git" }
 ordered-float = "1.0"
 
-tokio = {version = "0.2.21", features = ["rt-threaded"]}
+tokio = {version = "0.2.21", features = ["rt-threaded", "time"]}
 futures = "0.3.5"
 crossbeam-channel = "0.4.3"
 
 segment = {path = "../segment"}
 
 itertools = "0.9"
+indicatif = "0.15.0"

@@ -9,6 +9,7 @@ use serde::de::DeserializeOwned;
 use thiserror::Error;
 use wal::Wal;
 use wal::WalOptions;
+use std::fmt::Debug;
 
 
 #[derive(Error, Debug)]
@@ -22,9 +23,26 @@ pub enum WalError {
     TruncateWalError(String),
 }
 
+
 #[derive(Debug, Deserialize, Serialize)]
-struct TestRecord {
-    pub data: i32,
+#[serde(rename_all = "snake_case")]
+struct TestInternalStruct1 {
+    data: usize,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+struct TestInternalStruct2 {
+    a: i32,
+    b: i32,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+enum TestRecord {
+    Struct1(TestInternalStruct1),
+    Struct2(TestInternalStruct2),
 }
 
 type Result<T> = result::Result<T, WalError>;
@@ -34,7 +52,7 @@ pub struct SerdeWal<R> {
     wal: Wal,
 }
 
-impl<'s, R: DeserializeOwned + Serialize> SerdeWal<R> {
+impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     pub fn new(dir: &str, wal_options: &WalOptions) -> Result<SerdeWal<R>> {
         let wal = Wal::with_options(dir, wal_options)
             .map_err(|err| WalError::InitWalError(format!("{:?}", err)))?;
@@ -45,20 +63,28 @@ impl<'s, R: DeserializeOwned + Serialize> SerdeWal<R> {
     }
 
     pub fn write(&mut self, entity: &R) -> Result<u64> {
-        let binary_entity = serde_cbor::to_vec(&entity).unwrap();
+        let binary_entity = rmp_serde::to_vec(&entity).unwrap();
         self.wal
             .append(&binary_entity)
             .map_err(|err| WalError::WriteWalError(format!("{:?}", err)))
     }
 
-    pub fn read(&'s self, start_from: u64) -> impl Iterator<Item = (u64, R)> + 's {
+    pub fn read_all(&'s self) -> impl Iterator<Item=(u64, R)> + 's {
+        self.read(self.wal.first_index())
+    }
+
+    pub fn len(&self) -> u64 {
+        self.wal.num_entries()
+    }
+
+    pub fn read(&'s self, start_from: u64) -> impl Iterator<Item=(u64, R)> + 's {
         let first_index = self.wal.first_index();
         let num_entries = self.wal.num_entries();
 
         let iter = (start_from..(first_index + num_entries))
             .map(move |idx| {
                 let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
-                let record: R = serde_cbor::from_slice(&record_bin)
+                let record: R = rmp_serde::from_read_ref(&record_bin.to_vec())
                     .expect("Can't deserialize entry, probably corrupted WAL on version mismatch");
                 (idx, record)
             });
@@ -76,6 +102,7 @@ mod tests {
     use super::*;
 
     extern crate tempdir;
+
     use tempdir::TempDir;
 
     #[test]
@@ -88,39 +115,38 @@ mod tests {
 
         let mut serde_wal: SerdeWal<TestRecord> = SerdeWal::new(dir.path().to_str().unwrap(), &wal_options).unwrap();
 
-        let record = TestRecord { data: 10 };
+        let record = TestRecord::Struct1(TestInternalStruct1 { data: 10 });
 
         serde_wal.write(&record).expect("Can't write");
 
         for (_idx, rec) in serde_wal.read(0) {
-            println!("{:?}", rec.data);
+            println!("{:?}", rec);
         }
 
-        let record = TestRecord { data: 11 };
+        let record = TestRecord::Struct2(TestInternalStruct2 { a: 12, b: 13 });
 
         serde_wal.write(&record).expect("Can't write");
 
         let mut read_iterator = serde_wal.read(0);
 
-        let record1 = read_iterator.next();
-        let record2 = read_iterator.next();
+        let (idx1, record1) = read_iterator.next().unwrap();
+        let (idx2, record2) = read_iterator.next().unwrap();
 
-        assert!(record2.is_some());
+        assert_eq!(idx1, 0);
+        assert_eq!(idx2, 1);
+
 
         match record1 {
-            Some((idx, record)) => {
-                assert_eq!(idx, 0);
-                assert_eq!(record.data, 10)
-            },
-            None => panic!("Record expected")
+            TestRecord::Struct1(x) => assert_eq!(x.data, 10),
+            TestRecord::Struct2(_) => panic!("Wrong structure"),
         }
 
         match record2 {
-            Some((idx, record)) => {
-                assert_eq!(idx, 1);
-                assert_eq!(record.data, 11)
+            TestRecord::Struct1(_) => panic!("Wrong structure"),
+            TestRecord::Struct2(x) => {
+                assert_eq!(x.a, 12);
+                assert_eq!(x.b, 13);
             },
-            None => panic!("Record expected")
         }
     }
 }

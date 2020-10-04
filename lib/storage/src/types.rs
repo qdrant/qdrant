@@ -14,7 +14,8 @@ pub struct OptimizersConfig {
     pub vacuum_min_vector_number: usize,
     pub max_segment_number: usize,
     pub memmap_threshold: usize,
-    pub indexing_threshold: usize
+    pub indexing_threshold: usize,
+    pub flush_interval_sec: u64,
 }
 
 

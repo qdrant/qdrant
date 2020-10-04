@@ -141,6 +141,7 @@ impl TableOfContent {
                     self.search_runtime.handle().clone(),
                     self.optimization_runtime.handle().clone(),
                     optimizers,
+                    self.storage_config.optimizers.flush_interval_sec
                 )?;
 
                 let mut write_collections = self.collections.write().unwrap();

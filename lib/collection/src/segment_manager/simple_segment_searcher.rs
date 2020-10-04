@@ -2,7 +2,7 @@ use crate::segment_manager::holders::segment_holder::{LockedSegment, LockedSegme
 use std::sync::Arc;
 use crate::segment_manager::segment_managers::{SegmentSearcher};
 use crate::collection::OperationResult;
-use segment::types::{ScoredPoint, Distance, PointIdType, SeqNumberType};
+use segment::types::{ScoredPoint, PointIdType, SeqNumberType};
 use tokio::runtime::Handle;
 use std::collections::{HashSet, HashMap};
 use segment::spaces::tools::peek_top_scores_iterable;
@@ -16,15 +16,13 @@ use crate::operations::types::{Record, CollectionInfo, SearchRequest};
 ///
 pub struct SimpleSegmentSearcher {
     pub segments: LockedSegmentHolder,
-    pub distance: Distance,
     pub runtime_handle: Handle,
 }
 
 impl SimpleSegmentSearcher {
-    pub fn new(segments: LockedSegmentHolder, runtime_handle: Handle, distance: Distance) -> Self {
+    pub fn new(segments: LockedSegmentHolder, runtime_handle: Handle) -> Self {
         return SimpleSegmentSearcher {
             segments,
-            distance,
             runtime_handle,
         };
     }
@@ -55,6 +53,14 @@ impl SegmentSearcher for SimpleSegmentSearcher {
         request: Arc<SearchRequest>,
     ) -> OperationResult<Vec<ScoredPoint>> {
         let segments = self.segments.read();
+
+        let some_segment = segments.iter().next();
+
+        if some_segment.is_none() {
+            return Ok(vec![]);
+        }
+
+        let distance = some_segment.unwrap().1.get().read().config().distance;
 
         let searches: Vec<_> = segments
             .iter()
@@ -88,7 +94,7 @@ impl SegmentSearcher for SimpleSegmentSearcher {
                     !res
                 }),
             request.top,
-            &self.distance,
+            &distance,
         );
 
         Ok(top_scores)
@@ -139,7 +145,6 @@ mod tests {
         let searcher = SimpleSegmentSearcher::new(
             Arc::new(RwLock::new(segment_holder)),
             threaded_rt1.handle().clone(),
-            Distance::Dot,
         );
 
         let query = vec![1.0, 1.0, 1.0, 1.0];
@@ -174,7 +179,6 @@ mod tests {
         let searcher = SimpleSegmentSearcher::new(
             Arc::new(RwLock::new(segment_holder)),
             threaded_rt1.handle().clone(),
-            Distance::Dot,
         );
 
         let records = searcher.retrieve(&vec![1, 2, 3], true, true).unwrap();

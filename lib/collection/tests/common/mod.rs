@@ -6,11 +6,11 @@ use segment::types::{Distance, SegmentConfig, Indexes};
 use tokio::runtime::Runtime;
 use tokio::runtime;
 use std::sync::Arc;
+use std::path::Path;
 
-pub fn simple_collection_fixture() -> (Runtime, TempDir, TempDir, Collection) {
-    let segment_dir = TempDir::new("segment").unwrap();
 
-    let wal_dir = TempDir::new("wal_test").unwrap();
+pub fn simple_collection_fixture(collection_path: &Path) -> (Runtime, Collection) {
+
     let wal_options = WalOptions {
         segment_capacity: 100,
         segment_queue_len: 0,
@@ -23,7 +23,7 @@ pub fn simple_collection_fixture() -> (Runtime, TempDir, TempDir, Collection) {
             ef_construct: 128,
         },
         distance: Distance::Dot,
-        storage_type: Default::default()
+        storage_type: Default::default(),
     };
 
 
@@ -37,13 +37,14 @@ pub fn simple_collection_fixture() -> (Runtime, TempDir, TempDir, Collection) {
     let optimizers = Arc::new(vec![]);
 
     let collection = build_collection(
-        wal_dir.path(),
+        collection_path,
         &wal_options,
         &collection_config,
         threaded_rt.handle().clone(),
         threaded_rt.handle().clone(),
         optimizers,
+        30,
     ).unwrap();
 
-    return (threaded_rt, wal_dir, segment_dir, collection);
+    return (threaded_rt, collection);
 }

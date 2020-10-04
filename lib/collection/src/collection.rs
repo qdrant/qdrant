@@ -11,7 +11,7 @@ use tokio::task::JoinError;
 use tokio::runtime::Handle;
 use crossbeam_channel::{Sender, SendError};
 use crate::update_handler::update_handler::UpdateHandler;
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 
 
 #[derive(Error, Debug, Clone)]
@@ -58,7 +58,7 @@ impl<T> From<SendError<T>> for CollectionError {
 pub type OperationResult<T> = result::Result<T, CollectionError>;
 
 pub struct Collection {
-    pub wal: Arc<RwLock<SerdeWal<CollectionUpdateOperations>>>,
+    pub wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
     pub searcher: Arc<dyn SegmentSearcher>,
     pub update_handler: Arc<UpdateHandler>,
     pub updater: Arc<dyn SegmentUpdater + Sync + Send>,
@@ -74,7 +74,7 @@ impl Collection {
     /// Explicitly waits for result to be updated.
     pub fn update(&self, operation: CollectionUpdateOperations, wait: bool) -> OperationResult<UpdateResult> {
 
-        let operation_id = self.wal.write().write(&operation)?;
+        let operation_id = self.wal.lock().write(&operation)?;
 
         let upd = self.updater.clone();
         let sndr = self.update_sender.clone();
