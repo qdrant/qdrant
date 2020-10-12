@@ -2,6 +2,7 @@ use thiserror::Error;
 use collection::collection::CollectionError;
 use sled::Error;
 use sled::transaction::TransactionError;
+use std::io::Error as IoError;
 
 
 #[derive(Error, Debug, Clone)]
@@ -38,5 +39,11 @@ impl From<Error> for StorageError {
 impl From<TransactionError> for StorageError {
     fn from(err: TransactionError) -> Self {
         StorageError::ServiceError { description: format!("Persistence error: {}", err) }
+    }
+}
+
+impl From<IoError> for StorageError {
+    fn from(err: IoError) -> Self {
+        StorageError::ServiceError { description: format!("{}", err) }
     }
 }

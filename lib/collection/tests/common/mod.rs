@@ -6,10 +6,20 @@ use tokio::runtime::Runtime;
 use tokio::runtime;
 use std::sync::Arc;
 use std::path::Path;
+use collection::collection_builder::optimizers_builder::OptimizersConfig;
+
+
+pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
+    deleted_threshold: 0.9,
+    vacuum_min_vector_number: 1000,
+    max_segment_number: 10,
+    memmap_threshold: 10_000,
+    indexing_threshold: 10_000,
+    flush_interval_sec: 30,
+};
 
 
 pub fn simple_collection_fixture(collection_path: &Path) -> (Runtime, Collection) {
-
     let wal_options = WalOptions {
         segment_capacity: 100,
         segment_queue_len: 0,
@@ -32,17 +42,13 @@ pub fn simple_collection_fixture(collection_path: &Path) -> (Runtime, Collection
         .build().unwrap();
 
 
-    // ToDo: Create simple optimizer here
-    let optimizers = Arc::new(vec![]);
-
     let collection = build_collection(
         collection_path,
         &wal_options,
         &collection_config,
         threaded_rt.handle().clone(),
         threaded_rt.handle().clone(),
-        optimizers,
-        30,
+        &TEST_OPTIMIZERS_CONFIG,
     ).unwrap();
 
     return (threaded_rt, collection);

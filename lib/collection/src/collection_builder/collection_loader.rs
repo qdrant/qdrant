@@ -1,8 +1,6 @@
 use crate::collection::Collection;
 use std::path::Path;
 use tokio::runtime::Handle;
-use std::sync::Arc;
-use crate::update_handler::update_handler::Optimizer;
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::wal::SerdeWal;
 use crate::operations::CollectionUpdateOperations;
@@ -11,6 +9,8 @@ use std::fs::read_dir;
 use segment::segment_constructor::segment_constructor::load_segment;
 use crate::collection_builder::collection_builder::construct_collection;
 use indicatif::ProgressBar;
+use crate::collection_builder::optimizers_builder::OptimizersConfig;
+use crate::collection_builder::optimizers_builder::build_optimizers;
 
 
 pub fn load_collection(
@@ -18,8 +18,7 @@ pub fn load_collection(
     wal_options: &WalOptions,  // from config
     search_runtime: Handle,  // from service
     optimize_runtime: Handle,  // from service
-    optimizers: Arc<Vec<Box<Optimizer>>>,
-    flush_interval_sec: u64,
+    optimizers_config: &OptimizersConfig
 ) -> Collection {
     let wal_path = collection_path.join("wal");
     let segments_path = collection_path.join("segments");
@@ -29,7 +28,6 @@ pub fn load_collection(
 
     let segment_dirs = read_dir(segments_path.as_path())
         .expect(&format!("Can't read segments directory {}", segments_path.to_str().unwrap()));
-
 
     for entry in segment_dirs {
         let segments_path = entry.unwrap().path();
@@ -42,13 +40,25 @@ pub fn load_collection(
         segment_holder.add(segment);
     };
 
+    let segment_config = segment_holder.random_segment()
+        .expect("Expected at least one segment in collection")
+        .get()
+        .read()
+        .config();
+
+    let optimizers = build_optimizers(
+        collection_path,
+        &segment_config,
+        &optimizers_config
+    );
+
     let collection = construct_collection(
         segment_holder,
         wal,
         search_runtime,
         optimize_runtime,
         optimizers,
-        flush_interval_sec
+        optimizers_config.flush_interval_sec
     );
 
     {

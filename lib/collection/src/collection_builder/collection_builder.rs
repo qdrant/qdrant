@@ -14,6 +14,8 @@ use crate::update_handler::update_handler::{UpdateHandler, Optimizer};
 use segment::types::SegmentConfig;
 use std::fs::create_dir_all;
 use parking_lot::{RwLock, Mutex};
+use crate::collection_builder::optimizers_builder::build_optimizers;
+use crate::collection_builder::optimizers_builder::OptimizersConfig;
 
 const DEFAULT_SEGMENT_NUMBER: usize = 5;
 
@@ -69,8 +71,7 @@ pub fn build_collection(
     segment_config: &SegmentConfig,  //  from user
     search_runtime: Handle,  // from service
     optimize_runtime: Handle,  // from service
-    optimizers: Arc<Vec<Box<Optimizer>>>,
-    flush_interval_sec: u64,
+    optimizers_config: &OptimizersConfig
 ) -> OperationResult<Collection> {
     let wal_path = collection_path
         .join("wal");
@@ -99,6 +100,11 @@ pub fn build_collection(
 
     let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(wal_path.to_str().unwrap(), wal_options)?;
 
+    let optimizers = build_optimizers(
+        collection_path,
+        &segment_config,
+        &optimizers_config
+    );
 
     let collection = construct_collection(
         segment_holder,
@@ -106,7 +112,7 @@ pub fn build_collection(
         search_runtime,
         optimize_runtime,
         optimizers,
-        flush_interval_sec,
+        optimizers_config.flush_interval_sec,
     );
 
     Ok(collection)

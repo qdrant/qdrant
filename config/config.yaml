@@ -23,10 +23,12 @@ storage:
     # If the number of segments exceeds this value, the optimizer will merge the smallest segments.
     max_segment_number: 5
 
-    # Maximum number of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file.
+    # Maximum number of vectors to store in-memory per segment.
+    # Segments larger than this threshold will be stored as read-only memmaped file.
     memmap_threshold: 50_000
 
-    # Maximum number of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
+    # Maximum number of vectors allowed for plain index.
+    # Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
     indexing_threshold: 20_000
 
     # Minimum interval between forced flushes.

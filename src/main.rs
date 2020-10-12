@@ -1,9 +1,9 @@
 extern crate segment;
 
-mod storage;
 mod common;
 mod operations;
 mod settings;
+mod api_models;
 
 
 fn main() {

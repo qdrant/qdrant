@@ -3,7 +3,7 @@ mod common;
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::PointOps;
 
-use crate::common::simple_collection_fixture;
+use crate::common::{simple_collection_fixture, TEST_OPTIMIZERS_CONFIG};
 use collection::operations::types::{UpdateStatus, SearchRequest};
 use std::sync::Arc;
 use collection::operations::payload_ops::{PayloadOps, PayloadInterface, PayloadVariant};
@@ -115,8 +115,6 @@ fn test_collection_loading() {
         .build().unwrap();
 
 
-    let optimizers = Arc::new(vec![]);
-
     // sleep(Duration::from_secs(120));
 
     let loaded_collection = load_collection(
@@ -124,8 +122,7 @@ fn test_collection_loading() {
         &wal_options,
         rt.handle().clone(),
         rt.handle().clone(),
-        optimizers,
-        10,
+        &TEST_OPTIMIZERS_CONFIG
     );
 
     let retrieved = loaded_collection.retrieve(&vec![1, 2], true, true).unwrap();

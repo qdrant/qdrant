@@ -6,20 +6,22 @@ use tokio::runtime::Runtime;
 use tokio::runtime;
 use num_cpus;
 use std::cmp::max;
-use segment::types::{SegmentConfig, StorageType};
+use segment::types::SegmentConfig;
 use std::path::{Path, PathBuf};
-use std::fs::{create_dir_all, remove_dir_all};
-use collection::collection_builder::optimizers_builder::build_optimizers;
+use std::fs::{create_dir_all, remove_dir_all, read_dir};
 use collection::collection_builder::collection_builder::build_collection;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::storage_ops::{AliasOperations, StorageOps};
 use crate::types::StorageConfig;
 use sled::Db;
 use sled::transaction::UnabortableTransactionError;
-use std::str::{from_utf8_unchecked, from_utf8};
+use std::str::from_utf8;
+use collection::collection_builder::collection_loader::load_collection;
 
 
-struct TableOfContent {
+const COLLECTIONS_DIR: &str = "collections";
+
+pub struct TableOfContent {
     collections: Arc<RwLock<HashMap<String, Arc<Collection>>>>,
     storage_config: StorageConfig,
     search_runtime: Runtime,
@@ -29,10 +31,7 @@ struct TableOfContent {
 
 
 impl TableOfContent {
-    pub fn new(
-        collections: HashMap<String, Arc<Collection>>,
-        storage_config: &StorageConfig,
-    ) -> Self {
+    pub fn new(storage_config: &StorageConfig) -> Self {
         let mut search_threads = storage_config.performance.max_search_threads;
 
         if search_threads == 0 {
@@ -56,11 +55,35 @@ impl TableOfContent {
             .build().unwrap();
 
 
+        create_dir_all(&storage_config.storage_path).unwrap();
+
+        let collection_paths = read_dir(&storage_config.storage_path).unwrap();
+
+        let mut collections: HashMap<String, Arc<Collection>> = Default::default();
+
+        for entry in collection_paths {
+            let collection_path = entry.unwrap().path();
+            let collection_name = collection_path.file_name().unwrap().to_str().unwrap().to_string();
+            let wal_options = WalOptions {
+                segment_capacity: storage_config.wal.wal_capacity_mb * 1024 * 1024,
+                segment_queue_len: storage_config.wal.wal_segments_ahead,
+            };
+
+            let collection = load_collection(
+                collection_path.as_path(),
+                &wal_options,
+                search_runtime.handle().clone(),
+                optimization_runtime.handle().clone(),
+                &storage_config.optimizers,
+            );
+
+            collections.insert(collection_name, Arc::new(collection));
+        };
+
         let alias_path = Path::new(&storage_config.storage_path)
             .join("aliases.sled");
 
         let alias_persistence = sled::open(alias_path.as_path()).unwrap();
-
 
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
@@ -73,7 +96,7 @@ impl TableOfContent {
 
     fn get_collection_path(&self, collection_name: &str) -> PathBuf {
         Path::new(&self.storage_config.storage_path)
-            .join("collections")
+            .join(&COLLECTIONS_DIR)
             .join(collection_name)
     }
 
@@ -88,8 +111,23 @@ impl TableOfContent {
         Ok(path)
     }
 
-    fn validate_collection_name(&self, collection_name: &str) -> Result<(), StorageError> {
-        if self.collections.read().unwrap().contains_key(collection_name) {
+    fn is_collection_exists(&self, collection_name: &str) -> bool {
+        self.collections.read().unwrap().contains_key(collection_name)
+    }
+
+
+    fn validate_collection_exists(&self, collection_name: &str) -> Result<(), StorageError> {
+        if !self.is_collection_exists(collection_name) {
+            return Err(StorageError::BadInput {
+                description: format!("Collection {} not exists!", collection_name)
+            });
+        }
+        Ok(())
+    }
+
+
+    fn validate_collection_not_exists(&self, collection_name: &str) -> Result<(), StorageError> {
+        if self.is_collection_exists(collection_name) {
             return Err(StorageError::BadInput {
                 description: format!("Collection {} already exists!", collection_name)
             });
@@ -97,7 +135,6 @@ impl TableOfContent {
 
         Ok(())
     }
-
 
     pub fn perform_collection_operation(&self, operation: StorageOps) -> Result<bool, StorageError> {
         match operation {
@@ -107,7 +144,7 @@ impl TableOfContent {
                 distance,
                 index
             } => {
-                self.validate_collection_name(&collection_name)?;
+                self.validate_collection_not_exists(&collection_name)?;
 
                 let wal_options = WalOptions {
                     segment_capacity: self.storage_config.wal.wal_capacity_mb * 1024 * 1024,
@@ -121,18 +158,8 @@ impl TableOfContent {
                     vector_size: dim,
                     index: index.unwrap_or(Default::default()),
                     distance,
-                    storage_type: Default::default()
+                    storage_type: Default::default(),
                 };
-
-                let optimizers = build_optimizers(
-                    &collection_path,
-                    segment_config.clone(),
-                    self.storage_config.optimizers.deleted_threshold,
-                    self.storage_config.optimizers.vacuum_min_vector_number,
-                    self.storage_config.optimizers.max_segment_number,
-                    self.storage_config.optimizers.memmap_threshold,
-                    self.storage_config.optimizers.indexing_threshold,
-                );
 
                 let segment = build_collection(
                     Path::new(&collection_path),
@@ -140,8 +167,7 @@ impl TableOfContent {
                     &segment_config,
                     self.search_runtime.handle().clone(),
                     self.optimization_runtime.handle().clone(),
-                    optimizers,
-                    self.storage_config.optimizers.flush_interval_sec
+                    &self.storage_config.optimizers,
                 )?;
 
                 let mut write_collections = self.collections.write().unwrap();
@@ -163,7 +189,9 @@ impl TableOfContent {
                 for action in actions {
                     match action {
                         AliasOperations::CreateAlias { collection_name, alias_name } => {
-                            self.validate_collection_name(&collection_name)?;
+                            self.validate_collection_exists(&collection_name)?;
+                            self.validate_collection_not_exists(&alias_name)?;
+
                             self.alias_persistence.insert(alias_name.as_bytes(), collection_name.as_bytes())?;
                         }
                         AliasOperations::DeleteAlias { alias_name } => {
@@ -202,9 +230,7 @@ impl TableOfContent {
                 from_utf8(&resolved_alias).unwrap().to_string()
             }
         };
-
-        self.validate_collection_name(&resolved_name)?;
-
+        self.validate_collection_exists(&resolved_name)?;
         Ok(resolved_name)
     }
 
