@@ -22,14 +22,18 @@ rand = "0.7.3"
 serde = { version = "~1.0", features = ["derive"] }
 serde_yaml = "~0.8"
 serde_json = "~1.0"
+itertools = "0.9"
 
 config = "~0.10.1"
 
 actix-web = "3"
+paperclip = { version = "0.4", features = ["actix"] }
 
 segment = {path = "lib/segment"}
 collection = {path = "lib/collection"}
 storage = {path = "lib/storage"}
+
+
 
 
 

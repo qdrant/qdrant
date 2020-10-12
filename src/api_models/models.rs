@@ -5,28 +5,29 @@ use std::fmt::Debug;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum Status {
+pub enum Status {
     Ok,
     Error(String)
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
-struct ApiResponse<D: Serialize + Deserialize + Debug> {
-    result: Option<D>,
-    status: Status,
-    time: float
+pub struct ApiResponse<D: Serialize + Debug> {
+    pub result: Option<D>,
+    pub status: Status,
+    pub time: f64
 }
 
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-struct CollectionDescription {
-    name: String
+pub struct CollectionDescription {
+    pub name: String
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-struct CollectionsResponse {
-    collections: Vec<CollectionDescription>
+pub struct CollectionsResponse {
+    pub collections: Vec<CollectionDescription>
 }

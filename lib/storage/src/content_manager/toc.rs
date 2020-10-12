@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use collection::collection::Collection;
 use std::collections::HashMap;
 use wal::WalOptions;
@@ -17,6 +17,7 @@ use sled::Db;
 use sled::transaction::UnabortableTransactionError;
 use std::str::from_utf8;
 use collection::collection_builder::collection_loader::load_collection;
+use parking_lot::RwLock;
 
 
 const COLLECTIONS_DIR: &str = "collections";
@@ -54,10 +55,11 @@ impl TableOfContent {
             .max_threads(optimization_threads)
             .build().unwrap();
 
+        let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
 
-        create_dir_all(&storage_config.storage_path).unwrap();
+        create_dir_all(&collections_path).unwrap();
 
-        let collection_paths = read_dir(&storage_config.storage_path).unwrap();
+        let collection_paths = read_dir(&collections_path).unwrap();
 
         let mut collections: HashMap<String, Arc<Collection>> = Default::default();
 
@@ -111,8 +113,14 @@ impl TableOfContent {
         Ok(path)
     }
 
-    fn is_collection_exists(&self, collection_name: &str) -> bool {
-        self.collections.read().unwrap().contains_key(collection_name)
+    fn validate_collection_not_exists(&self, collection_name: &str) -> Result<(), StorageError> {
+        if self.is_collection_exists(collection_name) {
+            return Err(StorageError::BadInput {
+                description: format!("Collection {} already exists!", collection_name)
+            });
+        }
+
+        Ok(())
     }
 
 
@@ -126,14 +134,22 @@ impl TableOfContent {
     }
 
 
-    fn validate_collection_not_exists(&self, collection_name: &str) -> Result<(), StorageError> {
-        if self.is_collection_exists(collection_name) {
-            return Err(StorageError::BadInput {
-                description: format!("Collection {} already exists!", collection_name)
-            });
-        }
+    fn resolve_name(&self, collection_name: &str) -> Result<String, StorageError> {
+        let alias_collection_name = self.alias_persistence
+            .get(collection_name.as_bytes())?;
 
-        Ok(())
+        let resolved_name = match alias_collection_name {
+            None => collection_name.to_string(),
+            Some(resolved_alias) => {
+                from_utf8(&resolved_alias).unwrap().to_string()
+            }
+        };
+        self.validate_collection_exists(&resolved_name)?;
+        Ok(resolved_name)
+    }
+
+    pub fn is_collection_exists(&self, collection_name: &str) -> bool {
+        self.collections.read().contains_key(collection_name)
     }
 
     pub fn perform_collection_operation(&self, operation: StorageOps) -> Result<bool, StorageError> {
@@ -170,12 +186,12 @@ impl TableOfContent {
                     &self.storage_config.optimizers,
                 )?;
 
-                let mut write_collections = self.collections.write().unwrap();
+                let mut write_collections = self.collections.write();
                 write_collections.insert(collection_name, Arc::new(segment));
                 Ok(true)
             }
             StorageOps::DeleteCollection { collection_name } => {
-                let removed = self.collections.write().unwrap().remove(&collection_name).is_some();
+                let removed = self.collections.write().remove(&collection_name).is_some();
                 if removed {
                     let path = self.get_collection_path(&collection_name);
                     remove_dir_all(path).or_else(
@@ -220,23 +236,28 @@ impl TableOfContent {
         }
     }
 
-    fn resolve_name(&self, collection_name: String) -> Result<String, StorageError> {
-        let alias_collection_name = self.alias_persistence
-            .get(collection_name.as_bytes())?;
-
-        let resolved_name = match alias_collection_name {
-            None => collection_name,
-            Some(resolved_alias) => {
-                from_utf8(&resolved_alias).unwrap().to_string()
-            }
-        };
-        self.validate_collection_exists(&resolved_name)?;
-        Ok(resolved_name)
-    }
-
-    pub fn get_collection(&self, collection_name: String) -> Result<Arc<Collection>, StorageError> {
-        let read_collection = self.collections.read().unwrap();
+    pub fn get_collection(&self, collection_name: &str) -> Result<Arc<Collection>, StorageError> {
+        let read_collection = self.collections.read();
         let real_collection_name = self.resolve_name(collection_name)?;
         Ok(read_collection.get(&real_collection_name).unwrap().clone())
+    }
+
+    /// List of all collections
+    pub fn all_collections(&self) -> Vec<String> {
+        self.collections.read().keys().cloned().collect()
+    }
+
+    /// List of all aliases for a given collection
+    pub fn collection_aliases(&self, collection_name: &str) -> Result<Vec<String>, StorageError> {
+        let mut result = vec![];
+        for pair in self.alias_persistence.iter() {
+            let (alias_bt, target_collection_bt) = pair?;
+            let alias = from_utf8(&alias_bt).unwrap().to_string();
+            let target_collection = from_utf8(&target_collection_bt).unwrap();
+            if collection_name == target_collection {
+                result.push(alias);
+            }
+        }
+        Ok(result)
     }
 }

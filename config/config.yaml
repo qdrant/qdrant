@@ -25,11 +25,11 @@ storage:
 
     # Maximum number of vectors to store in-memory per segment.
     # Segments larger than this threshold will be stored as read-only memmaped file.
-    memmap_threshold: 50_000
+    memmap_threshold: 50000
 
     # Maximum number of vectors allowed for plain index.
     # Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
-    indexing_threshold: 20_000
+    indexing_threshold: 20000
 
     # Minimum interval between forced flushes.
     flush_interval_sec: 60

@@ -59,7 +59,7 @@ pub type OperationResult<T> = result::Result<T, CollectionError>;
 
 pub struct Collection {
     pub wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-    pub searcher: Arc<dyn SegmentSearcher>,
+    pub searcher: Arc<dyn SegmentSearcher + Sync + Send>,
     pub update_handler: Arc<UpdateHandler>,
     pub updater: Arc<dyn SegmentUpdater + Sync + Send>,
     pub runtime_handle: Handle,
