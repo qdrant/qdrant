@@ -7,7 +7,7 @@ use tokio::runtime::Handle;
 use std::collections::{HashSet, HashMap};
 use segment::spaces::tools::peek_top_scores_iterable;
 use futures::future::try_join_all;
-use crate::operations::types::{Record, CollectionInfo, SearchRequest};
+use crate::operations::types::{Record, SearchRequest};
 
 /// Simple implementation of segment manager
 ///  - owens segments
@@ -31,7 +31,6 @@ impl SimpleSegmentSearcher {
         segment: LockedSegment,
         request: Arc<SearchRequest>,
     ) -> OperationResult<Vec<ScoredPoint>> {
-
         let res = segment.get().read().search(
             &request.vector,
             request.filter.as_ref(),
@@ -44,10 +43,6 @@ impl SimpleSegmentSearcher {
 }
 
 impl SegmentSearcher for SimpleSegmentSearcher {
-    fn info(&self) -> OperationResult<CollectionInfo> {
-        unimplemented!()
-    }
-
     fn search(
         &self,
         request: Arc<SearchRequest>,

@@ -18,7 +18,6 @@ pub enum StorageError {
     BadRequest { description: String },
 }
 
-
 impl From<CollectionError> for StorageError {
     fn from(err: CollectionError) -> Self {
         match err {

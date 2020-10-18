@@ -598,6 +598,7 @@ dependencies = [
 name = "collection"
 version = "0.1.0"
 dependencies = [
+ "atomicwrites",
  "criterion",
  "crossbeam-channel",
  "futures",

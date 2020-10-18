@@ -16,12 +16,32 @@ use std::fs::create_dir_all;
 use parking_lot::{RwLock, Mutex};
 use crate::collection_builder::optimizers_builder::build_optimizers;
 use crate::collection_builder::optimizers_builder::OptimizersConfig;
+use atomicwrites::OverwriteBehavior::AllowOverwrite;
+use atomicwrites::AtomicFile;
+use std::io::Write;
 
 const DEFAULT_SEGMENT_NUMBER: usize = 5;
 
+pub const COLLECTION_CONFIG_FILE: &str = "config.json";
+
+
+fn save_config(path: &Path, config: &SegmentConfig) -> OperationResult<()> {
+    let config_path = path.join(COLLECTION_CONFIG_FILE);
+    let af = AtomicFile::new(&config_path, AllowOverwrite);
+    let state_bytes = serde_json::to_vec(config).unwrap();
+    af.write(|f| {
+        f.write_all(&state_bytes)
+    }).or_else(move |err|
+        Err(CollectionError::ServiceError {
+            error: format!("Can't write {:?}, error: {}", config_path, err)
+        })
+    )?;
+    Ok(())
+}
 
 pub fn construct_collection(
     segment_holder: SegmentHolder,
+    config: &SegmentConfig,
     wal: SerdeWal<CollectionUpdateOperations>,
     search_runtime: Handle,  // from service
     optimize_runtime: Handle,  // from service
@@ -52,6 +72,8 @@ pub fn construct_collection(
     ));
 
     let collection = Collection {
+        segments: segment_holder.clone(),
+        config: config.clone(),
         wal: locked_wal,
         searcher: Arc::new(searcher),
         update_handler,
@@ -71,7 +93,7 @@ pub fn build_collection(
     segment_config: &SegmentConfig,  //  from user
     search_runtime: Handle,  // from service
     optimize_runtime: Handle,  // from service
-    optimizers_config: &OptimizersConfig
+    optimizers_config: &OptimizersConfig,
 ) -> OperationResult<Collection> {
     let wal_path = collection_path
         .join("wal");
@@ -100,14 +122,17 @@ pub fn build_collection(
 
     let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(wal_path.to_str().unwrap(), wal_options)?;
 
+    save_config(collection_path, &segment_config)?;
+
     let optimizers = build_optimizers(
         collection_path,
         &segment_config,
-        &optimizers_config
+        &optimizers_config,
     );
 
     let collection = construct_collection(
         segment_holder,
+        segment_config,
         wal,
         search_runtime,
         optimize_runtime,

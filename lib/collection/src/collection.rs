@@ -1,6 +1,6 @@
 use thiserror::Error;
 use crate::operations::CollectionUpdateOperations;
-use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
+use segment::types::{PointIdType, ScoredPoint, SeqNumberType, SegmentConfig};
 use std::result;
 use crate::operations::types::{Record, CollectionInfo, UpdateResult, UpdateStatus, SearchRequest};
 use std::sync::Arc;
@@ -11,7 +11,8 @@ use tokio::task::JoinError;
 use tokio::runtime::Handle;
 use crossbeam_channel::{Sender, SendError};
 use crate::update_handler::update_handler::UpdateHandler;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
+use crate::segment_manager::holders::segment_holder::SegmentHolder;
 
 
 #[derive(Error, Debug, Clone)]
@@ -30,7 +31,7 @@ pub enum CollectionError {
 impl From<OperationError> for CollectionError {
     fn from(err: OperationError) -> Self {
         match err {
-            OperationError::WrongVector { .. } => Self::BadInput { description: format!("{}", err)},
+            OperationError::WrongVector { .. } => Self::BadInput { description: format!("{}", err) },
             OperationError::PointIdError { missed_point_id } => Self::NotFound { missed_point_id },
             OperationError::ServiceError { description } => Self::ServiceError { error: description }
         }
@@ -58,12 +59,14 @@ impl<T> From<SendError<T>> for CollectionError {
 pub type OperationResult<T> = result::Result<T, CollectionError>;
 
 pub struct Collection {
+    pub segments: Arc<RwLock<SegmentHolder>>,
+    pub config: SegmentConfig,
     pub wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
     pub searcher: Arc<dyn SegmentSearcher + Sync + Send>,
     pub update_handler: Arc<UpdateHandler>,
     pub updater: Arc<dyn SegmentUpdater + Sync + Send>,
     pub runtime_handle: Handle,
-    pub update_sender: Sender<SeqNumberType>
+    pub update_sender: Sender<SeqNumberType>,
 }
 
 
@@ -73,7 +76,6 @@ impl Collection {
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
     pub fn update(&self, operation: CollectionUpdateOperations, wait: bool) -> OperationResult<UpdateResult> {
-
         let operation_id = self.wal.lock().write(&operation)?;
 
         let upd = self.updater.clone();
@@ -94,7 +96,25 @@ impl Collection {
     }
 
     pub fn info(&self) -> OperationResult<CollectionInfo> {
-        return self.searcher.info();
+        let segments = self.segments.read();
+        let mut vectors_count = 0;
+        let mut segments_count = 0;
+        let mut ram_size = 0;
+        let mut disk_size = 0;
+        for (_idx, segment) in segments.iter() {
+            segments_count += 1;
+            let segment_info = segment.get().read().info();
+            vectors_count += segment_info.num_vectors;
+            disk_size += segment_info.disk_usage_bytes;
+            ram_size += segment_info.ram_usage_bytes;
+        }
+        Ok(CollectionInfo {
+            vectors_count,
+            segments_count,
+            disk_data_size: disk_size,
+            ram_data_size: ram_size,
+            config: self.config.clone(),
+        })
     }
 
     pub fn search(&self, request: Arc<SearchRequest>) -> OperationResult<Vec<ScoredPoint>> {

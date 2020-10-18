@@ -18,7 +18,8 @@ pub struct Record {
 pub struct CollectionInfo {
     pub vectors_count: usize,
     pub segments_count: usize,
-    pub data_size: usize,
+    pub disk_data_size: usize,
+    pub ram_data_size: usize,
     pub config: SegmentConfig,
 }
 

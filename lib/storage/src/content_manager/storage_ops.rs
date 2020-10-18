@@ -21,7 +21,7 @@ pub enum AliasOperations {
 pub enum StorageOps {
     /// Create new collection and (optionally) specify index params
     CreateCollection {
-        collection_name: String,
+        name: String,
         dim: usize,
         distance: Distance,
         index: Option<Indexes>,

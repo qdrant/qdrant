@@ -116,10 +116,9 @@ impl TableOfContent {
     fn validate_collection_not_exists(&self, collection_name: &str) -> Result<(), StorageError> {
         if self.is_collection_exists(collection_name) {
             return Err(StorageError::BadInput {
-                description: format!("Collection {} already exists!", collection_name)
+                description: format!("Collection `{}` already exists!", collection_name)
             });
         }
-
         Ok(())
     }
 
@@ -127,7 +126,7 @@ impl TableOfContent {
     fn validate_collection_exists(&self, collection_name: &str) -> Result<(), StorageError> {
         if !self.is_collection_exists(collection_name) {
             return Err(StorageError::BadInput {
-                description: format!("Collection {} not exists!", collection_name)
+                description: format!("Collection `{}` doesn't exist!", collection_name)
             });
         }
         Ok(())
@@ -155,7 +154,7 @@ impl TableOfContent {
     pub fn perform_collection_operation(&self, operation: StorageOps) -> Result<bool, StorageError> {
         match operation {
             StorageOps::CreateCollection {
-                collection_name,
+                name: collection_name,
                 dim,
                 distance,
                 index

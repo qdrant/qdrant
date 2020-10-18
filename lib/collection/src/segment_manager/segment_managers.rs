@@ -1,12 +1,10 @@
 use segment::types::{SeqNumberType, ScoredPoint, PointIdType};
 use crate::collection::{OperationResult};
 use crate::operations::CollectionUpdateOperations;
-use crate::operations::types::{Record, CollectionInfo, SearchRequest};
+use crate::operations::types::{Record, SearchRequest};
 use std::sync::Arc;
 
 pub trait SegmentSearcher {
-    fn info(&self) -> OperationResult<CollectionInfo>;
-
     fn search(&self,
               // Request is supposed to be a read only, that is why no mutex used
               request: Arc<SearchRequest>,
