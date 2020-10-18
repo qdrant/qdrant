@@ -27,26 +27,14 @@ itertools = "0.9"
 config = "~0.10.1"
 
 actix-web = "3"
-paperclip = { version = "0.4", features = ["actix"] }
 
 segment = {path = "lib/segment"}
 collection = {path = "lib/collection"}
 storage = {path = "lib/storage"}
 
 
-
-
-
 [workspace]
 members = ["lib/*"]
-
-[[bin]]
-name = "service"
-path = "src/service.rs"
-test = false
-bench = false
-build = false
-
 
 [[bench]]
 name = "dyn_benchmark"

@@ -1,7 +1,13 @@
 storage:
+  # Where to store all the data
   storage_path: ./storage
+
+  # Write-ahead-log related configuration
   wal:
+    # Size of a single WAL segment
     wal_capacity_mb: 32
+
+    # Number of WAL segments to create ahead of actual data requirement
     wal_segments_ahead: 0
 
 
@@ -36,5 +42,12 @@ storage:
 
 
 service:
+
+  # Maximum size of POST data in a single request in megabytes
+  max_request_size_mb: 32
+
+  # Host to bind the service on
   host: 0.0.0.0
+
+  # Port to bind the service on
   port: 6333
