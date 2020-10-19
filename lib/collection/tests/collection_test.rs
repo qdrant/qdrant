@@ -109,10 +109,9 @@ fn test_collection_loading() {
         segment_queue_len: 0,
     };
 
-    let rt: Runtime = runtime::Builder::new()
-        .threaded_scheduler()
+    let rt = Arc::new(runtime::Builder::new_multi_thread()
         .max_threads(2)
-        .build().unwrap();
+        .build().unwrap());
 
 
     // sleep(Duration::from_secs(120));
@@ -120,8 +119,8 @@ fn test_collection_loading() {
     let loaded_collection = load_collection(
         collection_dir.path(),
         &wal_options,
-        rt.handle().clone(),
-        rt.handle().clone(),
+        rt.clone(),
+        rt.clone(),
         &TEST_OPTIMIZERS_CONFIG
     );
 
