@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use segment::types::PayloadKeyType;
 use collection::collection_builder::collection_loader::load_collection;
 use wal::WalOptions;
-use tokio::runtime::Runtime;
 use tempdir::TempDir;
 use tokio::runtime;
 

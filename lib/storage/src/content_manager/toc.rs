@@ -26,7 +26,7 @@ pub struct TableOfContent {
     collections: Arc<RwLock<HashMap<String, Arc<Collection>>>>,
     storage_config: StorageConfig,
     search_runtime: Arc<Runtime>,
-    optimization_runtime: Arc<Runtime>,
+    pub optimization_runtime: Arc<Runtime>,
     alias_persistence: Db,
 }
 
@@ -46,7 +46,7 @@ impl TableOfContent {
 
         let mut optimization_threads = storage_config.performance.max_optimize_threads;
         if optimization_threads == 0 {
-            optimization_threads = 1;
+            optimization_threads = 2;
         }
 
         let optimization_runtime = Arc::new(runtime::Builder::new_multi_thread()

@@ -15,7 +15,7 @@ storage:
     # Number of parallel threads used for search operations. If 0 - auto selection.
     max_search_threads: 0
 
-    # Number of parallel threads used for index optimization. If 0 - auto selection.
+    # Number of parallel threads used for index optimization. Should be at least 2. If 0 - auto selection.
     max_optimize_threads: 0
 
 
@@ -38,7 +38,7 @@ storage:
     indexing_threshold: 20000
 
     # Minimum interval between forced flushes.
-    flush_interval_sec: 60
+    flush_interval_sec: 10
 
 
 service:

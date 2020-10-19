@@ -15,7 +15,6 @@ use segment::types::SegmentConfig;
 use std::io::Read;
 use std::sync::Arc;
 
-
 fn load_config(path: &Path) -> SegmentConfig {
     let config_path = path.join(COLLECTION_CONFIG_FILE);
     let mut contents = String::new();

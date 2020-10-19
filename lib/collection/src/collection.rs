@@ -85,6 +85,7 @@ impl Collection {
             sndr.send(operation_id)?;
             res
         };
+
         let update_handler = self.runtime_handle.spawn(update_future);
 
         if !wait {
