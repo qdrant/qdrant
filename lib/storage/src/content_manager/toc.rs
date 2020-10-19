@@ -25,8 +25,8 @@ const COLLECTIONS_DIR: &str = "collections";
 pub struct TableOfContent {
     collections: Arc<RwLock<HashMap<String, Arc<Collection>>>>,
     storage_config: StorageConfig,
-    search_runtime: Runtime,
-    optimization_runtime: Runtime,
+    search_runtime: Arc<Runtime>,
+    optimization_runtime: Arc<Runtime>,
     alias_persistence: Db,
 }
 
@@ -40,20 +40,18 @@ impl TableOfContent {
             search_threads = max(1, num_cpu - 1);
         }
 
-        let search_runtime: Runtime = runtime::Builder::new()
-            .threaded_scheduler()
+        let search_runtime = Arc::new(runtime::Builder::new_multi_thread()
             .max_threads(search_threads)
-            .build().unwrap();
+            .build().unwrap());
 
         let mut optimization_threads = storage_config.performance.max_optimize_threads;
         if optimization_threads == 0 {
             optimization_threads = 1;
         }
 
-        let optimization_runtime: Runtime = runtime::Builder::new()
-            .threaded_scheduler()
+        let optimization_runtime = Arc::new(runtime::Builder::new_multi_thread()
             .max_threads(optimization_threads)
-            .build().unwrap();
+            .build().unwrap());
 
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
 
@@ -74,8 +72,8 @@ impl TableOfContent {
             let collection = load_collection(
                 collection_path.as_path(),
                 &wal_options,
-                search_runtime.handle().clone(),
-                optimization_runtime.handle().clone(),
+                search_runtime.clone(),
+                optimization_runtime.clone(),
                 &storage_config.optimizers,
             );
 
@@ -180,8 +178,8 @@ impl TableOfContent {
                     Path::new(&collection_path),
                     &wal_options,
                     &segment_config,
-                    self.search_runtime.handle().clone(),
-                    self.optimization_runtime.handle().clone(),
+                    self.search_runtime.clone(),
+                    self.optimization_runtime.clone(),
                     &self.storage_config.optimizers,
                 )?;
 

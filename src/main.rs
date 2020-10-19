@@ -4,7 +4,7 @@ extern crate log;
 mod settings;
 
 mod common;
-mod collections_api;
+mod api;
 
 use actix_web::middleware::Logger;
 
@@ -12,7 +12,9 @@ use actix_web::{web, App, HttpServer, error, HttpRequest, HttpResponse};
 
 use env_logger;
 use storage::content_manager::toc::TableOfContent;
-use crate::collections_api::api::{get_collections, get_collection, update_collections};
+use crate::api::collections_api::{get_collections, update_collections, get_collection};
+use crate::api::update_api::update_vectors;
+use crate::api::retrieve_api::{get_vectors, get_vector};
 
 
 fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error::Error {
@@ -52,7 +54,15 @@ async fn main() -> std::io::Result<()> {
             .data(web::JsonConfig::default().limit(33554432).error_handler(json_error_handler)) // 32 Mb
             .service(get_collections)
             .service(update_collections)
-            .service(get_collection);
+            .service(get_collection)
+            .service(update_vectors)
+            .service(get_vector)
+            .service(get_vectors)
+            ;
+
+        // ToDo: API for updating vectors in collection
+        // ToDo: API for retrieving vectors
+        // ToDo: API for search
 
         app
     })

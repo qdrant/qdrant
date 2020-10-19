@@ -1,6 +1,6 @@
-use crate::collection::Collection;
+use crate::collection::{Collection, CollectionError};
 use std::path::Path;
-use tokio::runtime::Handle;
+use tokio::runtime::Runtime;
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::wal::SerdeWal;
 use crate::operations::CollectionUpdateOperations;
@@ -13,6 +13,7 @@ use crate::collection_builder::optimizers_builder::OptimizersConfig;
 use crate::collection_builder::optimizers_builder::build_optimizers;
 use segment::types::SegmentConfig;
 use std::io::Read;
+use std::sync::Arc;
 
 
 fn load_config(path: &Path) -> SegmentConfig {
@@ -27,8 +28,8 @@ fn load_config(path: &Path) -> SegmentConfig {
 pub fn load_collection(
     collection_path: &Path,
     wal_options: &WalOptions,  // from config
-    search_runtime: Handle,  // from service
-    optimize_runtime: Handle,  // from service
+    search_runtime: Arc<Runtime>,  // from service
+    optimize_runtime: Arc<Runtime>,  // from service
     optimizers_config: &OptimizersConfig,
 ) -> Collection {
     let wal_path = collection_path.join("wal");
@@ -75,7 +76,14 @@ pub fn load_collection(
         bar.set_message("Recovering collection");
 
         for (op_num, update) in wal.read_all() {
-            collection.updater.update(op_num, &update).unwrap();
+            // Panic only in case of internal error. If wrong formatting - skip
+            match collection.updater.update(op_num, &update) {
+                Ok(_) => {}
+                Err(err) => match err {
+                    CollectionError::ServiceError { error } => panic!(format!("Can't apply WAL operation: {}", error)),
+                    _ => {}
+                }
+            }
             bar.inc(1);
         }
 

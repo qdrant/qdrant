@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::segment_manager::segment_managers::{SegmentSearcher};
 use crate::collection::OperationResult;
 use segment::types::{ScoredPoint, PointIdType, SeqNumberType};
-use tokio::runtime::Handle;
+use tokio::runtime::Runtime;
 use std::collections::{HashSet, HashMap};
 use segment::spaces::tools::peek_top_scores_iterable;
 use futures::future::try_join_all;
@@ -16,11 +16,11 @@ use crate::operations::types::{Record, SearchRequest};
 ///
 pub struct SimpleSegmentSearcher {
     pub segments: LockedSegmentHolder,
-    pub runtime_handle: Handle,
+    pub runtime_handle: Arc<Runtime>,
 }
 
 impl SimpleSegmentSearcher {
-    pub fn new(segments: LockedSegmentHolder, runtime_handle: Handle) -> Self {
+    pub fn new(segments: LockedSegmentHolder, runtime_handle: Arc<Runtime>) -> Self {
         return SimpleSegmentSearcher {
             segments,
             runtime_handle,
@@ -131,15 +131,14 @@ mod tests {
 
         let segment_holder = build_test_holder(dir.path());
 
-        let threaded_rt1: Runtime = runtime::Builder::new()
-            .threaded_scheduler()
+        let threaded_rt1: Runtime = runtime::Builder::new_multi_thread()
             .max_threads(2)
             .build().unwrap();
 
 
         let searcher = SimpleSegmentSearcher::new(
             Arc::new(RwLock::new(segment_holder)),
-            threaded_rt1.handle().clone(),
+            Arc::new(threaded_rt1),
         );
 
         let query = vec![1.0, 1.0, 1.0, 1.0];
@@ -166,14 +165,14 @@ mod tests {
         let dir = TempDir::new("segment_dir").unwrap();
         let segment_holder = build_test_holder(dir.path());
 
-        let threaded_rt1: Runtime = runtime::Builder::new()
-            .threaded_scheduler()
+        let threaded_rt1: Runtime = runtime::Builder::new_multi_thread()
             .max_threads(2)
             .build().unwrap();
+        ;
 
         let searcher = SimpleSegmentSearcher::new(
             Arc::new(RwLock::new(segment_holder)),
-            threaded_rt1.handle().clone(),
+            Arc::new(threaded_rt1),
         );
 
         let records = searcher.retrieve(&vec![1, 2, 3], true, true).unwrap();

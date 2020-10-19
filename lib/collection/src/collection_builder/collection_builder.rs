@@ -6,7 +6,7 @@ use crate::wal::SerdeWal;
 use crate::operations::CollectionUpdateOperations;
 use wal::WalOptions;
 use std::sync::Arc;
-use tokio::runtime::Handle;
+use tokio::runtime::Runtime;
 use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
 use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
 use crossbeam_channel::unbounded;
@@ -43,8 +43,8 @@ pub fn construct_collection(
     segment_holder: SegmentHolder,
     config: &SegmentConfig,
     wal: SerdeWal<CollectionUpdateOperations>,
-    search_runtime: Handle,  // from service
-    optimize_runtime: Handle,  // from service
+    search_runtime: Arc<Runtime>,  // from service
+    optimize_runtime: Arc<Runtime>,  // from service
     optimizers: Arc<Vec<Box<Optimizer>>>,
     flush_interval_sec: u64,
 ) -> Collection {
@@ -91,8 +91,8 @@ pub fn build_collection(
     collection_path: &Path,
     wal_options: &WalOptions,  // from config
     segment_config: &SegmentConfig,  //  from user
-    search_runtime: Handle,  // from service
-    optimize_runtime: Handle,  // from service
+    search_runtime: Arc<Runtime>,  // from service
+    optimize_runtime: Arc<Runtime>,  // from service
     optimizers_config: &OptimizersConfig,
 ) -> OperationResult<Collection> {
     let wal_path = collection_path

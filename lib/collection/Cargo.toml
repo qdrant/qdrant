@@ -24,7 +24,7 @@ rmp-serde = "~0.14"
 wal = { git = "https://github.com/generall/wal.git" }
 ordered-float = "1.0"
 
-tokio = {version = "0.2.21", features = ["rt-threaded", "time"]}
+tokio = {version = "~0.3", features = ["rt-multi-thread", "time"]}
 futures = "0.3.5"
 crossbeam-channel = "0.4.3"
 atomicwrites = "0.2.5"

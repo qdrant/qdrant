@@ -8,11 +8,11 @@ use crate::wal::{SerdeWal, WalError};
 use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
 use segment::entry::entry_point::OperationError;
 use tokio::task::JoinError;
-use tokio::runtime::Handle;
 use crossbeam_channel::{Sender, SendError};
 use crate::update_handler::update_handler::UpdateHandler;
 use parking_lot::{Mutex, RwLock};
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
+use tokio::runtime::Runtime;
 
 
 #[derive(Error, Debug, Clone)]
@@ -65,7 +65,7 @@ pub struct Collection {
     pub searcher: Arc<dyn SegmentSearcher + Sync + Send>,
     pub update_handler: Arc<UpdateHandler>,
     pub updater: Arc<dyn SegmentUpdater + Sync + Send>,
-    pub runtime_handle: Handle,
+    pub runtime_handle: Arc<Runtime>,
     pub update_sender: Sender<SeqNumberType>,
 }
 

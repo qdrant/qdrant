@@ -1,7 +1,6 @@
 use crossbeam_channel::Receiver;
 use segment::types::SeqNumberType;
 use std::sync::{Arc};
-use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 use crate::segment_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder};
@@ -9,6 +8,7 @@ use parking_lot::Mutex;
 use crate::wal::SerdeWal;
 use crate::operations::CollectionUpdateOperations;
 use tokio::time::{Duration, Instant};
+use tokio::runtime::Runtime;
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
@@ -17,7 +17,7 @@ pub struct UpdateHandler {
     segments: LockedSegmentHolder,
     receiver: Receiver<SeqNumberType>,
     worker: Option<JoinHandle<()>>,
-    runtime_handle: Handle,
+    runtime_handle: Arc<Runtime>,
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
     flush_timeout_sec: u64
 }
@@ -27,7 +27,7 @@ impl UpdateHandler {
     pub fn new(
         optimizers: Arc<Vec<Box<Optimizer>>>,
         receiver: Receiver<SeqNumberType>,
-        runtime_handle: Handle,
+        runtime_handle: Arc<Runtime>,
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
         flush_timeout_sec: u64

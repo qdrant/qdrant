@@ -14,7 +14,7 @@ num_cpus = "1.0"
 thiserror = "1.0"
 rand = "0.7.3"
 wal = { git = "https://github.com/generall/wal.git" }
-tokio = {version = "0.2.21", features = ["rt-threaded"]}
+tokio = {version = "~0.3", features = ["rt-multi-thread"]}
 serde = { version = "~1.0", features = ["derive"] }
 
 

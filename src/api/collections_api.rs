@@ -1,10 +1,10 @@
 use storage::content_manager::toc::TableOfContent;
 use actix_web::{get, post, web, Responder};
-use crate::collections_api::models::{CollectionDescription, CollectionsResponse};
 use itertools::Itertools;
 use crate::common::helpers::process_response;
 use actix_web::rt::time::Instant;
 use storage::content_manager::storage_ops::StorageOps;
+use crate::api::models::{CollectionDescription, CollectionsResponse};
 
 #[get("/collections")]
 pub async fn get_collections(
