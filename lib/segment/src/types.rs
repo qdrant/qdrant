@@ -29,7 +29,7 @@ pub enum Order {
     SmallBetter,
 }
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, Copy, Clone, PartialEq, Debug)]
 pub struct ScoredPoint {
     pub idx: PointIdType,
     pub score: ScoreType,

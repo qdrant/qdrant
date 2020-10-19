@@ -15,6 +15,7 @@ use storage::content_manager::toc::TableOfContent;
 use crate::api::collections_api::{get_collections, update_collections, get_collection};
 use crate::api::update_api::update_vectors;
 use crate::api::retrieve_api::{get_vectors, get_vector};
+use crate::api::search_api::search_vectors;
 
 
 fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error::Error {
@@ -58,12 +59,10 @@ async fn main() -> std::io::Result<()> {
             .service(update_vectors)
             .service(get_vector)
             .service(get_vectors)
+            .service(search_vectors)
             ;
 
-        // ToDo: API for updating vectors in collection
-        // ToDo: API for retrieving vectors
-        // ToDo: API for search
-
+        // ToDo: fix storage issue
         app
     })
         // .workers(1)
