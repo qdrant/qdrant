@@ -10,7 +10,6 @@ use std::sync::Arc;
 use segment::segment::Segment;
 use crate::segment_manager::holders::proxy_segment::ProxySegment;
 use std::cmp::min;
-use crate::collection::CollectionError;
 
 
 pub type SegmentId = usize;

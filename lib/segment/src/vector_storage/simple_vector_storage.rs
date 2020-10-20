@@ -41,7 +41,7 @@ impl SimpleVectorStorage {
             if stored_record.deleted {
                 deleted.insert(point_id);
             }
-            vectors.insert(point_id, stored_record.vector.clone());
+            vectors[point_id] = stored_record.vector;
         }
 
         return Ok(SimpleVectorStorage {
@@ -96,7 +96,7 @@ impl VectorStorage for SimpleVectorStorage {
     }
 
     fn update_vector(&mut self, key: usize, vector: &Vec<f64>) -> OperationResult<usize> {
-        self.vectors.insert(key, vector.clone());
+        self.vectors[key] = vector.clone();
         self.update_stored(key)?;
         return Ok(key)
     }
