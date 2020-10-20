@@ -81,7 +81,7 @@ impl Collection {
         let upd = self.updater.clone();
         let sndr = self.update_sender.clone();
         let update_future = async move {
-            let res = upd.update(operation_id, &operation);
+            let res = upd.update(operation_id, operation);
             sndr.send(operation_id)?;
             res
         };

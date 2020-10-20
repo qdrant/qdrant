@@ -1,7 +1,7 @@
 mod common;
 
 use collection::operations::CollectionUpdateOperations;
-use collection::operations::point_ops::PointOps;
+use collection::operations::point_ops::{PointOps, PointStruct};
 
 use crate::common::{simple_collection_fixture, TEST_OPTIMIZERS_CONFIG};
 use collection::operations::types::{UpdateStatus, SearchRequest};
@@ -13,6 +13,7 @@ use collection::collection_builder::collection_loader::load_collection;
 use wal::WalOptions;
 use tempdir::TempDir;
 use tokio::runtime;
+use collection::operations::point_ops::PointInsertOps::{BatchPoints, PointsList};
 
 
 #[test]
@@ -22,7 +23,7 @@ fn test_collection_updater() {
     let (_rt, collection) = simple_collection_fixture(collection_dir.path());
 
     let insert_points = CollectionUpdateOperations::PointOperation(
-        PointOps::UpsertPoints {
+        PointOps::UpsertPoints(BatchPoints {
             ids: vec![0, 1, 2, 3, 4],
             vectors: vec![
                 vec![1.0, 0.0, 1.0, 1.0],
@@ -31,7 +32,8 @@ fn test_collection_updater() {
                 vec![1.0, 1.0, 0.0, 1.0],
                 vec![1.0, 0.0, 0.0, 0.0],
             ],
-        }
+            payloads: None,
+        })
     );
 
     let insert_result = collection.update(insert_points, true);
@@ -71,7 +73,7 @@ fn test_collection_loading() {
         let (_rt, collection) = simple_collection_fixture(collection_dir.path());
 
         let insert_points = CollectionUpdateOperations::PointOperation(
-            PointOps::UpsertPoints {
+            PointOps::UpsertPoints(BatchPoints {
                 ids: vec![0, 1, 2, 3, 4],
                 vectors: vec![
                     vec![1.0, 0.0, 1.0, 1.0],
@@ -80,7 +82,8 @@ fn test_collection_loading() {
                     vec![1.0, 1.0, 0.0, 1.0],
                     vec![1.0, 0.0, 0.0, 0.0],
                 ],
-            }
+                payloads: None,
+            })
         );
 
         collection.update(insert_points, true).unwrap();
@@ -120,7 +123,7 @@ fn test_collection_loading() {
         &wal_options,
         rt.clone(),
         rt.clone(),
-        &TEST_OPTIMIZERS_CONFIG
+        &TEST_OPTIMIZERS_CONFIG,
     );
 
     let retrieved = loaded_collection.retrieve(&vec![1, 2], true, true).unwrap();
@@ -140,16 +143,14 @@ fn test_collection_loading() {
 #[test]
 fn test_deserialization() {
     let insert_points = CollectionUpdateOperations::PointOperation(
-        PointOps::UpsertPoints {
-            ids: vec![0, 1, 2, 3, 4],
+        PointOps::UpsertPoints(BatchPoints {
+            ids: vec![0, 1],
             vectors: vec![
                 vec![1.0, 0.0, 1.0, 1.0],
                 vec![1.0, 0.0, 1.0, 0.0],
-                vec![1.0, 1.0, 1.0, 1.0],
-                vec![1.0, 1.0, 0.0, 1.0],
-                vec![1.0, 0.0, 0.0, 0.0],
             ],
-        }
+            payloads: None,
+        })
     );
 
     let json_str = serde_json::to_string_pretty(&insert_points).unwrap();
@@ -166,5 +167,38 @@ fn test_deserialization() {
     let read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&crob_bytes).unwrap();
 
     eprintln!("read_obj2 = {:#?}", read_obj2);
+}
 
+
+#[test]
+fn test_deserialization2() {
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        PointOps::UpsertPoints(PointsList(vec![
+            PointStruct {
+                id: 0,
+                vector: vec![1.0, 0.0, 1.0, 1.0],
+                payload: None
+            },
+            PointStruct {
+                id: 1,
+                vector: vec![1.0, 0.0, 1.0, 0.0],
+                payload: None
+            }
+        ]))
+    );
+
+    let json_str = serde_json::to_string_pretty(&insert_points).unwrap();
+
+    eprintln!("&json_str = {}", &json_str);
+
+    let read_obj: CollectionUpdateOperations = serde_json::from_str(json_str.as_str()).unwrap();
+
+    eprintln!("read_obj = {:#?}", read_obj);
+
+
+    let crob_bytes = rmp_serde::to_vec(&insert_points).unwrap();
+
+    let read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&crob_bytes).unwrap();
+
+    eprintln!("read_obj2 = {:#?}", read_obj2);
 }

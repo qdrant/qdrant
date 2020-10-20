@@ -76,7 +76,7 @@ pub fn load_collection(
 
         for (op_num, update) in wal.read_all() {
             // Panic only in case of internal error. If wrong formatting - skip
-            match collection.updater.update(op_num, &update) {
+            match collection.updater.update(op_num, update) {
                 Ok(_) => {}
                 Err(err) => match err {
                     CollectionError::ServiceError { error } => panic!(format!("Can't apply WAL operation: {}", error)),

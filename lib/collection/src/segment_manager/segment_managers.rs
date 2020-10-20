@@ -20,7 +20,7 @@ pub trait SegmentSearcher {
 
 
 pub trait SegmentUpdater {
-    fn update(&self, op_num: SeqNumberType, operation: &CollectionUpdateOperations) -> CollectionResult<usize>;
+    fn update(&self, op_num: SeqNumberType, operation: CollectionUpdateOperations) -> CollectionResult<usize>;
 }
 
 

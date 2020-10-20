@@ -62,7 +62,6 @@ async fn main() -> std::io::Result<()> {
             .service(search_vectors)
             ;
 
-        // ToDo: fix storage issue
         app
     })
         // .workers(1)

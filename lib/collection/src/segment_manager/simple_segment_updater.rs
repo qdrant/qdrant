@@ -7,7 +7,7 @@ use segment::types::{SeqNumberType, PointIdType, PayloadKeyType};
 use std::collections::{HashSet, HashMap};
 use crate::operations::types::VectorType;
 
-use crate::operations::point_ops::PointOps;
+use crate::operations::point_ops::{PointOps, PointInsertOps};
 use crate::operations::payload_ops::{PayloadOps, PayloadInterface};
 
 pub struct SimpleSegmentUpdater {
@@ -48,11 +48,25 @@ impl SimpleSegmentUpdater {
     /// Checks point id in each segment, update point if found.
     /// All not found points are inserted into random segment.
     /// Returns: number of updated points.
-    fn upsert_points(&self, op_num: SeqNumberType, ids: &Vec<PointIdType>, vectors: &Vec<VectorType>) -> CollectionResult<usize> {
+    fn upsert_points(&self,
+                     op_num: SeqNumberType,
+                     ids: &Vec<PointIdType>,
+                     vectors: &Vec<VectorType>,
+                     payloads: &Option<Vec<Option<HashMap<PayloadKeyType, PayloadInterface>>>>,
+    ) -> CollectionResult<usize> {
         if ids.len() != vectors.len() {
             return Err(CollectionError::BadInput {
                 description: format!("Amount of ids ({}) and vectors ({}) does not match", ids.len(), vectors.len())
             });
+        }
+
+        match payloads {
+            None => {}
+            Some(payload_vector) => if payload_vector.len() != ids.len() {
+                return Err(CollectionError::BadInput {
+                    description: format!("Amount of ids ({}) and payloads ({}) does not match", ids.len(), payload_vector.len())
+                });
+            }
         }
 
         let mut updated_points: HashSet<PointIdType> = Default::default();
@@ -74,14 +88,28 @@ impl SimpleSegmentUpdater {
             .cloned()
             .filter(|x| !updated_points.contains(x));
 
-        let default_write_segment = segments.random_appendable_segment()
-            .ok_or(CollectionError::ServiceError { error: "No segments exists, expected at least one".to_string() })?;
+        {
+            let default_write_segment = segments.random_appendable_segment()
+                .ok_or(CollectionError::ServiceError { error: "No segments exists, expected at least one".to_string() })?;
 
-        let segment_arc = default_write_segment.get();
-        let mut write_segment = segment_arc.write();
-        for point_id in new_point_ids {
-            write_segment.upsert_point(op_num, point_id, points_map[&point_id])?;
+            let segment_arc = default_write_segment.get();
+            let mut write_segment = segment_arc.write();
+            for point_id in new_point_ids {
+                write_segment.upsert_point(op_num, point_id, points_map[&point_id])?;
+            }
         }
+
+        match payloads {
+            Some(payload_vector) => {
+                for (point_id, payload) in ids.iter().zip(payload_vector.iter()) {
+                    if payload.is_some() {
+                        self.set_payload(op_num, payload.as_ref().unwrap(), &vec![*point_id])?;
+                    }
+                }
+            }
+            _ => {}
+        }
+
         Ok(res)
     }
 
@@ -155,14 +183,29 @@ impl SimpleSegmentUpdater {
         Ok(res)
     }
 
-    pub fn process_point_operation(&self, op_num: SeqNumberType, point_operation: &PointOps) -> CollectionResult<usize> {
+    pub fn process_point_operation(&self, op_num: SeqNumberType, point_operation: PointOps) -> CollectionResult<usize> {
         match point_operation {
-            PointOps::UpsertPoints {
-                ids,
-                vectors,
-                ..
-            } => self.upsert_points(op_num, ids, vectors),
-            PointOps::DeletePoints { ids, .. } => self.delete_points(op_num, ids),
+            PointOps::DeletePoints { ids, .. } => self.delete_points(op_num, &ids),
+            PointOps::UpsertPoints(operation) => {
+                let (ids, vectors, payloads) = match operation {
+                    PointInsertOps::BatchPoints { ids, vectors, payloads, .. } => {
+                        (ids, vectors, payloads)
+                    },
+                    PointInsertOps::PointsList(points) => {
+                        let mut ids = vec![];
+                        let mut vectors = vec![];
+                        let mut payloads = vec![];
+                        for point in points {
+                            ids.push(point.id);
+                            vectors.push(point.vector);
+                            payloads.push(point.payload)
+                        }
+                        (ids, vectors, Some(payloads))
+                    }
+                };
+                let res = self.upsert_points(op_num, &ids, &vectors, &payloads)?;
+                Ok(res)
+            }
         }
     }
 
@@ -188,12 +231,12 @@ impl SimpleSegmentUpdater {
 
 
 impl SegmentUpdater for SimpleSegmentUpdater {
-    fn update(&self, op_num: SeqNumberType, operation: &CollectionUpdateOperations) -> CollectionResult<usize> {
+    fn update(&self, op_num: SeqNumberType, operation: CollectionUpdateOperations) -> CollectionResult<usize> {
         // Allow only one update at a time, ensure no data races between segments.
         // let _lock = self.update_lock.lock().unwrap();
         match operation {
             CollectionUpdateOperations::PointOperation(point_operation) => self.process_point_operation(op_num, point_operation),
-            CollectionUpdateOperations::PayloadOperation(payload_operation) => self.process_payload_operation(op_num, payload_operation),
+            CollectionUpdateOperations::PayloadOperation(payload_operation) => self.process_payload_operation(op_num, &payload_operation),
         }
     }
 }
@@ -228,6 +271,7 @@ mod tests {
             100,
             &points,
             &vectors,
+            &None
         );
 
         match res {
