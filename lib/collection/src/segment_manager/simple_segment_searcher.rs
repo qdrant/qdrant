@@ -1,7 +1,7 @@
 use crate::segment_manager::holders::segment_holder::{LockedSegment, LockedSegmentHolder};
 use std::sync::Arc;
 use crate::segment_manager::segment_managers::{SegmentSearcher};
-use crate::collection::OperationResult;
+use crate::collection::CollectionResult;
 use segment::types::{ScoredPoint, PointIdType, SeqNumberType};
 use tokio::runtime::Runtime;
 use std::collections::{HashSet, HashMap};
@@ -30,7 +30,7 @@ impl SimpleSegmentSearcher {
     pub async fn search_in_segment(
         segment: LockedSegment,
         request: Arc<SearchRequest>,
-    ) -> OperationResult<Vec<ScoredPoint>> {
+    ) -> CollectionResult<Vec<ScoredPoint>> {
         let res = segment.get().read().search(
             &request.vector,
             request.filter.as_ref(),
@@ -46,7 +46,7 @@ impl SegmentSearcher for SimpleSegmentSearcher {
     fn search(
         &self,
         request: Arc<SearchRequest>,
-    ) -> OperationResult<Vec<ScoredPoint>> {
+    ) -> CollectionResult<Vec<ScoredPoint>> {
         let segments = self.segments.read();
 
         let some_segment = segments.iter().next();
@@ -60,7 +60,7 @@ impl SegmentSearcher for SimpleSegmentSearcher {
         let searches: Vec<_> = segments
             .iter()
             .map(|(_id, segment)|
-                SimpleSegmentSearcher::search_in_segment(segment.mk_copy(), request.clone())
+                SimpleSegmentSearcher::search_in_segment(segment.clone(), request.clone())
             )
             .map(|f| self.runtime_handle.spawn(f))
             .collect();
@@ -95,7 +95,7 @@ impl SegmentSearcher for SimpleSegmentSearcher {
         Ok(top_scores)
     }
 
-    fn retrieve(&self, points: &Vec<PointIdType>, with_payload: bool, with_vector: bool) -> OperationResult<Vec<Record>> {
+    fn retrieve(&self, points: &Vec<PointIdType>, with_payload: bool, with_vector: bool) -> CollectionResult<Vec<Record>> {
         let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut point_records: HashMap<PointIdType, Record> = Default::default();
 
@@ -168,7 +168,6 @@ mod tests {
         let threaded_rt1: Runtime = runtime::Builder::new_multi_thread()
             .max_threads(2)
             .build().unwrap();
-        ;
 
         let searcher = SimpleSegmentSearcher::new(
             Arc::new(RwLock::new(segment_holder)),

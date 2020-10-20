@@ -1,16 +1,16 @@
 use parking_lot::{RwLock, RwLockWriteGuard, RwLockReadGuard};
 
 use std::collections::HashMap;
-use segment::entry::entry_point::{SegmentEntry, Result};
+use segment::entry::entry_point::{SegmentEntry, OperationResult, OperationError};
 
 use rand::{thread_rng, Rng};
 use rand::seq::SliceRandom;
 use segment::types::{PointIdType, SeqNumberType};
-use crate::collection::OperationResult;
 use std::sync::Arc;
 use segment::segment::Segment;
 use crate::segment_manager::holders::proxy_segment::ProxySegment;
 use std::cmp::min;
+use crate::collection::CollectionError;
 
 
 pub type SegmentId = usize;
@@ -26,13 +26,6 @@ impl LockedSegment {
         segment.into()
     }
 
-    pub fn mk_copy(&self) -> Self {
-        match self {
-            LockedSegment::Original(x) => LockedSegment::Original(x.clone()),
-            LockedSegment::Proxy(x) => LockedSegment::Proxy(x.clone()),
-        }
-    }
-
     pub fn get(&self) -> Arc<RwLock<dyn SegmentEntry>> {
         return match self {
             LockedSegment::Original(segment) => segment.clone(),
@@ -40,9 +33,22 @@ impl LockedSegment {
         };
     }
 
-    pub fn drop_data(self) -> Result<()> {
+    pub fn drop_data(self) -> OperationResult<()> {
         self.get().write().drop_data()?;
         Ok(())
+    }
+}
+
+impl Clone for LockedSegment {
+    fn clone(&self) -> Self {
+        match self {
+            LockedSegment::Original(x) => LockedSegment::Original(x.clone()),
+            LockedSegment::Proxy(x) => LockedSegment::Proxy(x.clone()),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        *self = source.clone();
     }
 }
 
@@ -128,9 +134,16 @@ impl<'s> SegmentHolder {
         return self.segments.get(&id);
     }
 
-    pub fn random_segment(&self) -> Option<&LockedSegment> {
-        let segments: Vec<_> = self.segments.values().collect();
-        segments.choose(&mut rand::thread_rng()).cloned()
+
+    pub fn random_appendable_segment(&self) -> Option<LockedSegment> {
+        let segments: Vec<_> = self.segments
+            .values()
+            .filter(|x| x.get().read().is_appendable())
+            .collect();
+        let segment = segments.choose(&mut rand::thread_rng())
+            .cloned()
+            .map(|x| x.clone());
+        segment
     }
 
     /// Selects point ids, which is stored in this segment
@@ -146,7 +159,7 @@ impl<'s> SegmentHolder {
 
 
     pub fn apply_segments<F>(&self, op_num: SeqNumberType, mut f: F) -> OperationResult<usize>
-        where F: FnMut(&mut RwLockWriteGuard<dyn SegmentEntry + 'static>) -> Result<bool>
+        where F: FnMut(&mut RwLockWriteGuard<dyn SegmentEntry + 'static>) -> OperationResult<bool>
     {
         let mut processed_segments = 0;
         for (_idx, segment) in self.segments.iter() {
@@ -161,7 +174,7 @@ impl<'s> SegmentHolder {
 
 
     pub fn apply_points<F>(&self, op_num: SeqNumberType, ids: &Vec<PointIdType>, mut f: F) -> OperationResult<usize>
-        where F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> Result<bool>
+        where F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>
     {
         let mut applied_points = 0;
         for (_idx, segment) in self.segments.iter() {
@@ -181,8 +194,53 @@ impl<'s> SegmentHolder {
         Ok(applied_points)
     }
 
+    /// Update function wrapper, which ensures that updates are not applied written to un-appendable segment.
+    /// In case of such attempt, this function will move data into a mutable segment and remove data from un-appendable.
+    pub fn apply_points_to_appendable<F>(
+        &self,
+        op_num: SeqNumberType,
+        ids: &Vec<PointIdType>, mut f: F) -> OperationResult<usize>
+        where F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>
+    {
+        // Choose random appendable segment
+        let default_write_segment = self.random_appendable_segment()
+            .ok_or(OperationError::ServiceError { description: "No appendable segments exists, expected at least one".to_string() })?;
+
+        let mut applied_points = 0;
+        for (_idx, segment) in self.segments.iter() {
+            // Skip this segment if it already have bigger version (WAL recovery related)
+            if segment.get().read().version() > op_num { continue; }
+            // Collect affected points first, we want to lock segment for writing as rare as possible
+            let segment_points = self.segment_points(ids, segment);
+            if !segment_points.is_empty() {
+                let segment_arc = segment.get();
+                let mut write_segment = segment_arc.write();
+                for point_id in segment_points {
+                    let is_applied = if write_segment.is_appendable() {
+                        f(point_id, &mut write_segment)?
+                    } else {
+                        let default_segment_lock = default_write_segment.get();
+                        let mut default_segment_guard = default_segment_lock.write();
+                        let vector = write_segment.vector(point_id)?;
+                        let payload = write_segment.payload(point_id)?;
+
+                        default_segment_guard.upsert_point(op_num, point_id, &vector)?;
+                        default_segment_guard.set_full_payload(op_num, point_id, payload)?;
+
+                        write_segment.delete_point(op_num, point_id)?;
+
+                        f(point_id, &mut default_segment_guard)?
+                    };
+                    applied_points += is_applied as usize;
+                }
+            }
+        }
+        Ok(applied_points)
+    }
+
+
     pub fn read_points<F>(&self, ids: &Vec<PointIdType>, mut f: F) -> OperationResult<usize>
-        where F: FnMut(PointIdType, &RwLockReadGuard<dyn SegmentEntry>) -> Result<bool>
+        where F: FnMut(PointIdType, &RwLockReadGuard<dyn SegmentEntry>) -> OperationResult<bool>
     {
         let mut read_points = 0;
         for (_idx, segment) in self.segments.iter() {

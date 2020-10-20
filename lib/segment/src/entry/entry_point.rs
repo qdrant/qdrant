@@ -51,8 +51,6 @@ impl From<Error> for OperationError {
     }
 }
 
-pub type Result<T> = result::Result<T, OperationError>;
-
 pub type OperationResult<T> = result::Result<T, OperationError>;
 
 
@@ -68,23 +66,23 @@ pub trait SegmentEntry {
               filter: Option<&Filter>,
               top: usize,
               params: Option<&SearchParams>,
-    ) -> Result<Vec<ScoredPoint>>;
+    ) -> OperationResult<Vec<ScoredPoint>>;
 
-    fn upsert_point(&mut self, op_num: SeqNumberType, point_id: PointIdType, vector: &Vec<VectorElementType>) -> Result<bool>;
+    fn upsert_point(&mut self, op_num: SeqNumberType, point_id: PointIdType, vector: &Vec<VectorElementType>) -> OperationResult<bool>;
 
-    fn delete_point(&mut self, op_num: SeqNumberType, point_id: PointIdType) -> Result<bool>;
+    fn delete_point(&mut self, op_num: SeqNumberType, point_id: PointIdType) -> OperationResult<bool>;
 
-    fn set_full_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, full_payload: TheMap<PayloadKeyType, PayloadType>) -> Result<bool>;
+    fn set_full_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, full_payload: TheMap<PayloadKeyType, PayloadType>) -> OperationResult<bool>;
 
-    fn set_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, key: &PayloadKeyType, payload: PayloadType) -> Result<bool>;
+    fn set_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, key: &PayloadKeyType, payload: PayloadType) -> OperationResult<bool>;
 
-    fn delete_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, key: &PayloadKeyType) -> Result<bool>;
+    fn delete_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, key: &PayloadKeyType) -> OperationResult<bool>;
 
-    fn clear_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType) -> Result<bool>;
+    fn clear_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType) -> OperationResult<bool>;
 
-    fn vector(&self, point_id: PointIdType) -> Result<Vec<VectorElementType>>;
+    fn vector(&self, point_id: PointIdType) -> OperationResult<Vec<VectorElementType>>;
 
-    fn payload(&self, point_id: PointIdType) -> Result<TheMap<PayloadKeyType, PayloadType>>;
+    fn payload(&self, point_id: PointIdType) -> OperationResult<TheMap<PayloadKeyType, PayloadType>>;
 
     fn iter_points(&self) -> Box<dyn Iterator<Item=PointIdType> + '_>;
 
@@ -100,11 +98,14 @@ pub trait SegmentEntry {
     /// Get segment configuration
     fn config(&self) -> SegmentConfig;
 
+    /// Get current stats of the segment
+    fn is_appendable(&self) -> bool;
+
     /// Flushes current segment state into a persistent storage, if possible
     /// Returns maximum version number which is guaranteed to be persisted.
-    fn flush(&self) -> Result<SeqNumberType>;
+    fn flush(&self) -> OperationResult<SeqNumberType>;
 
     /// Removes all persisted data and forces to destroy segment
-    fn drop_data(&mut self) -> Result<()>;
+    fn drop_data(&mut self) -> OperationResult<()>;
 }
 

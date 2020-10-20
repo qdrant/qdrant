@@ -7,7 +7,7 @@ use segment::types::{SegmentType, SegmentConfig, StorageType, Indexes};
 use itertools::Itertools;
 use segment::segment_constructor::segment_constructor::build_segment;
 use std::path::PathBuf;
-use crate::collection::OperationResult;
+use crate::collection::CollectionResult;
 
 
 pub struct MergeOptimizer {
@@ -50,7 +50,7 @@ impl SegmentOptimizer for MergeOptimizer {
             .collect()
     }
 
-    fn temp_segment(&self) -> OperationResult<LockedSegment> {
+    fn temp_segment(&self) -> CollectionResult<LockedSegment> {
         Ok(LockedSegment::new(build_simple_segment(
             self.segments_path.as_path(),
             self.config.vector_size,
@@ -58,7 +58,7 @@ impl SegmentOptimizer for MergeOptimizer {
         )?))
     }
 
-    fn optimized_segment(&self, optimizing_segments: &Vec<LockedSegment>) -> OperationResult<Segment> {
+    fn optimized_segment(&self, optimizing_segments: &Vec<LockedSegment>) -> CollectionResult<Segment> {
         let total_vectors: usize = optimizing_segments.iter()
             .map(|s| s.get().read().info().num_vectors).sum();
 

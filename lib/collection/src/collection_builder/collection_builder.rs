@@ -1,4 +1,4 @@
-use crate::collection::{Collection, OperationResult, CollectionError};
+use crate::collection::{Collection, CollectionResult, CollectionError};
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use std::path::Path;
@@ -25,7 +25,7 @@ const DEFAULT_SEGMENT_NUMBER: usize = 5;
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 
 
-fn save_config(path: &Path, config: &SegmentConfig) -> OperationResult<()> {
+fn save_config(path: &Path, config: &SegmentConfig) -> CollectionResult<()> {
     let config_path = path.join(COLLECTION_CONFIG_FILE);
     let af = AtomicFile::new(&config_path, AllowOverwrite);
     let state_bytes = serde_json::to_vec(config).unwrap();
@@ -94,7 +94,7 @@ pub fn build_collection(
     search_runtime: Arc<Runtime>,  // from service
     optimize_runtime: Arc<Runtime>,  // from service
     optimizers_config: &OptimizersConfig,
-) -> OperationResult<Collection> {
+) -> CollectionResult<Collection> {
     let wal_path = collection_path
         .join("wal");
 

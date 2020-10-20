@@ -1,5 +1,5 @@
 use segment::types::{PointIdType};
-use crate::collection::OperationResult;
+use crate::collection::CollectionResult;
 use crate::segment_manager::holders::segment_holder::{SegmentId, LockedSegment, LockedSegmentHolder};
 use std::sync::Arc;
 use segment::segment::Segment;
@@ -13,16 +13,16 @@ pub trait SegmentOptimizer {
     fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId>;
 
     /// Build temp segment
-    fn temp_segment(&self) -> OperationResult<LockedSegment>;
+    fn temp_segment(&self) -> CollectionResult<LockedSegment>;
 
     /// Build optimized segment
-    fn optimized_segment(&self, optimizing_segments: &Vec<LockedSegment>) -> OperationResult<Segment>;
+    fn optimized_segment(&self, optimizing_segments: &Vec<LockedSegment>) -> CollectionResult<Segment>;
 
 
     /// Performs optimization of collections's segments, including:
     ///     - Segment rebuilding
     ///     - Segment joining
-    fn optimize(&self, segments: LockedSegmentHolder, ids: Vec<SegmentId>) -> OperationResult<bool> {
+    fn optimize(&self, segments: LockedSegmentHolder, ids: Vec<SegmentId>) -> CollectionResult<bool> {
         let tmp_segment = self.temp_segment()?;
 
         let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
@@ -31,7 +31,7 @@ pub trait SegmentOptimizer {
             let read_segments = segments.read();
             ids.iter().cloned()
                 .map(|id| read_segments.get(id))
-                .filter_map(|x| x.and_then(|x| Some(x.mk_copy()) ))
+                .filter_map(|x| x.and_then(|x| Some(x.clone()) ))
                 .collect()
         };
 
@@ -39,8 +39,8 @@ pub trait SegmentOptimizer {
 
         let proxies: Vec<_> = optimizing_segments.iter()
             .map(|sg| ProxySegment::new(
-                sg.mk_copy(),
-                tmp_segment.mk_copy(),
+                sg.clone(),
+                tmp_segment.clone(),
                 proxy_deleted_points.clone(),
             )).collect();
 

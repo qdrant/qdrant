@@ -6,7 +6,7 @@ use crate::segment_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_constructor::build_segment;
 use std::path::PathBuf;
-use crate::collection::OperationResult;
+use crate::collection::CollectionResult;
 
 pub struct VacuumOptimizer {
     deleted_threshold: f64,
@@ -36,7 +36,7 @@ impl VacuumOptimizer {
             .filter(|(_, info)| info.num_vectors > self.min_vectors_number)
             .filter(|(_, info)| info.num_deleted_vectors as f64 / info.num_vectors as f64 > self.deleted_threshold)
             .max_by_key(|(_, info)| OrderedFloat(info.num_deleted_vectors as f64 / info.num_vectors as f64))
-            .and_then(|(idx, _)| Some((idx, segments.read().get(idx).unwrap().mk_copy())))
+            .and_then(|(idx, _)| Some((idx, segments.read().get(idx).unwrap().clone())))
     }
 }
 
@@ -49,7 +49,7 @@ impl SegmentOptimizer for VacuumOptimizer {
         }
     }
 
-    fn temp_segment(&self) -> OperationResult<LockedSegment> {
+    fn temp_segment(&self) -> CollectionResult<LockedSegment> {
         Ok(LockedSegment::new(build_simple_segment(
             self.segments_path.as_path(),
             self.config.vector_size,
@@ -57,7 +57,7 @@ impl SegmentOptimizer for VacuumOptimizer {
         )?))
     }
 
-    fn optimized_segment(&self, optimizing_segments: &Vec<LockedSegment>) -> OperationResult<Segment> {
+    fn optimized_segment(&self, optimizing_segments: &Vec<LockedSegment>) -> CollectionResult<Segment> {
         let optimizing_segment = optimizing_segments.get(0).unwrap();
         let config = optimizing_segment.get().read().config();
         Ok(build_segment(self.segments_path.as_path(), &config)?)

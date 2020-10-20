@@ -56,7 +56,7 @@ impl<T> From<SendError<T>> for CollectionError {
     }
 }
 
-pub type OperationResult<T> = result::Result<T, CollectionError>;
+pub type CollectionResult<T> = result::Result<T, CollectionError>;
 
 pub struct Collection {
     pub segments: Arc<RwLock<SegmentHolder>>,
@@ -75,7 +75,7 @@ impl Collection {
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
-    pub fn update(&self, operation: CollectionUpdateOperations, wait: bool) -> OperationResult<UpdateResult> {
+    pub fn update(&self, operation: CollectionUpdateOperations, wait: bool) -> CollectionResult<UpdateResult> {
         let operation_id = self.wal.lock().write(&operation)?;
 
         let upd = self.updater.clone();
@@ -96,7 +96,7 @@ impl Collection {
         Ok(UpdateResult { operation_id, status: UpdateStatus::Completed })
     }
 
-    pub fn info(&self) -> OperationResult<CollectionInfo> {
+    pub fn info(&self) -> CollectionResult<CollectionInfo> {
         let segments = self.segments.read();
         let mut vectors_count = 0;
         let mut segments_count = 0;
@@ -118,7 +118,7 @@ impl Collection {
         })
     }
 
-    pub fn search(&self, request: Arc<SearchRequest>) -> OperationResult<Vec<ScoredPoint>> {
+    pub fn search(&self, request: Arc<SearchRequest>) -> CollectionResult<Vec<ScoredPoint>> {
         return self.searcher.search(request);
     }
 
@@ -127,7 +127,7 @@ impl Collection {
         points: &Vec<PointIdType>,
         with_payload: bool,
         with_vector: bool,
-    ) -> OperationResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<Record>> {
         return self.searcher.retrieve(points, with_payload, with_vector);
     }
 }

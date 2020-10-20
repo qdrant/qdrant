@@ -151,6 +151,10 @@ impl VectorStorage for MemmapVectorStorage {
         unimplemented!()
     }
 
+    fn update_vector(&mut self, key: usize, vector: &Vec<f64>) -> OperationResult<usize> {
+        unimplemented!()
+    }
+
     fn update_from(&mut self, other: &dyn VectorStorage) -> OperationResult<Range<PointOffsetType>> {
         self.mmap = None;
         self.deleted_mmap = None;

@@ -95,6 +95,12 @@ impl VectorStorage for SimpleVectorStorage {
         return Ok(self.vectors.len() - 1);
     }
 
+    fn update_vector(&mut self, key: usize, vector: &Vec<f64>) -> OperationResult<usize> {
+        self.vectors.insert(key, vector.clone());
+        self.update_stored(key)?;
+        return Ok(key)
+    }
+
     fn update_from(&mut self, other: &dyn VectorStorage) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors.len();
         for id in other.iter_ids() {
