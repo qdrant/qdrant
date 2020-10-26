@@ -371,22 +371,29 @@ components:
       - name
       type: object
     CollectionInfo:
+      description: Current statistics and configuration of the collection.
       properties:
         config:
-          $ref: '#/components/schemas/SegmentConfig'
+          allOf:
+          - $ref: '#/components/schemas/SegmentConfig'
+          description: Collection settings
         disk_data_size:
+          description: Disk space, used by collection
           format: uint
           minimum: 0
           type: integer
         ram_data_size:
+          description: RAM used by collection
           format: uint
           minimum: 0
           type: integer
         segments_count:
+          description: Number of segments in collection
           format: uint
           minimum: 0
           type: integer
         vectors_count:
+          description: Number of vectors in collection
           format: uint
           minimum: 0
           type: integer
@@ -447,7 +454,8 @@ components:
         - has_id
         type: object
     Distance:
-      description: Type of internal tags, build from payload
+      description: Type of internal tags, build from payload Distance function types
+        used to compare vectors
       enum:
       - Cosine
       - Euclid
@@ -498,7 +506,9 @@ components:
       type: object
     Indexes:
       anyOf:
-      - properties:
+      - description: Do not use any index, scan whole vector collection during search.
+          Guarantee 100% precision, but may be time consuming on large collections.
+        properties:
           options:
             type: object
           type:
@@ -509,14 +519,22 @@ components:
         - options
         - type
         type: object
-      - properties:
+      - description: Use filterable HNSW index for approximate search. Is very fast
+          even on a very huge collections, but require additional space to store index
+          and additional time to build it.
+        properties:
           options:
             properties:
               ef_construct:
+                description: Number of neighbours to consider during the index building.
+                  Larger the value - more accurate the search, more time required
+                  to build index.
                 format: uint
                 minimum: 0
                 type: integer
               m:
+                description: Number of edges per node in the index graph. Larger the
+                  value - more accurate the search, more space required.
                 format: uint
                 minimum: 0
                 type: integer
@@ -931,12 +949,20 @@ components:
     SegmentConfig:
       properties:
         distance:
-          $ref: '#/components/schemas/Distance'
+          allOf:
+          - $ref: '#/components/schemas/Distance'
+          description: Type of distance function used for measuring distance between
+            vectors
         index:
-          $ref: '#/components/schemas/Indexes'
+          allOf:
+          - $ref: '#/components/schemas/Indexes'
+          description: Type of index used for search
         storage_type:
-          $ref: '#/components/schemas/StorageType'
+          allOf:
+          - $ref: '#/components/schemas/StorageType'
+          description: Type of vector storage
         vector_size:
+          description: Size of a vectors used
           format: uint
           minimum: 0
           type: integer
@@ -995,7 +1021,9 @@ components:
         type: object
     StorageType:
       anyOf:
-      - properties:
+      - description: Store vectors in memory and use persistence storage only if vectors
+          are changed
+        properties:
           type:
             enum:
             - in_memory
@@ -1003,7 +1031,9 @@ components:
         required:
         - type
         type: object
-      - properties:
+      - description: Use memmap to store vectors, a little slower than `InMemory`,
+          but requires little RAM
+        properties:
           type:
             enum:
             - mmap
@@ -1011,6 +1041,7 @@ components:
         required:
         - type
         type: object
+      description: Type of vector storage
     UpdateResult:
       properties:
         operation_id:

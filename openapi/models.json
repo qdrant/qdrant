@@ -82,6 +82,7 @@
                 }
             },
             "CollectionInfo": {
+                "description": "Current statistics and configuration of the collection.",
                 "type": "object",
                 "required": [
                     "config",
@@ -92,24 +93,33 @@
                 ],
                 "properties": {
                     "config": {
-                        "$ref": "#/components/schemas/SegmentConfig"
+                        "description": "Collection settings",
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/SegmentConfig"
+                            }
+                        ]
                     },
                     "disk_data_size": {
+                        "description": "Disk space, used by collection",
                         "type": "integer",
                         "format": "uint",
                         "minimum": 0
                     },
                     "ram_data_size": {
+                        "description": "RAM used by collection",
                         "type": "integer",
                         "format": "uint",
                         "minimum": 0
                     },
                     "segments_count": {
+                        "description": "Number of segments in collection",
                         "type": "integer",
                         "format": "uint",
                         "minimum": 0
                     },
                     "vectors_count": {
+                        "description": "Number of vectors in collection",
                         "type": "integer",
                         "format": "uint",
                         "minimum": 0
@@ -205,7 +215,7 @@
                 ]
             },
             "Distance": {
-                "description": "Type of internal tags, build from payload",
+                "description": "Type of internal tags, build from payload Distance function types used to compare vectors",
                 "type": "string",
                 "enum": [
                     "Cosine",
@@ -278,6 +288,7 @@
             "Indexes": {
                 "anyOf": [
                     {
+                        "description": "Do not use any index, scan whole vector collection during search. Guarantee 100% precision, but may be time consuming on large collections.",
                         "type": "object",
                         "required": [
                             "options",
@@ -296,6 +307,7 @@
                         }
                     },
                     {
+                        "description": "Use filterable HNSW index for approximate search. Is very fast even on a very huge collections, but require additional space to store index and additional time to build it.",
                         "type": "object",
                         "required": [
                             "options",
@@ -310,11 +322,13 @@
                                 ],
                                 "properties": {
                                     "ef_construct": {
+                                        "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.",
                                         "type": "integer",
                                         "format": "uint",
                                         "minimum": 0
                                     },
                                     "m": {
+                                        "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
                                         "type": "integer",
                                         "format": "uint",
                                         "minimum": 0
@@ -969,15 +983,31 @@
                 ],
                 "properties": {
                     "distance": {
-                        "$ref": "#/components/schemas/Distance"
+                        "description": "Type of distance function used for measuring distance between vectors",
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/Distance"
+                            }
+                        ]
                     },
                     "index": {
-                        "$ref": "#/components/schemas/Indexes"
+                        "description": "Type of index used for search",
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/Indexes"
+                            }
+                        ]
                     },
                     "storage_type": {
-                        "$ref": "#/components/schemas/StorageType"
+                        "description": "Type of vector storage",
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/StorageType"
+                            }
+                        ]
                     },
                     "vector_size": {
+                        "description": "Size of a vectors used",
                         "type": "integer",
                         "format": "uint",
                         "minimum": 0
@@ -1064,8 +1094,10 @@
                 ]
             },
             "StorageType": {
+                "description": "Type of vector storage",
                 "anyOf": [
                     {
+                        "description": "Store vectors in memory and use persistence storage only if vectors are changed",
                         "type": "object",
                         "required": [
                             "type"
@@ -1080,6 +1112,7 @@
                         }
                     },
                     {
+                        "description": "Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM",
                         "type": "object",
                         "required": [
                             "type"
