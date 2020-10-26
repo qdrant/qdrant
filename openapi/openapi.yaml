@@ -122,8 +122,53 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+    post:
+      tags:
+        - point
+      summary: Update points in collection
+      operationId: update_points
+      requestBody:
+        description: Points update operations
+        content:
+          application/json:
+            schema:
+              $ref: "./models.json#/definitions/CollectionUpdateOperations"
 
-  /collections/{name}/vectors/{id}:
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to search in
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: [ "Ok" ]
+                  result:
+                    type: array
+                    items:
+                      $ref: "./models.json#/definitions/UpdateResult"
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+
+  /collections/{name}/points/{id}:
     get:
       tags:
         - point
@@ -166,6 +211,97 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /collections/{name}/points:
+    get:
+      tags:
+        - point
+      summary: Retrieve points by ids
+      operationId: get_points
+      requestBody:
+        description: List of points to retrieve
+        content:
+          application/json:
+            schema:
+              $ref: "./models.json#/definitions/PointRequest"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to retrieve from
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: ["Ok"]
+                  result:
+                    type: array
+                    items:
+                      $ref: "./models.json#/definitions/Record"
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /collections/{name}/points/search:
+    get:
+      tags:
+        - point
+      summary: Search points
+      operationId: search_points
+      requestBody:
+        description: Search request with optional filtering
+        content:
+          application/json:
+            schema:
+              $ref: "./models.json#/definitions/SearchRequest"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to search in
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: ["Ok"]
+                  result:
+                    type: array
+                    items:
+                      $ref: "./models.json#/definitions/ScoredPoint"
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
 components:
   schemas:

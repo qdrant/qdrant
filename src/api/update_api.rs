@@ -13,7 +13,7 @@ pub struct UpdateParam {
 }
 
 #[post("/collections/{name}")]
-pub async fn update_vectors(
+pub async fn update_points(
     toc: web::Data<TableOfContent>,
     web::Path(name): web::Path<String>,
     operation: web::Json<CollectionUpdateOperations>,

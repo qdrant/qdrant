@@ -6,7 +6,7 @@ use std::sync::Arc;
 use collection::operations::types::SearchRequest;
 
 #[post("/collections/{name}/points/search")]
-pub async fn search_vectors(
+pub async fn search_points(
     toc: web::Data<TableOfContent>,
     web::Path(name): web::Path<String>,
     request: web::Json<SearchRequest>,

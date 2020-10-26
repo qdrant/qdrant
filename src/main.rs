@@ -13,9 +13,9 @@ use actix_web::{web, App, HttpServer, error, HttpRequest, HttpResponse};
 use env_logger;
 use storage::content_manager::toc::TableOfContent;
 use crate::api::collections_api::{get_collections, update_collections, get_collection};
-use crate::api::update_api::update_vectors;
+use crate::api::update_api::update_points;
 use crate::api::retrieve_api::{get_vectors, get_point};
-use crate::api::search_api::search_vectors;
+use crate::api::search_api::search_points;
 
 
 fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error::Error {
@@ -56,10 +56,10 @@ async fn main() -> std::io::Result<()> {
             .service(get_collections)
             .service(update_collections)
             .service(get_collection)
-            .service(update_vectors)
+            .service(update_points)
             .service(get_point)
             .service(get_vectors)
-            .service(search_vectors)
+            .service(search_points)
             ;
 
         app

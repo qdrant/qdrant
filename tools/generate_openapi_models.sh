@@ -19,7 +19,7 @@ docker run --rm \
 
 # (cd tools/openapi-merge/ ; docker build . --tag merge-openapi)
 
-echo "WARNING: This file is auto-generated. Do NOT edit it manually!" >./openapi/openapi-merged.yaml
+echo "# WARNING: This file is auto-generated. Do NOT edit it manually!" >./openapi/openapi-merged.yaml
 
 docker run \
     -v $(pwd)/openapi:/project \
