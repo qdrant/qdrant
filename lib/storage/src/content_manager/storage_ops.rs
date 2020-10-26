@@ -5,13 +5,17 @@ use segment::types::{Distance, Indexes};
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AliasOperations {
+    /// Create alternative name for a collection.
+    /// Collection will be available under both names for search, retrieve,
     CreateAlias {
         collection_name: String,
         alias_name: String,
     },
+    /// Delete alias if exists
     DeleteAlias {
         alias_name: String,
     },
+    /// Change alias to a new one
     RenameAlias {
         old_alias_name: String,
         new_alias_name: String,
@@ -31,6 +35,8 @@ pub enum StorageOps {
     /// Delete collection with given name
     DeleteCollection(String),
     /// Perform changes of collection aliases
+    /// Alias changes are atomic, meaning that no collection modifications can happen between
+    /// alias operations
     ChangeAliases {
         actions: Vec<AliasOperations>,
     }

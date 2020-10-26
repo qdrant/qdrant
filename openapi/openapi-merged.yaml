@@ -14,16 +14,16 @@ externalDocs:
 servers:
   - url: http://localhost:6333/
 tags:
-  - name: collection
-    description: Searchable collection of points.
-  - name: point
-    description: Float-point vector with payload.
+  - name: collections
+    description: Searchable collections of points.
+  - name: points
+    description: Float-point vectors with payload.
 
 paths:
   /collections:
     get:
       tags:
-        - collection
+        - collections
       summary: Get list of existing collections
       operationId: get_collections
       responses:
@@ -52,7 +52,7 @@ paths:
 
     post:
       tags:
-        - collection
+        - collections
       summary: Perform update operation on collections
       operationId: update_collections
       requestBody:
@@ -88,7 +88,7 @@ paths:
   /collections/{name}:
     get:
       tags:
-        - collection
+        - collections
       summary: Get information about existing collection
       operationId: get_collection
       parameters:
@@ -124,7 +124,7 @@ paths:
 
     post:
       tags:
-        - point
+        - points
       summary: Update points in collection
       operationId: update_points
       requestBody:
@@ -171,7 +171,7 @@ paths:
   /collections/{name}/points/{id}:
     get:
       tags:
-        - point
+        - points
       summary: Retrieve point by id
       operationId: get_point
       parameters:
@@ -214,7 +214,7 @@ paths:
   /collections/{name}/points:
     post:
       tags:
-        - point
+        - points
       summary: Retrieve points by ids
       operationId: get_points
       requestBody:
@@ -260,7 +260,7 @@ paths:
   /collections/{name}/points/search:
     post:
       tags:
-        - point
+        - points
       summary: Search points
       operationId: search_points
       requestBody:
@@ -324,7 +324,9 @@ components:
 
     AliasOperations:
       anyOf:
-      - properties:
+      - description: Create alternative name for a collection. Collection will be
+          available under both names for search, retrieve,
+        properties:
           create_alias:
             properties:
               alias_name:
@@ -338,7 +340,8 @@ components:
         required:
         - create_alias
         type: object
-      - properties:
+      - description: Delete alias if exists
+        properties:
           delete_alias:
             properties:
               alias_name:
@@ -349,7 +352,8 @@ components:
         required:
         - delete_alias
         type: object
-      - properties:
+      - description: Change alias to a new one
+        properties:
           rename_alias:
             properties:
               new_alias_name:
@@ -419,31 +423,36 @@ components:
       type: object
     Condition:
       anyOf:
-      - properties:
+      - description: Nested filter
+        properties:
           filter:
             $ref: '#/components/schemas/Filter'
         required:
         - filter
         type: object
-      - properties:
+      - description: Check if point has field with a given value
+        properties:
           match:
             $ref: '#/components/schemas/Match'
         required:
         - match
         type: object
-      - properties:
+      - description: Check if points value lies in a given range
+        properties:
           range:
             $ref: '#/components/schemas/Range'
         required:
         - range
         type: object
-      - properties:
+      - description: Check if points geo location lies in a given area
+        properties:
           geo_bounding_box:
             $ref: '#/components/schemas/GeoBoundingBox'
         required:
         - geo_bounding_box
         type: object
-      - properties:
+      - description: Check if points id is in a given set
+        properties:
           has_id:
             items:
               format: uint64
@@ -464,16 +473,19 @@ components:
     Filter:
       properties:
         must:
+          description: All conditions must match
           items:
             $ref: '#/components/schemas/Condition'
           nullable: true
           type: array
         must_not:
+          description: All conditions must NOT match
           items:
             $ref: '#/components/schemas/Condition'
           nullable: true
           type: array
         should:
+          description: At least one of thous conditions should match
           items:
             $ref: '#/components/schemas/Condition'
           nullable: true
@@ -482,11 +494,16 @@ components:
     GeoBoundingBox:
       properties:
         bottom_right:
-          $ref: '#/components/schemas/GeoPoint'
+          allOf:
+          - $ref: '#/components/schemas/GeoPoint'
+          description: Coordinates of the bottom right point of the area rectangle
         key:
+          description: Name of the field to match with
           type: string
         top_left:
-          $ref: '#/components/schemas/GeoPoint'
+          allOf:
+          - $ref: '#/components/schemas/GeoPoint'
+          description: Coordinates of the top left point of the area rectangle
       required:
       - bottom_right
       - key
@@ -553,12 +570,15 @@ components:
     Match:
       properties:
         integer:
+          description: Integer value to match
           format: int64
           nullable: true
           type: integer
         key:
+          description: Name of the field to match with
           type: string
         keyword:
+          description: Keyword value to match
           nullable: true
           type: string
       required:
@@ -612,7 +632,7 @@ components:
         type: object
     PayloadOps:
       anyOf:
-      - description: Overrides
+      - description: Set payload value, overrides if it is already exists
         properties:
           set_payload:
             properties:
@@ -621,6 +641,7 @@ components:
                   $ref: '#/components/schemas/PayloadInterface'
                 type: object
               points:
+                description: Assigns payload to each point in this list
                 items:
                   format: uint64
                   minimum: 0
@@ -633,7 +654,7 @@ components:
         required:
         - set_payload
         type: object
-      - description: Deletes specified Payload if they are assigned
+      - description: Deletes specified payload values if they are assigned
         properties:
           delete_payload:
             properties:
@@ -642,6 +663,7 @@ components:
                   type: string
                 type: array
               points:
+                description: Deletes values from each point in this list
                 items:
                   format: uint64
                   minimum: 0
@@ -654,7 +676,7 @@ components:
         required:
         - delete_payload
         type: object
-      - description: Drops all Payload associated with given points.
+      - description: Drops all Payload values associated with given points.
         properties:
           clear_payload:
             properties:
@@ -757,7 +779,8 @@ components:
         type: array
     PointInsertOps:
       anyOf:
-      - properties:
+      - description: Inset points from a batch.
+        properties:
           batch:
             properties:
               ids:
@@ -788,7 +811,8 @@ components:
         required:
         - batch
         type: object
-      - properties:
+      - description: Insert points from a list
+        properties:
           points:
             items:
               $ref: '#/components/schemas/PointStruct'
@@ -835,15 +859,18 @@ components:
     PointStruct:
       properties:
         id:
+          description: Point id
           format: uint64
           minimum: 0
           type: integer
         payload:
           additionalProperties:
             $ref: '#/components/schemas/PayloadInterface'
+          description: Payload values (optional)
           nullable: true
           type: object
         vector:
+          description: Vector
           items:
             format: double
             type: number
@@ -855,20 +882,25 @@ components:
     Range:
       properties:
         gt:
+          description: point.key > range.gt
           format: double
           nullable: true
           type: number
         gte:
+          description: point.key >= range.gte
           format: double
           nullable: true
           type: number
         key:
+          description: Name of the field to match with
           type: string
         lt:
+          description: point.key < range.lt
           format: double
           nullable: true
           type: number
         lte:
+          description: point.key <= range.lte
           format: double
           nullable: true
           type: number
@@ -876,17 +908,21 @@ components:
       - key
       type: object
     Record:
+      description: Point data
       properties:
         id:
+          description: Id of the point
           format: uint64
           minimum: 0
           type: integer
         payload:
           additionalProperties:
             $ref: '#/components/schemas/PayloadType'
+          description: Payload - values assigned to the point
           nullable: true
           type: object
         vector:
+          description: Vector of the point
           items:
             format: double
             type: number
@@ -897,23 +933,28 @@ components:
       type: object
     ScoredPoint:
       properties:
-        idx:
+        id:
+          description: Point id
           format: uint64
           minimum: 0
           type: integer
         score:
+          description: Points vector distance to the query vector
           format: float
           type: number
       required:
-      - idx
+      - id
       - score
       type: object
     SearchParams:
       anyOf:
-      - properties:
+      - description: Params relevant to HNSW index
+        properties:
           hnsw:
             properties:
               ef:
+                description: Size of the beam in a beam-search. Larger the value -
+                  more accurate the result, more time required for search.
                 format: uint
                 minimum: 0
                 type: integer
@@ -923,21 +964,27 @@ components:
         required:
         - hnsw
         type: object
+      description: Additional parameters of the search
     SearchRequest:
+      description: Search request
       properties:
         filter:
           anyOf:
           - $ref: '#/components/schemas/Filter'
           - nullable: true
+          description: Look only for points which satisfies this conditions
         params:
           anyOf:
           - $ref: '#/components/schemas/SearchParams'
           - nullable: true
+          description: Additional search params
         top:
+          description: Max number of result to return
           format: uint
           minimum: 0
           type: integer
         vector:
+          description: Look for vectors closest to this
           items:
             format: double
             type: number
@@ -1005,7 +1052,8 @@ components:
         required:
         - delete_collection
         type: object
-      - description: Perform changes of collection aliases
+      - description: Perform changes of collection aliases Alias changes are atomic,
+          meaning that no collection modifications can happen between alias operations
         properties:
           change_aliases:
             properties:
@@ -1045,11 +1093,14 @@ components:
     UpdateResult:
       properties:
         operation_id:
+          description: Sequential number of the operation
           format: uint64
           minimum: 0
           type: integer
         status:
-          $ref: '#/components/schemas/UpdateStatus'
+          allOf:
+          - $ref: '#/components/schemas/UpdateStatus'
+          description: Update status
       required:
       - operation_id
       - status

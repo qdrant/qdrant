@@ -8,8 +8,11 @@ use crate::operations::payload_ops::PayloadInterface;
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct PointStruct {
+    /// Point id
     pub id: PointIdType,
+    /// Vector
     pub vector: VectorType,
+    /// Payload values (optional)
     pub payload: Option<HashMap<PayloadKeyType, PayloadInterface>>,
 }
 
@@ -18,12 +21,14 @@ pub struct PointStruct {
 #[serde(rename_all = "snake_case")]
 pub enum PointInsertOps {
     #[serde(rename = "batch")]
+    /// Inset points from a batch.
     BatchPoints {
         ids: Vec<PointIdType>,
         vectors: Vec<VectorType>,
         payloads: Option<Vec<Option<HashMap<PayloadKeyType, PayloadInterface>>>>,
     },
     #[serde(rename = "points")]
+    /// Insert points from a list
     PointsList(Vec<PointStruct>),
 }
 

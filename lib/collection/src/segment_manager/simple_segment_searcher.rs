@@ -84,8 +84,8 @@ impl SegmentSearcher for SimpleSegmentSearcher {
                 .map(|x| x.unwrap())
                 .flatten()
                 .filter(|scored| {
-                    let res = seen_idx.contains(&scored.idx);
-                    seen_idx.insert(scored.idx);
+                    let res = seen_idx.contains(&scored.id);
+                    seen_idx.insert(scored.id);
                     !res
                 }),
             request.top,
@@ -156,8 +156,8 @@ mod tests {
 
         assert_eq!(result.len(), 5);
 
-        assert!(result[0].idx == 3 || result[0].idx == 11);
-        assert!(result[1].idx == 3 || result[1].idx == 11);
+        assert!(result[0].id == 3 || result[0].id == 11);
+        assert!(result[1].id == 3 || result[1].id == 11);
     }
 
     #[test]

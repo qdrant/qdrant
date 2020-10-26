@@ -4,6 +4,7 @@
             "AliasOperations": {
                 "anyOf": [
                     {
+                        "description": "Create alternative name for a collection. Collection will be available under both names for search, retrieve,",
                         "type": "object",
                         "required": [
                             "create_alias"
@@ -27,6 +28,7 @@
                         }
                     },
                     {
+                        "description": "Delete alias if exists",
                         "type": "object",
                         "required": [
                             "delete_alias"
@@ -46,6 +48,7 @@
                         }
                     },
                     {
+                        "description": "Change alias to a new one",
                         "type": "object",
                         "required": [
                             "rename_alias"
@@ -153,6 +156,7 @@
             "Condition": {
                 "anyOf": [
                     {
+                        "description": "Nested filter",
                         "type": "object",
                         "required": [
                             "filter"
@@ -164,6 +168,7 @@
                         }
                     },
                     {
+                        "description": "Check if point has field with a given value",
                         "type": "object",
                         "required": [
                             "match"
@@ -175,6 +180,7 @@
                         }
                     },
                     {
+                        "description": "Check if points value lies in a given range",
                         "type": "object",
                         "required": [
                             "range"
@@ -186,6 +192,7 @@
                         }
                     },
                     {
+                        "description": "Check if points geo location lies in a given area",
                         "type": "object",
                         "required": [
                             "geo_bounding_box"
@@ -197,6 +204,7 @@
                         }
                     },
                     {
+                        "description": "Check if points id is in a given set",
                         "type": "object",
                         "required": [
                             "has_id"
@@ -227,6 +235,7 @@
                 "type": "object",
                 "properties": {
                     "must": {
+                        "description": "All conditions must match",
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/Condition"
@@ -234,6 +243,7 @@
                         "nullable": true
                     },
                     "must_not": {
+                        "description": "All conditions must NOT match",
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/Condition"
@@ -241,6 +251,7 @@
                         "nullable": true
                     },
                     "should": {
+                        "description": "At least one of thous conditions should match",
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/Condition"
@@ -258,13 +269,24 @@
                 ],
                 "properties": {
                     "bottom_right": {
-                        "$ref": "#/components/schemas/GeoPoint"
+                        "description": "Coordinates of the bottom right point of the area rectangle",
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/GeoPoint"
+                            }
+                        ]
                     },
                     "key": {
+                        "description": "Name of the field to match with",
                         "type": "string"
                     },
                     "top_left": {
-                        "$ref": "#/components/schemas/GeoPoint"
+                        "description": "Coordinates of the top left point of the area rectangle",
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/GeoPoint"
+                            }
+                        ]
                     }
                 }
             },
@@ -352,14 +374,17 @@
                 ],
                 "properties": {
                     "integer": {
+                        "description": "Integer value to match",
                         "type": "integer",
                         "format": "int64",
                         "nullable": true
                     },
                     "key": {
+                        "description": "Name of the field to match with",
                         "type": "string"
                     },
                     "keyword": {
+                        "description": "Keyword value to match",
                         "type": "string",
                         "nullable": true
                     }
@@ -445,7 +470,7 @@
                 "description": "Define operations description for point payloads manipulation",
                 "anyOf": [
                     {
-                        "description": "Overrides",
+                        "description": "Set payload value, overrides if it is already exists",
                         "type": "object",
                         "required": [
                             "set_payload"
@@ -465,6 +490,7 @@
                                         }
                                     },
                                     "points": {
+                                        "description": "Assigns payload to each point in this list",
                                         "type": "array",
                                         "items": {
                                             "type": "integer",
@@ -477,7 +503,7 @@
                         }
                     },
                     {
-                        "description": "Deletes specified Payload if they are assigned",
+                        "description": "Deletes specified payload values if they are assigned",
                         "type": "object",
                         "required": [
                             "delete_payload"
@@ -497,6 +523,7 @@
                                         }
                                     },
                                     "points": {
+                                        "description": "Deletes values from each point in this list",
                                         "type": "array",
                                         "items": {
                                             "type": "integer",
@@ -509,7 +536,7 @@
                         }
                     },
                     {
-                        "description": "Drops all Payload associated with given points.",
+                        "description": "Drops all Payload values associated with given points.",
                         "type": "object",
                         "required": [
                             "clear_payload"
@@ -684,6 +711,7 @@
             "PointInsertOps": {
                 "anyOf": [
                     {
+                        "description": "Inset points from a batch.",
                         "type": "object",
                         "required": [
                             "batch"
@@ -730,6 +758,7 @@
                         }
                     },
                     {
+                        "description": "Insert points from a list",
                         "type": "object",
                         "required": [
                             "points"
@@ -810,11 +839,13 @@
                 ],
                 "properties": {
                     "id": {
+                        "description": "Point id",
                         "type": "integer",
                         "format": "uint64",
                         "minimum": 0
                     },
                     "payload": {
+                        "description": "Payload values (optional)",
                         "type": "object",
                         "additionalProperties": {
                             "$ref": "#/components/schemas/PayloadInterface"
@@ -822,6 +853,7 @@
                         "nullable": true
                     },
                     "vector": {
+                        "description": "Vector",
                         "type": "array",
                         "items": {
                             "type": "number",
@@ -837,24 +869,29 @@
                 ],
                 "properties": {
                     "gt": {
+                        "description": "point.key > range.gt",
                         "type": "number",
                         "format": "double",
                         "nullable": true
                     },
                     "gte": {
+                        "description": "point.key >= range.gte",
                         "type": "number",
                         "format": "double",
                         "nullable": true
                     },
                     "key": {
+                        "description": "Name of the field to match with",
                         "type": "string"
                     },
                     "lt": {
+                        "description": "point.key < range.lt",
                         "type": "number",
                         "format": "double",
                         "nullable": true
                     },
                     "lte": {
+                        "description": "point.key <= range.lte",
                         "type": "number",
                         "format": "double",
                         "nullable": true
@@ -862,17 +899,20 @@
                 }
             },
             "Record": {
+                "description": "Point data",
                 "type": "object",
                 "required": [
                     "id"
                 ],
                 "properties": {
                     "id": {
+                        "description": "Id of the point",
                         "type": "integer",
                         "format": "uint64",
                         "minimum": 0
                     },
                     "payload": {
+                        "description": "Payload - values assigned to the point",
                         "type": "object",
                         "additionalProperties": {
                             "$ref": "#/components/schemas/PayloadType"
@@ -880,6 +920,7 @@
                         "nullable": true
                     },
                     "vector": {
+                        "description": "Vector of the point",
                         "type": "array",
                         "items": {
                             "type": "number",
@@ -892,24 +933,28 @@
             "ScoredPoint": {
                 "type": "object",
                 "required": [
-                    "idx",
+                    "id",
                     "score"
                 ],
                 "properties": {
-                    "idx": {
+                    "id": {
+                        "description": "Point id",
                         "type": "integer",
                         "format": "uint64",
                         "minimum": 0
                     },
                     "score": {
+                        "description": "Points vector distance to the query vector",
                         "type": "number",
                         "format": "float"
                     }
                 }
             },
             "SearchParams": {
+                "description": "Additional parameters of the search",
                 "anyOf": [
                     {
+                        "description": "Params relevant to HNSW index",
                         "type": "object",
                         "required": [
                             "hnsw"
@@ -922,6 +967,7 @@
                                 ],
                                 "properties": {
                                     "ef": {
+                                        "description": "Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.",
                                         "type": "integer",
                                         "format": "uint",
                                         "minimum": 0
@@ -933,6 +979,7 @@
                 ]
             },
             "SearchRequest": {
+                "description": "Search request",
                 "type": "object",
                 "required": [
                     "top",
@@ -940,6 +987,7 @@
                 ],
                 "properties": {
                     "filter": {
+                        "description": "Look only for points which satisfies this conditions",
                         "anyOf": [
                             {
                                 "$ref": "#/components/schemas/Filter"
@@ -950,6 +998,7 @@
                         ]
                     },
                     "params": {
+                        "description": "Additional search params",
                         "anyOf": [
                             {
                                 "$ref": "#/components/schemas/SearchParams"
@@ -960,11 +1009,13 @@
                         ]
                     },
                     "top": {
+                        "description": "Max number of result to return",
                         "type": "integer",
                         "format": "uint",
                         "minimum": 0
                     },
                     "vector": {
+                        "description": "Look for vectors closest to this",
                         "type": "array",
                         "items": {
                             "type": "number",
@@ -1069,7 +1120,7 @@
                         }
                     },
                     {
-                        "description": "Perform changes of collection aliases",
+                        "description": "Perform changes of collection aliases Alias changes are atomic, meaning that no collection modifications can happen between alias operations",
                         "type": "object",
                         "required": [
                             "change_aliases"
@@ -1136,12 +1187,18 @@
                 ],
                 "properties": {
                     "operation_id": {
+                        "description": "Sequential number of the operation",
                         "type": "integer",
                         "format": "uint64",
                         "minimum": 0
                     },
                     "status": {
-                        "$ref": "#/components/schemas/UpdateStatus"
+                        "description": "Update status",
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/UpdateStatus"
+                            }
+                        ]
                     }
                 }
             },

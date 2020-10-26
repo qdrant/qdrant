@@ -148,7 +148,7 @@ impl SegmentEntry for Segment {
             .map(|&scored_point_offset|
                 (
                     ScoredPoint {
-                        idx: id_mapper
+                        id: id_mapper
                             .external_id(scored_point_offset.idx)
                             .unwrap_or_else(|| panic!("Corrupter id_mapper, no external value for {}", scored_point_offset.idx)),
                         score: scored_point_offset.score,

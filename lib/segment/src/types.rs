@@ -36,7 +36,9 @@ pub enum Order {
 
 #[derive(Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Debug)]
 pub struct ScoredPoint {
-    pub idx: PointIdType,
+    /// Point id
+    pub id: PointIdType,
+    /// Points vector distance to the query vector
     pub score: ScoreType,
 }
 
@@ -81,8 +83,11 @@ pub struct SegmentInfo {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
+/// Additional parameters of the search
 pub enum SearchParams {
+    /// Params relevant to HNSW index
     Hnsw {
+        /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
         ef: usize
     }
 }
@@ -179,26 +184,37 @@ pub enum PayloadType {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Match {
+    /// Name of the field to match with
     pub key: PayloadKeyType,
+    /// Keyword value to match
     pub keyword: Option<String>,
+    /// Integer value to match
     pub integer: Option<i64>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Range {
+    /// Name of the field to match with
     pub key: PayloadKeyType,
+    /// point.key < range.lt
     pub lt: Option<f64>,
+    /// point.key > range.gt
     pub gt: Option<f64>,
+    /// point.key >= range.gte
     pub gte: Option<f64>,
+    /// point.key <= range.lte
     pub lte: Option<f64>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoBoundingBox {
+    /// Name of the field to match with
     pub key: PayloadKeyType,
+    /// Coordinates of the top left point of the area rectangle
     pub top_left: GeoPoint,
+    /// Coordinates of the bottom right point of the area rectangle
     pub bottom_right: GeoPoint,
 }
 
@@ -206,18 +222,26 @@ pub struct GeoBoundingBox {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum Condition {
+    /// Nested filter
     Filter(Filter),
+    /// Check if point has field with a given value
     Match(Match),
+    /// Check if points value lies in a given range
     Range(Range),
+    /// Check if points geo location lies in a given area
     GeoBoundingBox(GeoBoundingBox),
+    /// Check if points id is in a given set
     HasId(HashSet<PointIdType>),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Filter {
+    /// At least one of thous conditions should match
     pub should: Option<Vec<Condition>>,
+    /// All conditions must match
     pub must: Option<Vec<Condition>>,
+    /// All conditions must NOT match
     pub must_not: Option<Vec<Condition>>,
 }
 

@@ -23,7 +23,7 @@ mod tests {
         let res = segment.search(&query_vector, None, 1, None).unwrap();
 
         let best_match = res.get(0).expect("Non-empty result");
-        assert_eq!(best_match.idx, 3);
+        assert_eq!(best_match.id, 3);
 
 
         let ids: HashSet<_> = vec![3].into_iter().collect();
@@ -39,7 +39,7 @@ mod tests {
         let res = segment.search(&query_vector, Some(&frt), 1, None).unwrap();
 
         let best_match = res.get(0).expect("Non-empty result");
-        assert_ne!(best_match.idx, 3);
+        assert_ne!(best_match.id, 3);
 
 
         let point_ids1: Vec<_> = segment.iter_points().collect();

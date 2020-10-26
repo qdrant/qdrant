@@ -199,6 +199,7 @@ impl TableOfContent {
                 Ok(removed)
             }
             StorageOps::ChangeAliases { actions } => {
+                let _collection_lock = self.collections.write(); // Make alias change atomic
                 for action in actions {
                     match action {
                         AliasOperations::CreateAlias { collection_name, alias_name } => {

@@ -58,7 +58,7 @@ fn test_collection_updater() {
     match search_res {
         Ok(res) => {
             assert_eq!(res.len(), 3);
-            assert_eq!(res[0].idx, 2);
+            assert_eq!(res[0].id, 2);
         }
         Err(err) => assert!(false, format!("search failed: {:?}", err)),
     }

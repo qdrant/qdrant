@@ -50,17 +50,19 @@ impl PayloadInterface {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadOps {
-    /// Overrides
+    /// Set payload value, overrides if it is already exists
     SetPayload {
         payload: HashMap<PayloadKeyType, PayloadInterface>,
+        /// Assigns payload to each point in this list
         points: Vec<PointIdType>,
     },
-    /// Deletes specified Payload if they are assigned
+    /// Deletes specified payload values if they are assigned
     DeletePayload {
         keys: Vec<PayloadKeyType>,
+        /// Deletes values from each point in this list
         points: Vec<PointIdType>,
     },
-    /// Drops all Payload associated with given points.
+    /// Drops all Payload values associated with given points.
     ClearPayload {
         points: Vec<PointIdType>,
     }
