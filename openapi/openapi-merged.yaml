@@ -1,0 +1,1030 @@
+openapi: 3.0.1
+info:
+  title: Qdrant API
+  description: "API description for Qdrant vector search engine. Describes CRUD and search operations on collections of points (vectors with payload)."
+  contact:
+    email: andrey@vasnetsov.com
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  version: 0.1.0
+externalDocs:
+  description: Find out more about Qdrant
+  url: https://github.com/generall/qdrant
+servers:
+  - url: http://localhost:6333/
+tags:
+  - name: collection
+    description: Searchable collection of points.
+  - name: point
+    description: Float-point vector with payload.
+
+paths:
+  /collections:
+    get:
+      tags:
+        - collection
+      summary: Get list of existing collections
+      operationId: get_collections
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: ["Ok"]
+                  result:
+                    $ref: "#/components/schemas/CollectionsResponse"
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    post:
+      tags:
+        - collection
+      summary: Perform update operation on collections
+      operationId: update_collections
+      requestBody:
+        description: Operation to perform on collections
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StorageOps"
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: ["Ok"]
+                  result:
+                    type: boolean
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /collections/{name}:
+    get:
+      tags:
+        - collection
+      summary: Get information about existing collection
+      operationId: get_collection
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to retrieve
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: ["Ok"]
+                  result:
+                    $ref: "#/components/schemas/CollectionInfo"
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    post:
+      tags:
+        - point
+      summary: Update points in collection
+      operationId: update_points
+      requestBody:
+        description: Points update operations
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CollectionUpdateOperations"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to search in
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: [ "Ok" ]
+                  result:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/UpdateResult"
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+
+  /collections/{name}/points/{id}:
+    get:
+      tags:
+        - point
+      summary: Retrieve point by id
+      operationId: get_point
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to retrieve from
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: Id of the point
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: ["Ok"]
+                  result:
+                    $ref: "#/components/schemas/Record"
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /collections/{name}/points:
+    post:
+      tags:
+        - point
+      summary: Retrieve points by ids
+      operationId: get_points
+      requestBody:
+        description: List of points to retrieve
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PointRequest"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to retrieve from
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: ["Ok"]
+                  result:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Record"
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /collections/{name}/points/search:
+    post:
+      tags:
+        - point
+      summary: Search points
+      operationId: search_points
+      requestBody:
+        description: Search request with optional filtering
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchRequest"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to search in
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: ["Ok"]
+                  result:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ScoredPoint"
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        time:
+          type: number
+          format: float
+          description: Time spent to process this request
+        status:
+          type: object
+          properties:
+            error:
+              type: string
+              description: Description of the occurred error.
+        result:
+          type: object
+          nullable: true
+
+    AliasOperations:
+      anyOf:
+      - properties:
+          create_alias:
+            properties:
+              alias_name:
+                type: string
+              collection_name:
+                type: string
+            required:
+            - alias_name
+            - collection_name
+            type: object
+        required:
+        - create_alias
+        type: object
+      - properties:
+          delete_alias:
+            properties:
+              alias_name:
+                type: string
+            required:
+            - alias_name
+            type: object
+        required:
+        - delete_alias
+        type: object
+      - properties:
+          rename_alias:
+            properties:
+              new_alias_name:
+                type: string
+              old_alias_name:
+                type: string
+            required:
+            - new_alias_name
+            - old_alias_name
+            type: object
+        required:
+        - rename_alias
+        type: object
+    CollectionDescription:
+      properties:
+        name:
+          type: string
+      required:
+      - name
+      type: object
+    CollectionInfo:
+      properties:
+        config:
+          $ref: '#/components/schemas/SegmentConfig'
+        disk_data_size:
+          format: uint
+          minimum: 0
+          type: integer
+        ram_data_size:
+          format: uint
+          minimum: 0
+          type: integer
+        segments_count:
+          format: uint
+          minimum: 0
+          type: integer
+        vectors_count:
+          format: uint
+          minimum: 0
+          type: integer
+      required:
+      - config
+      - disk_data_size
+      - ram_data_size
+      - segments_count
+      - vectors_count
+      type: object
+    CollectionUpdateOperations:
+      anyOf:
+      - $ref: '#/components/schemas/PointOps'
+      - $ref: '#/components/schemas/PayloadOps'
+    CollectionsResponse:
+      properties:
+        collections:
+          items:
+            $ref: '#/components/schemas/CollectionDescription'
+          type: array
+      required:
+      - collections
+      type: object
+    Condition:
+      anyOf:
+      - properties:
+          filter:
+            $ref: '#/components/schemas/Filter'
+        required:
+        - filter
+        type: object
+      - properties:
+          match:
+            $ref: '#/components/schemas/Match'
+        required:
+        - match
+        type: object
+      - properties:
+          range:
+            $ref: '#/components/schemas/Range'
+        required:
+        - range
+        type: object
+      - properties:
+          geo_bounding_box:
+            $ref: '#/components/schemas/GeoBoundingBox'
+        required:
+        - geo_bounding_box
+        type: object
+      - properties:
+          has_id:
+            items:
+              format: uint64
+              minimum: 0
+              type: integer
+            type: array
+        required:
+        - has_id
+        type: object
+    Distance:
+      description: Type of internal tags, build from payload
+      enum:
+      - Cosine
+      - Euclid
+      - Dot
+      type: string
+    Filter:
+      properties:
+        must:
+          items:
+            $ref: '#/components/schemas/Condition'
+          nullable: true
+          type: array
+        must_not:
+          items:
+            $ref: '#/components/schemas/Condition'
+          nullable: true
+          type: array
+        should:
+          items:
+            $ref: '#/components/schemas/Condition'
+          nullable: true
+          type: array
+      type: object
+    GeoBoundingBox:
+      properties:
+        bottom_right:
+          $ref: '#/components/schemas/GeoPoint'
+        key:
+          type: string
+        top_left:
+          $ref: '#/components/schemas/GeoPoint'
+      required:
+      - bottom_right
+      - key
+      - top_left
+      type: object
+    GeoPoint:
+      properties:
+        lat:
+          format: double
+          type: number
+        lon:
+          format: double
+          type: number
+      required:
+      - lat
+      - lon
+      type: object
+    Indexes:
+      anyOf:
+      - properties:
+          options:
+            type: object
+          type:
+            enum:
+            - plain
+            type: string
+        required:
+        - options
+        - type
+        type: object
+      - properties:
+          options:
+            properties:
+              ef_construct:
+                format: uint
+                minimum: 0
+                type: integer
+              m:
+                format: uint
+                minimum: 0
+                type: integer
+            required:
+            - ef_construct
+            - m
+            type: object
+          type:
+            enum:
+            - hnsw
+            type: string
+        required:
+        - options
+        - type
+        type: object
+    Match:
+      properties:
+        integer:
+          format: int64
+          nullable: true
+          type: integer
+        key:
+          type: string
+        keyword:
+          nullable: true
+          type: string
+      required:
+      - key
+      type: object
+    PayloadInterface:
+      anyOf:
+      - properties:
+          type:
+            enum:
+            - keyword
+            type: string
+          value:
+            $ref: '#/components/schemas/PayloadVariant_for_String'
+        required:
+        - type
+        - value
+        type: object
+      - properties:
+          type:
+            enum:
+            - integer
+            type: string
+          value:
+            $ref: '#/components/schemas/PayloadVariant_for_int64'
+        required:
+        - type
+        - value
+        type: object
+      - properties:
+          type:
+            enum:
+            - float
+            type: string
+          value:
+            $ref: '#/components/schemas/PayloadVariant_for_double'
+        required:
+        - type
+        - value
+        type: object
+      - properties:
+          type:
+            enum:
+            - geo
+            type: string
+          value:
+            $ref: '#/components/schemas/PayloadVariant_for_GeoPoint'
+        required:
+        - type
+        - value
+        type: object
+    PayloadOps:
+      anyOf:
+      - description: Overrides
+        properties:
+          set_payload:
+            properties:
+              payload:
+                additionalProperties:
+                  $ref: '#/components/schemas/PayloadInterface'
+                type: object
+              points:
+                items:
+                  format: uint64
+                  minimum: 0
+                  type: integer
+                type: array
+            required:
+            - payload
+            - points
+            type: object
+        required:
+        - set_payload
+        type: object
+      - description: Deletes specified Payload if they are assigned
+        properties:
+          delete_payload:
+            properties:
+              keys:
+                items:
+                  type: string
+                type: array
+              points:
+                items:
+                  format: uint64
+                  minimum: 0
+                  type: integer
+                type: array
+            required:
+            - keys
+            - points
+            type: object
+        required:
+        - delete_payload
+        type: object
+      - description: Drops all Payload associated with given points.
+        properties:
+          clear_payload:
+            properties:
+              points:
+                items:
+                  format: uint64
+                  minimum: 0
+                  type: integer
+                type: array
+            required:
+            - points
+            type: object
+        required:
+        - clear_payload
+        type: object
+      description: Define operations description for point payloads manipulation
+    PayloadType:
+      anyOf:
+      - properties:
+          type:
+            enum:
+            - keyword
+            type: string
+          value:
+            items:
+              type: string
+            type: array
+        required:
+        - type
+        - value
+        type: object
+      - properties:
+          type:
+            enum:
+            - integer
+            type: string
+          value:
+            items:
+              format: int64
+              type: integer
+            type: array
+        required:
+        - type
+        - value
+        type: object
+      - properties:
+          type:
+            enum:
+            - float
+            type: string
+          value:
+            items:
+              format: double
+              type: number
+            type: array
+        required:
+        - type
+        - value
+        type: object
+      - properties:
+          type:
+            enum:
+            - geo
+            type: string
+          value:
+            items:
+              $ref: '#/components/schemas/GeoPoint'
+            type: array
+        required:
+        - type
+        - value
+        type: object
+    PayloadVariant_for_GeoPoint:
+      anyOf:
+      - $ref: '#/components/schemas/GeoPoint'
+      - items:
+          $ref: '#/components/schemas/GeoPoint'
+        type: array
+    PayloadVariant_for_String:
+      anyOf:
+      - type: string
+      - items:
+          type: string
+        type: array
+    PayloadVariant_for_double:
+      anyOf:
+      - format: double
+        type: number
+      - items:
+          format: double
+          type: number
+        type: array
+    PayloadVariant_for_int64:
+      anyOf:
+      - format: int64
+        type: integer
+      - items:
+          format: int64
+          type: integer
+        type: array
+    PointInsertOps:
+      anyOf:
+      - properties:
+          batch:
+            properties:
+              ids:
+                items:
+                  format: uint64
+                  minimum: 0
+                  type: integer
+                type: array
+              payloads:
+                items:
+                  additionalProperties:
+                    $ref: '#/components/schemas/PayloadInterface'
+                  nullable: true
+                  type: object
+                nullable: true
+                type: array
+              vectors:
+                items:
+                  items:
+                    format: double
+                    type: number
+                  type: array
+                type: array
+            required:
+            - ids
+            - vectors
+            type: object
+        required:
+        - batch
+        type: object
+      - properties:
+          points:
+            items:
+              $ref: '#/components/schemas/PointStruct'
+            type: array
+        required:
+        - points
+        type: object
+    PointOps:
+      anyOf:
+      - description: Insert or update points
+        properties:
+          upsert_points:
+            $ref: '#/components/schemas/PointInsertOps'
+        required:
+        - upsert_points
+        type: object
+      - description: Delete point if exists
+        properties:
+          delete_points:
+            properties:
+              ids:
+                items:
+                  format: uint64
+                  minimum: 0
+                  type: integer
+                type: array
+            required:
+            - ids
+            type: object
+        required:
+        - delete_points
+        type: object
+    PointRequest:
+      properties:
+        ids:
+          items:
+            format: uint64
+            minimum: 0
+            type: integer
+          type: array
+      required:
+      - ids
+      type: object
+    PointStruct:
+      properties:
+        id:
+          format: uint64
+          minimum: 0
+          type: integer
+        payload:
+          additionalProperties:
+            $ref: '#/components/schemas/PayloadInterface'
+          nullable: true
+          type: object
+        vector:
+          items:
+            format: double
+            type: number
+          type: array
+      required:
+      - id
+      - vector
+      type: object
+    Range:
+      properties:
+        gt:
+          format: double
+          nullable: true
+          type: number
+        gte:
+          format: double
+          nullable: true
+          type: number
+        key:
+          type: string
+        lt:
+          format: double
+          nullable: true
+          type: number
+        lte:
+          format: double
+          nullable: true
+          type: number
+      required:
+      - key
+      type: object
+    Record:
+      properties:
+        id:
+          format: uint64
+          minimum: 0
+          type: integer
+        payload:
+          additionalProperties:
+            $ref: '#/components/schemas/PayloadType'
+          nullable: true
+          type: object
+        vector:
+          items:
+            format: double
+            type: number
+          nullable: true
+          type: array
+      required:
+      - id
+      type: object
+    ScoredPoint:
+      properties:
+        idx:
+          format: uint64
+          minimum: 0
+          type: integer
+        score:
+          format: float
+          type: number
+      required:
+      - idx
+      - score
+      type: object
+    SearchParams:
+      anyOf:
+      - properties:
+          hnsw:
+            properties:
+              ef:
+                format: uint
+                minimum: 0
+                type: integer
+            required:
+            - ef
+            type: object
+        required:
+        - hnsw
+        type: object
+    SearchRequest:
+      properties:
+        filter:
+          anyOf:
+          - $ref: '#/components/schemas/Filter'
+          - nullable: true
+        params:
+          anyOf:
+          - $ref: '#/components/schemas/SearchParams'
+          - nullable: true
+        top:
+          format: uint
+          minimum: 0
+          type: integer
+        vector:
+          items:
+            format: double
+            type: number
+          type: array
+      required:
+      - top
+      - vector
+      type: object
+    SegmentConfig:
+      properties:
+        distance:
+          $ref: '#/components/schemas/Distance'
+        index:
+          $ref: '#/components/schemas/Indexes'
+        storage_type:
+          $ref: '#/components/schemas/StorageType'
+        vector_size:
+          format: uint
+          minimum: 0
+          type: integer
+      required:
+      - distance
+      - index
+      - storage_type
+      - vector_size
+      type: object
+    StorageOps:
+      anyOf:
+      - description: Create new collection and (optionally) specify index params
+        properties:
+          create_collection:
+            properties:
+              distance:
+                $ref: '#/components/schemas/Distance'
+              index:
+                anyOf:
+                - $ref: '#/components/schemas/Indexes'
+                - nullable: true
+              name:
+                type: string
+              vector_size:
+                format: uint
+                minimum: 0
+                type: integer
+            required:
+            - distance
+            - name
+            - vector_size
+            type: object
+        required:
+        - create_collection
+        type: object
+      - description: Delete collection with given name
+        properties:
+          delete_collection:
+            type: string
+        required:
+        - delete_collection
+        type: object
+      - description: Perform changes of collection aliases
+        properties:
+          change_aliases:
+            properties:
+              actions:
+                items:
+                  $ref: '#/components/schemas/AliasOperations'
+                type: array
+            required:
+            - actions
+            type: object
+        required:
+        - change_aliases
+        type: object
+    StorageType:
+      anyOf:
+      - properties:
+          type:
+            enum:
+            - in_memory
+            type: string
+        required:
+        - type
+        type: object
+      - properties:
+          type:
+            enum:
+            - mmap
+            type: string
+        required:
+        - type
+        type: object
+    UpdateResult:
+      properties:
+        operation_id:
+          format: uint64
+          minimum: 0
+          type: integer
+        status:
+          $ref: '#/components/schemas/UpdateStatus'
+      required:
+      - operation_id
+      - status
+      type: object
+    UpdateStatus:
+      enum:
+      - acknowledged
+      - completed
+      type: string

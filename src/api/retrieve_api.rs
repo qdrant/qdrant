@@ -6,7 +6,6 @@ use segment::types::PointIdType;
 use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};
 use storage::content_manager::errors::StorageError;
-use collection::operations::types::Record;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct PointRequest {

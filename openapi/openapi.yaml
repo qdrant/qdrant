@@ -42,7 +42,7 @@ paths:
                     type: string
                     enum: ["Ok"]
                   result:
-                    $ref: "./models.json#/definitions/CollectionsResponse"
+                    $ref: "./models.json#/components/schemas/CollectionsResponse"
         default:
           description: error
           content:
@@ -60,7 +60,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "./models.json#/definitions/StorageOps"
+              $ref: "./models.json#/components/schemas/StorageOps"
       responses:
         200:
           description: successful operation
@@ -114,7 +114,7 @@ paths:
                     type: string
                     enum: ["Ok"]
                   result:
-                    $ref: "./models.json#/definitions/CollectionInfo"
+                    $ref: "./models.json#/components/schemas/CollectionInfo"
         default:
           description: error
           content:
@@ -132,7 +132,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "./models.json#/definitions/CollectionUpdateOperations"
+              $ref: "./models.json#/components/schemas/CollectionUpdateOperations"
 
       parameters:
         - name: name
@@ -159,7 +159,7 @@ paths:
                   result:
                     type: array
                     items:
-                      $ref: "./models.json#/definitions/UpdateResult"
+                      $ref: "./models.json#/components/schemas/UpdateResult"
         default:
           description: error
           content:
@@ -203,7 +203,7 @@ paths:
                     type: string
                     enum: ["Ok"]
                   result:
-                    $ref: "./models.json#/definitions/Record"
+                    $ref: "./models.json#/components/schemas/Record"
         default:
           description: error
           content:
@@ -212,7 +212,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /collections/{name}/points:
-    get:
+    post:
       tags:
         - point
       summary: Retrieve points by ids
@@ -222,7 +222,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "./models.json#/definitions/PointRequest"
+              $ref: "./models.json#/components/schemas/PointRequest"
 
       parameters:
         - name: name
@@ -249,7 +249,7 @@ paths:
                   result:
                     type: array
                     items:
-                      $ref: "./models.json#/definitions/Record"
+                      $ref: "./models.json#/components/schemas/Record"
         default:
           description: error
           content:
@@ -258,7 +258,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /collections/{name}/points/search:
-    get:
+    post:
       tags:
         - point
       summary: Search points
@@ -268,7 +268,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "./models.json#/definitions/SearchRequest"
+              $ref: "./models.json#/components/schemas/SearchRequest"
 
       parameters:
         - name: name
@@ -295,7 +295,7 @@ paths:
                   result:
                     type: array
                     items:
-                      $ref: "./models.json#/definitions/ScoredPoint"
+                      $ref: "./models.json#/components/schemas/ScoredPoint"
         default:
           description: error
           content:
@@ -321,3 +321,4 @@ components:
         result:
           type: object
           nullable: true
+

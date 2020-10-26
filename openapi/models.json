@@ -1,0 +1,1124 @@
+{
+    "components": {
+        "schemas": {
+            "AliasOperations": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "required": [
+                            "create_alias"
+                        ],
+                        "properties": {
+                            "create_alias": {
+                                "type": "object",
+                                "required": [
+                                    "alias_name",
+                                    "collection_name"
+                                ],
+                                "properties": {
+                                    "alias_name": {
+                                        "type": "string"
+                                    },
+                                    "collection_name": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "delete_alias"
+                        ],
+                        "properties": {
+                            "delete_alias": {
+                                "type": "object",
+                                "required": [
+                                    "alias_name"
+                                ],
+                                "properties": {
+                                    "alias_name": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "rename_alias"
+                        ],
+                        "properties": {
+                            "rename_alias": {
+                                "type": "object",
+                                "required": [
+                                    "new_alias_name",
+                                    "old_alias_name"
+                                ],
+                                "properties": {
+                                    "new_alias_name": {
+                                        "type": "string"
+                                    },
+                                    "old_alias_name": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "CollectionDescription": {
+                "type": "object",
+                "required": [
+                    "name"
+                ],
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    }
+                }
+            },
+            "CollectionInfo": {
+                "type": "object",
+                "required": [
+                    "config",
+                    "disk_data_size",
+                    "ram_data_size",
+                    "segments_count",
+                    "vectors_count"
+                ],
+                "properties": {
+                    "config": {
+                        "$ref": "#/components/schemas/SegmentConfig"
+                    },
+                    "disk_data_size": {
+                        "type": "integer",
+                        "format": "uint",
+                        "minimum": 0
+                    },
+                    "ram_data_size": {
+                        "type": "integer",
+                        "format": "uint",
+                        "minimum": 0
+                    },
+                    "segments_count": {
+                        "type": "integer",
+                        "format": "uint",
+                        "minimum": 0
+                    },
+                    "vectors_count": {
+                        "type": "integer",
+                        "format": "uint",
+                        "minimum": 0
+                    }
+                }
+            },
+            "CollectionUpdateOperations": {
+                "anyOf": [
+                    {
+                        "$ref": "#/components/schemas/PointOps"
+                    },
+                    {
+                        "$ref": "#/components/schemas/PayloadOps"
+                    }
+                ]
+            },
+            "CollectionsResponse": {
+                "type": "object",
+                "required": [
+                    "collections"
+                ],
+                "properties": {
+                    "collections": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CollectionDescription"
+                        }
+                    }
+                }
+            },
+            "Condition": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "required": [
+                            "filter"
+                        ],
+                        "properties": {
+                            "filter": {
+                                "$ref": "#/components/schemas/Filter"
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "match"
+                        ],
+                        "properties": {
+                            "match": {
+                                "$ref": "#/components/schemas/Match"
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "range"
+                        ],
+                        "properties": {
+                            "range": {
+                                "$ref": "#/components/schemas/Range"
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "geo_bounding_box"
+                        ],
+                        "properties": {
+                            "geo_bounding_box": {
+                                "$ref": "#/components/schemas/GeoBoundingBox"
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "has_id"
+                        ],
+                        "properties": {
+                            "has_id": {
+                                "type": "array",
+                                "items": {
+                                    "type": "integer",
+                                    "format": "uint64",
+                                    "minimum": 0
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "Distance": {
+                "description": "Type of internal tags, build from payload",
+                "type": "string",
+                "enum": [
+                    "Cosine",
+                    "Euclid",
+                    "Dot"
+                ]
+            },
+            "Filter": {
+                "type": "object",
+                "properties": {
+                    "must": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Condition"
+                        },
+                        "nullable": true
+                    },
+                    "must_not": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Condition"
+                        },
+                        "nullable": true
+                    },
+                    "should": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Condition"
+                        },
+                        "nullable": true
+                    }
+                }
+            },
+            "GeoBoundingBox": {
+                "type": "object",
+                "required": [
+                    "bottom_right",
+                    "key",
+                    "top_left"
+                ],
+                "properties": {
+                    "bottom_right": {
+                        "$ref": "#/components/schemas/GeoPoint"
+                    },
+                    "key": {
+                        "type": "string"
+                    },
+                    "top_left": {
+                        "$ref": "#/components/schemas/GeoPoint"
+                    }
+                }
+            },
+            "GeoPoint": {
+                "type": "object",
+                "required": [
+                    "lat",
+                    "lon"
+                ],
+                "properties": {
+                    "lat": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "lon": {
+                        "type": "number",
+                        "format": "double"
+                    }
+                }
+            },
+            "Indexes": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "required": [
+                            "options",
+                            "type"
+                        ],
+                        "properties": {
+                            "options": {
+                                "type": "object"
+                            },
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "plain"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "options",
+                            "type"
+                        ],
+                        "properties": {
+                            "options": {
+                                "type": "object",
+                                "required": [
+                                    "ef_construct",
+                                    "m"
+                                ],
+                                "properties": {
+                                    "ef_construct": {
+                                        "type": "integer",
+                                        "format": "uint",
+                                        "minimum": 0
+                                    },
+                                    "m": {
+                                        "type": "integer",
+                                        "format": "uint",
+                                        "minimum": 0
+                                    }
+                                }
+                            },
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "hnsw"
+                                ]
+                            }
+                        }
+                    }
+                ]
+            },
+            "Match": {
+                "type": "object",
+                "required": [
+                    "key"
+                ],
+                "properties": {
+                    "integer": {
+                        "type": "integer",
+                        "format": "int64",
+                        "nullable": true
+                    },
+                    "key": {
+                        "type": "string"
+                    },
+                    "keyword": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
+            "PayloadInterface": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "required": [
+                            "type",
+                            "value"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "keyword"
+                                ]
+                            },
+                            "value": {
+                                "$ref": "#/components/schemas/PayloadVariant_for_String"
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "type",
+                            "value"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "integer"
+                                ]
+                            },
+                            "value": {
+                                "$ref": "#/components/schemas/PayloadVariant_for_int64"
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "type",
+                            "value"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "float"
+                                ]
+                            },
+                            "value": {
+                                "$ref": "#/components/schemas/PayloadVariant_for_double"
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "type",
+                            "value"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "geo"
+                                ]
+                            },
+                            "value": {
+                                "$ref": "#/components/schemas/PayloadVariant_for_GeoPoint"
+                            }
+                        }
+                    }
+                ]
+            },
+            "PayloadOps": {
+                "description": "Define operations description for point payloads manipulation",
+                "anyOf": [
+                    {
+                        "description": "Overrides",
+                        "type": "object",
+                        "required": [
+                            "set_payload"
+                        ],
+                        "properties": {
+                            "set_payload": {
+                                "type": "object",
+                                "required": [
+                                    "payload",
+                                    "points"
+                                ],
+                                "properties": {
+                                    "payload": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                            "$ref": "#/components/schemas/PayloadInterface"
+                                        }
+                                    },
+                                    "points": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "integer",
+                                            "format": "uint64",
+                                            "minimum": 0
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "description": "Deletes specified Payload if they are assigned",
+                        "type": "object",
+                        "required": [
+                            "delete_payload"
+                        ],
+                        "properties": {
+                            "delete_payload": {
+                                "type": "object",
+                                "required": [
+                                    "keys",
+                                    "points"
+                                ],
+                                "properties": {
+                                    "keys": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "points": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "integer",
+                                            "format": "uint64",
+                                            "minimum": 0
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "description": "Drops all Payload associated with given points.",
+                        "type": "object",
+                        "required": [
+                            "clear_payload"
+                        ],
+                        "properties": {
+                            "clear_payload": {
+                                "type": "object",
+                                "required": [
+                                    "points"
+                                ],
+                                "properties": {
+                                    "points": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "integer",
+                                            "format": "uint64",
+                                            "minimum": 0
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "PayloadType": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "required": [
+                            "type",
+                            "value"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "keyword"
+                                ]
+                            },
+                            "value": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "type",
+                            "value"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "integer"
+                                ]
+                            },
+                            "value": {
+                                "type": "array",
+                                "items": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "type",
+                            "value"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "float"
+                                ]
+                            },
+                            "value": {
+                                "type": "array",
+                                "items": {
+                                    "type": "number",
+                                    "format": "double"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "type",
+                            "value"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "geo"
+                                ]
+                            },
+                            "value": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/GeoPoint"
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "PayloadVariant_for_GeoPoint": {
+                "anyOf": [
+                    {
+                        "$ref": "#/components/schemas/GeoPoint"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/GeoPoint"
+                        }
+                    }
+                ]
+            },
+            "PayloadVariant_for_String": {
+                "anyOf": [
+                    {
+                        "type": "string"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            },
+            "PayloadVariant_for_double": {
+                "anyOf": [
+                    {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "number",
+                            "format": "double"
+                        }
+                    }
+                ]
+            },
+            "PayloadVariant_for_int64": {
+                "anyOf": [
+                    {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    }
+                ]
+            },
+            "PointInsertOps": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "required": [
+                            "batch"
+                        ],
+                        "properties": {
+                            "batch": {
+                                "type": "object",
+                                "required": [
+                                    "ids",
+                                    "vectors"
+                                ],
+                                "properties": {
+                                    "ids": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "integer",
+                                            "format": "uint64",
+                                            "minimum": 0
+                                        }
+                                    },
+                                    "payloads": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                                "$ref": "#/components/schemas/PayloadInterface"
+                                            },
+                                            "nullable": true
+                                        },
+                                        "nullable": true
+                                    },
+                                    "vectors": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "number",
+                                                "format": "double"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "points"
+                        ],
+                        "properties": {
+                            "points": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/PointStruct"
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "PointOps": {
+                "anyOf": [
+                    {
+                        "description": "Insert or update points",
+                        "type": "object",
+                        "required": [
+                            "upsert_points"
+                        ],
+                        "properties": {
+                            "upsert_points": {
+                                "$ref": "#/components/schemas/PointInsertOps"
+                            }
+                        }
+                    },
+                    {
+                        "description": "Delete point if exists",
+                        "type": "object",
+                        "required": [
+                            "delete_points"
+                        ],
+                        "properties": {
+                            "delete_points": {
+                                "type": "object",
+                                "required": [
+                                    "ids"
+                                ],
+                                "properties": {
+                                    "ids": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "integer",
+                                            "format": "uint64",
+                                            "minimum": 0
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "PointRequest": {
+                "type": "object",
+                "required": [
+                    "ids"
+                ],
+                "properties": {
+                    "ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "uint64",
+                            "minimum": 0
+                        }
+                    }
+                }
+            },
+            "PointStruct": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "vector"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "uint64",
+                        "minimum": 0
+                    },
+                    "payload": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/PayloadInterface"
+                        },
+                        "nullable": true
+                    },
+                    "vector": {
+                        "type": "array",
+                        "items": {
+                            "type": "number",
+                            "format": "double"
+                        }
+                    }
+                }
+            },
+            "Range": {
+                "type": "object",
+                "required": [
+                    "key"
+                ],
+                "properties": {
+                    "gt": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "gte": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "key": {
+                        "type": "string"
+                    },
+                    "lt": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "lte": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    }
+                }
+            },
+            "Record": {
+                "type": "object",
+                "required": [
+                    "id"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "uint64",
+                        "minimum": 0
+                    },
+                    "payload": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/PayloadType"
+                        },
+                        "nullable": true
+                    },
+                    "vector": {
+                        "type": "array",
+                        "items": {
+                            "type": "number",
+                            "format": "double"
+                        },
+                        "nullable": true
+                    }
+                }
+            },
+            "ScoredPoint": {
+                "type": "object",
+                "required": [
+                    "idx",
+                    "score"
+                ],
+                "properties": {
+                    "idx": {
+                        "type": "integer",
+                        "format": "uint64",
+                        "minimum": 0
+                    },
+                    "score": {
+                        "type": "number",
+                        "format": "float"
+                    }
+                }
+            },
+            "SearchParams": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "required": [
+                            "hnsw"
+                        ],
+                        "properties": {
+                            "hnsw": {
+                                "type": "object",
+                                "required": [
+                                    "ef"
+                                ],
+                                "properties": {
+                                    "ef": {
+                                        "type": "integer",
+                                        "format": "uint",
+                                        "minimum": 0
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "SearchRequest": {
+                "type": "object",
+                "required": [
+                    "top",
+                    "vector"
+                ],
+                "properties": {
+                    "filter": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/Filter"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    },
+                    "params": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/SearchParams"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    },
+                    "top": {
+                        "type": "integer",
+                        "format": "uint",
+                        "minimum": 0
+                    },
+                    "vector": {
+                        "type": "array",
+                        "items": {
+                            "type": "number",
+                            "format": "double"
+                        }
+                    }
+                }
+            },
+            "SegmentConfig": {
+                "type": "object",
+                "required": [
+                    "distance",
+                    "index",
+                    "storage_type",
+                    "vector_size"
+                ],
+                "properties": {
+                    "distance": {
+                        "$ref": "#/components/schemas/Distance"
+                    },
+                    "index": {
+                        "$ref": "#/components/schemas/Indexes"
+                    },
+                    "storage_type": {
+                        "$ref": "#/components/schemas/StorageType"
+                    },
+                    "vector_size": {
+                        "type": "integer",
+                        "format": "uint",
+                        "minimum": 0
+                    }
+                }
+            },
+            "StorageOps": {
+                "anyOf": [
+                    {
+                        "description": "Create new collection and (optionally) specify index params",
+                        "type": "object",
+                        "required": [
+                            "create_collection"
+                        ],
+                        "properties": {
+                            "create_collection": {
+                                "type": "object",
+                                "required": [
+                                    "distance",
+                                    "name",
+                                    "vector_size"
+                                ],
+                                "properties": {
+                                    "distance": {
+                                        "$ref": "#/components/schemas/Distance"
+                                    },
+                                    "index": {
+                                        "anyOf": [
+                                            {
+                                                "$ref": "#/components/schemas/Indexes"
+                                            },
+                                            {
+                                                "nullable": true
+                                            }
+                                        ]
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "vector_size": {
+                                        "type": "integer",
+                                        "format": "uint",
+                                        "minimum": 0
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "description": "Delete collection with given name",
+                        "type": "object",
+                        "required": [
+                            "delete_collection"
+                        ],
+                        "properties": {
+                            "delete_collection": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    {
+                        "description": "Perform changes of collection aliases",
+                        "type": "object",
+                        "required": [
+                            "change_aliases"
+                        ],
+                        "properties": {
+                            "change_aliases": {
+                                "type": "object",
+                                "required": [
+                                    "actions"
+                                ],
+                                "properties": {
+                                    "actions": {
+                                        "type": "array",
+                                        "items": {
+                                            "$ref": "#/components/schemas/AliasOperations"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "StorageType": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "required": [
+                            "type"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "in_memory"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "type"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "mmap"
+                                ]
+                            }
+                        }
+                    }
+                ]
+            },
+            "UpdateResult": {
+                "type": "object",
+                "required": [
+                    "operation_id",
+                    "status"
+                ],
+                "properties": {
+                    "operation_id": {
+                        "type": "integer",
+                        "format": "uint64",
+                        "minimum": 0
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/UpdateStatus"
+                    }
+                }
+            },
+            "UpdateStatus": {
+                "type": "string",
+                "enum": [
+                    "acknowledged",
+                    "completed"
+                ]
+            }
+        }
+    }
+}
