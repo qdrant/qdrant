@@ -16,11 +16,17 @@ pub struct Record {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+/// Current statistics and configuration of the collection.
 pub struct CollectionInfo {
+    /// Number of vectors in collection
     pub vectors_count: usize,
+    /// Number of segments in collection
     pub segments_count: usize,
+    /// Disk space, used by collection
     pub disk_data_size: usize,
+    /// RAM used by collection
     pub ram_data_size: usize,
+    /// Collection settings
     pub config: SegmentConfig,
 }
 

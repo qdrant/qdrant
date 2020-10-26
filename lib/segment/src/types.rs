@@ -19,9 +19,13 @@ pub type VectorElementType = f64;
 
 /// Type of internal tags, build from payload
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy)]
+/// Distance function types used to compare vectors
 pub enum Distance {
+    /// https://en.wikipedia.org/wiki/Cosine_similarity
     Cosine,
+    /// https://en.wikipedia.org/wiki/Euclidean_distance
     Euclid,
+    /// https://en.wikipedia.org/wiki/Dot_product
     Dot,
 }
 
@@ -96,9 +100,15 @@ pub fn distance_order(distance: &Distance) -> Order {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum Indexes {
+    /// Do not use any index, scan whole vector collection during search.
+    /// Guarantee 100% precision, but may be time consuming on large collections.
     Plain {},
+    /// Use filterable HNSW index for approximate search. Is very fast even on a very huge collections,
+    /// but require additional space to store index and additional time to build it.
     Hnsw {
+        /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
         m: usize,
+        /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
         ef_construct: usize,
     },
 }
@@ -113,8 +123,11 @@ impl Default for Indexes {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
+/// Type of vector storage
 pub enum StorageType {
+    /// Store vectors in memory and use persistence storage only if vectors are changed
     InMemory,
+    /// Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM
     Mmap,
 }
 
@@ -128,9 +141,13 @@ impl Default for StorageType {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
+    /// Size of a vectors used
     pub vector_size: usize,
+    /// Type of index used for search
     pub index: Indexes,
+    /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
+    /// Type of vector storage
     pub storage_type: StorageType
 }
 
