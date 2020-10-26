@@ -153,7 +153,7 @@ impl TableOfContent {
         match operation {
             StorageOps::CreateCollection {
                 name: collection_name,
-                dim,
+                vector_size,
                 distance,
                 index
             } => {
@@ -168,7 +168,7 @@ impl TableOfContent {
 
 
                 let segment_config = SegmentConfig {
-                    vector_size: dim,
+                    vector_size,
                     index: index.unwrap_or(Default::default()),
                     distance,
                     storage_type: Default::default(),
@@ -187,7 +187,7 @@ impl TableOfContent {
                 write_collections.insert(collection_name, Arc::new(segment));
                 Ok(true)
             }
-            StorageOps::DeleteCollection { collection_name } => {
+            StorageOps::DeleteCollection(collection_name) => {
                 let removed = self.collections.write().remove(&collection_name).is_some();
                 if removed {
                     let path = self.get_collection_path(&collection_name);

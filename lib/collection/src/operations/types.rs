@@ -1,12 +1,13 @@
 use segment::types::{VectorElementType, PointIdType, TheMap, PayloadKeyType, PayloadType, SeqNumberType, Filter, SearchParams, SegmentConfig};
 use serde;
 use serde::{Deserialize, Serialize};
+use schemars::{JsonSchema};
 
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
 
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct Record {
     pub id: PointIdType,
@@ -14,7 +15,7 @@ pub struct Record {
     pub vector: Option<Vec<VectorElementType>>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CollectionInfo {
     pub vectors_count: usize,
     pub segments_count: usize,
@@ -24,7 +25,7 @@ pub struct CollectionInfo {
 }
 
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateStatus {
     Acknowledged,
@@ -32,7 +33,7 @@ pub enum UpdateStatus {
 }
 
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateResult {
     pub operation_id: SeqNumberType,
@@ -40,7 +41,7 @@ pub struct UpdateResult {
 }
 
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequest {
     pub vector: Vec<VectorElementType>,

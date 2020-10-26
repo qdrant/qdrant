@@ -5,9 +5,10 @@ use segment::types::SegmentConfig;
 use crate::segment_manager::optimizers::merge_optimizer::MergeOptimizer;
 use std::path::Path;
 use serde::{Deserialize, Serialize};
+use schemars::{JsonSchema};
 
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct OptimizersConfig {
     pub deleted_threshold: f64,
     pub vacuum_min_vector_number: usize,

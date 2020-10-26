@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use schemars::{JsonSchema};
 use std::cmp::{Ordering};
 use ordered_float::OrderedFloat;
 use std::collections::{BTreeMap, HashSet};
@@ -17,7 +18,7 @@ pub type TagType = u64;
 pub type VectorElementType = f64;
 
 /// Type of internal tags, build from payload
-#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy)]
 pub enum Distance {
     Cosine,
     Euclid,
@@ -29,7 +30,7 @@ pub enum Order {
     SmallBetter,
 }
 
-#[derive(Deserialize, Serialize, Copy, Clone, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Debug)]
 pub struct ScoredPoint {
     pub idx: PointIdType,
     pub score: ScoreType,
@@ -50,7 +51,7 @@ impl PartialOrd for ScoredPoint {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum SegmentType {
     /// Segment cheap insert & delete operations
@@ -62,7 +63,7 @@ pub enum SegmentType {
 }
 
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentInfo {
     pub segment_type: SegmentType,
@@ -74,7 +75,7 @@ pub struct SegmentInfo {
 }
 
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchParams {
     Hnsw {
@@ -91,7 +92,7 @@ pub fn distance_order(distance: &Distance) -> Order {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum Indexes {
@@ -109,7 +110,7 @@ impl Default for Indexes {
 }
 
 
-#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum StorageType {
@@ -124,7 +125,7 @@ impl Default for StorageType {
 }
 
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     pub vector_size: usize,
@@ -133,21 +134,21 @@ pub struct SegmentConfig {
     pub storage_type: StorageType
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentState {
     pub version: SeqNumberType,
     pub config: SegmentConfig,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoPoint {
     pub lon: f64,
     pub lat: f64,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "value")]
 pub enum PayloadType {
@@ -158,7 +159,7 @@ pub enum PayloadType {
 }
 
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Match {
     pub key: PayloadKeyType,
@@ -166,7 +167,7 @@ pub struct Match {
     pub integer: Option<i64>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Range {
     pub key: PayloadKeyType,
@@ -176,7 +177,7 @@ pub struct Range {
     pub lte: Option<f64>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoBoundingBox {
     pub key: PayloadKeyType,
@@ -185,7 +186,7 @@ pub struct GeoBoundingBox {
 }
 
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum Condition {
     Filter(Filter),
@@ -195,7 +196,7 @@ pub enum Condition {
     HasId(HashSet<PointIdType>),
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Filter {
     pub should: Option<Vec<Condition>>,

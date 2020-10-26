@@ -608,6 +608,7 @@ dependencies = [
  "parking_lot 0.11.0",
  "rand 0.7.3",
  "rmp-serde",
+ "schemars",
  "segment",
  "serde 1.0.116",
  "serde_cbor",
@@ -856,6 +857,12 @@ name = "dtoa"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4358a9e11b9a09cf52383b451b49a169e8d797b68aa02301ff586d70d9661ea3"
+
+[[package]]
+name = "dyn-clone"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d55796afa1b20c2945ca8eabfc421839f2b766619209f1ede813cf2484f31804"
 
 [[package]]
 name = "either"
@@ -1798,6 +1805,7 @@ dependencies = [
  "log 0.4.8",
  "num_cpus",
  "rand 0.7.3",
+ "schemars",
  "segment",
  "serde 1.0.116",
  "serde_json",
@@ -2071,6 +2079,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "schemars"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "763f667253711994847f7e73befe859d6fff7bea2b7a7f01669d2c5b60765c37"
+dependencies = [
+ "dyn-clone",
+ "schemars_derive",
+ "serde 1.0.116",
+ "serde_json",
+]
+
+[[package]]
+name = "schemars_derive"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1d457e2e37415f32b7628ddc5a7fea06ef63bd029ed180d65166e87ca25ce21"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_derive_internals",
+ "syn",
+]
+
+[[package]]
 name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2086,6 +2118,7 @@ dependencies = [
  "memmap 0.7.0",
  "ordered-float",
  "rmp-serde",
+ "schemars",
  "serde 1.0.116",
  "serde_cbor",
  "serde_json",
@@ -2153,6 +2186,17 @@ name = "serde_derive"
 version = "1.0.116"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f630a6370fd8e457873b4bd2ffdae75408bc291ba72be773772a4c2a065d9ae8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "serde_derive_internals"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dbab34ca63057a1f15280bdf3c39f2b1eb1b54c17e98360e511637aef7418c6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2344,6 +2388,7 @@ dependencies = [
  "num_cpus",
  "parking_lot 0.11.0",
  "rand 0.7.3",
+ "schemars",
  "segment",
  "serde 1.0.116",
  "sled",

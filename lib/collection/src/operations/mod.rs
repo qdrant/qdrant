@@ -3,8 +3,9 @@ pub mod point_ops;
 pub mod payload_ops;
 
 use serde::{Deserialize, Serialize};
+use schemars::{JsonSchema};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum CollectionUpdateOperations {

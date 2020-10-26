@@ -4,10 +4,10 @@ use actix_web::rt::time::Instant;
 use crate::common::helpers::process_response;
 use collection::operations::CollectionUpdateOperations;
 use actix_web::web::Query;
-use serde::{Deserialize};
+use serde::{Deserialize, Serialize};
+use schemars::{JsonSchema};
 
-
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, JsonSchema)]
 pub struct UpdateParam {
     pub wait: Option<bool>
 }

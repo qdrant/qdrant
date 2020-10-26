@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
+use schemars::{JsonSchema};
 use segment::types::{PointIdType, PayloadKeyType};
 use crate::operations::types::VectorType;
 use std::collections::HashMap;
 use crate::operations::payload_ops::PayloadInterface;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct PointStruct {
     pub id: PointIdType,
@@ -13,7 +14,7 @@ pub struct PointStruct {
 }
 
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PointInsertOps {
     #[serde(rename = "batch")]
@@ -27,7 +28,7 @@ pub enum PointInsertOps {
 }
 
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PointOps {
     /// Insert or update points

@@ -2,11 +2,12 @@
 
 use serde;
 use serde::{Deserialize, Serialize};
+use schemars::{JsonSchema};
 use segment::types::{PointIdType, PayloadKeyType, PayloadType, GeoPoint};
 use std::collections::HashMap;
 
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum PayloadVariant<T> {
@@ -23,7 +24,7 @@ impl<T: Clone> PayloadVariant<T> {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type",  content = "value")]
 pub enum PayloadInterface {
@@ -46,7 +47,7 @@ impl PayloadInterface {
 
 
 /// Define operations description for point payloads manipulation
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadOps {
     /// Overrides

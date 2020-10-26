@@ -5,7 +5,7 @@ use actix_web::rt::time::Instant;
 use std::sync::Arc;
 use collection::operations::types::SearchRequest;
 
-#[post("/collections/{name}/vectors/search")]
+#[post("/collections/{name}/points/search")]
 pub async fn search_vectors(
     toc: web::Data<TableOfContent>,
     web::Path(name): web::Path<String>,

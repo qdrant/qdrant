@@ -1,0 +1,15 @@
+{
+  "name": "tools",
+  "version": "1.0.0",
+  "description": "",
+  "main": "convert.js",
+  "dependencies": {
+    "@openapi-contrib/json-schema-to-openapi-schema": "^1.2.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "convert": "node convert.js"
+  },
+  "author": "",
+  "license": "ISC"
+}
