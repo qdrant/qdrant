@@ -26,7 +26,6 @@ pub struct TableOfContent {
     collections: Arc<RwLock<HashMap<String, Arc<Collection>>>>,
     storage_config: StorageConfig,
     search_runtime: Arc<Runtime>,
-    pub optimization_runtime: Arc<Runtime>,
     alias_persistence: Db,
 }
 
@@ -42,15 +41,6 @@ impl TableOfContent {
 
         let search_runtime = Arc::new(runtime::Builder::new_multi_thread()
             .max_threads(search_threads)
-            .build().unwrap());
-
-        let mut optimization_threads = storage_config.performance.max_optimize_threads;
-        if optimization_threads == 0 {
-            optimization_threads = 4;
-        }
-
-        let optimization_runtime = Arc::new(runtime::Builder::new_multi_thread()
-            .max_threads(optimization_threads)
             .build().unwrap());
 
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
@@ -73,7 +63,6 @@ impl TableOfContent {
                 collection_path.as_path(),
                 &wal_options,
                 search_runtime.clone(),
-                optimization_runtime.clone(),
                 &storage_config.optimizers,
             );
 
@@ -89,7 +78,6 @@ impl TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: storage_config.clone(),
             search_runtime,
-            optimization_runtime,
             alias_persistence,
         }
     }
@@ -179,7 +167,6 @@ impl TableOfContent {
                     &wal_options,
                     &segment_config,
                     self.search_runtime.clone(),
-                    self.optimization_runtime.clone(),
                     &self.storage_config.optimizers,
                 )?;
 

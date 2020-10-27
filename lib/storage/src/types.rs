@@ -6,7 +6,6 @@ use collection::collection_builder::optimizers_builder::OptimizersConfig;
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct PerformanceConfig {
     pub max_search_threads: usize,
-    pub max_optimize_threads: usize,
 }
 
 

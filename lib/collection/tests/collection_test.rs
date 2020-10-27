@@ -122,7 +122,6 @@ fn test_collection_loading() {
         collection_dir.path(),
         &wal_options,
         rt.clone(),
-        rt.clone(),
         &TEST_OPTIMIZERS_CONFIG,
     );
 

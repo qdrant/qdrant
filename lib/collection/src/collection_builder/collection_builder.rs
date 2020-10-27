@@ -19,6 +19,7 @@ use crate::collection_builder::optimizers_builder::OptimizersConfig;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use atomicwrites::AtomicFile;
 use std::io::Write;
+use tokio::runtime;
 
 const DEFAULT_SEGMENT_NUMBER: usize = 5;
 
@@ -44,12 +45,14 @@ pub fn construct_collection(
     config: &SegmentConfig,
     wal: SerdeWal<CollectionUpdateOperations>,
     search_runtime: Arc<Runtime>,  // from service
-    optimize_runtime: Arc<Runtime>,  // from service
     optimizers: Arc<Vec<Box<Optimizer>>>,
     flush_interval_sec: u64,
 ) -> Collection {
     let segment_holder = Arc::new(RwLock::new(segment_holder));
 
+    let optimize_runtime = Arc::new(runtime::Builder::new_multi_thread()
+        .max_threads(2)
+        .build().unwrap());
 
     let locked_wal = Arc::new(Mutex::new(wal));
 
@@ -92,7 +95,6 @@ pub fn build_collection(
     wal_options: &WalOptions,  // from config
     segment_config: &SegmentConfig,  //  from user
     search_runtime: Arc<Runtime>,  // from service
-    optimize_runtime: Arc<Runtime>,  // from service
     optimizers_config: &OptimizersConfig,
 ) -> CollectionResult<Collection> {
     let wal_path = collection_path
@@ -135,7 +137,6 @@ pub fn build_collection(
         segment_config,
         wal,
         search_runtime,
-        optimize_runtime,
         optimizers,
         optimizers_config.flush_interval_sec,
     );

@@ -35,7 +35,6 @@ pub fn load_collection_fixture(collection_path: &Path) -> (Arc<Runtime>, Collect
         collection_path,
         &wal_options,
         threaded_rt.clone(),
-        threaded_rt.clone(),
         &TEST_OPTIMIZERS_CONFIG,
     );
 

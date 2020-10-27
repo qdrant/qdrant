@@ -28,7 +28,6 @@ pub fn load_collection(
     collection_path: &Path,
     wal_options: &WalOptions,  // from config
     search_runtime: Arc<Runtime>,  // from service
-    optimize_runtime: Arc<Runtime>,  // from service
     optimizers_config: &OptimizersConfig,
 ) -> Collection {
     let wal_path = collection_path.join("wal");
@@ -64,7 +63,6 @@ pub fn load_collection(
         &segment_config,
         wal,
         search_runtime,
-        optimize_runtime,
         optimizers,
         optimizers_config.flush_interval_sec,
     );
