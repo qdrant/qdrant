@@ -9,25 +9,29 @@ Qdrant is written in Rust, which makes it reliable even under high load.
 
 # API
 
-todo
+OpenAPI 3.0 documentation is available [here](openapi).
+OpenAPI makes it easy to generate client for virtually any framework or programing language.
+
+You can also browse [online documentation](todo_link_to_redoc).
 
 # Features
 
+## Filtering
+
+Qdrant supports any combinations of `should`, `must` and `must_not` conditions,
+which makes it possible to use in applications when object could not be described solely by vector.
+It could be location features, availability flags, and other custom properties businesses should take into account.
+
+## Write-ahead logging
+
+Once service confirmed an update - it won't lose data even in case of power shut down. 
+All operations are stored in the update journal and the latest database state could be easily reconstructed at any moment.
+
+## Stand-alone
+
+Qdrant does not rely on any external database or orchestration controller, which makes it very easy to configure.
+
 # Usage
 
-
-# ToDo
-
-* Binary arrays
-* HNSW index
-* SIMD acceleration
-  * https://github.com/raphlinus/fearless_simd
-  * OpenBLAS
-  * https://github.com/rust-ndarray/ndarray <!>
-* Cluster support 
-  * raft
-* Clients + binary protocol
-* GPU support
-* FAISS -- ????
-
+## Docker
 
