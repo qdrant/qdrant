@@ -1,6 +1,6 @@
 use thiserror::Error;
 use crate::operations::CollectionUpdateOperations;
-use segment::types::{PointIdType, ScoredPoint, SeqNumberType, SegmentConfig};
+use segment::types::{PointIdType, ScoredPoint, SegmentConfig};
 use std::result;
 use crate::operations::types::{Record, CollectionInfo, UpdateResult, UpdateStatus, SearchRequest};
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
 use segment::entry::entry_point::OperationError;
 use tokio::task::JoinError;
 use crossbeam_channel::{Sender, SendError};
-use crate::update_handler::update_handler::UpdateHandler;
+use crate::update_handler::update_handler::{UpdateHandler, UpdateSignal};
 use parking_lot::{Mutex, RwLock};
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use tokio::runtime::Runtime;
@@ -66,7 +66,7 @@ pub struct Collection {
     pub update_handler: Arc<UpdateHandler>,
     pub updater: Arc<dyn SegmentUpdater + Sync + Send>,
     pub runtime_handle: Arc<Runtime>,
-    pub update_sender: Sender<SeqNumberType>,
+    pub update_sender: Sender<UpdateSignal>,
 }
 
 
@@ -82,7 +82,7 @@ impl Collection {
         let sndr = self.update_sender.clone();
         let update_future = async move {
             let res = upd.update(operation_id, operation);
-            sndr.send(operation_id)?;
+            sndr.send(UpdateSignal::Operation(operation_id))?;
             res
         };
 
@@ -129,5 +129,16 @@ impl Collection {
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>> {
         return self.searcher.retrieve(points, with_payload, with_vector);
+    }
+
+    pub fn stop(&self) -> CollectionResult<()> {
+        self.update_sender.send(UpdateSignal::Stop)?;
+        Ok(())
+    }
+}
+
+impl Drop for Collection {
+    fn drop(&mut self) {
+        self.stop().unwrap(); // Finishes update tasks right before destructor stucks to do so with runtime
     }
 }

@@ -32,9 +32,4 @@ fn test_collection_reloading() {
 
     assert_eq!(collection.info().unwrap().vectors_count, 2)
 
-    // for (_idx, segment) in collection.segments.read().iter() {
-    //     eprintln!("segment.get().read().info() = {:?}", segment.get().read().info());
-    // }
-    //
-    // eprintln!("collection.info() = {:#?}", collection.info());
 }

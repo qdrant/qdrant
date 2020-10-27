@@ -57,7 +57,6 @@ pub fn simple_collection_fixture(collection_path: &Path) -> (Arc<Runtime>, Colle
         storage_type: Default::default(),
     };
 
-
     let threaded_rt = Arc::new(runtime::Builder::new_multi_thread()
         .max_threads(2)
         .build().unwrap());
@@ -67,7 +66,6 @@ pub fn simple_collection_fixture(collection_path: &Path) -> (Arc<Runtime>, Colle
         collection_path,
         &wal_options,
         &collection_config,
-        threaded_rt.clone(),
         threaded_rt.clone(),
         &TEST_OPTIMIZERS_CONFIG,
     ).unwrap();
