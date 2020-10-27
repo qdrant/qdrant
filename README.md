@@ -1,4 +1,4 @@
-# Qdrant
+# :black_square_button: Qdrant
 
 Qdrant (read: _quadrant_ ) is a vector similarity search engine.
 It provides a production-ready service with a convenient API to store, search, and manage points (vectors with additional payload).
@@ -7,12 +7,12 @@ It is tailored on extended support of filtering, which makes it useful for all s
 
 Qdrant is written in Rust, which makes it reliable even under high load.
 
-# API
+# API [![OpenAPI docs](https://img.shields.io/badge/docs-OpenAP3.0-success)](https://qdrant.github.io/qdrant/redoc/index.html)
 
 OpenAPI 3.0 documentation is available [here](openapi).
 OpenAPI makes it easy to generate client for virtually any framework or programing language.
 
-You can also browse [online documentation](todo_link_to_redoc).
+You can also browse [online documentation](https://qdrant.github.io/qdrant/redoc/index.html).
 
 # Features
 
