@@ -12,7 +12,7 @@ externalDocs:
   description: Find out more about Qdrant
   url: https://github.com/generall/qdrant
 servers:
-  - url: http://localhost:6333/
+  - url: http://localhost:6333
 tags:
   - name: collections
     description: Searchable collections of points.

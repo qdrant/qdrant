@@ -12,18 +12,18 @@ externalDocs:
   description: Find out more about Qdrant
   url: https://github.com/generall/qdrant
 servers:
-  - url: http://localhost:6333/
+  - url: http://localhost:6333
 tags:
-  - name: collection
-    description: Searchable collection of points.
-  - name: point
-    description: Float-point vector with payload.
+  - name: collections
+    description: Searchable collections of points.
+  - name: points
+    description: Float-point vectors with payload.
 
 paths:
   /collections:
     get:
       tags:
-        - collection
+        - collections
       summary: Get list of existing collections
       operationId: get_collections
       responses:
@@ -52,7 +52,7 @@ paths:
 
     post:
       tags:
-        - collection
+        - collections
       summary: Perform update operation on collections
       operationId: update_collections
       requestBody:
@@ -88,7 +88,7 @@ paths:
   /collections/{name}:
     get:
       tags:
-        - collection
+        - collections
       summary: Get information about existing collection
       operationId: get_collection
       parameters:
@@ -124,7 +124,7 @@ paths:
 
     post:
       tags:
-        - point
+        - points
       summary: Update points in collection
       operationId: update_points
       requestBody:
@@ -171,7 +171,7 @@ paths:
   /collections/{name}/points/{id}:
     get:
       tags:
-        - point
+        - points
       summary: Retrieve point by id
       operationId: get_point
       parameters:
@@ -214,7 +214,7 @@ paths:
   /collections/{name}/points:
     post:
       tags:
-        - point
+        - points
       summary: Retrieve points by ids
       operationId: get_points
       requestBody:
@@ -260,7 +260,7 @@ paths:
   /collections/{name}/points/search:
     post:
       tags:
-        - point
+        - points
       summary: Search points
       operationId: search_points
       requestBody:
