@@ -43,7 +43,3 @@ bench = false
 
 [workspace]
 members = ["lib/*"]
-
-[[bench]]
-name = "dyn_benchmark"
-harness = false

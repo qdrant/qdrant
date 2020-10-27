@@ -46,7 +46,7 @@ impl TableOfContent {
 
         let mut optimization_threads = storage_config.performance.max_optimize_threads;
         if optimization_threads == 0 {
-            optimization_threads = 2;
+            optimization_threads = 4;
         }
 
         let optimization_runtime = Arc::new(runtime::Builder::new_multi_thread()

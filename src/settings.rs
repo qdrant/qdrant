@@ -40,9 +40,6 @@ impl Settings {
         // Eg.. `QDRANT_DEBUG=1 ./target/app` would set the `debug` key
         s.merge(Environment::with_prefix("QDRANT"))?;
 
-        // Now that we're done, let's access our configuration
-        println!("debug: {:?}", s.get_bool("debug"));
-
         // You can deserialize (and thus freeze) the entire configuration as
         s.try_into()
     }
