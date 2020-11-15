@@ -1,6 +1,7 @@
 use crate::types::{Filter, PointOffsetType, VectorElementType, SearchParams};
 use crate::vector_storage::vector_storage::ScoredPointOffset;
 use crate::entry::entry_point::OperationResult;
+use crate::index::field_index::EstimationResult;
 
 /// Trait for vector searching
 pub trait Index {
@@ -20,7 +21,7 @@ pub trait Index {
 
 pub trait PayloadIndex {
     /// Estimate amount of points (min, max) which satisfies filtering condition.
-    fn estimate_cardinality(&self, query: &Filter) -> (usize, usize);
+    fn estimate_cardinality(&self, query: &Filter) -> EstimationResult;
 
     /// Return list of all point ids, which satisfy filtering criteria
     fn query_points(&self, query: &Filter) -> Vec<PointOffsetType>;

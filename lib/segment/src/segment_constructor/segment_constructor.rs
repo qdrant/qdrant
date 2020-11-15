@@ -2,7 +2,7 @@ use crate::segment::{Segment, SEGMENT_STATE_FILE};
 use crate::id_mapper::simple_id_mapper::SimpleIdMapper;
 use crate::vector_storage::simple_vector_storage::SimpleVectorStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
-use crate::index::plain_index::{PlainPayloadIndex, PlainIndex};
+use crate::index::plain_payload_index::{PlainPayloadIndex, PlainIndex};
 use crate::query_planner::simple_query_planner::SimpleQueryPlanner;
 use crate::types::{SegmentType, SegmentConfig, Indexes, SegmentState, SeqNumberType, StorageType};
 use std::sync::{Arc, Mutex};

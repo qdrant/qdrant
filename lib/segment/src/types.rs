@@ -16,6 +16,10 @@ pub type ScoreType = f32;
 pub type TagType = u64;
 /// Type of vector element.
 pub type VectorElementType = f32;
+/// Type of float point payload
+pub type FPPayloadType = f64;
+/// Type of integer point payload
+pub type IntPayloadType = i64;
 
 /// Type of internal tags, build from payload
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy)]
@@ -175,8 +179,8 @@ pub struct GeoPoint {
 #[serde(tag = "type", content = "value")]
 pub enum PayloadType {
     Keyword(Vec<String>),
-    Integer(Vec<i64>),
-    Float(Vec<f64>),
+    Integer(Vec<IntPayloadType>),
+    Float(Vec<FPPayloadType>),
     Geo(Vec<GeoPoint>),
 }
 
@@ -189,7 +193,7 @@ pub struct Match {
     /// Keyword value to match
     pub keyword: Option<String>,
     /// Integer value to match
-    pub integer: Option<i64>,
+    pub integer: Option<IntPayloadType>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -198,13 +202,13 @@ pub struct Range {
     /// Name of the field to match with
     pub key: PayloadKeyType,
     /// point.key < range.lt
-    pub lt: Option<f64>,
+    pub lt: Option<FPPayloadType>,
     /// point.key > range.gt
-    pub gt: Option<f64>,
+    pub gt: Option<FPPayloadType>,
     /// point.key >= range.gte
-    pub gte: Option<f64>,
+    pub gte: Option<FPPayloadType>,
     /// point.key <= range.lte
-    pub lte: Option<f64>,
+    pub lte: Option<FPPayloadType>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
