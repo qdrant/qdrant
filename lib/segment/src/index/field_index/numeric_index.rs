@@ -1,16 +1,26 @@
-use crate::types::{FPPayloadType, Range};
+use crate::types::{FloatPayloadType, Range, IntPayloadType};
 use crate::index::field_index::index_builder::{Element, IndexBuilder};
 use ordered_float::OrderedFloat;
-use crate::index::field_index::EstimationResult;
+use crate::index::field_index::Estimation;
 use std::cmp::{min, max};
 use std::cmp::Ordering::{Greater, Less};
 use serde::{Deserialize, Serialize};
 use num_traits::ToPrimitive;
 
-impl Into<NumericIndex<FPPayloadType>> for IndexBuilder<FPPayloadType> {
-    fn into(mut self) -> NumericIndex<FPPayloadType> {
+impl Into<PersistedNumericIndex<FloatPayloadType>> for IndexBuilder<FloatPayloadType> {
+    fn into(mut self) -> PersistedNumericIndex<FloatPayloadType> {
         self.elements.sort_by_key(|el| OrderedFloat(el.value));
-        NumericIndex {
+        PersistedNumericIndex {
+            points_count: self.ids.len(),
+            elements: self.elements,
+        }
+    }
+}
+
+impl Into<PersistedNumericIndex<IntPayloadType>> for IndexBuilder<IntPayloadType> {
+    fn into(mut self) -> PersistedNumericIndex<IntPayloadType> {
+        self.elements.sort_by_key(|el| el.value);
+        PersistedNumericIndex {
             points_count: self.ids.len(),
             elements: self.elements,
         }
@@ -18,13 +28,13 @@ impl Into<NumericIndex<FPPayloadType>> for IndexBuilder<FPPayloadType> {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct NumericIndex<N: ToPrimitive> {
+pub struct PersistedNumericIndex<N: ToPrimitive> {
     points_count: usize,
     elements: Vec<Element<N>>,
 }
 
 
-impl<N: ToPrimitive> NumericIndex<N> {
+impl<N: ToPrimitive> PersistedNumericIndex<N> {
     fn search_range(&self, range: &Range) -> (usize, usize) {
         let mut lower_index = 0;
         let mut upper_index = self.elements.len();
@@ -60,7 +70,7 @@ impl<N: ToPrimitive> NumericIndex<N> {
         (lower_index, upper_index)
     }
 
-    pub fn range_cardinality(&self, range: &Range) -> EstimationResult {
+    pub fn range_cardinality(&self, range: &Range) -> Estimation {
         let (lower_index, upper_index) = self.search_range(range);
 
         let values_count: i64 = upper_index as i64 - lower_index as i64;
@@ -76,7 +86,7 @@ impl<N: ToPrimitive> NumericIndex<N> {
         // min = max(1, 500 - (1200 - 1000)) = 300
         // exp = 500 / (1200 / 1000) = 416
         // max = min(1000, 500) = 500
-        EstimationResult {
+        Estimation {
             min: max(1, values_count - (total_values - self.points_count as i64)) as usize,
             exp: (values_count as f64 / value_per_point) as usize,
             max: min(self.points_count as i64, values_count) as usize,
@@ -91,7 +101,7 @@ mod tests {
 
     #[test]
     fn test_bsearch() {
-        let index = NumericIndex {
+        let index = PersistedNumericIndex {
             points_count: 9,
             elements: vec![
                 Element { id: 1, value: 1.0 },
@@ -129,7 +139,7 @@ mod tests {
 
     #[test]
     fn test_cardinality() {
-        let index = NumericIndex {
+        let index = PersistedNumericIndex {
             points_count: 9,
             elements: vec![
                 Element { id: 1, value: 1.0 },
@@ -158,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_serde() {
-        let index = NumericIndex {
+        let index = PersistedNumericIndex {
             points_count: 9,
             elements: vec![
                 Element { id: 1, value: 1 },

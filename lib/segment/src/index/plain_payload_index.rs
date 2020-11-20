@@ -6,7 +6,7 @@ use crate::payload_storage::payload_storage::{ConditionChecker};
 use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use crate::entry::entry_point::OperationResult;
-use crate::index::field_index::EstimationResult;
+use crate::index::field_index::Estimation;
 
 
 pub struct PlainPayloadIndex {
@@ -26,7 +26,7 @@ impl PlainPayloadIndex {
 }
 
 impl PayloadIndex for PlainPayloadIndex {
-    fn estimate_cardinality(&self, query: &Filter) -> EstimationResult {
+    fn estimate_cardinality(&self, query: &Filter) -> Estimation {
         let mut matched_points = 0;
         let condition_checker = self.condition_checker.borrow();
         for i in self.vector_storage.borrow().iter_ids() {
@@ -34,7 +34,7 @@ impl PayloadIndex for PlainPayloadIndex {
                 matched_points += 1;
             }
         }
-        EstimationResult { min: matched_points, exp: matched_points, max: matched_points }
+        Estimation { min: matched_points, exp: matched_points, max: matched_points }
     }
 
     fn query_points(&self, query: &Filter) -> Vec<usize> {

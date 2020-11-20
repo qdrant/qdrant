@@ -24,6 +24,8 @@ pub enum OperationError {
     WrongVector { expected_dim: usize, received_dim: usize },
     #[error("No point with id {missed_point_id} found")]
     PointIdError { missed_point_id: PointIdType },
+    #[error("Payload type does not match with previously given for field {field_name}. Expected: {expected_type}")]
+    TypeError { field_name: PayloadKeyType, expected_type: String },
     #[error("Service runtime error: {description}")]
     ServiceError { description: String },
 }

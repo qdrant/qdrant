@@ -17,7 +17,7 @@ pub type TagType = u64;
 /// Type of vector element.
 pub type VectorElementType = f32;
 /// Type of float point payload
-pub type FPPayloadType = f64;
+pub type FloatPayloadType = f64;
 /// Type of integer point payload
 pub type IntPayloadType = i64;
 
@@ -180,8 +180,29 @@ pub struct GeoPoint {
 pub enum PayloadType {
     Keyword(Vec<String>),
     Integer(Vec<IntPayloadType>),
-    Float(Vec<FPPayloadType>),
+    Float(Vec<FloatPayloadType>),
     Geo(Vec<GeoPoint>),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type", content = "value")]
+pub enum PayloadSchema {
+    Keyword,
+    Integer,
+    Float,
+    Geo,
+}
+
+impl From<&PayloadType> for PayloadSchema {
+    fn from(payload_type: &PayloadType) -> Self {
+        match payload_type {
+            PayloadType::Keyword(_) => PayloadSchema::Keyword,
+            PayloadType::Integer(_) => PayloadSchema::Integer,
+            PayloadType::Float(_) => PayloadSchema::Float,
+            PayloadType::Geo(_) => PayloadSchema::Geo,
+        }
+    }
 }
 
 
@@ -202,13 +223,13 @@ pub struct Range {
     /// Name of the field to match with
     pub key: PayloadKeyType,
     /// point.key < range.lt
-    pub lt: Option<FPPayloadType>,
+    pub lt: Option<FloatPayloadType>,
     /// point.key > range.gt
-    pub gt: Option<FPPayloadType>,
+    pub gt: Option<FloatPayloadType>,
     /// point.key >= range.gte
-    pub gte: Option<FPPayloadType>,
+    pub gte: Option<FloatPayloadType>,
     /// point.key <= range.lte
-    pub lte: Option<FPPayloadType>,
+    pub lte: Option<FloatPayloadType>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
