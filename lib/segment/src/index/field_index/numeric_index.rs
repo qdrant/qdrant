@@ -7,22 +7,25 @@ use std::cmp::Ordering::{Greater, Less};
 use serde::{Deserialize, Serialize};
 use num_traits::ToPrimitive;
 
-impl Into<PersistedNumericIndex<FloatPayloadType>> for IndexBuilder<FloatPayloadType> {
-    fn into(mut self) -> PersistedNumericIndex<FloatPayloadType> {
-        self.elements.sort_by_key(|el| OrderedFloat(el.value));
+
+impl From<&IndexBuilder<FloatPayloadType>> for PersistedNumericIndex<FloatPayloadType> {
+    fn from(builder: &IndexBuilder<FloatPayloadType>) -> Self {
+        let mut elements = builder.elements.clone();
+        elements.sort_by_key(|el| OrderedFloat(el.value));
         PersistedNumericIndex {
-            points_count: self.ids.len(),
-            elements: self.elements,
+            points_count: builder.ids.len(),
+            elements,
         }
     }
 }
 
-impl Into<PersistedNumericIndex<IntPayloadType>> for IndexBuilder<IntPayloadType> {
-    fn into(mut self) -> PersistedNumericIndex<IntPayloadType> {
-        self.elements.sort_by_key(|el| el.value);
+impl From<&IndexBuilder<IntPayloadType>> for PersistedNumericIndex<IntPayloadType> {
+    fn from(builder: &IndexBuilder<IntPayloadType>) -> Self {
+        let mut elements = builder.elements.clone();
+        elements.sort_by_key(|el| el.value);
         PersistedNumericIndex {
-            points_count: self.ids.len(),
-            elements: self.elements,
+            points_count: builder.ids.len(),
+            elements,
         }
     }
 }
