@@ -40,7 +40,7 @@ paths:
                     description: Time spent to process this request
                   status:
                     type: string
-                    enum: ["Ok"]
+                    enum: ["ok"]
                   result:
                     $ref: "#/components/schemas/CollectionsResponse"
         default:
@@ -75,7 +75,7 @@ paths:
                     description: Time spent to process this request
                   status:
                     type: string
-                    enum: ["Ok"]
+                    enum: ["ok"]
                   result:
                     type: boolean
         default:
@@ -112,7 +112,7 @@ paths:
                     description: Time spent to process this request
                   status:
                     type: string
-                    enum: ["Ok"]
+                    enum: ["ok"]
                   result:
                     $ref: "#/components/schemas/CollectionInfo"
         default:
@@ -155,7 +155,7 @@ paths:
                     description: Time spent to process this request
                   status:
                     type: string
-                    enum: [ "Ok" ]
+                    enum: [ "ok" ]
                   result:
                     type: array
                     items:
@@ -201,7 +201,7 @@ paths:
                     description: Time spent to process this request
                   status:
                     type: string
-                    enum: ["Ok"]
+                    enum: ["ok"]
                   result:
                     $ref: "#/components/schemas/Record"
         default:
@@ -245,7 +245,7 @@ paths:
                     description: Time spent to process this request
                   status:
                     type: string
-                    enum: ["Ok"]
+                    enum: ["ok"]
                   result:
                     type: array
                     items:
@@ -291,7 +291,7 @@ paths:
                     description: Time spent to process this request
                   status:
                     type: string
-                    enum: ["Ok"]
+                    enum: ["ok"]
                   result:
                     type: array
                     items:
