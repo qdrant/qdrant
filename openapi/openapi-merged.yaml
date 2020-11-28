@@ -157,9 +157,7 @@ paths:
                     type: string
                     enum: [ "ok" ]
                   result:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/UpdateResult"
+                    $ref: "#/components/schemas/UpdateResult"
         default:
           description: error
           content:
