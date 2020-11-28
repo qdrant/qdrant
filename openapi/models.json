@@ -96,12 +96,7 @@
                 ],
                 "properties": {
                     "config": {
-                        "description": "Collection settings",
-                        "allOf": [
-                            {
-                                "$ref": "#/components/schemas/SegmentConfig"
-                            }
-                        ]
+                        "$ref": "#/components/schemas/SegmentConfig"
                     },
                     "disk_data_size": {
                         "description": "Disk space, used by collection",
@@ -269,24 +264,14 @@
                 ],
                 "properties": {
                     "bottom_right": {
-                        "description": "Coordinates of the bottom right point of the area rectangle",
-                        "allOf": [
-                            {
-                                "$ref": "#/components/schemas/GeoPoint"
-                            }
-                        ]
+                        "$ref": "#/components/schemas/GeoPoint"
                     },
                     "key": {
                         "description": "Name of the field to match with",
                         "type": "string"
                     },
                     "top_left": {
-                        "description": "Coordinates of the top left point of the area rectangle",
-                        "allOf": [
-                            {
-                                "$ref": "#/components/schemas/GeoPoint"
-                            }
-                        ]
+                        "$ref": "#/components/schemas/GeoPoint"
                     }
                 }
             },
@@ -1034,28 +1019,13 @@
                 ],
                 "properties": {
                     "distance": {
-                        "description": "Type of distance function used for measuring distance between vectors",
-                        "allOf": [
-                            {
-                                "$ref": "#/components/schemas/Distance"
-                            }
-                        ]
+                        "$ref": "#/components/schemas/Distance"
                     },
                     "index": {
-                        "description": "Type of index used for search",
-                        "allOf": [
-                            {
-                                "$ref": "#/components/schemas/Indexes"
-                            }
-                        ]
+                        "$ref": "#/components/schemas/Indexes"
                     },
                     "storage_type": {
-                        "description": "Type of vector storage",
-                        "allOf": [
-                            {
-                                "$ref": "#/components/schemas/StorageType"
-                            }
-                        ]
+                        "$ref": "#/components/schemas/StorageType"
                     },
                     "vector_size": {
                         "description": "Size of a vectors used",
@@ -1193,12 +1163,7 @@
                         "minimum": 0
                     },
                     "status": {
-                        "description": "Update status",
-                        "allOf": [
-                            {
-                                "$ref": "#/components/schemas/UpdateStatus"
-                            }
-                        ]
+                        "$ref": "#/components/schemas/UpdateStatus"
                     }
                 }
             },

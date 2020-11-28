@@ -376,9 +376,7 @@ components:
       description: Current statistics and configuration of the collection.
       properties:
         config:
-          allOf:
-          - $ref: '#/components/schemas/SegmentConfig'
-          description: Collection settings
+          $ref: '#/components/schemas/SegmentConfig'
         disk_data_size:
           description: Disk space, used by collection
           format: uint
@@ -492,16 +490,12 @@ components:
     GeoBoundingBox:
       properties:
         bottom_right:
-          allOf:
-          - $ref: '#/components/schemas/GeoPoint'
-          description: Coordinates of the bottom right point of the area rectangle
+          $ref: '#/components/schemas/GeoPoint'
         key:
           description: Name of the field to match with
           type: string
         top_left:
-          allOf:
-          - $ref: '#/components/schemas/GeoPoint'
-          description: Coordinates of the top left point of the area rectangle
+          $ref: '#/components/schemas/GeoPoint'
       required:
       - bottom_right
       - key
@@ -994,18 +988,11 @@ components:
     SegmentConfig:
       properties:
         distance:
-          allOf:
-          - $ref: '#/components/schemas/Distance'
-          description: Type of distance function used for measuring distance between
-            vectors
+          $ref: '#/components/schemas/Distance'
         index:
-          allOf:
-          - $ref: '#/components/schemas/Indexes'
-          description: Type of index used for search
+          $ref: '#/components/schemas/Indexes'
         storage_type:
-          allOf:
-          - $ref: '#/components/schemas/StorageType'
-          description: Type of vector storage
+          $ref: '#/components/schemas/StorageType'
         vector_size:
           description: Size of a vectors used
           format: uint
@@ -1096,9 +1083,7 @@ components:
           minimum: 0
           type: integer
         status:
-          allOf:
-          - $ref: '#/components/schemas/UpdateStatus'
-          description: Update status
+          $ref: '#/components/schemas/UpdateStatus'
       required:
       - operation_id
       - status
