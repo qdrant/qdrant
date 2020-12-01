@@ -9,6 +9,7 @@ use crate::wal::SerdeWal;
 use crate::operations::CollectionUpdateOperations;
 use tokio::time::{Duration, Instant};
 use tokio::runtime::Runtime;
+use log::debug;
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
@@ -76,16 +77,18 @@ impl UpdateHandler {
             match recv_res {
                 Ok(signal) => {
                     match signal {
-                        UpdateSignal::Operation(_) => {
+                        UpdateSignal::Operation(operation_id) => {
+                            debug!("Performing update operation: {}", operation_id);
                             for optimizer in optimizers.iter() {
                                 let unoptimal_segment_ids = optimizer.check_condition(segments.clone());
                                 if !unoptimal_segment_ids.is_empty() {
-                                    // ToDo: Add logging here
+                                    debug!("Start optimization on segments: {:?}", unoptimal_segment_ids);
                                     optimizer.optimize(segments.clone(), unoptimal_segment_ids).unwrap();
                                 }
                             }
                             let elapsed = last_flushed.elapsed();
                             if elapsed > flush_timeout {
+                                debug!("Performing flushing: {}", operation_id);
                                 last_flushed = Instant::now();
                                 let flushed_operation = segments.read().flush_all().unwrap();
                                 wal.lock().ack(flushed_operation).unwrap();

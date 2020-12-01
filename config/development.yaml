@@ -1,7 +1,12 @@
 
 debug: true
-log_level: INFO
+log_level: DEBUG,sled=INFO
 
 service:
   host: 127.0.0.1
   port: 6333
+
+storage:
+  optimizers:
+    # Minimum interval between forced flushes.
+    flush_interval_sec: 1
