@@ -10,7 +10,6 @@ pub mod entry;
 pub mod types;
 
 
-
 #[cfg(test)]
 mod tests {
     #[test]

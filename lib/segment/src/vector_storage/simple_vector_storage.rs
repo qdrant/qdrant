@@ -7,8 +7,11 @@ use crate::spaces::tools::{mertic_object, peek_top_scores};
 use crate::entry::entry_point::OperationResult;
 use std::ops::Range;
 use std::path::Path;
-use sled::Db;
+use sled::{Db, Config};
 use serde::{Deserialize, Serialize};
+
+/// Since sled is used for reading only during the initialization, large read cache is not required
+const SLED_CACHE_SIZE: u64 = 10 * 1024 * 1024; // 10 mb
 
 pub struct SimpleVectorStorage {
     dim: usize,
@@ -30,17 +33,18 @@ impl SimpleVectorStorage {
         let mut vectors: Vec<Vec<VectorElementType>> = vec![];
         let mut deleted: HashSet<PointOffsetType> = HashSet::new();
 
-        let store = sled::open(path)?;
+        let store = Config::new().cache_capacity(SLED_CACHE_SIZE).path(path).open()?;
 
         vectors.resize(store.len(), vec![]);
 
         for record in store.iter() {
             let (key, val) = record?;
             let point_id: PointOffsetType = bincode::deserialize(&key).unwrap();
-            let stored_record: StoredRecord = bincode::deserialize(&val).unwrap();
+            let mut stored_record: StoredRecord = bincode::deserialize(&val).unwrap();
             if stored_record.deleted {
                 deleted.insert(point_id);
             }
+            stored_record.vector.shrink_to_fit();
             vectors[point_id] = stored_record.vector;
         }
 
