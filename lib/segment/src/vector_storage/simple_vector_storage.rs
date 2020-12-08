@@ -9,6 +9,9 @@ use std::ops::Range;
 use std::path::Path;
 use sled::{Db, Config};
 use serde::{Deserialize, Serialize};
+use std::mem::size_of;
+use log::debug;
+
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 const SLED_CACHE_SIZE: u64 = 10 * 1024 * 1024; // 10 mb
@@ -33,18 +36,24 @@ impl SimpleVectorStorage {
         let mut vectors: Vec<Vec<VectorElementType>> = vec![];
         let mut deleted: HashSet<PointOffsetType> = HashSet::new();
 
-        let store = Config::new().cache_capacity(SLED_CACHE_SIZE).path(path).open()?;
+        let store = Config::new()
+            .cache_capacity(SLED_CACHE_SIZE)
+            .path(path).open()?;
 
         vectors.resize(store.len(), vec![]);
+
+        let expected_collection_size = dim * store.len() * size_of::<VectorElementType>() / 1024 / 1024;
+        debug!("Vector count: {}, expected_mem: {} Mb",
+               store.len(), expected_collection_size);
 
         for record in store.iter() {
             let (key, val) = record?;
             let point_id: PointOffsetType = bincode::deserialize(&key).unwrap();
-            let mut stored_record: StoredRecord = bincode::deserialize(&val).unwrap();
+            let stored_record: StoredRecord = bincode::deserialize(&val).unwrap();
             if stored_record.deleted {
                 deleted.insert(point_id);
             }
-            stored_record.vector.shrink_to_fit();
+            // stored_record.vector.shrink_to_fit();
             vectors[point_id] = stored_record.vector;
         }
 

@@ -1,24 +1,29 @@
-use std::sync::Arc;
-use collection::collection::Collection;
-use std::collections::HashMap;
-use wal::WalOptions;
-use tokio::runtime::Runtime;
-use tokio::runtime;
-use num_cpus;
 use std::cmp::max;
-use segment::types::SegmentConfig;
+use std::collections::HashMap;
+use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::path::{Path, PathBuf};
-use std::fs::{create_dir_all, remove_dir_all, read_dir};
+use std::str::from_utf8;
+use std::sync::Arc;
+
+use num_cpus;
+use parking_lot::RwLock;
+use sled::{Config, Db};
+use sled::transaction::UnabortableTransactionError;
+use tokio::runtime;
+use tokio::runtime::Runtime;
+use wal::WalOptions;
+
+use collection::collection::Collection;
 use collection::collection_builder::collection_builder::build_collection;
+use collection::collection_builder::collection_loader::load_collection;
+use segment::types::SegmentConfig;
+
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::storage_ops::{AliasOperations, StorageOps};
 use crate::types::StorageConfig;
-use sled::Db;
-use sled::transaction::UnabortableTransactionError;
-use std::str::from_utf8;
-use collection::collection_builder::collection_loader::load_collection;
-use parking_lot::RwLock;
 
+/// Since sled is used for reading only during the initialization, large read cache is not required
+const SLED_CACHE_SIZE: u64 = 1 * 1024 * 1024; // 1 mb
 
 const COLLECTIONS_DIR: &str = "collections";
 
@@ -72,7 +77,10 @@ impl TableOfContent {
         let alias_path = Path::new(&storage_config.storage_path)
             .join("aliases.sled");
 
-        let alias_persistence = sled::open(alias_path.as_path()).unwrap();
+        let alias_persistence = Config::new().cache_capacity(SLED_CACHE_SIZE)
+            .path(alias_path.as_path())
+            .open()
+            .unwrap();
 
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),

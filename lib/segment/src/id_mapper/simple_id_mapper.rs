@@ -2,9 +2,12 @@ use std::collections::HashMap;
 use crate::types::{PointOffsetType, PointIdType};
 use crate::id_mapper::id_mapper::IdMapper;
 use crate::entry::entry_point::OperationResult;
-use sled::Db;
+use sled::{Db, Config};
 use bincode;
 use std::path::Path;
+
+/// Since sled is used for reading only during the initialization, large read cache is not required
+const SLED_CACHE_SIZE: u64 = 10 * 1024 * 1024; // 10 mb
 
 pub struct SimpleIdMapper {
     internal_to_external: HashMap<PointOffsetType, PointIdType>,
@@ -15,7 +18,9 @@ pub struct SimpleIdMapper {
 impl SimpleIdMapper {
 
     pub fn open(path: &Path) -> Self {
-        let store = sled::open(path).unwrap();
+        let store = Config::new()
+            .cache_capacity(SLED_CACHE_SIZE)
+            .path(path).open().unwrap();
 
         let mut internal_to_external: HashMap<PointOffsetType, PointIdType> = Default::default();
         let mut external_to_internal: HashMap<PointIdType, PointOffsetType> = Default::default();

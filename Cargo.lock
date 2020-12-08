@@ -2075,6 +2075,8 @@ dependencies = [
  "atomic_refcell",
  "atomicwrites",
  "bincode",
+ "env_logger 0.7.1",
+ "log 0.4.11",
  "memmap 0.7.0",
  "ordered-float",
  "rmp-serde",

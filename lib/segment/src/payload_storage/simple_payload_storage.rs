@@ -4,8 +4,11 @@ use crate::types::{PayloadKeyType, PayloadType, PointOffsetType, TheMap};
 use std::collections::{HashMap};
 
 use crate::entry::entry_point::OperationResult;
-use sled::Db;
+use sled::{Db, Config};
 use std::path::Path;
+
+/// Since sled is used for reading only during the initialization, large read cache is not required
+const SLED_CACHE_SIZE: u64 = 10 * 1024 * 1024; // 10 mb
 
 pub struct SimplePayloadStorage {
     payload: HashMap<PointOffsetType, TheMap<PayloadKeyType, PayloadType>>,
@@ -15,7 +18,7 @@ pub struct SimplePayloadStorage {
 
 impl SimplePayloadStorage {
     pub fn open(path: &Path) -> Self {
-        let store = sled::open(path).unwrap();
+        let store = Config::new().cache_capacity(SLED_CACHE_SIZE).path(path).open().unwrap();
 
         let mut payload_map: HashMap<PointOffsetType, TheMap<PayloadKeyType, PayloadType>> = Default::default();
 
