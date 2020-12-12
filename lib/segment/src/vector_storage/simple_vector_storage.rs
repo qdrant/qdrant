@@ -1,26 +1,25 @@
-use super::vector_storage::VectorStorage;
-use crate::types::{PointOffsetType, VectorElementType, Distance};
-use std::collections::{HashSet};
-use crate::vector_storage::vector_storage::{ScoredPointOffset};
-
-use crate::spaces::tools::{mertic_object, peek_top_scores};
-use crate::entry::entry_point::OperationResult;
+use std::collections::HashSet;
 use std::ops::Range;
 use std::path::Path;
-use sled::{Db, Config};
-use serde::{Deserialize, Serialize};
-use std::mem::size_of;
-use log::debug;
 
+use rocksdb::{DB, Options, IteratorMode};
+use serde::{Deserialize, Serialize};
+
+use crate::entry::entry_point::OperationResult;
+use crate::spaces::tools::{mertic_object, peek_top_scores};
+use crate::types::{Distance, PointOffsetType, VectorElementType};
+use crate::vector_storage::vector_storage::ScoredPointOffset;
+
+use super::vector_storage::VectorStorage;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
-const SLED_CACHE_SIZE: u64 = 10 * 1024 * 1024; // 10 mb
+const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 
 pub struct SimpleVectorStorage {
     dim: usize,
     vectors: Vec<Vec<VectorElementType>>,
     deleted: HashSet<PointOffsetType>,
-    store: Db,
+    store: DB,
 }
 
 
@@ -36,24 +35,21 @@ impl SimpleVectorStorage {
         let mut vectors: Vec<Vec<VectorElementType>> = vec![];
         let mut deleted: HashSet<PointOffsetType> = HashSet::new();
 
-        let store = Config::new()
-            .cache_capacity(SLED_CACHE_SIZE)
-            .path(path).open()?;
+        let mut options: Options = Options::default();
+        options.set_write_buffer_size(DB_CACHE_SIZE);
+        options.create_if_missing(true);
+        let store = DB::open(&options, path)?;
 
-        vectors.resize(store.len(), vec![]);
-
-        let expected_collection_size = dim * store.len() * size_of::<VectorElementType>() / 1024 / 1024;
-        debug!("Vector count: {}, expected_mem: {} Mb",
-               store.len(), expected_collection_size);
-
-        for record in store.iter() {
-            let (key, val) = record?;
+        for (key, val) in store.iterator(IteratorMode::Start) {
             let point_id: PointOffsetType = bincode::deserialize(&key).unwrap();
             let stored_record: StoredRecord = bincode::deserialize(&val).unwrap();
             if stored_record.deleted {
                 deleted.insert(point_id);
             }
             // stored_record.vector.shrink_to_fit();
+            if vectors.len() <= point_id {
+                vectors.resize(point_id + 1, vec![])
+            }
             vectors[point_id] = stored_record.vector;
         }
 
@@ -72,9 +68,9 @@ impl SimpleVectorStorage {
             deleted: self.deleted.contains(&point_id),
             vector: v.clone(), // ToDo: try to reduce number of vector copies
         };
-        self.store.insert(
+        self.store.put(
             bincode::serialize(&point_id).unwrap(),
-            bincode::serialize(&record).unwrap()
+            bincode::serialize(&record).unwrap(),
         )?;
 
         Ok(())
@@ -111,7 +107,7 @@ impl VectorStorage for SimpleVectorStorage {
     fn update_vector(&mut self, key: usize, vector: &Vec<f64>) -> OperationResult<usize> {
         self.vectors[key] = vector.clone();
         self.update_stored(key)?;
-        return Ok(key)
+        return Ok(key);
     }
 
     fn update_from(&mut self, other: &dyn VectorStorage) -> OperationResult<Range<PointOffsetType>> {
@@ -135,7 +131,7 @@ impl VectorStorage for SimpleVectorStorage {
         return Box::new(iter);
     }
 
-    fn flush(&self) -> OperationResult<usize> {
+    fn flush(&self) -> OperationResult<()> {
         Ok(self.store.flush()?)
     }
 
@@ -190,13 +186,12 @@ impl VectorStorage for SimpleVectorStorage {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempdir::TempDir;
 
+    use super::*;
 
     #[test]
     fn test_score_points() {
-
         let dir = TempDir::new("storage_dir").unwrap();
         let distance = Distance::Dot;
         let dim = 4;

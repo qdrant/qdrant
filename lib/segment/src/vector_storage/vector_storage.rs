@@ -39,7 +39,7 @@ pub trait VectorStorage {
     fn update_from(&mut self, other: &dyn VectorStorage) -> OperationResult<Range<PointOffsetType>>;
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()>;
     fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
-    fn flush(&self) -> OperationResult<usize>;
+    fn flush(&self) -> OperationResult<()>;
 
     fn score_points(
         &self,

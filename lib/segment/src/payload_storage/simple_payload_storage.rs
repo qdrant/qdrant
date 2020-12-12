@@ -1,45 +1,52 @@
-use crate::payload_storage::payload_storage::{PayloadStorage};
-use crate::types::{PayloadKeyType, PayloadType, PointOffsetType, TheMap};
-
-use std::collections::{HashMap};
-
-use crate::entry::entry_point::OperationResult;
-use sled::{Db, Config};
+use std::collections::HashMap;
 use std::path::Path;
 
+use rocksdb::{DB, IteratorMode, Options};
+
+use crate::entry::entry_point::OperationResult;
+use crate::payload_storage::payload_storage::PayloadStorage;
+use crate::types::{PayloadKeyType, PayloadType, PointOffsetType, TheMap};
+
 /// Since sled is used for reading only during the initialization, large read cache is not required
-const SLED_CACHE_SIZE: u64 = 10 * 1024 * 1024; // 10 mb
+const DB_CACHE_SIZE: usize = 10 * 1024 * 1024;
+// 10 mb
+const DB_NAME: &'static str = "payload";
 
 pub struct SimplePayloadStorage {
     payload: HashMap<PointOffsetType, TheMap<PayloadKeyType, PayloadType>>,
-    store: Db,
+    store: DB,
 }
 
 
 impl SimplePayloadStorage {
-    pub fn open(path: &Path) -> Self {
-        let store = Config::new().cache_capacity(SLED_CACHE_SIZE).path(path).open().unwrap();
+    pub fn open(path: &Path) -> OperationResult<Self> {
+        let mut options: Options = Options::default();
+        options.set_write_buffer_size(DB_CACHE_SIZE);
+        options.create_if_missing(true);
+        options.create_missing_column_families(true);
+        let store = DB::open_cf(&options, path, vec![DB_NAME])?;
 
         let mut payload_map: HashMap<PointOffsetType, TheMap<PayloadKeyType, PayloadType>> = Default::default();
 
-        for record in store.iter() {
-            let (key, val) = record.unwrap();
-
+        let cf_handle = store.cf_handle(DB_NAME).unwrap();
+        for (key, val) in store.iterator_cf(cf_handle, IteratorMode::Start) {
             let point_id: PointOffsetType = serde_cbor::from_slice(&key).unwrap();
             let payload: TheMap<PayloadKeyType, PayloadType> = serde_cbor::from_slice(&val).unwrap();
             payload_map.insert(point_id, payload);
         }
 
-        SimplePayloadStorage {
+        Ok(SimplePayloadStorage {
             payload: payload_map,
             store,
-        }
+        })
     }
 
     fn update_storage(&self, point_id: &PointOffsetType) -> OperationResult<()> {
+        let cf_handle = self.store.cf_handle(DB_NAME).unwrap();
         match self.payload.get(point_id) {
-            None => self.store.remove(serde_cbor::to_vec(&point_id).unwrap())?,
-            Some(payload) => self.store.insert(
+            None => self.store.delete_cf(cf_handle, serde_cbor::to_vec(&point_id).unwrap())?,
+            Some(payload) => self.store.put_cf(
+                cf_handle,
                 serde_cbor::to_vec(&point_id).unwrap(),
                 serde_cbor::to_vec(payload).unwrap(),
             )?,
@@ -90,11 +97,40 @@ impl PayloadStorage for SimplePayloadStorage {
 
     fn wipe(&mut self) -> OperationResult<()> {
         self.payload = HashMap::new();
-        self.store.clear()?;
+        self.store.drop_cf(DB_NAME)?;
+        let mut options: Options = Options::default();
+        options.set_write_buffer_size(DB_CACHE_SIZE);
+        options.create_if_missing(true);
+        self.store.create_cf(DB_NAME, &options)?;
         Ok(())
     }
 
-    fn flush(&self) -> OperationResult<usize> {
-        Ok(self.store.flush()?)
+    fn flush(&self) -> OperationResult<()> {
+        let cf_handle = self.store.cf_handle(DB_NAME).unwrap();
+        Ok(self.store.flush_cf(cf_handle)?)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use tempdir::TempDir;
+
+    use super::*;
+
+    #[test]
+    fn test_wipe() {
+        let dir = TempDir::new("storage_dir").unwrap();
+        let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
+        let payload = PayloadType::Integer(vec![1, 2, 3]);
+        let key = "key".to_owned();
+        storage.assign(100, &key, payload.clone()).unwrap();
+        storage.wipe().unwrap();
+        storage.assign(100, &key, payload.clone()).unwrap();
+        storage.wipe().unwrap();
+        storage.assign(100, &key, payload.clone()).unwrap();
+        assert!(storage.payload(100).len() > 0);
+        storage.wipe().unwrap();
+        assert_eq!(storage.payload(100).len(), 0);
     }
 }

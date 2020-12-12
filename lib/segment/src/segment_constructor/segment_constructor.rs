@@ -25,7 +25,7 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
     let payload_storage_path = segment_path.join("payload_storage");
     let vector_storage_path = segment_path.join("vector_storage");
 
-    let id_mapper = sp(SimpleIdMapper::open(mapper_path.as_path()));
+    let id_mapper = sp(SimpleIdMapper::open(mapper_path.as_path())?);
 
 
     let vector_storage: Arc<AtomicRefCell<dyn VectorStorage>> = match config.storage_type {
@@ -33,7 +33,7 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
         StorageType::Mmap => sp(MemmapVectorStorage::open(vector_storage_path.as_path(), config.vector_size)?),
     };
 
-    let payload_storage = sp(SimplePayloadStorage::open(payload_storage_path.as_path()));
+    let payload_storage = sp(SimplePayloadStorage::open(payload_storage_path.as_path())?);
 
 
     let condition_checker = sp(SimpleConditionChecker::new(

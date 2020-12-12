@@ -2,9 +2,9 @@ use thiserror::Error;
 use std::path::Path;
 use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentConfig};
 use std::result;
-use sled::Error;
 use std::io::Error as IoError;
 use atomicwrites::Error as AtomicIoError;
+use rocksdb::Error;
 
 
 /// Trait for versionable & saveable objects.
@@ -47,7 +47,7 @@ impl From<IoError> for OperationError {
 
 impl From<Error> for OperationError {
     fn from(err: Error) -> Self {
-        OperationError::ServiceError { description: format!("persistence error: {:?}", err) }
+        OperationError::ServiceError { description: format!("persistence error: {}", err) }
     }
 }
 

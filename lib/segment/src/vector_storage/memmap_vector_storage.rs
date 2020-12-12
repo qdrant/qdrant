@@ -223,9 +223,9 @@ impl VectorStorage for MemmapVectorStorage {
         return Box::new(iter);
     }
 
-    fn flush(&self) -> OperationResult<usize> {
+    fn flush(&self) -> OperationResult<()> {
         self.deleted_mmap.as_ref().unwrap().flush()?;
-        Ok(0)
+        Ok(())
     }
 
     fn score_points(

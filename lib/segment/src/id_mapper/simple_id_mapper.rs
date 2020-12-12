@@ -2,42 +2,42 @@ use std::collections::HashMap;
 use crate::types::{PointOffsetType, PointIdType};
 use crate::id_mapper::id_mapper::IdMapper;
 use crate::entry::entry_point::OperationResult;
-use sled::{Db, Config};
 use bincode;
 use std::path::Path;
+use rocksdb::{Options, DB, IteratorMode};
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
-const SLED_CACHE_SIZE: u64 = 10 * 1024 * 1024; // 10 mb
+const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 
 pub struct SimpleIdMapper {
     internal_to_external: HashMap<PointOffsetType, PointIdType>,
     external_to_internal: HashMap<PointIdType, PointOffsetType>,
-    store: Db,
+    store: DB,
 }
 
 impl SimpleIdMapper {
 
-    pub fn open(path: &Path) -> Self {
-        let store = Config::new()
-            .cache_capacity(SLED_CACHE_SIZE)
-            .path(path).open().unwrap();
+    pub fn open(path: &Path) -> OperationResult<Self> {
+        let mut options: Options = Options::default();
+        options.set_write_buffer_size(DB_CACHE_SIZE);
+        options.create_if_missing(true);
+        let store = DB::open(&options, path)?;
 
         let mut internal_to_external: HashMap<PointOffsetType, PointIdType> = Default::default();
         let mut external_to_internal: HashMap<PointIdType, PointOffsetType> = Default::default();
 
-        for record in store.iter() {
-            let (key, val) = record.unwrap();
+        for (key, val) in store.iterator(IteratorMode::Start) {
             let external_id: PointIdType = bincode::deserialize(&key).unwrap();
             let internal_id: PointOffsetType = bincode::deserialize(&val).unwrap();
             internal_to_external.insert(internal_id, external_id);
             external_to_internal.insert(external_id, internal_id);
         }
 
-        SimpleIdMapper {
+        Ok(SimpleIdMapper {
             internal_to_external,
             external_to_internal,
             store,
-        }
+        })
     }
 }
 
@@ -55,10 +55,9 @@ impl IdMapper for SimpleIdMapper {
         self.external_to_internal.insert(external_id, internal_id);
         self.internal_to_external.insert(internal_id, external_id);
 
-        self.store.insert(
+        self.store.put(
             bincode::serialize(&external_id).unwrap(),
             bincode::serialize(&internal_id).unwrap())?;
-
         Ok(())
     }
 
@@ -68,7 +67,7 @@ impl IdMapper for SimpleIdMapper {
             Some(x) => self.internal_to_external.remove(&x),
             None => None
         };
-        self.store.remove(bincode::serialize(&external_id).unwrap())?;
+        self.store.delete(bincode::serialize(&external_id).unwrap())?;
         Ok(())
     }
 
@@ -76,7 +75,7 @@ impl IdMapper for SimpleIdMapper {
         Box::new(self.external_to_internal.keys().cloned())
     }
 
-    fn flush(&self) -> OperationResult<usize> {
+    fn flush(&self) -> OperationResult<()> {
         Ok(self.store.flush()?)
     }
 }
