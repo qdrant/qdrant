@@ -5,7 +5,8 @@ let host = 'http://localhost:6333'
 
 let collection_name = 'stress_collection';
 
-let vector_length = 1000;
+let vector_length = 128;
+let vectors_per_batch = 32;
 
 var create_collection_payload = JSON.stringify({
     "create_collection": {
@@ -113,7 +114,7 @@ export default function () {
 
     var payload = JSON.stringify({
         "upsert_points": {
-            "points": Array.from({ length: 64 }, () => generate_point()),
+            "points": Array.from({ length: vectors_per_batch }, () => generate_point()),
         }
     });
 

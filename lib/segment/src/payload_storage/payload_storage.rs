@@ -30,7 +30,7 @@ pub trait PayloadStorage {
     fn wipe(&mut self) -> OperationResult<()>;
 
     /// Force persistence of current storage state.
-    fn flush(&self) -> OperationResult<usize>;
+    fn flush(&self) -> OperationResult<()>;
 }
 
 

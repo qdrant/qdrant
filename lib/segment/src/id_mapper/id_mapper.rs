@@ -23,6 +23,6 @@ pub trait IdMapper {
     fn iter_external(&self) -> Box<dyn Iterator<Item=PointIdType> + '_>;
 
     /// Force persistence of current mapper state.
-    fn flush(&self) -> OperationResult<usize>;
+    fn flush(&self) -> OperationResult<()>;
 
 }

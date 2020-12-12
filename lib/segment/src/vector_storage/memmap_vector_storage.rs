@@ -209,8 +209,10 @@ impl VectorStorage for MemmapVectorStorage {
             let mmap = self.deleted_mmap.as_mut().unwrap();
             let flag = mmap.get_mut(key + HEADER_SIZE).unwrap();
 
-            *flag = 1;
-            self.deleted_count += 1;
+            if *flag == 0 {
+                *flag = 1;
+                self.deleted_count += 1;
+            }
         }
         Ok(())
     }
@@ -221,9 +223,9 @@ impl VectorStorage for MemmapVectorStorage {
         return Box::new(iter);
     }
 
-    fn flush(&self) -> OperationResult<usize> {
+    fn flush(&self) -> OperationResult<()> {
         self.deleted_mmap.as_ref().unwrap().flush()?;
-        Ok(0)
+        Ok(())
     }
 
     fn score_points(
