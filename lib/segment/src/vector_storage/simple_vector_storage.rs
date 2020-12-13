@@ -2,7 +2,8 @@ use std::collections::HashSet;
 use std::ops::Range;
 use std::path::Path;
 
-use rocksdb::{DB, Options, IteratorMode};
+use log::debug;
+use rocksdb::{DB, IteratorMode, Options};
 use serde::{Deserialize, Serialize};
 
 use crate::entry::entry_point::OperationResult;
@@ -11,6 +12,7 @@ use crate::types::{Distance, PointOffsetType, VectorElementType};
 use crate::vector_storage::vector_storage::ScoredPointOffset;
 
 use super::vector_storage::VectorStorage;
+use std::mem::size_of;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
@@ -38,6 +40,7 @@ impl SimpleVectorStorage {
         let mut options: Options = Options::default();
         options.set_write_buffer_size(DB_CACHE_SIZE);
         options.create_if_missing(true);
+
         let store = DB::open(&options, path)?;
 
         for (key, val) in store.iterator(IteratorMode::Start) {
@@ -46,12 +49,16 @@ impl SimpleVectorStorage {
             if stored_record.deleted {
                 deleted.insert(point_id);
             }
-            // stored_record.vector.shrink_to_fit();
             if vectors.len() <= point_id {
                 vectors.resize(point_id + 1, vec![])
             }
             vectors[point_id] = stored_record.vector;
         }
+
+        debug!("Segment vectors: {}", vectors.len());
+
+        debug!("Estimated segment size {} MB", vectors.len() * dim * size_of::<VectorElementType>() / 1024 / 1024);
+
 
         return Ok(SimpleVectorStorage {
             dim,
@@ -104,7 +111,7 @@ impl VectorStorage for SimpleVectorStorage {
         return Ok(self.vectors.len() - 1);
     }
 
-    fn update_vector(&mut self, key: usize, vector: &Vec<f64>) -> OperationResult<usize> {
+    fn update_vector(&mut self, key: usize, vector: &Vec<VectorElementType>) -> OperationResult<usize> {
         self.vectors[key] = vector.clone();
         self.update_stored(key)?;
         return Ok(key);

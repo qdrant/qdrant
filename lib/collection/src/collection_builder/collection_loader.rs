@@ -14,6 +14,8 @@ use crate::collection_builder::optimizers_builder::build_optimizers;
 use segment::types::SegmentConfig;
 use std::io::Read;
 use std::sync::Arc;
+use log::debug;
+
 
 fn load_config(path: &Path) -> SegmentConfig {
     let config_path = path.join(COLLECTION_CONFIG_FILE);
@@ -84,6 +86,7 @@ pub fn load_collection(
             bar.inc(1);
         }
 
+        collection.flush_all().unwrap();
         bar.finish();
     }
 

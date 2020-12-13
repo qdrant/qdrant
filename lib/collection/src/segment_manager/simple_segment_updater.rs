@@ -74,7 +74,15 @@ impl SimpleSegmentUpdater {
 
         let segments = self.segments.read();
 
+        // Get points, which presence in segments with higher version
+        self.segments.read().read_points(ids, |id, segment| {
+            if segment.version() > op_num {
+                updated_points.insert(id);
+            }
+            Ok(true)
+        })?;
 
+        // Update points in writable segments
         let res = segments.apply_points_to_appendable(
             op_num,
             ids,
@@ -83,6 +91,7 @@ impl SimpleSegmentUpdater {
                 write_segment.upsert_point(op_num, id, points_map[&id])
             })?;
 
+        // Insert new points, which was not updated.
         let new_point_ids = ids
             .iter()
             .cloned()

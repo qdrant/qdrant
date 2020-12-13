@@ -41,5 +41,11 @@ path = "src/schema_generator.rs"
 test = false
 bench = false
 
+[[bin]]
+name = "cli"
+path = "src/cli.rs"
+test = false
+bench = false
+
 [workspace]
 members = ["lib/*"]

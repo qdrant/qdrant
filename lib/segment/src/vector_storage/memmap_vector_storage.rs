@@ -151,7 +151,7 @@ impl VectorStorage for MemmapVectorStorage {
         unimplemented!()
     }
 
-    fn update_vector(&mut self, _key: usize, _vector: &Vec<f64>) -> OperationResult<usize> {
+    fn update_vector(&mut self, _key: usize, _vector: &Vec<VectorElementType>) -> OperationResult<usize> {
         unimplemented!()
     }
 

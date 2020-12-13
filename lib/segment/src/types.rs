@@ -14,8 +14,8 @@ pub type SeqNumberType = u64;
 pub type ScoreType = f32;
 /// Type of vector matching score
 pub type TagType = u64;
-/// Type of vector element. Note: used in interface only, storage vector type is NOT specified here
-pub type VectorElementType = f64;
+/// Type of vector element.
+pub type VectorElementType = f32;
 
 /// Type of internal tags, build from payload
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy)]

@@ -1,16 +1,16 @@
-use parking_lot::{RwLock, RwLockWriteGuard, RwLockReadGuard};
-
-use std::collections::HashMap;
-use segment::entry::entry_point::{SegmentEntry, OperationResult, OperationError};
-
-use rand::{thread_rng, Rng};
-use rand::seq::SliceRandom;
-use segment::types::{PointIdType, SeqNumberType};
-use std::sync::Arc;
-use segment::segment::Segment;
-use crate::segment_manager::holders::proxy_segment::ProxySegment;
 use std::cmp::min;
+use std::collections::HashMap;
+use std::sync::Arc;
 
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use rand::{Rng, thread_rng};
+use rand::seq::SliceRandom;
+
+use segment::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
+use segment::segment::Segment;
+use segment::types::{PointIdType, SeqNumberType};
+
+use crate::segment_manager::holders::proxy_segment::ProxySegment;
 
 pub type SegmentId = usize;
 
@@ -205,35 +205,28 @@ impl<'s> SegmentHolder {
         let default_write_segment = self.random_appendable_segment()
             .ok_or(OperationError::ServiceError { description: "No appendable segments exists, expected at least one".to_string() })?;
 
-        let mut applied_points = 0;
-        for (_idx, segment) in self.segments.iter() {
-            // Skip this segment if it already have bigger version (WAL recovery related)
-            if segment.get().read().version() > op_num { continue; }
-            // Collect affected points first, we want to lock segment for writing as rare as possible
-            let segment_points = self.segment_points(ids, segment);
-            if !segment_points.is_empty() {
-                let segment_arc = segment.get();
-                let mut write_segment = segment_arc.write();
-                for point_id in segment_points {
-                    let is_applied = if write_segment.is_appendable() {
-                        f(point_id, &mut write_segment)?
-                    } else {
-                        let default_segment_lock = default_write_segment.get();
-                        let mut default_segment_guard = default_segment_lock.write();
-                        let vector = write_segment.vector(point_id)?;
-                        let payload = write_segment.payload(point_id)?;
+        let applied_points = self.apply_points(
+            op_num,
+            ids,
+            |point_id, write_segment| {
+                let is_applied = if write_segment.is_appendable() {
+                    f(point_id, write_segment)?
+                } else {
+                    let default_segment_lock = default_write_segment.get();
+                    let mut default_segment_guard = default_segment_lock.write();
+                    let vector = write_segment.vector(point_id)?;
+                    let payload = write_segment.payload(point_id)?;
 
-                        default_segment_guard.upsert_point(op_num, point_id, &vector)?;
-                        default_segment_guard.set_full_payload(op_num, point_id, payload)?;
+                    default_segment_guard.upsert_point(op_num, point_id, &vector)?;
+                    default_segment_guard.set_full_payload(op_num, point_id, payload)?;
 
-                        write_segment.delete_point(op_num, point_id)?;
+                    write_segment.delete_point(op_num, point_id)?;
 
-                        f(point_id, &mut default_segment_guard)?
-                    };
-                    applied_points += is_applied as usize;
-                }
+                    f(point_id, &mut default_segment_guard)?
+                };
+                Ok(is_applied)
             }
-        }
+        )?;
         Ok(applied_points)
     }
 
@@ -271,13 +264,14 @@ impl<'s> SegmentHolder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use tempdir::TempDir;
+
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
     use segment::types::Distance;
 
     use crate::segment_manager::fixtures::{build_segment_1, build_segment_2};
-    use tempdir::TempDir;
 
+    use super::*;
 
     #[test]
     fn test_add_and_swap() {

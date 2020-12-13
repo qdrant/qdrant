@@ -135,6 +135,11 @@ impl Collection {
         self.update_sender.send(UpdateSignal::Stop)?;
         Ok(())
     }
+
+    pub fn flush_all(&self) -> CollectionResult<()> {
+        self.segments.read().flush_all()?;
+        Ok(())
+    }
 }
 
 impl Drop for Collection {
