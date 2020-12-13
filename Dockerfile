@@ -2,6 +2,7 @@ FROM rust:1.47 as builder
 
 COPY . ./qdrant
 WORKDIR ./qdrant
+RUN apt-get update ; apt-get install -y clang
 
 # Build actual target here
 RUN cargo build --release --bin qdrant
