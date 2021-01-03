@@ -2,7 +2,7 @@ FROM rust:1.47 as builder
 
 COPY . ./qdrant
 WORKDIR ./qdrant
-RUN apt-get update ; apt-get install -y clang
+RUN apt-get update ; apt-get install -y clang libopenblas-dev libgfortran-9-dev
 
 # Build actual target here
 RUN cargo build --release --bin qdrant
