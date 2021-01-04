@@ -1,5 +1,5 @@
 
-use crate::types::{Distance, Order, distance_order, VectorElementType};
+use crate::types::{Distance, Order, distance_order};
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 use crate::spaces::metric::Metric;
@@ -72,7 +72,7 @@ pub fn peek_top_scores<E: Ord + Clone>(scores: &[E], top: usize, distance: &Dist
 
 }
 
-pub fn mertic_object(distance: &Distance) -> Box<dyn Metric<VectorElementType>> {
+pub fn mertic_object(distance: &Distance) -> Box<dyn Metric> {
     match distance {
         Distance::Cosine => Box::new(CosineMetric {}),
         Distance::Euclid => unimplemented!(),

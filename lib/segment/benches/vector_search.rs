@@ -1,6 +1,6 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use itertools::Itertools;
-use ndarray::{Array, Array1, Array2, ArrayBase, ShapeBuilder};
+use ndarray::{Array, Array1, Array2, ArrayBase, ShapeBuilder, Axis};
 use tempdir::TempDir;
 
 use segment::spaces::tools::{peek_top_scores, peek_top_scores_iterable};
@@ -9,7 +9,7 @@ use segment::vector_storage::simple_vector_storage::SimpleVectorStorage;
 use segment::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
 
 const NUM_VECTORS: usize = 50000;
-const DIM: usize = 1000;
+const DIM: usize = 1000; // Larger dimensionality - greater the BLAS advantage
 
 fn random_vector(size: usize) -> Vec<f32> {
     let mut vec: Vec<f32> = Vec::with_capacity(size);
@@ -36,7 +36,7 @@ fn benchmark_naive(c: &mut Criterion) {
     let dist = Distance::Dot;
     let storage = init_vector_storage(&dir, DIM, NUM_VECTORS);
 
-    c.bench_function("naive vector search",
+    c.bench_function("storage vector search",
                      |b| b.iter(|| {
                          let vector = random_vector(DIM);
                          storage.score_all(&vector, 10, &dist)
@@ -57,7 +57,8 @@ fn benchmark_ndarray(c: &mut Criterion) {
     c.bench_function("ndarray BLAS dot production",
                      |b| b.iter(|| {
                          let vector = Array::from(random_vector(DIM));
-                         let production_result: Array1<f32> = matrix.dot(&vector);
+                         let mut production_result = matrix.dot(&vector);
+
                          let top = peek_top_scores_iterable(
                              production_result.iter()
                                  .cloned()

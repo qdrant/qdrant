@@ -17,7 +17,8 @@ RUN apt-get update \
 EXPOSE 6333
 
 ENV TZ=Etc/UTC \
-    RUN_MODE=production
+    RUN_MODE=production \
+    OPENBLAS_NUM_THREADS=1
 
 RUN mkdir -p ${APP}
 
