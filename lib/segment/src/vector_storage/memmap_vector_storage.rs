@@ -235,15 +235,15 @@ impl VectorStorage for MemmapVectorStorage {
         distance: &Distance,
     ) -> Vec<ScoredPointOffset> {
         let metric = mertic_object(distance);
-
+        let preprocessed_vector = metric.preprocess(vector.clone());
         let scores: Vec<ScoredPointOffset> = points.iter()
             .cloned()
             .filter(|point| !self.deleted(*point).unwrap_or(true))
             .map(|point| {
-                let other_vector = self.raw_vector(point).unwrap();
+                let other_vector =self.raw_vector(point).unwrap();
                 ScoredPointOffset {
                     idx: point,
-                    score: metric.similarity(vector, other_vector),
+                    score: metric.similarity(&preprocessed_vector, &other_vector),
                 }
             }).collect();
         return peek_top_scores(&scores, top, distance);
@@ -251,13 +251,13 @@ impl VectorStorage for MemmapVectorStorage {
 
     fn score_all(&self, vector: &Vec<VectorElementType>, top: usize, distance: &Distance) -> Vec<ScoredPointOffset> {
         let metric = mertic_object(distance);
-
+        let preprocessed_vector = metric.preprocess(vector.clone());
         let scores: Vec<ScoredPointOffset> = self.iter_ids()
             .map(|point| {
                 let other_vector = self.raw_vector(point).unwrap();
                 ScoredPointOffset {
                     idx: point,
-                    score: metric.similarity(vector, other_vector),
+                    score: metric.similarity(&preprocessed_vector, other_vector),
                 }
             }).collect();
 

@@ -21,6 +21,8 @@ jobs:
         profile: minimal
         toolchain: stable
     - uses: actions/checkout@v2
+    - name: Install dependencies
+      run: sudo apt-get install clang libopenblas-dev libgfortran-9-dev
     - name: Run tests
       run: cargo test --all
 

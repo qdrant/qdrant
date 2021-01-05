@@ -2,7 +2,7 @@ FROM rust:1.47 as builder
 
 COPY . ./qdrant
 WORKDIR ./qdrant
-RUN apt-get update ; apt-get install -y clang
+RUN apt-get update ; apt-get install -y clang libopenblas-dev libgfortran-9-dev
 
 # Build actual target here
 RUN cargo build --release --bin qdrant
@@ -17,7 +17,8 @@ RUN apt-get update \
 EXPOSE 6333
 
 ENV TZ=Etc/UTC \
-    RUN_MODE=production
+    RUN_MODE=production \
+    OPENBLAS_NUM_THREADS=1
 
 RUN mkdir -p ${APP}
 

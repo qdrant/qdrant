@@ -1,16 +1,16 @@
-use crate::types::{ScoreType, Distance};
+use crate::types::{ScoreType, Distance, VectorElementType};
+use ndarray::Array1;
 
 
-
-
-pub trait Metric<El> {
+pub trait Metric {
     fn distance(&self) -> Distance;
 
     /// Greater the value - closer the vectors
-    fn similarity(&self, v1: &[El], v2: &[El]) -> ScoreType;
+    fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType;
 
-    fn similarity_batch(&self, vector: &[El], other_vectors: &[&[El]]) -> Vec<ScoreType>;
-    
+    /// Same as similarity, but using BLAS-supported functions
+    fn blas_similarity(&self, v1: &Array1<VectorElementType>, v2: &Array1<VectorElementType>) -> ScoreType;
+
     /// Necessary vector transformations performed before adding it to the collection (like normalization)
-    fn preprocess(&self, vector: Vec<El>) -> Vec<El>;
+    fn preprocess(&self, vector: Vec<VectorElementType>) -> Vec<VectorElementType>;
 }
