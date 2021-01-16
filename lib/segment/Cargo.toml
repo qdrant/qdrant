@@ -16,7 +16,7 @@ rand = "0.8"
 
 ndarray = { version = "0.14", features = ["blas"] }
 blas-src = { version = "0.6.1", default-features = false, features = ["openblas"] }
-openblas-src = { version = "0.9", default-features = false, features = ["cblas", "system"] }
+openblas-src = { version = "0.9", default-features = false, features = ["cblas", "static"] }
 
 itertools = "0.10"
 rocksdb = "0.15.0"
