@@ -1,8 +1,8 @@
 use thiserror::Error;
 use crate::operations::CollectionUpdateOperations;
-use segment::types::{PointIdType, ScoredPoint, SegmentConfig};
+use segment::types::{PointIdType, ScoredPoint, SegmentConfig, VectorElementType};
 use std::result;
-use crate::operations::types::{Record, CollectionInfo, UpdateResult, UpdateStatus, SearchRequest};
+use crate::operations::types::{Record, CollectionInfo, UpdateResult, UpdateStatus, SearchRequest, RecommendRequest};
 use std::sync::Arc;
 use crate::wal::{SerdeWal, WalError};
 use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
@@ -13,6 +13,10 @@ use crate::update_handler::update_handler::{UpdateHandler, UpdateSignal};
 use parking_lot::{Mutex, RwLock};
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use tokio::runtime::Runtime;
+use itertools::Itertools;
+use std::collections::HashMap;
+use segment::types::Filter;
+use segment::types::Condition;
 
 
 #[derive(Error, Debug, Clone)]
@@ -139,6 +143,91 @@ impl Collection {
     pub fn flush_all(&self) -> CollectionResult<()> {
         self.segments.read().flush_all()?;
         Ok(())
+    }
+
+    fn avg_vectors<'a>(vectors: impl Iterator<Item=&'a Vec<VectorElementType>>) -> Vec<VectorElementType> {
+        let mut count: usize = 0;
+        let mut avg_vector: Vec<VectorElementType> = vec![];
+        for vector in vectors {
+            count += 1;
+            for i in 0..vector.len() {
+                if i >= avg_vector.len() {
+                    avg_vector.push(vector[i])
+                } else {
+                    avg_vector[i] = avg_vector[i] + vector[i];
+                }
+            }
+        }
+
+        for i in 0..avg_vector.len() {
+            avg_vector[i] = avg_vector[i] / (count as VectorElementType);
+        }
+
+        avg_vector
+    }
+
+    pub fn recommend(&self, request: Arc<RecommendRequest>) -> CollectionResult<Vec<ScoredPoint>> {
+        if request.positive.is_empty() {
+            return Err(CollectionError::BadRequest {
+                description: format!("At least one positive vector ID required")
+            });
+        }
+
+        let reference_vectors_ids = request.positive
+            .iter()
+            .chain(request.negative.iter())
+            .cloned()
+            .collect_vec();
+
+        let vectors = self.retrieve(&reference_vectors_ids, false, true)?;
+        let vectors_map: HashMap<PointIdType, Vec<VectorElementType>> = vectors
+            .into_iter()
+            .map(|rec| (rec.id, rec.vector.unwrap()))
+            .collect();
+
+        for point_id in reference_vectors_ids.iter().cloned() {
+            if !vectors_map.contains_key(&point_id) {
+                return Err(CollectionError::NotFound {
+                    missed_point_id: point_id
+                });
+            }
+        }
+
+        let avg_positive = Collection::avg_vectors(request.positive
+            .iter()
+            .map(|vid| vectors_map.get(vid).unwrap()));
+
+        let search_vector = if request.negative.is_empty() {
+            avg_positive
+        } else {
+            let avg_negative = Collection::avg_vectors(request.negative
+                .iter()
+                .map(|vid| vectors_map.get(vid).unwrap()));
+
+            avg_positive
+                .iter()
+                .cloned()
+                .zip(avg_negative.iter().cloned())
+                .map(|(pos, neg)| pos + pos - neg)
+                .collect()
+        };
+
+
+        let search_request = SearchRequest {
+            vector: search_vector,
+            filter: Some(Filter {
+                should: None,
+                must: match request.filter.clone() {
+                    None => None,
+                    Some(filter) => Some(vec![Condition::Filter(filter)])
+                },
+                must_not: Some(vec![Condition::HasId(reference_vectors_ids.iter().cloned().collect())]),
+            }),
+            params: request.params.clone(),
+            top: request.top,
+        };
+
+        self.search(Arc::new(search_request))
     }
 }
 
