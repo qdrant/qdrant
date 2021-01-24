@@ -304,10 +304,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "approx"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f2a05fd1bd10b2527e20a2cd32d8873d115b8b39fe219ee25f42a8aca6ba278"
+dependencies = [
+ "num-traits 0.2.14",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
+
+[[package]]
+name = "as-slice"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb4d1c23475b74e3672afa8c2be22040b8b7783ad9b461021144ed10a46bb0e6"
+dependencies = [
+ "generic-array 0.12.3",
+ "generic-array 0.13.2",
+ "generic-array 0.14.4",
+ "stable_deref_trait",
+]
 
 [[package]]
 name = "async-trait"
@@ -459,7 +480,7 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4152116fd6e9dadb291ae18fc1ec3575ed6d84c29642d97890f4b4a3417297e4"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.4",
 ]
 
 [[package]]
@@ -870,7 +891,7 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3dd60d1080a57a05ab032377049e0591415d2b31afd7028356dbf3cc6dcb066"
 dependencies = [
- "generic-array",
+ "generic-array 0.14.4",
 ]
 
 [[package]]
@@ -1147,12 +1168,63 @@ dependencies = [
 
 [[package]]
 name = "generic-array"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c68f0274ae0e023facc3c97b2e00f076be70e254bc851d972503b328db79b2ec"
+dependencies = [
+ "typenum",
+]
+
+[[package]]
+name = "generic-array"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ed1e761351b56f54eb9dcd0cfaca9fd0daecf93918e1cfc01c8a3d26ee7adcd"
+dependencies = [
+ "typenum",
+]
+
+[[package]]
+name = "generic-array"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "501466ecc8a30d1d3b7fc9229b122b2ce8ed6e9d9223f1138d4babb253e51817"
 dependencies = [
  "typenum",
  "version_check",
+]
+
+[[package]]
+name = "geo"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "479219490dcbbf2a374908457df0b4d5b1d8eb62eb48b0ee897f9af9e7c44210"
+dependencies = [
+ "geo-types",
+ "geographiclib-rs",
+ "num-traits 0.2.14",
+ "robust",
+ "rstar",
+]
+
+[[package]]
+name = "geo-types"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6b362f0f09b4ff7ad8210f806f80ab6d0d895365a6830cb504267aeccfe3f43"
+dependencies = [
+ "approx",
+ "num-traits 0.2.14",
+ "rstar",
+]
+
+[[package]]
+name = "geographiclib-rs"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b78e20d5d868fa2c4182a8170cb4df261e781a605810e3c1500269c1907da461"
+dependencies = [
+ "lazy_static 1.4.0",
 ]
 
 [[package]]
@@ -1216,10 +1288,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d36fab90f82edc3c747f9d438e06cf0a491055896f2a279638bb5beed6c40177"
 
 [[package]]
+name = "hash32"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4041af86e63ac4298ce40e5cca669066e75b6f1aa3390fe2561ffa5e1d9f4cc"
+dependencies = [
+ "byteorder 1.3.4",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7afe4a420e3fe79967a00898cc1f4db7c8a49a9333a29f8a4bd76a253d5cd04"
+
+[[package]]
+name = "heapless"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74911a68a1658cfcfb61bc0ccfbd536e3b6e906f8c2f7883ee50157e3e2184f1"
+dependencies = [
+ "as-slice",
+ "generic-array 0.13.2",
+ "hash32",
+ "stable_deref_trait",
+]
 
 [[package]]
 name = "heck"
@@ -1840,6 +1933,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pdqselect"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ec91767ecc0a0bbe558ce8c9da33c068066c57ecc8bb8477ef8c1ad3ef77c27"
+
+[[package]]
 name = "peeking_take_while"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2239,6 +2338,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "robust"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5864e7ef1a6b7bcf1d6ca3f655e65e724ed3b52546a0d0a663c991522f552ea"
+
+[[package]]
 name = "rocksdb"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2246,6 +2351,18 @@ checksum = "23d83c02c429044d58474eaf5ae31e062d0de894e21125b47437ec0edc1397e6"
 dependencies = [
  "libc",
  "librocksdb-sys",
+]
+
+[[package]]
+name = "rstar"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f9a31b6d446dcdf5b1c9677068e147bd86ce5efcdbce4741f0b55d747381924"
+dependencies = [
+ "heapless",
+ "num-traits 0.2.14",
+ "pdqselect",
+ "smallvec",
 ]
 
 [[package]]
@@ -2336,6 +2453,7 @@ dependencies = [
  "blas-src",
  "criterion",
  "env_logger 0.7.1",
+ "geo",
  "itertools 0.10.0",
  "log 0.4.11",
  "memmap 0.7.0",
@@ -2546,6 +2664,12 @@ dependencies = [
  "redox_syscall",
  "winapi 0.3.9",
 ]
+
+[[package]]
+name = "stable_deref_trait"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "standback"
