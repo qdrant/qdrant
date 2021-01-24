@@ -3,12 +3,7 @@ use storage::content_manager::toc::TableOfContent;
 use crate::common::helpers::process_response;
 use actix_web::rt::time::Instant;
 use std::sync::Arc;
-use collection::operations::types::{SearchRequest, RecommendRequest};
-use storage::content_manager::errors::StorageError;
-use itertools::Itertools;
-use std::collections::HashMap;
-use segment::types::{PointIdType, VectorElementType};
-use collection::collection::CollectionResult;
+use collection::operations::types::RecommendRequest;
 
 
 #[post("/collections/{name}/points/recommend")]
