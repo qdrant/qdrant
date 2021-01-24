@@ -1157,6 +1157,43 @@ components:
       required:
       - key
       type: object
+    RecommendRequest:
+      description: Search request
+      properties:
+        filter:
+          anyOf:
+          - $ref: '#/components/schemas/Filter'
+          - nullable: true
+          description: Look only for points which satisfies this conditions
+        negative:
+          description: Try to avoid vectors like this
+          items:
+            format: uint64
+            minimum: 0
+            type: integer
+          type: array
+        params:
+          anyOf:
+          - $ref: '#/components/schemas/SearchParams'
+          - nullable: true
+          description: Additional search params
+        positive:
+          description: Look for vectors closest to those
+          items:
+            format: uint64
+            minimum: 0
+            type: integer
+          type: array
+        top:
+          description: Max number of result to return
+          format: uint
+          minimum: 0
+          type: integer
+      required:
+      - negative
+      - positive
+      - top
+      type: object
     Record:
       description: Point data
       properties:

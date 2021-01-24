@@ -917,6 +917,63 @@
                     }
                 }
             },
+            "RecommendRequest": {
+                "description": "Search request",
+                "type": "object",
+                "required": [
+                    "negative",
+                    "positive",
+                    "top"
+                ],
+                "properties": {
+                    "filter": {
+                        "description": "Look only for points which satisfies this conditions",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/Filter"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    },
+                    "negative": {
+                        "description": "Try to avoid vectors like this",
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "uint64",
+                            "minimum": 0
+                        }
+                    },
+                    "params": {
+                        "description": "Additional search params",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/SearchParams"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    },
+                    "positive": {
+                        "description": "Look for vectors closest to those",
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "uint64",
+                            "minimum": 0
+                        }
+                    },
+                    "top": {
+                        "description": "Max number of result to return",
+                        "type": "integer",
+                        "format": "uint",
+                        "minimum": 0
+                    }
+                }
+            },
             "Record": {
                 "description": "Point data",
                 "type": "object",
