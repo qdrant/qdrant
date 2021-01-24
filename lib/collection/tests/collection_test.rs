@@ -4,7 +4,7 @@ use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::{PointOps, PointStruct};
 
 use crate::common::{simple_collection_fixture, TEST_OPTIMIZERS_CONFIG};
-use collection::operations::types::{UpdateStatus, SearchRequest};
+use collection::operations::types::{UpdateStatus, SearchRequest, RecommendRequest};
 use std::sync::Arc;
 use collection::operations::payload_ops::{PayloadOps, PayloadInterface, PayloadVariant};
 use std::collections::HashMap;
@@ -176,12 +176,12 @@ fn test_deserialization2() {
             PointStruct {
                 id: 0,
                 vector: vec![1.0, 0.0, 1.0, 1.0],
-                payload: None
+                payload: None,
             },
             PointStruct {
                 id: 1,
                 vector: vec![1.0, 0.0, 1.0, 0.0],
-                payload: None
+                payload: None,
             }
         ]))
     );
@@ -200,4 +200,43 @@ fn test_deserialization2() {
     let read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&crob_bytes).unwrap();
 
     eprintln!("read_obj2 = {:#?}", read_obj2);
+}
+
+
+#[test]
+fn test_recommendation_api() {
+    let collection_dir = TempDir::new("collection").unwrap();
+    let (_rt, collection) = simple_collection_fixture(collection_dir.path());
+
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        PointOps::UpsertPoints(BatchPoints {
+            ids: vec![0, 1, 2, 3, 4, 5, 6, 7, 8],
+            vectors: vec![
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 0.0, 1.0],
+                vec![0.0, 0.0, 0.0, 1.0],
+            ],
+            payloads: None,
+        })
+    );
+
+    collection.update(insert_points, true).unwrap();
+
+    let result = collection.recommend(Arc::new(RecommendRequest {
+        positive: vec![0],
+        negative: vec![8],
+        filter: None,
+        params: None,
+        top: 5
+    })).unwrap();
+    assert!(result.len() > 0);
+    let top1 = result[0];
+
+    assert!(top1.id == 5 || top1.id == 6);
 }

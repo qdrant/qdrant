@@ -14,7 +14,6 @@ use crate::collection_builder::optimizers_builder::build_optimizers;
 use segment::types::SegmentConfig;
 use std::io::Read;
 use std::sync::Arc;
-use log::debug;
 
 
 fn load_config(path: &Path) -> SegmentConfig {

@@ -17,6 +17,7 @@ use crate::api::update_api::update_points;
 use crate::api::retrieve_api::{get_vectors, get_point};
 use crate::api::search_api::search_points;
 use serde::{Deserialize, Serialize};
+use crate::api::recommend_api::recommend_points;
 
 #[derive(Serialize, Deserialize)]
 pub struct VersionInfo {
@@ -75,6 +76,7 @@ async fn main() -> std::io::Result<()> {
             .service(get_point)
             .service(get_vectors)
             .service(search_points)
+            .service(recommend_points)
             ;
 
         app

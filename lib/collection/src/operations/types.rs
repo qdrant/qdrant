@@ -69,4 +69,20 @@ pub struct SearchRequest {
     pub top: usize,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+/// Search request
+pub struct RecommendRequest {
+    /// Look for vectors closest to those
+    pub positive: Vec<PointIdType>,
+    /// Try to avoid vectors like this
+    pub negative: Vec<PointIdType>,
+    /// Look only for points which satisfies this conditions
+    pub filter: Option<Filter>,
+    /// Additional search params
+    pub params: Option<SearchParams>,
+    /// Max number of result to return
+    pub top: usize,
+}
+
 
