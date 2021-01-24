@@ -218,6 +218,17 @@ pub struct GeoBoundingBox {
     pub bottom_right: GeoPoint,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct GeoRadius {
+    /// Name of the field to match with
+    pub key: PayloadKeyType,
+    /// Coordinates of the top left point of the area rectangle
+    pub center: GeoPoint,
+    /// Radius of the area in meters
+    pub radius: f64,
+}
+
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -230,6 +241,8 @@ pub enum Condition {
     Range(Range),
     /// Check if points geo location lies in a given area
     GeoBoundingBox(GeoBoundingBox),
+    /// Check if geo point is within a given radius
+    GeoRadius(GeoRadius),
     /// Check if points id is in a given set
     HasId(HashSet<PointIdType>),
 }

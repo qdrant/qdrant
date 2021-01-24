@@ -1,9 +1,11 @@
 use crate::payload_storage::payload_storage::{ConditionChecker};
-use crate::types::{Filter, PayloadKeyType, PayloadType, Condition, GeoBoundingBox, Range, Match, TheMap, PointOffsetType, PointIdType};
+use crate::types::{Filter, PayloadKeyType, PayloadType, Condition, GeoBoundingBox, Range, Match, TheMap, PointOffsetType, PointIdType, GeoRadius};
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use crate::id_mapper::id_mapper::IdMapper;
+use geo::Point;
+use geo::algorithm::haversine_distance::HaversineDistance;
 
 
 fn match_payload(payload: &PayloadType, condition_match: &Match) -> bool {
@@ -55,6 +57,28 @@ fn match_geo(
     };
 }
 
+fn match_geo_radius(
+    payload: &PayloadType,
+    geo_radius_query: &GeoRadius,
+) -> bool {
+    return match payload {
+        PayloadType::Geo(geo_points) => {
+            let query_center = Point::new(
+                geo_radius_query.center.lon,
+                geo_radius_query.center.lat);
+
+            geo_points
+                .iter()
+                .any(|geo_point|
+                    query_center.haversine_distance(
+                        &Point::new(geo_point.lon, geo_point.lat)
+                    ) < geo_radius_query.radius
+                )
+        },
+        _ => false,
+    };
+}
+
 
 fn check_condition(point_id: PointIdType, payload: &TheMap<PayloadKeyType, PayloadType>, condition: &Condition) -> bool {
     match condition {
@@ -72,6 +96,11 @@ fn check_condition(point_id: PointIdType, payload: &TheMap<PayloadKeyType, Paylo
         Condition::GeoBoundingBox(geo_bounding_box) => {
             payload.get(&geo_bounding_box.key)
                 .map(|p| match_geo(p, geo_bounding_box))
+                .unwrap_or(false)
+        }
+        Condition::GeoRadius(geo_radius) => {
+            payload.get(&geo_radius.key)
+                .map(|p| match_geo_radius(p, geo_radius))
                 .unwrap_or(false)
         }
         Condition::HasId(ids) => {
@@ -150,6 +179,28 @@ mod tests {
     use crate::types::PayloadType;
     use crate::types::GeoPoint;
     use std::collections::HashSet;
+
+    #[test]
+    fn test_geo_matching() {
+        let berlin_and_moscow = PayloadType::Geo(vec![
+            GeoPoint{lat: 52.52197645, lon: 13.413637435864272 },
+            GeoPoint{lat: 55.7536283, lon: 37.62137960067377 }
+        ]);
+        let near_berlin_query = GeoRadius {
+            key: "test".to_string(),
+            center: GeoPoint{lat: 52.511, lon: 13.423637 },
+            radius: 2000.0
+        };
+        let miss_geo_query = GeoRadius {
+            key: "test".to_string(),
+            center: GeoPoint{lat: 52.511, lon: 20.423637 },
+            radius: 2000.0
+        };
+
+        assert!(match_geo_radius(&berlin_and_moscow, &near_berlin_query));
+        assert!(!match_geo_radius(&berlin_and_moscow, &miss_geo_query));
+    }
+
 
     #[test]
     fn test_condition_checker() {

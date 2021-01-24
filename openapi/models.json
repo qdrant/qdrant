@@ -199,6 +199,18 @@
                         }
                     },
                     {
+                        "description": "Check if geo point is within a given radius",
+                        "type": "object",
+                        "required": [
+                            "geo_radius"
+                        ],
+                        "properties": {
+                            "geo_radius": {
+                                "$ref": "#/components/schemas/GeoRadius"
+                            }
+                        }
+                    },
+                    {
                         "description": "Check if points id is in a given set",
                         "type": "object",
                         "required": [
@@ -287,6 +299,28 @@
                         "format": "double"
                     },
                     "lon": {
+                        "type": "number",
+                        "format": "double"
+                    }
+                }
+            },
+            "GeoRadius": {
+                "type": "object",
+                "required": [
+                    "center",
+                    "key",
+                    "radius"
+                ],
+                "properties": {
+                    "center": {
+                        "$ref": "#/components/schemas/GeoPoint"
+                    },
+                    "key": {
+                        "description": "Name of the field to match with",
+                        "type": "string"
+                    },
+                    "radius": {
+                        "description": "Radius of the area in meters",
                         "type": "number",
                         "format": "double"
                     }
@@ -734,7 +768,7 @@
                                             "type": "array",
                                             "items": {
                                                 "type": "number",
-                                                "format": "double"
+                                                "format": "float"
                                             }
                                         }
                                     }
@@ -842,7 +876,7 @@
                         "type": "array",
                         "items": {
                             "type": "number",
-                            "format": "double"
+                            "format": "float"
                         }
                     }
                 }
@@ -909,7 +943,7 @@
                         "type": "array",
                         "items": {
                             "type": "number",
-                            "format": "double"
+                            "format": "float"
                         },
                         "nullable": true
                     }
@@ -1004,7 +1038,7 @@
                         "type": "array",
                         "items": {
                             "type": "number",
-                            "format": "double"
+                            "format": "float"
                         }
                     }
                 }
