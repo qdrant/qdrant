@@ -1,43 +1,36 @@
-use crate::types::{FloatPayloadType, Range, IntPayloadType};
-use crate::index::field_index::index_builder::{Element, IndexBuilder};
+use crate::types::{FloatPayloadType, Range, IntPayloadType, Condition, PayloadType, PointOffsetType};
+use crate::index::field_index::index_builder::IndexBuilder;
 use ordered_float::OrderedFloat;
-use crate::index::field_index::Estimation;
+use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use std::cmp::{min, max};
 use std::cmp::Ordering::{Greater, Less};
 use serde::{Deserialize, Serialize};
 use num_traits::ToPrimitive;
+use crate::index::field_index::field_index::{PayloadFieldIndex, PayloadFieldIndexBuilder};
+use std::mem;
 
-
-impl From<&IndexBuilder<FloatPayloadType>> for PersistedNumericIndex<FloatPayloadType> {
-    fn from(builder: &IndexBuilder<FloatPayloadType>) -> Self {
-        let mut elements = builder.elements.clone();
-        elements.sort_by_key(|el| OrderedFloat(el.value));
-        PersistedNumericIndex {
-            points_count: builder.ids.len(),
-            elements,
-        }
-    }
-}
-
-impl From<&IndexBuilder<IntPayloadType>> for PersistedNumericIndex<IntPayloadType> {
-    fn from(builder: &IndexBuilder<IntPayloadType>) -> Self {
-        let mut elements = builder.elements.clone();
-        elements.sort_by_key(|el| el.value);
-        PersistedNumericIndex {
-            points_count: builder.ids.len(),
-            elements,
-        }
-    }
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Element<N> {
+    pub id: PointOffsetType,
+    pub value: N,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct PersistedNumericIndex<N: ToPrimitive> {
+pub struct PersistedNumericIndex<N: ToPrimitive + Clone> {
     points_count: usize,
     elements: Vec<Element<N>>,
 }
 
 
-impl<N: ToPrimitive> PersistedNumericIndex<N> {
+impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
+
+    pub fn new() -> Self {
+        Self {
+            points_count: 0,
+            elements: vec![]
+        }
+    }
+
     fn search_range(&self, range: &Range) -> (usize, usize) {
         let mut lower_index = 0;
         let mut upper_index = self.elements.len();
@@ -73,7 +66,7 @@ impl<N: ToPrimitive> PersistedNumericIndex<N> {
         (lower_index, upper_index)
     }
 
-    pub fn range_cardinality(&self, range: &Range) -> Estimation {
+    pub fn range_cardinality(&self, range: &Range) -> CardinalityEstimation {
         let (lower_index, upper_index) = self.search_range(range);
 
         let values_count: i64 = upper_index as i64 - lower_index as i64;
@@ -89,11 +82,67 @@ impl<N: ToPrimitive> PersistedNumericIndex<N> {
         // min = max(1, 500 - (1200 - 1000)) = 300
         // exp = 500 / (1200 / 1000) = 416
         // max = min(1000, 500) = 500
-        Estimation {
+        CardinalityEstimation {
             min: max(1, values_count - (total_values - self.points_count as i64)) as usize,
             exp: (values_count as f64 / value_per_point) as usize,
             max: min(self.points_count as i64, values_count) as usize,
         }
+    }
+
+    fn add_many(&mut self, id: PointOffsetType, values: &Vec<N>) {
+        for value in values.iter().cloned() {
+            self.elements.push(Element { id, value })
+        }
+    }
+}
+
+
+impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
+    fn filter(&self, condition: &Condition) -> Box<dyn Iterator<Item=usize>> {
+        unimplemented!()
+    }
+
+    fn estimate_condition_cardinality(&self, condition: &Condition) -> Option<CardinalityEstimation> {
+        match condition {
+            Condition::Range(range_condition) => Some(self.range_cardinality(range_condition)),
+            _ => None
+        }
+    }
+}
+
+impl PayloadFieldIndexBuilder for PersistedNumericIndex<FloatPayloadType> {
+    fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
+        match value {
+            PayloadType::Float(number) => self.add_many(id, number),
+            _ => panic!("Unexpected payload type: {:?}", value)
+        }
+    }
+
+    fn build(&mut self) -> FieldIndex {
+        let mut elements = mem::replace(&mut self.elements, vec![]);
+        elements.sort_by_key(|el| OrderedFloat(el.value));
+        FieldIndex::FloatIndex(PersistedNumericIndex {
+            points_count: elements.len(),
+            elements
+        })
+    }
+}
+
+impl PayloadFieldIndexBuilder for PersistedNumericIndex<IntPayloadType> {
+    fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
+        match value {
+            PayloadType::Integer(number) => self.add_many(id, number),
+            _ => panic!("Unexpected payload type: {:?}", value)
+        }
+    }
+
+    fn build(&mut self) -> FieldIndex {
+        let mut elements = mem::replace(&mut self.elements, vec![]);
+        elements.sort_by_key(|el| el.value);
+        FieldIndex::IntIndex(PersistedNumericIndex {
+            points_count: elements.len(),
+            elements
+        })
     }
 }
 

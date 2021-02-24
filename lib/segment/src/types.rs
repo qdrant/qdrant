@@ -128,6 +128,22 @@ impl Default for Indexes {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type", content = "options")]
+/// Type of payload index
+pub enum PayloadIndexType {
+    /// Store vectors in memory and use persistence storage only if vectors are changed
+    Plain,
+    /// Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM
+    Struct,
+}
+
+impl Default for PayloadIndexType {
+    fn default() -> Self {
+        PayloadIndexType::Plain
+    }
+}
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -154,6 +170,8 @@ pub struct SegmentConfig {
     pub vector_size: usize,
     /// Type of index used for search
     pub index: Indexes,
+    /// Payload Indexes
+    pub payload_index: Option<PayloadIndexType>,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
     /// Type of vector storage
@@ -187,20 +205,20 @@ pub enum PayloadType {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "value")]
-pub enum PayloadSchema {
+pub enum PayloadSchemaType {
     Keyword,
     Integer,
     Float,
     Geo,
 }
 
-impl From<&PayloadType> for PayloadSchema {
+impl From<&PayloadType> for PayloadSchemaType {
     fn from(payload_type: &PayloadType) -> Self {
         match payload_type {
-            PayloadType::Keyword(_) => PayloadSchema::Keyword,
-            PayloadType::Integer(_) => PayloadSchema::Integer,
-            PayloadType::Float(_) => PayloadSchema::Float,
-            PayloadType::Geo(_) => PayloadSchema::Geo,
+            PayloadType::Keyword(_) => PayloadSchemaType::Keyword,
+            PayloadType::Integer(_) => PayloadSchemaType::Integer,
+            PayloadType::Float(_) => PayloadSchemaType::Float,
+            PayloadType::Geo(_) => PayloadSchemaType::Geo,
         }
     }
 }

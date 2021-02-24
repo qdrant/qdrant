@@ -23,6 +23,7 @@ fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> { Arc::new(AtomicRefCell::new(t)) }
 fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentConfig) -> OperationResult<Segment> {
     let mapper_path = segment_path.join("id_mapper");
     let payload_storage_path = segment_path.join("payload_storage");
+    let payload_index_path = segment_path.join("payload_index");
     let vector_storage_path = segment_path.join("vector_storage");
 
     let id_mapper = sp(SimpleIdMapper::open(mapper_path.as_path())?);
@@ -42,8 +43,8 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
     ));
 
     let payload_index = sp(PlainPayloadIndex::new(
-        condition_checker, vector_storage.clone(),
-    ));
+        condition_checker, vector_storage.clone(), &payload_index_path, None
+    )?);
 
     let index = sp(match config.index {
         Indexes::Plain { .. } => PlainIndex::new(vector_storage.clone(), payload_index, config.distance),

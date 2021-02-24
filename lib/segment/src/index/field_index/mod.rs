@@ -7,10 +7,12 @@ pub mod numeric_index;
 pub mod index_builder;
 pub mod geo_index;
 pub mod map_index;
+pub mod field_index;
+pub mod index_selector;
 
 
 #[derive(Debug)]
-pub struct Estimation {
+pub struct CardinalityEstimation {
     pub min: usize,
     pub exp: usize,
     pub max: usize
@@ -23,5 +25,4 @@ pub enum FieldIndex {
     IntMapIndex(PersistedMapIndex<IntPayloadType>),
     KeywordIndex(PersistedMapIndex<String>),
     FloatIndex(PersistedNumericIndex<FloatPayloadType>),
-
 }

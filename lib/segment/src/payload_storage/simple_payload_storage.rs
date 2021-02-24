@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
-use crate::types::{PayloadKeyType, PayloadType, PointOffsetType, TheMap, PayloadSchema};
+use crate::types::{PayloadKeyType, PayloadType, PointOffsetType, TheMap, PayloadSchemaType};
 
 use rocksdb::{DB, IteratorMode, Options};
 
@@ -15,7 +15,7 @@ const DB_NAME: &'static str = "payload";
 
 pub struct SimplePayloadStorage {
     payload: HashMap<PointOffsetType, TheMap<PayloadKeyType, PayloadType>>,
-    schema: TheMap<PayloadKeyType, PayloadSchema>,
+    schema: TheMap<PayloadKeyType, PayloadSchemaType>,
     store: DB,
 }
 
@@ -29,7 +29,7 @@ impl SimplePayloadStorage {
         let store = DB::open_cf(&options, path, vec![DB_NAME])?;
 
         let mut payload_map: HashMap<PointOffsetType, TheMap<PayloadKeyType, PayloadType>> = Default::default();
-        let mut schema: TheMap<PayloadKeyType, PayloadSchema> = Default::default();
+        let mut schema: TheMap<PayloadKeyType, PayloadSchemaType> = Default::default();
 
         let cf_handle = store.cf_handle(DB_NAME).unwrap();
         for (key, val) in store.iterator_cf(cf_handle, IteratorMode::Start) {
@@ -47,7 +47,7 @@ impl SimplePayloadStorage {
     }
 
     fn update_schema_value(
-        schema: &mut TheMap<PayloadKeyType, PayloadSchema>,
+        schema: &mut TheMap<PayloadKeyType, PayloadSchemaType>,
         key: &PayloadKeyType,
         value: &PayloadType
     ) -> OperationResult<()> {
@@ -65,7 +65,7 @@ impl SimplePayloadStorage {
     }
 
     fn update_schema(
-        schema: &mut TheMap<PayloadKeyType, PayloadSchema>,
+        schema: &mut TheMap<PayloadKeyType, PayloadSchemaType>,
         payload: &TheMap<PayloadKeyType, PayloadType>) -> OperationResult<()> {
         for (key, value) in payload.iter() {
             SimplePayloadStorage::update_schema_value(schema, key, value)?;
@@ -144,7 +144,7 @@ impl PayloadStorage for SimplePayloadStorage {
         Ok(self.store.flush_cf(cf_handle)?)
     }
 
-    fn schema(&self) -> TheMap<PayloadKeyType, PayloadSchema> {
+    fn schema(&self) -> TheMap<PayloadKeyType, PayloadSchemaType> {
         return self.schema.clone()
     }
 

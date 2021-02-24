@@ -1,32 +1,97 @@
 use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
 use crate::index::index::{Index, PayloadIndex};
-use crate::types::{Filter, VectorElementType, Distance, SearchParams};
+use crate::types::{Filter, VectorElementType, Distance, SearchParams, PointOffsetType, PayloadKeyType};
 use crate::payload_storage::payload_storage::{ConditionChecker};
 
 use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use crate::entry::entry_point::OperationResult;
-use crate::index::field_index::Estimation;
-
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::payload_config::{PayloadConfig, PAYLOAD_INDEX_CONFIG_FILE};
+use std::path::{Path, PathBuf};
+use atomicwrites::AtomicFile;
+use atomicwrites::OverwriteBehavior::AllowOverwrite;
+use std::io::Write;
+use std::fs::create_dir_all;
 
 pub struct PlainPayloadIndex {
     condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
     vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
+    config: PayloadConfig,
+    path: PathBuf
 }
 
 
 impl PlainPayloadIndex {
-    pub fn new(condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
-               vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>) -> Self {
-        PlainPayloadIndex {
+
+    fn config_path(&self) -> PathBuf {
+        PayloadConfig::get_config_path(&self.path)
+    }
+
+    fn save_config(&self) -> OperationResult<()> {
+        let config_path = self.config_path();
+        self.config.save(&config_path)
+    }
+
+    pub fn open(
+        condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+        vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
+        path: &Path,
+    ) -> OperationResult<Self> {
+        let config_path = PayloadConfig::get_config_path(path);
+        let config = PayloadConfig::load(&config_path)?;
+
+        let index = PlainPayloadIndex {
             condition_checker,
             vector_storage,
-        }
+            config,
+            path: path.to_owned()
+        };
+
+        Ok(index)
+    }
+
+    pub fn new(
+        condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+        vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
+        path: &Path,
+        config: Option<PayloadConfig>
+    ) -> OperationResult<Self> {
+        create_dir_all(path)?;
+        let payload_config = config.unwrap_or_default();
+
+        let index = PlainPayloadIndex {
+            condition_checker,
+            vector_storage,
+            config: payload_config,
+            path: path.to_owned()
+        };
+
+        index.save_config()?;
+
+        Ok(index)
     }
 }
 
 impl PayloadIndex for PlainPayloadIndex {
-    fn estimate_cardinality(&self, query: &Filter) -> Estimation {
+    fn indexed_fields(&self) -> Vec<PayloadKeyType> {
+        self.config.indexed_fields.clone()
+    }
+
+    fn mark_indexed(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
+        if !self.config.indexed_fields.contains(field) {
+            self.config.indexed_fields.push(field.clone());
+            return self.save_config()
+        }
+        Ok(())
+    }
+
+    fn drop_index(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
+        self.config.indexed_fields = self.config.indexed_fields.iter().cloned().filter(|x| x != field).collect();
+        self.save_config()
+    }
+
+    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
         let mut matched_points = 0;
         let condition_checker = self.condition_checker.borrow();
         for i in self.vector_storage.borrow().iter_ids() {
@@ -34,10 +99,10 @@ impl PayloadIndex for PlainPayloadIndex {
                 matched_points += 1;
             }
         }
-        Estimation { min: matched_points, exp: matched_points, max: matched_points }
+        CardinalityEstimation { min: matched_points, exp: matched_points, max: matched_points }
     }
 
-    fn query_points(&self, query: &Filter) -> Vec<usize> {
+    fn query_points(&self, query: &Filter) -> Vec<PointOffsetType> {
         let mut matched_points = vec![];
         let condition_checker = self.condition_checker.borrow();
         for i in self.vector_storage.borrow().iter_ids() {
