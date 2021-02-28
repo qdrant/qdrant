@@ -6,7 +6,7 @@ use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage};
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use std::path::{Path, PathBuf};
 use std::collections::HashMap;
-use std::fs::{File, create_dir_all};
+use std::fs::{File, create_dir_all, remove_file};
 use std::io::Error;
 use crate::entry::entry_point::{OperationResult, OperationError};
 use crate::index::field_index::index_builder::{IndexBuilderTypes, IndexBuilder};
@@ -15,6 +15,8 @@ use uuid::Builder;
 use crate::index::field_index::field_index::PayloadFieldIndexBuilder;
 use crate::index::field_index::index_selector::index_selector;
 use crate::index::payload_config::PayloadConfig;
+use itertools::Itertools;
+use log::debug;
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 
@@ -62,21 +64,24 @@ impl StructPayloadIndex {
         Ok(())
     }
 
-    fn load_field_index(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
+    fn load_field_index(&self, field: &PayloadKeyType) -> OperationResult<Vec<FieldIndex>> {
+
         let field_index_path = Self::get_field_index_path(&self.path, field);
+        debug!("Loading field `{}` index from {}", field, field_index_path.to_str().unwrap());
         let file = File::open(field_index_path)?;
         let field_indexes: Vec<FieldIndex> = serde_cbor::from_reader(file)
             .map_err(|err| OperationError::ServiceError { description: format!("Unable to load index: {:?}", err) })?;
-        self.field_indexes.insert(field.clone(), field_indexes);
 
-        Ok(())
+        Ok(field_indexes)
     }
 
     fn load_all_fields(&mut self) -> OperationResult<()> {
-        let field_iterator = self.config.indexed_fields.iter();
-        for field in field_iterator {
-            self.load_field_index(field)?;
+        let mut field_indexes: IndexesMap = Default::default();
+        for field in self.config.indexed_fields.iter() {
+            let field_index = self.load_field_index(field)?;
+            field_indexes.insert(field.clone(), field_index);
         }
+        self.field_indexes = field_indexes;
         Ok(())
     }
 
@@ -88,24 +93,20 @@ impl StructPayloadIndex {
         let config_path = PayloadConfig::get_config_path(path);
         let config = PayloadConfig::load(&config_path)?;
 
-        let file = File::open(path);
-        let field_indexes: IndexesMap = match file {
-            Ok(file_reader) => serde_cbor::from_reader(file_reader).unwrap(),
-            Err(_) => Default::default()
-        };
-
-        let index = StructPayloadIndex {
+        let mut index = StructPayloadIndex {
             condition_checker,
             payload,
-            field_indexes,
+            field_indexes: Default::default(),
             config,
             path: path.to_owned(),
         };
 
+        index.load_all_fields()?;
+
         Ok(index)
     }
 
-    pub fn build_field_index(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
+    pub fn build_field_index(&self, field: &PayloadKeyType) -> OperationResult<Vec<FieldIndex>> {
         let payload_ref = self.payload.borrow();
         let schema = payload_ref.schema();
 
@@ -113,14 +114,12 @@ impl StructPayloadIndex {
 
         if field_type_opt.is_none() {
             // There is not data to index
-            return Ok(());
+            return Ok(vec![]);
         }
 
         let field_type = field_type_opt.unwrap();
 
         let mut builders = index_selector(field_type);
-
-        let mut field_indexes: IndexesMap = Default::default();
 
         for point_id in payload_ref.iter_ids() {
             let point_payload = payload_ref.payload(point_id);
@@ -135,18 +134,38 @@ impl StructPayloadIndex {
             }
         }
 
-        self.field_indexes.insert(
-            field.clone(),
-            builders.iter_mut().map(|builder| builder.build()).collect(),
-        );
+        let field_indexes = builders.iter_mut().map(|builder| builder.build()).collect_vec();
 
-        self.save_field_index(field)
+        Ok(field_indexes)
     }
 
     fn build_all_fields(&mut self) -> OperationResult<()> {
+        let mut field_indexes: IndexesMap = Default::default();
         for field in self.config.indexed_fields.iter() {
-            self.build_field_index(field)?;
+            let field_index = self.build_field_index(field)?;
+            field_indexes.insert(field.clone(), field_index);
         }
+        self.field_indexes = field_indexes;
+        for field in self.config.indexed_fields.iter() {
+            self.save_field_index(field)?;
+        }
+        Ok(())
+    }
+
+    fn build_and_save(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
+        if !self.config.indexed_fields.contains(field) {
+            self.config.indexed_fields.push(field.clone());
+            self.save_config()?;
+        }
+
+        let field_indexes = self.build_field_index(field)?;
+        self.field_indexes.insert(
+            field.clone(),
+            field_indexes
+        );
+
+        self.save_field_index(field)?;
+
         Ok(())
     }
 
@@ -166,6 +185,8 @@ impl StructPayloadIndex {
             path: path.to_owned(),
         };
 
+        payload_index.build_all_fields()?;
+
         Ok(payload_index)
     }
 
@@ -184,15 +205,30 @@ impl StructPayloadIndex {
 
 impl PayloadIndex for StructPayloadIndex {
     fn indexed_fields(&self) -> Vec<PayloadKeyType> {
-        unimplemented!()
+        self.config.indexed_fields.clone()
     }
 
     fn mark_indexed(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
-        unimplemented!()
+        if !self.config.indexed_fields.contains(field) {
+            self.config.indexed_fields.push(field.clone());
+            self.save_config()?;
+            self.build_and_save(field)?;
+        }
+        Ok(())
     }
 
     fn drop_index(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
-        unimplemented!()
+        self.config.indexed_fields = self.config.indexed_fields.iter().cloned().filter(|x| x != field).collect();
+        self.save_config()?;
+        self.field_indexes.remove(field);
+
+        let field_index_path = Self::get_field_index_path(&self.path, field);
+
+        if field_index_path.exists() {
+            remove_file(&field_index_path)?;
+        }
+
+        Ok(())
     }
 
     fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
@@ -204,3 +240,16 @@ impl PayloadIndex for StructPayloadIndex {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempdir::TempDir;
+    use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
+
+    #[test]
+    fn test_index_save_and_load() {
+        let dir = TempDir::new("storage_dir").unwrap();
+        let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
+
+    }
+}
