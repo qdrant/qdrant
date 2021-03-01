@@ -1,13 +1,14 @@
-use crate::types::{FloatPayloadType, Range, IntPayloadType, Condition, PayloadType, PointOffsetType};
-use crate::index::field_index::index_builder::IndexBuilder;
-use ordered_float::OrderedFloat;
-use crate::index::field_index::{CardinalityEstimation, FieldIndex};
-use std::cmp::{min, max};
+use std::cmp::{max, min};
 use std::cmp::Ordering::{Greater, Less};
-use serde::{Deserialize, Serialize};
-use num_traits::ToPrimitive;
-use crate::index::field_index::field_index::{PayloadFieldIndex, PayloadFieldIndexBuilder};
 use std::mem;
+
+use num_traits::ToPrimitive;
+use ordered_float::OrderedFloat;
+use serde::{Deserialize, Serialize};
+
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::field_index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
+use crate::types::{Condition, FloatPayloadType, IntPayloadType, PayloadType, PointOffsetType, Range};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Element<N> {
@@ -83,6 +84,7 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
         // exp = 500 / (1200 / 1000) = 416
         // max = min(1000, 500) = 500
         CardinalityEstimation {
+            primary_clauses: vec![Condition::Range(range.clone())],
             min: max(1, values_count - (total_values - self.points_count as i64)) as usize,
             exp: (values_count as f64 / value_per_point) as usize,
             max: min(self.points_count as i64, values_count) as usize,

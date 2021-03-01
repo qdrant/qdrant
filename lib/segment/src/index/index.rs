@@ -18,6 +18,10 @@ pub trait Index {
     fn build_index(&mut self) -> OperationResult<()> ;
 }
 
+pub trait QueryEstimator {
+    /// Estimate amount of points (min, max) which satisfies filtering condition.
+    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation;
+}
 
 pub trait PayloadIndex {
     /// Get indexed fields
@@ -28,9 +32,6 @@ pub trait PayloadIndex {
 
     /// Remove index
     fn drop_index(&mut self, field: &PayloadKeyType) -> OperationResult<()>;
-
-    /// Estimate amount of points (min, max) which satisfies filtering condition.
-    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation;
 
     /// Return list of all point ids, which satisfy filtering criteria
     fn query_points(&self, query: &Filter) -> Vec<PointOffsetType>;

@@ -1,33 +1,35 @@
-use crate::index::index::{PayloadIndex};
-use crate::types::{Filter, PayloadKeyType, PayloadSchemaType, PayloadType};
-use std::sync::Arc;
-use atomic_refcell::AtomicRefCell;
-use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage};
-use crate::index::field_index::{CardinalityEstimation, FieldIndex};
-use std::path::{Path, PathBuf};
 use std::collections::HashMap;
-use std::fs::{File, create_dir_all, remove_file};
+use std::fs::{create_dir_all, File, remove_file};
 use std::io::Error;
-use crate::entry::entry_point::{OperationResult, OperationError};
-use crate::index::field_index::index_builder::{IndexBuilderTypes, IndexBuilder};
-use crate::index::field_index::numeric_index::PersistedNumericIndex;
-use uuid::Builder;
-use crate::index::field_index::field_index::PayloadFieldIndexBuilder;
-use crate::index::field_index::index_selector::index_selector;
-use crate::index::payload_config::PayloadConfig;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
 use log::debug;
+use uuid::Builder;
+
+use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::field_index::field_index::{FieldIndex, PayloadFieldIndexBuilder};
+use crate::index::field_index::index_selector::index_selector;
+use crate::index::field_index::numeric_index::PersistedNumericIndex;
+use crate::index::index::PayloadIndex;
+use crate::index::payload_config::PayloadConfig;
+use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage};
+use crate::types::{Filter, PayloadKeyType, PayloadSchemaType, PayloadType};
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 
 type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
 
-struct StructPayloadIndex {
+pub struct StructPayloadIndex {
     condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
     payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
     field_indexes: IndexesMap,
     config: PayloadConfig,
     path: PathBuf,
+    total_points: usize,
 }
 
 impl StructPayloadIndex {
@@ -65,7 +67,6 @@ impl StructPayloadIndex {
     }
 
     fn load_field_index(&self, field: &PayloadKeyType) -> OperationResult<Vec<FieldIndex>> {
-
         let field_index_path = Self::get_field_index_path(&self.path, field);
         debug!("Loading field `{}` index from {}", field, field_index_path.to_str().unwrap());
         let file = File::open(field_index_path)?;
@@ -89,6 +90,7 @@ impl StructPayloadIndex {
     pub fn open(condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
                 payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
                 path: &Path,
+                total_points: usize,
     ) -> OperationResult<Self> {
         let config_path = PayloadConfig::get_config_path(path);
         let config = PayloadConfig::load(&config_path)?;
@@ -99,6 +101,7 @@ impl StructPayloadIndex {
             field_indexes: Default::default(),
             config,
             path: path.to_owned(),
+            total_points,
         };
 
         index.load_all_fields()?;
@@ -161,7 +164,7 @@ impl StructPayloadIndex {
         let field_indexes = self.build_field_index(field)?;
         self.field_indexes.insert(
             field.clone(),
-            field_indexes
+            field_indexes,
         );
 
         self.save_field_index(field)?;
@@ -174,6 +177,7 @@ impl StructPayloadIndex {
         payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
         path: &Path,
         config: Option<PayloadConfig>,
+        total_points: usize,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
         let payload_config = config.unwrap_or_default();
@@ -183,6 +187,7 @@ impl StructPayloadIndex {
             field_indexes: Default::default(),
             config: payload_config,
             path: path.to_owned(),
+            total_points,
         };
 
         payload_index.build_all_fields()?;
@@ -197,8 +202,8 @@ impl StructPayloadIndex {
         Ok(())
     }
 
-    fn total_points(&self) -> usize {
-        unimplemented!()
+    pub fn total_points(&self) -> usize {
+        self.total_points
     }
 }
 
@@ -231,10 +236,6 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
-    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
-        unimplemented!()
-    }
-
     fn query_points(&self, query: &Filter) -> Vec<usize> {
         unimplemented!()
     }
@@ -242,14 +243,15 @@ impl PayloadIndex for StructPayloadIndex {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempdir::TempDir;
+
     use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
+
+    use super::*;
 
     #[test]
     fn test_index_save_and_load() {
         let dir = TempDir::new("storage_dir").unwrap();
         let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
-
     }
 }

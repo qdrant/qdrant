@@ -91,17 +91,6 @@ impl PayloadIndex for PlainPayloadIndex {
         self.save_config()
     }
 
-    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
-        let mut matched_points = 0;
-        let condition_checker = self.condition_checker.borrow();
-        for i in self.vector_storage.borrow().iter_ids() {
-            if condition_checker.check(i, query) {
-                matched_points += 1;
-            }
-        }
-        CardinalityEstimation { min: matched_points, exp: matched_points, max: matched_points }
-    }
-
     fn query_points(&self, query: &Filter) -> Vec<PointOffsetType> {
         let mut matched_points = vec![];
         let condition_checker = self.condition_checker.borrow();
