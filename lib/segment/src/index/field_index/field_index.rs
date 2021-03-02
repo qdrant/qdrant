@@ -8,21 +8,8 @@ pub trait PayloadFieldIndex {
     /// Get iterator over points fitting given `condition`
     fn filter(&self, condition: &Condition) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
 
-    fn estimate_condition_cardinality(&self, condition: &Condition) -> Option<CardinalityEstimation>;
+    fn estimate_cardinality(&self, condition: &Condition) -> Option<CardinalityEstimation>;
 
-    /// Estimate number of points fitting given `condition`
-    fn estimate_cardinality(&self, condition: &Condition) -> Option<CardinalityEstimation> {
-        match condition {
-            Condition::Filter(_) => None,  // Can't estimate nested here
-            Condition::HasId(ids) => Some(CardinalityEstimation {
-                primary_clauses: vec![Condition::HasId(ids.clone())],
-                min: 0,
-                exp: ids.len(),
-                max: ids.len()
-            }),
-            _ => self.estimate_condition_cardinality(condition)
-        }
-    }
 }
 
 pub trait PayloadFieldIndexBuilder {
@@ -40,13 +27,24 @@ pub enum FieldIndex {
     FloatIndex(PersistedNumericIndex<FloatPayloadType>),
 }
 
+impl FieldIndex {
+    pub fn get_payload_field_index(&self) -> &dyn PayloadFieldIndex {
+        match self {
+            FieldIndex::IntIndex(payload_field_index) => payload_field_index,
+            FieldIndex::IntMapIndex(payload_field_index) => payload_field_index,
+            FieldIndex::KeywordIndex(payload_field_index) => payload_field_index,
+            FieldIndex::FloatIndex(payload_field_index) => payload_field_index,
+        }
+    }
+}
+
 impl PayloadFieldIndex for FieldIndex {
 
     fn filter(&self, condition: &Condition) -> Box<dyn Iterator<Item=usize>> {
-        unimplemented!()
+        self.get_payload_field_index().filter(condition)
     }
 
-    fn estimate_condition_cardinality(&self, condition: &Condition) -> Option<CardinalityEstimation> {
-        unimplemented!()
+    fn estimate_cardinality(&self, condition: &Condition) -> Option<CardinalityEstimation> {
+        self.get_payload_field_index().estimate_cardinality(condition)
     }
 }
