@@ -5,9 +5,9 @@ use std::mem;
 
 use serde::{Deserialize, Serialize};
 
-use crate::index::field_index::CardinalityEstimation;
+use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
 use crate::index::field_index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
-use crate::types::{Condition, IntPayloadType, PayloadType, PointOffsetType};
+use crate::types::{IntPayloadType, PayloadType, PointOffsetType, FieldCondition};
 
 #[derive(Serialize, Deserialize)]
 pub struct PersistedMapIndex<N: Hash + Eq + Clone> {
@@ -25,7 +25,7 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
         }
     }
 
-    pub fn match_cardinality(&self, condition: &Condition, value: &N) -> CardinalityEstimation {
+    pub fn match_cardinality(&self, value: &N) -> CardinalityEstimation {
         let values_count = match self.map.get(value) {
             None => 0,
             Some(points) => points.len()
@@ -33,7 +33,7 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
         let value_per_point = self.values_count as f64 / self.points_count as f64;
 
         CardinalityEstimation {
-            primary_clauses: vec![condition.clone()],
+            primary_clauses: vec![],
             min: max(1, values_count as i64 - (self.values_count as i64 - self.points_count as i64)) as usize,
             exp: (values_count as f64 / value_per_point) as usize,
             max: min(self.points_count as i64, values_count as i64) as usize,
@@ -57,31 +57,39 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
 }
 
 impl PayloadFieldIndex for PersistedMapIndex<String> {
-    fn filter(&self, condition: &Condition) -> Box<dyn Iterator<Item=usize>> {
+    fn filter(&self, condition: &FieldCondition) -> Box<dyn Iterator<Item=usize>> {
         unimplemented!()
     }
 
-    fn estimate_condition_cardinality(&self, condition: &Condition) -> Option<CardinalityEstimation> {
-        match condition {
-            Condition::Match(match_condition) => {
-                match_condition.keyword.as_ref().map(|keyword| self.match_cardinality(condition, keyword))
-            }
-            _ => None
+    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+        match &condition.r#match {
+            None => None,
+            Some(match_condition) => match_condition.keyword
+                .as_ref()
+                .map(|keyword| {
+                    let mut estimation = self.match_cardinality(keyword);
+                    estimation.primary_clauses.push(PrimaryCondition::Condition(condition.clone()));
+                    estimation
+                })
         }
     }
 }
 
 impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
-    fn filter(&self, condition: &Condition) -> Box<dyn Iterator<Item=usize>> {
+    fn filter(&self, condition: &FieldCondition) -> Box<dyn Iterator<Item=usize>> {
         unimplemented!()
     }
 
-    fn estimate_condition_cardinality(&self, condition: &Condition) -> Option<CardinalityEstimation> {
-        match condition {
-            Condition::Match(match_condition) => {
-                match_condition.integer.as_ref().map(|number| self.match_cardinality(condition,number))
-            }
-            _ => None
+    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+        match &condition.r#match {
+            None => None,
+            Some(match_condition) => match_condition.integer
+                .as_ref()
+                .map(|number| {
+                    let mut estimation = self.match_cardinality(number);
+                    estimation.primary_clauses.push(PrimaryCondition::Condition(condition.clone()));
+                    estimation
+                })
         }
     }
 }

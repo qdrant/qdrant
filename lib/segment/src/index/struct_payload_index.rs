@@ -1,23 +1,20 @@
 use std::collections::HashMap;
 use std::fs::{create_dir_all, File, remove_file};
-use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
 use log::debug;
-use uuid::Builder;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::index::field_index::CardinalityEstimation;
-use crate::index::field_index::field_index::{FieldIndex, PayloadFieldIndexBuilder};
+use crate::index::field_index::field_index::{FieldIndex, PayloadFieldIndex};
 use crate::index::field_index::index_selector::index_selector;
-use crate::index::field_index::numeric_index::PersistedNumericIndex;
 use crate::index::index::PayloadIndex;
 use crate::index::payload_config::PayloadConfig;
 use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage};
-use crate::types::{Filter, PayloadKeyType, PayloadSchemaType, PayloadType};
+use crate::types::{Filter, PayloadKeyType, FieldCondition};
+use crate::index::field_index::CardinalityEstimation;
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 
@@ -33,6 +30,20 @@ pub struct StructPayloadIndex {
 }
 
 impl StructPayloadIndex {
+
+    pub fn estimate_field_condition(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+        self.field_indexes.get(&condition.key).and_then(|indexes| {
+            let mut result_estimation: Option<CardinalityEstimation> = None;
+            for index in indexes {
+                result_estimation = index.estimate_cardinality(condition);
+                if result_estimation.is_some() {
+                    break
+                }
+            }
+            result_estimation
+        })
+    }
+
     fn config_path(&self) -> PathBuf {
         PayloadConfig::get_config_path(&self.path)
     }

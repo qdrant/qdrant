@@ -1,7 +1,7 @@
 use crate::types::PayloadKeyType;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use crate::entry::entry_point::{OperationResult, OperationError};
+use crate::entry::entry_point::OperationResult;
 use crate::common::file_operations::{atomic_save_json, read_json};
 
 pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "config.json";

@@ -227,8 +227,6 @@ impl From<&PayloadType> for PayloadSchemaType {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Match {
-    /// Name of the field to match with
-    pub key: PayloadKeyType,
     /// Keyword value to match
     pub keyword: Option<String>,
     /// Integer value to match
@@ -238,8 +236,6 @@ pub struct Match {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Range {
-    /// Name of the field to match with
-    pub key: PayloadKeyType,
     /// point.key < range.lt
     pub lt: Option<FloatPayloadType>,
     /// point.key > range.gt
@@ -253,8 +249,6 @@ pub struct Range {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoBoundingBox {
-    /// Name of the field to match with
-    pub key: PayloadKeyType,
     /// Coordinates of the top left point of the area rectangle
     pub top_left: GeoPoint,
     /// Coordinates of the bottom right point of the area rectangle
@@ -264,28 +258,33 @@ pub struct GeoBoundingBox {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoRadius {
-    /// Name of the field to match with
-    pub key: PayloadKeyType,
     /// Coordinates of the top left point of the area rectangle
     pub center: GeoPoint,
     /// Radius of the area in meters
     pub radius: f64,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct FieldCondition {
+    pub key: PayloadKeyType,
+    /// Check if point has field with a given value
+    pub r#match: Option<Match>,
+    /// Check if points value lies in a given range
+    pub range: Option<Range>,
+    /// Check if points geo location lies in a given area
+    pub geo_bounding_box: Option<GeoBoundingBox>,
+    /// Check if geo point is within a given radius
+    pub geo_radius: Option<GeoRadius>,
+}
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum Condition {
     /// Nested filter
     Filter(Filter),
-    /// Check if point has field with a given value
-    Match(Match),
-    /// Check if points value lies in a given range
-    Range(Range),
-    /// Check if points geo location lies in a given area
-    GeoBoundingBox(GeoBoundingBox),
-    /// Check if geo point is within a given radius
-    GeoRadius(GeoRadius),
+    /// Check if field satisfies provided condition
+    Field(FieldCondition),
     /// Check if points id is in a given set
     HasId(HashSet<PointIdType>),
 }
@@ -336,10 +335,15 @@ mod tests {
     #[test]
     fn test_serialize_query() {
         let filter = Filter {
-            must: Some(vec![Condition::Match(Match {
+            must: Some(vec![Condition::Field(FieldCondition{
                 key: "hello".to_owned(),
-                keyword: Some("world".to_owned()),
-                integer: None,
+                r#match: Some(Match {
+                    keyword: Some("world".to_owned()),
+                    integer: None
+                }),
+                range: None,
+                geo_bounding_box: None,
+                geo_radius: None
             })]),
             must_not: None,
             should: None,
@@ -352,35 +356,39 @@ mod tests {
     fn test_payload_query_parse() {
         let query1 = r#"
         {
-            "must":[
-               {
-                  "match":{
-                     "key":"hello",
-                     "integer":42
-                  }
-               },
-               {
-                   "filter": {
-                       "must_not": [
-                           {
-                                "has_id": [1, 2, 3, 4, 5, 6]
-                           },
-                           {
-                                "geo_bounding_box": {
+            "must": [
+                {
+                    "field": {
+                        "key": "hello",
+                        "match": {
+                            "integer": 42
+                        }
+                    }
+                },
+                {
+                    "filter": {
+                        "must_not": [
+                            {
+                                "has_id": [1, 2, 3, 4]
+                            },
+                            {
+                                "field": {
                                     "key": "geo_field",
-                                    "top_left": {
-                                        "lon": 13.410146,
-                                        "lat": 52.519289 
-                                    },
-                                    "bottom_right": {
-                                        "lon": 13.432683,
-                                        "lat": 52.505582
+                                    "geo_bounding_box": {
+                                        "top_left": {
+                                            "lon": 13.410146,
+                                            "lat": 52.519289
+                                        },
+                                        "bottom_right": {
+                                            "lon": 13.432683,
+                                            "lat": 52.505582
+                                        }
                                     }
                                 }
-                           }
-                       ]
-                   }
-               }
+                            }
+                        ]
+                    }
+                }
             ]
         }
         "#;

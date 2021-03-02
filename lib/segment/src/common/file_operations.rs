@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{Read, Write};
 use crate::entry::entry_point::{OperationError, OperationResult};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::path::Path;
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;

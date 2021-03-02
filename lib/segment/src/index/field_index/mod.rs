@@ -1,19 +1,24 @@
-use crate::index::field_index::map_index::PersistedMapIndex;
-use crate::index::field_index::numeric_index::PersistedNumericIndex;
-use crate::types::{Condition, FloatPayloadType, IntPayloadType};
+
+
+use crate::types::{FieldCondition, PointIdType};
+use std::collections::HashSet;
 
 pub mod numeric_index;
 pub mod geo_index;
 pub mod map_index;
 pub mod field_index;
 pub mod index_selector;
-pub mod estimations;
 
+#[derive(Debug, Clone)]
+pub enum PrimaryCondition {
+    Condition(FieldCondition),
+    Ids(HashSet<PointIdType>)
+}
 
 #[derive(Debug)]
 pub struct CardinalityEstimation {
     /// Conditions that could be used to mane a primary point selection.
-    pub primary_clauses: Vec<Condition>,
+    pub primary_clauses: Vec<PrimaryCondition>,
     /// Minimal possible matched points in best case for a query
     pub min: usize,
     /// Expected number of matched points for a query

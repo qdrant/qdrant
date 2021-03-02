@@ -6,9 +6,9 @@ use num_traits::ToPrimitive;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
-use crate::index::field_index::CardinalityEstimation;
+use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
 use crate::index::field_index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
-use crate::types::{Condition, FloatPayloadType, IntPayloadType, PayloadType, PointOffsetType, Range};
+use crate::types::{FloatPayloadType, IntPayloadType, PayloadType, PointOffsetType, Range, FieldCondition};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Element<N> {
@@ -84,7 +84,7 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
         // exp = 500 / (1200 / 1000) = 416
         // max = min(1000, 500) = 500
         CardinalityEstimation {
-            primary_clauses: vec![Condition::Range(range.clone())],
+            primary_clauses: vec![],
             min: max(1, values_count - (total_values - self.points_count as i64)) as usize,
             exp: (values_count as f64 / value_per_point) as usize,
             max: min(self.points_count as i64, values_count) as usize,
@@ -100,15 +100,18 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
 
 
 impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
-    fn filter(&self, condition: &Condition) -> Box<dyn Iterator<Item=usize>> {
+    fn filter(&self, condition: &FieldCondition) -> Box<dyn Iterator<Item=usize>> {
         unimplemented!()
     }
 
-    fn estimate_condition_cardinality(&self, condition: &Condition) -> Option<CardinalityEstimation> {
-        match condition {
-            Condition::Range(range_condition) => Some(self.range_cardinality(range_condition)),
-            _ => None
-        }
+    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+        condition.range
+            .as_ref()
+            .map(|range| {
+                let mut cardinality = self.range_cardinality(range);
+                cardinality.primary_clauses.push(PrimaryCondition::Condition(condition.clone()));
+                cardinality
+            })
     }
 }
 
@@ -171,7 +174,6 @@ mod tests {
         };
 
         let res = index.search_range(&Range {
-            key: "".to_string(),
             lt: None,
             gt: None,
             gte: None,
@@ -180,7 +182,6 @@ mod tests {
         assert_eq!(res, (0, index.elements.len()));
 
         let res = index.search_range(&Range {
-            key: "".to_string(),
             lt: Some(15.0),
             gt: None,
             gte: Some(6.0),
@@ -209,7 +210,6 @@ mod tests {
         };
 
         let estimation = index.range_cardinality(&Range {
-            key: "".to_string(),
             lt: Some(15.0),
             gt: None,
             gte: Some(6.0),

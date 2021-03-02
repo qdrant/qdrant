@@ -2,14 +2,13 @@ use serde::{Deserialize, Serialize};
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::field_index::map_index::PersistedMapIndex;
 use crate::index::field_index::numeric_index::PersistedNumericIndex;
-use crate::types::{Condition, FloatPayloadType, IntPayloadType, PayloadType, PointOffsetType};
+use crate::types::{FieldCondition, FloatPayloadType, IntPayloadType, PayloadType, PointOffsetType};
 
 pub trait PayloadFieldIndex {
     /// Get iterator over points fitting given `condition`
-    fn filter(&self, condition: &Condition) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
+    fn filter(&self, condition: &FieldCondition) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
 
-    fn estimate_cardinality(&self, condition: &Condition) -> Option<CardinalityEstimation>;
-
+    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation>;
 }
 
 pub trait PayloadFieldIndexBuilder {
@@ -40,11 +39,11 @@ impl FieldIndex {
 
 impl PayloadFieldIndex for FieldIndex {
 
-    fn filter(&self, condition: &Condition) -> Box<dyn Iterator<Item=usize>> {
+    fn filter(&self, condition: &FieldCondition) -> Box<dyn Iterator<Item=usize> + '_> {
         self.get_payload_field_index().filter(condition)
     }
 
-    fn estimate_cardinality(&self, condition: &Condition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         self.get_payload_field_index().estimate_cardinality(condition)
     }
 }

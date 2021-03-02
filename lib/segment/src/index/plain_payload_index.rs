@@ -6,12 +6,8 @@ use crate::payload_storage::payload_storage::{ConditionChecker};
 use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use crate::entry::entry_point::OperationResult;
-use crate::index::field_index::CardinalityEstimation;
-use crate::index::payload_config::{PayloadConfig, PAYLOAD_INDEX_CONFIG_FILE};
+use crate::index::payload_config::PayloadConfig;
 use std::path::{Path, PathBuf};
-use atomicwrites::AtomicFile;
-use atomicwrites::OverwriteBehavior::AllowOverwrite;
-use std::io::Write;
 use std::fs::create_dir_all;
 
 pub struct PlainPayloadIndex {
