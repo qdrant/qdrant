@@ -9,6 +9,9 @@ use crate::entry::entry_point::OperationResult;
 use crate::index::payload_config::PayloadConfig;
 use std::path::{Path, PathBuf};
 use std::fs::create_dir_all;
+use crate::index::field_index::CardinalityEstimation;
+use itertools::Itertools;
+
 
 pub struct PlainPayloadIndex {
     condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
@@ -87,7 +90,23 @@ impl PayloadIndex for PlainPayloadIndex {
         self.save_config()
     }
 
-    fn query_points(&self, query: &Filter) -> Vec<PointOffsetType> {
+    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
+        let mut matched_points = 0;
+        let condition_checker = self.condition_checker.borrow();
+        for i in self.vector_storage.borrow().iter_ids() {
+            if condition_checker.check(i, query) {
+                matched_points += 1;
+            }
+        }
+        CardinalityEstimation {
+            primary_clauses: vec![],
+            min: matched_points,
+            exp: matched_points,
+            max: matched_points
+        }
+    }
+
+    fn query_points(&self, query: &Filter) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
         let mut matched_points = vec![];
         let condition_checker = self.condition_checker.borrow();
         for i in self.vector_storage.borrow().iter_ids() {
@@ -95,7 +114,7 @@ impl PayloadIndex for PlainPayloadIndex {
                 matched_points.push(i);
             }
         }
-        return matched_points;
+        return Box::new(matched_points.into_iter());
     }
 }
 
@@ -131,7 +150,7 @@ impl Index for PlainIndex {
     ) -> Vec<ScoredPointOffset> {
         match filter {
             Some(filter) => {
-                let filtered_ids = self.payload_index.borrow().query_points(filter);
+                let filtered_ids = self.payload_index.borrow().query_points(filter).collect_vec();
                 self.vector_storage.borrow().score_points(vector, &filtered_ids, top, &self.distance)
             }
             None => self.vector_storage.borrow().score_all(vector, top, &self.distance)

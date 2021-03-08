@@ -57,7 +57,7 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
 }
 
 impl PayloadFieldIndex for PersistedMapIndex<String> {
-    fn filter(&self, condition: &FieldCondition) -> Box<dyn Iterator<Item=usize>> {
+    fn filter(&self, condition: &FieldCondition) -> Option<Box<dyn Iterator<Item=PointOffsetType>>> {
         unimplemented!()
     }
 
@@ -76,7 +76,7 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
 }
 
 impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
-    fn filter(&self, condition: &FieldCondition) -> Box<dyn Iterator<Item=usize>> {
+    fn filter(&self, condition: &FieldCondition) -> Option<Box<dyn Iterator<Item=PointOffsetType>>> {
         unimplemented!()
     }
 

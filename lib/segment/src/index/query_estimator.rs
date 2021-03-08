@@ -1,4 +1,4 @@
-use crate::index::index::{QueryEstimator, PayloadIndex};
+use crate::index::index::PayloadIndex;
 use crate::types::{Filter, Condition};
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -119,33 +119,4 @@ fn estimate_must_not<F>(estimator: &F, conditions: &Vec<Condition>, total: usize
     let estimate = |x| invert_estimation(&estimate_condition(estimator, x, total), total);
     let must_not_estimations = conditions.iter().map(estimate).collect_vec();
     combine_must_estimations(&must_not_estimations, total)
-}
-
-
-impl QueryEstimator for StructPayloadIndex {
-    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
-        let total = self.total_points();
-
-        let estimator = |condition: &Condition| {
-            match condition {
-                Condition::Filter(_) => panic!("Unexpected branching"),
-                Condition::HasId(ids) => CardinalityEstimation {
-                    primary_clauses: vec![PrimaryCondition::Ids(ids.clone())],
-                    min: 0,
-                    exp: ids.len(),
-                    max: ids.len(),
-                },
-                Condition::Field(field_condition) => self
-                    .estimate_field_condition(field_condition)
-                    .unwrap_or(CardinalityEstimation {
-                        primary_clauses: vec![],
-                        min: 0,
-                        exp: self.total_points() / 2,
-                        max: self.total_points(),
-                    }),
-            }
-        };
-
-        estimate_filter(&estimator, query, total)
-    }
 }

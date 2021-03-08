@@ -6,7 +6,7 @@ use crate::types::{FieldCondition, FloatPayloadType, IntPayloadType, PayloadType
 
 pub trait PayloadFieldIndex {
     /// Get iterator over points fitting given `condition`
-    fn filter(&self, condition: &FieldCondition) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
+    fn filter(&self, condition: &FieldCondition) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>>;
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation>;
 }
@@ -39,7 +39,7 @@ impl FieldIndex {
 
 impl PayloadFieldIndex for FieldIndex {
 
-    fn filter(&self, condition: &FieldCondition) -> Box<dyn Iterator<Item=usize> + '_> {
+    fn filter(&self, condition: &FieldCondition) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
         self.get_payload_field_index().filter(condition)
     }
 

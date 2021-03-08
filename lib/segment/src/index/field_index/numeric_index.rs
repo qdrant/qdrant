@@ -100,7 +100,7 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
 
 
 impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
-    fn filter(&self, condition: &FieldCondition) -> Box<dyn Iterator<Item=usize>> {
+    fn filter(&self, condition: &FieldCondition) -> Option<Box<dyn Iterator<Item=PointOffsetType>>> {
         unimplemented!()
     }
 

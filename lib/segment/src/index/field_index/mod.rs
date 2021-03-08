@@ -1,6 +1,6 @@
 
 
-use crate::types::{FieldCondition, PointIdType};
+use crate::types::{FieldCondition, PointOffsetType};
 use std::collections::HashSet;
 
 pub mod numeric_index;
@@ -12,7 +12,7 @@ pub mod index_selector;
 #[derive(Debug, Clone)]
 pub enum PrimaryCondition {
     Condition(FieldCondition),
-    Ids(HashSet<PointIdType>)
+    Ids(HashSet<PointOffsetType>)
 }
 
 #[derive(Debug)]

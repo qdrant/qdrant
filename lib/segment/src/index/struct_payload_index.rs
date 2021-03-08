@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, File, remove_file};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,8 +13,12 @@ use crate::index::field_index::index_selector::index_selector;
 use crate::index::index::PayloadIndex;
 use crate::index::payload_config::PayloadConfig;
 use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage};
-use crate::types::{Filter, PayloadKeyType, FieldCondition};
-use crate::index::field_index::CardinalityEstimation;
+use crate::types::{Filter, PayloadKeyType, FieldCondition, Condition, PointOffsetType};
+use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
+use crate::index::query_estimator::estimate_filter;
+use crate::vector_storage::vector_storage::VectorStorage;
+use std::iter::FromIterator;
+use crate::id_mapper::id_mapper::IdMapper;
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 
@@ -22,7 +26,9 @@ type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
 
 pub struct StructPayloadIndex {
     condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+    vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
+    id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
     field_indexes: IndexesMap,
     config: PayloadConfig,
     path: PathBuf,
@@ -30,18 +36,31 @@ pub struct StructPayloadIndex {
 }
 
 impl StructPayloadIndex {
-
     pub fn estimate_field_condition(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         self.field_indexes.get(&condition.key).and_then(|indexes| {
             let mut result_estimation: Option<CardinalityEstimation> = None;
             for index in indexes {
                 result_estimation = index.estimate_cardinality(condition);
                 if result_estimation.is_some() {
-                    break
+                    break;
                 }
             }
             result_estimation
         })
+    }
+
+    fn query_field(&self, field_condition: &FieldCondition) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
+        let indexes = self.field_indexes
+            .get(&field_condition.key)
+            .and_then(|indexes|
+                indexes
+                    .iter()
+                    .map(|field_index| field_index.filter(field_condition))
+                    .skip_while(|filter_iter| filter_iter.is_none())
+                    .next()
+                    .map(|filter_iter| filter_iter.unwrap())
+            );
+        indexes
     }
 
     fn config_path(&self) -> PathBuf {
@@ -99,7 +118,9 @@ impl StructPayloadIndex {
 
 
     pub fn open(condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+                vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
                 payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
+                id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
                 path: &Path,
                 total_points: usize,
     ) -> OperationResult<Self> {
@@ -108,7 +129,9 @@ impl StructPayloadIndex {
 
         let mut index = StructPayloadIndex {
             condition_checker,
+            vector_storage,
             payload,
+            id_mapper,
             field_indexes: Default::default(),
             config,
             path: path.to_owned(),
@@ -185,7 +208,9 @@ impl StructPayloadIndex {
 
     pub fn new(
         condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+        vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
         payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
+        id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
         path: &Path,
         config: Option<PayloadConfig>,
         total_points: usize,
@@ -194,7 +219,9 @@ impl StructPayloadIndex {
         let payload_config = config.unwrap_or_default();
         let mut payload_index = Self {
             condition_checker,
+            vector_storage,
             payload,
+            id_mapper,
             field_indexes: Default::default(),
             config: payload_config,
             path: path.to_owned(),
@@ -247,8 +274,69 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
-    fn query_points(&self, query: &Filter) -> Vec<usize> {
-        unimplemented!()
+    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
+        let total = self.total_points();
+
+        let estimator = |condition: &Condition| {
+            match condition {
+                Condition::Filter(_) => panic!("Unexpected branching"),
+                Condition::HasId(ids) => {
+                    let id_mapper_ref = self.id_mapper.borrow();
+                    let mapped_ids: HashSet<PointOffsetType> = ids.iter()
+                        .filter_map(|external_id| id_mapper_ref.internal_id(*external_id))
+                        .collect();
+                    let num_ids = mapped_ids.len();
+                    CardinalityEstimation {
+                        primary_clauses: vec![PrimaryCondition::Ids(mapped_ids)],
+                        min: 0,
+                        exp: num_ids,
+                        max: num_ids,
+                    }
+                }
+                Condition::Field(field_condition) => self
+                    .estimate_field_condition(field_condition)
+                    .unwrap_or(CardinalityEstimation {
+                        primary_clauses: vec![],
+                        min: 0,
+                        exp: self.total_points() / 2,
+                        max: self.total_points(),
+                    }),
+            }
+        };
+
+        estimate_filter(&estimator, query, total)
+    }
+
+    fn query_points(&self, query: &Filter) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+        // Assume query is already estimated to be small enough so we can iterate over all matched ids
+        let query_cardinality = self.estimate_cardinality(query);
+        let condition_checker = self.condition_checker.borrow();
+        let vector_storage_ref = self.vector_storage.borrow();
+        let full_scan_iterator = vector_storage_ref.iter_ids(); // Should not be used if filter restricted by indexed fields
+        return if query_cardinality.primary_clauses.is_empty() {
+            // Worst case: query expected to return few matches, but index can't be used
+            let matched_points = full_scan_iterator
+                .filter(|i| condition_checker.check(*i, query))
+                .collect_vec();
+
+            Box::new(matched_points.into_iter())
+        } else {
+            // CPU-optimized strategy here: points are made unique before applying other filters.
+            let preselected: HashSet<PointOffsetType> = query_cardinality.primary_clauses.iter()
+                .map(|clause| {
+                    match clause {
+                        PrimaryCondition::Condition(field_condition) => self.query_field(field_condition)
+                            .unwrap_or(vector_storage_ref.iter_ids() /* index is not built */),
+                        PrimaryCondition::Ids(ids) => Box::new(ids.iter().cloned())
+                    }
+                })
+                .flat_map(|x| x)
+                .collect();
+            let  matched_points = preselected.into_iter()
+                .filter(|i| condition_checker.check(*i, query))
+                .collect_vec();
+            Box::new(matched_points.into_iter())
+        };
     }
 }
 
@@ -265,4 +353,10 @@ mod tests {
         let dir = TempDir::new("storage_dir").unwrap();
         let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
     }
+
+    // #[test]
+    // fn test_flat_map() {
+    //     let a = vec![vec![1,2,3], vec![4,5,6], vec![7,7,7]];
+    //     a.iter().flat_map(|x| x.iter()).for_each(|x| println!("{}", x))
+    // }
 }
