@@ -24,11 +24,10 @@ pub struct PersistedNumericIndex<N: ToPrimitive + Clone> {
 
 
 impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
-
     pub fn new() -> Self {
         Self {
             points_count: 0,
-            elements: vec![]
+            elements: vec![],
         }
     }
 
@@ -96,12 +95,19 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
             self.elements.push(Element { id, value })
         }
     }
+
+    fn condition_iter(&self, range: &Range) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+        let (lower_index, upper_index) = self.search_range(range);
+        Box::new((&self.elements[lower_index..upper_index]).iter().map(|element| element.id))
+    }
 }
 
 
 impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
-    fn filter(&self, condition: &FieldCondition) -> Option<Box<dyn Iterator<Item=PointOffsetType>>> {
-        unimplemented!()
+    fn filter(&self, condition: &FieldCondition) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
+        condition.range
+            .as_ref()
+            .map(|range| self.condition_iter(range))
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
@@ -128,7 +134,7 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<FloatPayloadType> {
         elements.sort_by_key(|el| OrderedFloat(el.value));
         FieldIndex::FloatIndex(PersistedNumericIndex {
             points_count: elements.len(),
-            elements
+            elements,
         })
     }
 }
@@ -146,7 +152,7 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<IntPayloadType> {
         elements.sort_by_key(|el| el.value);
         FieldIndex::IntIndex(PersistedNumericIndex {
             points_count: elements.len(),
-            elements
+            elements,
         })
     }
 }
