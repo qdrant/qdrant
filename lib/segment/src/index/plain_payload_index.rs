@@ -38,7 +38,12 @@ impl PlainPayloadIndex {
         path: &Path,
     ) -> OperationResult<Self> {
         let config_path = PayloadConfig::get_config_path(path);
-        let config = PayloadConfig::load(&config_path)?;
+        let config = if config_path.exists() {
+            PayloadConfig::load(&config_path)?
+        } else {
+            PayloadConfig::default()
+        };
+
 
         let index = PlainPayloadIndex {
             condition_checker,
@@ -47,26 +52,9 @@ impl PlainPayloadIndex {
             path: path.to_owned()
         };
 
-        Ok(index)
-    }
-
-    pub fn new(
-        condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
-        vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
-        path: &Path,
-        config: Option<PayloadConfig>
-    ) -> OperationResult<Self> {
-        create_dir_all(path)?;
-        let payload_config = config.unwrap_or_default();
-
-        let index = PlainPayloadIndex {
-            condition_checker,
-            vector_storage,
-            config: payload_config,
-            path: path.to_owned()
-        };
-
-        index.save_config()?;
+        if !index.config_path().exists() {
+            index.save_config()?
+        }
 
         Ok(index)
     }

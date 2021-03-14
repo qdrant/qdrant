@@ -4,7 +4,7 @@ use crate::vector_storage::simple_vector_storage::SimpleVectorStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::index::plain_payload_index::{PlainPayloadIndex, PlainIndex};
 use crate::query_planner::simple_query_planner::SimpleQueryPlanner;
-use crate::types::{SegmentType, SegmentConfig, Indexes, SegmentState, SeqNumberType, StorageType};
+use crate::types::{SegmentType, SegmentConfig, Indexes, SegmentState, SeqNumberType, StorageType, PayloadIndexType};
 use std::sync::{Arc, Mutex};
 use atomic_refcell::AtomicRefCell;
 use crate::payload_storage::query_checker::SimpleConditionChecker;
@@ -15,6 +15,8 @@ use crate::entry::entry_point::{OperationResult, OperationError};
 use std::io::Read;
 use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
 use crate::vector_storage::vector_storage::VectorStorage;
+use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::index::PayloadIndex;
 
 
 fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> { Arc::new(AtomicRefCell::new(t)) }
@@ -42,9 +44,15 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
         id_mapper.clone(),
     ));
 
-    let payload_index = sp(PlainPayloadIndex::new(
-        condition_checker, vector_storage.clone(), &payload_index_path, None
-    )?);
+    let payload_index: Arc<AtomicRefCell<dyn PayloadIndex>> = match config.payload_index.unwrap_or_default() {
+        PayloadIndexType::Plain => sp(PlainPayloadIndex::open(condition_checker, vector_storage.clone(), &payload_index_path)?),
+        PayloadIndexType::Struct => sp(StructPayloadIndex::open(
+            condition_checker,
+            vector_storage.clone(),
+            payload_storage.clone(),
+            id_mapper.clone(),
+            &payload_index_path)?),
+    };
 
     let index = sp(match config.index {
         Indexes::Plain { .. } => PlainIndex::new(vector_storage.clone(), payload_index, config.distance),

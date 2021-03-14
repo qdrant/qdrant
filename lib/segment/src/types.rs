@@ -133,9 +133,9 @@ impl Default for Indexes {
 #[serde(tag = "type", content = "options")]
 /// Type of payload index
 pub enum PayloadIndexType {
-    /// Store vectors in memory and use persistence storage only if vectors are changed
+    /// Do not index anything, just keep of what should be indexed later
     Plain,
-    /// Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM
+    /// Build payload index. Index is saved on disc, but index itself is in RAM
     Struct,
 }
 

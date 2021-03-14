@@ -32,7 +32,6 @@ pub struct StructPayloadIndex {
     field_indexes: IndexesMap,
     config: PayloadConfig,
     path: PathBuf,
-    total_points: usize,
 }
 
 impl StructPayloadIndex {
@@ -122,10 +121,13 @@ impl StructPayloadIndex {
                 payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
                 id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
                 path: &Path,
-                total_points: usize,
     ) -> OperationResult<Self> {
         let config_path = PayloadConfig::get_config_path(path);
-        let config = PayloadConfig::load(&config_path)?;
+        let config = if config_path.exists() {
+            PayloadConfig::load(&config_path)?
+        } else {
+            PayloadConfig::default()
+        };
 
         let mut index = StructPayloadIndex {
             condition_checker,
@@ -134,9 +136,13 @@ impl StructPayloadIndex {
             id_mapper,
             field_indexes: Default::default(),
             config,
-            path: path.to_owned(),
-            total_points,
+            path: path.to_owned()
         };
+
+        if !index.config_path().exists() {
+            // Save default config
+            index.save_config()?
+        }
 
         index.load_all_fields()?;
 
@@ -206,33 +212,6 @@ impl StructPayloadIndex {
         Ok(())
     }
 
-    pub fn new(
-        condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
-        vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
-        payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
-        id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
-        path: &Path,
-        config: Option<PayloadConfig>,
-        total_points: usize,
-    ) -> OperationResult<Self> {
-        create_dir_all(path)?;
-        let payload_config = config.unwrap_or_default();
-        let mut payload_index = Self {
-            condition_checker,
-            vector_storage,
-            payload,
-            id_mapper,
-            field_indexes: Default::default(),
-            config: payload_config,
-            path: path.to_owned(),
-            total_points,
-        };
-
-        payload_index.build_all_fields()?;
-
-        Ok(payload_index)
-    }
-
     fn save(&self) -> OperationResult<()> {
         let file = File::create(self.path.as_path())?;
         serde_cbor::to_writer(file, &self.field_indexes)
@@ -241,7 +220,7 @@ impl StructPayloadIndex {
     }
 
     pub fn total_points(&self) -> usize {
-        self.total_points
+        self.vector_storage.borrow().vector_count()
     }
 }
 
@@ -332,31 +311,10 @@ impl PayloadIndex for StructPayloadIndex {
                 })
                 .flat_map(|x| x)
                 .collect();
-            let  matched_points = preselected.into_iter()
+            let matched_points = preselected.into_iter()
                 .filter(|i| condition_checker.check(*i, query))
                 .collect_vec();
             Box::new(matched_points.into_iter())
         };
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use tempdir::TempDir;
-
-    use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
-
-    use super::*;
-
-    #[test]
-    fn test_index_save_and_load() {
-        let dir = TempDir::new("storage_dir").unwrap();
-        let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
-    }
-
-    // #[test]
-    // fn test_flat_map() {
-    //     let a = vec![vec![1,2,3], vec![4,5,6], vec![7,7,7]];
-    //     a.iter().flat_map(|x| x.iter()).for_each(|x| println!("{}", x))
-    // }
 }
