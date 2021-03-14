@@ -17,7 +17,6 @@ use crate::types::{Filter, PayloadKeyType, FieldCondition, Condition, PointOffse
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
 use crate::index::query_estimator::estimate_filter;
 use crate::vector_storage::vector_storage::VectorStorage;
-use std::iter::FromIterator;
 use crate::id_mapper::id_mapper::IdMapper;
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
@@ -122,6 +121,7 @@ impl StructPayloadIndex {
                 id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
                 path: &Path,
     ) -> OperationResult<Self> {
+        create_dir_all(path)?;
         let config_path = PayloadConfig::get_config_path(path);
         let config = if config_path.exists() {
             PayloadConfig::load(&config_path)?
@@ -182,19 +182,6 @@ impl StructPayloadIndex {
         Ok(field_indexes)
     }
 
-    fn build_all_fields(&mut self) -> OperationResult<()> {
-        let mut field_indexes: IndexesMap = Default::default();
-        for field in self.config.indexed_fields.iter() {
-            let field_index = self.build_field_index(field)?;
-            field_indexes.insert(field.clone(), field_index);
-        }
-        self.field_indexes = field_indexes;
-        for field in self.config.indexed_fields.iter() {
-            self.save_field_index(field)?;
-        }
-        Ok(())
-    }
-
     fn build_and_save(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
         if !self.config.indexed_fields.contains(field) {
             self.config.indexed_fields.push(field.clone());
@@ -212,13 +199,6 @@ impl StructPayloadIndex {
         Ok(())
     }
 
-    fn save(&self) -> OperationResult<()> {
-        let file = File::create(self.path.as_path())?;
-        serde_cbor::to_writer(file, &self.field_indexes)
-            .map_err(|err| OperationError::ServiceError { description: format!("Unable to save index: {:?}", err) })?;
-        Ok(())
-    }
-
     pub fn total_points(&self) -> usize {
         self.vector_storage.borrow().vector_count()
     }
@@ -230,7 +210,7 @@ impl PayloadIndex for StructPayloadIndex {
         self.config.indexed_fields.clone()
     }
 
-    fn mark_indexed(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
+    fn set_indexed(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
         if !self.config.indexed_fields.contains(field) {
             self.config.indexed_fields.push(field.clone());
             self.save_config()?;
@@ -267,19 +247,14 @@ impl PayloadIndex for StructPayloadIndex {
                     let num_ids = mapped_ids.len();
                     CardinalityEstimation {
                         primary_clauses: vec![PrimaryCondition::Ids(mapped_ids)],
-                        min: 0,
+                        min: num_ids,
                         exp: num_ids,
                         max: num_ids,
                     }
                 }
                 Condition::Field(field_condition) => self
                     .estimate_field_condition(field_condition)
-                    .unwrap_or(CardinalityEstimation {
-                        primary_clauses: vec![],
-                        min: 0,
-                        exp: self.total_points() / 2,
-                        max: self.total_points(),
-                    }),
+                    .unwrap_or(CardinalityEstimation::unknown(self.total_points())),
             }
         };
 

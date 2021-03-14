@@ -1,9 +1,7 @@
-use crate::index::index::PayloadIndex;
 use crate::types::{Filter, Condition};
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
-use crate::index::struct_payload_index::StructPayloadIndex;
 use itertools::Itertools;
-use std::cmp::max;
+use std::cmp::{max, min};
 
 fn combine_must_estimations(estimations: &Vec<CardinalityEstimation>, total: usize) -> CardinalityEstimation {
     let min_estimation = estimations.iter()
@@ -93,7 +91,7 @@ fn estimate_should<F>(estimator: &F, conditions: &Vec<Condition>, total: usize) 
         primary_clauses: clauses,
         min: should_estimations.iter().map(|x| x.min).max().unwrap_or(0),
         exp: expected_count,
-        max: should_estimations.iter().map(|x| x.max).sum(),
+        max: min(should_estimations.iter().map(|x| x.max).sum(), total),
     }
 }
 
@@ -119,4 +117,200 @@ fn estimate_must_not<F>(estimator: &F, conditions: &Vec<Condition>, total: usize
     let estimate = |x| invert_estimation(&estimate_condition(estimator, x, total), total);
     let must_not_estimations = conditions.iter().map(estimate).collect_vec();
     combine_must_estimations(&must_not_estimations, total)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{FieldCondition};
+
+    const TOTAL: usize = 1000;
+
+    fn test_condition(key: String) -> Condition {
+        Condition::Field(FieldCondition {
+            key,
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+        })
+    }
+
+    fn test_estimator(condition: &Condition) -> CardinalityEstimation {
+        match condition {
+            Condition::Filter(_) => panic!("unexpected Filter"),
+            Condition::Field(field) => match field.key.as_str() {
+                "color" => CardinalityEstimation {
+                    primary_clauses: vec![PrimaryCondition::Condition(field.clone())],
+                    min: 100,
+                    exp: 200,
+                    max: 300,
+                },
+                "size" => CardinalityEstimation {
+                    primary_clauses: vec![PrimaryCondition::Condition(field.clone())],
+                    min: 100,
+                    exp: 100,
+                    max: 100,
+                },
+                "price" => CardinalityEstimation {
+                    primary_clauses: vec![PrimaryCondition::Condition(field.clone())],
+                    min: 10,
+                    exp: 15,
+                    max: 20,
+                },
+                _ => CardinalityEstimation::unknown(TOTAL)
+            },
+            Condition::HasId(ids) => CardinalityEstimation {
+                primary_clauses: vec![PrimaryCondition::Ids(ids.iter().map(|x| *x as usize).collect())],
+                min: ids.len(),
+                exp: ids.len(),
+                max: ids.len(),
+            }
+        }
+    }
+
+    #[test]
+    fn simple_query_estimation_test() {
+        let query = Filter::new_must(test_condition("color".to_owned()));
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        assert_eq!(estimation.exp, 200);
+        assert!(!estimation.primary_clauses.is_empty());
+    }
+
+    #[test]
+    fn must_estimation_query_test() {
+        let query = Filter {
+            should: None,
+            must: Some(vec![
+                test_condition("color".to_owned()),
+                test_condition("size".to_owned()),
+                test_condition("un-indexed".to_owned()),
+            ]),
+            must_not: None,
+        };
+
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        assert_eq!(estimation.primary_clauses.len(), 1);
+        match &estimation.primary_clauses[0] {
+            PrimaryCondition::Condition(field) => assert_eq!(&field.key, "size"),
+            PrimaryCondition::Ids(_) => assert!(false)
+        }
+        assert!(estimation.max <= TOTAL);
+        assert!(estimation.exp <= estimation.max);
+        assert!(estimation.min <= estimation.exp);
+    }
+
+    #[test]
+    fn should_estimation_query_test() {
+        let query = Filter {
+            should: Some(vec![
+                test_condition("color".to_owned()),
+                test_condition("size".to_owned()),
+            ]),
+            must: None,
+            must_not: None,
+        };
+
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        assert_eq!(estimation.primary_clauses.len(), 2);
+        assert!(estimation.max <= TOTAL);
+        assert!(estimation.exp <= estimation.max);
+        assert!(estimation.min <= estimation.exp);
+    }
+
+    #[test]
+    fn another_should_estimation_query_test() {
+        let query = Filter {
+            should: Some(vec![
+                test_condition("color".to_owned()),
+                test_condition("size".to_owned()),
+                test_condition("un-indexed".to_owned()),
+            ]),
+            must: None,
+            must_not: None,
+        };
+
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        assert_eq!(estimation.primary_clauses.len(), 0);
+        eprintln!("estimation = {:#?}", estimation);
+        assert!(estimation.max <= TOTAL);
+        assert!(estimation.exp <= estimation.max);
+        assert!(estimation.min <= estimation.exp);
+    }
+
+    #[test]
+    fn complex_estimation_query_test() {
+        let query = Filter {
+            should: Some(vec![
+                Condition::Filter(Filter {
+                    should: None,
+                    must: Some(vec![
+                        test_condition("color".to_owned()),
+                        test_condition("size".to_owned()),
+                    ]),
+                    must_not: None,
+                }),
+                Condition::Filter(Filter {
+                    should: None,
+                    must: Some(vec![
+                        test_condition("price".to_owned()),
+                        test_condition("size".to_owned()),
+                    ]),
+                    must_not: None,
+                }),
+            ]),
+            must: None,
+            must_not: Some(vec![
+                Condition::HasId(vec![1, 2, 3, 4, 5].iter().cloned().collect())
+            ]),
+        };
+
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        assert_eq!(estimation.primary_clauses.len(), 2);
+        assert!(estimation.max <= TOTAL);
+        assert!(estimation.exp <= estimation.max);
+        assert!(estimation.min <= estimation.exp);
+    }
+
+    #[test]
+    fn another_complex_estimation_query_test() {
+        let query = Filter {
+            should: None,
+            must: Some(vec![
+                Condition::Filter(Filter {
+                    must: None,
+                    should: Some(vec![
+                        test_condition("color".to_owned()),
+                        test_condition("size".to_owned()),
+                    ]),
+                    must_not: None,
+                }),
+                Condition::Filter(Filter {
+                    must: None,
+                    should: Some(vec![
+                        test_condition("price".to_owned()),
+                        test_condition("size".to_owned()),
+                    ]),
+                    must_not: None,
+                }),
+            ]),
+            must_not: Some(vec![
+                Condition::HasId(vec![1, 2, 3, 4, 5].iter().cloned().collect())
+            ]),
+        };
+
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        assert_eq!(estimation.primary_clauses.len(), 2);
+        estimation.primary_clauses.iter().for_each(|x| match x {
+            PrimaryCondition::Condition(field) => assert!(vec![
+                "price".to_owned(),
+                "size".to_owned(),
+            ].contains(&field.key )),
+            PrimaryCondition::Ids(_) => assert!(false, "Should not go here")
+        });
+        assert!(estimation.max <= TOTAL);
+        assert!(estimation.exp <= estimation.max);
+        assert!(estimation.min <= estimation.exp);
+    }
 }

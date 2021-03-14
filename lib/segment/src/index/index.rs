@@ -23,7 +23,7 @@ pub trait PayloadIndex {
     fn indexed_fields(&self) -> Vec<PayloadKeyType>;
 
     /// Mark field as one which should be indexed
-    fn mark_indexed(&mut self, field: &PayloadKeyType) -> OperationResult<()>;
+    fn set_indexed(&mut self, field: &PayloadKeyType) -> OperationResult<()>;
 
     /// Remove index
     fn drop_index(&mut self, field: &PayloadKeyType) -> OperationResult<()>;

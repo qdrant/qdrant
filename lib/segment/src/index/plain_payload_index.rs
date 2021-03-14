@@ -37,6 +37,7 @@ impl PlainPayloadIndex {
         vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
         path: &Path,
     ) -> OperationResult<Self> {
+        create_dir_all(path)?;
         let config_path = PayloadConfig::get_config_path(path);
         let config = if config_path.exists() {
             PayloadConfig::load(&config_path)?
@@ -65,7 +66,7 @@ impl PayloadIndex for PlainPayloadIndex {
         self.config.indexed_fields.clone()
     }
 
-    fn mark_indexed(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
+    fn set_indexed(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
         if !self.config.indexed_fields.contains(field) {
             self.config.indexed_fields.push(field.clone());
             return self.save_config()

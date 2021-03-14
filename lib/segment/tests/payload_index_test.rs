@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rand::prelude::ThreadRng;
     use rand::seq::SliceRandom;
     use segment::types::{PayloadType, VectorElementType, SegmentConfig, Indexes, PayloadIndexType, Distance, StorageType};
@@ -8,33 +7,33 @@ mod tests {
     use tempdir::TempDir;
     use segment::segment_constructor::segment_constructor::build_segment;
 
-    const ADJECTIVE: Vec<String> = vec![
-        "jobless".to_string(),
-        "rightful".to_string(),
-        "breakable".to_string(),
-        "impartial".to_string(),
-        "shocking".to_string(),
-        "faded".to_string(),
-        "phobic".to_string(),
-        "overt".to_string(),
-        "like".to_string(),
-        "wide-eyed".to_string(),
-        "broad".to_string(),
+    const ADJECTIVE: &'static [&'static str] = &[
+        "jobless",
+        "rightful",
+        "breakable",
+        "impartial",
+        "shocking",
+        "faded",
+        "phobic",
+        "overt",
+        "like",
+        "wide-eyed",
+        "broad",
     ];
 
-    const NOUN: Vec<String> = vec![
-        "territory".to_string(),
-        "jam".to_string(),
-        "neck".to_string(),
-        "chicken".to_string(),
-        "cap".to_string(),
-        "kiss".to_string(),
-        "veil".to_string(),
-        "trail".to_string(),
-        "size".to_string(),
-        "digestion".to_string(),
-        "rod".to_string(),
-        "seed".to_string(),
+    const NOUN: &'static [&'static str] =&[
+        "territory",
+        "jam",
+        "neck",
+        "chicken",
+        "cap",
+        "kiss",
+        "veil",
+        "trail",
+        "size",
+        "digestion",
+        "rod",
+        "seed",
     ];
 
     fn random_keyword(rnd_gen: &mut ThreadRng) -> String {
@@ -63,7 +62,8 @@ mod tests {
     fn test_struct_payload_index() {
         // Compare search with plain and struct indexes
 
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir1 = TempDir::new("segment1_dir").unwrap();
+        let dir2 = TempDir::new("segment2_dir").unwrap();
 
         let dim = 5;
 
@@ -75,9 +75,9 @@ mod tests {
             distance: Distance::Dot,
         };
 
-        let mut plain_segment = build_segment(path, &config).unwrap();
+        let mut plain_segment = build_segment(dir1.path(), &config).unwrap();
         config.payload_index = Some(PayloadIndexType::Struct);
-        let mut struct_segment = build_segment(path, &config).unwrap();
+        let mut struct_segment = build_segment(dir2.path(), &config).unwrap();
 
         // ToDo: Init both segments with same data
         // ToDo: Compare indexed and un-indexed search results

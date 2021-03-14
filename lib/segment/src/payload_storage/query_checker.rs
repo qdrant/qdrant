@@ -203,17 +203,6 @@ mod tests {
             geo_radius: None,
         });
 
-        let in_moscow = Condition::Field(FieldCondition {
-            key: "location".to_string(),
-            r#match: None,
-            range: None,
-            geo_bounding_box: Some(GeoBoundingBox {
-                top_left: GeoPoint { lon: 37.0366, lat: 56.1859 },
-                bottom_right: GeoPoint { lon: 38.2532, lat: 55.317 },
-            }),
-            geo_radius: None,
-        });
-
         let with_bad_rating = Condition::Field(FieldCondition {
             key: "rating".to_string(),
             r#match: None,
