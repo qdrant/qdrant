@@ -47,18 +47,21 @@ pub fn estimate_filter<F>(estimator: &F, filter: &Filter, total: usize) -> Cardi
 
     match &filter.must {
         None => {}
-        Some(conditions) =>
+        Some(conditions) => if !conditions.is_empty() {
             filter_estimations.push(estimate_must(estimator, conditions, total))
+        }
     }
     match &filter.should {
         None => {}
-        Some(conditions) =>
+        Some(conditions) => if !conditions.is_empty() {
             filter_estimations.push(estimate_should(estimator, conditions, total))
+        }
     }
     match &filter.must_not {
         None => {}
-        Some(conditions) =>
+        Some(conditions) => if !conditions.is_empty() {
             filter_estimations.push(estimate_must_not(estimator, conditions, total))
+        }
     }
 
     combine_must_estimations(&filter_estimations, total)
@@ -306,7 +309,7 @@ mod tests {
             PrimaryCondition::Condition(field) => assert!(vec![
                 "price".to_owned(),
                 "size".to_owned(),
-            ].contains(&field.key )),
+            ].contains(&field.key)),
             PrimaryCondition::Ids(_) => assert!(false, "Should not go here")
         });
         assert!(estimation.max <= TOTAL);
