@@ -2085,7 +2085,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "actix-web",
  "collection",
@@ -2496,7 +2496,7 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 
 [[package]]
 name = "segment"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "atomic_refcell",
  "atomicwrites",
@@ -2788,7 +2788,7 @@ checksum = "213701ba3370744dcd1a12960caa4843b3d68b4d1c0a5d575e0d65b2ee9d16c0"
 
 [[package]]
 name = "storage"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "collection",
  "num_cpus",

@@ -109,5 +109,11 @@ pub trait SegmentEntry {
 
     /// Removes all persisted data and forces to destroy segment
     fn drop_data(&mut self) -> OperationResult<()>;
+
+    /// Delete field index, if exists
+    fn delete_field_index(&mut self, op_num: SeqNumberType, key: &PayloadKeyType) -> OperationResult<bool>;
+
+    /// Create index for a payload field, if not exists
+    fn create_field_index(&mut self, op_num: SeqNumberType, key: &PayloadKeyType) -> OperationResult<bool>;
 }
 

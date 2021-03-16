@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::fs::{remove_dir_all};
 use std::io::Write;
 use atomicwrites::{AtomicFile, AllowOverwrite};
+use crate::index::index::PayloadIndex;
 
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
@@ -23,6 +24,7 @@ pub struct Segment {
     pub id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
     pub vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     pub payload_storage: Arc<AtomicRefCell<dyn PayloadStorage>>,
+    pub payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
     /// User for writing only here.
     pub query_planner: Arc<AtomicRefCell<dyn QueryPlanner>>,
     pub appendable_flag: bool,
@@ -298,5 +300,17 @@ impl SegmentEntry for Segment {
 
     fn drop_data(&mut self) -> OperationResult<()> {
         Ok(remove_dir_all(&self.current_path)?)
+    }
+
+    fn delete_field_index(&mut self, op_num: u64, key: &PayloadKeyType) -> OperationResult<bool> {
+        if self.skip_by_version(op_num) { return Ok(false); };
+        self.payload_index.borrow_mut().drop_index(key)?;
+        Ok(true)
+    }
+
+    fn create_field_index(&mut self, op_num: u64, key: &PayloadKeyType) -> OperationResult<bool> {
+        if self.skip_by_version(op_num) { return Ok(false); };
+        self.payload_index.borrow_mut().set_indexed(key)?;
+        Ok(true)
     }
 }

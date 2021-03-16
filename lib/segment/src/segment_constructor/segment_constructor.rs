@@ -55,7 +55,11 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
     };
 
     let index = sp(match config.index {
-        Indexes::Plain { .. } => PlainIndex::new(vector_storage.clone(), payload_index, config.distance),
+        Indexes::Plain { .. } => PlainIndex::new(
+            vector_storage.clone(),
+            payload_index.clone(),
+            config.distance
+        ),
         Indexes::Hnsw { .. } => unimplemented!(),
     });
 
@@ -75,6 +79,7 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
         id_mapper: id_mapper.clone(),
         vector_storage,
         payload_storage: payload_storage.clone(),
+        payload_index: payload_index.clone(),
         query_planner: sp(query_planer),
         appendable_flag: appendable,
         segment_type,

@@ -7,6 +7,8 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 
 type LockedRmSet = Arc<RwLock<HashSet<PointIdType>>>;
+type LockedFieldsSet = Arc<RwLock<HashSet<PayloadKeyType>>>;
+
 
 /// This object is a wrapper around read-only segment.
 /// It could be used to provide all read and write operations while wrapped segment is being optimized (i.e. not available for writing)
@@ -16,15 +18,25 @@ pub struct ProxySegment {
     pub wrapped_segment: LockedSegment,
     /// Points which should not longer used from wrapped_segment
     deleted_points: LockedRmSet,
+    deleted_indexes: LockedFieldsSet,
+    created_indexes: LockedFieldsSet
 }
 
 
 impl ProxySegment {
-    pub fn new(segment: LockedSegment, write_segment: LockedSegment, deleted_points: LockedRmSet) -> Self {
+    pub fn new(
+        segment: LockedSegment,
+        write_segment: LockedSegment,
+        deleted_points: LockedRmSet,
+        created_indexes: LockedFieldsSet,
+        deleted_indexes: LockedFieldsSet,
+    ) -> Self {
         ProxySegment {
             write_segment,
             wrapped_segment: segment,
             deleted_points,
+            created_indexes,
+            deleted_indexes
         }
     }
 
@@ -235,6 +247,20 @@ impl SegmentEntry for ProxySegment {
         self.wrapped_segment.get().write().drop_data()?;
         Ok(())
     }
+
+    fn delete_field_index(&mut self, op_num: u64, key: &PayloadKeyType) -> OperationResult<bool> {
+        if self.version() > op_num { return Ok(false); }
+        self.deleted_indexes.write().insert(key.clone());
+        self.created_indexes.write().remove(key);
+        self.write_segment.get().write().delete_field_index(op_num, key)
+    }
+
+    fn create_field_index(&mut self, op_num: u64, key: &PayloadKeyType) -> OperationResult<bool> {
+        if self.version() > op_num { return Ok(false); }
+        self.created_indexes.write().insert(key.clone());
+        self.deleted_indexes.write().remove(key);
+        self.write_segment.get().write().create_field_index(op_num, key)
+    }
 }
 
 
@@ -251,7 +277,16 @@ mod tests {
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
 
-        let mut proxy_segment = ProxySegment::new(original_segment, write_segment, deleted_points);
+        let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+        let created_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+
+        let mut proxy_segment = ProxySegment::new(
+            original_segment,
+            write_segment,
+            deleted_points,
+            deleted_indexes.clone(),
+            created_indexes.clone()
+        );
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment.upsert_point(100, 4, &vec4).unwrap();

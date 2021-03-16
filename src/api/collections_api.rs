@@ -3,7 +3,7 @@ use actix_web::{get, post, web, Responder};
 use itertools::Itertools;
 use crate::common::helpers::process_response;
 use actix_web::rt::time::Instant;
-use storage::content_manager::storage_ops::StorageOps;
+use storage::content_manager::storage_ops::StorageOperations;
 use crate::api::models::{CollectionDescription, CollectionsResponse};
 
 #[get("/collections")]
@@ -43,7 +43,7 @@ pub async fn get_collection(
 #[post("/collections")]
 pub async fn update_collections(
     toc: web::Data<TableOfContent>,
-    operation: web::Json<StorageOps>,
+    operation: web::Json<StorageOperations>,
 ) -> impl Responder {
     let timing = Instant::now();
 

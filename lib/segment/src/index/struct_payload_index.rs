@@ -94,20 +94,27 @@ impl StructPayloadIndex {
         Ok(())
     }
 
-    fn load_field_index(&self, field: &PayloadKeyType) -> OperationResult<Vec<FieldIndex>> {
+    fn load_or_build_field_index(&self, field: &PayloadKeyType) -> OperationResult<Vec<FieldIndex>> {
         let field_index_path = Self::get_field_index_path(&self.path, field);
-        debug!("Loading field `{}` index from {}", field, field_index_path.to_str().unwrap());
-        let file = File::open(field_index_path)?;
-        let field_indexes: Vec<FieldIndex> = serde_cbor::from_reader(file)
-            .map_err(|err| OperationError::ServiceError { description: format!("Unable to load index: {:?}", err) })?;
+        if field_index_path.exists() {
+            debug!("Loading field `{}` index from {}", field, field_index_path.to_str().unwrap());
+            let file = File::open(field_index_path)?;
+            let field_indexes: Vec<FieldIndex> = serde_cbor::from_reader(file)
+                .map_err(|err| OperationError::ServiceError { description: format!("Unable to load index: {:?}", err) })?;
 
-        Ok(field_indexes)
+            Ok(field_indexes)
+        } else {
+            debug!("Index for field `{}` not found in {}, building now", field, field_index_path.to_str().unwrap());
+            let res = self.build_field_index(field)?;
+            self.save_field_index(field)?;
+            Ok(res)
+        }
     }
 
     fn load_all_fields(&mut self) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
         for field in self.config.indexed_fields.iter() {
-            let field_index = self.load_field_index(field)?;
+            let field_index = self.load_or_build_field_index(field)?;
             field_indexes.insert(field.clone(), field_index);
         }
         self.field_indexes = field_indexes;
