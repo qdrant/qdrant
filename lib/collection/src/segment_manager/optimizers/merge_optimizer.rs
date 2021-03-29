@@ -1,13 +1,13 @@
 use crate::segment_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId, LockedSegment};
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::segment::Segment;
-use segment::types::{SegmentType, SegmentConfig, StorageType, Indexes};
+use segment::types::{SegmentType, SegmentConfig, StorageType, Indexes, PayloadIndexType};
 
 use itertools::Itertools;
 use segment::segment_constructor::segment_constructor::build_segment;
 use std::path::PathBuf;
 use crate::collection::CollectionResult;
+use segment::segment_constructor::segment_builder::SegmentBuilder;
 
 
 pub struct MergeOptimizer {
@@ -23,7 +23,8 @@ impl MergeOptimizer {
         max_segments: usize,
         memmap_threshold: usize,
         indexing_threshold: usize,
-        segments_path: PathBuf, config: SegmentConfig) -> Self {
+        segments_path: PathBuf,
+        config: SegmentConfig) -> Self {
         return MergeOptimizer { max_segments, memmap_threshold, indexing_threshold, segments_path, config };
     }
 }
@@ -41,9 +42,14 @@ impl SegmentOptimizer for MergeOptimizer {
         // We need 3 segments because in this case we can guarantee that total segments number will be less
 
         read_segments.iter()
-            .map(|(idx, segment)| (*idx, segment.get().read().info()))
-            .filter(|(_, info)| info.segment_type != SegmentType::Special)
-            .map(|(idx, info)| (idx, info.num_vectors))
+            .filter_map(|(idx, segment)| {
+                let segment_entry = segment.get();
+                let read_segment = segment_entry.read();
+                match read_segment.segment_type() != SegmentType::Special {
+                    true => Some((*idx, read_segment.vectors_count())),
+                    false => None
+                }
+            })
             .sorted_by_key(|(_, size)| *size)
             .take(3)
             .map(|x| x.0)
@@ -58,21 +64,30 @@ impl SegmentOptimizer for MergeOptimizer {
         )?))
     }
 
-    fn optimized_segment(&self, optimizing_segments: &Vec<LockedSegment>) -> CollectionResult<Segment> {
+    fn optimized_segment_builder(&self, optimizing_segments: &Vec<LockedSegment>) -> CollectionResult<SegmentBuilder> {
         let total_vectors: usize = optimizing_segments.iter()
-            .map(|s| s.get().read().info().num_vectors).sum();
+            .map(|s| s.get().read().vectors_count()).sum();
 
         let mut optimized_config = self.config.clone();
 
         if total_vectors < self.memmap_threshold {
             optimized_config.storage_type = StorageType::InMemory;
+        } else {
+            optimized_config.storage_type = StorageType::Mmap;
         }
 
         if total_vectors < self.indexing_threshold {
             optimized_config.index = Indexes::Plain {};
+            optimized_config.payload_index = Some(PayloadIndexType::Plain)
+        } else {
+            optimized_config.payload_index = Some(PayloadIndexType::Struct);
+            optimized_config.index = match optimized_config.index {
+                Indexes::Plain { } => Indexes::default_hnsw(),
+                _ => optimized_config.index
+            }
         }
 
-        Ok(build_segment(self.segments_path.as_path(), &optimized_config)?)
+        Ok(SegmentBuilder::new(build_segment(self.segments_path.as_path(), &optimized_config)?))
     }
 }
 
@@ -116,6 +131,7 @@ mod tests {
             dir.path().to_owned(), SegmentConfig {
                 vector_size: 4,
                 index: Indexes::Plain {},
+                payload_index: Some(Default::default()),
                 distance: Distance::Dot,
                 storage_type: Default::default(),
             });

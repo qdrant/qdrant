@@ -8,6 +8,8 @@ use crate::segment_manager::holders::proxy_segment::ProxySegment;
 use segment::entry::entry_point::SegmentEntry;
 use parking_lot::RwLock;
 use itertools::Itertools;
+use segment::segment_constructor::segment_builder::SegmentBuilder;
+use std::convert::TryInto;
 
 pub trait SegmentOptimizer {
     /// Checks if segment optimization is required
@@ -17,7 +19,7 @@ pub trait SegmentOptimizer {
     fn temp_segment(&self) -> CollectionResult<LockedSegment>;
 
     /// Build optimized segment
-    fn optimized_segment(&self, optimizing_segments: &Vec<LockedSegment>) -> CollectionResult<Segment>;
+    fn optimized_segment_builder(&self, optimizing_segments: &Vec<LockedSegment>) -> CollectionResult<SegmentBuilder>;
 
 
     /// Performs optimization of collections's segments, including:
@@ -38,7 +40,7 @@ pub trait SegmentOptimizer {
                 .collect()
         };
 
-        let mut optimized_segment = self.optimized_segment(&optimizing_segments)?;
+        let mut segment_builder = self.optimized_segment_builder(&optimizing_segments)?;
 
         let proxies: Vec<_> = optimizing_segments.iter()
             .map(|sg| ProxySegment::new(
@@ -63,18 +65,21 @@ pub trait SegmentOptimizer {
             match segment {
                 LockedSegment::Original(segment_arc) => {
                     let segment_guard = segment_arc.read();
-                    optimized_segment.update_from(&segment_guard)?;
+                    segment_builder.update_from(&segment_guard)?;
                 },
                 LockedSegment::Proxy(_) => panic!("Attempt to optimize segment which is already currently under optimization. Should never happen"),
             }
         }
 
+        for field in proxy_deleted_indexes.read().iter() { segment_builder.indexed_fields.remove(field); }
+        for field in proxy_created_indexes.read().iter().cloned() { segment_builder.indexed_fields.insert(field); }
+
+        let mut optimized_segment: Segment = segment_builder.try_into()?;
+
         // Delete points in 2 steps
         // First step - delete all points with read lock
         // Second step - delete all the rest points with full write lock
         let deleted_points_snapshot: HashSet<PointIdType> = proxy_deleted_points.read().iter().cloned().collect();
-        let deleted_indexes = proxy_deleted_indexes.read().iter().cloned().collect_vec();
-        let create_indexes = proxy_created_indexes.read().iter().cloned().collect_vec();
 
         for point_id in deleted_points_snapshot.iter().cloned() {
             optimized_segment.delete_point(
@@ -82,7 +87,9 @@ pub trait SegmentOptimizer {
                 point_id,
             ).unwrap();
         }
-        optimized_segment.finish_building()?;
+
+        let deleted_indexes = proxy_deleted_indexes.read().iter().cloned().collect_vec();
+        let create_indexes = proxy_created_indexes.read().iter().cloned().collect_vec();
 
         for delete_field_name in deleted_indexes.iter() {
             optimized_segment.delete_field_index(optimized_segment.version, delete_field_name)?;

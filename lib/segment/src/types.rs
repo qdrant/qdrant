@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};
 use std::cmp::{Ordering};
 use ordered_float::OrderedFloat;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashSet, HashMap};
 
 pub type PointIdType = u64;
 /// Type of point index across all segments
@@ -72,8 +72,14 @@ pub enum SegmentType {
     Special,
 }
 
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct PayloadSchemaInfo {
+    pub data_type: PayloadSchemaType,
+    pub indexed: bool
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentInfo {
     pub segment_type: SegmentType,
@@ -82,6 +88,7 @@ pub struct SegmentInfo {
     pub ram_usage_bytes: usize,
     pub disk_usage_bytes: usize,
     pub is_appendable: bool,
+    pub schema: HashMap<PayloadKeyType, PayloadSchemaInfo>
 }
 
 
@@ -120,6 +127,15 @@ pub enum Indexes {
         /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
         ef_construct: usize,
     },
+}
+
+impl Indexes {
+    pub fn default_hnsw() -> Self {
+        Indexes::Hnsw {
+            m: 16,
+            ef_construct: 100
+        }
+    }
 }
 
 impl Default for Indexes {
@@ -202,7 +218,7 @@ pub enum PayloadType {
     Geo(Vec<GeoPoint>),
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "value")]
 pub enum PayloadSchemaType {

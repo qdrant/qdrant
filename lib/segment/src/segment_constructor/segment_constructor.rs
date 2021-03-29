@@ -60,15 +60,24 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
             payload_index.clone(),
             config.distance
         ),
-        Indexes::Hnsw { .. } => unimplemented!(),
+        _ => PlainIndex::new(
+            vector_storage.clone(),
+            payload_index.clone(),
+            config.distance
+        )
+        // ToDo: Add HNSW index init here
+        // Indexes::Hnsw { .. } => unimplemented!(),
     });
 
-    let appendable = config.index == Indexes::Plain {} && config.storage_type == StorageType::InMemory;
-
     let segment_type = match config.index {
-        Indexes::Plain { .. } => SegmentType::Plain,
+        Indexes::Plain { .. } => match config.payload_index.unwrap_or_default() {
+            PayloadIndexType::Plain => SegmentType::Plain,
+            PayloadIndexType::Struct => SegmentType::Indexed
+        },
         Indexes::Hnsw { .. } => SegmentType::Indexed,
     };
+
+    let appendable = segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
 
     let query_planer = SimpleQueryPlanner::new(index);
 

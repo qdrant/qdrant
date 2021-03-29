@@ -1,6 +1,6 @@
 use thiserror::Error;
 use std::path::Path;
-use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentConfig};
+use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentConfig, SegmentType};
 use std::result;
 use std::io::Error as IoError;
 use atomicwrites::Error as AtomicIoError;
@@ -93,6 +93,12 @@ pub trait SegmentEntry {
 
     /// Return number of vectors in this segment
     fn vectors_count(&self) -> usize;
+
+    /// Number of vectors, marked as deleted
+    fn deleted_count(&self) -> usize;
+
+    /// Get segment type
+    fn segment_type(&self) -> SegmentType;
 
     /// Get current stats of the segment
     fn info(&self) -> SegmentInfo;

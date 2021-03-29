@@ -53,6 +53,7 @@ pub fn simple_collection_fixture(collection_path: &Path) -> (Arc<Runtime>, Colle
             m: 16,
             ef_construct: 128,
         },
+        payload_index: Some(Default::default()),
         distance: Distance::Dot,
         storage_type: Default::default(),
     };

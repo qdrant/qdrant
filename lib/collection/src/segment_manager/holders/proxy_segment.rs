@@ -217,6 +217,14 @@ impl SegmentEntry for ProxySegment {
         count
     }
 
+    fn deleted_count(&self) -> usize {
+        self.write_segment.get().read().deleted_count()
+    }
+
+    fn segment_type(&self) -> SegmentType {
+        SegmentType::Special
+    }
+
     fn info(&self) -> SegmentInfo {
         let wrapped_info = self.wrapped_segment.get().read().info();
         let write_info = self.write_segment.get().read().info();
@@ -228,6 +236,7 @@ impl SegmentEntry for ProxySegment {
             ram_usage_bytes: wrapped_info.ram_usage_bytes + write_info.ram_usage_bytes,
             disk_usage_bytes: wrapped_info.disk_usage_bytes + write_info.disk_usage_bytes,
             is_appendable: false,
+            schema: wrapped_info.schema
         };
     }
 

@@ -3,10 +3,10 @@ use segment::types::{SegmentType, SegmentConfig};
 use ordered_float::OrderedFloat;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::segment_manager::optimizers::segment_optimizer::SegmentOptimizer;
-use segment::segment::Segment;
 use segment::segment_constructor::segment_constructor::build_segment;
 use std::path::PathBuf;
 use crate::collection::CollectionResult;
+use segment::segment_constructor::segment_builder::SegmentBuilder;
 
 pub struct VacuumOptimizer {
     deleted_threshold: f64,
@@ -31,11 +31,22 @@ impl VacuumOptimizer {
 
     fn worst_segment(&self, segments: LockedSegmentHolder) -> Option<(SegmentId, LockedSegment)> {
         segments.read().iter()
-            .map(|(idx, segment)| (*idx, segment.get().read().info()))
-            .filter(|(_, info)| info.segment_type != SegmentType::Special)
-            .filter(|(_, info)| info.num_vectors > self.min_vectors_number)
-            .filter(|(_, info)| info.num_deleted_vectors as f64 / info.num_vectors as f64 > self.deleted_threshold)
-            .max_by_key(|(_, info)| OrderedFloat(info.num_deleted_vectors as f64 / info.num_vectors as f64))
+            // .map(|(idx, segment)| (*idx, segment.get().read().info()))
+            .filter_map(|(idx, segment)| {
+                let segment_entry = segment.get();
+                let read_segment = segment_entry.read();
+                let littered_ratio = read_segment.deleted_count() as f64 / read_segment.vectors_count() as f64;
+
+                let is_big = read_segment.vectors_count() >= self.min_vectors_number;
+                let is_not_special = read_segment.segment_type() != SegmentType::Special;
+                let is_littered = littered_ratio > self.deleted_threshold;
+
+                match is_big && is_not_special && is_littered {
+                    true => Some((*idx, littered_ratio)),
+                    false => None
+                }
+            })
+            .max_by_key(|(_, ratio)| OrderedFloat(*ratio))
             .and_then(|(idx, _)| Some((idx, segments.read().get(idx).unwrap().clone())))
     }
 }
@@ -57,10 +68,10 @@ impl SegmentOptimizer for VacuumOptimizer {
         )?))
     }
 
-    fn optimized_segment(&self, optimizing_segments: &Vec<LockedSegment>) -> CollectionResult<Segment> {
+    fn optimized_segment_builder(&self, optimizing_segments: &Vec<LockedSegment>) -> CollectionResult<SegmentBuilder> {
         let optimizing_segment = optimizing_segments.get(0).unwrap();
         let config = optimizing_segment.get().read().config();
-        Ok(build_segment(self.segments_path.as_path(), &config)?)
+        Ok(SegmentBuilder::new(build_segment(self.segments_path.as_path(), &config)?))
     }
 }
 
@@ -141,6 +152,7 @@ mod tests {
             SegmentConfig {
                 vector_size: 4,
                 index: Indexes::Plain {},
+                payload_index: Some(Default::default()),
                 distance: Distance::Dot,
                 storage_type: StorageType::InMemory,
             },

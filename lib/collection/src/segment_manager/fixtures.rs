@@ -12,21 +12,34 @@ use std::path::Path;
 use parking_lot::RwLock;
 
 pub fn empty_segment(path: &Path) -> Segment {
-    let segment = build_simple_segment(path,  4, Distance::Dot).unwrap();
+    let segment = build_simple_segment(path, 4, Distance::Dot).unwrap();
     return segment;
 }
 
 
-pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: usize) -> Segment {
+pub fn random_segment(
+    path: &Path,
+    opnum: SeqNumberType,
+    num_vectors: u64,
+    dim: usize
+) -> Segment {
     let mut segment = build_simple_segment(path, dim, Distance::Dot).unwrap();
     let mut rnd = rand::thread_rng();
-
+    let payload_key = "number".to_owned();
     for _ in 0..num_vectors {
         let random_vector: Vec<_> = (0..dim).map(|_| rnd.gen_range(0.0, 1.0)).collect();
+        let point_id = rnd.gen_range(1, 100_000_000);
+        let payload_value = rnd.gen_range(1, 1_000);
         segment.upsert_point(
             opnum,
-            rnd.gen_range(1, 100_000_000),
-            &random_vector
+            point_id,
+            &random_vector,
+        ).unwrap();
+        segment.set_payload(
+            opnum,
+            point_id,
+            &payload_key,
+            PayloadType::Integer(vec![payload_value]),
         ).unwrap();
     }
     segment

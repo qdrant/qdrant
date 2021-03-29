@@ -6,6 +6,7 @@ use crate::segment_manager::optimizers::merge_optimizer::MergeOptimizer;
 use std::path::Path;
 use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};
+use crate::segment_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -27,6 +28,14 @@ pub fn build_optimizers(
     let segments_path = collection_path.join("segments");
 
     Arc::new(vec![
+        Box::new(
+            IndexingOptimizer::new(
+                optimizers_config.memmap_threshold,
+                optimizers_config.indexing_threshold,
+                segments_path.clone(),
+                segment_config.clone()
+            )
+        ),
         Box::new(
             MergeOptimizer::new(
                 optimizers_config.max_segment_number,
