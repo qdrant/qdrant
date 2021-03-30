@@ -9,33 +9,33 @@ It is tailored on extended support of filtering, which makes it useful for all s
 
 Qdrant is written in Rust :crab:, which makes it reliable even under high load.
 
-# API [![OpenAPI docs](https://img.shields.io/badge/docs-OpenAPI3.0-success)](https://qdrant.github.io/qdrant/redoc/index.html)
+## API [![OpenAPI docs](https://img.shields.io/badge/docs-OpenAPI3.0-success)](https://qdrant.github.io/qdrant/redoc/index.html)
 
 Online OpenAPI 3.0 documentation is available [here](https://qdrant.github.io/qdrant/redoc/index.html).
 OpenAPI makes it easy to generate client for virtually any framework or programing language.
 
 You can also download raw OpenAPI [definitions](openapi/openapi.yaml).
 
-# Features
+## Features
 
-## Filtering
+### Filtering
 
 Qdrant supports any combinations of `should`, `must` and `must_not` conditions,
 which makes it possible to use in applications when object could not be described solely by vector.
 It could be location features, availability flags, and other custom properties businesses should take into account.
 
-## Write-ahead logging
+### Write-ahead logging
 
 Once service confirmed an update - it won't lose data even in case of power shut down. 
 All operations are stored in the update journal and the latest database state could be easily reconstructed at any moment.
 
-## Stand-alone
+### Stand-alone
 
 Qdrant does not rely on any external database or orchestration controller, which makes it very easy to configure.
 
-# Usage
+## Usage
 
-## Docker
+### Docker
 
 Build your own from source
 
@@ -64,7 +64,7 @@ Make sure to mount it as a volume, otherwise docker will drop it with the contai
 
 Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/)
 
-# Examples
+## Examples
 
 This example covers the most basic use-case - collection creation and basic vector search.
 For additional information please refer to the [documentation](https://qdrant.github.io/qdrant/redoc/index.html).

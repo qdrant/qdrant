@@ -162,8 +162,8 @@ info:
         "filter": {
             "should": [
                 {
+                    "key": "city",
                     "match": {
-                        "key": "city",
                         "keyword": "London"
                     }
                 }

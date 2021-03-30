@@ -162,8 +162,8 @@ info:
         "filter": {
             "should": [
                 {
+                    "key": "city",
                     "match": {
-                        "key": "city",
                         "keyword": "London"
                     }
                 }
@@ -649,6 +649,7 @@ components:
       anyOf:
       - $ref: '#/components/schemas/PointOps'
       - $ref: '#/components/schemas/PayloadOps'
+      - $ref: '#/components/schemas/FieldIndexOperations'
     CollectionsResponse:
       properties:
         collections:
@@ -660,52 +661,9 @@ components:
       type: object
     Condition:
       anyOf:
-      - description: Nested filter
-        properties:
-          filter:
-            $ref: '#/components/schemas/Filter'
-        required:
-        - filter
-        type: object
-      - description: Check if point has field with a given value
-        properties:
-          match:
-            $ref: '#/components/schemas/Match'
-        required:
-        - match
-        type: object
-      - description: Check if points value lies in a given range
-        properties:
-          range:
-            $ref: '#/components/schemas/Range'
-        required:
-        - range
-        type: object
-      - description: Check if points geo location lies in a given area
-        properties:
-          geo_bounding_box:
-            $ref: '#/components/schemas/GeoBoundingBox'
-        required:
-        - geo_bounding_box
-        type: object
-      - description: Check if geo point is within a given radius
-        properties:
-          geo_radius:
-            $ref: '#/components/schemas/GeoRadius'
-        required:
-        - geo_radius
-        type: object
-      - description: Check if points id is in a given set
-        properties:
-          has_id:
-            items:
-              format: uint64
-              minimum: 0
-              type: integer
-            type: array
-        required:
-        - has_id
-        type: object
+      - $ref: '#/components/schemas/FieldCondition'
+      - $ref: '#/components/schemas/HasIdCondition'
+      - $ref: '#/components/schemas/Filter'
     Distance:
       description: Type of internal tags, build from payload Distance function types
         used to compare vectors
@@ -714,7 +672,51 @@ components:
       - Euclid
       - Dot
       type: string
+    FieldCondition:
+      properties:
+        geo_bounding_box:
+          anyOf:
+          - $ref: '#/components/schemas/GeoBoundingBox'
+          - nullable: true
+          description: Check if points geo location lies in a given area
+        geo_radius:
+          anyOf:
+          - $ref: '#/components/schemas/GeoRadius'
+          - nullable: true
+          description: Check if geo point is within a given radius
+        key:
+          type: string
+        match:
+          anyOf:
+          - $ref: '#/components/schemas/Match'
+          - nullable: true
+          description: Check if point has field with a given value
+        range:
+          anyOf:
+          - $ref: '#/components/schemas/Range'
+          - nullable: true
+          description: Check if points value lies in a given range
+      required:
+      - key
+      type: object
+    FieldIndexOperations:
+      anyOf:
+      - description: Create index for payload field
+        properties:
+          create_index:
+            type: string
+        required:
+        - create_index
+        type: object
+      - description: Delete index for the field
+        properties:
+          delete_index:
+            type: string
+        required:
+        - delete_index
+        type: object
     Filter:
+      additionalProperties: false
       properties:
         must:
           description: All conditions must match
@@ -739,14 +741,10 @@ components:
       properties:
         bottom_right:
           $ref: '#/components/schemas/GeoPoint'
-        key:
-          description: Name of the field to match with
-          type: string
         top_left:
           $ref: '#/components/schemas/GeoPoint'
       required:
       - bottom_right
-      - key
       - top_left
       type: object
     GeoPoint:
@@ -765,17 +763,24 @@ components:
       properties:
         center:
           $ref: '#/components/schemas/GeoPoint'
-        key:
-          description: Name of the field to match with
-          type: string
         radius:
           description: Radius of the area in meters
           format: double
           type: number
       required:
       - center
-      - key
       - radius
+      type: object
+    HasIdCondition:
+      properties:
+        has_id:
+          items:
+            format: uint64
+            minimum: 0
+            type: integer
+          type: array
+      required:
+      - has_id
       type: object
     Indexes:
       anyOf:
@@ -830,16 +835,33 @@ components:
           format: int64
           nullable: true
           type: integer
-        key:
-          description: Name of the field to match with
-          type: string
         keyword:
           description: Keyword value to match
           nullable: true
           type: string
-      required:
-      - key
       type: object
+    PayloadIndexType:
+      anyOf:
+      - description: Do not index anything, just keep of what should be indexed later
+        properties:
+          type:
+            enum:
+            - plain
+            type: string
+        required:
+        - type
+        type: object
+      - description: Build payload index. Index is saved on disc, but index itself
+          is in RAM
+        properties:
+          type:
+            enum:
+            - struct
+            type: string
+        required:
+        - type
+        type: object
+      description: Type of payload index
     PayloadInterface:
       anyOf:
       - properties:
@@ -1147,9 +1169,6 @@ components:
           format: double
           nullable: true
           type: number
-        key:
-          description: Name of the field to match with
-          type: string
         lt:
           description: point.key < range.lt
           format: double
@@ -1160,8 +1179,6 @@ components:
           format: double
           nullable: true
           type: number
-      required:
-      - key
       type: object
     RecommendRequest:
       description: Search request
@@ -1292,6 +1309,11 @@ components:
           $ref: '#/components/schemas/Distance'
         index:
           $ref: '#/components/schemas/Indexes'
+        payload_index:
+          anyOf:
+          - $ref: '#/components/schemas/PayloadIndexType'
+          - nullable: true
+          description: Payload Indexes
         storage_type:
           $ref: '#/components/schemas/StorageType'
         vector_size:
@@ -1305,7 +1327,7 @@ components:
       - storage_type
       - vector_size
       type: object
-    StorageOps:
+    StorageOperations:
       anyOf:
       - description: Create new collection and (optionally) specify index params
         properties:
