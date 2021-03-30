@@ -1,13 +1,9 @@
 use crate::segment_manager::optimizers::segment_optimizer::{SegmentOptimizer, OptimizerThresholds};
-use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId, LockedSegment};
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{SegmentType, SegmentConfig, StorageType, Indexes, PayloadIndexType};
-
+use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
+use segment::types::{SegmentType, SegmentConfig};
 use itertools::Itertools;
-use segment::segment_constructor::segment_constructor::build_segment;
 use std::path::{PathBuf, Path};
-use crate::collection::CollectionResult;
-use segment::segment_constructor::segment_builder::SegmentBuilder;
+
 
 /// Optimizer that tries to reduce number of segments until it fits configured value
 pub struct MergeOptimizer {
@@ -85,7 +81,7 @@ impl SegmentOptimizer for MergeOptimizer {
 mod tests {
     use super::*;
     use crate::segment_manager::fixtures::{random_segment};
-    use crate::segment_manager::holders::segment_holder::SegmentHolder;
+    use crate::segment_manager::holders::segment_holder::{SegmentHolder, LockedSegment};
     use segment::types::{Distance, Indexes};
     use std::sync::{Arc};
     use tempdir::TempDir;

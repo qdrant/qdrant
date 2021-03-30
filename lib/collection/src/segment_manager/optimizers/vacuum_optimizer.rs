@@ -1,12 +1,9 @@
 use crate::segment_manager::holders::segment_holder::{SegmentId, LockedSegment, LockedSegmentHolder};
 use segment::types::{SegmentType, SegmentConfig};
 use ordered_float::OrderedFloat;
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::segment_manager::optimizers::segment_optimizer::{SegmentOptimizer, OptimizerThresholds};
-use segment::segment_constructor::segment_constructor::build_segment;
 use std::path::{PathBuf, Path};
-use crate::collection::CollectionResult;
-use segment::segment_constructor::segment_builder::SegmentBuilder;
+
 
 pub struct VacuumOptimizer {
     deleted_threshold: f64,

@@ -1,12 +1,9 @@
 use std::path::{PathBuf, Path};
-use segment::types::{SegmentConfig, SegmentType, StorageType, Indexes, PayloadIndexType};
+use segment::types::{SegmentConfig, SegmentType};
 use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId, LockedSegment};
 use std::cmp::min;
 use crate::segment_manager::optimizers::segment_optimizer::{SegmentOptimizer, OptimizerThresholds};
-use crate::collection::CollectionResult;
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::segment_constructor::segment_constructor::build_segment;
-use segment::segment_constructor::segment_builder::SegmentBuilder;
+
 
 pub struct IndexingOptimizer {
     thresholds_config: OptimizerThresholds,
@@ -92,6 +89,7 @@ mod tests {
     use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
     use crate::operations::FieldIndexOperations;
     use crate::operations::point_ops::{PointOps, PointInsertOps};
+    use segment::types::StorageType;
 
 
     fn init() {
