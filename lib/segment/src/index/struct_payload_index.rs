@@ -246,9 +246,9 @@ impl PayloadIndex for StructPayloadIndex {
         let estimator = |condition: &Condition| {
             match condition {
                 Condition::Filter(_) => panic!("Unexpected branching"),
-                Condition::HasId(ids) => {
+                Condition::HasId(has_id) => {
                     let id_mapper_ref = self.id_mapper.borrow();
-                    let mapped_ids: HashSet<PointOffsetType> = ids.iter()
+                    let mapped_ids: HashSet<PointOffsetType> = has_id.has_id.iter()
                         .filter_map(|external_id| id_mapper_ref.internal_id(*external_id))
                         .collect();
                     let num_ids = mapped_ids.len();

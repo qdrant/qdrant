@@ -126,7 +126,7 @@ fn estimate_must_not<F>(estimator: &F, conditions: &Vec<Condition>, total: usize
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{FieldCondition};
+    use crate::types::{FieldCondition, HasIdCondition};
 
     const TOTAL: usize = 1000;
 
@@ -164,11 +164,11 @@ mod tests {
                 },
                 _ => CardinalityEstimation::unknown(TOTAL)
             },
-            Condition::HasId(ids) => CardinalityEstimation {
-                primary_clauses: vec![PrimaryCondition::Ids(ids.iter().map(|x| *x as usize).collect())],
-                min: ids.len(),
-                exp: ids.len(),
-                max: ids.len(),
+            Condition::HasId(has_id) => CardinalityEstimation {
+                primary_clauses: vec![PrimaryCondition::Ids(has_id.has_id.iter().map(|x| *x as usize).collect())],
+                min: has_id.has_id.len(),
+                exp: has_id.has_id.len(),
+                max: has_id.has_id.len(),
             }
         }
     }
@@ -265,7 +265,7 @@ mod tests {
             ]),
             must: None,
             must_not: Some(vec![
-                Condition::HasId(vec![1, 2, 3, 4, 5].iter().cloned().collect())
+                Condition::HasId(HasIdCondition { has_id: vec![1, 2, 3, 4, 5].iter().cloned().collect() })
             ]),
         };
 
@@ -299,7 +299,7 @@ mod tests {
                 }),
             ]),
             must_not: Some(vec![
-                Condition::HasId(vec![1, 2, 3, 4, 5].iter().cloned().collect())
+                Condition::HasId(HasIdCondition { has_id: vec![1, 2, 3, 4, 5].iter().cloned().collect() })
             ]),
         };
 

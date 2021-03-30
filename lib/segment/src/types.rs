@@ -76,7 +76,7 @@ pub enum SegmentType {
 #[serde(rename_all = "snake_case")]
 pub struct PayloadSchemaInfo {
     pub data_type: PayloadSchemaType,
-    pub indexed: bool
+    pub indexed: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
@@ -88,7 +88,7 @@ pub struct SegmentInfo {
     pub ram_usage_bytes: usize,
     pub disk_usage_bytes: usize,
     pub is_appendable: bool,
-    pub schema: HashMap<PayloadKeyType, PayloadSchemaInfo>
+    pub schema: HashMap<PayloadKeyType, PayloadSchemaInfo>,
 }
 
 
@@ -133,7 +133,7 @@ impl Indexes {
     pub fn default_hnsw() -> Self {
         Indexes::Hnsw {
             m: 16,
-            ef_construct: 100
+            ef_construct: 100,
         }
     }
 }
@@ -191,7 +191,7 @@ pub struct SegmentConfig {
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
     /// Type of vector storage
-    pub storage_type: StorageType
+    pub storage_type: StorageType,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -295,17 +295,31 @@ pub struct FieldCondition {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
-#[serde(rename_all = "snake_case")]
-pub enum Condition {
-    /// Nested filter
-    Filter(Filter),
-    /// Check if field satisfies provided condition
-    Field(FieldCondition),
-    /// Check if points id is in a given set
-    HasId(HashSet<PointIdType>),
+pub struct HasIdCondition {
+    pub has_id: HashSet<PointIdType>
+}
+
+impl Into<HasIdCondition> for HashSet<PointIdType> {
+    fn into(self) -> HasIdCondition {
+        HasIdCondition {
+            has_id: self
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(untagged)]
+pub enum Condition {
+    /// Check if field satisfies provided condition
+    Field(FieldCondition),
+    /// Check if points id is in a given set
+    HasId(HasIdCondition),
+    /// Nested filter
+    Filter(Filter),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct Filter {
     /// At least one of thous conditions should match
@@ -351,15 +365,15 @@ mod tests {
     #[test]
     fn test_serialize_query() {
         let filter = Filter {
-            must: Some(vec![Condition::Field(FieldCondition{
+            must: Some(vec![Condition::Field(FieldCondition {
                 key: "hello".to_owned(),
                 r#match: Some(Match {
                     keyword: Some("world".to_owned()),
-                    integer: None
+                    integer: None,
                 }),
                 range: None,
                 geo_bounding_box: None,
-                geo_radius: None
+                geo_radius: None,
             })]),
             must_not: None,
             should: None,
@@ -369,41 +383,47 @@ mod tests {
     }
 
     #[test]
+    fn test_deny_unknown_fields() {
+         let query1 = r#"
+         {
+            "wrong": "query"
+         }
+         "#;
+        let filter: Result<Filter, _> = serde_json::from_str(query1);
+
+        assert!(filter.is_err())
+    }
+
+    #[test]
     fn test_payload_query_parse() {
         let query1 = r#"
         {
             "must": [
                 {
-                    "field": {
-                        "key": "hello",
-                        "match": {
-                            "integer": 42
-                        }
+                    "key": "hello",
+                    "match": {
+                        "integer": 42
                     }
                 },
                 {
-                    "filter": {
-                        "must_not": [
-                            {
-                                "has_id": [1, 2, 3, 4]
-                            },
-                            {
-                                "field": {
-                                    "key": "geo_field",
-                                    "geo_bounding_box": {
-                                        "top_left": {
-                                            "lon": 13.410146,
-                                            "lat": 52.519289
-                                        },
-                                        "bottom_right": {
-                                            "lon": 13.432683,
-                                            "lat": 52.505582
-                                        }
-                                    }
+                    "must_not": [
+                        {
+                            "has_id": [1, 2, 3, 4]
+                        },
+                        {
+                            "key": "geo_field",
+                            "geo_bounding_box": {
+                                "top_left": {
+                                    "lon": 13.410146,
+                                    "lat": 52.519289
+                                },
+                                "bottom_right": {
+                                    "lon": 13.432683,
+                                    "lat": 52.505582
                                 }
                             }
-                        ]
-                    }
+                        }
+                    ]
                 }
             ]
         }

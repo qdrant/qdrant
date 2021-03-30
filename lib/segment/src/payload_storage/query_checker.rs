@@ -95,12 +95,12 @@ impl ConditionChecker for SimpleConditionChecker
                         res
                     }).unwrap_or(false)
                 }
-                Condition::HasId(ids) => {
+                Condition::HasId(has_id) => {
                     let external_id = match self.id_mapper.borrow().external_id(point_id) {
                         None => return false,
                         Some(id) => id,
                     };
-                    ids.contains(&external_id)
+                    has_id.has_id.contains(&external_id)
                 }
                 Condition::Filter(_) => panic!("Unexpected branching!")
             }
@@ -309,7 +309,7 @@ mod tests {
         let query = Filter {
             should: None,
             must: None,
-            must_not: Some(vec![Condition::HasId(ids)]),
+            must_not: Some(vec![Condition::HasId(ids.into())]),
         };
         assert!(!payload_checker.check(2, &query));
 
@@ -319,7 +319,7 @@ mod tests {
         let query = Filter {
             should: None,
             must: None,
-            must_not: Some(vec![Condition::HasId(ids)]),
+            must_not: Some(vec![Condition::HasId(ids.into())]),
         };
         assert!(payload_checker.check(10, &query));
 
@@ -327,7 +327,7 @@ mod tests {
 
         let query = Filter {
             should: None,
-            must: Some(vec![Condition::HasId(ids)]),
+            must: Some(vec![Condition::HasId(ids.into())]),
             must_not: None,
         };
         assert!(payload_checker.check(2, &query));

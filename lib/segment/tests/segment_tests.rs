@@ -32,7 +32,7 @@ mod tests {
         let frt = Filter {
             should: None,
             must: None,
-            must_not: Some(vec![Condition::HasId(ids)]),
+            must_not: Some(vec![Condition::HasId(ids.into())]),
         };
 
 

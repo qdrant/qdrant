@@ -1,6 +1,6 @@
 use thiserror::Error;
 use crate::operations::CollectionUpdateOperations;
-use segment::types::{PointIdType, ScoredPoint, SegmentConfig, VectorElementType};
+use segment::types::{PointIdType, ScoredPoint, SegmentConfig, VectorElementType, HasIdCondition};
 use std::result;
 use crate::operations::types::{Record, CollectionInfo, UpdateResult, UpdateStatus, SearchRequest, RecommendRequest};
 use std::sync::Arc;
@@ -222,7 +222,7 @@ impl Collection {
                     None => None,
                     Some(filter) => Some(vec![Condition::Filter(filter)])
                 },
-                must_not: Some(vec![Condition::HasId(reference_vectors_ids.iter().cloned().collect())]),
+                must_not: Some(vec![Condition::HasId(HasIdCondition { has_id: reference_vectors_ids.iter().cloned().collect() })]),
             }),
             params: request.params.clone(),
             top: request.top,
