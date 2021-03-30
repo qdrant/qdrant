@@ -121,5 +121,8 @@ pub trait SegmentEntry {
 
     /// Create index for a payload field, if not exists
     fn create_field_index(&mut self, op_num: SeqNumberType, key: &PayloadKeyType) -> OperationResult<bool>;
+
+    /// Get indexed fields
+    fn get_indexed_fields(&self) -> Vec<PayloadKeyType>;
 }
 

@@ -304,4 +304,8 @@ impl SegmentEntry for Segment {
         self.payload_index.borrow_mut().set_indexed(key)?;
         Ok(true)
     }
+
+    fn get_indexed_fields(&self) -> Vec<PayloadKeyType> {
+        self.payload_index.borrow().indexed_fields()
+    }
 }

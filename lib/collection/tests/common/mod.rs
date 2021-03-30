@@ -14,12 +14,14 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
     vacuum_min_vector_number: 1000,
     max_segment_number: 10,
-    memmap_threshold: 10_000,
-    indexing_threshold: 10_000,
+    memmap_threshold: 100_000,
+    indexing_threshold: 50_000,
+    payload_indexing_threshold: 20_000,
     flush_interval_sec: 30,
 };
 
 
+#[allow(dead_code)]
 pub fn load_collection_fixture(collection_path: &Path) -> (Arc<Runtime>, Collection) {
     let wal_options = WalOptions {
         segment_capacity: 100,

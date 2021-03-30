@@ -245,7 +245,7 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn is_appendable(&self) -> bool {
-        false
+        true
     }
 
     fn flush(&self) -> OperationResult<u64> {
@@ -269,6 +269,15 @@ impl SegmentEntry for ProxySegment {
         self.created_indexes.write().insert(key.clone());
         self.deleted_indexes.write().remove(key);
         self.write_segment.get().write().create_field_index(op_num, key)
+    }
+
+    fn get_indexed_fields(&self) -> Vec<PayloadKeyType> {
+        let indexed_fields = self.wrapped_segment.get().read().get_indexed_fields();
+        indexed_fields
+            .into_iter()
+            .chain(self.created_indexes.read().iter().cloned())
+            .filter(|x| !self.deleted_indexes.read().contains(x))
+            .collect()
     }
 }
 
