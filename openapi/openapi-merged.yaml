@@ -313,10 +313,10 @@ paths:
     post:
       tags:
         - points
-      summary: Update points in collection
+      summary: Update points (vectors, payloads, indexes) in collection
       operationId: update_points
       requestBody:
-        description: Points update operations
+        description: Collection update operations
         content:
           application/json:
             schema:
@@ -329,6 +329,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: wait
+          in: query
+          description: "Wait for changes to actually happen? Default: false"
+          required: false
+          schema:
+            type: boolean
       responses:
         200:
           description: successful operation
@@ -417,12 +423,6 @@ paths:
           required: true
           schema:
             type: string
-        - name: wait
-          in: query
-          description: "Wait for changes to actually happen? Default: false"
-          required: false
-          schema:
-            type: boolean
       responses:
         200:
           description: successful operation
@@ -647,7 +647,7 @@ components:
       type: object
     CollectionUpdateOperations:
       anyOf:
-      - $ref: '#/components/schemas/PointOps'
+      - $ref: '#/components/schemas/PointOperations'
       - $ref: '#/components/schemas/PayloadOps'
       - $ref: '#/components/schemas/FieldIndexOperations'
     CollectionsResponse:
@@ -1055,7 +1055,7 @@ components:
           format: int64
           type: integer
         type: array
-    PointInsertOps:
+    PointInsertOperations:
       anyOf:
       - description: Inset points from a batch.
         properties:
@@ -1098,12 +1098,12 @@ components:
         required:
         - points
         type: object
-    PointOps:
+    PointOperations:
       anyOf:
       - description: Insert or update points
         properties:
           upsert_points:
-            $ref: '#/components/schemas/PointInsertOps'
+            $ref: '#/components/schemas/PointInsertOperations'
         required:
         - upsert_points
         type: object
@@ -1360,8 +1360,8 @@ components:
         required:
         - delete_collection
         type: object
-      - description: Perform changes of collection aliases Alias changes are atomic,
-          meaning that no collection modifications can happen between alias operations
+      - description: Perform changes of collection aliases. Alias changes are atomic,
+          meaning that no collection modifications can happen between alias operations.
         properties:
           change_aliases:
             properties:

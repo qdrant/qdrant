@@ -127,7 +127,7 @@
             "CollectionUpdateOperations": {
                 "anyOf": [
                     {
-                        "$ref": "#/components/schemas/PointOps"
+                        "$ref": "#/components/schemas/PointOperations"
                     },
                     {
                         "$ref": "#/components/schemas/PayloadOps"
@@ -780,7 +780,7 @@
                     }
                 ]
             },
-            "PointInsertOps": {
+            "PointInsertOperations": {
                 "anyOf": [
                     {
                         "description": "Inset points from a batch.",
@@ -846,7 +846,7 @@
                     }
                 ]
             },
-            "PointOps": {
+            "PointOperations": {
                 "anyOf": [
                     {
                         "description": "Insert or update points",
@@ -856,7 +856,7 @@
                         ],
                         "properties": {
                             "upsert_points": {
-                                "$ref": "#/components/schemas/PointInsertOps"
+                                "$ref": "#/components/schemas/PointInsertOperations"
                             }
                         }
                     },
@@ -1238,7 +1238,7 @@
                         }
                     },
                     {
-                        "description": "Perform changes of collection aliases Alias changes are atomic, meaning that no collection modifications can happen between alias operations",
+                        "description": "Perform changes of collection aliases. Alias changes are atomic, meaning that no collection modifications can happen between alias operations.",
                         "type": "object",
                         "required": [
                             "change_aliases"

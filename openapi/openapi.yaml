@@ -313,10 +313,10 @@ paths:
     post:
       tags:
         - points
-      summary: Update points in collection
+      summary: Update points (vectors, payloads, indexes) in collection
       operationId: update_points
       requestBody:
-        description: Points update operations
+        description: Collection update operations
         content:
           application/json:
             schema:
@@ -329,6 +329,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: wait
+          in: query
+          description: "Wait for changes to actually happen? Default: false"
+          required: false
+          schema:
+            type: boolean
       responses:
         200:
           description: successful operation
@@ -417,12 +423,6 @@ paths:
           required: true
           schema:
             type: string
-        - name: wait
-          in: query
-          description: "Wait for changes to actually happen? Default: false"
-          required: false
-          schema:
-            type: boolean
       responses:
         200:
           description: successful operation
