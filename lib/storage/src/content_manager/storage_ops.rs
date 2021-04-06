@@ -34,9 +34,9 @@ pub enum StorageOperations {
     },
     /// Delete collection with given name
     DeleteCollection(String),
-    /// Perform changes of collection aliases
+    /// Perform changes of collection aliases.
     /// Alias changes are atomic, meaning that no collection modifications can happen between
-    /// alias operations
+    /// alias operations.
     ChangeAliases {
         actions: Vec<AliasOperations>,
     }

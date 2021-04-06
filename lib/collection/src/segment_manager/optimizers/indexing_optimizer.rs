@@ -88,7 +88,7 @@ mod tests {
     use itertools::Itertools;
     use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
     use crate::operations::FieldIndexOperations;
-    use crate::operations::point_ops::{PointOps, PointInsertOps};
+    use crate::operations::point_ops::{PointOperations, PointInsertOperations};
     use segment::types::StorageType;
 
 
@@ -186,7 +186,7 @@ mod tests {
             assert!(info.schema[&payload_field].indexed, "Testing that payload index is not lost");
         }
 
-        let insert_point_ops = PointOps::UpsertPoints(PointInsertOps::BatchPoints {
+        let insert_point_ops = PointOperations::UpsertPoints(PointInsertOperations::BatchPoints {
             ids: vec![501, 502, 503],
             vectors: vec![
                 vec![1.0, 0.0, 0.5, 0.0],
@@ -218,7 +218,7 @@ mod tests {
 
         assert!(new_infos2.len() > new_infos.len(), "Check that new appendable segment was created");
 
-        let insert_point_ops = PointOps::UpsertPoints(PointInsertOps::BatchPoints {
+        let insert_point_ops = PointOperations::UpsertPoints(PointInsertOperations::BatchPoints {
             ids: vec![601, 602, 603],
             vectors: vec![
                 vec![0.0, 1.0, 0.5, 0.0],

@@ -7,7 +7,7 @@ use segment::types::{SeqNumberType, PointIdType, PayloadKeyType};
 use std::collections::{HashSet, HashMap};
 use crate::operations::types::VectorType;
 
-use crate::operations::point_ops::{PointOps, PointInsertOps};
+use crate::operations::point_ops::{PointOperations, PointInsertOperations};
 use crate::operations::payload_ops::{PayloadOps, PayloadInterface};
 
 pub struct SimpleSegmentUpdater {
@@ -210,15 +210,15 @@ impl SimpleSegmentUpdater {
         Ok(res)
     }
 
-    pub fn process_point_operation(&self, op_num: SeqNumberType, point_operation: PointOps) -> CollectionResult<usize> {
+    pub fn process_point_operation(&self, op_num: SeqNumberType, point_operation: PointOperations) -> CollectionResult<usize> {
         match point_operation {
-            PointOps::DeletePoints { ids, .. } => self.delete_points(op_num, &ids),
-            PointOps::UpsertPoints(operation) => {
+            PointOperations::DeletePoints { ids, .. } => self.delete_points(op_num, &ids),
+            PointOperations::UpsertPoints(operation) => {
                 let (ids, vectors, payloads) = match operation {
-                    PointInsertOps::BatchPoints { ids, vectors, payloads, .. } => {
+                    PointInsertOperations::BatchPoints { ids, vectors, payloads, .. } => {
                         (ids, vectors, payloads)
                     }
-                    PointInsertOps::PointsList(points) => {
+                    PointInsertOperations::PointsList(points) => {
                         let mut ids = vec![];
                         let mut vectors = vec![];
                         let mut payloads = vec![];

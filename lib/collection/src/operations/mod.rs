@@ -18,7 +18,7 @@ pub enum FieldIndexOperations {
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum CollectionUpdateOperations {
-    PointOperation(point_ops::PointOps),
+    PointOperation(point_ops::PointOperations),
     PayloadOperation(payload_ops::PayloadOps),
     FieldIndexOperation(FieldIndexOperations)
 }
