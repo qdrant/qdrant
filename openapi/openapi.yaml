@@ -248,7 +248,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "./models.json#/components/schemas/StorageOps"
+              $ref: "./models.json#/components/schemas/StorageOperations"
       responses:
         200:
           description: successful operation
