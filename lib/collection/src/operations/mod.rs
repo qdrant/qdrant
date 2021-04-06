@@ -7,10 +7,20 @@ use schemars::{JsonSchema};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+pub enum FieldIndexOperations {
+    /// Create index for payload field
+    CreateIndex(String),
+    /// Delete index for the field
+    DeleteIndex(String),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum CollectionUpdateOperations {
-    PointOperation(point_ops::PointOps),
+    PointOperation(point_ops::PointOperations),
     PayloadOperation(payload_ops::PayloadOps),
+    FieldIndexOperation(FieldIndexOperations)
 }
 
 

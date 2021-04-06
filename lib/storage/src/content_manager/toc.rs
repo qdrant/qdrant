@@ -19,7 +19,7 @@ use collection::collection_builder::collection_loader::load_collection;
 use segment::types::SegmentConfig;
 
 use crate::content_manager::errors::StorageError;
-use crate::content_manager::storage_ops::{AliasOperations, StorageOps};
+use crate::content_manager::storage_ops::{AliasOperations, StorageOperations};
 use crate::types::StorageConfig;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
@@ -145,9 +145,9 @@ impl TableOfContent {
         self.collections.read().contains_key(collection_name)
     }
 
-    pub fn perform_collection_operation(&self, operation: StorageOps) -> Result<bool, StorageError> {
+    pub fn perform_collection_operation(&self, operation: StorageOperations) -> Result<bool, StorageError> {
         match operation {
-            StorageOps::CreateCollection {
+            StorageOperations::CreateCollection {
                 name: collection_name,
                 vector_size,
                 distance,
@@ -166,6 +166,7 @@ impl TableOfContent {
                 let segment_config = SegmentConfig {
                     vector_size,
                     index: index.unwrap_or(Default::default()),
+                    payload_index: Some(Default::default()),
                     distance,
                     storage_type: Default::default(),
                 };
@@ -182,7 +183,7 @@ impl TableOfContent {
                 write_collections.insert(collection_name, Arc::new(segment));
                 Ok(true)
             }
-            StorageOps::DeleteCollection(collection_name) => {
+            StorageOperations::DeleteCollection(collection_name) => {
                 let removed = self.collections.write().remove(&collection_name).is_some();
                 if removed {
                     let path = self.get_collection_path(&collection_name);
@@ -193,7 +194,7 @@ impl TableOfContent {
                 }
                 Ok(removed)
             }
-            StorageOps::ChangeAliases { actions } => {
+            StorageOperations::ChangeAliases { actions } => {
                 let _collection_lock = self.collections.write(); // Make alias change atomic
                 for action in actions {
                     match action {

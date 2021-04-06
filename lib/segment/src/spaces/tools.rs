@@ -69,7 +69,6 @@ pub fn peek_top_scores_iterable<I, E: Ord + Clone>(scores: I, top: usize, distan
 
 pub fn peek_top_scores<E: Ord + Clone>(scores: &[E], top: usize, distance: &Distance) -> Vec<E> {
     return peek_top_scores_iterable(scores.iter().cloned(), top, distance)
-
 }
 
 pub fn mertic_object(distance: &Distance) -> Box<dyn Metric> {

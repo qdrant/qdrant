@@ -2,9 +2,9 @@ use crate::segment::{Segment, SEGMENT_STATE_FILE};
 use crate::id_mapper::simple_id_mapper::SimpleIdMapper;
 use crate::vector_storage::simple_vector_storage::SimpleVectorStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
-use crate::index::plain_index::{PlainPayloadIndex, PlainIndex};
+use crate::index::plain_payload_index::{PlainPayloadIndex, PlainIndex};
 use crate::query_planner::simple_query_planner::SimpleQueryPlanner;
-use crate::types::{SegmentType, SegmentConfig, Indexes, SegmentState, SeqNumberType, StorageType};
+use crate::types::{SegmentType, SegmentConfig, Indexes, SegmentState, SeqNumberType, StorageType, PayloadIndexType};
 use std::sync::{Arc, Mutex};
 use atomic_refcell::AtomicRefCell;
 use crate::payload_storage::query_checker::SimpleConditionChecker;
@@ -15,6 +15,8 @@ use crate::entry::entry_point::{OperationResult, OperationError};
 use std::io::Read;
 use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
 use crate::vector_storage::vector_storage::VectorStorage;
+use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::index::PayloadIndex;
 
 
 fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> { Arc::new(AtomicRefCell::new(t)) }
@@ -23,6 +25,7 @@ fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> { Arc::new(AtomicRefCell::new(t)) }
 fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentConfig) -> OperationResult<Segment> {
     let mapper_path = segment_path.join("id_mapper");
     let payload_storage_path = segment_path.join("payload_storage");
+    let payload_index_path = segment_path.join("payload_index");
     let vector_storage_path = segment_path.join("vector_storage");
 
     let id_mapper = sp(SimpleIdMapper::open(mapper_path.as_path())?);
@@ -41,21 +44,40 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
         id_mapper.clone(),
     ));
 
-    let payload_index = sp(PlainPayloadIndex::new(
-        condition_checker, vector_storage.clone(),
-    ));
+    let payload_index: Arc<AtomicRefCell<dyn PayloadIndex>> = match config.payload_index.unwrap_or_default() {
+        PayloadIndexType::Plain => sp(PlainPayloadIndex::open(condition_checker, vector_storage.clone(), &payload_index_path)?),
+        PayloadIndexType::Struct => sp(StructPayloadIndex::open(
+            condition_checker,
+            vector_storage.clone(),
+            payload_storage.clone(),
+            id_mapper.clone(),
+            &payload_index_path)?),
+    };
 
     let index = sp(match config.index {
-        Indexes::Plain { .. } => PlainIndex::new(vector_storage.clone(), payload_index, config.distance),
-        Indexes::Hnsw { .. } => unimplemented!(),
+        Indexes::Plain { .. } => PlainIndex::new(
+            vector_storage.clone(),
+            payload_index.clone(),
+            config.distance
+        ),
+        _ => PlainIndex::new(
+            vector_storage.clone(),
+            payload_index.clone(),
+            config.distance
+        )
+        // ToDo: Add HNSW index init here
+        // Indexes::Hnsw { .. } => unimplemented!(),
     });
 
-    let appendable = config.index == Indexes::Plain {} && config.storage_type == StorageType::InMemory;
-
     let segment_type = match config.index {
-        Indexes::Plain { .. } => SegmentType::Plain,
+        Indexes::Plain { .. } => match config.payload_index.unwrap_or_default() {
+            PayloadIndexType::Plain => SegmentType::Plain,
+            PayloadIndexType::Struct => SegmentType::Indexed
+        },
         Indexes::Hnsw { .. } => SegmentType::Indexed,
     };
+
+    let appendable = segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
 
     let query_planer = SimpleQueryPlanner::new(index);
 
@@ -66,6 +88,7 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
         id_mapper: id_mapper.clone(),
         vector_storage,
         payload_storage: payload_storage.clone(),
+        payload_index: payload_index.clone(),
         query_planner: sp(query_planer),
         appendable_flag: appendable,
         segment_type,

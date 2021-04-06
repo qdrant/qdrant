@@ -1,13 +1,13 @@
 use std::sync::Mutex;
 use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder};
 use crate::segment_manager::segment_managers::SegmentUpdater;
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use crate::collection::{CollectionResult, CollectionError};
 use segment::types::{SeqNumberType, PointIdType, PayloadKeyType};
 use std::collections::{HashSet, HashMap};
 use crate::operations::types::VectorType;
 
-use crate::operations::point_ops::{PointOps, PointInsertOps};
+use crate::operations::point_ops::{PointOperations, PointInsertOperations};
 use crate::operations::payload_ops::{PayloadOps, PayloadInterface};
 
 pub struct SimpleSegmentUpdater {
@@ -192,15 +192,33 @@ impl SimpleSegmentUpdater {
         Ok(res)
     }
 
-    pub fn process_point_operation(&self, op_num: SeqNumberType, point_operation: PointOps) -> CollectionResult<usize> {
+    fn create_field_index(&self, op_num: SeqNumberType, field_name: &PayloadKeyType) -> CollectionResult<usize> {
+        let res = self.segments
+            .read()
+            .apply_segments(op_num, |write_segment| {
+                write_segment.create_field_index(op_num, field_name)
+            })?;
+        Ok(res)
+    }
+
+    fn delete_field_index(&self, op_num: SeqNumberType, field_name: &PayloadKeyType) -> CollectionResult<usize> {
+        let res = self.segments
+            .read()
+            .apply_segments(op_num, |write_segment| {
+                write_segment.delete_field_index(op_num, field_name)
+            })?;
+        Ok(res)
+    }
+
+    pub fn process_point_operation(&self, op_num: SeqNumberType, point_operation: PointOperations) -> CollectionResult<usize> {
         match point_operation {
-            PointOps::DeletePoints { ids, .. } => self.delete_points(op_num, &ids),
-            PointOps::UpsertPoints(operation) => {
+            PointOperations::DeletePoints { ids, .. } => self.delete_points(op_num, &ids),
+            PointOperations::UpsertPoints(operation) => {
                 let (ids, vectors, payloads) = match operation {
-                    PointInsertOps::BatchPoints { ids, vectors, payloads, .. } => {
+                    PointInsertOperations::BatchPoints { ids, vectors, payloads, .. } => {
                         (ids, vectors, payloads)
-                    },
-                    PointInsertOps::PointsList(points) => {
+                    }
+                    PointInsertOperations::PointsList(points) => {
                         let mut ids = vec![];
                         let mut vectors = vec![];
                         let mut payloads = vec![];
@@ -236,6 +254,13 @@ impl SimpleSegmentUpdater {
             } => self.clear_payload(op_num, points),
         }
     }
+
+    pub fn process_field_index_operation(&self, op_num: SeqNumberType, field_index_operation: &FieldIndexOperations) -> CollectionResult<usize> {
+        match field_index_operation {
+            FieldIndexOperations::CreateIndex(field_name) => self.create_field_index(op_num, field_name),
+            FieldIndexOperations::DeleteIndex(field_name) => self.delete_field_index(op_num, field_name),
+        }
+    }
 }
 
 
@@ -246,6 +271,7 @@ impl SegmentUpdater for SimpleSegmentUpdater {
         match operation {
             CollectionUpdateOperations::PointOperation(point_operation) => self.process_point_operation(op_num, point_operation),
             CollectionUpdateOperations::PayloadOperation(payload_operation) => self.process_payload_operation(op_num, &payload_operation),
+            CollectionUpdateOperations::FieldIndexOperation(index_operation) => self.process_field_index_operation(op_num, &index_operation),
         }
     }
 }
@@ -280,7 +306,7 @@ mod tests {
             100,
             &points,
             &vectors,
-            &None
+            &None,
         );
 
         match res {

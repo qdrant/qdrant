@@ -33,6 +33,9 @@ storage:
     # Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
     indexing_threshold: 20000
 
+    # Starting from this amount of vectors per-segment the engine will start building index for payload.
+    payload_indexing_threshold: 10000
+
     # Minimum interval between forced flushes.
     flush_interval_sec: 10
 

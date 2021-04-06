@@ -127,10 +127,13 @@
             "CollectionUpdateOperations": {
                 "anyOf": [
                     {
-                        "$ref": "#/components/schemas/PointOps"
+                        "$ref": "#/components/schemas/PointOperations"
                     },
                     {
                         "$ref": "#/components/schemas/PayloadOps"
+                    },
+                    {
+                        "$ref": "#/components/schemas/FieldIndexOperations"
                     }
                 ]
             },
@@ -151,81 +154,13 @@
             "Condition": {
                 "anyOf": [
                     {
-                        "description": "Nested filter",
-                        "type": "object",
-                        "required": [
-                            "filter"
-                        ],
-                        "properties": {
-                            "filter": {
-                                "$ref": "#/components/schemas/Filter"
-                            }
-                        }
+                        "$ref": "#/components/schemas/FieldCondition"
                     },
                     {
-                        "description": "Check if point has field with a given value",
-                        "type": "object",
-                        "required": [
-                            "match"
-                        ],
-                        "properties": {
-                            "match": {
-                                "$ref": "#/components/schemas/Match"
-                            }
-                        }
+                        "$ref": "#/components/schemas/HasIdCondition"
                     },
                     {
-                        "description": "Check if points value lies in a given range",
-                        "type": "object",
-                        "required": [
-                            "range"
-                        ],
-                        "properties": {
-                            "range": {
-                                "$ref": "#/components/schemas/Range"
-                            }
-                        }
-                    },
-                    {
-                        "description": "Check if points geo location lies in a given area",
-                        "type": "object",
-                        "required": [
-                            "geo_bounding_box"
-                        ],
-                        "properties": {
-                            "geo_bounding_box": {
-                                "$ref": "#/components/schemas/GeoBoundingBox"
-                            }
-                        }
-                    },
-                    {
-                        "description": "Check if geo point is within a given radius",
-                        "type": "object",
-                        "required": [
-                            "geo_radius"
-                        ],
-                        "properties": {
-                            "geo_radius": {
-                                "$ref": "#/components/schemas/GeoRadius"
-                            }
-                        }
-                    },
-                    {
-                        "description": "Check if points id is in a given set",
-                        "type": "object",
-                        "required": [
-                            "has_id"
-                        ],
-                        "properties": {
-                            "has_id": {
-                                "type": "array",
-                                "items": {
-                                    "type": "integer",
-                                    "format": "uint64",
-                                    "minimum": 0
-                                }
-                            }
-                        }
+                        "$ref": "#/components/schemas/Filter"
                     }
                 ]
             },
@@ -236,6 +171,89 @@
                     "Cosine",
                     "Euclid",
                     "Dot"
+                ]
+            },
+            "FieldCondition": {
+                "type": "object",
+                "required": [
+                    "key"
+                ],
+                "properties": {
+                    "geo_bounding_box": {
+                        "description": "Check if points geo location lies in a given area",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/GeoBoundingBox"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    },
+                    "geo_radius": {
+                        "description": "Check if geo point is within a given radius",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/GeoRadius"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    },
+                    "key": {
+                        "type": "string"
+                    },
+                    "match": {
+                        "description": "Check if point has field with a given value",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/Match"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    },
+                    "range": {
+                        "description": "Check if points value lies in a given range",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/Range"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    }
+                }
+            },
+            "FieldIndexOperations": {
+                "anyOf": [
+                    {
+                        "description": "Create index for payload field",
+                        "type": "object",
+                        "required": [
+                            "create_index"
+                        ],
+                        "properties": {
+                            "create_index": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    {
+                        "description": "Delete index for the field",
+                        "type": "object",
+                        "required": [
+                            "delete_index"
+                        ],
+                        "properties": {
+                            "delete_index": {
+                                "type": "string"
+                            }
+                        }
+                    }
                 ]
             },
             "Filter": {
@@ -265,22 +283,18 @@
                         },
                         "nullable": true
                     }
-                }
+                },
+                "additionalProperties": false
             },
             "GeoBoundingBox": {
                 "type": "object",
                 "required": [
                     "bottom_right",
-                    "key",
                     "top_left"
                 ],
                 "properties": {
                     "bottom_right": {
                         "$ref": "#/components/schemas/GeoPoint"
-                    },
-                    "key": {
-                        "description": "Name of the field to match with",
-                        "type": "string"
                     },
                     "top_left": {
                         "$ref": "#/components/schemas/GeoPoint"
@@ -308,21 +322,32 @@
                 "type": "object",
                 "required": [
                     "center",
-                    "key",
                     "radius"
                 ],
                 "properties": {
                     "center": {
                         "$ref": "#/components/schemas/GeoPoint"
                     },
-                    "key": {
-                        "description": "Name of the field to match with",
-                        "type": "string"
-                    },
                     "radius": {
                         "description": "Radius of the area in meters",
                         "type": "number",
                         "format": "double"
+                    }
+                }
+            },
+            "HasIdCondition": {
+                "type": "object",
+                "required": [
+                    "has_id"
+                ],
+                "properties": {
+                    "has_id": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "uint64",
+                            "minimum": 0
+                        }
                     }
                 }
             },
@@ -388,9 +413,6 @@
             },
             "Match": {
                 "type": "object",
-                "required": [
-                    "key"
-                ],
                 "properties": {
                     "integer": {
                         "description": "Integer value to match",
@@ -398,16 +420,47 @@
                         "format": "int64",
                         "nullable": true
                     },
-                    "key": {
-                        "description": "Name of the field to match with",
-                        "type": "string"
-                    },
                     "keyword": {
                         "description": "Keyword value to match",
                         "type": "string",
                         "nullable": true
                     }
                 }
+            },
+            "PayloadIndexType": {
+                "description": "Type of payload index",
+                "anyOf": [
+                    {
+                        "description": "Do not index anything, just keep of what should be indexed later",
+                        "type": "object",
+                        "required": [
+                            "type"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "plain"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "description": "Build payload index. Index is saved on disc, but index itself is in RAM",
+                        "type": "object",
+                        "required": [
+                            "type"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "struct"
+                                ]
+                            }
+                        }
+                    }
+                ]
             },
             "PayloadInterface": {
                 "anyOf": [
@@ -727,7 +780,7 @@
                     }
                 ]
             },
-            "PointInsertOps": {
+            "PointInsertOperations": {
                 "anyOf": [
                     {
                         "description": "Inset points from a batch.",
@@ -793,7 +846,7 @@
                     }
                 ]
             },
-            "PointOps": {
+            "PointOperations": {
                 "anyOf": [
                     {
                         "description": "Insert or update points",
@@ -803,7 +856,7 @@
                         ],
                         "properties": {
                             "upsert_points": {
-                                "$ref": "#/components/schemas/PointInsertOps"
+                                "$ref": "#/components/schemas/PointInsertOperations"
                             }
                         }
                     },
@@ -883,9 +936,6 @@
             },
             "Range": {
                 "type": "object",
-                "required": [
-                    "key"
-                ],
                 "properties": {
                     "gt": {
                         "description": "point.key > range.gt",
@@ -898,10 +948,6 @@
                         "type": "number",
                         "format": "double",
                         "nullable": true
-                    },
-                    "key": {
-                        "description": "Name of the field to match with",
-                        "type": "string"
                     },
                     "lt": {
                         "description": "point.key < range.lt",
@@ -1115,6 +1161,17 @@
                     "index": {
                         "$ref": "#/components/schemas/Indexes"
                     },
+                    "payload_index": {
+                        "description": "Payload Indexes",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/PayloadIndexType"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    },
                     "storage_type": {
                         "$ref": "#/components/schemas/StorageType"
                     },
@@ -1126,7 +1183,7 @@
                     }
                 }
             },
-            "StorageOps": {
+            "StorageOperations": {
                 "anyOf": [
                     {
                         "description": "Create new collection and (optionally) specify index params",
@@ -1181,7 +1238,7 @@
                         }
                     },
                     {
-                        "description": "Perform changes of collection aliases Alias changes are atomic, meaning that no collection modifications can happen between alias operations",
+                        "description": "Perform changes of collection aliases. Alias changes are atomic, meaning that no collection modifications can happen between alias operations.",
                         "type": "object",
                         "required": [
                             "change_aliases"

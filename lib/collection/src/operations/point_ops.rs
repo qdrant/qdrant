@@ -19,7 +19,7 @@ pub struct PointStruct {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum PointInsertOps {
+pub enum PointInsertOperations {
     #[serde(rename = "batch")]
     /// Inset points from a batch.
     BatchPoints {
@@ -35,9 +35,9 @@ pub enum PointInsertOps {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum PointOps {
+pub enum PointOperations {
     /// Insert or update points
-    UpsertPoints(PointInsertOps),
+    UpsertPoints(PointInsertOperations),
     /// Delete point if exists
     DeletePoints {
         ids: Vec<PointIdType>,

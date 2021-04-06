@@ -1,5 +1,5 @@
 
-use crate::types::{PointOffsetType, PayloadKeyType, PayloadType, Filter, TheMap};
+use crate::types::{PointOffsetType, PayloadKeyType, PayloadType, Filter, TheMap, PayloadSchemaType};
 use crate::entry::entry_point::OperationResult;
 
 
@@ -15,6 +15,7 @@ pub trait PayloadStorage {
         Ok(())
     }
 
+    /// Assign payload to a concrete point with a concrete payload value
     fn assign(&mut self, point_id: PointOffsetType, key: &PayloadKeyType, payload: PayloadType) -> OperationResult<()>;
 
     /// Get payload for point
@@ -31,6 +32,12 @@ pub trait PayloadStorage {
 
     /// Force persistence of current storage state.
     fn flush(&self) -> OperationResult<()>;
+
+    /// Get payload schema, automatically generated from payload
+    fn schema(&self) -> TheMap<PayloadKeyType, PayloadSchemaType>;
+
+    /// Iterate all point ids with payload
+    fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
 }
 
 

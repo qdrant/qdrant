@@ -1,7 +1,7 @@
 mod common;
 
 use collection::operations::CollectionUpdateOperations;
-use collection::operations::point_ops::{PointOps, PointStruct};
+use collection::operations::point_ops::{PointOperations, PointStruct};
 
 use crate::common::{simple_collection_fixture, TEST_OPTIMIZERS_CONFIG};
 use collection::operations::types::{UpdateStatus, SearchRequest, RecommendRequest};
@@ -13,7 +13,7 @@ use collection::collection_builder::collection_loader::load_collection;
 use wal::WalOptions;
 use tempdir::TempDir;
 use tokio::runtime;
-use collection::operations::point_ops::PointInsertOps::{BatchPoints, PointsList};
+use collection::operations::point_ops::PointInsertOperations::{BatchPoints, PointsList};
 
 
 #[test]
@@ -23,7 +23,7 @@ fn test_collection_updater() {
     let (_rt, collection) = simple_collection_fixture(collection_dir.path());
 
     let insert_points = CollectionUpdateOperations::PointOperation(
-        PointOps::UpsertPoints(BatchPoints {
+        PointOperations::UpsertPoints(BatchPoints {
             ids: vec![0, 1, 2, 3, 4],
             vectors: vec![
                 vec![1.0, 0.0, 1.0, 1.0],
@@ -73,7 +73,7 @@ fn test_collection_loading() {
         let (_rt, collection) = simple_collection_fixture(collection_dir.path());
 
         let insert_points = CollectionUpdateOperations::PointOperation(
-            PointOps::UpsertPoints(BatchPoints {
+            PointOperations::UpsertPoints(BatchPoints {
                 ids: vec![0, 1, 2, 3, 4],
                 vectors: vec![
                     vec![1.0, 0.0, 1.0, 1.0],
@@ -142,7 +142,7 @@ fn test_collection_loading() {
 #[test]
 fn test_deserialization() {
     let insert_points = CollectionUpdateOperations::PointOperation(
-        PointOps::UpsertPoints(BatchPoints {
+        PointOperations::UpsertPoints(BatchPoints {
             ids: vec![0, 1],
             vectors: vec![
                 vec![1.0, 0.0, 1.0, 1.0],
@@ -172,7 +172,7 @@ fn test_deserialization() {
 #[test]
 fn test_deserialization2() {
     let insert_points = CollectionUpdateOperations::PointOperation(
-        PointOps::UpsertPoints(PointsList(vec![
+        PointOperations::UpsertPoints(PointsList(vec![
             PointStruct {
                 id: 0,
                 vector: vec![1.0, 0.0, 1.0, 1.0],
@@ -209,7 +209,7 @@ fn test_recommendation_api() {
     let (_rt, collection) = simple_collection_fixture(collection_dir.path());
 
     let insert_points = CollectionUpdateOperations::PointOperation(
-        PointOps::UpsertPoints(BatchPoints {
+        PointOperations::UpsertPoints(BatchPoints {
             ids: vec![0, 1, 2, 3, 4, 5, 6, 7, 8],
             vectors: vec![
                 vec![0.0, 0.0, 1.0, 1.0],

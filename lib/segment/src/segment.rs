@@ -2,15 +2,15 @@ use crate::id_mapper::id_mapper::IdMapper;
 use crate::vector_storage::vector_storage::VectorStorage;
 use crate::payload_storage::payload_storage::{PayloadStorage};
 use crate::entry::entry_point::{SegmentEntry, OperationResult, OperationError};
-use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentType, SegmentConfig, SegmentState};
+use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentType, SegmentConfig, SegmentState, PayloadSchemaInfo};
 use crate::query_planner::query_planner::QueryPlanner;
 use std::sync::{Arc, Mutex};
 use atomic_refcell::{AtomicRefCell};
-use std::cmp;
 use std::path::PathBuf;
 use std::fs::{remove_dir_all};
 use std::io::Write;
 use atomicwrites::{AtomicFile, AllowOverwrite};
+use crate::index::index::PayloadIndex;
 
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
@@ -23,6 +23,7 @@ pub struct Segment {
     pub id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
     pub vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     pub payload_storage: Arc<AtomicRefCell<dyn PayloadStorage>>,
+    pub payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
     /// User for writing only here.
     pub query_planner: Arc<AtomicRefCell<dyn QueryPlanner>>,
     pub appendable_flag: bool,
@@ -32,35 +33,6 @@ pub struct Segment {
 
 
 impl Segment {
-    /// Update current segment with all (not deleted) vectors and payload form `other` segment
-    /// Perform index building at the end of update
-    pub fn update_from(&mut self, other: &Segment) -> OperationResult<()> {
-        self.version = cmp::max(self.version, other.version());
-
-        let other_id_mapper = other.id_mapper.borrow();
-        let other_vector_storage = other.vector_storage.borrow();
-        let other_payload_storage = other.payload_storage.borrow();
-
-        let new_internal_range = self.vector_storage.borrow_mut().update_from(&*other_vector_storage)?;
-
-        let mut id_mapper = self.id_mapper.borrow_mut();
-        let mut payload_storage = self.payload_storage.borrow_mut();
-
-        for (new_internal_id, old_internal_id) in new_internal_range.zip(other.vector_storage.borrow().iter_ids()) {
-            let other_external_id = other_id_mapper.external_id(old_internal_id).unwrap();
-            id_mapper.set_link(other_external_id, new_internal_id)?;
-            payload_storage.assign_all(new_internal_id, other_payload_storage.payload(old_internal_id))?;
-        }
-        Ok(())
-    }
-
-
-    /// Launch index rebuilding on a whole segment data
-    pub fn finish_building(&mut self) -> OperationResult<()> {
-        self.query_planner.borrow_mut().build_index()?;
-        Ok(())
-    }
-
 
     fn update_vector(&mut self,
                      old_internal_id: PointOffsetType,
@@ -260,7 +232,27 @@ impl SegmentEntry for Segment {
         self.vector_storage.borrow().vector_count()
     }
 
+    fn deleted_count(&self) -> usize {
+        self.vector_storage.borrow().deleted_count()
+    }
+
+    fn segment_type(&self) -> SegmentType {
+        self.segment_type
+    }
+
     fn info(&self) -> SegmentInfo {
+        let indexed_fields = self.payload_index.borrow().indexed_fields();
+        let schema = self.payload_storage.borrow()
+            .schema()
+            .into_iter()
+            .map(|(key, data_type)| {
+                let is_indexed = indexed_fields.contains(&key);
+                (key, PayloadSchemaInfo {
+                    data_type: data_type.clone(),
+                    indexed: is_indexed,
+                })
+            }).collect();
+
         SegmentInfo {
             segment_type: self.segment_type,
             num_vectors: self.vectors_count(),
@@ -268,6 +260,7 @@ impl SegmentEntry for Segment {
             ram_usage_bytes: 0, // ToDo: Implement
             disk_usage_bytes: 0,  // ToDo: Implement
             is_appendable: self.appendable_flag,
+            schema,
         }
     }
 
@@ -298,5 +291,21 @@ impl SegmentEntry for Segment {
 
     fn drop_data(&mut self) -> OperationResult<()> {
         Ok(remove_dir_all(&self.current_path)?)
+    }
+
+    fn delete_field_index(&mut self, op_num: u64, key: &PayloadKeyType) -> OperationResult<bool> {
+        if self.skip_by_version(op_num) { return Ok(false); };
+        self.payload_index.borrow_mut().drop_index(key)?;
+        Ok(true)
+    }
+
+    fn create_field_index(&mut self, op_num: u64, key: &PayloadKeyType) -> OperationResult<bool> {
+        if self.skip_by_version(op_num) { return Ok(false); };
+        self.payload_index.borrow_mut().set_indexed(key)?;
+        Ok(true)
+    }
+
+    fn get_indexed_fields(&self) -> Vec<PayloadKeyType> {
+        self.payload_index.borrow().indexed_fields()
     }
 }

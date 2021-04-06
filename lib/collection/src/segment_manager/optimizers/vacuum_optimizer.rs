@@ -1,17 +1,16 @@
 use crate::segment_manager::holders::segment_holder::{SegmentId, LockedSegment, LockedSegmentHolder};
 use segment::types::{SegmentType, SegmentConfig};
 use ordered_float::OrderedFloat;
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use crate::segment_manager::optimizers::segment_optimizer::SegmentOptimizer;
-use segment::segment::Segment;
-use segment::segment_constructor::segment_constructor::build_segment;
-use std::path::PathBuf;
-use crate::collection::CollectionResult;
+use crate::segment_manager::optimizers::segment_optimizer::{SegmentOptimizer, OptimizerThresholds};
+use std::path::{PathBuf, Path};
+
 
 pub struct VacuumOptimizer {
     deleted_threshold: f64,
     min_vectors_number: usize,
+    thresholds_config: OptimizerThresholds,
     segments_path: PathBuf,
+    collection_temp_dir: PathBuf,
     config: SegmentConfig,
 }
 
@@ -19,48 +18,65 @@ pub struct VacuumOptimizer {
 impl VacuumOptimizer {
     pub fn new(deleted_threshold: f64,
                min_vectors_number: usize,
+               thresholds_config: OptimizerThresholds,
                segments_path: PathBuf,
+               collection_temp_dir: PathBuf,
                config: SegmentConfig) -> Self {
         VacuumOptimizer {
             deleted_threshold,
             min_vectors_number,
+            thresholds_config,
             segments_path,
+            collection_temp_dir,
             config,
         }
     }
 
     fn worst_segment(&self, segments: LockedSegmentHolder) -> Option<(SegmentId, LockedSegment)> {
         segments.read().iter()
-            .map(|(idx, segment)| (*idx, segment.get().read().info()))
-            .filter(|(_, info)| info.segment_type != SegmentType::Special)
-            .filter(|(_, info)| info.num_vectors > self.min_vectors_number)
-            .filter(|(_, info)| info.num_deleted_vectors as f64 / info.num_vectors as f64 > self.deleted_threshold)
-            .max_by_key(|(_, info)| OrderedFloat(info.num_deleted_vectors as f64 / info.num_vectors as f64))
+            // .map(|(idx, segment)| (*idx, segment.get().read().info()))
+            .filter_map(|(idx, segment)| {
+                let segment_entry = segment.get();
+                let read_segment = segment_entry.read();
+                let littered_ratio = read_segment.deleted_count() as f64 / read_segment.vectors_count() as f64;
+
+                let is_big = read_segment.vectors_count() >= self.min_vectors_number;
+                let is_not_special = read_segment.segment_type() != SegmentType::Special;
+                let is_littered = littered_ratio > self.deleted_threshold;
+
+                match is_big && is_not_special && is_littered {
+                    true => Some((*idx, littered_ratio)),
+                    false => None
+                }
+            })
+            .max_by_key(|(_, ratio)| OrderedFloat(*ratio))
             .and_then(|(idx, _)| Some((idx, segments.read().get(idx).unwrap().clone())))
     }
 }
 
 
 impl SegmentOptimizer for VacuumOptimizer {
+    fn collection_path(&self) -> &Path {
+        self.segments_path.as_path()
+    }
+
+    fn temp_path(&self) -> &Path {
+        self.collection_temp_dir.as_path()
+    }
+
+    fn base_segment_config(&self) -> SegmentConfig {
+        self.config.clone()
+    }
+
+    fn threshold_config(&self) -> &OptimizerThresholds {
+        &self.thresholds_config
+    }
+
     fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId> {
         match self.worst_segment(segments) {
             None => vec![],
             Some((segment_id, _segment)) => vec![segment_id],
         }
-    }
-
-    fn temp_segment(&self) -> CollectionResult<LockedSegment> {
-        Ok(LockedSegment::new(build_simple_segment(
-            self.segments_path.as_path(),
-            self.config.vector_size,
-            self.config.distance,
-        )?))
-    }
-
-    fn optimized_segment(&self, optimizing_segments: &Vec<LockedSegment>) -> CollectionResult<Segment> {
-        let optimizing_segment = optimizing_segments.get(0).unwrap();
-        let config = optimizing_segment.get().read().config();
-        Ok(build_segment(self.segments_path.as_path(), &config)?)
     }
 }
 
@@ -79,6 +95,7 @@ mod tests {
 
     #[test]
     fn test_vacuum_conditions() {
+        let temp_dir = TempDir::new("segment_temp_dir").unwrap();
         let dir = TempDir::new("segment_dir").unwrap();
         let mut holder = SegmentHolder::new();
         let segment_id = holder.add(random_segment(dir.path(), 100, 200, 4));
@@ -137,10 +154,17 @@ mod tests {
         let vacuum_optimizer = VacuumOptimizer::new(
             0.2,
             50,
+            OptimizerThresholds{
+                memmap_threshold: 1000000,
+                indexing_threshold: 1000000,
+                payload_indexing_threshold: 1000000
+            },
             dir.path().to_owned(),
+            temp_dir.path().to_owned(),
             SegmentConfig {
                 vector_size: 4,
                 index: Indexes::Plain {},
+                payload_index: Some(Default::default()),
                 distance: Distance::Dot,
                 storage_type: StorageType::InMemory,
             },

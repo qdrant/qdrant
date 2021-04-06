@@ -24,7 +24,7 @@ pub enum AliasOperations {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum StorageOps {
+pub enum StorageOperations {
     /// Create new collection and (optionally) specify index params
     CreateCollection {
         name: String,
@@ -34,9 +34,9 @@ pub enum StorageOps {
     },
     /// Delete collection with given name
     DeleteCollection(String),
-    /// Perform changes of collection aliases
+    /// Perform changes of collection aliases.
     /// Alias changes are atomic, meaning that no collection modifications can happen between
-    /// alias operations
+    /// alias operations.
     ChangeAliases {
         actions: Vec<AliasOperations>,
     }

@@ -1,6 +1,6 @@
 use thiserror::Error;
 use std::path::Path;
-use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentConfig};
+use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentConfig, SegmentType};
 use std::result;
 use std::io::Error as IoError;
 use atomicwrites::Error as AtomicIoError;
@@ -24,6 +24,8 @@ pub enum OperationError {
     WrongVector { expected_dim: usize, received_dim: usize },
     #[error("No point with id {missed_point_id} found")]
     PointIdError { missed_point_id: PointIdType },
+    #[error("Payload type does not match with previously given for field {field_name}. Expected: {expected_type}")]
+    TypeError { field_name: PayloadKeyType, expected_type: String },
     #[error("Service runtime error: {description}")]
     ServiceError { description: String },
 }
@@ -92,6 +94,12 @@ pub trait SegmentEntry {
     /// Return number of vectors in this segment
     fn vectors_count(&self) -> usize;
 
+    /// Number of vectors, marked as deleted
+    fn deleted_count(&self) -> usize;
+
+    /// Get segment type
+    fn segment_type(&self) -> SegmentType;
+
     /// Get current stats of the segment
     fn info(&self) -> SegmentInfo;
 
@@ -107,5 +115,14 @@ pub trait SegmentEntry {
 
     /// Removes all persisted data and forces to destroy segment
     fn drop_data(&mut self) -> OperationResult<()>;
+
+    /// Delete field index, if exists
+    fn delete_field_index(&mut self, op_num: SeqNumberType, key: &PayloadKeyType) -> OperationResult<bool>;
+
+    /// Create index for a payload field, if not exists
+    fn create_field_index(&mut self, op_num: SeqNumberType, key: &PayloadKeyType) -> OperationResult<bool>;
+
+    /// Get indexed fields
+    fn get_indexed_fields(&self) -> Vec<PayloadKeyType>;
 }
 

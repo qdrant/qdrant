@@ -1,35 +1,55 @@
-use crate::segment_manager::optimizers::segment_optimizer::SegmentOptimizer;
-use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId, LockedSegment};
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::segment::Segment;
-use segment::types::{SegmentType, SegmentConfig, StorageType, Indexes};
-
+use crate::segment_manager::optimizers::segment_optimizer::{SegmentOptimizer, OptimizerThresholds};
+use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
+use segment::types::{SegmentType, SegmentConfig};
 use itertools::Itertools;
-use segment::segment_constructor::segment_constructor::build_segment;
-use std::path::PathBuf;
-use crate::collection::CollectionResult;
+use std::path::{PathBuf, Path};
 
 
+/// Optimizer that tries to reduce number of segments until it fits configured value
 pub struct MergeOptimizer {
     max_segments: usize,
-    memmap_threshold: usize,
-    indexing_threshold: usize,
+    thresholds_config: OptimizerThresholds,
     segments_path: PathBuf,
+    collection_temp_dir: PathBuf,
     config: SegmentConfig,
 }
 
 impl MergeOptimizer {
     pub fn new(
         max_segments: usize,
-        memmap_threshold: usize,
-        indexing_threshold: usize,
-        segments_path: PathBuf, config: SegmentConfig) -> Self {
-        return MergeOptimizer { max_segments, memmap_threshold, indexing_threshold, segments_path, config };
+        thresholds_config: OptimizerThresholds,
+        segments_path: PathBuf,
+        collection_temp_dir: PathBuf,
+        config: SegmentConfig) -> Self {
+        return MergeOptimizer {
+            max_segments,
+            thresholds_config,
+            segments_path,
+            collection_temp_dir,
+            config,
+        };
     }
 }
 
 
 impl SegmentOptimizer for MergeOptimizer {
+    fn collection_path(&self) -> &Path {
+        self.segments_path.as_path()
+    }
+
+    fn temp_path(&self) -> &Path {
+        self.collection_temp_dir.as_path()
+    }
+
+    fn base_segment_config(&self) -> SegmentConfig {
+        self.config.clone()
+    }
+
+    fn threshold_config(&self) -> &OptimizerThresholds {
+        &self.thresholds_config
+    }
+
+
     fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId> {
         let read_segments = segments.read();
 
@@ -41,38 +61,18 @@ impl SegmentOptimizer for MergeOptimizer {
         // We need 3 segments because in this case we can guarantee that total segments number will be less
 
         read_segments.iter()
-            .map(|(idx, segment)| (*idx, segment.get().read().info()))
-            .filter(|(_, info)| info.segment_type != SegmentType::Special)
-            .map(|(idx, info)| (idx, info.num_vectors))
+            .filter_map(|(idx, segment)| {
+                let segment_entry = segment.get();
+                let read_segment = segment_entry.read();
+                match read_segment.segment_type() != SegmentType::Special {
+                    true => Some((*idx, read_segment.vectors_count())),
+                    false => None
+                }
+            })
             .sorted_by_key(|(_, size)| *size)
             .take(3)
             .map(|x| x.0)
             .collect()
-    }
-
-    fn temp_segment(&self) -> CollectionResult<LockedSegment> {
-        Ok(LockedSegment::new(build_simple_segment(
-            self.segments_path.as_path(),
-            self.config.vector_size,
-            self.config.distance,
-        )?))
-    }
-
-    fn optimized_segment(&self, optimizing_segments: &Vec<LockedSegment>) -> CollectionResult<Segment> {
-        let total_vectors: usize = optimizing_segments.iter()
-            .map(|s| s.get().read().info().num_vectors).sum();
-
-        let mut optimized_config = self.config.clone();
-
-        if total_vectors < self.memmap_threshold {
-            optimized_config.storage_type = StorageType::InMemory;
-        }
-
-        if total_vectors < self.indexing_threshold {
-            optimized_config.index = Indexes::Plain {};
-        }
-
-        Ok(build_segment(self.segments_path.as_path(), &optimized_config)?)
     }
 }
 
@@ -81,7 +81,7 @@ impl SegmentOptimizer for MergeOptimizer {
 mod tests {
     use super::*;
     use crate::segment_manager::fixtures::{random_segment};
-    use crate::segment_manager::holders::segment_holder::SegmentHolder;
+    use crate::segment_manager::holders::segment_holder::{SegmentHolder, LockedSegment};
     use segment::types::{Distance, Indexes};
     use std::sync::{Arc};
     use tempdir::TempDir;
@@ -90,6 +90,7 @@ mod tests {
     #[test]
     fn test_merge_optimizer() {
         let dir = TempDir::new("segment_dir").unwrap();
+        let temp_dir = TempDir::new("segment_temp_dir").unwrap();
 
         let mut holder = SegmentHolder::new();
 
@@ -111,11 +112,17 @@ mod tests {
 
         let merge_optimizer = MergeOptimizer::new(
             5,
-            10000,
-            100000,
-            dir.path().to_owned(), SegmentConfig {
+            OptimizerThresholds{
+                memmap_threshold: 1000000,
+                indexing_threshold: 1000000,
+                payload_indexing_threshold: 1000000
+            },
+            dir.path().to_owned(),
+            temp_dir.path().to_owned(),
+            SegmentConfig {
                 vector_size: 4,
                 index: Indexes::Plain {},
+                payload_index: Some(Default::default()),
                 distance: Distance::Dot,
                 storage_type: Default::default(),
             });
@@ -130,7 +137,7 @@ mod tests {
             assert!(segments_to_merge.contains(&segment_in));
         }
 
-        let old_path =segments_to_merge.iter()
+        let old_path = segments_to_merge.iter()
             .map(|sid| {
                 match locked_holder.read().get(*sid).unwrap() {
                     LockedSegment::Original(x) => x.read().current_path.clone(),

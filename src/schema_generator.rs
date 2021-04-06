@@ -8,7 +8,7 @@ use crate::api::models::CollectionsResponse;
 use crate::api::retrieve_api::PointRequest;
 
 use collection::operations::types::{CollectionInfo, Record, SearchRequest, UpdateResult, RecommendRequest};
-use storage::content_manager::storage_ops::StorageOps;
+use storage::content_manager::storage_ops::StorageOperations;
 use serde::{Deserialize, Serialize};
 use segment::types::ScoredPoint;
 use collection::operations::CollectionUpdateOperations;
@@ -17,7 +17,7 @@ use collection::operations::CollectionUpdateOperations;
 struct AllDefinitions {
     a1: CollectionsResponse,
     a2: CollectionInfo,
-    a3: StorageOps,
+    a3: StorageOperations,
     a4: PointRequest,
     a5: Record,
     a6: SearchRequest,

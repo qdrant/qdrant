@@ -2,12 +2,13 @@ use crate::vector_storage::vector_storage::{VectorStorage, ScoredPointOffset};
 use crate::entry::entry_point::OperationResult;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::fs::{File, OpenOptions};
+use std::fs::{File, OpenOptions, create_dir_all};
 use memmap::{MmapOptions, Mmap, MmapMut};
 use std::mem::{size_of, transmute};
 use crate::types::{VectorElementType, PointOffsetType, Distance};
 use std::io::Write;
 use crate::spaces::tools::{mertic_object, peek_top_scores};
+use crate::common::error_logging::LogError;
 
 pub struct MemmapVectorStorage {
     dim: usize,
@@ -70,16 +71,18 @@ impl MemmapVectorStorage {
 
 
     pub fn open(path: &Path, dim: usize) -> OperationResult<Self> {
+        create_dir_all(path)?;
+
         let data_path = path.join("matrix.dat");
         let deleted_path = path.join("deleted.dat");
 
-        MemmapVectorStorage::ensure_data_file_exists(data_path.as_path())?;
-        MemmapVectorStorage::ensure_deleted_file_exists(deleted_path.as_path())?;
+        MemmapVectorStorage::ensure_data_file_exists(data_path.as_path()).describe("Create mmap data file")?;
+        MemmapVectorStorage::ensure_deleted_file_exists(deleted_path.as_path()).describe("Create mmap deleted flags file")?;
 
-        let mmap = MemmapVectorStorage::open_read(&data_path)?;
+        let mmap = MemmapVectorStorage::open_read(&data_path).describe("Open mmap for reading")?;
         let num_vectors = (mmap.len() - HEADER_SIZE) / dim / size_of::<VectorElementType>();
 
-        let deleted_mmap = MemmapVectorStorage::open_write(&deleted_path)?;
+        let deleted_mmap = MemmapVectorStorage::open_write(&deleted_path).describe("Open mmap for writing")?;
 
         let deleted_count = (HEADER_SIZE..deleted_mmap.len())
             .map(|idx| *deleted_mmap.get(idx).unwrap() as usize).sum();
@@ -148,11 +151,11 @@ impl VectorStorage for MemmapVectorStorage {
     }
 
     fn put_vector(&mut self, _vector: &Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
-        unimplemented!()
+        panic!("Can't put vector in mmap storage")
     }
 
     fn update_vector(&mut self, _key: usize, _vector: &Vec<VectorElementType>) -> OperationResult<usize> {
-        unimplemented!()
+        panic!("Can't directly update vector in mmap storage")
     }
 
     fn update_from(&mut self, other: &dyn VectorStorage) -> OperationResult<Range<PointOffsetType>> {

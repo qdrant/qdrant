@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};
 use std::cmp::{Ordering};
 use ordered_float::OrderedFloat;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashSet, HashMap};
 
 pub type PointIdType = u64;
 /// Type of point index across all segments
@@ -16,6 +16,10 @@ pub type ScoreType = f32;
 pub type TagType = u64;
 /// Type of vector element.
 pub type VectorElementType = f32;
+/// Type of float point payload
+pub type FloatPayloadType = f64;
+/// Type of integer point payload
+pub type IntPayloadType = i64;
 
 /// Type of internal tags, build from payload
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy)]
@@ -68,8 +72,14 @@ pub enum SegmentType {
     Special,
 }
 
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct PayloadSchemaInfo {
+    pub data_type: PayloadSchemaType,
+    pub indexed: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentInfo {
     pub segment_type: SegmentType,
@@ -78,6 +88,7 @@ pub struct SegmentInfo {
     pub ram_usage_bytes: usize,
     pub disk_usage_bytes: usize,
     pub is_appendable: bool,
+    pub schema: HashMap<PayloadKeyType, PayloadSchemaInfo>,
 }
 
 
@@ -118,12 +129,37 @@ pub enum Indexes {
     },
 }
 
+impl Indexes {
+    pub fn default_hnsw() -> Self {
+        Indexes::Hnsw {
+            m: 16,
+            ef_construct: 100,
+        }
+    }
+}
+
 impl Default for Indexes {
     fn default() -> Self {
         Indexes::Plain {}
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type", content = "options")]
+/// Type of payload index
+pub enum PayloadIndexType {
+    /// Do not index anything, just keep of what should be indexed later
+    Plain,
+    /// Build payload index. Index is saved on disc, but index itself is in RAM
+    Struct,
+}
+
+impl Default for PayloadIndexType {
+    fn default() -> Self {
+        PayloadIndexType::Plain
+    }
+}
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -150,10 +186,12 @@ pub struct SegmentConfig {
     pub vector_size: usize,
     /// Type of index used for search
     pub index: Indexes,
+    /// Payload Indexes
+    pub payload_index: Option<PayloadIndexType>,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
     /// Type of vector storage
-    pub storage_type: StorageType
+    pub storage_type: StorageType,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -175,43 +213,58 @@ pub struct GeoPoint {
 #[serde(tag = "type", content = "value")]
 pub enum PayloadType {
     Keyword(Vec<String>),
-    Integer(Vec<i64>),
-    Float(Vec<f64>),
+    Integer(Vec<IntPayloadType>),
+    Float(Vec<FloatPayloadType>),
     Geo(Vec<GeoPoint>),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type", content = "value")]
+pub enum PayloadSchemaType {
+    Keyword,
+    Integer,
+    Float,
+    Geo,
+}
+
+impl From<&PayloadType> for PayloadSchemaType {
+    fn from(payload_type: &PayloadType) -> Self {
+        match payload_type {
+            PayloadType::Keyword(_) => PayloadSchemaType::Keyword,
+            PayloadType::Integer(_) => PayloadSchemaType::Integer,
+            PayloadType::Float(_) => PayloadSchemaType::Float,
+            PayloadType::Geo(_) => PayloadSchemaType::Geo,
+        }
+    }
 }
 
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Match {
-    /// Name of the field to match with
-    pub key: PayloadKeyType,
     /// Keyword value to match
     pub keyword: Option<String>,
     /// Integer value to match
-    pub integer: Option<i64>,
+    pub integer: Option<IntPayloadType>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Range {
-    /// Name of the field to match with
-    pub key: PayloadKeyType,
     /// point.key < range.lt
-    pub lt: Option<f64>,
+    pub lt: Option<FloatPayloadType>,
     /// point.key > range.gt
-    pub gt: Option<f64>,
+    pub gt: Option<FloatPayloadType>,
     /// point.key >= range.gte
-    pub gte: Option<f64>,
+    pub gte: Option<FloatPayloadType>,
     /// point.key <= range.lte
-    pub lte: Option<f64>,
+    pub lte: Option<FloatPayloadType>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoBoundingBox {
-    /// Name of the field to match with
-    pub key: PayloadKeyType,
     /// Coordinates of the top left point of the area rectangle
     pub top_left: GeoPoint,
     /// Coordinates of the bottom right point of the area rectangle
@@ -221,33 +274,52 @@ pub struct GeoBoundingBox {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoRadius {
-    /// Name of the field to match with
-    pub key: PayloadKeyType,
     /// Coordinates of the top left point of the area rectangle
     pub center: GeoPoint,
     /// Radius of the area in meters
     pub radius: f64,
 }
 
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
-pub enum Condition {
-    /// Nested filter
-    Filter(Filter),
+pub struct FieldCondition {
+    pub key: PayloadKeyType,
     /// Check if point has field with a given value
-    Match(Match),
+    pub r#match: Option<Match>,
     /// Check if points value lies in a given range
-    Range(Range),
+    pub range: Option<Range>,
     /// Check if points geo location lies in a given area
-    GeoBoundingBox(GeoBoundingBox),
+    pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
-    GeoRadius(GeoRadius),
-    /// Check if points id is in a given set
-    HasId(HashSet<PointIdType>),
+    pub geo_radius: Option<GeoRadius>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+pub struct HasIdCondition {
+    pub has_id: HashSet<PointIdType>
+}
+
+impl Into<HasIdCondition> for HashSet<PointIdType> {
+    fn into(self) -> HasIdCondition {
+        HasIdCondition {
+            has_id: self
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(untagged)]
+pub enum Condition {
+    /// Check if field satisfies provided condition
+    Field(FieldCondition),
+    /// Check if points id is in a given set
+    HasId(HasIdCondition),
+    /// Nested filter
+    Filter(Filter),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct Filter {
     /// At least one of thous conditions should match
@@ -293,10 +365,15 @@ mod tests {
     #[test]
     fn test_serialize_query() {
         let filter = Filter {
-            must: Some(vec![Condition::Match(Match {
+            must: Some(vec![Condition::Field(FieldCondition {
                 key: "hello".to_owned(),
-                keyword: Some("world".to_owned()),
-                integer: None,
+                r#match: Some(Match {
+                    keyword: Some("world".to_owned()),
+                    integer: None,
+                }),
+                range: None,
+                geo_bounding_box: None,
+                geo_radius: None,
             })]),
             must_not: None,
             should: None,
@@ -306,38 +383,48 @@ mod tests {
     }
 
     #[test]
+    fn test_deny_unknown_fields() {
+         let query1 = r#"
+         {
+            "wrong": "query"
+         }
+         "#;
+        let filter: Result<Filter, _> = serde_json::from_str(query1);
+
+        assert!(filter.is_err())
+    }
+
+    #[test]
     fn test_payload_query_parse() {
         let query1 = r#"
         {
-            "must":[
-               {
-                  "match":{
-                     "key":"hello",
-                     "integer":42
-                  }
-               },
-               {
-                   "filter": {
-                       "must_not": [
-                           {
-                                "has_id": [1, 2, 3, 4, 5, 6]
-                           },
-                           {
-                                "geo_bounding_box": {
-                                    "key": "geo_field",
-                                    "top_left": {
-                                        "lon": 13.410146,
-                                        "lat": 52.519289 
-                                    },
-                                    "bottom_right": {
-                                        "lon": 13.432683,
-                                        "lat": 52.505582
-                                    }
+            "must": [
+                {
+                    "key": "hello",
+                    "match": {
+                        "integer": 42
+                    }
+                },
+                {
+                    "must_not": [
+                        {
+                            "has_id": [1, 2, 3, 4]
+                        },
+                        {
+                            "key": "geo_field",
+                            "geo_bounding_box": {
+                                "top_left": {
+                                    "lon": 13.410146,
+                                    "lat": 52.519289
+                                },
+                                "bottom_right": {
+                                    "lon": 13.432683,
+                                    "lat": 52.505582
                                 }
-                           }
-                       ]
-                   }
-               }
+                            }
+                        }
+                    ]
+                }
             ]
         }
         "#;

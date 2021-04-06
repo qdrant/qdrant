@@ -1,6 +1,6 @@
 [package]
 name = "segment"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Andrey Vasnetsov <vasnetsov93@gmail.com>"]
 edition = "2018"
 
@@ -35,6 +35,7 @@ schemars = "0.8.0"
 log = "0.4"
 env_logger = "0.7.1"
 geo = "0.17.0"
+num-traits = "0.2.14"
 
 [[bench]]
 name = "vector_search"
