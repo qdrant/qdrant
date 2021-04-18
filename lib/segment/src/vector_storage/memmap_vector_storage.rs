@@ -1,4 +1,4 @@
-use crate::vector_storage::vector_storage::{VectorStorage, ScoredPointOffset};
+use crate::vector_storage::vector_storage::{VectorStorage, ScoredPointOffset, RawScorer};
 use crate::entry::entry_point::OperationResult;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -9,6 +9,7 @@ use crate::types::{VectorElementType, PointOffsetType, Distance};
 use std::io::Write;
 use crate::spaces::tools::{mertic_object, peek_top_scores};
 use crate::common::error_logging::LogError;
+use crate::spaces::metric::Metric;
 
 pub struct MemmapVectorStorage {
     dim: usize,
@@ -229,6 +230,10 @@ impl VectorStorage for MemmapVectorStorage {
     fn flush(&self) -> OperationResult<()> {
         self.deleted_mmap.as_ref().unwrap().flush()?;
         Ok(())
+    }
+
+    fn raw_scorer(&self, vector: &Vec<f32>, distance: &Distance) -> Box<dyn RawScorer> {
+        unimplemented!()
     }
 
     fn score_points(

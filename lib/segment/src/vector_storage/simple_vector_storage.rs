@@ -9,11 +9,12 @@ use serde::{Deserialize, Serialize};
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::tools::{mertic_object, peek_top_scores};
 use crate::types::{Distance, PointOffsetType, VectorElementType};
-use crate::vector_storage::vector_storage::ScoredPointOffset;
+use crate::vector_storage::vector_storage::{ScoredPointOffset, RawScorer};
 
 use super::vector_storage::VectorStorage;
 use std::mem::size_of;
 use ndarray::{Array1, Array};
+use crate::spaces::metric::Metric;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
@@ -30,6 +31,28 @@ pub struct SimpleVectorStorage {
 struct StoredRecord {
     pub deleted: bool,
     pub vector: Vec<VectorElementType>,
+}
+
+struct SimpleRawScorer<'a> {
+    query: Array1<VectorElementType>,
+    metric: Box<dyn Metric>,
+    vectors: &'a Vec<Array1<VectorElementType>>,
+    deleted: &'a HashSet<PointOffsetType>,
+}
+
+impl RawScorer for SimpleRawScorer<'_> {
+    fn score_points<'a>(&'a self, points: &'a mut dyn Iterator<Item=PointOffsetType>) -> Box<dyn Iterator<Item=ScoredPointOffset> + 'a> {
+        let res_iter = points
+            .filter(move |point| !self.deleted.contains(point))
+            .map(move |point| {
+                let other_vector = self.vectors.get(point).unwrap();
+                ScoredPointOffset {
+                    idx: point,
+                    score: self.metric.blas_similarity(&self.query, other_vector),
+                }
+            });
+        Box::new(res_iter)
+    }
 }
 
 
@@ -142,6 +165,18 @@ impl VectorStorage for SimpleVectorStorage {
         Ok(self.store.flush()?)
     }
 
+    fn raw_scorer(&self, vector: &Vec<VectorElementType>, distance: &Distance) -> Box<dyn RawScorer + '_> {
+        let metric = mertic_object(distance);
+        let raw_scorer = SimpleRawScorer {
+            query: Array::from(metric.preprocess(vector.clone())),
+            metric,
+            vectors: &self.vectors,
+            deleted: &self.deleted,
+        };
+
+        Box::new(raw_scorer)
+    }
+
     fn score_points(
         &self,
         vector: &Vec<VectorElementType>,
@@ -196,6 +231,7 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
+    use itertools::Itertools;
 
     #[test]
     fn test_score_points() {
@@ -247,10 +283,22 @@ mod tests {
             &distance,
         );
 
+        let raw_scorer = storage.raw_scorer(&query, &distance);
+
+        let query_points = vec![0, 1, 2, 3, 4];
+        let mut query_points1 = query_points.iter().cloned();
+        let mut query_points2 = query_points.iter().cloned();
+
+        let raw_res1 = raw_scorer.score_points(&mut query_points1).collect_vec();
+        let raw_res2 = raw_scorer.score_points(&mut query_points2).collect_vec();
+
+        assert_eq!(raw_res1, raw_res2);
+
 
         let _top_idx = match closest.get(0) {
             Some(scored_point) => {
                 assert_ne!(scored_point.idx, 2);
+                assert_eq!(&raw_res1[scored_point.idx], scored_point);
             }
             None => { assert!(false, "No close vector found!") }
         };

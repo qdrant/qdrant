@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn test_deny_unknown_fields() {
-         let query1 = r#"
+        let query1 = r#"
          {
             "wrong": "query"
          }

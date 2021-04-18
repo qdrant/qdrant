@@ -3,6 +3,7 @@ use std::cmp::{Ordering};
 use ordered_float::OrderedFloat;
 use crate::entry::entry_point::OperationResult;
 use std::ops::Range;
+use crate::spaces::metric::Metric;
 
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -26,6 +27,12 @@ impl PartialOrd for ScoredPointOffset {
 }
 
 
+/// Optimized scorer for multiple scoring requests comparing with a single query
+/// Holds current query and params, receives only subset of points to score
+pub trait RawScorer {
+    fn score_points<'a>(&'a self, points: &'a mut dyn Iterator<Item=PointOffsetType>) -> Box<dyn Iterator<Item=ScoredPointOffset> + 'a>;
+}
+
 /// Trait for vector storage
 /// El - type of vector element, expected numerical type
 /// Storage operates with internal IDs (PointOffsetType), which always starts with zero and have no skips
@@ -40,6 +47,8 @@ pub trait VectorStorage {
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()>;
     fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
     fn flush(&self) -> OperationResult<()>;
+
+    fn raw_scorer(&self, vector: &Vec<VectorElementType>, distance: &Distance) -> Box<dyn RawScorer + '_>;
 
     fn score_points(
         &self,
