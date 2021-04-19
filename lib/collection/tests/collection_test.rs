@@ -195,9 +195,9 @@ fn test_deserialization2() {
     eprintln!("read_obj = {:#?}", read_obj);
 
 
-    let crob_bytes = rmp_serde::to_vec(&insert_points).unwrap();
+    let raw_bytes = rmp_serde::to_vec(&insert_points).unwrap();
 
-    let read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&crob_bytes).unwrap();
+    let read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&raw_bytes).unwrap();
 
     eprintln!("read_obj2 = {:#?}", read_obj2);
 }

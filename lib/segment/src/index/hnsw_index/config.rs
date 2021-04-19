@@ -9,9 +9,7 @@ pub const HNSW_INDEX_CONFIG_FILE: &str = "hnsw_config.json";
 pub struct HnswConfig {
     pub m: usize,
     // Requested M
-    pub max_m: usize,
-    // Actual M in top layers (might be bigger based on indexed fields)
-    pub max_m0: usize,
+    pub m0: usize,
     // Actual M on level 0
     pub ef_construct: usize,
     // Number of neighbours to search on construction
@@ -25,8 +23,7 @@ impl HnswConfig {
     pub fn new(m: usize, ef_construct: usize) -> Self {
         HnswConfig {
             m,
-            max_m: m,
-            max_m0: m * 2,
+            m0: m * 2,
             ef_construct,
             ef: ef_construct,
             level_factor: 1.0 / (m as f64).ln()

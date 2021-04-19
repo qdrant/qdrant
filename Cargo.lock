@@ -2513,7 +2513,6 @@ dependencies = [
  "openblas-src",
  "ordered-float",
  "rand 0.8.3",
- "rmp-serde",
  "rocksdb",
  "schemars",
  "serde 1.0.123",

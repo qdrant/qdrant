@@ -1,12 +1,14 @@
-
+use serde::{Deserialize, Serialize};
 use crate::types::{Distance, Order, distance_order};
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric};
+use std::collections::binary_heap::Iter;
 
 
-struct FixedLengthPriorityQueue<T> {
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct FixedLengthPriorityQueue<T: Ord> {
     heap: BinaryHeap<T>,
     length: usize,
 }
@@ -30,6 +32,10 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
 
     pub fn into_vec(self) -> Vec<T> {
         self.heap.into_sorted_vec()
+    }
+
+    pub fn iter(&self) -> Iter<'_, T> {
+        self.heap.iter()
     }
 }
 

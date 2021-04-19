@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashSet, HashMap};
 
 pub type PointIdType = u64;
 /// Type of point index across all segments
-pub type PointOffsetType = usize;
+pub type PointOffsetType = u32;
 /// Type of point index inside a segment
 pub type PayloadKeyType = String;
 pub type SeqNumberType = u64;

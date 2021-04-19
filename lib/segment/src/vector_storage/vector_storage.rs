@@ -40,6 +40,7 @@ pub trait VectorStorage {
     fn vector_dim(&self) -> usize;
     fn vector_count(&self) -> usize; /// Number of searchable vectors (not deleted)
     fn deleted_count(&self) -> usize; /// Number of vectors, marked as deleted but still stored
+    fn total_vector_count(&self) -> usize; /// Number of all stored vectors including deleted
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>>;
     fn put_vector(&mut self, vector: &Vec<VectorElementType>) -> OperationResult<PointOffsetType>;
     fn update_vector(&mut self, key: PointOffsetType, vector: &Vec<VectorElementType>) -> OperationResult<PointOffsetType>;

@@ -76,8 +76,8 @@ impl MmapVectors {
 
     pub fn data_offset(&self, key: PointOffsetType) -> Option<usize> {
         let vector_data_length = self.dim * size_of::<VectorElementType>();
-        let offset = key * vector_data_length + HEADER_SIZE;
-        if key >= self.num_vectors {
+        let offset = (key as usize) * vector_data_length + HEADER_SIZE;
+        if key >= (self.num_vectors as PointOffsetType) {
             return None;
         }
         Some(offset)
@@ -98,7 +98,7 @@ impl MmapVectors {
     }
 
     pub fn deleted(&self, key: PointOffsetType) -> Option<bool> {
-        self.deleted_mmap.get(HEADER_SIZE + key).map(|x| *x > 0)
+        self.deleted_mmap.get(HEADER_SIZE + (key as usize)).map(|x| *x > 0)
     }
 
     /// Creates returns owned vector (copy of internal vector)
@@ -113,8 +113,8 @@ impl MmapVectors {
     }
 
     pub fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
-        if key < self.num_vectors {
-            let flag = self.deleted_mmap.get_mut(key + HEADER_SIZE).unwrap();
+        if key < (self.num_vectors as PointOffsetType) {
+            let flag = self.deleted_mmap.get_mut((key as usize) + HEADER_SIZE).unwrap();
 
             if *flag == 0 {
                 *flag = 1;

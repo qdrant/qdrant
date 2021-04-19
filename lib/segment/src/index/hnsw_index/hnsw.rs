@@ -17,9 +17,9 @@ use rand::{thread_rng, Rng};
 use rand::prelude::ThreadRng;
 use rand::distributions::Uniform;
 use crate::index::hnsw_index::config::HnswConfig;
+use crate::index::hnsw_index::graph_layers::GraphLayers;
 
-
-struct HNSWIndex {
+pub struct HNSWIndex {
     condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
     vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
@@ -27,18 +27,21 @@ struct HNSWIndex {
     path: PathBuf,
     distance: Distance,
     thread_rng: ThreadRng,
+    graph: GraphLayers
 }
 
 
 impl HNSWIndex {
-    fn get_random_layer(&mut self, reverse_size: f64) -> usize {
+    fn get_graph_path(&self) -> PathBuf { GraphLayers::get_path(self.path.as_path()) }
+
+    pub fn get_random_layer(&mut self) -> usize {
         let distribution = Uniform::new(0.0, 1.0);
         let sample: f64 = self.thread_rng.sample(distribution);
-        let picked_level = sample.ln() * reverse_size;
+        let picked_level = - sample.ln() * self.config.level_factor;
         return picked_level.round() as usize;
     }
 
-    fn open(
+    pub fn open(
         path: &Path,
         distance: Distance,
         condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
@@ -66,6 +69,17 @@ impl HNSWIndex {
             HnswConfig::new(m, ef_construct)
         };
 
+        let graph_path = GraphLayers::get_path(path);
+        let graph = if graph_path.exists() {
+            GraphLayers::load(graph_path.as_path())?
+        } else {
+            GraphLayers::new(
+                vector_storage.borrow().total_vector_count(),
+                config.m,
+                config.m0,
+            )
+        };
+
         Ok(HNSWIndex {
             condition_checker,
             vector_storage,
@@ -74,19 +88,24 @@ impl HNSWIndex {
             path: path.to_owned(),
             distance,
             thread_rng: rng,
+            graph
         })
     }
 
-    fn build_and_save(&mut self) -> OperationResult<()> {
+    pub fn build_and_save(&mut self) -> OperationResult<()> {
         unimplemented!()
     }
 
-    fn search_with_condition(&self, top: usize, ef: usize, points_scorer: &FilteredScorer) -> Vec<ScoredPointOffset> {
+    pub fn search_with_condition(&self, top: usize, ef: usize, points_scorer: &FilteredScorer) -> Vec<ScoredPointOffset> {
         unimplemented!()
     }
 
-    fn link_point(&mut self, point_id: PointOffsetType, ef: usize, points_scorer: &FilteredScorer) {
-        let layer_id = self.get_random_layer(self.config.level_factor);
+    pub fn link_point(&mut self, point_id: PointOffsetType, ef: usize, points_scorer: &FilteredScorer) {
+        let point_level = self.get_random_layer();
+
+
+
+
         unimplemented!()
     }
 }

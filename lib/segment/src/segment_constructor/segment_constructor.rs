@@ -45,9 +45,12 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
     ));
 
     let payload_index: Arc<AtomicRefCell<dyn PayloadIndex>> = match config.payload_index.unwrap_or_default() {
-        PayloadIndexType::Plain => sp(PlainPayloadIndex::open(condition_checker, vector_storage.clone(), &payload_index_path)?),
+        PayloadIndexType::Plain => sp(PlainPayloadIndex::open(
+            condition_checker.clone(),
+            vector_storage.clone(),
+            &payload_index_path)?),
         PayloadIndexType::Struct => sp(StructPayloadIndex::open(
-            condition_checker,
+            condition_checker.clone(),
             vector_storage.clone(),
             payload_storage.clone(),
             id_mapper.clone(),
@@ -89,6 +92,7 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
         vector_storage,
         payload_storage: payload_storage.clone(),
         payload_index: payload_index.clone(),
+        condition_checker,
         query_planner: sp(query_planer),
         appendable_flag: appendable,
         segment_type,

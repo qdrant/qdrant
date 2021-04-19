@@ -80,6 +80,10 @@ impl VectorStorage for MemmapVectorStorage {
         self.mmap_store.as_ref().unwrap().deleted_count
     }
 
+    fn total_vector_count(&self) -> usize {
+        self.mmap_store.as_ref().unwrap().num_vectors
+    }
+
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
         self.mmap_store.as_ref().and_then(|x| x.get_vector(key))
     }
@@ -88,14 +92,14 @@ impl VectorStorage for MemmapVectorStorage {
         panic!("Can't put vector in mmap storage")
     }
 
-    fn update_vector(&mut self, _key: usize, _vector: &Vec<VectorElementType>) -> OperationResult<usize> {
+    fn update_vector(&mut self, _key: PointOffsetType, _vector: &Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
         panic!("Can't directly update vector in mmap storage")
     }
 
     fn update_from(&mut self, other: &dyn VectorStorage) -> OperationResult<Range<PointOffsetType>> {
         let dim = self.vector_dim();
 
-        let start_index = self.mmap_store.as_ref().unwrap().num_vectors;
+        let start_index = self.mmap_store.as_ref().unwrap().num_vectors as PointOffsetType;
         let mut end_index = start_index;
 
         self.mmap_store = None;
@@ -125,7 +129,7 @@ impl VectorStorage for MemmapVectorStorage {
                 .create(false)
                 .open(self.deleted_path.as_path())?;
 
-            let flags: Vec<u8> = vec![0; end_index - start_index];
+            let flags: Vec<u8> = vec![0; (end_index - start_index) as usize];
             let flag_bytes = vf_to_u8(&flags);
             file.write(flag_bytes)?;
             file.flush()?;
@@ -146,7 +150,7 @@ impl VectorStorage for MemmapVectorStorage {
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
         let num_vectors = self.mmap_store.as_ref().unwrap().num_vectors;
-        let iter = (0..num_vectors)
+        let iter = (0..(num_vectors as PointOffsetType))
             .filter(move |id| !self.mmap_store.as_ref().unwrap().deleted(*id).unwrap());
         return Box::new(iter);
     }

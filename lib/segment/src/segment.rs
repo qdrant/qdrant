@@ -1,6 +1,6 @@
 use crate::id_mapper::id_mapper::IdMapper;
 use crate::vector_storage::vector_storage::VectorStorage;
-use crate::payload_storage::payload_storage::{PayloadStorage};
+use crate::payload_storage::payload_storage::{PayloadStorage, ConditionChecker};
 use crate::entry::entry_point::{SegmentEntry, OperationResult, OperationError};
 use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentType, SegmentConfig, SegmentState, PayloadSchemaInfo};
 use crate::query_planner::query_planner::QueryPlanner;
@@ -24,6 +24,7 @@ pub struct Segment {
     pub vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     pub payload_storage: Arc<AtomicRefCell<dyn PayloadStorage>>,
     pub payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
+    pub condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
     /// User for writing only here.
     pub query_planner: Arc<AtomicRefCell<dyn QueryPlanner>>,
     pub appendable_flag: bool,
