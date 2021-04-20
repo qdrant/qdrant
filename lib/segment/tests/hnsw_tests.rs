@@ -10,7 +10,7 @@ mod tests {
     use std::sync::Arc;
     use atomic_refcell::AtomicRefCell;
     use segment::payload_storage::query_checker::SimpleConditionChecker;
-    use segment::types::Indexes;
+    use segment::types::{Indexes, DEFAULT_INDEXING_THRESHOLD};
     use std::cmp::max;
 
 
@@ -33,6 +33,7 @@ mod tests {
                 m: 24,
                 ef_construct: 128,
             }),
+            DEFAULT_INDEXING_THRESHOLD
         ).expect("hnsw index created");
 
         let mut max_level = 0;

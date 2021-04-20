@@ -125,6 +125,7 @@ mod tests {
                 payload_index: Some(Default::default()),
                 distance: Distance::Dot,
                 storage_type: Default::default(),
+                indexing_threshold: 10000000
             });
 
         let locked_holder = Arc::new(RwLock::new(holder));

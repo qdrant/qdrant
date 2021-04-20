@@ -53,6 +53,23 @@ impl RawScorer for SimpleRawScorer<'_> {
             });
         Box::new(res_iter)
     }
+
+    fn check_point(&self, point: PointOffsetType) -> bool {
+        (point < self.vectors.len() as PointOffsetType) && !self.deleted.contains(&point)
+    }
+
+    fn score_point(&self, point: PointOffsetType) -> Option<ScoredPointOffset> {
+        match self.check_point(point) {
+            false => None,
+            true => {
+                let other_vector = self.vectors.get(point as usize).unwrap();
+                Some(ScoredPointOffset {
+                    idx: point,
+                    score: self.metric.blas_similarity(&self.query, other_vector),
+                })
+            }
+        }
+    }
 }
 
 

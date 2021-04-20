@@ -169,6 +169,7 @@ impl TableOfContent {
                     payload_index: Some(Default::default()),
                     distance,
                     storage_type: Default::default(),
+                    indexing_threshold: self.storage_config.optimizers.indexing_threshold
                 };
 
                 let segment = build_collection(

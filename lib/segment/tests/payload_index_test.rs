@@ -135,6 +135,7 @@ mod tests {
             payload_index: Some(PayloadIndexType::Plain),
             storage_type: StorageType::InMemory,
             distance: Distance::Dot,
+            indexing_threshold: 10000
         };
 
         let mut plain_segment = build_segment(dir1.path(), &config).unwrap();

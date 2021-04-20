@@ -37,6 +37,8 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     pub fn iter(&self) -> Iter<'_, T> {
         self.heap.iter()
     }
+
+    pub fn top(&self) -> Option<&T> { self.heap.peek() }
 }
 
 pub fn peek_top_scores_iterable<I, E: Ord + Clone>(scores: I, top: usize, distance: &Distance) -> Vec<E>

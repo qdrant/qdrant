@@ -31,6 +31,8 @@ impl PartialOrd for ScoredPointOffset {
 /// Holds current query and params, receives only subset of points to score
 pub trait RawScorer {
     fn score_points<'a>(&'a self, points: &'a mut dyn Iterator<Item=PointOffsetType>) -> Box<dyn Iterator<Item=ScoredPointOffset> + 'a>;
+    fn check_point(&self, point: PointOffsetType) -> bool;
+    fn score_point(&self, point: PointOffsetType) -> Option<ScoredPointOffset>;
 }
 
 /// Trait for vector storage

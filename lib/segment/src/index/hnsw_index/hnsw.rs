@@ -48,6 +48,7 @@ impl HNSWIndex {
         vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
         payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
         index_config: Option<Indexes>,
+        indexing_threshold: usize
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
         let mut rng = thread_rng();
@@ -73,10 +74,12 @@ impl HNSWIndex {
         let graph = if graph_path.exists() {
             GraphLayers::load(graph_path.as_path())?
         } else {
+            let entry_points_num = vector_storage.borrow().total_vector_count();
             GraphLayers::new(
                 vector_storage.borrow().total_vector_count(),
                 config.m,
                 config.m0,
+                max(1, entry_points_num / indexing_threshold * 10)
             )
         };
 
@@ -103,8 +106,7 @@ impl HNSWIndex {
     pub fn link_point(&mut self, point_id: PointOffsetType, ef: usize, points_scorer: &FilteredScorer) {
         let point_level = self.get_random_layer();
 
-
-
+        self.graph.link_new_point(point_id, point_level, ef, points_scorer);
 
         unimplemented!()
     }

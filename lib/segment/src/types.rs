@@ -192,7 +192,13 @@ pub struct SegmentConfig {
     pub distance: Distance,
     /// Type of vector storage
     pub storage_type: StorageType,
+    /// Indexing if efficient starting from this number of vectors
+    /// Also used to switch between brute-force and indexed search
+    pub indexing_threshold: usize,
 }
+
+/// Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
+pub const DEFAULT_INDEXING_THRESHOLD: usize = 20_000;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]

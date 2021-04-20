@@ -167,6 +167,7 @@ mod tests {
                 payload_index: Some(Default::default()),
                 distance: Distance::Dot,
                 storage_type: StorageType::InMemory,
+                indexing_threshold: 10000000
             },
         );
 

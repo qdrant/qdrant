@@ -36,6 +36,23 @@ impl RawScorer for MemmapRawScorer<'_> {
             });
         Box::new(res_iter)
     }
+
+    fn check_point(&self, point: PointOffsetType) -> bool {
+        (point < self.mmap_store.num_vectors as PointOffsetType) && !self.mmap_store.deleted(point).unwrap_or(true)
+    }
+
+    fn score_point(&self, point: PointOffsetType) -> Option<ScoredPointOffset> {
+        match self.check_point(point) {
+            false => None,
+            true => {
+                let other_vector = self.mmap_store.raw_vector(point).unwrap();
+                Some(ScoredPointOffset {
+                    idx: point,
+                    score: self.metric.similarity(&self.query, other_vector),
+                })
+            }
+        }
+    }
 }
 
 
@@ -169,7 +186,7 @@ impl VectorStorage for MemmapVectorStorage {
             MemmapRawScorer {
                 query,
                 metric,
-                mmap_store: &self.mmap_store.as_ref().unwrap()
+                mmap_store: &self.mmap_store.as_ref().unwrap(),
             }
         )
     }
