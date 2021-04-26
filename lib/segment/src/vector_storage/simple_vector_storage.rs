@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::tools::{mertic_object, peek_top_scores};
-use crate::types::{Distance, PointOffsetType, VectorElementType};
+use crate::types::{Distance, PointOffsetType, VectorElementType, ScoreType};
 use crate::vector_storage::vector_storage::{ScoredPointOffset, RawScorer};
 
 use super::vector_storage::VectorStorage;
@@ -69,6 +69,12 @@ impl RawScorer for SimpleRawScorer<'_> {
                 })
             }
         }
+    }
+
+    fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
+        let vector_a = &self.vectors[point_a as usize];
+        let vector_b = &self.vectors[point_b as usize];
+        return self.metric.blas_similarity(vector_a, vector_b);
     }
 }
 

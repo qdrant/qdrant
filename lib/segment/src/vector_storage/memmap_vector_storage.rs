@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::fs::{File, OpenOptions, create_dir_all};
 use memmap::{MmapOptions, Mmap, MmapMut};
 use std::mem::{size_of, transmute};
-use crate::types::{VectorElementType, PointOffsetType, Distance};
+use crate::types::{VectorElementType, PointOffsetType, Distance, ScoreType};
 use std::io::Write;
 use crate::spaces::tools::{mertic_object, peek_top_scores};
 use crate::common::error_logging::LogError;
@@ -52,6 +52,12 @@ impl RawScorer for MemmapRawScorer<'_> {
                 })
             }
         }
+    }
+
+    fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
+        let vector_a = self.mmap_store.raw_vector(point_a).unwrap();
+        let vector_b = self.mmap_store.raw_vector(point_b).unwrap();
+        return self.metric.similarity(vector_a, vector_b)
     }
 }
 

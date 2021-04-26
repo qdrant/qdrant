@@ -105,7 +105,6 @@ impl HNSWIndex {
 
     pub fn link_point(&mut self, point_id: PointOffsetType, ef: usize, points_scorer: &FilteredScorer) {
         let point_level = self.get_random_layer();
-
         self.graph.link_new_point(point_id, point_level, ef, points_scorer);
 
         unimplemented!()

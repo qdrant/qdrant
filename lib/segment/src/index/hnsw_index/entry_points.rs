@@ -27,54 +27,56 @@ impl Ord for EntryPoint {
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct EntryPoints {
     entry_points: Vec<EntryPoint>,
-    extra_entry_points: FixedLengthPriorityQueue<EntryPoint>
+    extra_entry_points: FixedLengthPriorityQueue<EntryPoint>,
 }
 
 impl EntryPoints {
     pub fn new(extra_entry_points: usize) -> Self {
         EntryPoints {
             entry_points: vec![],
-            extra_entry_points: FixedLengthPriorityQueue::new(extra_entry_points)
+            extra_entry_points: FixedLengthPriorityQueue::new(extra_entry_points),
         }
     }
 
-    pub fn new_point(&mut self, new_point: PointOffsetType, level: usize, points_scorer: &FilteredScorer) -> EntryPoint {
+    pub fn new_point(&mut self, new_point: PointOffsetType, level: usize, points_scorer: &FilteredScorer) -> Option<EntryPoint> {
         // there are 3 cases:
         // - There is proper entry point for a new point higher or same level - return the point
         // - The new point is higher than any alternative - return the next best thing
-        // - There is no point and alternatives - return self
+        // - There is no point and alternatives - return None
 
         for i in 0..self.entry_points.len() {
             let candidate = &self.entry_points[i];
+
             if points_scorer.check_point(candidate.point_id) {
-                // Found checkpoint candidate
-                return if candidate.level >= level {
-                    // The good checkpoint exists.
-                    // Return it, and also try to save given if required
-                    self.extra_entry_points.push(EntryPoint {
-                        point_id: new_point,
-                        level
-                    });
-                    candidate.clone()
-                } else {
-                    // The current point is better than existing
-                    let entry = self.entry_points[i].clone();
-                    self.entry_points[i] = EntryPoint {
-                        point_id: new_point,
-                        level
-                    };
-                    self.extra_entry_points.push(entry.clone());
-                    entry
-                }
+                continue; // Checkpoint does not fulfil filtering conditions. Hence, does not "exists"
             }
+            // Found checkpoint candidate
+            return if candidate.level >= level {
+                // The good checkpoint exists.
+                // Return it, and also try to save given if required
+                self.extra_entry_points.push(EntryPoint {
+                    point_id: new_point,
+                    level,
+                });
+                Some(candidate.clone())
+            } else {
+                // The current point is better than existing
+                let entry = self.entry_points[i].clone();
+                self.entry_points[i] = EntryPoint {
+                    point_id: new_point,
+                    level,
+                };
+                self.extra_entry_points.push(entry.clone());
+                Some(entry)
+            };
         }
         // No entry points found. Create a new one and return self
         let new_entry = EntryPoint {
             point_id: new_point,
-            level
+            level,
         };
         self.entry_points.push(new_entry.clone());
-        new_entry
+        None
     }
 
     pub fn get_entry_point(&self, points_scorer: &FilteredScorer) -> Option<EntryPoint> {

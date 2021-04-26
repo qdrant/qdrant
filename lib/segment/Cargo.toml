@@ -34,6 +34,7 @@ env_logger = "0.7.1"
 geo = "0.17.0"
 num-traits = "0.2.14"
 rand = "0.8"
+lru = "0.6.5"
 
 [[bench]]
 name = "vector_search"

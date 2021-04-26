@@ -1,4 +1,4 @@
-use crate::types::{PointOffsetType, Filter};
+use crate::types::{PointOffsetType, Filter, ScoreType};
 use crate::vector_storage::vector_storage::{ScoredPointOffset, RawScorer};
 use crate::payload_storage::payload_storage::ConditionChecker;
 
@@ -19,7 +19,6 @@ impl FilteredScorer<'_> {
 
     pub fn score_iterable_points<F>(&self, points_iterator: &mut dyn Iterator<Item=PointOffsetType>, mut action: F)
         where F: FnMut(ScoredPointOffset) {
-
         match self.filter {
             None => self.raw_scorer.score_points(points_iterator).for_each(action),
             Some(f) => {
@@ -36,5 +35,9 @@ impl FilteredScorer<'_> {
             .cloned();
 
         self.score_iterable_points(&mut points_iterator, action);
+    }
+
+    pub fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
+        self.raw_scorer.score_internal(point_a, point_b)
     }
 }
