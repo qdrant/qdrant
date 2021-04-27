@@ -1,7 +1,6 @@
 use crate::entry::entry_point::OperationResult;
 use std::path::{Path, PathBuf};
 use std::fs::create_dir_all;
-use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};
 use crate::index::index::{Index, PayloadIndex};
 use crate::types::{SearchParams, Filter, PointOffsetType, Distance, Indexes};

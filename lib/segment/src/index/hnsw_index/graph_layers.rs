@@ -7,7 +7,11 @@ use crate::entry::entry_point::OperationResult;
 use crate::common::file_operations::{read_bin, atomic_save_bin};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::entry_points::{EntryPoints, EntryPoint};
-use std::mem;
+use crate::vector_storage::vector_storage::ScoredPointOffset;
+use crate::index::hnsw_index::visited_pool::VisitedPool;
+use crate::index::hnsw_index::searcher::Searcher;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 
 pub type LinkContainer = Vec<PointOffsetType>;
@@ -15,13 +19,17 @@ pub type LayersContainer = Vec<LinkContainer>;
 
 pub const HNSW_GRAPH_FILE: &str = "graph.bin";
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct GraphLayers {
     max_level: usize,
     m: usize,
     m0: usize,
     links_layers: Vec<LayersContainer>,
     entry_points: EntryPoints,
+
+    // Fields used on construction phase only
+    #[serde(skip)]
+    visited_pool: Option<Rc<RefCell<VisitedPool>>>
 }
 
 /// Object contains links between nodes for HNSW search
@@ -48,7 +56,17 @@ impl GraphLayers {
             m0,
             links_layers,
             entry_points: EntryPoints::new(entry_points_num),
+            visited_pool: Some(Rc::new(RefCell::new(VisitedPool::new(num_points))))
         }
+    }
+
+    fn num_points(&self) -> usize { self.links_layers.len() }
+
+    fn get_visited_pool(&mut self) -> Rc<RefCell<VisitedPool>> {
+        if self.visited_pool.is_none() {
+            self.visited_pool = Some(Rc::new(RefCell::new(VisitedPool::new(self.num_points()))))
+        }
+        self.visited_pool.as_ref().cloned().unwrap()
     }
 
     fn links(&self, point_id: PointOffsetType, level: usize) -> &LinkContainer {
@@ -67,6 +85,36 @@ impl GraphLayers {
             point_layers.push(links)
         }
         self.max_level = max(level, self.max_level);
+    }
+
+
+    /// Greedy search for closest points within a single graph layer
+    fn search_base_level(&self, entry_point: PointOffsetType, searcher: &mut Searcher, level: usize, points_scorer: &FilteredScorer) {
+        while let Some(index) = searcher.candidates.pop() {
+            let seen_rc = searcher.seen.clone();
+            let mut seen = seen_rc.borrow_mut();
+
+            let mut links_iter = self.links(index, level)
+                .iter()
+                .cloned()
+                .filter(|point_id| seen.update_visited(*point_id));
+
+            points_scorer.score_iterable_points(&mut links_iter, |score_point| {
+                let was_added = match searcher.nearest.push(score_point.clone()) {
+                    None => true,
+                    Some(removed) => {
+                        removed.idx != score_point.idx
+                    }
+                };
+                if was_added {
+                    searcher.candidates.push(score_point.idx)
+                }
+            });
+        }
+    }
+
+    fn search_entry(&self, entry_point: PointOffsetType, level: usize, target_level: usize) -> ScoredPointOffset {
+        unimplemented!()
     }
 
     /// Connect new point to links, so that links contains only closest points
@@ -158,7 +206,7 @@ impl GraphLayers {
         }
 
         if new_point_inserted {
-            mem::replace(links, temp_links);
+            *links = temp_links;
         } else {
             if links.len() < level_m {
                 links.push(new_point_id)
@@ -185,11 +233,14 @@ impl GraphLayers {
                 if entry_point.level > level {
                     // The entry point is higher than a new point
                     // Let's find closest one on same level
+
+                    let curr_dist = points_scorer.score_internal(point_id, entry_id);
+                    // greedy search for a single closest point
+
                     // ToDo: search for closest point on `level`
-                } else {
-                    // New point is above existing point
-                    // Let's start linking from the old point level
                 }
+                // Start linking with `level`,
+                // it is possible that there is no points on this level exists
             }
         }
     }

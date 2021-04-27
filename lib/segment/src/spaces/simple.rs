@@ -1,3 +1,4 @@
+extern crate blas_src;
 use ndarray::Array1;
 
 use crate::types::{Distance, ScoreType, VectorElementType};

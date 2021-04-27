@@ -7,6 +7,7 @@ use crate::spaces::simple::{CosineMetric, DotProductMetric};
 use std::collections::binary_heap::Iter;
 
 
+/// This is a MaxQueue by default - it will keep the largest elements
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct FixedLengthPriorityQueue<T: Ord> {
     heap: BinaryHeap<T>,
