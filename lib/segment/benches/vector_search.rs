@@ -65,8 +65,7 @@ fn benchmark_ndarray(c: &mut Criterion) {
                                  .enumerate()
                                  .map(
                                      |(idx, score)| ScoredPointOffset { idx, score }),
-                             10,
-                             &Distance::Dot,
+                             10
                          );
                      }));
 }

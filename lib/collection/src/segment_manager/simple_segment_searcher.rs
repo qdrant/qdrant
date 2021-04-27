@@ -55,8 +55,6 @@ impl SegmentSearcher for SimpleSegmentSearcher {
             return Ok(vec![]);
         }
 
-        let distance = some_segment.unwrap().1.get().read().config().distance;
-
         let searches: Vec<_> = segments
             .iter()
             .map(|(_id, segment)|
@@ -89,7 +87,6 @@ impl SegmentSearcher for SimpleSegmentSearcher {
                     !res
                 }),
             request.top,
-            &distance,
         );
 
         Ok(top_scores)

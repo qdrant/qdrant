@@ -224,7 +224,7 @@ impl VectorStorage for SimpleVectorStorage {
                     score: metric.blas_similarity(&preprocessed_vector, other_vector),
                 }
             }).collect();
-        return peek_top_scores(&scores, top, distance);
+        return peek_top_scores(&scores, top);
     }
 
 
@@ -238,7 +238,7 @@ impl VectorStorage for SimpleVectorStorage {
                 idx: point as PointOffsetType,
                 score: metric.blas_similarity(&preprocessed_vector, other_vector),
             }).collect();
-        return peek_top_scores(&scores, top, distance);
+        return peek_top_scores(&scores, top);
     }
 
     fn score_internal(

@@ -215,7 +215,7 @@ impl VectorStorage for MemmapVectorStorage {
                     score: metric.similarity(&preprocessed_vector, &other_vector),
                 }
             }).collect();
-        return peek_top_scores(&scores, top, distance);
+        return peek_top_scores(&scores, top);
     }
 
     fn score_all(&self, vector: &Vec<VectorElementType>, top: usize, distance: &Distance) -> Vec<ScoredPointOffset> {
@@ -230,7 +230,7 @@ impl VectorStorage for MemmapVectorStorage {
                 }
             }).collect();
 
-        return peek_top_scores(&scores, top, distance);
+        return peek_top_scores(&scores, top);
     }
 
     fn score_internal(
