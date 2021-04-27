@@ -9,7 +9,7 @@ use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::entry_points::{EntryPoints, EntryPoint};
 use crate::vector_storage::vector_storage::ScoredPointOffset;
 use crate::index::hnsw_index::visited_pool::VisitedPool;
-use crate::index::hnsw_index::searcher::Searcher;
+use crate::index::hnsw_index::search_context::SearchContext;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -89,7 +89,7 @@ impl GraphLayers {
 
 
     /// Greedy search for closest points within a single graph layer
-    fn search_base_level(&self, entry_point: PointOffsetType, searcher: &mut Searcher, level: usize, points_scorer: &FilteredScorer) {
+    fn search_base_level(&self, entry_point: PointOffsetType, searcher: &mut SearchContext, level: usize, points_scorer: &FilteredScorer) {
         while let Some(index) = searcher.candidates.pop() {
             let seen_rc = searcher.seen.clone();
             let mut seen = seen_rc.borrow_mut();
@@ -221,7 +221,11 @@ impl GraphLayers {
 
         self.set_levels(point_id, level);
 
-        let entry_point_opt = self.entry_points.new_point(point_id, level, points_scorer);
+        let entry_point_opt = self.entry_points.new_point(
+            point_id,
+            level,
+            |point_id| points_scorer.check_point(point_id)
+        );
         match entry_point_opt {
             // New point is a new empty entry (for this filter, at least)
             // We can't do much here, so just quit

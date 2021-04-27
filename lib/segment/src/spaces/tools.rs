@@ -18,7 +18,7 @@ pub struct FixedLengthPriorityQueue<T: Ord> {
 impl<T: Ord> FixedLengthPriorityQueue<T> {
     pub fn new(length: usize) -> Self {
         FixedLengthPriorityQueue::<T> {
-            heap: BinaryHeap::new(),
+            heap: BinaryHeap::with_capacity(length + 1),
             length,
         }
     }

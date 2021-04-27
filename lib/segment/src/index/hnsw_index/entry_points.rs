@@ -38,7 +38,9 @@ impl EntryPoints {
         }
     }
 
-    pub fn new_point(&mut self, new_point: PointOffsetType, level: usize, points_scorer: &FilteredScorer) -> Option<EntryPoint> {
+    pub fn new_point<F>(&mut self, new_point: PointOffsetType, level: usize, checker: F) -> Option<EntryPoint>
+    where F: Fn(PointOffsetType) -> bool
+    {
         // there are 3 cases:
         // - There is proper entry point for a new point higher or same level - return the point
         // - The new point is higher than any alternative - return the next best thing
@@ -47,7 +49,7 @@ impl EntryPoints {
         for i in 0..self.entry_points.len() {
             let candidate = &self.entry_points[i];
 
-            if points_scorer.check_point(candidate.point_id) {
+            if checker(candidate.point_id) {
                 continue; // Checkpoint does not fulfil filtering conditions. Hence, does not "exists"
             }
             // Found checkpoint candidate
