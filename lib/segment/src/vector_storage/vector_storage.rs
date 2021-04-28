@@ -32,7 +32,7 @@ impl PartialOrd for ScoredPointOffset {
 pub trait RawScorer {
     fn score_points<'a>(&'a self, points: &'a mut dyn Iterator<Item=PointOffsetType>) -> Box<dyn Iterator<Item=ScoredPointOffset> + 'a>;
     fn check_point(&self, point: PointOffsetType) -> bool;
-    fn score_point(&self, point: PointOffsetType) -> Option<ScoredPointOffset>;
+    fn score_point(&self, point: PointOffsetType) -> ScoreType;
 
     /// Return distance between stored points selected by ids
     /// Panics if any id is out of range

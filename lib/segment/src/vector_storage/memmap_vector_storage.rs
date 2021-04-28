@@ -41,17 +41,9 @@ impl RawScorer for MemmapRawScorer<'_> {
         (point < self.mmap_store.num_vectors as PointOffsetType) && !self.mmap_store.deleted(point).unwrap_or(true)
     }
 
-    fn score_point(&self, point: PointOffsetType) -> Option<ScoredPointOffset> {
-        match self.check_point(point) {
-            false => None,
-            true => {
-                let other_vector = self.mmap_store.raw_vector(point).unwrap();
-                Some(ScoredPointOffset {
-                    idx: point,
-                    score: self.metric.similarity(&self.query, other_vector),
-                })
-            }
-        }
+    fn score_point(&self, point: PointOffsetType) -> ScoreType {
+        let other_vector = self.mmap_store.raw_vector(point).unwrap();
+        self.metric.similarity(&self.query, other_vector)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {

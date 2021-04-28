@@ -58,17 +58,9 @@ impl RawScorer for SimpleRawScorer<'_> {
         (point < self.vectors.len() as PointOffsetType) && !self.deleted.contains(&point)
     }
 
-    fn score_point(&self, point: PointOffsetType) -> Option<ScoredPointOffset> {
-        match self.check_point(point) {
-            false => None,
-            true => {
-                let other_vector = self.vectors.get(point as usize).unwrap();
-                Some(ScoredPointOffset {
-                    idx: point,
-                    score: self.metric.blas_similarity(&self.query, other_vector),
-                })
-            }
-        }
+    fn score_point(&self, point: PointOffsetType) -> ScoreType {
+        let other_vector = &self.vectors[point as usize];
+        self.metric.blas_similarity(&self.query, other_vector)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {

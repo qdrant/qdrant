@@ -12,6 +12,7 @@ use crate::index::hnsw_index::visited_pool::VisitedPool;
 use crate::index::hnsw_index::search_context::SearchContext;
 use std::cell::RefCell;
 use std::rc::Rc;
+use crate::common::utils::rev_range;
 
 
 pub type LinkContainer = Vec<PointOffsetType>;
@@ -29,7 +30,7 @@ pub struct GraphLayers {
 
     // Fields used on construction phase only
     #[serde(skip)]
-    visited_pool: Option<Rc<RefCell<VisitedPool>>>
+    visited_pool: Option<Rc<RefCell<VisitedPool>>>,
 }
 
 /// Object contains links between nodes for HNSW search
@@ -56,7 +57,7 @@ impl GraphLayers {
             m0,
             links_layers,
             entry_points: EntryPoints::new(entry_points_num),
-            visited_pool: Some(Rc::new(RefCell::new(VisitedPool::new(num_points))))
+            visited_pool: Some(Rc::new(RefCell::new(VisitedPool::new(num_points)))),
         }
     }
 
@@ -113,8 +114,26 @@ impl GraphLayers {
         }
     }
 
-    fn search_entry(&self, entry_point: PointOffsetType, level: usize, target_level: usize) -> ScoredPointOffset {
-        unimplemented!()
+    fn search_entry(&self, entry_point: PointOffsetType, top_level: usize, target_level: usize, points_scorer: &FilteredScorer) -> ScoredPointOffset
+    {
+        let mut current_point = ScoredPointOffset {
+            idx: entry_point,
+            score: points_scorer.raw_scorer.score_point(entry_point)
+        };
+        for level in rev_range(top_level, target_level) {
+            let mut changed = true;
+            while changed {
+                changed = false;
+                let mut links = self.links(current_point.idx, level).iter().cloned();
+                points_scorer.score_iterable_points(&mut links, |score_point| {
+                    if score_point.score > current_point.score {
+                        changed = true;
+                        current_point = score_point;
+                    }
+                });
+            }
+        }
+        current_point
     }
 
     /// Connect new point to links, so that links contains only closest points
@@ -224,7 +243,7 @@ impl GraphLayers {
         let entry_point_opt = self.entry_points.new_point(
             point_id,
             level,
-            |point_id| points_scorer.check_point(point_id)
+            |point_id| points_scorer.check_point(point_id),
         );
         match entry_point_opt {
             // New point is a new empty entry (for this filter, at least)
