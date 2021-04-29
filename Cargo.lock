@@ -2480,6 +2480,7 @@ dependencies = [
  "num-traits 0.2.14",
  "openblas-src",
  "ordered-float",
+ "parking_lot",
  "rand 0.8.3",
  "rocksdb",
  "schemars",

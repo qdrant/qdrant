@@ -1,18 +1,20 @@
 use serde::{Deserialize, Serialize};
 use crate::types::{PointOffsetType, ScoreType};
 use crate::spaces::tools::FixedLengthPriorityQueue;
-use std::cmp::{Ordering, max};
+use std::cmp::{Ordering, max, min};
 use std::path::{Path, PathBuf};
 use crate::entry::entry_point::OperationResult;
 use crate::common::file_operations::{read_bin, atomic_save_bin};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::entry_points::{EntryPoints, EntryPoint};
 use crate::vector_storage::vector_storage::ScoredPointOffset;
-use crate::index::hnsw_index::visited_pool::VisitedPool;
+use crate::index::hnsw_index::visited_pool::{VisitedList, VisitedPool};
 use crate::index::hnsw_index::search_context::SearchContext;
 use std::cell::RefCell;
 use std::rc::Rc;
 use crate::common::utils::rev_range;
+use std::mem;
+use serde::__private::ser::serialize_tagged_newtype;
 
 
 pub type LinkContainer = Vec<PointOffsetType>;
@@ -30,7 +32,7 @@ pub struct GraphLayers {
 
     // Fields used on construction phase only
     #[serde(skip)]
-    visited_pool: Option<Rc<RefCell<VisitedPool>>>,
+    visited_pool: VisitedPool,
 }
 
 /// Object contains links between nodes for HNSW search
@@ -57,18 +59,11 @@ impl GraphLayers {
             m0,
             links_layers,
             entry_points: EntryPoints::new(entry_points_num),
-            visited_pool: Some(Rc::new(RefCell::new(VisitedPool::new(num_points)))),
+            visited_pool: VisitedPool::new(),
         }
     }
 
     fn num_points(&self) -> usize { self.links_layers.len() }
-
-    fn get_visited_pool(&mut self) -> Rc<RefCell<VisitedPool>> {
-        if self.visited_pool.is_none() {
-            self.visited_pool = Some(Rc::new(RefCell::new(VisitedPool::new(self.num_points()))))
-        }
-        self.visited_pool.as_ref().cloned().unwrap()
-    }
 
     fn links(&self, point_id: PointOffsetType, level: usize) -> &LinkContainer {
         &self.links_layers[point_id as usize][level]
@@ -90,35 +85,38 @@ impl GraphLayers {
 
 
     /// Greedy search for closest points within a single graph layer
-    fn search_base_level(&self, entry_point: PointOffsetType, searcher: &mut SearchContext, level: usize, points_scorer: &FilteredScorer) {
+    fn _search_on_level(&self, searcher: &mut SearchContext, level: usize, visited_list: &mut VisitedList, points_scorer: &FilteredScorer) {
         while let Some(index) = searcher.candidates.pop() {
-            let seen_rc = searcher.seen.clone();
-            let mut seen = seen_rc.borrow_mut();
 
             let mut links_iter = self.links(index, level)
                 .iter()
                 .cloned()
-                .filter(|point_id| seen.update_visited(*point_id));
+                .filter(|point_id| visited_list.update_visited(*point_id));
 
-            points_scorer.score_iterable_points(&mut links_iter, |score_point| {
-                let was_added = match searcher.nearest.push(score_point.clone()) {
-                    None => true,
-                    Some(removed) => {
-                        removed.idx != score_point.idx
-                    }
-                };
-                if was_added {
-                    searcher.candidates.push(score_point.idx)
-                }
-            });
+            points_scorer.score_iterable_points(
+                &mut links_iter,
+                |score_point| searcher.process_candidate(score_point),
+            );
         }
+
+    }
+
+    fn search_on_level(&self, level_entry: ScoredPointOffset, level: usize, ef: usize, points_scorer: &FilteredScorer) -> FixedLengthPriorityQueue<ScoredPointOffset> {
+        let mut visited_list = self.visited_pool.get(self.num_points());
+        let mut search_context = SearchContext::new(
+            level_entry, ef);
+
+        self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
+
+        self.visited_pool.return_back(visited_list);
+        search_context.nearest
     }
 
     fn search_entry(&self, entry_point: PointOffsetType, top_level: usize, target_level: usize, points_scorer: &FilteredScorer) -> ScoredPointOffset
     {
         let mut current_point = ScoredPointOffset {
             idx: entry_point,
-            score: points_scorer.raw_scorer.score_point(entry_point)
+            score: points_scorer.raw_scorer.score_point(entry_point),
         };
         for level in rev_range(top_level, target_level) {
             let mut changed = true;
@@ -252,18 +250,51 @@ impl GraphLayers {
 
             // Entry point found.
             Some(entry_point) => {
-                let mut entry_id = entry_point.point_id;
-                if entry_point.level > level {
+                let mut level_entry = if entry_point.level > level {
                     // The entry point is higher than a new point
                     // Let's find closest one on same level
 
-                    let curr_dist = points_scorer.score_internal(point_id, entry_id);
                     // greedy search for a single closest point
+                    self.search_entry(
+                        entry_point.point_id,
+                        entry_point.level,
+                        level,
+                        points_scorer,
+                    )
+                } else {
+                    ScoredPointOffset {
+                        idx: entry_point.point_id,
+                        score: points_scorer.score_internal(point_id, entry_point.point_id),
+                    }
+                };
+                // minimal common level for entry points
+                let linking_level = min(level, entry_point.level);
 
-                    // ToDo: search for closest point on `level`
+
+                for curr_level in (0..=linking_level).rev() {
+                    let mut nearest_points = self.search_on_level(
+                        level_entry, curr_level, ef, points_scorer
+                    );
+
+                    for nearest_point in nearest_points.iter() {
+                        self.connect_new_point_with_heuristic(
+                            nearest_point.idx,
+                            point_id,
+                            curr_level,
+                            |a, b| points_scorer.score_internal(a, b)
+                        );
+
+                        self.connect_new_point_with_heuristic(
+                            point_id,
+                            nearest_point.idx,
+                            curr_level,
+                            |a, b| points_scorer.score_internal(a, b)
+                        );
+                        if nearest_point.score > level_entry.score {
+                            level_entry = nearest_point.clone()
+                        }
+                    }
                 }
-                // Start linking with `level`,
-                // it is possible that there is no points on this level exists
             }
         }
     }
