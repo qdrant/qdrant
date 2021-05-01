@@ -78,6 +78,7 @@ impl HNSWIndex {
                 vector_storage.borrow().total_vector_count(),
                 config.m,
                 config.m0,
+                config.ef_construct,
                 max(1, entry_points_num / indexing_threshold * 10)
             )
         };
@@ -102,11 +103,9 @@ impl HNSWIndex {
         unimplemented!()
     }
 
-    pub fn link_point(&mut self, point_id: PointOffsetType, ef: usize, points_scorer: &FilteredScorer) {
+    pub fn link_point(&mut self, point_id: PointOffsetType, points_scorer: &FilteredScorer) {
         let point_level = self.get_random_layer();
-        self.graph.link_new_point(point_id, point_level, ef, points_scorer);
-
-        unimplemented!()
+        self.graph.link_new_point(point_id, point_level, points_scorer);
     }
 }
 
