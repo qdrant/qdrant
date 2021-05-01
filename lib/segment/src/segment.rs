@@ -11,6 +11,7 @@ use std::fs::{remove_dir_all};
 use std::io::Write;
 use atomicwrites::{AtomicFile, AllowOverwrite};
 use crate::index::index::PayloadIndex;
+use crate::spaces::tools::mertic_object;
 
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
@@ -37,7 +38,7 @@ impl Segment {
 
     fn update_vector(&mut self,
                      old_internal_id: PointOffsetType,
-                     vector: &Vec<VectorElementType>,
+                     vector: Vec<VectorElementType>,
     ) -> OperationResult<PointOffsetType> {
         let new_internal_index = {
             let mut vector_storage = self.vector_storage.borrow_mut();
@@ -140,6 +141,9 @@ impl SegmentEntry for Segment {
             return Err(OperationError::WrongVector { expected_dim: vector_dim, received_dim: vector.len() });
         }
 
+        let metric = mertic_object(&self.segment_config.distance);
+        let processed_vector = metric.preprocess(vector.clone());
+
         let stored_internal_point = {
             let id_mapped = self.id_mapper.borrow();
             id_mapped.internal_id(point_id)
@@ -147,9 +151,9 @@ impl SegmentEntry for Segment {
 
         let (was_replaced, new_index) = match stored_internal_point {
             Some(existing_internal_id) =>
-                (true, self.update_vector(existing_internal_id, vector)?),
+                (true, self.update_vector(existing_internal_id, processed_vector)?),
             None =>
-                (false, self.vector_storage.borrow_mut().put_vector(vector)?)
+                (false, self.vector_storage.borrow_mut().put_vector(processed_vector)?)
         };
 
         self.id_mapper.borrow_mut().set_link(point_id, new_index)?;

@@ -17,10 +17,10 @@ impl FilteredScorer<'_> {
         }
     }
 
-    pub fn score_iterable_points<F>(&self, points_iterator: &mut dyn Iterator<Item=PointOffsetType>, limit: usize, mut action: F)
+    pub fn score_iterable_points<F>(&self, points_iterator: &mut dyn Iterator<Item=PointOffsetType>, limit: usize, action: F)
         where F: FnMut(ScoredPointOffset) {
         match self.filter {
-            None => self.raw_scorer.score_points(points_iterator).for_each(action),
+            None => self.raw_scorer.score_points(points_iterator).take(limit).for_each(action),
             Some(f) => {
                 let mut points_filtered_iterator = points_iterator
                     .filter(move |id| self.condition_checker.check(*id, f));
@@ -29,7 +29,7 @@ impl FilteredScorer<'_> {
         };
     }
 
-    pub fn score_points<F>(&self, ids: &[PointOffsetType], limit: usize, mut action: F)
+    pub fn score_points<F>(&self, ids: &[PointOffsetType], limit: usize, action: F)
         where F: FnMut(ScoredPointOffset) {
         let mut points_iterator = ids
             .iter()

@@ -32,8 +32,16 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
 
 
     let vector_storage: Arc<AtomicRefCell<dyn VectorStorage>> = match config.storage_type {
-        StorageType::InMemory => sp(SimpleVectorStorage::open(vector_storage_path.as_path(), config.vector_size)?),
-        StorageType::Mmap => sp(MemmapVectorStorage::open(vector_storage_path.as_path(), config.vector_size)?),
+        StorageType::InMemory => sp(SimpleVectorStorage::open(
+            vector_storage_path.as_path(),
+            config.vector_size,
+            config.distance
+        )?),
+        StorageType::Mmap => sp(MemmapVectorStorage::open(
+            vector_storage_path.as_path(),
+            config.vector_size,
+            config.distance
+        )?),
     };
 
     let payload_storage = sp(SimplePayloadStorage::open(payload_storage_path.as_path())?);

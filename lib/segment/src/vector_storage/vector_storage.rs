@@ -30,6 +30,7 @@ impl PartialOrd for ScoredPointOffset {
 /// Optimized scorer for multiple scoring requests comparing with a single query
 /// Holds current query and params, receives only subset of points to score
 pub trait RawScorer {
+    // ToDo: Replace boxed iterator with callback and make a benchmark
     fn score_points<'a>(&'a self, points: &'a mut dyn Iterator<Item=PointOffsetType>) -> Box<dyn Iterator<Item=ScoredPointOffset> + 'a>;
     fn check_point(&self, point: PointOffsetType) -> bool;
     fn score_point(&self, point: PointOffsetType) -> ScoreType;
@@ -48,34 +49,31 @@ pub trait VectorStorage {
     fn deleted_count(&self) -> usize; /// Number of vectors, marked as deleted but still stored
     fn total_vector_count(&self) -> usize; /// Number of all stored vectors including deleted
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>>;
-    fn put_vector(&mut self, vector: &Vec<VectorElementType>) -> OperationResult<PointOffsetType>;
-    fn update_vector(&mut self, key: PointOffsetType, vector: &Vec<VectorElementType>) -> OperationResult<PointOffsetType>;
+    fn put_vector(&mut self, vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType>;
+    fn update_vector(&mut self, key: PointOffsetType, vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType>;
     fn update_from(&mut self, other: &dyn VectorStorage) -> OperationResult<Range<PointOffsetType>>;
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()>;
     fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
     fn flush(&self) -> OperationResult<()>;
 
-    fn raw_scorer(&self, vector: &Vec<VectorElementType>, distance: &Distance) -> Box<dyn RawScorer + '_>;
+    fn raw_scorer(&self, vector: &Vec<VectorElementType>) -> Box<dyn RawScorer + '_>;
 
     fn score_points(
         &self,
         vector: &Vec<VectorElementType>,
         points: &[PointOffsetType],
-        top: usize,
-        distance: &Distance,
+        top: usize
     ) -> Vec<ScoredPointOffset>;
     fn score_all(
         &self,
         vector: &Vec<VectorElementType>,
-        top: usize,
-        distance: &Distance
+        top: usize
     ) -> Vec<ScoredPointOffset>;
     fn score_internal(
         &self,
         point: PointOffsetType,
         points: &[PointOffsetType],
-        top: usize,
-        distance: &Distance
+        top: usize
     ) -> Vec<ScoredPointOffset>;
 }
 

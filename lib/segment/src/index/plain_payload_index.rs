@@ -140,9 +140,9 @@ impl Index for PlainIndex {
         match filter {
             Some(filter) => {
                 let filtered_ids = self.payload_index.borrow().query_points(filter).collect_vec();
-                self.vector_storage.borrow().score_points(vector, &filtered_ids, top, &self.distance)
+                self.vector_storage.borrow().score_points(vector, &filtered_ids, top)
             }
-            None => self.vector_storage.borrow().score_all(vector, top, &self.distance)
+            None => self.vector_storage.borrow().score_all(vector, top)
         }
     }
 

@@ -123,7 +123,7 @@ impl Index for HNSWIndex {
         let ef = max(req_ef, top);
 
         let vector_storage = self.vector_storage.borrow();
-        let raw_scorer = vector_storage.raw_scorer(vector, &self.distance);
+        let raw_scorer = vector_storage.raw_scorer(vector);
         let condition_checker = self.condition_checker.borrow();
 
         let points_scorer = FilteredScorer {

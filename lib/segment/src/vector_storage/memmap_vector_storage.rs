@@ -2,13 +2,11 @@ use crate::vector_storage::vector_storage::{VectorStorage, ScoredPointOffset, Ra
 use crate::entry::entry_point::OperationResult;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::fs::{File, OpenOptions, create_dir_all};
-use memmap::{MmapOptions, Mmap, MmapMut};
-use std::mem::{size_of, transmute};
+use std::fs::{OpenOptions, create_dir_all};
+use std::mem::{size_of};
 use crate::types::{VectorElementType, PointOffsetType, Distance, ScoreType};
 use std::io::Write;
 use crate::spaces::tools::{mertic_object, peek_top_scores};
-use crate::common::error_logging::LogError;
 use crate::spaces::metric::Metric;
 use crate::vector_storage::mmap_vectors::MmapVectors;
 
@@ -19,7 +17,7 @@ fn vf_to_u8<T>(v: &Vec<T>) -> &[u8] {
 
 pub struct MemmapRawScorer<'a> {
     query: Vec<VectorElementType>,
-    metric: Box<dyn Metric>,
+    metric: &'a Box<dyn Metric>,
     mmap_store: &'a MmapVectors,
 }
 
@@ -58,10 +56,11 @@ pub struct MemmapVectorStorage {
     vectors_path: PathBuf,
     deleted_path: PathBuf,
     mmap_store: Option<MmapVectors>,
+    metric: Box<dyn Metric>
 }
 
 impl MemmapVectorStorage {
-    pub fn open(path: &Path, dim: usize) -> OperationResult<Self> {
+    pub fn open(path: &Path, dim: usize, distance: Distance) -> OperationResult<Self> {
         create_dir_all(path)?;
 
         let vectors_path = path.join("matrix.dat");
@@ -73,10 +72,13 @@ impl MemmapVectorStorage {
             dim,
         )?;
 
+        let metric = mertic_object(&distance);
+
         Ok(MemmapVectorStorage {
             vectors_path,
             deleted_path,
             mmap_store: Some(mmap_store),
+            metric
         })
     }
 }
@@ -103,11 +105,11 @@ impl VectorStorage for MemmapVectorStorage {
         self.mmap_store.as_ref().and_then(|x| x.get_vector(key))
     }
 
-    fn put_vector(&mut self, _vector: &Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
+    fn put_vector(&mut self, _vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
         panic!("Can't put vector in mmap storage")
     }
 
-    fn update_vector(&mut self, _key: PointOffsetType, _vector: &Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
+    fn update_vector(&mut self, _key: PointOffsetType, _vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
         panic!("Can't directly update vector in mmap storage")
     }
 
@@ -177,13 +179,12 @@ impl VectorStorage for MemmapVectorStorage {
         }
     }
 
-    fn raw_scorer(&self, vector: &Vec<VectorElementType>, distance: &Distance) -> Box<dyn RawScorer + '_> {
-        let metric = mertic_object(distance);
-        let query = metric.preprocess(vector.clone());
+    fn raw_scorer(&self, vector: &Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
+        let query = self.metric.preprocess(vector.clone());
         Box::new(
             MemmapRawScorer {
                 query,
-                metric,
+                metric: &self.metric,
                 mmap_store: &self.mmap_store.as_ref().unwrap(),
             }
         )
@@ -193,10 +194,8 @@ impl VectorStorage for MemmapVectorStorage {
         &self, vector: &Vec<VectorElementType>,
         points: &[PointOffsetType],
         top: usize,
-        distance: &Distance,
     ) -> Vec<ScoredPointOffset> {
-        let metric = mertic_object(distance);
-        let preprocessed_vector = metric.preprocess(vector.clone());
+        let preprocessed_vector = self.metric.preprocess(vector.clone());
         let scores: Vec<ScoredPointOffset> = points.iter()
             .cloned()
             .filter(|point| !self.mmap_store.as_ref().unwrap().deleted(*point).unwrap_or(true))
@@ -204,21 +203,20 @@ impl VectorStorage for MemmapVectorStorage {
                 let other_vector = self.mmap_store.as_ref().unwrap().raw_vector(point).unwrap();
                 ScoredPointOffset {
                     idx: point,
-                    score: metric.similarity(&preprocessed_vector, &other_vector),
+                    score: self.metric.similarity(&preprocessed_vector, &other_vector),
                 }
             }).collect();
         return peek_top_scores(&scores, top);
     }
 
-    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize, distance: &Distance) -> Vec<ScoredPointOffset> {
-        let metric = mertic_object(distance);
-        let preprocessed_vector = metric.preprocess(vector.clone());
+    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize) -> Vec<ScoredPointOffset> {
+        let preprocessed_vector = self.metric.preprocess(vector.clone());
         let scores: Vec<ScoredPointOffset> = self.iter_ids()
             .map(|point| {
                 let other_vector = self.mmap_store.as_ref().unwrap().raw_vector(point).unwrap();
                 ScoredPointOffset {
                     idx: point,
-                    score: metric.similarity(&preprocessed_vector, other_vector),
+                    score: self.metric.similarity(&preprocessed_vector, other_vector),
                 }
             }).collect();
 
@@ -230,10 +228,9 @@ impl VectorStorage for MemmapVectorStorage {
         point: PointOffsetType,
         points: &[PointOffsetType],
         top: usize,
-        distance: &Distance,
     ) -> Vec<ScoredPointOffset> {
         let vector = self.get_vector(point).unwrap();
-        return self.score_points(&vector, points, top, distance);
+        return self.score_points(&vector, points, top);
     }
 }
 
@@ -247,8 +244,9 @@ mod tests {
 
     #[test]
     fn test_basic_persistence() {
+        let dist = Distance::Dot;
         let dir = TempDir::new("storage_dir").unwrap();
-        let mut storage = MemmapVectorStorage::open(dir.path(), 4).unwrap();
+        let mut storage = MemmapVectorStorage::open(dir.path(), 4, dist).unwrap();
 
         let vec1 = vec![1.0, 0.0, 1.0, 1.0];
         let vec2 = vec![1.0, 0.0, 1.0, 0.0];
@@ -258,11 +256,11 @@ mod tests {
 
         {
             let dir2 = TempDir::new("storage_dir2").unwrap();
-            let mut storage2 = SimpleVectorStorage::open(dir2.path(), 4).unwrap();
+            let mut storage2 = SimpleVectorStorage::open(dir2.path(), 4, dist).unwrap();
 
-            storage2.put_vector(&vec1).unwrap();
-            storage2.put_vector(&vec2).unwrap();
-            storage2.put_vector(&vec3).unwrap();
+            storage2.put_vector(vec1.clone()).unwrap();
+            storage2.put_vector(vec2.clone()).unwrap();
+            storage2.put_vector(vec3.clone()).unwrap();
             storage.update_from(&storage2).unwrap();
         }
 
@@ -278,9 +276,9 @@ mod tests {
 
         {
             let dir2 = TempDir::new("storage_dir2").unwrap();
-            let mut storage2 = SimpleVectorStorage::open(dir2.path(), 4).unwrap();
-            storage2.put_vector(&vec4).unwrap();
-            storage2.put_vector(&vec5).unwrap();
+            let mut storage2 = SimpleVectorStorage::open(dir2.path(), 4, dist).unwrap();
+            storage2.put_vector(vec4.clone()).unwrap();
+            storage2.put_vector(vec5.clone()).unwrap();
             storage.update_from(&storage2).unwrap();
         }
 
@@ -292,14 +290,14 @@ mod tests {
         assert_eq!(stored_ids, vec![0, 1, 3, 4]);
 
 
-        let res = storage.score_all(&vec3, 2, &Distance::Dot);
+        let res = storage.score_all(&vec3, 2);
 
         assert_eq!(res.len(), 2);
 
         assert_ne!(res[0].idx, 2);
 
         let res = storage.score_points(
-            &vec3, &vec![0, 1, 2, 3, 4], 2, &Distance::Dot);
+            &vec3, &vec![0, 1, 2, 3, 4], 2);
 
         assert_eq!(res.len(), 2);
         assert_ne!(res[0].idx, 2);
@@ -307,8 +305,9 @@ mod tests {
 
     #[test]
     fn test_mmap_raw_scorer() {
+        let dist = Distance::Dot;
         let dir = TempDir::new("storage_dir").unwrap();
-        let mut storage = MemmapVectorStorage::open(dir.path(), 4).unwrap();
+        let mut storage = MemmapVectorStorage::open(dir.path(), 4, dist).unwrap();
 
         let vec1 = vec![1.0, 0.0, 1.0, 1.0];
         let vec2 = vec![1.0, 0.0, 1.0, 0.0];
@@ -318,20 +317,20 @@ mod tests {
 
         {
             let dir2 = TempDir::new("storage_dir2").unwrap();
-            let mut storage2 = SimpleVectorStorage::open(dir2.path(), 4).unwrap();
+            let mut storage2 = SimpleVectorStorage::open(dir2.path(), 4, dist).unwrap();
 
-            storage2.put_vector(&vec1).unwrap();
-            storage2.put_vector(&vec2).unwrap();
-            storage2.put_vector(&vec3).unwrap();
-            storage2.put_vector(&vec4).unwrap();
-            storage2.put_vector(&vec5).unwrap();
+            storage2.put_vector(vec1.clone()).unwrap();
+            storage2.put_vector(vec2.clone()).unwrap();
+            storage2.put_vector(vec3.clone()).unwrap();
+            storage2.put_vector(vec4.clone()).unwrap();
+            storage2.put_vector(vec5.clone()).unwrap();
             storage.update_from(&storage2).unwrap();
         }
 
         let query = vec![-1.0, -1.0, -1.0, -1.0];
         let query_points: Vec<PointOffsetType> = vec![0, 2, 4];
 
-        let scorer = storage.raw_scorer(&query, &Distance::Dot);
+        let scorer = storage.raw_scorer(&query);
 
         let res = scorer.score_points(&mut query_points.iter().cloned()).collect_vec();
 
