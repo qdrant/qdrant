@@ -14,8 +14,6 @@ pub struct HnswConfig {
     pub ef_construct: usize,
     // Number of neighbours to search on construction
     pub ef: usize,
-    // Max Number of layers
-    pub level_factor: f64, // Factor of level probability
 }
 
 impl HnswConfig {
@@ -25,8 +23,7 @@ impl HnswConfig {
             m,
             m0: m * 2,
             ef_construct,
-            ef: ef_construct,
-            level_factor: 1.0 / (m as f64).ln()
+            ef: ef_construct
         }
     }
 

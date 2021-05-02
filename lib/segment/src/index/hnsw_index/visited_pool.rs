@@ -1,7 +1,5 @@
 use crate::types::PointOffsetType;
-use std::collections::VecDeque;
 use parking_lot::RwLock;
-use std::sync::Arc;
 
 /// Max number of visited lists to preserve in memory
 /// If more than this number of concurrent requests occurred - new list will be created dynamically,
@@ -24,8 +22,9 @@ impl VisitedList {
         }
     }
 
-    /// Updates visited list, return if point was visited before
-    pub fn update_visited(&mut self, point_id: PointOffsetType) -> bool {
+    /// Updates visited list
+    /// return _true_ if point was visited before
+    pub fn check_and_update_visited(&mut self, point_id: PointOffsetType) -> bool {
         let idx = point_id as usize;
         if idx >= self.visit_counters.len() {
             self.visit_counters.resize(idx + 1, 0);

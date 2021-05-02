@@ -179,11 +179,20 @@ impl VectorStorage for MemmapVectorStorage {
         }
     }
 
-    fn raw_scorer(&self, vector: &Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
-        let query = self.metric.preprocess(vector.clone());
+    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
         Box::new(
             MemmapRawScorer {
-                query,
+                query: self.metric.preprocess(vector),
+                metric: &self.metric,
+                mmap_store: &self.mmap_store.as_ref().unwrap(),
+            }
+        )
+    }
+
+    fn raw_scorer_internal(&self, point_id: PointOffsetType) -> Box<dyn RawScorer + '_> {
+        Box::new(
+            MemmapRawScorer {
+                query: self.get_vector(point_id).unwrap(),
                 metric: &self.metric,
                 mmap_store: &self.mmap_store.as_ref().unwrap(),
             }
@@ -330,7 +339,7 @@ mod tests {
         let query = vec![-1.0, -1.0, -1.0, -1.0];
         let query_points: Vec<PointOffsetType> = vec![0, 2, 4];
 
-        let scorer = storage.raw_scorer(&query);
+        let scorer = storage.raw_scorer(query.clone());
 
         let res = scorer.score_points(&mut query_points.iter().cloned()).collect_vec();
 

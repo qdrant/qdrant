@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::types::PointOffsetType;
 use std::cmp::Ordering;
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::spaces::tools::FixedLengthPriorityQueue;
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
@@ -49,7 +48,7 @@ impl EntryPoints {
         for i in 0..self.entry_points.len() {
             let candidate = &self.entry_points[i];
 
-            if checker(candidate.point_id) {
+            if !checker(candidate.point_id) {
                 continue; // Checkpoint does not fulfil filtering conditions. Hence, does not "exists"
             }
             // Found checkpoint candidate
@@ -81,16 +80,51 @@ impl EntryPoints {
         None
     }
 
-    pub fn get_entry_point(&self, points_scorer: &FilteredScorer) -> Option<EntryPoint> {
+    /// Find the highest EntryPoint which satisfies filtering condition of `checker`
+    pub fn get_entry_point<F>(&self, checker: F) -> Option<EntryPoint>
+    where F: Fn(PointOffsetType) -> bool
+    {
         self.entry_points.iter()
-            .filter(|entry| points_scorer.check_point(entry.point_id))
+            .filter(|entry| checker(entry.point_id))
             .cloned().next().or_else(|| {
             // Searching for at least some entry point
             self.extra_entry_points
                 .iter()
-                .filter(|entry| points_scorer.check_point(entry.point_id))
+                .filter(|entry| checker(entry.point_id))
                 .cloned()
-                .next()
+                .max_by_key(|ep| ep.level)
         })
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::Rng;
+
+    #[test]
+    fn test_entry_points() {
+        let mut points = EntryPoints::new(10);
+
+        let mut rnd = rand::thread_rng();
+
+        for i in 0..1000 {
+            let level = rnd.gen_range(0..10000);
+            points.new_point(i, level, |_x| true);
+        }
+
+        assert_eq!(points.entry_points.len(), 1);
+        assert_eq!(points.extra_entry_points.len(), 10);
+
+        assert!(points.entry_points[0].level > 1);
+
+        for i in 1000..2000 {
+            let level = rnd.gen_range(0..10000);
+            points.new_point(i, level, |x| x % 5 == i % 5);
+        }
+
+        assert_eq!(points.entry_points.len(), 5);
+        assert_eq!(points.extra_entry_points.len(), 10);
     }
 }

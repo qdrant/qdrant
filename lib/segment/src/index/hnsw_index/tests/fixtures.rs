@@ -1,34 +1,56 @@
 use ndarray::{Array1, Array};
-use crate::types::{VectorElementType, PointOffsetType, Distance};
+use crate::types::{VectorElementType, PointOffsetType, Distance, Filter};
 use crate::spaces::metric::Metric;
 use std::collections::HashSet;
 use crate::spaces::tools::mertic_object;
 use crate::vector_storage::simple_vector_storage::SimpleRawScorer;
-use crate::vector_storage::vector_storage::RawScorer;
+use crate::payload_storage::payload_storage::ConditionChecker;
+use itertools::Itertools;
+use rand::prelude::ThreadRng;
+use rand::Rng;
+
+
+fn random_vector(rnd_gen: &mut ThreadRng, size: usize) -> Vec<VectorElementType> {
+    (0..size).map(|_| rnd_gen.gen()).collect()
+}
+
+pub struct FakeConditionChecker {}
+
+impl ConditionChecker for FakeConditionChecker {
+    fn check(&self, _point_id: PointOffsetType, _query: &Filter) -> bool { true }
+}
 
 pub struct TestRawScorerProducer {
-    vectors: Vec<Array1<VectorElementType>>,
-    deleted: HashSet<PointOffsetType>,
-    metric: Box<dyn Metric>
+    pub vectors: Vec<Array1<VectorElementType>>,
+    pub deleted: HashSet<PointOffsetType>,
+    pub metric: Box<dyn Metric>,
 }
 
 
 impl TestRawScorerProducer {
-    pub fn new(vectors: Vec<Vec<VectorElementType>>) -> Self {
+    pub fn new(dim: usize, num_vectors: usize, distance: Distance) -> Self {
+        let mut rnd = rand::thread_rng();
+
+        let metric = mertic_object(&distance);
+
+        let vectors = (0..num_vectors)
+            .map(|_x| metric.preprocess(random_vector(&mut rnd, dim)))
+            .collect_vec();
+
         TestRawScorerProducer {
             vectors: vectors.into_iter().map(|v| Array::from(v)).collect(),
             deleted: Default::default(),
-            metric: mertic_object(&Distance::Dot)
+            metric,
         }
     }
 
-    pub fn get_raw_scorer(&self, query: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
-        let metric = mertic_object(&Distance::Dot);
-        Box::new(SimpleRawScorer {
-            query: Array::from(metric.preprocess(query)),
+    pub fn get_raw_scorer(&self, query: Vec<VectorElementType>) -> SimpleRawScorer {
+        SimpleRawScorer {
+            query: Array::from(self.metric.preprocess(query)),
             metric: &self.metric,
             vectors: &self.vectors,
             deleted: &self.deleted,
-        })
+        }
     }
 }
+

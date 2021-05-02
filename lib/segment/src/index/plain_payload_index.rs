@@ -1,6 +1,6 @@
 use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
 use crate::index::index::{Index, PayloadIndex};
-use crate::types::{Filter, VectorElementType, Distance, SearchParams, PointOffsetType, PayloadKeyType};
+use crate::types::{Filter, VectorElementType, SearchParams, PointOffsetType, PayloadKeyType};
 use crate::payload_storage::payload_storage::{ConditionChecker};
 
 use std::sync::Arc;
@@ -111,19 +111,16 @@ impl PayloadIndex for PlainPayloadIndex {
 pub struct PlainIndex {
     vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
-    distance: Distance,
 }
 
 impl PlainIndex {
     pub fn new(
         vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
-        payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
-        distance: Distance,
+        payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>
     ) -> PlainIndex {
         return PlainIndex {
             vector_storage,
-            payload_index,
-            distance,
+            payload_index
         };
     }
 }

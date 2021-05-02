@@ -193,15 +193,22 @@ impl VectorStorage for SimpleVectorStorage {
         Ok(self.store.flush()?)
     }
 
-    fn raw_scorer(&self, vector: &Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
-        let raw_scorer = SimpleRawScorer {
-            query: Array::from(self.metric.preprocess(vector.clone())),
+    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
+        Box::new(SimpleRawScorer {
+            query: Array::from(self.metric.preprocess(vector)),
             metric: &self.metric,
             vectors: &self.vectors,
             deleted: &self.deleted,
-        };
+        })
+    }
 
-        Box::new(raw_scorer)
+    fn raw_scorer_internal(&self, point_id: PointOffsetType) -> Box<dyn RawScorer + '_> {
+        Box::new(SimpleRawScorer {
+            query: self.vectors[point_id as usize].clone(),
+            metric: &self.metric,
+            vectors: &self.vectors,
+            deleted: &self.deleted,
+        })
     }
 
     fn score_points(
@@ -304,7 +311,7 @@ mod tests {
             2,
         );
 
-        let raw_scorer = storage.raw_scorer(&query);
+        let raw_scorer = storage.raw_scorer(query.clone());
 
         let query_points = vec![0, 1, 2, 3, 4];
         let mut query_points1 = query_points.iter().cloned();

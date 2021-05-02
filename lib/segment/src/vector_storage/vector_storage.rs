@@ -1,9 +1,8 @@
-use crate::types::{PointOffsetType, ScoreType, VectorElementType, Distance};
+use crate::types::{PointOffsetType, ScoreType, VectorElementType};
 use std::cmp::{Ordering};
 use ordered_float::OrderedFloat;
 use crate::entry::entry_point::OperationResult;
 use std::ops::Range;
-use crate::spaces::metric::Metric;
 
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -32,7 +31,9 @@ impl PartialOrd for ScoredPointOffset {
 pub trait RawScorer {
     // ToDo: Replace boxed iterator with callback and make a benchmark
     fn score_points<'a>(&'a self, points: &'a mut dyn Iterator<Item=PointOffsetType>) -> Box<dyn Iterator<Item=ScoredPointOffset> + 'a>;
+    /// Return true if point satisfies current search context (exists and not deleted)
     fn check_point(&self, point: PointOffsetType) -> bool;
+    /// Score stored vector with vector under the given index
     fn score_point(&self, point: PointOffsetType) -> ScoreType;
 
     /// Return distance between stored points selected by ids
@@ -56,7 +57,11 @@ pub trait VectorStorage {
     fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
     fn flush(&self) -> OperationResult<()>;
 
-    fn raw_scorer(&self, vector: &Vec<VectorElementType>) -> Box<dyn RawScorer + '_>;
+    /// Generate a RawScorer object which contains all required context for searching similar vector
+    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_>;
+    /// Same as `raw_scorer` but uses internal vector for search, avoids double pre-processing
+    fn raw_scorer_internal(&self, point_id: PointOffsetType) -> Box<dyn RawScorer + '_>;
+
 
     fn score_points(
         &self,

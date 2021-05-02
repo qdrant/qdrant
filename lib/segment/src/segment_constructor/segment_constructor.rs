@@ -69,12 +69,10 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
         Indexes::Plain { .. } => PlainIndex::new(
             vector_storage.clone(),
             payload_index.clone(),
-            config.distance
         ),
         _ => PlainIndex::new(
             vector_storage.clone(),
             payload_index.clone(),
-            config.distance
         )
         // ToDo: Add HNSW index init here
         // Indexes::Hnsw { .. } => unimplemented!(),

@@ -1,12 +1,7 @@
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::vector_storage::vector_storage::ScoredPointOffset;
-use std::collections::HashSet;
-use crate::index::hnsw_index::visited_pool::{VisitedList, VisitedPool};
-use crate::types::{PointOffsetType, ScoreType};
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc};
-use parking_lot::RwLock;
+use crate::types::PointOffsetType;
+
 
 /// Structure that holds context of the search
 pub struct SearchContext {
@@ -20,7 +15,7 @@ impl SearchContext {
         let mut nearest = FixedLengthPriorityQueue::new(ef);
         nearest.push(entry_point);
         SearchContext {
-            nearest: FixedLengthPriorityQueue::new(ef),
+            nearest,
             candidates: vec![entry_point.idx]
         }
     }

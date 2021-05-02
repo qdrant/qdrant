@@ -38,6 +38,10 @@ impl FilteredScorer<'_> {
         self.score_iterable_points(&mut points_iterator, limit, action);
     }
 
+    pub fn score_point(&self, point_id: PointOffsetType) -> ScoreType {
+        self.raw_scorer.score_point(point_id)
+    }
+
     pub fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.raw_scorer.score_internal(point_a, point_b)
     }

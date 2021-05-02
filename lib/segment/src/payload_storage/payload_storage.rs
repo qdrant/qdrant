@@ -75,6 +75,6 @@ pub trait PayloadStorage {
 
 
 pub trait ConditionChecker {
-    /// Check if point satisfies filter condition
+    /// Check if point satisfies filter condition. Return true if satisfies
     fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool;
 }

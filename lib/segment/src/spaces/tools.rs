@@ -1,11 +1,9 @@
 use serde::{Deserialize, Serialize};
-use crate::types::{Distance, Order};
+use crate::types::Distance;
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
-use std::collections::binary_heap::Iter;
-use crate::types::Distance::Euclid;
 
 
 /// This is a MinHeap by default - it will keep the largest elements, pop smallest
@@ -36,11 +34,20 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
         self.heap.into_sorted_vec().into_iter().map(|x| x.0).collect()
     }
 
+    pub fn into_iter(self) -> impl Iterator<Item=T> {
+        self.heap.into_sorted_vec().into_iter().map(|x| x.0)
+    }
+
     pub fn iter(&self) -> impl Iterator<Item=&T> + '_ {
-        self.heap.iter().map(|x| &x.0)
+        self.heap.iter().rev().map(|x| &x.0)
     }
 
     pub fn top(&self) -> Option<&T> { self.heap.peek().map(|x| &x.0) }
+
+    /// Return actual length of the queue
+    pub fn len(&self) -> usize {
+        self.heap.len()
+    }
 }
 
 pub fn peek_top_scores_iterable<I, E: Ord + Clone>(scores: I, top: usize) -> Vec<E>

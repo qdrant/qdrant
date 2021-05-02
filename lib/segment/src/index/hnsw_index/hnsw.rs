@@ -1,7 +1,6 @@
 use crate::entry::entry_point::OperationResult;
 use std::path::{Path, PathBuf};
 use std::fs::create_dir_all;
-use schemars::{JsonSchema};
 use crate::index::index::{Index, PayloadIndex};
 use crate::types::{SearchParams, Filter, PointOffsetType, Distance, Indexes};
 use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
@@ -9,14 +8,14 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use crate::payload_storage::payload_storage::ConditionChecker;
 use std::cmp::max;
-use itertools::Itertools;
 use std::ops::Deref;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use rand::{thread_rng, Rng};
+use rand::thread_rng;
 use rand::prelude::ThreadRng;
-use rand::distributions::Uniform;
 use crate::index::hnsw_index::config::HnswConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
+use crate::spaces::metric::Metric;
+use crate::spaces::tools::mertic_object;
 
 pub struct HNSWIndex {
     condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
@@ -24,7 +23,7 @@ pub struct HNSWIndex {
     payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
     config: HnswConfig,
     path: PathBuf,
-    distance: Distance,
+    metric: Box<dyn Metric>,
     thread_rng: ThreadRng,
     graph: GraphLayers
 }
@@ -32,13 +31,6 @@ pub struct HNSWIndex {
 
 impl HNSWIndex {
     fn get_graph_path(&self) -> PathBuf { GraphLayers::get_path(self.path.as_path()) }
-
-    pub fn get_random_layer(&mut self) -> usize {
-        let distribution = Uniform::new(0.0, 1.0);
-        let sample: f64 = self.thread_rng.sample(distribution);
-        let picked_level = - sample.ln() * self.config.level_factor;
-        return picked_level.round() as usize;
-    }
 
     pub fn open(
         path: &Path,
@@ -79,9 +71,12 @@ impl HNSWIndex {
                 config.m,
                 config.m0,
                 config.ef_construct,
-                max(1, entry_points_num / indexing_threshold * 10)
+                max(1, entry_points_num / indexing_threshold * 10),
+                true
             )
         };
+
+        let metric = mertic_object(&distance);
 
         Ok(HNSWIndex {
             condition_checker,
@@ -89,7 +84,7 @@ impl HNSWIndex {
             payload_index,
             config,
             path: path.to_owned(),
-            distance,
+            metric,
             thread_rng: rng,
             graph
         })
@@ -104,7 +99,7 @@ impl HNSWIndex {
     }
 
     pub fn link_point(&mut self, point_id: PointOffsetType, points_scorer: &FilteredScorer) {
-        let point_level = self.get_random_layer();
+        let point_level = self.graph.get_random_layer(&mut self.thread_rng);
         self.graph.link_new_point(point_id, point_level, points_scorer);
     }
 }
@@ -123,7 +118,7 @@ impl Index for HNSWIndex {
         let ef = max(req_ef, top);
 
         let vector_storage = self.vector_storage.borrow();
-        let raw_scorer = vector_storage.raw_scorer(vector);
+        let raw_scorer = vector_storage.raw_scorer(vector.clone());
         let condition_checker = self.condition_checker.borrow();
 
         let points_scorer = FilteredScorer {
