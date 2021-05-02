@@ -352,6 +352,8 @@ mod tests {
     use rand::seq::SliceRandom;
     use rand::thread_rng;
     use crate::index::hnsw_index::tests::fixtures::{TestRawScorerProducer, FakeConditionChecker};
+    use std::fs::File;
+    use std::io::Write;
 
     #[test]
     fn test_connect_new_point() {
@@ -496,8 +498,48 @@ mod tests {
 
         assert!(total_links_0 > 0);
 
-        eprintln!("total_links_0 / num_vectors = {:#?}", total_links_0 as f64 / num_vectors as f64);
+        assert!(total_links_0 as f64 / num_vectors as f64 > m as f64);
 
-        eprintln!("main_entry = {:#?}", main_entry);
+        // eprintln!("total_links_0 / num_vectors = {:#?}", total_links_0 as f64 / num_vectors as f64);
+
+        // eprintln!("main_entry = {:#?}", main_entry);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_draw_hnsw_graph() {
+        let dim = 2;
+        let m = 4;
+        let ef_construct = 32;
+        let entry_points_num = 1;
+        let num_vectors = 500;
+
+        let vector_holder = TestRawScorerProducer::new(dim, num_vectors, Distance::Euclid);
+
+        let mut graph_layers = GraphLayers::new(
+            num_vectors, m, m * 2, ef_construct, entry_points_num, false,
+        );
+
+        let mut rng = thread_rng();
+
+        for idx in 0..(num_vectors as PointOffsetType) {
+            let fake_condition_checker = FakeConditionChecker {};
+            let added_vector = vector_holder.vectors[idx as usize].to_vec();
+            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
+            let scorer = FilteredScorer {
+                raw_scorer: &raw_scorer,
+                condition_checker: &fake_condition_checker,
+                filter: None,
+            };
+            let level = graph_layers.get_random_layer(&mut rng);
+            graph_layers.link_new_point(idx, level, &scorer);
+        }
+
+        let graph_json = serde_json::to_string_pretty(&graph_layers).unwrap();
+
+        let vectors_json = serde_json::to_string_pretty(&vector_holder.vectors.iter().map(|x| x.to_vec()).collect_vec()).unwrap();
+
+        let mut file = File::create("graph.json").unwrap();
+        file.write_all(format!("{{ \"graph\": {}, \n \"vectors\": {} }}", graph_json, vectors_json).as_bytes()).unwrap();
     }
 }
