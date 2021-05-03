@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::entry::entry_point::OperationResult;
 use crate::common::file_operations::{read_bin, atomic_save_bin};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::index::hnsw_index::entry_points::EntryPoints;
+use crate::index::hnsw_index::entry_points::{EntryPoints, EntryPoint};
 use crate::vector_storage::vector_storage::ScoredPointOffset;
 use crate::index::hnsw_index::visited_pool::{VisitedList, VisitedPool};
 use crate::index::hnsw_index::search_context::SearchContext;
@@ -15,6 +15,7 @@ use rand::distributions::Uniform;
 use rand::prelude::ThreadRng;
 use rand::Rng;
 use std::collections::BinaryHeap;
+use itertools::Itertools;
 
 
 pub type LinkContainer = Vec<PointOffsetType>;
@@ -131,6 +132,9 @@ impl GraphLayers {
         search_context.nearest
     }
 
+
+    /// Greedy searches for entry point of level `target_level`.
+    /// Beam size is 1.
     fn search_entry(&self, entry_point: PointOffsetType, top_level: usize, target_level: usize, points_scorer: &FilteredScorer) -> ScoredPointOffset
     {
         let mut current_point = ScoredPointOffset {
@@ -190,6 +194,7 @@ impl GraphLayers {
         }
     }
 
+    /// https://github.com/nmslib/hnswlib/issues/99
     fn select_candidate_with_heuristic_from_sorted<F>(
         candidates: impl Iterator<Item=ScoredPointOffset>,
         m: usize,
@@ -296,7 +301,7 @@ impl GraphLayers {
                                     });
                                 }
                                 let selected_candidates = Self::select_candidate_with_heuristic_from_sorted(
-                                    candidates.into_sorted_vec().into_iter(),
+                                    candidates.into_sorted_vec().into_iter().rev(),
                                     level_m,
                                     scorer,
                                 );
@@ -330,6 +335,23 @@ impl GraphLayers {
         }
     }
 
+    pub fn search(&self, top: usize, ef: usize, points_scorer: &FilteredScorer) -> Vec<ScoredPointOffset> {
+        let entry_point = match self.entry_points.get_entry_point(|point_id| points_scorer.check_point(point_id)) {
+            None => return vec![],
+            Some(ep) => ep
+        };
+
+        let zero_level_entry = self.search_entry(
+            entry_point.point_id,
+            entry_point.level,
+            0,
+            points_scorer
+        );
+
+        let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), points_scorer);
+        nearest.into_iter().take(top).collect_vec()
+    }
+
     pub fn get_path(path: &Path) -> PathBuf {
         path.join(HNSW_GRAPH_FILE)
     }
@@ -351,9 +373,10 @@ mod tests {
     use itertools::Itertools;
     use rand::seq::SliceRandom;
     use rand::thread_rng;
-    use crate::index::hnsw_index::tests::fixtures::{TestRawScorerProducer, FakeConditionChecker};
+    use crate::index::hnsw_index::tests::fixtures::{TestRawScorerProducer, FakeConditionChecker, random_vector};
     use std::fs::File;
     use std::io::Write;
+    use ndarray::Array;
 
     #[test]
     fn test_connect_new_point() {
@@ -458,13 +481,15 @@ mod tests {
         let dim = 8;
         let m = 8;
         let ef_construct = 16;
+        let ef = 32;
         let entry_points_num = 10;
         let num_vectors = 1000;
+        let use_heuristic = true;
 
         let vector_holder = TestRawScorerProducer::new(dim, num_vectors, Distance::Cosine);
 
         let mut graph_layers = GraphLayers::new(
-            num_vectors, m, m * 2, ef_construct, entry_points_num, true,
+            num_vectors, m, m * 2, ef_construct, entry_points_num, use_heuristic,
         );
 
         let mut rng = thread_rng();
@@ -499,6 +524,32 @@ mod tests {
         assert!(total_links_0 > 0);
 
         assert!(total_links_0 as f64 / num_vectors as f64 > m as f64);
+
+        let top = 5;
+        let query = random_vector(&mut rng, dim);
+        let processed_query = Array::from(vector_holder.metric.preprocess(query.clone()));
+        let mut reference_top = FixedLengthPriorityQueue::new(top);
+        for (idx, vec) in vector_holder.vectors.iter().enumerate() {
+            reference_top.push(
+                ScoredPointOffset {
+                    idx: idx as PointOffsetType,
+                    score: vector_holder.metric.blas_similarity(vec, &processed_query)
+                }
+            );
+        }
+
+        let fake_condition_checker = FakeConditionChecker {};
+        let raw_scorer = vector_holder.get_raw_scorer(query);
+        let scorer = FilteredScorer {
+            raw_scorer: &raw_scorer,
+            condition_checker: &fake_condition_checker,
+            filter: None,
+        };
+
+        let graph_search = graph_layers.search(top, ef, &scorer);
+
+        assert_eq!(reference_top.into_vec(), graph_search);
+
 
         // eprintln!("total_links_0 / num_vectors = {:#?}", total_links_0 as f64 / num_vectors as f64);
 

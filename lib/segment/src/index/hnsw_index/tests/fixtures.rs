@@ -10,7 +10,7 @@ use rand::prelude::ThreadRng;
 use rand::Rng;
 
 
-fn random_vector(rnd_gen: &mut ThreadRng, size: usize) -> Vec<VectorElementType> {
+pub fn random_vector(rnd_gen: &mut ThreadRng, size: usize) -> Vec<VectorElementType> {
     (0..size).map(|_| rnd_gen.gen()).collect()
 }
 
