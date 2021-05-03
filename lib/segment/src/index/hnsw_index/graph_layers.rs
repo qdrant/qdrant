@@ -564,11 +564,12 @@ mod tests {
         let ef_construct = 32;
         let entry_points_num = 1;
         let num_vectors = 500;
+        let use_heuristic = true;
 
         let vector_holder = TestRawScorerProducer::new(dim, num_vectors, Distance::Euclid);
 
         let mut graph_layers = GraphLayers::new(
-            num_vectors, m, m * 2, ef_construct, entry_points_num, false,
+            num_vectors, m, m * 2, ef_construct, entry_points_num, use_heuristic,
         );
 
         let mut rng = thread_rng();
