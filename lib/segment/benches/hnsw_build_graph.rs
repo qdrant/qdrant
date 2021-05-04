@@ -17,7 +17,6 @@ const USE_HEURISTIC: bool = true;
 
 
 fn hnsw_benchmark(c: &mut Criterion) {
-
     let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, Distance::Cosine);
     let mut group = c.benchmark_group("hnsw-index-build-group");
     group.sample_size(10);
@@ -47,7 +46,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
 
 criterion_group!{
     name = benches;
-    config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(10));
+    config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
     targets = hnsw_benchmark
 }
 

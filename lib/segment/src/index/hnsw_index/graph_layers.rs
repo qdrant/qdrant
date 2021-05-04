@@ -16,6 +16,8 @@ use rand::prelude::ThreadRng;
 use rand::Rng;
 use std::collections::BinaryHeap;
 use itertools::Itertools;
+use crate::index::hnsw_index::build_cache::DistanceCache;
+use std::cell::RefCell;
 
 
 pub type LinkContainer = Vec<PointOffsetType>;
@@ -135,8 +137,7 @@ impl GraphLayers {
 
     /// Greedy searches for entry point of level `target_level`.
     /// Beam size is 1.
-    fn search_entry(&self, entry_point: PointOffsetType, top_level: usize, target_level: usize, points_scorer: &FilteredScorer) -> ScoredPointOffset
-    {
+    fn search_entry(&self, entry_point: PointOffsetType, top_level: usize, target_level: usize, points_scorer: &FilteredScorer) -> ScoredPointOffset {
         let mut current_point = ScoredPointOffset {
             idx: entry_point,
             score: points_scorer.score_point(entry_point),
@@ -162,18 +163,17 @@ impl GraphLayers {
     }
 
     /// Connect new point to links, so that links contains only closest points
-    fn connect_new_point<F>(&mut self,
-                            new_point_id: PointOffsetType,
-                            target_point_id: PointOffsetType,
-                            level: usize,
-                            mut score_internal: F,
+    fn connect_new_point<F>(
+        links: &mut LinkContainer,
+        new_point_id: PointOffsetType,
+        target_point_id: PointOffsetType,
+        level_m: usize,
+        mut score_internal: F,
     )
         where F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType
     {
         // ToDo: binary search here ? (most likely does not worth it)
-        let level_m = self.get_m(level);
         let new_to_target = score_internal(target_point_id, new_point_id);
-        let links = &mut self.links_layers[target_point_id as usize][level];
 
         let mut id_to_insert = links.len();
         for i in 0..links.len() {
@@ -273,15 +273,17 @@ impl GraphLayers {
                 let scorer = |a, b| points_scorer.score_internal(a, b);
 
                 for curr_level in (0..=linking_level).rev() {
+                    let level_m = self.get_m(curr_level);
                     let nearest_points = self.search_on_level(
                         level_entry, curr_level, self.ef_construct, points_scorer,
                     );
 
                     if self.use_heuristic {
-                        let level_m = self.get_m(curr_level);
+
                         let selected_nearest = Self::select_candidates_with_heuristic(
                             nearest_points, level_m, scorer);
                         self.links_layers[point_id as usize][curr_level].clone_from(&selected_nearest);
+
 
                         for other_point in selected_nearest.iter().cloned() {
                             let other_point_links = &mut self.links_layers[other_point as usize][curr_level];
@@ -312,18 +314,20 @@ impl GraphLayers {
                         }
                     } else {
                         for nearest_point in nearest_points.iter() {
-                            self.connect_new_point(
+                            Self::connect_new_point(
+                                &mut self.links_layers[point_id as usize][curr_level],
                                 nearest_point.idx,
                                 point_id,
-                                curr_level,
-                                |a, b| points_scorer.score_internal(a, b),
+                                level_m,
+                                scorer,
                             );
 
-                            self.connect_new_point(
+                            Self::connect_new_point(
+                                &mut self.links_layers[nearest_point.idx as usize][curr_level],
                                 point_id,
                                 nearest_point.idx,
-                                curr_level,
-                                |a, b| points_scorer.score_internal(a, b),
+                                level_m,
+                                scorer,
                             );
                             if nearest_point.score > level_entry.score {
                                 level_entry = nearest_point.clone()
@@ -345,7 +349,7 @@ impl GraphLayers {
             entry_point.point_id,
             entry_point.level,
             0,
-            points_scorer
+            points_scorer,
         );
 
         let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), points_scorer);
@@ -425,10 +429,12 @@ mod tests {
         let mut graph_layers = GraphLayers::new(num_points, m, m, ef_construct, 1, true);
         insert_ids.shuffle(&mut thread_rng());
         for id in insert_ids.iter().cloned() {
-            graph_layers.connect_new_point(
+            let level_m = graph_layers.get_m(0);
+            GraphLayers::connect_new_point(
+                &mut graph_layers.links_layers[0][0],
                 id,
                 0,
-                0,
+                level_m,
                 scorer,
             )
         }
@@ -474,6 +480,12 @@ mod tests {
         );
 
         assert_eq!(nearest_on_level.len(), graph_layers.links_layers[0][0].len() + 1);
+
+        for nearest in nearest_on_level.iter() {
+            eprintln!("nearest = {:#?}", nearest);
+            assert_eq!(nearest.score, scorer.score_internal(linking_idx, nearest.idx))
+        }
+
     }
 
     #[test]
@@ -533,7 +545,7 @@ mod tests {
             reference_top.push(
                 ScoredPointOffset {
                     idx: idx as PointOffsetType,
-                    score: vector_holder.metric.blas_similarity(vec, &processed_query)
+                    score: vector_holder.metric.blas_similarity(vec, &processed_query),
                 }
             );
         }

@@ -8,6 +8,7 @@ use crate::payload_storage::payload_storage::ConditionChecker;
 use itertools::Itertools;
 use rand::prelude::ThreadRng;
 use rand::Rng;
+use bit_vec::BitVec;
 
 
 pub fn random_vector(rnd_gen: &mut ThreadRng, size: usize) -> Vec<VectorElementType> {
@@ -22,7 +23,7 @@ impl ConditionChecker for FakeConditionChecker {
 
 pub struct TestRawScorerProducer {
     pub vectors: Vec<Array1<VectorElementType>>,
-    pub deleted: HashSet<PointOffsetType>,
+    pub deleted: BitVec,
     pub metric: Box<dyn Metric>,
 }
 
@@ -39,7 +40,7 @@ impl TestRawScorerProducer {
 
         TestRawScorerProducer {
             vectors: vectors.into_iter().map(|v| Array::from(v)).collect(),
-            deleted: Default::default(),
+            deleted: BitVec::from_elem(num_vectors, false),
             metric,
         }
     }

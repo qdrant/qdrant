@@ -5,6 +5,7 @@ mod config;
 mod entry_points;
 mod search_context;
 mod visited_pool;
+mod build_cache;
 
 #[cfg(test)]
 mod tests;

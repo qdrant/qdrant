@@ -22,12 +22,16 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     }
 
     pub fn push(&mut self, value: T) -> Option<T> {
-        self.heap.push(Reverse(value));
-        return if self.heap.len() > self.length {
+        if self.heap.len() < self.length {
+            self.heap.push(Reverse(value));
+            return None
+        }
+        return if self.heap.peek().unwrap().0 < value {
+            self.heap.push(Reverse(value));
             self.heap.pop().map(|x| x.0)
         } else {
-            None
-        };
+            Some(value)
+        }
     }
 
     pub fn into_vec(self) -> Vec<T> {
