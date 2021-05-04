@@ -8,6 +8,7 @@ pub mod spaces;
 pub mod segment_constructor;
 pub mod entry;
 pub mod types;
+pub mod fixtures;
 mod common;
 
 

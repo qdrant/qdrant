@@ -373,7 +373,7 @@ mod tests {
     use itertools::Itertools;
     use rand::seq::SliceRandom;
     use rand::thread_rng;
-    use crate::index::hnsw_index::tests::fixtures::{TestRawScorerProducer, FakeConditionChecker, random_vector};
+    use crate::fixtures::index_fixtures::{TestRawScorerProducer, FakeConditionChecker, random_vector};
     use std::fs::File;
     use std::io::Write;
     use ndarray::Array;

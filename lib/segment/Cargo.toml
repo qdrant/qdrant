@@ -7,6 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dev-dependencies]
+pprof = { version = "0.4", features = ["flamegraph"] }
 tempdir = "0.3.7"
 criterion = "0.3"
 
@@ -39,4 +40,8 @@ lru = "0.6.5"
 
 [[bench]]
 name = "vector_search"
+harness = false
+
+[[bench]]
+name = "hnsw_build_graph"
 harness = false

@@ -4,7 +4,7 @@ use ndarray::{Array, Array1, Array2, ArrayBase, ShapeBuilder, Axis};
 use tempdir::TempDir;
 
 use segment::spaces::tools::{peek_top_scores, peek_top_scores_iterable};
-use segment::types::{Distance, VectorElementType};
+use segment::types::{Distance, VectorElementType, PointOffsetType};
 use segment::vector_storage::simple_vector_storage::SimpleVectorStorage;
 use segment::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
 
@@ -64,7 +64,7 @@ fn benchmark_ndarray(c: &mut Criterion) {
                                  .cloned()
                                  .enumerate()
                                  .map(
-                                     |(idx, score)| ScoredPointOffset { idx, score }),
+                                     |(idx, score)| ScoredPointOffset { idx: idx as PointOffsetType, score }),
                              10
                          );
                      }));
