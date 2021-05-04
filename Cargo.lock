@@ -2085,7 +2085,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "actix-web",
  "collection",
@@ -2496,7 +2496,7 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 
 [[package]]
 name = "segment"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "atomic_refcell",
  "atomicwrites",

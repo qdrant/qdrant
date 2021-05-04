@@ -18,6 +18,8 @@ pub struct Element<N> {
 
 #[derive(Serialize, Deserialize)]
 pub struct PersistedNumericIndex<N: ToPrimitive + Clone> {
+    /// Number of unique element ids.
+    /// Each point can have several values
     points_count: usize,
     elements: Vec<Element<N>>,
 }
@@ -62,8 +64,11 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
             }).err().unwrap();
             upper_index = min(upper_index, index);
         });
-
-        (lower_index, upper_index)
+        return if lower_index > upper_index {
+            (0, 0)
+        } else {
+            (lower_index, upper_index)
+        }
     }
 
     pub fn range_cardinality(&self, range: &Range) -> CardinalityEstimation {
@@ -84,7 +89,7 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
         // max = min(1000, 500) = 500
         CardinalityEstimation {
             primary_clauses: vec![],
-            min: max(1, values_count - (total_values - self.points_count as i64)) as usize,
+            min: max(min(1, values_count), values_count - (total_values - self.points_count as i64)) as usize,
             exp: (values_count as f64 / value_per_point) as usize,
             max: min(self.points_count as i64, values_count) as usize,
         }
@@ -94,6 +99,7 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
         for value in values.iter().cloned() {
             self.elements.push(Element { id, value })
         }
+        self.points_count += 1
     }
 
     fn condition_iter(&self, range: &Range) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
@@ -133,7 +139,7 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<FloatPayloadType> {
         let mut elements = mem::replace(&mut self.elements, vec![]);
         elements.sort_by_key(|el| OrderedFloat(el.value));
         FieldIndex::FloatIndex(PersistedNumericIndex {
-            points_count: elements.len(),
+            points_count: self.points_count,
             elements,
         })
     }
@@ -151,7 +157,7 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<IntPayloadType> {
         let mut elements = mem::replace(&mut self.elements, vec![]);
         elements.sort_by_key(|el| el.value);
         FieldIndex::IntIndex(PersistedNumericIndex {
-            points_count: elements.len(),
+            points_count: self.points_count,
             elements,
         })
     }
@@ -224,6 +230,16 @@ mod tests {
         eprintln!("estimation = {:#?}", estimation);
         assert!(estimation.min <= estimation.exp);
         assert!(estimation.exp <= estimation.max);
+
+        let estimation = index.range_cardinality(&Range {
+            lt: Some(6.0),
+            gt: None,
+            gte: Some(16.0),
+            lte: None,
+        });
+        eprintln!("estimation = {:#?}", estimation);
+        assert_eq!(estimation.min, 0);
+        assert_eq!(estimation.exp, 0);
     }
 
     #[test]

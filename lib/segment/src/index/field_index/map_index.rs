@@ -1,4 +1,3 @@
-use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::{mem, iter};
@@ -11,16 +10,12 @@ use crate::types::{IntPayloadType, PayloadType, PointOffsetType, FieldCondition}
 
 #[derive(Serialize, Deserialize)]
 pub struct PersistedMapIndex<N: Hash + Eq + Clone> {
-    points_count: usize,
-    values_count: usize,
     map: HashMap<N, Vec<PointOffsetType>>,
 }
 
 impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
     pub fn new() -> PersistedMapIndex<N> {
         PersistedMapIndex {
-            points_count: 0,
-            values_count: 0,
             map: Default::default(),
         }
     }
@@ -30,13 +25,12 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
             None => 0,
             Some(points) => points.len()
         };
-        let value_per_point = self.values_count as f64 / self.points_count as f64;
 
         CardinalityEstimation {
             primary_clauses: vec![],
-            min: max(1, values_count as i64 - (self.values_count as i64 - self.points_count as i64)) as usize,
-            exp: (values_count as f64 / value_per_point) as usize,
-            max: min(self.points_count as i64, values_count as i64) as usize,
+            min: values_count,
+            exp: values_count,
+            max: values_count,
         }
     }
 
@@ -114,8 +108,6 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
         let data = mem::replace(&mut self.map, Default::default());
 
         FieldIndex::KeywordIndex(PersistedMapIndex {
-            points_count: self.points_count,
-            values_count: self.values_count,
             map: data,
         })
     }
@@ -133,8 +125,6 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<IntPayloadType> {
         let data = mem::replace(&mut self.map, Default::default());
 
         FieldIndex::IntMapIndex(PersistedMapIndex {
-            points_count: self.points_count,
-            values_count: self.values_count,
             map: data,
         })
     }

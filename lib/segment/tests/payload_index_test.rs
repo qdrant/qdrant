@@ -2,12 +2,13 @@
 mod tests {
     use rand::prelude::ThreadRng;
     use rand::seq::SliceRandom;
-    use segment::types::{PayloadType, VectorElementType, SegmentConfig, Indexes, PayloadIndexType, Distance, StorageType, TheMap, PayloadKeyType, Filter, Condition, FieldCondition, Match, Range};
+    use segment::types::{PayloadType, VectorElementType, SegmentConfig, Indexes, PayloadIndexType, Distance, StorageType, TheMap, PayloadKeyType, Filter, Condition, FieldCondition, Match, Range as RangeConditionl};
     use rand::Rng;
     use tempdir::TempDir;
     use segment::segment_constructor::segment_constructor::build_segment;
     use segment::entry::entry_point::SegmentEntry;
     use itertools::Itertools;
+    use std::ops::Range;
 
     const ADJECTIVE: &'static [&'static str] = &[
         "jobless",
@@ -38,6 +39,8 @@ mod tests {
         "seed",
     ];
 
+    const INT_RANGE: Range<i64> = 0..500;
+
     fn random_keyword(rnd_gen: &mut ThreadRng) -> String {
         let random_adj = ADJECTIVE.choose(rnd_gen).unwrap();
         let random_noun = NOUN.choose(rnd_gen).unwrap();
@@ -49,8 +52,8 @@ mod tests {
     }
 
     fn random_int_payload(rnd_gen: &mut ThreadRng) -> PayloadType {
-        let val1: i64 = rnd_gen.gen_range(0..500);
-        let val2: i64 = rnd_gen.gen_range(0..500);
+        let val1: i64 = rnd_gen.gen_range(INT_RANGE);
+        let val2: i64 = rnd_gen.gen_range(INT_RANGE);
         PayloadType::Integer(vec![val1, val2])
     }
 
@@ -74,11 +77,11 @@ mod tests {
             false => Condition::Field(FieldCondition {
                 key: "int".to_string(),
                 r#match: None,
-                range: Some(Range {
+                range: Some(RangeConditionl {
                     lt: None,
                     gt: None,
-                    gte: Some(rnd_gen.gen_range(0..500) as f64),
-                    lte: Some(rnd_gen.gen_range(0..500) as f64),
+                    gte: Some(rnd_gen.gen_range(INT_RANGE) as f64),
+                    lte: Some(rnd_gen.gen_range(INT_RANGE) as f64),
                 }),
                 geo_bounding_box: None,
                 geo_radius: None,
@@ -141,7 +144,10 @@ mod tests {
         let str_key = "kvd".to_string();
         let int_key = "int".to_string();
 
-        for idx in 0..1000 {
+        let num_points = 1000;
+
+        let mut opnum = 0;
+        for idx in 0..num_points {
             let vector = random_vector(&mut rnd, dim);
             let mut payload: TheMap<PayloadKeyType, PayloadType> = Default::default();
             payload.insert(str_key.clone(), random_keyword_payload(&mut rnd));
@@ -152,14 +158,26 @@ mod tests {
 
             plain_segment.set_full_payload(idx, idx, payload.clone()).unwrap();
             struct_segment.set_full_payload(idx, idx, payload.clone()).unwrap();
+
+            opnum += 1;
         }
 
-        for _i in 0..20 {
+        struct_segment.create_field_index(opnum, &str_key).unwrap();
+        struct_segment.create_field_index(opnum, &int_key).unwrap();
+
+
+        for _i in 0..100 {
             let query_vector = random_vector(&mut rnd, dim);
             let query_filter = random_filter(&mut rnd);
 
             let plain_result = plain_segment.search(&query_vector, Some(&query_filter), 5, None).unwrap();
             let struct_result = struct_segment.search(&query_vector, Some(&query_filter), 5, None).unwrap();
+
+            let estimation = struct_segment.payload_index.borrow().estimate_cardinality(&query_filter);
+
+            assert!(estimation.min <= estimation.exp);
+            assert!(estimation.exp <= estimation.max);
+            assert!(estimation.max <= num_points as usize);
 
             plain_result
                 .iter()
