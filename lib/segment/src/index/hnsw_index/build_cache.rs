@@ -3,6 +3,7 @@ use std::hash::{Hasher, Hash};
 use std::collections::hash_map::DefaultHasher;
 use std::cmp::{min, max};
 use std::collections::HashSet;
+use fasthash::SeaHasher;
 
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
@@ -35,7 +36,7 @@ pub struct DistanceCache {
 
 impl DistanceCache {
     fn hasher() -> impl Hasher {
-        DefaultHasher::new()
+        SeaHasher::new()
     }
 
     pub fn new(size: usize) -> Self {

@@ -29,7 +29,7 @@ impl PartialOrd for ScoredPointOffset {
 /// Optimized scorer for multiple scoring requests comparing with a single query
 /// Holds current query and params, receives only subset of points to score
 pub trait RawScorer {
-    // ToDo: Replace boxed iterator with callback and make a benchmark
+    // ToDo: Replace boxed iterator with callback and make a benchmark (-4% on benchmarks, but ugly)
     fn score_points<'a>(&'a self, points: &'a mut dyn Iterator<Item=PointOffsetType>) -> Box<dyn Iterator<Item=ScoredPointOffset> + 'a>;
     /// Return true if point satisfies current search context (exists and not deleted)
     fn check_point(&self, point: PointOffsetType) -> bool;

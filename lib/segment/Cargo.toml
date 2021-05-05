@@ -38,6 +38,7 @@ num-traits = "0.2.14"
 rand = "0.8"
 lru = "0.6.5"
 bit-vec = "0.6"
+fasthash = "0.4"
 
 [[bench]]
 name = "vector_search"
@@ -45,4 +46,8 @@ harness = false
 
 [[bench]]
 name = "hnsw_build_graph"
+harness = false
+
+[[bench]]
+name = "cache_benchmark"
 harness = false
