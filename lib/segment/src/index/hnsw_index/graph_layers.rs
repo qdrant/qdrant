@@ -47,19 +47,22 @@ pub struct GraphLayers {
 ///
 /// Assume all scores are similarities. Larger score = closer points
 impl GraphLayers {
-    pub fn new(
+    pub fn new_with_params(
         num_vectors: usize, // Initial number of points in index
         m: usize, // Expected M for non-first layer
         m0: usize, // Expected M for first layer
         ef_construct: usize,
         entry_points_num: usize, // Depends on number of points
         use_heuristic: bool,
+        reserve: bool
     ) -> Self {
         let mut links_layers: Vec<LayersContainer> = vec![];
 
         for _i in 0..num_vectors {
             let mut links: LinkContainer = Vec::new();
-            links.reserve(m0);
+            if reserve {
+                links.reserve(m0);
+            }
             links_layers.push(vec![links]);
         }
 
@@ -74,6 +77,17 @@ impl GraphLayers {
             entry_points: EntryPoints::new(entry_points_num),
             visited_pool: VisitedPool::new(),
         }
+    }
+
+    pub fn new(
+        num_vectors: usize, // Initial number of points in index
+        m: usize, // Expected M for non-first layer
+        m0: usize, // Expected M for first layer
+        ef_construct: usize,
+        entry_points_num: usize, // Depends on number of points
+        use_heuristic: bool,
+    ) -> Self {
+        Self::new_with_params(num_vectors, m, m0, ef_construct, entry_points_num, use_heuristic, true)
     }
 
     fn num_points(&self) -> usize { self.links_layers.len() }
@@ -337,6 +351,29 @@ impl GraphLayers {
                 }
             }
         }
+    }
+
+    pub fn merge_with_other(&mut self, other: GraphLayers) {
+        let mut visited_list = self.visited_pool.get(self.num_points());
+        if other.links_layers.len() > self.links_layers.len() {
+            self.links_layers.resize(other.links_layers.len(), vec![])
+        }
+        for (point_id, layers) in other.links_layers.into_iter().enumerate() {
+            visited_list.next_iteration();
+            let current_layers = &mut self.links_layers[point_id];
+            for (level, links) in layers.into_iter().enumerate() {
+                if current_layers.len() <= level {
+                    current_layers.push(links)
+                } else {
+                    let current_links = &mut current_layers[level];
+                    current_links.iter().cloned().for_each(|x| {visited_list.check_and_update_visited(x);});
+                    for link in links.into_iter().filter(|x| visited_list.check_and_update_visited(*x)) {
+                        current_links.push(link)
+                    }
+                }
+            }
+        }
+        self.visited_pool.return_back(visited_list);
     }
 
     pub fn search(&self, top: usize, ef: usize, points_scorer: &FilteredScorer) -> Vec<ScoredPointOffset> {
