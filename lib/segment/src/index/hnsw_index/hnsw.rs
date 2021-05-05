@@ -95,7 +95,7 @@ impl HNSWIndex {
     }
 
     pub fn search_with_condition(&self, top: usize, ef: usize, points_scorer: &FilteredScorer) -> Vec<ScoredPointOffset> {
-        unimplemented!()
+        self.graph.search(top, ef, points_scorer)
     }
 
     pub fn link_point(&mut self, point_id: PointOffsetType, points_scorer: &FilteredScorer) {
@@ -127,7 +127,7 @@ impl Index for HNSWIndex {
             filter,
         };
 
-        self.search_with_condition(top, ef, &points_scorer)
+        self.graph.search(top, ef, &points_scorer)
     }
 
     fn build_index(&mut self) -> OperationResult<()> {

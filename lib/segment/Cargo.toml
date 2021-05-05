@@ -47,7 +47,3 @@ harness = false
 [[bench]]
 name = "hnsw_build_graph"
 harness = false
-
-[[bench]]
-name = "cache_benchmark"
-harness = false
