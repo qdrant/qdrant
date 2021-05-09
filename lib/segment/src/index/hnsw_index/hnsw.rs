@@ -2,7 +2,7 @@ use crate::entry::entry_point::OperationResult;
 use std::path::{Path, PathBuf};
 use std::fs::create_dir_all;
 use crate::index::index::{Index, PayloadIndex};
-use crate::types::{SearchParams, Filter, PointOffsetType, Distance, Indexes};
+use crate::types::{SearchParams, Filter, PointOffsetType, Distance, Indexes, VectorElementType};
 use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
 use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
@@ -106,7 +106,7 @@ impl HNSWIndex {
 
 
 impl Index for HNSWIndex {
-    fn search(&self, vector: &Vec<f32>, filter: Option<&Filter>, top: usize, params: Option<&SearchParams>) -> Vec<ScoredPointOffset> {
+    fn search(&self, vector: &Vec<VectorElementType>, filter: Option<&Filter>, top: usize, params: Option<&SearchParams>) -> Vec<ScoredPointOffset> {
         let req_ef = match params {
             None => self.config.ef,
             Some(request_params) => match request_params {
@@ -131,6 +131,26 @@ impl Index for HNSWIndex {
     }
 
     fn build_index(&mut self) -> OperationResult<()> {
-        unimplemented!()
+        // Build main index graph
+        let vector_storage = self.vector_storage.borrow();
+        let condition_checker = self.condition_checker.borrow();
+        let mut rng = thread_rng();
+
+        for vector_id in vector_storage.iter_ids() {
+            let vector = vector_storage.get_vector(vector_id).unwrap();
+            let raw_scorer = vector_storage.raw_scorer(vector);
+            let points_scorer = FilteredScorer {
+                raw_scorer: raw_scorer.as_ref(),
+                condition_checker: condition_checker.deref(),
+                filter: None,
+            };
+
+            let level = self.graph.get_random_layer(&mut rng);
+            self.graph.link_new_point(vector_id, level, &points_scorer);
+        }
+
+
+
+        Ok(())
     }
 }

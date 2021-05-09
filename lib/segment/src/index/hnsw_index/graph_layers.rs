@@ -353,7 +353,7 @@ impl GraphLayers {
         }
     }
 
-    pub fn merge_with_other(&mut self, other: GraphLayers) {
+    pub fn merge_from_other(&mut self, other: GraphLayers) {
         let mut visited_list = self.visited_pool.get(self.num_points());
         if other.links_layers.len() > self.links_layers.len() {
             self.links_layers.resize(other.links_layers.len(), vec![])
@@ -373,6 +373,8 @@ impl GraphLayers {
                 }
             }
         }
+        self.entry_points.merge_from_other(other.entry_points);
+
         self.visited_pool.return_back(visited_list);
     }
 

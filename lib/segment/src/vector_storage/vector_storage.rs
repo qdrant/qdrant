@@ -54,7 +54,7 @@ pub trait VectorStorage {
     fn update_vector(&mut self, key: PointOffsetType, vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType>;
     fn update_from(&mut self, other: &dyn VectorStorage) -> OperationResult<Range<PointOffsetType>>;
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()>;
-    fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
+    fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_>; /// Iterator over not-deleted ids
     fn flush(&self) -> OperationResult<()>;
 
     /// Generate a RawScorer object which contains all required context for searching similar vector
