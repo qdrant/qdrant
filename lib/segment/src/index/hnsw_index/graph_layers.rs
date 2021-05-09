@@ -8,7 +8,7 @@ use crate::common::file_operations::{read_bin, atomic_save_bin};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::entry_points::{EntryPoints, EntryPoint};
 use crate::vector_storage::vector_storage::ScoredPointOffset;
-use crate::index::hnsw_index::visited_pool::{VisitedList, VisitedPool};
+use crate::index::visited_pool::{VisitedList, VisitedPool};
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::common::utils::rev_range;
 use rand::distributions::Uniform;
@@ -91,6 +91,10 @@ impl GraphLayers {
     }
 
     fn num_points(&self) -> usize { self.links_layers.len() }
+
+    pub fn point_level(&self, point_id: PointOffsetType) -> usize {
+        self.links_layers[point_id as usize].len() - 1
+    }
 
     /// Get links of current point
     fn links(&self, point_id: PointOffsetType, level: usize) -> &LinkContainer {

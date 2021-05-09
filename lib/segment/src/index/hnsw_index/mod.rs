@@ -4,8 +4,8 @@ pub mod point_scorer;
 mod config;
 mod entry_points;
 mod search_context;
-mod visited_pool;
 mod build_cache;
+mod build_condition_checker;
 
 #[cfg(test)]
 mod tests;

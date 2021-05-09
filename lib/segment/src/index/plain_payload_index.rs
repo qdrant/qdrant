@@ -9,7 +9,7 @@ use crate::entry::entry_point::OperationResult;
 use crate::index::payload_config::PayloadConfig;
 use std::path::{Path, PathBuf};
 use std::fs::create_dir_all;
-use crate::index::field_index::CardinalityEstimation;
+use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use itertools::Itertools;
 
 
@@ -95,7 +95,7 @@ impl PayloadIndex for PlainPayloadIndex {
         }
     }
 
-    fn query_points(&self, query: &Filter) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+    fn query_points<'a>(&'a self, query: &'a Filter) -> Box<dyn Iterator<Item=PointOffsetType> + 'a> {
         let mut matched_points = vec![];
         let condition_checker = self.condition_checker.borrow();
         for i in self.vector_storage.borrow().iter_ids() {
@@ -104,6 +104,11 @@ impl PayloadIndex for PlainPayloadIndex {
             }
         }
         return Box::new(matched_points.into_iter());
+    }
+
+    fn payload_blocks(&self, _threshold: usize) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+        // No blocks for un-indexed payload
+        Box::new(vec![].into_iter())
     }
 }
 

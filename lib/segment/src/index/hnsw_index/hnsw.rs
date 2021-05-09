@@ -16,6 +16,8 @@ use crate::index::hnsw_index::config::HnswConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::spaces::metric::Metric;
 use crate::spaces::tools::mertic_object;
+use crate::types::Condition::Field;
+use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 
 pub struct HNSWIndex {
     condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
@@ -25,7 +27,7 @@ pub struct HNSWIndex {
     path: PathBuf,
     metric: Box<dyn Metric>,
     thread_rng: ThreadRng,
-    graph: GraphLayers
+    graph: GraphLayers,
 }
 
 
@@ -39,7 +41,7 @@ impl HNSWIndex {
         vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
         payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
         index_config: Option<Indexes>,
-        indexing_threshold: usize
+        indexing_threshold: usize,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
         let mut rng = thread_rng();
@@ -58,7 +60,7 @@ impl HNSWIndex {
                     _ => panic!("Mismatch index config"),
                 }
             };
-            HnswConfig::new(m, ef_construct)
+            HnswConfig::new(m, ef_construct, indexing_threshold)
         };
 
         let graph_path = GraphLayers::get_path(path);
@@ -72,7 +74,7 @@ impl HNSWIndex {
                 config.m0,
                 config.ef_construct,
                 max(1, entry_points_num / indexing_threshold * 10),
-                true
+                true,
             )
         };
 
@@ -86,7 +88,7 @@ impl HNSWIndex {
             path: path.to_owned(),
             metric,
             thread_rng: rng,
-            graph
+            graph,
         })
     }
 
@@ -149,8 +151,42 @@ impl Index for HNSWIndex {
             self.graph.link_new_point(vector_id, level, &points_scorer);
         }
 
+        let total_vectors_count = vector_storage.total_vector_count();
+        let mut block_condition_checker = BuildConditionChecker::new(total_vectors_count);
+        let payload_index = self.payload_index.borrow();
 
+        for payload_block in payload_index.payload_blocks(self.config.indexing_threshold) {
+            block_condition_checker.filter_list.next_iteration();
+            let filter = Filter::new_must(Field(payload_block.condition));
 
+            for block_point_id in payload_index.query_points(&filter) {
+                block_condition_checker.filter_list.check_and_update_visited(block_point_id);
+            }
+
+            let mut block_graph = GraphLayers::new(
+                total_vectors_count,
+                self.config.m,
+                self.config.m0,
+                self.config.ef_construct,
+                1,
+                true,
+            );
+
+            for block_point_id in payload_index.query_points(&filter) {
+                let vector = vector_storage.get_vector(block_point_id).unwrap();
+                let raw_scorer = vector_storage.raw_scorer(vector);
+                let points_scorer = FilteredScorer {
+                    raw_scorer: raw_scorer.as_ref(),
+                    condition_checker: &block_condition_checker,
+                    filter: None,
+                };
+
+                let level = self.graph.point_level(block_point_id);
+                block_graph.link_new_point(block_point_id, level, &points_scorer);
+            }
+
+            self.graph.merge_from_other(block_graph);
+        }
         Ok(())
     }
 }

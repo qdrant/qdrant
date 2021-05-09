@@ -1,14 +1,19 @@
 use serde::{Deserialize, Serialize};
-use crate::index::field_index::CardinalityEstimation;
+use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::field_index::map_index::PersistedMapIndex;
 use crate::index::field_index::numeric_index::PersistedNumericIndex;
-use crate::types::{FieldCondition, FloatPayloadType, IntPayloadType, PayloadType, PointOffsetType};
+use crate::types::{FieldCondition, FloatPayloadType, IntPayloadType, PayloadType, PointOffsetType, PayloadKeyType};
 
 pub trait PayloadFieldIndex {
     /// Get iterator over points fitting given `condition`
     fn filter(&self, condition: &FieldCondition) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>>;
 
+    /// Return estimation of points amount which satisfy given condition
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation>;
+
+    /// Iterate conditions for payload blocks with minimum size of `threshold`
+    /// Required for building HNSW index
+    fn payload_blocks(&self, threshold: usize, key: PayloadKeyType) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_>;
 }
 
 pub trait PayloadFieldIndexBuilder {
@@ -45,5 +50,9 @@ impl PayloadFieldIndex for FieldIndex {
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         self.get_payload_field_index().estimate_cardinality(condition)
+    }
+
+    fn payload_blocks(&self, threshold: usize, key: PayloadKeyType) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+        self.get_payload_field_index().payload_blocks(threshold, key)
     }
 }

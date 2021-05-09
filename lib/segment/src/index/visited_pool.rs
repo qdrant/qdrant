@@ -22,8 +22,16 @@ impl VisitedList {
         }
     }
 
+    /// Return `true` if visited
+    pub fn check(&self, point_id: PointOffsetType) -> bool {
+        self.visit_counters
+            .get(point_id as usize)
+            .map(|x| *x >= self.current_iter)
+            .unwrap_or(false)
+    }
+
     /// Updates visited list
-    /// return _true_ if point was visited before
+    /// return `true` if point was visited before
     pub fn check_and_update_visited(&mut self, point_id: PointOffsetType) -> bool {
         let idx = point_id as usize;
         if idx >= self.visit_counters.len() {
@@ -53,7 +61,7 @@ impl VisitedPool {
         }
     }
 
-    pub fn get(&self, num_points: usize) -> VisitedList{
+    pub fn get(&self, num_points: usize) -> VisitedList {
         match self.pool.write().pop() {
             None => VisitedList::new(num_points),
             Some(mut vl) => {

@@ -14,16 +14,19 @@ pub struct HnswConfig {
     pub ef_construct: usize,
     // Number of neighbours to search on construction
     pub ef: usize,
+    // Minimal number of vectors to perform indexing
+    pub indexing_threshold: usize,
 }
 
 impl HnswConfig {
 
-    pub fn new(m: usize, ef_construct: usize) -> Self {
+    pub fn new(m: usize, ef_construct: usize, indexing_threshold: usize) -> Self {
         HnswConfig {
             m,
             m0: m * 2,
             ef_construct,
-            ef: ef_construct
+            ef: ef_construct,
+            indexing_threshold
         }
     }
 
