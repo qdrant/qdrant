@@ -42,14 +42,14 @@ So why not let people choose their next lunch by its appearance, even if they do
 
 <table>
     <tr>
-        <td>
-            <img height="300px" style="" src="https://qdrant.tech/content/images/text_search.png">
+        <td width="30%">
+            <img src="https://qdrant.tech/content/images/text_search.png">
         </td>
-        <td>
-            <img height="300px" src="https://qdrant.tech/content/images/image_search.png">
+        <td width="30%">
+            <img src="https://qdrant.tech/content/images/image_search.png">
         </td>
-        <td>
-            <img height="300px" src="https://qdrant.tech/content/images/recommendations.png">
+        <td width="30%">
+            <img src="https://qdrant.tech/content/images/recommendations.png">
         </td>
     </tr>
     <tr>
@@ -68,10 +68,10 @@ So why not let people choose their next lunch by its appearance, even if they do
 <table align="center">
     <tr>
         <td>
-            <img height="300px" src="https://qdrant.tech/content/images/chat_bots.png">
+            <img width="300px" src="https://qdrant.tech/content/images/chat_bots.png">
         </td>
         <td>
-            <img height="300px" src="https://qdrant.tech/content/images/matching_engines.png">
+            <img width="300px" src="https://qdrant.tech/content/images/matching_engines.png">
         </td>
     </tr>
     <tr>
