@@ -89,7 +89,7 @@ So why not let people choose their next lunch by its appearance, even if they do
 ## API
 
 Online OpenAPI 3.0 documentation is available [here](https://qdrant.github.io/qdrant/redoc/index.html).
-OpenAPI makes it easy to generate client for virtually any framework or programing language.
+OpenAPI makes it easy to generate a client for virtually any framework or programing language.
 
 You can also download raw OpenAPI [definitions](openapi/openapi.yaml).
 
@@ -97,8 +97,8 @@ You can also download raw OpenAPI [definitions](openapi/openapi.yaml).
 
 ### Filtering
 
-Qdrant supports key-value payload associated with vectors. Not only stores payload but also allows filter results based on payload values.
-It allows any combinations of `should`, `must` and `must_not` conditions, but unlike ElasticSearch post-filtering, Qdrant guarantees all relevant vectors are retrieved.
+Qdrant supports key-value payload associated with vectors. It does not only store payload but also allows filter results based on payload values.
+It allows any combinations of `should`, `must`, and `must_not` conditions, but unlike ElasticSearch post-filtering, Qdrant guarantees all relevant vectors are retrieved.
 
 ### Rich data types
 
@@ -107,7 +107,7 @@ Payload filtering conditions allow you to build almost any custom business logic
 
 ### Query planning and payload indexes
 
-Using the information about the stored key-value data, `query planner` decides on the best way to execute the query.
+Using the information about the stored key-value data, the `query planner` decides on the best way to execute the query.
 For example, if the search space limited by filters is small, it is more efficient to use a full brute force than an index.
 
 ### SIMD Hardware Acceleration
@@ -117,7 +117,7 @@ It allows you to search even faster on modern hardware.
 
 ### Write-ahead logging
 
-Once service confirmed an update - it won't lose data even in case of power shut down. 
+Once the service confirmed an update - it won't lose data even in case of power shut down. 
 All operations are stored in the update journal and the latest database state could be easily reconstructed at any moment.
 
 ### Stand-alone
