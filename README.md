@@ -1,6 +1,6 @@
 
 <p align="center">
-  <img src="/docs/logo.svg" alt="Qdrant">
+  <img height="100" src="https://github.com/qdrant/qdrant/blob/master/docs/logo.svg?raw=true" alt="Qdrant">
 </p>
 
 <p align="center">
@@ -18,9 +18,73 @@ Qdrant (read: _quadrant_ ) is a vector similarity search engine.
 It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.
 Qdrant is tailored to extended filtering support.  It makes it useful for all sorts of neural-network or semantic-based matching, faceted search, and other applications. 
 
+Qdrant is written in Rust :crab:, which makes it reliable even under high load.
+
 With Qdrant, embeddings or neural network encoders can be turned into full-fledged applications for matching, searching, recommending, and much more!
 
-Qdrant is written in Rust :crab:, which makes it reliable even under high load.
+## Demo Projects
+
+### Semantic Text Search :mag:
+
+The neural search uses semantic embeddings instead of keywords and works best with short texts.
+With Qdrant and a pre-trained neural network, you can build and deploy semantic neural search on your data in minutes.
+[Try it online!](https://demo.qdrant.tech/)
+
+### Similar Image Search - Food Discovery :pizza:
+
+There are multiple ways to discover things, text search is not the only one.
+In the case of food, people rely more on appearance than description and ingredients.
+So why not let people choose their next lunch by its appearance, even if they don’t know the name of the dish?
+[Check it out!](https://food-discovery.qdrant.tech/)
+
+<details>
+<summary> More solutions </summary>
+
+<table>
+    <tr>
+        <td>
+            <img src="https://qdrant.tech/content/images/text_search.png">
+        </td>
+        <td>
+            <img src="https://qdrant.tech/content/images/image_search.png">
+        </td>
+        <td>
+            <img src="https://qdrant.tech/content/images/recommendations.png">
+        </td>
+    </tr>
+    <tr>
+        <td>
+            Semantic Text Search
+        </td>
+        <td>
+            Similar Image Search
+        </td>
+        <td>
+            Recommendations
+        </td>
+    </tr>
+</table>
+
+<table align="center">
+    <tr>
+        <td>
+            <img src="https://qdrant.tech/content/images/chat_bots.png">
+        </td>
+        <td>
+            <img src="https://qdrant.tech/content/images/matching_engines.png">
+        </td>
+    </tr>
+    <tr>
+        <td>
+            Chat Bots
+        </td>
+        <td>
+            Matching Engines
+        </td>
+    </tr>
+</table>
+
+</details>
 
 ## API
 
