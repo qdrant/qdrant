@@ -1,15 +1,28 @@
-# :black_square_button: Qdrant
 
-![Tests](https://github.com/qdrant/qdrant/workflows/Tests/badge.svg)
+<p align="center">
+  <img src="/docs/logo.svg" alt="Qdrant">
+</p>
+
+<p align="center">
+    <b>Vector Similarity Search Engine with extended filtering support</b>
+</p>
+
+<p align=center>
+    <a href="https://slack.jina.ai"><img src="https://github.com/qdrant/qdrant/workflows/Tests/badge.svg"></a>
+    <a href="https://qdrant.github.io/qdrant/redoc/index.html"><img src="https://img.shields.io/badge/Docs-OpenAPI%203.0-success"></a>
+    <a href="https://github.com/qdrant/qdrant/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-success"></a>
+    <a href="https://t.me/joinchat/sIuUArGQRp9kMTUy"><img src="https://img.shields.io/badge/Telegram-Qdrant-blue.svg?logo=telegram" alt="Telegram"></a>
+</p>
 
 Qdrant (read: _quadrant_ ) is a vector similarity search engine.
-It provides a production-ready service with a convenient API to store, search, and manage points (vectors with additional payload).
+It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.
+Qdrant is tailored to extended filtering support.  It makes it useful for all sorts of neural-network or semantic-based matching, faceted search, and other applications. 
 
-It is tailored on extended support of filtering, which makes it useful for all sorts of neural-network or semantic based matching, faceted search, and other applications. 
+With Qdrant, embeddings or neural network encoders can be turned into full-fledged applications for matching, searching, recommending, and much more!
 
 Qdrant is written in Rust :crab:, which makes it reliable even under high load.
 
-## API [![OpenAPI docs](https://img.shields.io/badge/docs-OpenAPI3.0-success)](https://qdrant.github.io/qdrant/redoc/index.html)
+## API
 
 Online OpenAPI 3.0 documentation is available [here](https://qdrant.github.io/qdrant/redoc/index.html).
 OpenAPI makes it easy to generate client for virtually any framework or programing language.
@@ -20,9 +33,23 @@ You can also download raw OpenAPI [definitions](openapi/openapi.yaml).
 
 ### Filtering
 
-Qdrant supports any combinations of `should`, `must` and `must_not` conditions,
-which makes it possible to use in applications when object could not be described solely by vector.
-It could be location features, availability flags, and other custom properties businesses should take into account.
+Qdrant supports key-value payload associated with vectors. Not only stores payload but also allows filter results based on payload values.
+It allows any combinations of `should`, `must` and `must_not` conditions, but unlike ElasticSearch post-filtering, Qdrant guarantees all relevant vectors are retrieved.
+
+### Rich data types
+
+Vector payload supports a large variety of data types and query conditions, including string matching, numerical ranges, geo-locations, and more.
+Payload filtering conditions allow you to build almost any custom business logic that should work on top of similarity matching.
+
+### Query planning and payload indexes
+
+Using the information about the stored key-value data, `query planner` decides on the best way to execute the query.
+For example, if the search space limited by filters is small, it is more efficient to use a full brute force than an index.
+
+### SIMD Hardware Acceleration
+
+With the `BLAS` library, Qdrant can take advantage of modern CPU architectures. 
+It allows you to search even faster on modern hardware.
 
 ### Write-ahead logging
 
@@ -35,7 +62,7 @@ Qdrant does not rely on any external database or orchestration controller, which
 
 ## Usage
 
-### Docker
+### Docker :whale:
 
 Build your own from source
 
@@ -64,155 +91,20 @@ Make sure to mount it as a volume, otherwise docker will drop it with the contai
 
 Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/)
 
-## Examples
+## Docs :notebook:
 
-This example covers the most basic use-case - collection creation and basic vector search.
-For additional information please refer to the [documentation](https://qdrant.github.io/qdrant/redoc/index.html).
+* The best place to start is [Quick Start Guide](QUICK_START.md)
+* Use the [OpenAPI specification](https://qdrant.github.io/qdrant/redoc/index.html) as a reference
+* Follow our [Step-by-Step Tutorial](https://qdrant.tech/articles/neural-search-tutorial/) to create your first neural network project with Qdrant
 
-### Create collection
-First - let's create a collection with dot-production metric.
-```bash
-curl -X POST 'http://localhost:6333/collections' \
-    -H 'Content-Type: application/json' \
-    --data-raw '{
-        "create_collection": {
-            "name": "test_collection",
-            "vector_size": 4,
-            "distance": "Dot"
-        }
-    }'
-```
+## Contacts
 
-Expected response:
-```json
-{
-    "result": true,
-    "status": "ok",
-    "time": 0.031095451
-}
-```
+* Join our [Telegram group](https://t.me/joinchat/sIuUArGQRp9kMTUy)
+* Follow us on [Twitter](https://twitter.com/qdrant_engine)
+* Subscribe to our [Newsletters](https://tech.us1.list-manage.com/subscribe/post?u=69617d79374ac6280dd2230b2&amp;id=acb2b876fc)
+* Write us an email [info@qdrant.tech](mailto:info@qdrant.tech)
 
+## License
 
-We can ensure that collection was created:
-```bash
-curl 'http://localhost:6333/collections/test_collection'
-```
+Qdrant is licensed under the Apache License, Version 2.0. View a copy of the [License file](LICENSE).
 
-Expected response:
-
-```json
-{
-  "result": {
-    "vectors_count": 0,
-    "segments_count": 5,
-    "disk_data_size": 0,
-    "ram_data_size": 0,
-    "config": {
-      "vector_size": 4,
-      "index": {
-        "type": "plain",
-        "options": {}
-      },
-      "distance": "Dot",
-      "storage_type": {
-        "type": "in_memory"
-      }
-    }
-  },
-  "status": "ok",
-  "time": 2.1199e-05
-}
-```
-
-
-### Add points
-Let's now add vectors with some payload:
-
-```bash
-curl -L -X POST 'http://localhost:6333/collections/test_collection?wait=true' \
-    -H 'Content-Type: application/json' \
-    --data-raw '{
-      "upsert_points": {
-        "points": [
-          {"id": 1, "vector": [0.05, 0.61, 0.76, 0.74], "payload": {"city": {"type": "keyword", "value": "Berlin"}}},
-          {"id": 2, "vector": [0.19, 0.81, 0.75, 0.11], "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}},
-          {"id": 3, "vector": [0.36, 0.55, 0.47, 0.94], "payload": {"city": {"type": "keyword", "value": ["Berlin", "Moscow"] }}},
-          {"id": 4, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"city": {"type": "keyword", "value": ["London", "Moscow"]}}},
-          {"id": 5, "vector": [0.24, 0.18, 0.22, 0.44], "payload": {"count": {"type": "integer", "value": [0]}}},
-          {"id": 6, "vector": [0.35, 0.08, 0.11, 0.44]}
-        ]
-      }
-    }'
-```
-
-Expected response:
-```json
-{
-    "result": {
-        "operation_id": 0,
-        "status": "completed"
-    },
-    "status": "ok",
-    "time": 0.000206061
-}
-```
-
-### Search with filtering
-
-Let's start with a basic request:
-
-```bash
-curl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \
-    -H 'Content-Type: application/json' \
-    --data-raw '{
-        "vector": [0.2,0.1,0.9,0.7],
-        "top": 3
-    }'
-```
-
-Expected response:
-
-```json
-{
-    "result": [
-        { "id": 4, "score": 1.362 },
-        { "id": 1, "score": 1.273 },
-        { "id": 3, "score": 1.208 }
-    ],
-    "status": "ok",
-    "time": 0.000055785
-}
-```
-
-But result is different if we add a filter:
-
-```bash
-curl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \
-    -H 'Content-Type: application/json' \
-    --data-raw '{
-      "filter": {
-          "should": [
-              {
-                  "key": "city",
-                  "match": {
-                      "keyword": "London"
-                  }
-              }
-          ]
-      },
-      "vector": [0.2, 0.1, 0.9, 0.7],
-      "top": 3
-  }'
-```
-
-Expected response:
-```json
-{
-    "result": [
-        { "id": 4, "score": 1.362 },
-        { "id": 2, "score": 0.871 }
-    ],
-    "status": "ok",
-    "time": 0.000093972
-}
-```
