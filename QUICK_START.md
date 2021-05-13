@@ -1,7 +1,7 @@
 # Quick Start with Qdrant
 
 This example covers the most basic use-case - collection creation and basic vector search.
-For additional information please refer to the [documentation](https://qdrant.github.io/qdrant/redoc/index.html).
+For additional information please refer to the [API documentation](https://qdrant.github.io/qdrant/redoc/index.html).
 
 ## Create collection
 First - let's create a collection with dot-production metric.
