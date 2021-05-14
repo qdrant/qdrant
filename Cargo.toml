@@ -48,4 +48,4 @@ test = false
 bench = false
 
 [workspace]
-members = ["lib/*"]
+members = ["lib/*", "python_bindings"]
