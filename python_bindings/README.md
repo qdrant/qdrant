@@ -11,7 +11,7 @@ From this folder, run:
 There may be some differences when running from macOS
 
 ```shell
-cargo build --release --all-targets -j 4 
+cargo build --release --all-targets -j 4 --no-default-features 
 ```
 
 Then you should see `../target/release/libqdrant_segment_py.so`.
@@ -25,8 +25,11 @@ cp ./target/release/libqdrant_segment_py.so qdrant_segment_py.so
 Once done, we can start a python shell, and do:
 
 ```python
-import qdrant_segment_py # notice this module matches the `.so` name
 import numpy as np
+from qdrant_segment_py import PySegmentConfig, PySegment
+
+config = PySegmentConfig(vector_size=100, index=0, payload_index=0, distance=0, storage_type=0)
+segment = PySegment('dir', config)
 
 def get_random_numpy():
     return np.random.rand(100).astype('float32') # for now only accepts this type
@@ -34,12 +37,12 @@ def get_random_numpy():
 segment = qdrant_segment_py.get_simple_segment('dir', 100)
 index_arrays = [get_random_numpy() for _ in range(1000)]
 for i, array in enumerate(index_arrays):
-    qdrant_segment_py.index(segment, i, array)
-ids, scores = qdrant_segment_py.search(segment, get_random_numpy().astype('float32'), 10)
+    segment.index(i, array)
+ids, scores = segment.search(get_random_numpy().astype('float32'), 10)
 >>> ids
-[789, 82, 162, 168, 151, 575, 164, 673, 977, 60]
+[520, 319, 194, 672, 841, 793, 594, 596, 655, 42]
 >>> scores
-[26.745899200439453, 26.652542114257812, 26.365930557250977, 26.1746826171875, 26.01166343688965, 25.981624603271484, 25.94896697998047, 25.8475399017334, 25.7318172454834, 25.70850944519043]
+[0.9040817618370056, 0.8993460536003113, 0.8909826874732971, 0.890875518321991, 0.860325038433075, 0.8592538237571716, 0.8529136180877686, 0.8495206832885742, 0.8460708260536194, 0.8437867164611816]
 ```
 
 Limitations for Jina.
