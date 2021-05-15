@@ -1,7 +1,6 @@
 use ndarray::{Array1, Array};
 use crate::types::{VectorElementType, PointOffsetType, Distance, Filter};
 use crate::spaces::metric::Metric;
-use std::collections::HashSet;
 use crate::spaces::tools::mertic_object;
 use crate::vector_storage::simple_vector_storage::SimpleRawScorer;
 use crate::payload_storage::payload_storage::ConditionChecker;

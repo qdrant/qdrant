@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::entry::entry_point::OperationResult;
 use crate::common::file_operations::{read_bin, atomic_save_bin};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::index::hnsw_index::entry_points::{EntryPoints, EntryPoint};
+use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::vector_storage::vector_storage::ScoredPointOffset;
 use crate::index::visited_pool::{VisitedList, VisitedPool};
 use crate::index::hnsw_index::search_context::SearchContext;
@@ -16,8 +16,6 @@ use rand::prelude::ThreadRng;
 use rand::Rng;
 use std::collections::BinaryHeap;
 use itertools::Itertools;
-use crate::index::hnsw_index::build_cache::DistanceCache;
-use std::cell::RefCell;
 
 
 pub type LinkContainer = Vec<PointOffsetType>;

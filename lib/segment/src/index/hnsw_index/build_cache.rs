@@ -1,8 +1,6 @@
 use crate::types::{ScoreType, PointOffsetType};
 use std::hash::{Hasher, Hash};
-use std::collections::hash_map::DefaultHasher;
 use std::cmp::{min, max};
-use std::collections::HashSet;
 use fasthash::SeaHasher;
 
 

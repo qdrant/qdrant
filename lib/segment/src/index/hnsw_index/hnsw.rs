@@ -44,7 +44,7 @@ impl HNSWIndex {
         indexing_threshold: usize,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
-        let mut rng = thread_rng();
+        let rng = thread_rng();
 
         let config_path = HnswConfig::get_config_path(path);
         let config = if config_path.exists() {

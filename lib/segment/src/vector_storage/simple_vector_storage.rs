@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::ops::Range;
 use std::path::Path;
 
@@ -6,7 +5,7 @@ use log::debug;
 use rocksdb::{DB, IteratorMode, Options};
 use serde::{Deserialize, Serialize};
 
-use crate::entry::entry_point::{OperationResult, OperationError};
+use crate::entry::entry_point::OperationResult;
 use crate::spaces::tools::{mertic_object, peek_top_scores};
 use crate::types::{Distance, PointOffsetType, VectorElementType, ScoreType};
 use crate::vector_storage::vector_storage::{ScoredPointOffset, RawScorer};

@@ -1,4 +1,4 @@
-use crate::types::{FieldCondition, PointOffsetType, PayloadKeyType};
+use crate::types::{FieldCondition, PointOffsetType};
 use std::collections::HashSet;
 
 pub mod numeric_index;
