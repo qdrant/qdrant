@@ -5,7 +5,7 @@ mod config;
 mod entry_points;
 mod search_context;
 mod build_cache;
-mod build_condition_checker;
+pub mod build_condition_checker;
 
 #[cfg(test)]
 mod tests;

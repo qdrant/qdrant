@@ -32,6 +32,7 @@ pub struct DistanceCache {
     pub misses: usize
 }
 
+#[allow(dead_code)]
 impl DistanceCache {
     fn hasher() -> impl Hasher {
         SeaHasher::new()

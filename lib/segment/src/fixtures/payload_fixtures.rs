@@ -47,10 +47,8 @@ pub fn random_keyword_payload(rnd_gen: &mut ThreadRng) -> PayloadType {
     PayloadType::Keyword(vec![random_keyword(rnd_gen)])
 }
 
-pub fn random_int_payload(rnd_gen: &mut ThreadRng) -> PayloadType {
-    let val1: i64 = rnd_gen.gen_range(INT_RANGE);
-    let val2: i64 = rnd_gen.gen_range(INT_RANGE);
-    PayloadType::Integer(vec![val1, val2])
+pub fn random_int_payload(rnd_gen: &mut ThreadRng, num_values: usize) -> PayloadType {
+    PayloadType::Integer((0..num_values).map(|_| rnd_gen.gen_range(INT_RANGE)).collect_vec())
 }
 
 pub fn random_vector(rnd_gen: &mut ThreadRng, size: usize) -> Vec<VectorElementType> {

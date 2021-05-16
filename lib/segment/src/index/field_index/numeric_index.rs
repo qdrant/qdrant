@@ -129,9 +129,11 @@ impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
     fn payload_blocks(&self, threshold: usize, key: PayloadKeyType) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
         // Creates half-overlapped ranges of points.
         let num_elements = self.elements.len();
+        let value_per_point = num_elements as f64 / self.points_count as f64;
+        let effective_threshold = (threshold as f64 * value_per_point) as usize;
 
-        let iter = (0..num_elements).step_by(threshold / 2).map(move |init_offset| {
-            let upper_index = min(num_elements - 1, init_offset + threshold);
+        let iter = (0..num_elements).step_by(effective_threshold / 2).map(move |init_offset| {
+            let upper_index = min(num_elements - 1, init_offset + effective_threshold);
 
             let upper_value = self.elements[upper_index].value.to_f64();
             let lower_value = self.elements[init_offset].value.to_f64();
@@ -149,7 +151,7 @@ impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
                     geo_bounding_box: None,
                     geo_radius: None,
                 },
-                cardinality: upper_index - init_offset,
+                cardinality: ((upper_index - init_offset) as f64 / value_per_point) as usize,
             }
         });
 

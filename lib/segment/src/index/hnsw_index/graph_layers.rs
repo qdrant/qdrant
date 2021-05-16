@@ -361,16 +361,16 @@ impl GraphLayers {
             self.links_layers.resize(other.links_layers.len(), vec![])
         }
         for (point_id, layers) in other.links_layers.into_iter().enumerate() {
-            visited_list.next_iteration();
             let current_layers = &mut self.links_layers[point_id];
-            for (level, links) in layers.into_iter().enumerate() {
+            for (level, other_links) in layers.into_iter().enumerate() {
                 if current_layers.len() <= level {
-                    current_layers.push(links)
+                    current_layers.push(other_links)
                 } else {
+                    visited_list.next_iteration();
                     let current_links = &mut current_layers[level];
                     current_links.iter().cloned().for_each(|x| {visited_list.check_and_update_visited(x);});
-                    for link in links.into_iter().filter(|x| visited_list.check_and_update_visited(*x)) {
-                        current_links.push(link)
+                    for other_link in other_links.into_iter().filter(|x| !visited_list.check_and_update_visited(*x)) {
+                        current_links.push(other_link)
                     }
                 }
             }

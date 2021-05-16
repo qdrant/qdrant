@@ -2,7 +2,7 @@ use crate::entry::entry_point::OperationResult;
 use std::path::{Path, PathBuf};
 use std::fs::create_dir_all;
 use crate::index::index::{Index, PayloadIndex};
-use crate::types::{SearchParams, Filter, PointOffsetType, Distance, Indexes, VectorElementType};
+use crate::types::{SearchParams, Filter, PointOffsetType, Distance, Indexes, VectorElementType, FieldCondition};
 use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
 use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
@@ -19,6 +19,9 @@ use crate::spaces::tools::mertic_object;
 use crate::types::Condition::Field;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 
+
+const HNSW_USE_HEURISTIC: bool = true;
+
 pub struct HNSWIndex {
     condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
     vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
@@ -32,8 +35,6 @@ pub struct HNSWIndex {
 
 
 impl HNSWIndex {
-    fn get_graph_path(&self) -> PathBuf { GraphLayers::get_path(self.path.as_path()) }
-
     pub fn open(
         path: &Path,
         distance: Distance,
@@ -74,7 +75,7 @@ impl HNSWIndex {
                 config.m0,
                 config.ef_construct,
                 max(1, entry_points_num / indexing_threshold * 10),
-                true,
+                HNSW_USE_HEURISTIC,
             )
         };
 
@@ -108,13 +109,46 @@ impl HNSWIndex {
         Ok(())
     }
 
-    pub fn search_with_condition(&self, top: usize, ef: usize, points_scorer: &FilteredScorer) -> Vec<ScoredPointOffset> {
-        self.graph.search(top, ef, points_scorer)
-    }
-
     pub fn link_point(&mut self, point_id: PointOffsetType, points_scorer: &FilteredScorer) {
         let point_level = self.graph.get_random_layer(&mut self.thread_rng);
         self.graph.link_new_point(point_id, point_level, points_scorer);
+    }
+
+    pub fn build_filtered_graph(&self, condition: FieldCondition, block_condition_checker: &mut BuildConditionChecker) -> GraphLayers {
+        block_condition_checker.filter_list.next_iteration();
+
+        let filter = Filter::new_must(Field(condition));
+
+        let payload_index = self.payload_index.borrow();
+        let vector_storage = self.vector_storage.borrow();
+
+        for block_point_id in payload_index.query_points(&filter) {
+            block_condition_checker.filter_list.check_and_update_visited(block_point_id);
+        }
+
+        let mut graph = GraphLayers::new(
+            self.vector_storage.borrow().total_vector_count(),
+            self.config.m,
+            self.config.m0,
+            self.config.ef_construct,
+            1,
+            HNSW_USE_HEURISTIC,
+        );
+
+        for block_point_id in payload_index.query_points(&filter) {
+            let vector = vector_storage.get_vector(block_point_id).unwrap();
+            let raw_scorer = vector_storage.raw_scorer(vector);
+            let points_scorer = FilteredScorer {
+                raw_scorer: raw_scorer.as_ref(),
+                condition_checker: block_condition_checker,
+                filter: None,
+            };
+
+            let level = self.graph.point_level(block_point_id);
+            graph.link_new_point(block_point_id, level, &points_scorer);
+        }
+
+        graph
     }
 }
 
@@ -165,38 +199,11 @@ impl Index for HNSWIndex {
 
         let total_vectors_count = vector_storage.total_vector_count();
         let mut block_condition_checker = BuildConditionChecker::new(total_vectors_count);
+
         let payload_index = self.payload_index.borrow();
 
         for payload_block in payload_index.payload_blocks(self.config.indexing_threshold) {
-            block_condition_checker.filter_list.next_iteration();
-            let filter = Filter::new_must(Field(payload_block.condition));
-
-            for block_point_id in payload_index.query_points(&filter) {
-                block_condition_checker.filter_list.check_and_update_visited(block_point_id);
-            }
-
-            let mut block_graph = GraphLayers::new(
-                total_vectors_count,
-                self.config.m,
-                self.config.m0,
-                self.config.ef_construct,
-                1,
-                true,
-            );
-
-            for block_point_id in payload_index.query_points(&filter) {
-                let vector = vector_storage.get_vector(block_point_id).unwrap();
-                let raw_scorer = vector_storage.raw_scorer(vector);
-                let points_scorer = FilteredScorer {
-                    raw_scorer: raw_scorer.as_ref(),
-                    condition_checker: &block_condition_checker,
-                    filter: None,
-                };
-
-                let level = self.graph.point_level(block_point_id);
-                block_graph.link_new_point(block_point_id, level, &points_scorer);
-            }
-
+            let block_graph = self.build_filtered_graph(payload_block.condition, &mut block_condition_checker);
             self.graph.merge_from_other(block_graph);
         }
         self.save()

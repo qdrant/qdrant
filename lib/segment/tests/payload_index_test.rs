@@ -33,13 +33,14 @@ mod tests {
         let int_key = "int".to_string();
 
         let num_points = 1000;
+        let num_int_values = 2;
 
         let mut opnum = 0;
         for idx in 0..num_points {
             let vector = random_vector(&mut rnd, dim);
             let mut payload: TheMap<PayloadKeyType, PayloadType> = Default::default();
             payload.insert(str_key.clone(), random_keyword_payload(&mut rnd));
-            payload.insert(int_key.clone(), random_int_payload(&mut rnd));
+            payload.insert(int_key.clone(), random_int_payload(&mut rnd, num_int_values));
 
             plain_segment.upsert_point(idx, idx, &vector).unwrap();
             struct_segment.upsert_point(idx, idx, &vector).unwrap();
