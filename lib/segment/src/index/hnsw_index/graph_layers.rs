@@ -422,6 +422,7 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use ndarray::Array;
+    use tempdir::TempDir;
 
     #[test]
     fn test_connect_new_point() {
@@ -482,6 +483,48 @@ mod tests {
         assert_eq!(graph_layers.links(0, 0), &vec![1, 2, 3, 4, 5, 6]);
     }
 
+    fn search_in_graph(query: &Vec<VectorElementType>, top: usize, vector_storage: &TestRawScorerProducer, graph: &GraphLayers) -> Vec<ScoredPointOffset> {
+        let fake_condition_checker = FakeConditionChecker {};
+        let raw_scorer = vector_storage.get_raw_scorer(query.clone());
+        let scorer = FilteredScorer {
+            raw_scorer: &raw_scorer,
+            condition_checker: &fake_condition_checker,
+            filter: None,
+        };
+        let ef = 16;
+        graph.search(top, ef, &scorer)
+    }
+
+    const M: usize = 8;
+
+    fn create_graph_layer(num_vectors: usize, dim: usize, use_heuristic: bool) -> (TestRawScorerProducer, GraphLayers) {
+        let m = M;
+        let ef_construct = 16;
+        let entry_points_num = 10;
+
+        let vector_holder = TestRawScorerProducer::new(dim, num_vectors, Distance::Cosine);
+
+        let mut graph_layers = GraphLayers::new(
+            num_vectors, m, m * 2, ef_construct, entry_points_num, use_heuristic,
+        );
+
+        let mut rng = thread_rng();
+
+        for idx in 0..(num_vectors as PointOffsetType) {
+            let fake_condition_checker = FakeConditionChecker {};
+            let added_vector = vector_holder.vectors[idx as usize].to_vec();
+            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
+            let scorer = FilteredScorer {
+                raw_scorer: &raw_scorer,
+                condition_checker: &fake_condition_checker,
+                filter: None,
+            };
+            let level = graph_layers.get_random_layer(&mut rng);
+            graph_layers.link_new_point(idx, level, &scorer);
+        }
+
+        (vector_holder, graph_layers)
+    }
 
     #[test]
     fn test_search_on_level() {
@@ -523,42 +566,46 @@ mod tests {
         assert_eq!(nearest_on_level.len(), graph_layers.links_layers[0][0].len() + 1);
 
         for nearest in nearest_on_level.iter() {
-            eprintln!("nearest = {:#?}", nearest);
+            // eprintln!("nearest = {:#?}", nearest);
             assert_eq!(nearest.score, scorer.score_internal(linking_idx, nearest.idx))
         }
 
     }
 
     #[test]
-    fn test_add_points() {
+    fn test_save_and_load() {
+        let num_vectors = 100;
         let dim = 8;
-        let m = 8;
-        let ef_construct = 16;
-        let ef = 32;
-        let entry_points_num = 10;
+        let top = 5;
+
+        let (vector_holder, graph_layers) = create_graph_layer(num_vectors, dim, false);
+
+        let mut rng = thread_rng();
+        let query = random_vector(&mut rng, dim);
+
+        let res1 = search_in_graph(&query, top, &vector_holder, &graph_layers);
+
+        let dir = TempDir::new("graph_dir").unwrap();
+
+        let path = GraphLayers::get_path(dir.path());
+        graph_layers.save(&path).unwrap();
+
+        let graph2 = GraphLayers::load(&path).unwrap();
+
+        let res2 = search_in_graph(&query, top, &vector_holder, &graph2);
+
+        assert_eq!(res1, res2)
+    }
+
+    #[test]
+    fn test_add_points() {
         let num_vectors = 1000;
-        let use_heuristic = true;
+        let dim = 8;
 
-        let vector_holder = TestRawScorerProducer::new(dim, num_vectors, Distance::Cosine);
-
-        let mut graph_layers = GraphLayers::new(
-            num_vectors, m, m * 2, ef_construct, entry_points_num, use_heuristic,
-        );
+        let (vector_holder, graph_layers) = create_graph_layer(num_vectors, dim, false);
 
         let mut rng = thread_rng();
 
-        for idx in 0..(num_vectors as PointOffsetType) {
-            let fake_condition_checker = FakeConditionChecker {};
-            let added_vector = vector_holder.vectors[idx as usize].to_vec();
-            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
-            let scorer = FilteredScorer {
-                raw_scorer: &raw_scorer,
-                condition_checker: &fake_condition_checker,
-                filter: None,
-            };
-            let level = graph_layers.get_random_layer(&mut rng);
-            graph_layers.link_new_point(idx, level, &scorer);
-        }
         let main_entry = graph_layers.entry_points.get_entry_point(|_x| true)
             .expect("Expect entry point to exists");
 
@@ -576,7 +623,7 @@ mod tests {
 
         assert!(total_links_0 > 0);
 
-        assert!(total_links_0 as f64 / num_vectors as f64 > m as f64);
+        assert!(total_links_0 as f64 / num_vectors as f64 > M as f64);
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
@@ -591,54 +638,19 @@ mod tests {
             );
         }
 
-        let fake_condition_checker = FakeConditionChecker {};
-        let raw_scorer = vector_holder.get_raw_scorer(query);
-        let scorer = FilteredScorer {
-            raw_scorer: &raw_scorer,
-            condition_checker: &fake_condition_checker,
-            filter: None,
-        };
-
-        let graph_search = graph_layers.search(top, ef, &scorer);
+        let graph_search = search_in_graph(&query, top, &vector_holder, &graph_layers);
 
         assert_eq!(reference_top.into_vec(), graph_search);
 
-
-        // eprintln!("total_links_0 / num_vectors = {:#?}", total_links_0 as f64 / num_vectors as f64);
-
-        // eprintln!("main_entry = {:#?}", main_entry);
     }
 
     #[test]
     #[ignore]
     fn test_draw_hnsw_graph() {
         let dim = 2;
-        let m = 4;
-        let ef_construct = 32;
-        let entry_points_num = 1;
         let num_vectors = 500;
-        let use_heuristic = true;
 
-        let vector_holder = TestRawScorerProducer::new(dim, num_vectors, Distance::Euclid);
-
-        let mut graph_layers = GraphLayers::new(
-            num_vectors, m, m * 2, ef_construct, entry_points_num, use_heuristic,
-        );
-
-        let mut rng = thread_rng();
-
-        for idx in 0..(num_vectors as PointOffsetType) {
-            let fake_condition_checker = FakeConditionChecker {};
-            let added_vector = vector_holder.vectors[idx as usize].to_vec();
-            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
-            let scorer = FilteredScorer {
-                raw_scorer: &raw_scorer,
-                condition_checker: &fake_condition_checker,
-                filter: None,
-            };
-            let level = graph_layers.get_random_layer(&mut rng);
-            graph_layers.link_new_point(idx, level, &scorer);
-        }
+        let (vector_holder, graph_layers) = create_graph_layer(num_vectors, dim, true);
 
         let graph_json = serde_json::to_string_pretty(&graph_layers).unwrap();
 

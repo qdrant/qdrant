@@ -92,8 +92,20 @@ impl HNSWIndex {
         })
     }
 
-    pub fn build_and_save(&mut self) -> OperationResult<()> {
-        unimplemented!()
+    fn save_config(&self) -> OperationResult<()> {
+        let config_path = HnswConfig::get_config_path(self.path.as_path());
+        self.config.save(&config_path)
+    }
+
+    fn save_graph(&self) -> OperationResult<()> {
+        let graph_path = GraphLayers::get_path(self.path.as_path());
+        self.graph.save(&graph_path)
+    }
+
+    pub fn save(&self) -> OperationResult<()> {
+        self.save_config()?;
+        self.save_graph()?;
+        Ok(())
     }
 
     pub fn search_with_condition(&self, top: usize, ef: usize, points_scorer: &FilteredScorer) -> Vec<ScoredPointOffset> {
@@ -187,6 +199,6 @@ impl Index for HNSWIndex {
 
             self.graph.merge_from_other(block_graph);
         }
-        Ok(())
+        self.save()
     }
 }
