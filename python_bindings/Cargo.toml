@@ -6,10 +6,6 @@ edition = "2018"
 [lib]
 name = "qdrant_segment_py"
 # "cdylib" is necessary to produce a shared library for Python to import from.
-#
-# Downstream Rust code (including code in `bin/`, `examples/`, and `tests/`) will not be able
-# to `use string_sum;` unless the "rlib" or "lib" crate type is also included, e.g.:
-# crate-type = ["cdylib", "rlib"]
 crate-type = ["cdylib"]
 
 [dependencies.pyo3]
@@ -20,5 +16,6 @@ extension-module = ["pyo3/extension-module"]
 default = ["extension-module"]
 
 [dependencies]
-segment = {path = "../lib/segment"}
+serde_json = "~1.0"
 numpy = "0.13"
+segment = {path = "../lib/segment"}

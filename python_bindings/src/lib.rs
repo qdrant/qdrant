@@ -7,7 +7,9 @@ use numpy::PyArray1;
 use pyo3::PyErr;
 use pyo3::exceptions::PyException;
 use segment::segment_constructor::segment_constructor::build_segment;
-
+use std::io::BufReader;
+use std::fs::File;
+use serde_json;
 
 fn handle_inner_result<T> (result: OperationResult<T>) -> PyResult<T> {
     match result {
@@ -24,83 +26,155 @@ fn handle_inner_result<T> (result: OperationResult<T>) -> PyResult<T> {
 }
 
 #[pyclass(unsendable, module="qdrant_segment_py", dict)]
+struct PyVectorIndexType {
+    index: Indexes
+}
+
+#[pymethods]
+impl PyVectorIndexType {
+    #[new]
+    fn new(index_type: usize, m: Option<usize>, ef: Option<usize>) -> Self {
+        let ind = match index_type {
+            0 => Some(Indexes::Plain {}),
+            1 => Some(Indexes::Hnsw { m: m.unwrap(), ef_construct: ef.unwrap()}),
+            x => {
+                println!("Invalid vector index type {}", x);
+                None
+            },
+        };
+
+        PyVectorIndexType { index: ind.unwrap() }
+    }
+}
+
+#[pyclass(unsendable, module="qdrant_segment_py", dict)]
+struct PyPayloadIndexType {
+    payload_index_type: PayloadIndexType
+}
+
+#[pymethods]
+impl PyPayloadIndexType {
+    //TODO: LEARN HOW TO ALSO ENABLE READING FROM TEXT
+    #[new]
+    fn new(payload_index: usize) -> Self {
+        let pind = match payload_index {
+            0 => Some(PayloadIndexType::Plain {}),
+            1 => Some(PayloadIndexType::Struct {}),
+            x => {
+                println!("Invalid payload index type {}", x);
+                None
+            },
+        };
+        PyPayloadIndexType { payload_index_type: pind.unwrap()}
+    }
+}
+
+#[pyclass(unsendable, module="qdrant_segment_py", dict)]
+struct PyDistanceType {
+    distance: Distance
+}
+
+#[pymethods]
+impl PyDistanceType {
+    //TODO: LEARN HOW TO ALSO ENABLE READING FROM TEXT
+    #[new]
+    fn new(distance: usize) -> Self {
+        let d = match distance {
+            0 => Some(Distance::Cosine),
+            1 => Some(Distance::Dot),
+            2 => Some(Distance::Euclid),
+            x => {
+                println!("Invalid distance type {}", x);
+                None
+            },
+        };
+        PyDistanceType { distance: d.unwrap()}
+    }
+}
+
+#[pyclass(unsendable, module="qdrant_segment_py", dict)]
+struct PyStorageType {
+    storage: StorageType
+}
+
+#[pymethods]
+impl PyStorageType {
+    //TODO: LEARN HOW TO ALSO ENABLE READING FROM TEXT
+    #[new]
+    fn new(storage: usize) -> Self {
+        let stype = match storage {
+            0 => Some(StorageType::InMemory),
+            1 => Some(StorageType::Mmap),
+            x => {
+                println!("Invalid storage type {}", x);
+                None
+            },
+        };
+        PyStorageType { storage: stype.unwrap()}
+    }
+}
+
+#[pyclass(unsendable, module="qdrant_segment_py", dict)]
 struct PySegmentConfig {
-    /// Size of a vectors used
-    pub vector_size: usize,
-    /// Type of index used for search
-    pub index: Indexes,
-    /// Payload Indexes
-    pub payload_index: Option<PayloadIndexType>,
-    /// Type of distance function used for measuring distance between vectors
-    pub distance: Distance,
-    /// Type of vector storage
-    pub storage_type: StorageType,
+    config: SegmentConfig
 }
 
 #[pymethods]
 impl PySegmentConfig {
     #[new]
-    fn new(vector_size: usize, index: usize, payload_index: Option<usize>, distance: usize, storage_type: usize) -> Self {
-        let ind = match index {
-            0 => Some(Indexes::Plain {}),
-            1 => Some(Indexes::Hnsw { m: 0, ef_construct: 0 }),
-            _ => None
-        };
-        let pind = match payload_index {
-            Some(0) => Some(PayloadIndexType::Plain),
-            Some(1) => Some(PayloadIndexType::Struct),
-            Some(x) => {
-                println!("Invalid payload index type {}", x);
-                None
-            },
-            None => None,
-        };
+    fn new(vector_size: usize,
+           index: &PyVectorIndexType,
+           payload_index: Option<&PyPayloadIndexType>,
+           distance: &PyDistanceType,
+           storage_type: &PyStorageType) -> Self {
 
-        let d = match distance {
-            0 => Some(Distance::Cosine),
-            1 => Some(Distance::Dot),
-            2 => Some(Distance::Euclid),
-            _ => None
-        };
+        let config = SegmentConfig { vector_size,
+            index: index.index,
+            payload_index: payload_index.map(|pid| pid.payload_index_type),
+            distance: distance.distance,
+            storage_type: storage_type.storage};
 
-        let stype = match storage_type {
-            0 => Some(StorageType::InMemory),
-            1 => Some(StorageType::Mmap),
-            _ => None
-        };
+        PySegmentConfig { config }
+    }
 
-
-        PySegmentConfig { vector_size: vector_size,
-            index: ind.unwrap(),
-            payload_index: pind,
-            distance: d.unwrap(),
-            storage_type: stype.unwrap()}
+    #[staticmethod]
+    fn from_config_file(dir: String) ->  Self {
+        let file = File::open(Path::new(&dir));
+        match file {
+            Ok(f) => PySegmentConfig {config: serde_json::from_reader( BufReader::new(f)).unwrap() },
+            _ => PySegmentConfig { config: SegmentConfig {
+                vector_size: 0,
+                index: Default::default(),
+                payload_index: None,
+                distance: Distance::Cosine,
+                storage_type: Default::default()
+            } }
+        }
     }
 }
-
 
 #[pyclass(unsendable, module="qdrant_segment_py", dict)]
 struct PySegment {
     pub segment: Segment
 }
 
-
 #[pymethods]
 impl PySegment {
+    const DEFAULT_OP_NUM: u64 = u64::MAX; // Disable skip_by_version for now
+
     #[new]
     fn new(dir: String, config: &PySegmentConfig) -> Self {
-        let segment_result = handle_inner_result(build_segment(Path::new(&dir), &SegmentConfig {
-            vector_size: config.vector_size,
-            index: config.index,
-            payload_index: config.payload_index,
-            distance: config.distance,
-            storage_type: config.storage_type
-        }));
+        let segment_result = handle_inner_result(build_segment(Path::new(&dir), &config.config));
         segment_result.map(|segment| PySegment{segment}).unwrap()
     }
 
     pub fn index(&mut self, point_id: PointIdType, vector: &PyArray1<VectorElementType>) -> PyResult<bool> {
-        let result = self.segment.upsert_point(100, point_id, &vector.to_vec().unwrap());
+        let result = self.segment.upsert_point(PySegment::DEFAULT_OP_NUM, point_id, &vector.to_vec().unwrap());
+        handle_inner_result(result)
+    }
+
+    pub fn delete(&mut self, point_id: PointIdType) -> PyResult<bool> {
+        let result = self.segment.delete_point(PySegment::DEFAULT_OP_NUM, point_id);
         handle_inner_result(result)
     }
 
@@ -117,6 +191,10 @@ impl PySegment {
 /// A Python module implemented in Rust.
 #[pymodule]
 fn qdrant_segment_py(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<PyVectorIndexType>()?;
+    m.add_class::<PyPayloadIndexType>()?;
+    m.add_class::<PyDistanceType>()?;
+    m.add_class::<PyStorageType>()?;
     m.add_class::<PySegmentConfig>()?;
     m.add_class::<PySegment>()?;
     Ok(())
