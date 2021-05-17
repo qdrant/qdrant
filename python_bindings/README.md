@@ -4,25 +4,33 @@ This is the first iteration to try to build Python bindings for the segment modu
 
 The intention is to offer the ANN functionality directly from Python without needing to have a Qdrant server.
 
-## Instructions to build
+## Instructions to build.
+
+### Prerequisites
+
+Check how to install [rust and cargo](https://www.rust-lang.org/tools/install) 
+
+Install maturin as tool for building the project and wheels.
+
+```shell
+pip install maturin
+```
 
 From this folder, run:
 
 There may be some differences when running from macOS
 
 ```shell
-cargo build --release --all-targets -j 4 --no-default-features 
+maturin build --no-sdist
+pip install target/wheels/qdrant_segment_py*cp37*
 ```
 
-Then you should see `../target/release/libqdrant_segment_py.so`.
-
-(may need to change the name in macOS or Windows)
-Then run:
+Then you can run:
 ```shell
-cp ./target/release/libqdrant_segment_py.so qdrant_segment_py.so
+python app.py
 ```
 
-Once done, we can start a python shell, and do:
+This is the content inside app.py:
 
 ```python
 from qdrant_segment_py import PyVectorIndexType, PyPayloadIndexType, PyDistanceType, PyStorageType, PySegmentConfig, PySegment

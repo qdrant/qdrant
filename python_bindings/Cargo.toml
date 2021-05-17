@@ -2,6 +2,7 @@
 name = "qdrant-segment-py"
 version = "0.1.0"
 edition = "2018"
+authors = ["Jina AI Dev-Team <dev-team@jina.ai>"]
 
 [lib]
 name = "qdrant_segment_py"
@@ -18,4 +19,8 @@ default = ["extension-module"]
 [dependencies]
 serde_json = "~1.0"
 numpy = "0.13"
-segment = {path = "../lib/segment"}
+
+[dependencies.segment]
+path = "../lib/segment"
+
+[workspace]
