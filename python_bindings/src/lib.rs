@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use segment::types::{Distance, PointIdType, VectorElementType, ScoredPoint, ScoreType, Indexes, PayloadIndexType, StorageType, SegmentConfig};
+use segment::types::{Distance, PointIdType, VectorElementType, ScoredPoint, ScoreType, Indexes, PayloadIndexType, StorageType, SegmentConfig, PayloadKeyType, TheMap, PayloadType, IntPayloadType, FloatPayloadType};
 use segment::segment::Segment;
 use std::path::Path;
 use segment::entry::entry_point::{OperationResult, SegmentEntry, OperationError};
@@ -153,6 +153,15 @@ impl PySegmentConfig {
     }
 }
 
+#[derive(Debug, Clone, FromPyObject)]
+enum PyPayloadType {
+    Keyword(Vec<String>),
+    Integer(IntPayloadType),
+    Float(FloatPayloadType),
+    IntegerVec(Vec<IntPayloadType>),
+    FloatVec(Vec<FloatPayloadType>),
+}
+
 #[pyclass(unsendable, module="qdrant_segment_py", dict)]
 struct PySegment {
     pub segment: Segment
@@ -171,6 +180,34 @@ impl PySegment {
     pub fn index(&mut self, point_id: PointIdType, vector: &PyArray1<VectorElementType>) -> PyResult<bool> {
         let result = self.segment.upsert_point(PySegment::DEFAULT_OP_NUM, point_id, &vector.to_vec().unwrap());
         handle_inner_result(result)
+    }
+
+    pub fn set_full_payload(&mut self, point_id: PointIdType, payload: TheMap<PayloadKeyType, PyPayloadType>) -> PyResult<bool> {
+        let inner_payload = payload.into_iter().map(|(k, v)| {
+            match v {
+                PyPayloadType::Keyword(x) => (k, PayloadType::Keyword(x)),
+                PyPayloadType::Integer(x) => (k, PayloadType::Integer(vec![x])),
+                PyPayloadType::Float(x) => (k, PayloadType::Float(vec![x])),
+                PyPayloadType::FloatVec(x) => (k, PayloadType::Float(x)),
+                PyPayloadType::IntegerVec(x) => (k, PayloadType::Integer(x))
+            }
+        }).rev().collect();
+        let result = self.segment.set_full_payload(PySegment::DEFAULT_OP_NUM, point_id, inner_payload);
+        handle_inner_result(result)
+    }
+
+    fn get_full_payload(&self, point_id: PointIdType) -> TheMap<PayloadKeyType, String> {
+        let payload = self.segment.payload(point_id).unwrap();
+        let mut results = TheMap::new();
+        for (k, _v) in payload {
+            match _v {
+                PayloadType::Keyword(x) => results.insert(k,  x.iter().map(String::from).collect()),
+                PayloadType::Integer(x) => results.insert(k,  x.iter().map(|k| k.to_string()).collect()),
+                PayloadType::Float(x) => results.insert(k,  x.iter().map(|k| k.to_string()).collect()),
+                _ => None
+            };
+        }
+        results
     }
 
     pub fn delete(&mut self, point_id: PointIdType) -> PyResult<bool> {
