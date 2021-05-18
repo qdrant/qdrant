@@ -66,9 +66,10 @@ docs[GRANULARITY_4_IDX_FILTER].granularity = 4
 
 for i, doc in enumerate(docs):
     result = segment.index(int(doc.id), doc.embedding)
-    full_doc_dict = doc.dict()
-    payload = {key: full_doc_dict[key] for key in ['id', 'text', 'granularity', 'weight']}
-    segment.set_full_payload(int(doc.id), payload)
+    payload = doc.dict()
+    # cannot handle embedding type properly
+    del payload['embedding']
+    segment.set_full_payload(int(doc.id), json.dumps(payload))
 
 query = get_random_numpy()
 
@@ -117,6 +118,7 @@ for id in new_ids:
     extracted_doc = Document(payload)
     print(f' extracted_doc {extracted_doc}')
     assert extracted_doc.text == f'I am document {id}'
+
 ```
 
 Limitations for Jina.

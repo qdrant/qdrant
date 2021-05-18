@@ -10,6 +10,8 @@ use segment::segment_constructor::segment_constructor::build_segment;
 use std::io::BufReader;
 use std::fs::File;
 use serde_json;
+use serde::{Deserialize, Serialize};
+use schemars::{JsonSchema};
 
 fn handle_inner_result<T> (result: OperationResult<T>) -> PyResult<T> {
     match result {
@@ -153,13 +155,16 @@ impl PySegmentConfig {
     }
 }
 
-#[derive(Debug, Clone, FromPyObject)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, FromPyObject)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
 enum PyPayloadType {
-    Keyword(Vec<String>),
+    Keyword(String),
     Integer(IntPayloadType),
     Float(FloatPayloadType),
+    KeywordVec(Vec<String>),
     IntegerVec(Vec<IntPayloadType>),
-    FloatVec(Vec<FloatPayloadType>),
+    FloatVec(Vec<FloatPayloadType>)
 }
 
 #[pyclass(unsendable, module="qdrant_segment_py", dict)]
@@ -182,12 +187,15 @@ impl PySegment {
         handle_inner_result(result)
     }
 
-    pub fn set_full_payload(&mut self, point_id: PointIdType, payload: TheMap<PayloadKeyType, PyPayloadType>) -> PyResult<bool> {
-        let inner_payload = payload.into_iter().map(|(k, v)| {
+    pub fn set_full_payload(&mut self, point_id: PointIdType, payload: String) -> PyResult<bool> {
+        let pypayloadtype: TheMap<PayloadKeyType, PyPayloadType> = serde_json::from_str(&payload).unwrap();
+        // need to correct the points where a collection is expected and not a single value
+        let inner_payload = pypayloadtype.into_iter().map(|(k, v)| {
             match v {
-                PyPayloadType::Keyword(x) => (k, PayloadType::Keyword(x)),
+                PyPayloadType::Keyword(x) => (k, PayloadType::Keyword(vec![x])),
                 PyPayloadType::Integer(x) => (k, PayloadType::Integer(vec![x])),
                 PyPayloadType::Float(x) => (k, PayloadType::Float(vec![x])),
+                PyPayloadType::KeywordVec(x) => (k, PayloadType::Keyword(x)),
                 PyPayloadType::FloatVec(x) => (k, PayloadType::Float(x)),
                 PyPayloadType::IntegerVec(x) => (k, PayloadType::Integer(x))
             }
@@ -201,9 +209,9 @@ impl PySegment {
         let mut results = TheMap::new();
         for (k, _v) in payload {
             match _v {
-                PayloadType::Keyword(x) => results.insert(k,  x.iter().map(String::from).collect()),
-                PayloadType::Integer(x) => results.insert(k,  x.iter().map(|k| k.to_string()).collect()),
-                PayloadType::Float(x) => results.insert(k,  x.iter().map(|k| k.to_string()).collect()),
+                PayloadType::Keyword(x) => results.insert(k, x.iter().map(String::from).collect()),
+                PayloadType::Integer(x) => results.insert(k, x.iter().map(|k| k.to_string()).collect()),
+                PayloadType::Float(x) => results.insert(k, x.iter().map(|k| k.to_string()).collect()),
                 _ => None
             };
         }
