@@ -215,12 +215,15 @@ impl PySegment {
         handle_inner_result(result)
     }
 
-    pub fn search(&self, vector: &PyArray1<VectorElementType>, top_k: usize) -> PyResult<(Vec<PointIdType>, Vec<ScoreType>)> {
+    pub fn search(&self, vector: &PyArray1<VectorElementType>, filter: Option<String>, top_k: usize) -> PyResult<(Vec<PointIdType>, Vec<ScoreType>)> {
         fn _convert_scored_point_vec(vec: Vec<ScoredPoint>) -> (Vec<PointIdType>, Vec<ScoreType>) {
             vec.into_iter().map(
                 |scored_point| (scored_point.id, scored_point.score)).unzip()
         }
-        let result = self.segment.search(&vector.to_vec().unwrap(), None, top_k, None);
+        let qdrant_filter = filter.map(|f| {
+            serde_json::from_str(&f).unwrap()
+        });
+        let result = self.segment.search(&vector.to_vec().unwrap(), Option::from(&qdrant_filter), top_k, None);
         handle_inner_result(result.map(|vec| _convert_scored_point_vec(vec)))
     }
 }
