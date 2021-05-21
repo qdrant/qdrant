@@ -180,6 +180,17 @@ impl SegmentEntry for Segment {
         Ok(true)
     }
 
+    fn set_full_payload_with_value(&mut self,
+                        op_num: SeqNumberType,
+                        point_id: PointIdType,
+                        full_payload: TheMap<PayloadKeyType, serde_json::value::Value>,
+    ) -> OperationResult<bool> {
+        if self.skip_by_version(op_num) { return Ok(false); };
+        let internal_id = self.lookup_internal_id(point_id)?;
+        self.payload_storage.borrow_mut().assign_all_with_value(internal_id, full_payload)?;
+        Ok(true)
+    }
+
     fn set_payload(&mut self,
                    op_num: SeqNumberType,
                    point_id: PointIdType,
