@@ -36,7 +36,6 @@ mod tests {
             payload_index: Some(PayloadIndexType::Plain),
             storage_type: StorageType::InMemory,
             distance,
-            indexing_threshold,
         };
 
         let int_key = "int".to_string();
@@ -65,7 +64,7 @@ mod tests {
         let hnsw_config = HnswConfig {
             m,
             ef_construct,
-            indexing_threshold
+            full_scan_threshold: indexing_threshold
         };
 
         let mut hnsw_index = HNSWIndex::open(

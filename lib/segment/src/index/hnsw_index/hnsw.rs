@@ -51,7 +51,7 @@ impl HNSWIndex {
         let config = if config_path.exists() {
             HnswGraphConfig::load(&config_path)?
         } else {
-            HnswGraphConfig::new(hnsw_config.m, hnsw_config.ef_construct, hnsw_config.indexing_threshold)
+            HnswGraphConfig::new(hnsw_config.m, hnsw_config.ef_construct, hnsw_config.full_scan_threshold)
         };
 
         let graph_path = GraphLayers::get_path(path);
@@ -64,7 +64,7 @@ impl HNSWIndex {
                 config.m,
                 config.m0,
                 config.ef_construct,
-                max(1, total_points / hnsw_config.indexing_threshold * 10),
+                max(1, total_points / hnsw_config.full_scan_threshold * 10),
                 HNSW_USE_HEURISTIC,
             )
         };

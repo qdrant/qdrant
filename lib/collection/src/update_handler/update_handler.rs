@@ -94,10 +94,11 @@ impl UpdateHandler {
                         UpdateSignal::Operation(operation_id) => {
                             debug!("Performing update operation: {}", operation_id);
                             for optimizer in optimizers.iter() {
-                                let unoptimal_segment_ids = optimizer.check_condition(segments.clone());
-                                if !unoptimal_segment_ids.is_empty() {
-                                    debug!("Start optimization on segments: {:?}", unoptimal_segment_ids);
-                                    optimizer.optimize(segments.clone(), unoptimal_segment_ids).unwrap();
+                                let mut nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
+                                while !nonoptimal_segment_ids.is_empty() {
+                                    debug!("Start optimization on segments: {:?}", nonoptimal_segment_ids);
+                                    optimizer.optimize(segments.clone(), nonoptimal_segment_ids).unwrap();
+                                    nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
                                 }
                             }
                             let elapsed = last_flushed.elapsed();

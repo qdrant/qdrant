@@ -130,13 +130,13 @@ pub struct HnswConfig {
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
     pub ef_construct: usize,
     /// Minimal amount of points for additional payload-based indexing.
-    /// If payload chunk is smaller than `indexing_threshold` additional indexing won't be used - 
+    /// If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
     /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
-    pub indexing_threshold: usize
+    pub full_scan_threshold: usize
 }
 
 impl Default for HnswConfig {
-    fn default() -> Self { HnswConfig { m: 16, ef_construct: 100, indexing_threshold: DEFAULT_INDEXING_THRESHOLD }}
+    fn default() -> Self { HnswConfig { m: 16, ef_construct: 100, full_scan_threshold: DEFAULT_FULL_SCAN_THRESHOLD }}
 }
 
 impl Indexes {
@@ -199,13 +199,10 @@ pub struct SegmentConfig {
     pub distance: Distance,
     /// Type of vector storage
     pub storage_type: StorageType,
-    /// Indexing if efficient starting from this number of vectors
-    /// Also used to switch between brute-force and indexed search
-    pub indexing_threshold: usize,
 }
 
 /// Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
-pub const DEFAULT_INDEXING_THRESHOLD: usize = 20_000;
+pub const DEFAULT_FULL_SCAN_THRESHOLD: usize = 20_000;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]

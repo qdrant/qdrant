@@ -74,6 +74,8 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
     pub fn range_cardinality(&self, range: &Range) -> CardinalityEstimation {
         let (lower_index, upper_index) = self.search_range(range);
 
+        // ToDo: Check if there is a more precise implementation for multiple values
+
         let values_count: i64 = upper_index as i64 - lower_index as i64;
         let total_values = self.elements.len() as i64;
         let value_per_point = total_values as f64 / self.points_count as f64;

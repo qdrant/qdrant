@@ -1,6 +1,6 @@
 use crate::segment::Segment;
 
-use crate::types::{Distance, SegmentConfig, Indexes, DEFAULT_INDEXING_THRESHOLD};
+use crate::types::{Distance, SegmentConfig, Indexes, DEFAULT_FULL_SCAN_THRESHOLD};
 
 use std::path::Path;
 use crate::segment_constructor::segment_constructor::build_segment;
@@ -22,7 +22,6 @@ pub fn build_simple_segment(path: &Path, dim: usize, distance: Distance) -> Oper
             payload_index: None,
             distance,
             storage_type: Default::default(),
-            indexing_threshold: DEFAULT_INDEXING_THRESHOLD
         },
     )
 }

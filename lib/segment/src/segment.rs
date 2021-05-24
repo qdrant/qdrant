@@ -25,7 +25,6 @@ pub struct Segment {
     pub payload_storage: Arc<AtomicRefCell<dyn PayloadStorage>>,
     pub payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
     pub condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
-    /// User for writing only here.
     pub vector_index: Arc<AtomicRefCell<dyn VectorIndex>>,
     pub appendable_flag: bool,
     pub segment_type: SegmentType,

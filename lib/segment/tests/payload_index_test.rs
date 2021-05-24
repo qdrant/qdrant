@@ -21,7 +21,6 @@ mod tests {
             payload_index: Some(PayloadIndexType::Struct),
             storage_type: StorageType::InMemory,
             distance: Distance::Dot,
-            indexing_threshold: 1000,
         };
 
         let str_key = "kvd".to_string();
@@ -75,7 +74,8 @@ mod tests {
         eprintln!("exact = {:#?}", exact);
         eprintln!("estimation = {:#?}", estimation);
 
-        assert!( (exact as i32 - estimation.exp as i32).abs() < config.indexing_threshold as i32)
+        assert!(exact <= estimation.max);
+        assert!(exact >= estimation.min);
     }
 
     #[test]
@@ -94,7 +94,6 @@ mod tests {
             payload_index: Some(PayloadIndexType::Plain),
             storage_type: StorageType::InMemory,
             distance: Distance::Dot,
-            indexing_threshold: 100,
         };
 
         let mut plain_segment = build_segment(dir1.path(), &config).unwrap();

@@ -55,7 +55,6 @@ pub fn simple_collection_fixture(collection_path: &Path) -> (Arc<Runtime>, Colle
         payload_index: Some(Default::default()),
         distance: Distance::Dot,
         storage_type: Default::default(),
-        indexing_threshold: 100000
     };
 
     let threaded_rt = Arc::new(runtime::Builder::new_multi_thread()

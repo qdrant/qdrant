@@ -134,7 +134,6 @@ mod tests {
                 payload_index: Some(Default::default()),
                 distance: segment_config.distance,
                 storage_type: StorageType::default(),
-                indexing_threshold: 10_000
             },
         );
 
