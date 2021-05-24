@@ -3,12 +3,12 @@ use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder};
 use crate::segment_manager::segment_managers::SegmentUpdater;
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use crate::collection::{CollectionResult, CollectionError};
-use segment::types::{SeqNumberType, PointIdType, PayloadKeyType};
+use segment::types::{SeqNumberType, PointIdType, PayloadKeyType, PayloadInterface};
 use std::collections::{HashSet, HashMap};
 use crate::operations::types::VectorType;
 
 use crate::operations::point_ops::{PointOperations, PointInsertOperations};
-use crate::operations::payload_ops::{PayloadOps, PayloadInterface};
+use crate::operations::payload_ops::PayloadOps;
 
 pub struct SimpleSegmentUpdater {
     segments: LockedSegmentHolder,
@@ -282,7 +282,7 @@ mod tests {
     use super::*;
     use crate::segment_manager::fixtures::{build_searcher};
     use crate::segment_manager::segment_managers::SegmentSearcher;
-    use crate::operations::payload_ops::PayloadVariant;
+    use segment::types::PayloadVariant;
     use tempdir::TempDir;
 
     #[test]

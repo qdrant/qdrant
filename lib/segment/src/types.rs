@@ -239,6 +239,44 @@ impl From<&PayloadType> for PayloadSchemaType {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum PayloadVariant<T> {
+    Value(T),
+    List(Vec<T>)
+}
+
+impl<T: Clone> PayloadVariant<T> {
+    pub fn to_list(&self) -> Vec<T>{
+        match self {
+            PayloadVariant::Value(x) => vec![x.clone()],
+            PayloadVariant::List(vec) => vec.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type",  content = "value")]
+pub enum PayloadInterface {
+    Keyword(PayloadVariant<String>),
+    Integer(PayloadVariant<i64>),
+    Float(PayloadVariant<f64>),
+    Geo(PayloadVariant<GeoPoint>),
+}
+
+impl PayloadInterface {
+    pub fn to_payload(&self) -> PayloadType {
+        match self {
+            PayloadInterface::Keyword(x) => PayloadType::Keyword(x.to_list()),
+            PayloadInterface::Integer(x) => PayloadType::Integer(x.to_list()),
+            PayloadInterface::Float(x) =>  PayloadType::Float(x.to_list()),
+            PayloadInterface::Geo(x) => PayloadType::Geo(x.to_list()),
+        }
+    }
+}
+
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]

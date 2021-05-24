@@ -1,9 +1,8 @@
 use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};
-use segment::types::{PointIdType, PayloadKeyType};
+use segment::types::{PointIdType, PayloadKeyType, PayloadInterface};
 use crate::operations::types::VectorType;
 use std::collections::HashMap;
-use crate::operations::payload_ops::PayloadInterface;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
