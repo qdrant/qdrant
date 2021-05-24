@@ -10,6 +10,7 @@ use crate::operations::CollectionUpdateOperations;
 use tokio::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 use log::debug;
+use crate::collection::CollectionResult;
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
@@ -61,6 +62,19 @@ impl UpdateHandler {
                 self.flush_timeout_sec,
             ),
         ));
+    }
+
+    /// Gracefully wait before all optimizations stop.
+    /// If some optimization is in progress - it will be finished before shutdown.
+    /// Blocking function.
+    pub fn wait_worker_stops(&mut self) -> CollectionResult<()> {
+        let res = match &mut self.worker {
+            None => (),
+            Some(handle) => self.runtime_handle.block_on(handle)?
+        };
+
+        self.worker = None;
+        Ok(res)
     }
 
     async fn worker_fn(

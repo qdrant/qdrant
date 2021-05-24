@@ -3,6 +3,7 @@ use std::cmp::{Ordering};
 use ordered_float::OrderedFloat;
 use crate::entry::entry_point::OperationResult;
 use std::ops::Range;
+use rand::Rng;
 
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -54,6 +55,7 @@ pub trait VectorStorage {
     fn update_vector(&mut self, key: PointOffsetType, vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType>;
     fn update_from(&mut self, other: &dyn VectorStorage) -> OperationResult<Range<PointOffsetType>>;
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()>;
+    fn is_deleted(&self, key: PointOffsetType) -> bool;
     fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_>; /// Iterator over not-deleted ids
     fn flush(&self) -> OperationResult<()>;
 
@@ -66,7 +68,7 @@ pub trait VectorStorage {
     fn score_points(
         &self,
         vector: &Vec<VectorElementType>,
-        points: &[PointOffsetType],
+        points: &mut dyn Iterator<Item=PointOffsetType>,
         top: usize
     ) -> Vec<ScoredPointOffset>;
     fn score_all(
@@ -77,9 +79,19 @@ pub trait VectorStorage {
     fn score_internal(
         &self,
         point: PointOffsetType,
-        points: &[PointOffsetType],
+        points: &mut dyn Iterator<Item=PointOffsetType>,
         top: usize
     ) -> Vec<ScoredPointOffset>;
+
+    /// Iterator over `n` random ids which are not deleted
+    fn sample_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+        let total = self.total_vector_count() as PointOffsetType;
+        let mut rng = rand::thread_rng();
+        Box::new((0..total)
+            .map(move |_| rng.gen_range(0..total))
+            .filter(move |x| !self.is_deleted(*x))
+        )
+    }
 }
 
 

@@ -6,7 +6,7 @@ use std::fs::{OpenOptions, create_dir_all};
 use std::mem::{size_of};
 use crate::types::{VectorElementType, PointOffsetType, Distance, ScoreType};
 use std::io::Write;
-use crate::spaces::tools::{mertic_object, peek_top_scores};
+use crate::spaces::tools::{mertic_object, peek_top_scores_iterable};
 use crate::spaces::metric::Metric;
 use crate::vector_storage::mmap_vectors::MmapVectors;
 
@@ -165,6 +165,10 @@ impl VectorStorage for MemmapVectorStorage {
         self.mmap_store.as_mut().unwrap().delete(key)
     }
 
+    fn is_deleted(&self, key: PointOffsetType) -> bool {
+        self.mmap_store.as_ref().unwrap().deleted(key).unwrap_or(false)
+    }
+
     fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
         let num_vectors = self.mmap_store.as_ref().unwrap().num_vectors;
         let iter = (0..(num_vectors as PointOffsetType))
@@ -201,12 +205,11 @@ impl VectorStorage for MemmapVectorStorage {
 
     fn score_points(
         &self, vector: &Vec<VectorElementType>,
-        points: &[PointOffsetType],
+        points: &mut dyn Iterator<Item=PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset> {
         let preprocessed_vector = self.metric.preprocess(vector.clone());
-        let scores: Vec<ScoredPointOffset> = points.iter()
-            .cloned()
+        let scores = points
             .filter(|point| !self.mmap_store.as_ref().unwrap().deleted(*point).unwrap_or(true))
             .map(|point| {
                 let other_vector = self.mmap_store.as_ref().unwrap().raw_vector(point).unwrap();
@@ -214,28 +217,28 @@ impl VectorStorage for MemmapVectorStorage {
                     idx: point,
                     score: self.metric.similarity(&preprocessed_vector, &other_vector),
                 }
-            }).collect();
-        return peek_top_scores(&scores, top);
+            });
+        return peek_top_scores_iterable(scores, top);
     }
 
     fn score_all(&self, vector: &Vec<VectorElementType>, top: usize) -> Vec<ScoredPointOffset> {
         let preprocessed_vector = self.metric.preprocess(vector.clone());
-        let scores: Vec<ScoredPointOffset> = self.iter_ids()
+        let scores = self.iter_ids()
             .map(|point| {
                 let other_vector = self.mmap_store.as_ref().unwrap().raw_vector(point).unwrap();
                 ScoredPointOffset {
                     idx: point,
                     score: self.metric.similarity(&preprocessed_vector, other_vector),
                 }
-            }).collect();
+            });
 
-        return peek_top_scores(&scores, top);
+        return peek_top_scores_iterable(scores, top);
     }
 
     fn score_internal(
         &self,
         point: PointOffsetType,
-        points: &[PointOffsetType],
+        points: &mut dyn Iterator<Item=PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset> {
         let vector = self.get_vector(point).unwrap();
@@ -306,7 +309,7 @@ mod tests {
         assert_ne!(res[0].idx, 2);
 
         let res = storage.score_points(
-            &vec3, &vec![0, 1, 2, 3, 4], 2);
+            &vec3, &mut vec![0, 1, 2, 3, 4].iter().cloned(), 2);
 
         assert_eq!(res.len(), 2);
         assert_ne!(res[0].idx, 2);

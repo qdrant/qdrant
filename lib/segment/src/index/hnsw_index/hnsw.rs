@@ -1,8 +1,8 @@
 use crate::entry::entry_point::OperationResult;
 use std::path::{Path, PathBuf};
 use std::fs::create_dir_all;
-use crate::index::index::{Index, PayloadIndex};
-use crate::types::{SearchParams, Filter, PointOffsetType, Distance, Indexes, VectorElementType, FieldCondition};
+use crate::index::index::{VectorIndex, PayloadIndex};
+use crate::types::{SearchParams, Filter, PointOffsetType, Distance, VectorElementType, FieldCondition, HnswConfig};
 use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
 use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
@@ -12,12 +12,13 @@ use std::ops::Deref;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use rand::thread_rng;
 use rand::prelude::ThreadRng;
-use crate::index::hnsw_index::config::HnswConfig;
+use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::spaces::metric::Metric;
 use crate::spaces::tools::mertic_object;
 use crate::types::Condition::Field;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
+use crate::index::sample_estimation::sample_check_cardinality;
 
 
 const HNSW_USE_HEURISTIC: bool = true;
@@ -26,7 +27,7 @@ pub struct HNSWIndex {
     condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
     vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
-    config: HnswConfig,
+    config: HnswGraphConfig,
     path: PathBuf,
     metric: Box<dyn Metric>,
     thread_rng: ThreadRng,
@@ -41,40 +42,29 @@ impl HNSWIndex {
         condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
         vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
         payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
-        index_config: Option<Indexes>,
-        indexing_threshold: usize,
+        hnsw_config: HnswConfig,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
         let rng = thread_rng();
 
-        let config_path = HnswConfig::get_config_path(path);
+        let config_path = HnswGraphConfig::get_config_path(path);
         let config = if config_path.exists() {
-            HnswConfig::load(&config_path)?
+            HnswGraphConfig::load(&config_path)?
         } else {
-            let (m, ef_construct) = match index_config {
-                None => match Indexes::default_hnsw() {
-                    Indexes::Hnsw { m, ef_construct } => (m, ef_construct),
-                    _ => panic!("Mismatch index config"),
-                },
-                Some(indx) => match indx {
-                    Indexes::Hnsw { m, ef_construct } => (m, ef_construct),
-                    _ => panic!("Mismatch index config"),
-                }
-            };
-            HnswConfig::new(m, ef_construct, indexing_threshold)
+            HnswGraphConfig::new(hnsw_config.m, hnsw_config.ef_construct, hnsw_config.indexing_threshold)
         };
 
         let graph_path = GraphLayers::get_path(path);
         let graph = if graph_path.exists() {
             GraphLayers::load(graph_path.as_path())?
         } else {
-            let entry_points_num = vector_storage.borrow().total_vector_count();
+            let total_points = vector_storage.borrow().total_vector_count();
             GraphLayers::new(
                 vector_storage.borrow().total_vector_count(),
                 config.m,
                 config.m0,
                 config.ef_construct,
-                max(1, entry_points_num / indexing_threshold * 10),
+                max(1, total_points / hnsw_config.indexing_threshold * 10),
                 HNSW_USE_HEURISTIC,
             )
         };
@@ -94,7 +84,7 @@ impl HNSWIndex {
     }
 
     fn save_config(&self) -> OperationResult<()> {
-        let config_path = HnswConfig::get_config_path(self.path.as_path());
+        let config_path = HnswGraphConfig::get_config_path(self.path.as_path());
         self.config.save(&config_path)
     }
 
@@ -150,17 +140,9 @@ impl HNSWIndex {
 
         graph
     }
-}
 
-
-impl Index for HNSWIndex {
-    fn search(&self, vector: &Vec<VectorElementType>, filter: Option<&Filter>, top: usize, params: Option<&SearchParams>) -> Vec<ScoredPointOffset> {
-        let req_ef = match params {
-            None => self.config.ef,
-            Some(request_params) => match request_params {
-                SearchParams::Hnsw { ef } => *ef
-            }
-        };
+    pub fn search_with_graph(&self, vector: &Vec<VectorElementType>, filter: Option<&Filter>, top: usize, params: Option<&SearchParams>) -> Vec<ScoredPointOffset> {
+        let req_ef = params.and_then(|params| params.hnsw_ef).unwrap_or(self.config.ef);
 
         // ef should always be bigger that required top
         let ef = max(req_ef, top);
@@ -177,12 +159,69 @@ impl Index for HNSWIndex {
 
         self.graph.search(top, ef, &points_scorer)
     }
+}
+
+
+impl VectorIndex for HNSWIndex {
+    fn search(&self, vector: &Vec<VectorElementType>, filter: Option<&Filter>, top: usize, params: Option<&SearchParams>) -> Vec<ScoredPointOffset> {
+        match filter {
+            None => self.search_with_graph(vector, None, top, params),
+            Some(query_filter) => {
+                // depending on the amount of filtered-out points the optimal strategy could be
+                // - to retrieve possible points and score them after
+                // - to use HNSW index with filtering condition
+
+                let payload_index = self.payload_index.borrow();
+                let query_cardinality = payload_index.estimate_cardinality(query_filter);
+
+                let vector_storage = self.vector_storage.borrow();
+
+                if query_cardinality.max < self.config.indexing_threshold {
+                    // if cardinality is small - use plain index
+                    let mut filtered_ids = payload_index.query_points(query_filter);
+                    return vector_storage.score_points(vector, &mut filtered_ids, top);
+                }
+
+                if query_cardinality.min > self.config.indexing_threshold {
+                    // if cardinality is high enough - use HNSW index
+                    return self.search_with_graph(vector, filter, top, params);
+                }
+
+                // Fast cardinality estimation is not enough, do sample estimation of cardinality
+
+                let condition_checker = self.condition_checker.borrow();
+                return if sample_check_cardinality(
+                    vector_storage.sample_ids(),
+                    |idx| condition_checker.check(idx, query_filter),
+                    self.config.indexing_threshold,
+                    vector_storage.vector_count()
+                ) {
+                    // if cardinality is high enough - use HNSW index
+                    self.search_with_graph(vector, filter, top, params)
+                } else {
+                    // if cardinality is small - use plain index
+                    let mut filtered_ids = payload_index.query_points(query_filter);
+                    vector_storage.score_points(vector, &mut filtered_ids, top)
+                };
+            }
+        }
+    }
 
     fn build_index(&mut self) -> OperationResult<()> {
         // Build main index graph
         let vector_storage = self.vector_storage.borrow();
         let condition_checker = self.condition_checker.borrow();
         let mut rng = thread_rng();
+
+        let total_points = vector_storage.total_vector_count();
+        self.graph = GraphLayers::new(
+            total_points,
+            self.config.m,
+            self.config.m0,
+            self.config.ef_construct,
+            max(1, total_points / self.config.indexing_threshold * 10),
+            HNSW_USE_HEURISTIC,
+        );
 
         for vector_id in vector_storage.iter_ids() {
             let vector = vector_storage.get_vector(vector_id).unwrap();
@@ -202,6 +241,7 @@ impl Index for HNSWIndex {
 
         let payload_index = self.payload_index.borrow();
 
+        // ToDo: Think about using connectivity threshold (based on m0) instead of `indexing_threshold`
         for payload_block in payload_index.payload_blocks(self.config.indexing_threshold) {
             let block_graph = self.build_filtered_graph(payload_block.condition, &mut block_condition_checker);
             self.graph.merge_from_other(block_graph);

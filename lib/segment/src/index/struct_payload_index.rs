@@ -15,7 +15,7 @@ use crate::index::payload_config::PayloadConfig;
 use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage};
 use crate::types::{Filter, PayloadKeyType, FieldCondition, Condition, PointOffsetType};
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition, PayloadBlockCondition};
-use crate::index::query_estimator::estimate_filter;
+use crate::index::query_estimator::{estimate_filter};
 use crate::vector_storage::vector_storage::VectorStorage;
 use crate::id_mapper::id_mapper::IdMapper;
 use crate::index::visited_pool::VisitedPool;
@@ -244,7 +244,7 @@ impl PayloadIndex for StructPayloadIndex {
     }
 
     fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
-        let total = self.total_points();
+        let total_points = self.total_points();
 
         let estimator = |condition: &Condition| {
             match condition {
@@ -268,14 +268,28 @@ impl PayloadIndex for StructPayloadIndex {
             }
         };
 
-        estimate_filter(&estimator, query, total)
+        estimate_filter(&estimator, query, total_points)
+    }
+
+    fn payload_blocks(&self, threshold: usize) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+        let iter = self.field_indexes
+            .iter()
+            .map(move |(key, indexes)| {
+                indexes
+                    .iter()
+                    .map(move |field_index| field_index.payload_blocks(threshold, key.clone()))
+                    .flatten()
+            }).flatten();
+
+        Box::new(iter)
     }
 
     fn query_points<'a>(&'a self, query: &'a Filter) -> Box<dyn Iterator<Item=PointOffsetType> + 'a> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
-        let query_cardinality = self.estimate_cardinality(query);
-        let condition_checker = self.condition_checker.borrow();
         let vector_storage_ref = self.vector_storage.borrow();
+        let condition_checker = self.condition_checker.borrow();
+
+        let query_cardinality = self.estimate_cardinality(query);
         return if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = vector_storage_ref.iter_ids();
             // Worst case: query expected to return few matches, but index can't be used
@@ -309,16 +323,4 @@ impl PayloadIndex for StructPayloadIndex {
         };
     }
 
-    fn payload_blocks(&self, threshold: usize) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
-        let iter = self.field_indexes
-            .iter()
-            .map(move |(key, indexes)| {
-                indexes
-                    .iter()
-                    .map(move |field_index| field_index.payload_blocks(threshold, key.clone()))
-                    .flatten()
-            }).flatten();
-
-        Box::new(iter)
-    }
 }

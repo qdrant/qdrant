@@ -134,6 +134,7 @@ mod tests {
                 payload_index: Some(Default::default()),
                 distance: segment_config.distance,
                 storage_type: StorageType::default(),
+                indexing_threshold: 10_000
             },
         );
 
@@ -156,7 +157,10 @@ mod tests {
         // ------ Plain -> Mmap & Indexed payload
         let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
         assert!(suggested_to_optimize.contains(&large_segment_id));
+        eprintln!("suggested_to_optimize = {:#?}", suggested_to_optimize);
         index_optimizer.optimize(locked_holder.clone(), suggested_to_optimize).unwrap();
+        eprintln!("Done");
+
 
          // ------ Plain -> Indexed payload
         let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());

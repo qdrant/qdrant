@@ -21,8 +21,6 @@ use atomicwrites::AtomicFile;
 use std::io::Write;
 use tokio::runtime;
 
-const DEFAULT_SEGMENT_NUMBER: usize = 5;
-
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 
 
@@ -114,7 +112,7 @@ pub fn build_collection(
 
     let mut segment_holder = SegmentHolder::new();
 
-    for _sid in 0..DEFAULT_SEGMENT_NUMBER {
+    for _sid in 0..optimizers_config.max_segment_number {
         let segment = build_simple_segment(
             segments_path.as_path(),
             segment_config.vector_size,

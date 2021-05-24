@@ -1,12 +1,12 @@
 #[cfg(test)]
 mod tests {
     use tempdir::TempDir;
-    use segment::types::{StorageType, Distance, PayloadIndexType, Indexes, SegmentConfig, TheMap, PayloadKeyType, PayloadType, SeqNumberType, PointIdType, Condition, FieldCondition, Filter, Range, SearchParams};
+    use segment::types::{StorageType, Distance, PayloadIndexType, Indexes, SegmentConfig, TheMap, PayloadKeyType, PayloadType, SeqNumberType, PointIdType, Condition, FieldCondition, Filter, Range, SearchParams, HnswConfig};
     use segment::segment_constructor::segment_constructor::build_segment;
     use segment::fixtures::payload_fixtures::{random_vector, random_int_payload};
     use segment::entry::entry_point::SegmentEntry;
     use segment::index::struct_payload_index::StructPayloadIndex;
-    use segment::index::index::{PayloadIndex, Index};
+    use segment::index::index::{PayloadIndex, VectorIndex};
     use segment::index::hnsw_index::hnsw::HNSWIndex;
     use std::sync::Arc;
     use atomic_refcell::AtomicRefCell;
@@ -62,10 +62,11 @@ mod tests {
 
         let payload_index_ptr = Arc::new(AtomicRefCell::new(payload_index));
 
-        let index_config = Some(Indexes::Hnsw {
+        let hnsw_config = HnswConfig {
             m,
             ef_construct,
-        });
+            indexing_threshold
+        };
 
         let mut hnsw_index = HNSWIndex::open(
             hnsw_dir.path(),
@@ -73,8 +74,7 @@ mod tests {
             segment.condition_checker.clone(),
             segment.vector_storage.clone(),
             payload_index_ptr.clone(),
-            index_config,
-            indexing_threshold,
+            hnsw_config
         ).unwrap();
 
         hnsw_index.build_index().unwrap();
@@ -113,11 +113,11 @@ mod tests {
             let filter_query = Some(&filter);
             // let filter_query = None;
 
-            let index_result = hnsw_index.search(
+            let index_result = hnsw_index.search_with_graph(
                 &query,
                 filter_query,
                 top,
-                Some(&SearchParams::Hnsw { ef })
+                Some(&SearchParams { hnsw_ef: Some(ef) })
             );
 
             let plain_result = segment.query_planner.borrow().search(&query, filter_query, top, None);

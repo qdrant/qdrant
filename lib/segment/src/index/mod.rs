@@ -6,3 +6,6 @@ pub mod hnsw_index;
 mod field_index;
 mod payload_config;
 mod visited_pool;
+mod sample_estimation;
+
+

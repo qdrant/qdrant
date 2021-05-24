@@ -16,7 +16,8 @@ use std::io::Read;
 use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
 use crate::vector_storage::vector_storage::VectorStorage;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::index::PayloadIndex;
+use crate::index::index::{PayloadIndex, VectorIndex};
+use crate::index::hnsw_index::hnsw::HNSWIndex;
 
 
 fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> { Arc::new(AtomicRefCell::new(t)) }
@@ -27,6 +28,7 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
     let payload_storage_path = segment_path.join("payload_storage");
     let payload_index_path = segment_path.join("payload_index");
     let vector_storage_path = segment_path.join("vector_storage");
+    let vector_index_path = segment_path.join("vector_index");
 
     let id_mapper = sp(SimpleIdMapper::open(mapper_path.as_path())?);
 
@@ -35,12 +37,12 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
         StorageType::InMemory => sp(SimpleVectorStorage::open(
             vector_storage_path.as_path(),
             config.vector_size,
-            config.distance
+            config.distance,
         )?),
         StorageType::Mmap => sp(MemmapVectorStorage::open(
             vector_storage_path.as_path(),
             config.vector_size,
-            config.distance
+            config.distance,
         )?),
     };
 
@@ -65,18 +67,20 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
             &payload_index_path)?),
     };
 
-    let index = sp(match config.index {
-        Indexes::Plain { .. } => PlainIndex::new(
+    let vector_index: Arc<AtomicRefCell<dyn VectorIndex>> = match config.index {
+        Indexes::Plain { .. } => sp(PlainIndex::new(
             vector_storage.clone(),
             payload_index.clone(),
-        ),
-        _ => PlainIndex::new(
+        )),
+        Indexes::Hnsw(hnsw_config) => sp(HNSWIndex::open(
+            &vector_index_path,
+            config.distance,
+            condition_checker.clone(),
             vector_storage.clone(),
             payload_index.clone(),
-        )
-        // ToDo: Add HNSW index init here
-        // Indexes::Hnsw { .. } => unimplemented!(),
-    });
+            hnsw_config
+        )?)
+    };
 
     let segment_type = match config.index {
         Indexes::Plain { .. } => match config.payload_index.unwrap_or_default() {
@@ -88,7 +92,7 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
 
     let appendable = segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
 
-    let query_planer = SimpleQueryPlanner::new(index);
+    let query_planner = SimpleQueryPlanner::new(vector_index);
 
     return Ok(Segment {
         version,
@@ -99,7 +103,7 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
         payload_storage: payload_storage.clone(),
         payload_index: payload_index.clone(),
         condition_checker,
-        query_planner: sp(query_planer),
+        query_planner: sp(query_planner),
         appendable_flag: appendable,
         segment_type,
         segment_config: config.clone(),

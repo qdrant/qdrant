@@ -44,9 +44,7 @@ pub fn load_collection(
         let segments_path = entry.unwrap().path();
         let segment = match load_segment(segments_path.as_path()) {
             Ok(x) => x,
-            Err(err) => panic!(
-                format!("Can't load segments from {}, error: {}", segments_path.to_str().unwrap(), err)
-            ),
+            Err(err) => panic!("Can't load segments from {}, error: {}", segments_path.to_str().unwrap(), err),
         };
         segment_holder.add(segment);
     };
@@ -78,7 +76,7 @@ pub fn load_collection(
             match collection.updater.update(op_num, update) {
                 Ok(_) => {}
                 Err(err) => match err {
-                    CollectionError::ServiceError { error } => panic!(format!("Can't apply WAL operation: {}", error)),
+                    CollectionError::ServiceError { error } => panic!("Can't apply WAL operation: {}", error),
                     _ => {}
                 }
             }

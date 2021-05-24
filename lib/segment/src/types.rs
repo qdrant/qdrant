@@ -95,12 +95,10 @@ pub struct SegmentInfo {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 /// Additional parameters of the search
-pub enum SearchParams {
+pub struct SearchParams {
     /// Params relevant to HNSW index
-    Hnsw {
-        /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
-        ef: usize
-    }
+    /// /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
+    pub hnsw_ef: Option<usize>
 }
 
 /// This function only stores mapping between distance and preferred result order
@@ -121,20 +119,29 @@ pub enum Indexes {
     Plain {},
     /// Use filterable HNSW index for approximate search. Is very fast even on a very huge collections,
     /// but require additional space to store index and additional time to build it.
-    Hnsw {
-        /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
-        m: usize,
-        /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
-        ef_construct: usize,
-    },
+    Hnsw(HnswConfig),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct HnswConfig {
+    /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+    pub m: usize,
+    /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
+    pub ef_construct: usize,
+    /// Minimal amount of points for additional payload-based indexing.
+    /// If payload chunk is smaller than `indexing_threshold` additional indexing won't be used - 
+    /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
+    pub indexing_threshold: usize
+}
+
+impl Default for HnswConfig {
+    fn default() -> Self { HnswConfig { m: 16, ef_construct: 100, indexing_threshold: DEFAULT_INDEXING_THRESHOLD }}
 }
 
 impl Indexes {
     pub fn default_hnsw() -> Self {
-        Indexes::Hnsw {
-            m: 16,
-            ef_construct: 100,
-        }
+        Indexes::Hnsw(Default::default())
     }
 }
 

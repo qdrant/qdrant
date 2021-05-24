@@ -6,22 +6,22 @@ use crate::common::file_operations::{read_json, atomic_save_json};
 pub const HNSW_INDEX_CONFIG_FILE: &str = "hnsw_config.json";
 
 #[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq)]
-pub struct HnswConfig {
+pub struct HnswGraphConfig {
     pub m: usize,
-    // Requested M
+    /// Requested M
     pub m0: usize,
-    // Actual M on level 0
+    /// Actual M on level 0
     pub ef_construct: usize,
-    // Number of neighbours to search on construction
+    /// Number of neighbours to search on construction
     pub ef: usize,
-    // Minimal number of vectors to perform indexing
+    /// Minimal number of vectors to perform indexing
     pub indexing_threshold: usize,
 }
 
-impl HnswConfig {
+impl HnswGraphConfig {
 
     pub fn new(m: usize, ef_construct: usize, indexing_threshold: usize) -> Self {
-        HnswConfig {
+        HnswGraphConfig {
             m,
             m0: m * 2,
             ef_construct,

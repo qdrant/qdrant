@@ -51,13 +51,11 @@ pub fn simple_collection_fixture(collection_path: &Path) -> (Arc<Runtime>, Colle
 
     let collection_config = SegmentConfig {
         vector_size: 4,
-        index: Indexes::Hnsw {
-            m: 16,
-            ef_construct: 128,
-        },
+        index: Indexes::default_hnsw(),
         payload_index: Some(Default::default()),
         distance: Distance::Dot,
         storage_type: Default::default(),
+        indexing_threshold: 100000
     };
 
     let threaded_rt = Arc::new(runtime::Builder::new_multi_thread()

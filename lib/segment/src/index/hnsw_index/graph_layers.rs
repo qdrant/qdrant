@@ -113,6 +113,9 @@ impl GraphLayers {
     }
 
     fn set_levels(&mut self, point_id: PointOffsetType, level: usize) {
+        if self.links_layers.len() <= point_id as usize {
+            self.links_layers.resize(point_id as usize, vec![]);
+        }
         let point_layers = &mut self.links_layers[point_id as usize];
         while point_layers.len() <= level {
             let mut links = vec![];

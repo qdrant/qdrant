@@ -1,4 +1,4 @@
-use crate::index::index::Index;
+use crate::index::index::VectorIndex;
 use crate::query_planner::query_planner::QueryPlanner;
 use crate::types::{Filter, VectorElementType, SearchParams};
 
@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::entry::entry_point::OperationResult;
 
 pub struct SimpleQueryPlanner {
-    index: Arc<AtomicRefCell<dyn Index>>
+    index: Arc<AtomicRefCell<dyn VectorIndex>>
 }
 
 impl QueryPlanner for SimpleQueryPlanner {
@@ -27,7 +27,7 @@ impl QueryPlanner for SimpleQueryPlanner {
 }
 
 impl SimpleQueryPlanner {
-    pub fn new(index: Arc<AtomicRefCell<dyn Index>>) -> Self {
+    pub fn new(index: Arc<AtomicRefCell<dyn VectorIndex>>) -> Self {
         SimpleQueryPlanner {
             index
         }

@@ -172,7 +172,7 @@ impl TableOfContent {
                     indexing_threshold: self.storage_config.optimizers.indexing_threshold
                 };
 
-                let segment = build_collection(
+                let collection = build_collection(
                     Path::new(&collection_path),
                     &wal_options,
                     &segment_config,
@@ -181,7 +181,7 @@ impl TableOfContent {
                 )?;
 
                 let mut write_collections = self.collections.write();
-                write_collections.insert(collection_name, Arc::new(segment));
+                write_collections.insert(collection_name, Arc::new(collection));
                 Ok(true)
             }
             StorageOperations::DeleteCollection(collection_name) => {

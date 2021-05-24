@@ -4,7 +4,7 @@ use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 
 /// Trait for vector searching
-pub trait Index {
+pub trait VectorIndex {
     /// Return list of Ids with fitting
     fn search(&self,
               vector: &Vec<VectorElementType>,

@@ -6,7 +6,7 @@ use rocksdb::{DB, IteratorMode, Options};
 use serde::{Deserialize, Serialize};
 
 use crate::entry::entry_point::OperationResult;
-use crate::spaces::tools::{mertic_object, peek_top_scores};
+use crate::spaces::tools::{mertic_object, peek_top_scores_iterable};
 use crate::types::{Distance, PointOffsetType, VectorElementType, ScoreType};
 use crate::vector_storage::vector_storage::{ScoredPointOffset, RawScorer};
 
@@ -200,6 +200,8 @@ impl VectorStorage for SimpleVectorStorage {
         Ok(())
     }
 
+    fn is_deleted(&self, key: PointOffsetType) -> bool { self.deleted[key as usize] }
+
     fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
         let iter = (0..self.vectors.len() as PointOffsetType)
             .filter(move |id| !self.deleted[*id as usize]);
@@ -231,12 +233,11 @@ impl VectorStorage for SimpleVectorStorage {
     fn score_points(
         &self,
         vector: &Vec<VectorElementType>,
-        points: &[PointOffsetType],
+        points: &mut dyn Iterator<Item=PointOffsetType>,
         top: usize
     ) -> Vec<ScoredPointOffset> {
         let preprocessed_vector = Array::from(self.metric.preprocess(vector.clone()));
-        let scores: Vec<ScoredPointOffset> = points.iter()
-            .cloned()
+        let scores = points
             .filter(|point| !self.deleted[*point as usize])
             .map(|point| {
                 let other_vector = self.vectors.get(point as usize).unwrap();
@@ -244,27 +245,27 @@ impl VectorStorage for SimpleVectorStorage {
                     idx: point,
                     score: self.metric.blas_similarity(&preprocessed_vector, other_vector),
                 }
-            }).collect();
-        return peek_top_scores(&scores, top);
+            });
+        return peek_top_scores_iterable(scores, top);
     }
 
 
     fn score_all(&self, vector: &Vec<VectorElementType>, top: usize) -> Vec<ScoredPointOffset> {
         let preprocessed_vector = Array::from(self.metric.preprocess(vector.clone()));
-        let scores: Vec<ScoredPointOffset> = self.vectors.iter()
+        let scores = self.vectors.iter()
             .enumerate()
             .filter(|(point, _)| !self.deleted[*point])
             .map(|(point, other_vector)| ScoredPointOffset {
                 idx: point as PointOffsetType,
                 score: self.metric.blas_similarity(&preprocessed_vector, other_vector),
-            }).collect();
-        return peek_top_scores(&scores, top);
+            });
+        return peek_top_scores_iterable(scores, top);
     }
 
     fn score_internal(
         &self,
         point: PointOffsetType,
-        points: &[PointOffsetType],
+        points: &mut dyn Iterator<Item=PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset> {
         let vector = self.get_vector(point).unwrap();
@@ -305,7 +306,7 @@ mod tests {
 
         let closest = storage.score_points(
             &query,
-            &[0, 1, 2, 3, 4],
+            &mut [0, 1, 2, 3, 4].iter().cloned(),
             2,
         );
 
@@ -324,7 +325,7 @@ mod tests {
 
         let closest = storage.score_points(
             &query,
-            &[0, 1, 2, 3, 4],
+            &mut [0, 1, 2, 3, 4].iter().cloned(),
             2,
         );
 
