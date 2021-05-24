@@ -14,7 +14,8 @@ mod tests {
         let dir1 = TempDir::new("segment1_dir").unwrap();
         let dim = 5;
 
-        let mut config = SegmentConfig {
+        let
+            config = SegmentConfig {
             vector_size: dim,
             index: Indexes::Plain {},
             payload_index: Some(PayloadIndexType::Struct),
@@ -43,6 +44,7 @@ mod tests {
         }
 
         struct_segment.create_field_index(opnum, &str_key).unwrap();
+        struct_segment.create_field_index(opnum, &int_key).unwrap();
 
         let filter = Filter::new_must(Condition::Field(FieldCondition {
             key: int_key,
@@ -59,10 +61,9 @@ mod tests {
 
         let estimation = struct_segment.payload_index
             .borrow()
-            .estimate_cardinality(&filter, config.indexing_threshold);
+            .estimate_cardinality(&filter);
 
         let checker = struct_segment.condition_checker.borrow();
-
 
         let exact = struct_segment.vector_storage
             .borrow()
@@ -125,11 +126,7 @@ mod tests {
         struct_segment.create_field_index(opnum, &str_key).unwrap();
         struct_segment.create_field_index(opnum, &int_key).unwrap();
 
-        let mut exp_diff = 0;
         let attempts = 100;
-        let mut hits = 0;
-        let mut tries = 0;
-
         for _i in 0..attempts {
             let query_vector = random_vector(&mut rnd, dim);
             let query_filter = random_filter(&mut rnd);
@@ -137,20 +134,11 @@ mod tests {
             let plain_result = plain_segment.search(&query_vector, Some(&query_filter), 5, None).unwrap();
             let struct_result = struct_segment.search(&query_vector, Some(&query_filter), 5, None).unwrap();
 
-            let approx_estimation = plain_segment.payload_index.borrow().estimate_cardinality(&query_filter, config.indexing_threshold);
-            let estimation = struct_segment.payload_index.borrow().estimate_cardinality(&query_filter, config.indexing_threshold);
+            let estimation = struct_segment.payload_index.borrow().estimate_cardinality(&query_filter);
 
-            exp_diff += (approx_estimation.exp as i32 - estimation.exp as i32).abs();
-
-            assert!(estimation.min <= estimation.exp, "{:#?}, {:#?}", estimation, approx_estimation);
-            assert!(estimation.exp <= estimation.max, "{:#?}, {:#?}", estimation, approx_estimation);
-            assert!(estimation.max <= num_points as usize, "{:#?}, {:#?}", estimation, approx_estimation);
-
-
-            if estimation.min == estimation.max {
-                hits += ((approx_estimation.exp as i32 - estimation.exp as i32) < config.indexing_threshold as i32) as i32;
-                tries += 1;
-            }
+            assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
+            assert!(estimation.exp <= estimation.max, "{:#?}", estimation);
+            assert!(estimation.max <= num_points as usize, "{:#?}", estimation);
 
             plain_result
                 .iter()
@@ -160,9 +148,5 @@ mod tests {
                     assert!((r1.score - r2.score) < 0.0001)
                 });
         }
-
-        eprintln!("exp_diff / attempts = {:#?}", exp_diff / attempts);
-        eprintln!("hits of {} = {}", tries, hits);
-        assert!(hits > (tries as f64 * 0.9) as i32);
     }
 }

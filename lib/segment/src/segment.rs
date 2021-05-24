@@ -3,14 +3,13 @@ use crate::vector_storage::vector_storage::VectorStorage;
 use crate::payload_storage::payload_storage::{PayloadStorage, ConditionChecker};
 use crate::entry::entry_point::{SegmentEntry, OperationResult, OperationError};
 use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentType, SegmentConfig, SegmentState, PayloadSchemaInfo};
-use crate::query_planner::query_planner::QueryPlanner;
 use std::sync::{Arc, Mutex};
 use atomic_refcell::{AtomicRefCell};
 use std::path::PathBuf;
 use std::fs::{remove_dir_all};
 use std::io::Write;
 use atomicwrites::{AtomicFile, AllowOverwrite};
-use crate::index::index::PayloadIndex;
+use crate::index::index::{PayloadIndex, VectorIndex};
 use crate::spaces::tools::mertic_object;
 
 
@@ -27,7 +26,7 @@ pub struct Segment {
     pub payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
     pub condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
     /// User for writing only here.
-    pub query_planner: Arc<AtomicRefCell<dyn QueryPlanner>>,
+    pub vector_index: Arc<AtomicRefCell<dyn VectorIndex>>,
     pub appendable_flag: bool,
     pub segment_type: SegmentType,
     pub segment_config: SegmentConfig,
@@ -114,7 +113,7 @@ impl SegmentEntry for Segment {
             });
         }
 
-        let internal_result = self.query_planner.borrow().search(vector, filter, top, params);
+        let internal_result = self.vector_index.borrow().search(vector, filter, top, params);
 
 
         let id_mapper = self.id_mapper.borrow();

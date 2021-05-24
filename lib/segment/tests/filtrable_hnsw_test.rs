@@ -120,7 +120,7 @@ mod tests {
                 Some(&SearchParams { hnsw_ef: Some(ef) })
             );
 
-            let plain_result = segment.query_planner.borrow().search(&query, filter_query, top, None);
+            let plain_result = segment.vector_index.borrow().search(&query, filter_query, top, None);
 
             if plain_result == index_result {
                 hits += 1;

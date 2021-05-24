@@ -3,7 +3,6 @@ use crate::id_mapper::simple_id_mapper::SimpleIdMapper;
 use crate::vector_storage::simple_vector_storage::SimpleVectorStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::index::plain_payload_index::{PlainPayloadIndex, PlainIndex};
-use crate::query_planner::simple_query_planner::SimpleQueryPlanner;
 use crate::types::{SegmentType, SegmentConfig, Indexes, SegmentState, SeqNumberType, StorageType, PayloadIndexType};
 use std::sync::{Arc, Mutex};
 use atomic_refcell::AtomicRefCell;
@@ -90,21 +89,19 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
         Indexes::Hnsw { .. } => SegmentType::Indexed,
     };
 
-    let appendable = segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
-
-    let query_planner = SimpleQueryPlanner::new(vector_index);
+    let appendable_flag = segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
 
     return Ok(Segment {
         version,
         persisted_version: Arc::new(Mutex::new(version)),
         current_path: segment_path.to_owned(),
-        id_mapper: id_mapper.clone(),
+        id_mapper,
         vector_storage,
-        payload_storage: payload_storage.clone(),
-        payload_index: payload_index.clone(),
+        payload_storage,
+        payload_index,
         condition_checker,
-        query_planner: sp(query_planner),
-        appendable_flag: appendable,
+        vector_index,
+        appendable_flag,
         segment_type,
         segment_config: config.clone(),
     });

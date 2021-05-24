@@ -1,5 +1,4 @@
 mod id_mapper;
-mod query_planner;
 pub mod payload_storage;
 pub mod index;
 pub mod vector_storage;
