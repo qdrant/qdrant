@@ -1,4 +1,3 @@
-use serde_json::value::Value;
 use segment::entry::entry_point::{SegmentEntry, OperationResult};
 use segment::types::{Filter, Condition, SearchParams, ScoredPoint, PayloadKeyType, PayloadType, TheMap, SeqNumberType, VectorElementType, PointIdType, SegmentInfo, SegmentType, SegmentConfig};
 use std::cmp::max;
@@ -161,10 +160,9 @@ impl SegmentEntry for ProxySegment {
         self.write_segment.get().write().set_full_payload(op_num, point_id, full_payload)
     }
 
-    fn set_full_payload_with_value(&mut self, op_num: u64, point_id: u64, full_payload: TheMap<PayloadKeyType, Value>) -> OperationResult<bool> {
+    fn set_full_payload_with_value(&mut self, op_num: u64, point_id: u64, full_payload: &String) -> OperationResult<bool> {
         if self.version() > op_num { return Ok(false); }
         self.move_if_exists(op_num, point_id)?;
-
         self.write_segment.get().write().set_full_payload_with_value(op_num, point_id, full_payload)
     }
 

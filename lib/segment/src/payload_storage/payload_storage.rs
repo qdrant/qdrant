@@ -62,9 +62,7 @@ pub trait PayloadStorage {
                             _ => vec![],
                         }
                     },
-                    Value::Object(ref x) => {
-                        _extract_payloads(x.iter(), Some(key))
-                    },
+                    Value::Object(ref x) => _extract_payloads(x.iter(), Some(key)),
                     _ => vec![]
                 }
             } ).collect()
