@@ -137,7 +137,7 @@ impl SimpleSegmentUpdater {
                 updated_points.insert(id);
                 let mut res = true;
                 for (key, payload) in payload {
-                    res = write_segment.set_payload(op_num, id, key, payload.to_payload())? && res;
+                    res = write_segment.set_payload(op_num, id, key, payload.into())? && res;
                 }
                 Ok(res)
             })?;
@@ -282,7 +282,7 @@ mod tests {
     use super::*;
     use crate::segment_manager::fixtures::{build_searcher};
     use crate::segment_manager::segment_managers::SegmentSearcher;
-    use crate::operations::payload_ops::PayloadVariant;
+    use crate::operations::payload_ops::{PayloadVariant, PayloadInterfaceStrict};
     use tempdir::TempDir;
 
     #[test]
@@ -356,7 +356,7 @@ mod tests {
 
         payload.insert(
             "color".to_string(),
-            PayloadInterface::Keyword(PayloadVariant::Value("red".to_string())),
+            PayloadInterfaceStrict::Keyword(PayloadVariant::Value("red".to_string())).into(),
         );
 
         let points = vec![1, 2, 3];

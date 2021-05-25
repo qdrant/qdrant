@@ -26,21 +26,49 @@ impl<T: Clone> PayloadVariant<T> {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[serde(tag = "type",  content = "value")]
+#[serde(untagged)]
 pub enum PayloadInterface {
+    Regular(PayloadInterfaceStrict),
+    KeywordShortcut(PayloadVariant<String>),
+    FloatShortcut(PayloadVariant<f64>),
+    IntShortcut(PayloadVariant<i64>),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type",  content = "value")]
+pub enum PayloadInterfaceStrict {
     Keyword(PayloadVariant<String>),
     Integer(PayloadVariant<i64>),
     Float(PayloadVariant<f64>),
     Geo(PayloadVariant<GeoPoint>),
 }
 
-impl PayloadInterface {
-    pub fn to_payload(&self) -> PayloadType {
-        match self {
-            PayloadInterface::Keyword(x) => PayloadType::Keyword(x.to_list()),
-            PayloadInterface::Integer(x) => PayloadType::Integer(x.to_list()),
-            PayloadInterface::Float(x) =>  PayloadType::Float(x.to_list()),
-            PayloadInterface::Geo(x) => PayloadType::Geo(x.to_list()),
+// For tests
+impl From<PayloadInterfaceStrict> for PayloadInterface {
+    fn from(x: PayloadInterfaceStrict) -> Self {
+        PayloadInterface::Regular(x)
+    }
+}
+
+impl From<&PayloadInterfaceStrict> for PayloadType {
+    fn from(interface: &PayloadInterfaceStrict) -> Self {
+        match interface {
+            PayloadInterfaceStrict::Keyword(x) => PayloadType::Keyword(x.to_list()),
+            PayloadInterfaceStrict::Integer(x) => PayloadType::Integer(x.to_list()),
+            PayloadInterfaceStrict::Float(x) =>  PayloadType::Float(x.to_list()),
+            PayloadInterfaceStrict::Geo(x) => PayloadType::Geo(x.to_list()),
+        }
+    }
+}
+
+impl From<&PayloadInterface> for PayloadType {
+    fn from(interface: &PayloadInterface) -> Self {
+        match interface {
+            PayloadInterface::Regular(x) => x.into(),
+            PayloadInterface::KeywordShortcut(x) => PayloadType::Keyword(x.to_list()),
+            PayloadInterface::FloatShortcut(x) => PayloadType::Float(x.to_list()),
+            PayloadInterface::IntShortcut(x) => PayloadType::Integer(x.to_list()),
         }
     }
 }
@@ -72,6 +100,20 @@ pub enum PayloadOps {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
+
+    #[test]
+    fn test_value_parse() {
+        let query = r#"["Berlin", "Barcelona", "Moscow"]"#;
+
+        let val: Value = serde_json::from_str(query).unwrap();
+
+        let payload_interface: PayloadInterface = serde_json::from_value(val).unwrap();
+
+        let payload: PayloadType = (&payload_interface).into();
+
+        eprintln!("payload = {:#?}", payload);
+    }
 
     #[test]
     fn test_serialization() {
@@ -81,7 +123,9 @@ mod tests {
                 "points": [1, 2, 3],
                 "payload": {
                     "key1": {"type": "keyword", "value": "hello"},
-                    "key2": {"type": "integer", "value": [1,2,3,4]}
+                    "key2": {"type": "integer", "value": [1,2,3,4]},
+                    "city": "Berlin",
+                    "prices": [2.13, 4.55]
                 }
             }
         }
@@ -94,12 +138,14 @@ mod tests {
                 payload,
                 points: _
             } => {
-                assert_eq!(payload.len(), 2);
+                eprintln!("payload = {:#?}", payload);
+
+                assert_eq!(payload.len(), 4);
 
                 assert!(payload.contains_key("key1"));
 
                 let payload_interface = payload.get("key1").expect("No key key1");
-                let payload1 = payload_interface.to_payload();
+                let payload1 = payload_interface.into();
 
                 match payload1 {
                     PayloadType::Keyword(x) => assert_eq!(x, vec!["hello".to_owned()]),
