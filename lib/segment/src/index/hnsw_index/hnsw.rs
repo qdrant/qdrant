@@ -2,7 +2,7 @@ use crate::entry::entry_point::OperationResult;
 use std::path::{Path, PathBuf};
 use std::fs::create_dir_all;
 use crate::index::index::{VectorIndex, PayloadIndex};
-use crate::types::{SearchParams, Filter, PointOffsetType, Distance, VectorElementType, FieldCondition, HnswConfig};
+use crate::types::{SearchParams, Filter, PointOffsetType, VectorElementType, FieldCondition, HnswConfig};
 use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
 use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
@@ -14,8 +14,6 @@ use rand::thread_rng;
 use rand::prelude::ThreadRng;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
-use crate::spaces::metric::Metric;
-use crate::spaces::tools::mertic_object;
 use crate::types::Condition::Field;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::sample_estimation::sample_check_cardinality;
@@ -29,7 +27,6 @@ pub struct HNSWIndex {
     payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
     config: HnswGraphConfig,
     path: PathBuf,
-    metric: Box<dyn Metric>,
     thread_rng: ThreadRng,
     graph: GraphLayers,
 }
@@ -38,7 +35,6 @@ pub struct HNSWIndex {
 impl HNSWIndex {
     pub fn open(
         path: &Path,
-        distance: Distance,
         condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
         vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
         payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
@@ -69,15 +65,12 @@ impl HNSWIndex {
             )
         };
 
-        let metric = mertic_object(&distance);
-
         Ok(HNSWIndex {
             condition_checker,
             vector_storage,
             payload_index,
             config,
             path: path.to_owned(),
-            metric,
             thread_rng: rng,
             graph,
         })

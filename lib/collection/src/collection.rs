@@ -19,7 +19,10 @@ use segment::types::Filter;
 use segment::types::Condition;
 use crate::config::CollectionConfig;
 use serde_json::Error as JsonError;
-
+use std::io::Error as IoError;
+use crate::collection_builder::optimizers_builder::{build_optimizers};
+use std::path::PathBuf;
+use crate::operations::config_diff::{OptimizersConfigDiff, DiffConfig};
 
 
 #[derive(Error, Debug, Clone)]
@@ -70,17 +73,24 @@ impl From<JsonError> for CollectionError {
     }
 }
 
+impl From<IoError> for CollectionError {
+    fn from(err: IoError) -> Self {
+        CollectionError::ServiceError { error: format!("File IO error: {}", err) }
+    }
+}
+
 pub type CollectionResult<T> = result::Result<T, CollectionError>;
 
 pub struct Collection {
     pub segments: Arc<RwLock<SegmentHolder>>,
-    pub config: CollectionConfig,
+    pub config: Arc<RwLock<CollectionConfig>>,
     pub wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
     pub searcher: Arc<dyn SegmentSearcher + Sync + Send>,
-    pub update_handler: Arc<UpdateHandler>,
+    pub update_handler: Arc<Mutex<UpdateHandler>>,
     pub updater: Arc<dyn SegmentUpdater + Sync + Send>,
     pub runtime_handle: Arc<Runtime>,
     pub update_sender: Sender<UpdateSignal>,
+    pub path: PathBuf
 }
 
 
@@ -128,7 +138,7 @@ impl Collection {
             segments_count,
             disk_data_size: disk_size,
             ram_data_size: ram_size,
-            config: self.config.clone(),
+            config: self.config.read().clone(),
         })
     }
 
@@ -238,6 +248,34 @@ impl Collection {
         };
 
         self.search(Arc::new(search_request))
+    }
+
+    /// Updates collection optimization params:
+    /// - Saves new params on disk
+    /// - Stops existing optimization loop
+    /// - Runs new optimizers with new params
+    pub fn update_optimizer_params(&self, optimizer_config_diff: OptimizersConfigDiff) -> CollectionResult<()> {
+        {
+            let mut config = self.config.write();
+            config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
+            config.save(self.path.as_path())?;
+        }
+        let config = self.config.read();
+        let mut update_handler = self.update_handler.lock();
+        self.stop()?;
+        update_handler.wait_worker_stops()?;
+        let new_optimizers = build_optimizers(
+            self.path.as_path(),
+            &config.params,
+            &config.optimizer_config,
+            &config.hnsw_config
+        );
+        update_handler.optimizers = new_optimizers;
+        update_handler.flush_timeout_sec = config.optimizer_config.flush_interval_sec;
+        update_handler.run_worker();
+        self.update_sender.send(UpdateSignal::Nop)?;
+
+        Ok(())
     }
 }
 

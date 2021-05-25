@@ -64,7 +64,7 @@ impl TableOfContent {
 
             let collection = load_collection(
                 collection_path.as_path(),
-                search_runtime.clone()
+                search_runtime.clone(),
             );
 
             collections.insert(collection_name, Arc::new(collection));
@@ -156,7 +156,7 @@ impl TableOfContent {
 
                 let collection_params = CollectionParams {
                     vector_size,
-                    distance
+                    distance,
                 };
                 let wal_config = match wal_config_diff {
                     None => self.storage_config.wal.clone(),
@@ -168,7 +168,7 @@ impl TableOfContent {
                     Some(diff) => diff.update(&self.storage_config.optimizers)?,
                 };
 
-                let hnsw_config = match hnsw_config_diff{
+                let hnsw_config = match hnsw_config_diff {
                     None => self.storage_config.hnsw_index.clone(),
                     Some(diff) => diff.update(&self.storage_config.hnsw_index)?
                 };
@@ -179,11 +179,24 @@ impl TableOfContent {
                     &collection_params,
                     self.search_runtime.clone(),
                     &optimizers_config,
-                    &hnsw_config
+                    &hnsw_config,
                 )?;
 
                 let mut write_collections = self.collections.write();
                 write_collections.insert(collection_name, Arc::new(collection));
+                Ok(true)
+            }
+            StorageOperations::UpdateCollection {
+                name,
+                optimizers_config
+            } => {
+                let collection = self.get_collection(&name)?;
+                match optimizers_config {
+                    None => {}
+                    Some(new_optimizers_config) => {
+                        collection.update_optimizer_params(new_optimizers_config)?
+                    }
+                }
                 Ok(true)
             }
             StorageOperations::DeleteCollection(collection_name) => {
@@ -236,6 +249,7 @@ impl TableOfContent {
     pub fn get_collection(&self, collection_name: &str) -> Result<Arc<Collection>, StorageError> {
         let read_collection = self.collections.read();
         let real_collection_name = self.resolve_name(collection_name)?;
+        // resolve_name already checked collection existence, unwrap is safe here
         Ok(read_collection.get(&real_collection_name).unwrap().clone())
     }
 

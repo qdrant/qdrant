@@ -4,23 +4,13 @@ use tokio::runtime::Runtime;
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::wal::SerdeWal;
 use crate::operations::CollectionUpdateOperations;
-use std::fs::{read_dir, File};
+use std::fs::{read_dir};
 use segment::segment_constructor::segment_constructor::load_segment;
-use crate::collection_builder::collection_builder::{construct_collection, COLLECTION_CONFIG_FILE};
+use crate::collection_builder::collection_builder::{construct_collection};
 use indicatif::ProgressBar;
 use crate::collection_builder::optimizers_builder::build_optimizers;
-use std::io::Read;
 use std::sync::Arc;
 use crate::config::CollectionConfig;
-
-
-fn load_config(path: &Path) -> CollectionConfig {
-    let config_path = path.join(COLLECTION_CONFIG_FILE);
-    let mut contents = String::new();
-    let mut file = File::open(config_path).unwrap();
-    file.read_to_string(&mut contents).unwrap();
-    serde_json::from_str(&contents).unwrap()
-}
 
 
 pub fn load_collection(
@@ -31,7 +21,8 @@ pub fn load_collection(
     let segments_path = collection_path.join("segments");
     let mut segment_holder = SegmentHolder::new();
 
-    let collection_config = load_config(&collection_path);
+    let collection_config = CollectionConfig::load(&collection_path)
+        .expect(&format!("Can't read collection config at {}", collection_path.to_str().unwrap()));
 
     let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(
         wal_path.to_str().unwrap(),
@@ -64,6 +55,7 @@ pub fn load_collection(
         wal,
         search_runtime,
         optimizers,
+        collection_path
     );
 
     {

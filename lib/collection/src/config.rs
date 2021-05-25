@@ -3,7 +3,14 @@ use schemars::{JsonSchema};
 use segment::types::{HnswConfig, Distance};
 use crate::collection_builder::optimizers_builder::OptimizersConfig;
 use wal::WalOptions;
+use crate::collection::{CollectionResult, CollectionError};
+use std::path::Path;
+use atomicwrites::AtomicFile;
+use atomicwrites::OverwriteBehavior::AllowOverwrite;
+use std::io::{Write, Read};
+use std::fs::File;
 
+pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct WalConfig {
@@ -44,3 +51,27 @@ pub struct CollectionConfig {
     pub wal_config: WalConfig,
 }
 
+
+impl CollectionConfig {
+    pub fn save(&self, path: &Path) -> CollectionResult<()> {
+        let config_path = path.join(COLLECTION_CONFIG_FILE);
+        let af = AtomicFile::new(&config_path, AllowOverwrite);
+        let state_bytes = serde_json::to_vec(self).unwrap();
+        af.write(|f| {
+            f.write_all(&state_bytes)
+        }).or_else(move |err|
+            Err(CollectionError::ServiceError {
+                error: format!("Can't write {:?}, error: {}", config_path, err)
+            })
+        )?;
+        Ok(())
+    }
+
+    pub fn load(path: &Path) -> CollectionResult<Self> {
+        let config_path = path.join(COLLECTION_CONFIG_FILE);
+        let mut contents = String::new();
+        let mut file = File::open(config_path)?;
+        file.read_to_string(&mut contents)?;
+        Ok(serde_json::from_str(&contents)?)
+    }
+}

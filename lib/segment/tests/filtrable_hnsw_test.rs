@@ -69,7 +69,6 @@ mod tests {
 
         let mut hnsw_index = HNSWIndex::open(
             hnsw_dir.path(),
-            distance,
             segment.condition_checker.clone(),
             segment.vector_storage.clone(),
             payload_index_ptr.clone(),

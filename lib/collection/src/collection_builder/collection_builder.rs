@@ -15,28 +15,8 @@ use std::fs::create_dir_all;
 use parking_lot::{RwLock, Mutex};
 use crate::collection_builder::optimizers_builder::build_optimizers;
 use crate::collection_builder::optimizers_builder::OptimizersConfig;
-use atomicwrites::OverwriteBehavior::AllowOverwrite;
-use atomicwrites::AtomicFile;
-use std::io::Write;
 use tokio::runtime;
 use crate::config::{CollectionConfig, WalConfig, CollectionParams};
-
-pub const COLLECTION_CONFIG_FILE: &str = "config.json";
-
-
-fn save_config(path: &Path, config: &CollectionConfig) -> CollectionResult<()> {
-    let config_path = path.join(COLLECTION_CONFIG_FILE);
-    let af = AtomicFile::new(&config_path, AllowOverwrite);
-    let state_bytes = serde_json::to_vec(config).unwrap();
-    af.write(|f| {
-        f.write_all(&state_bytes)
-    }).or_else(move |err|
-        Err(CollectionError::ServiceError {
-            error: format!("Can't write {:?}, error: {}", config_path, err)
-        })
-    )?;
-    Ok(())
-}
 
 pub fn construct_collection(
     segment_holder: SegmentHolder,
@@ -44,6 +24,7 @@ pub fn construct_collection(
     wal: SerdeWal<CollectionUpdateOperations>,
     search_runtime: Arc<Runtime>,  // from service
     optimizers: Arc<Vec<Box<Optimizer>>>,
+    collection_path: &Path,
 ) -> Collection {
     let segment_holder = Arc::new(RwLock::new(segment_holder));
 
@@ -62,24 +43,25 @@ pub fn construct_collection(
     // ToDo: Move tx-rx into updater, so Collection should not know about it.
     let (tx, rx) = unbounded();
 
-    let update_handler = Arc::new(UpdateHandler::new(
+    let update_handler = Arc::new(Mutex::new(UpdateHandler::new(
         optimizers,
         rx,
         optimize_runtime.clone(),
         segment_holder.clone(),
         locked_wal.clone(),
         config.optimizer_config.flush_interval_sec,
-    ));
+    )));
 
     let collection = Collection {
         segments: segment_holder.clone(),
-        config,
+        config: Arc::new(RwLock::new(config)),
         wal: locked_wal,
         searcher: Arc::new(searcher),
         update_handler,
         updater: Arc::new(updater),
         runtime_handle: optimize_runtime,
         update_sender: tx,
+        path: collection_path.to_owned()
     };
 
     return collection;
@@ -129,7 +111,7 @@ pub fn build_collection(
         wal_config: wal_config.clone()
     };
 
-    save_config(collection_path, &collection_config)?;
+    collection_config.save(collection_path)?;
 
     let optimizers = build_optimizers(
         collection_path,
@@ -144,6 +126,7 @@ pub fn build_collection(
         wal,
         search_runtime,
         optimizers,
+        collection_path,
     );
 
     Ok(collection)

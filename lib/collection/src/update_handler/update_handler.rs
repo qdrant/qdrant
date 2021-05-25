@@ -15,18 +15,22 @@ use crate::collection::CollectionResult;
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
 pub enum UpdateSignal {
+    /// Info that operation with
     Operation(SeqNumberType),
+    /// Stop all optimizers and listening
     Stop,
+    /// Empty signal used to trigger optimizers
+    Nop,
 }
 
 pub struct UpdateHandler {
-    optimizers: Arc<Vec<Box<Optimizer>>>,
+    pub optimizers: Arc<Vec<Box<Optimizer>>>,
+    pub flush_timeout_sec: u64,
     segments: LockedSegmentHolder,
     receiver: Receiver<UpdateSignal>,
     worker: Option<JoinHandle<()>>,
     runtime_handle: Arc<Runtime>,
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-    flush_timeout_sec: u64,
 }
 
 
@@ -77,6 +81,22 @@ impl UpdateHandler {
         Ok(res)
     }
 
+    fn process_optimization(
+        optimizers: Arc<Vec<Box<Optimizer>>>,
+        segments: LockedSegmentHolder,
+    ) {
+        for optimizer in optimizers.iter() {
+            let mut nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
+            while !nonoptimal_segment_ids.is_empty() {
+                debug!("Start optimization on segments: {:?}", nonoptimal_segment_ids);
+                // If optimization fails, it could not be reported to anywhere except for console.
+                // So the only recovery here is to stop optimization and await for restart
+                optimizer.optimize(segments.clone(), nonoptimal_segment_ids).unwrap();
+                nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
+            }
+        }
+    }
+
     async fn worker_fn(
         optimizers: Arc<Vec<Box<Optimizer>>>,
         receiver: Receiver<UpdateSignal>,
@@ -91,16 +111,13 @@ impl UpdateHandler {
             match recv_res {
                 Ok(signal) => {
                     match signal {
+                        UpdateSignal::Nop => {
+                            Self::process_optimization(optimizers.clone(), segments.clone());
+                        }
                         UpdateSignal::Operation(operation_id) => {
                             debug!("Performing update operation: {}", operation_id);
-                            for optimizer in optimizers.iter() {
-                                let mut nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
-                                while !nonoptimal_segment_ids.is_empty() {
-                                    debug!("Start optimization on segments: {:?}", nonoptimal_segment_ids);
-                                    optimizer.optimize(segments.clone(), nonoptimal_segment_ids).unwrap();
-                                    nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
-                                }
-                            }
+                            Self::process_optimization(optimizers.clone(), segments.clone());
+
                             let elapsed = last_flushed.elapsed();
                             if elapsed > flush_timeout {
                                 debug!("Performing flushing: {}", operation_id);

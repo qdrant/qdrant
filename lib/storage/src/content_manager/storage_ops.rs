@@ -40,7 +40,14 @@ pub enum StorageOperations {
         wal_config: Option<WalConfigDiff>,
         /// Custom params for Optimizers.  If none - values from service configuration file are used.
         optimizers_config: Option<OptimizersConfigDiff>
-
+    },
+    /// Update parameters of the existing collection
+    UpdateCollection {
+        name: String,
+        /// Custom params for Optimizers.  If none - values from service configuration file are used.
+        /// This operation is blocking, it will only proceed ones all current optimizations are complete
+        optimizers_config: Option<OptimizersConfigDiff>
+        // ToDo: Allow updates for other configuration params as well
     },
     /// Delete collection with given name
     DeleteCollection(String),

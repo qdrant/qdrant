@@ -73,7 +73,6 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
         )),
         Indexes::Hnsw(hnsw_config) => sp(HNSWIndex::open(
             &vector_index_path,
-            config.distance,
             condition_checker.clone(),
             vector_storage.clone(),
             payload_index.clone(),

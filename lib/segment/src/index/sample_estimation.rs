@@ -5,6 +5,7 @@ const MAX_ESTIMATED_POINTS: usize = 1000;
 
 /// How many points do we need to check in order to estimate expected query cardinality.
 /// Based on https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval
+#[allow(dead_code)]
 fn estimate_required_sample_size(total: usize, confidence_interval: usize) -> usize {
     let confidence_interval = min(confidence_interval, total);
     let z = 1.96; // percentile 0.95 of normal distribution
