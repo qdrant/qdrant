@@ -1,14 +1,17 @@
-use serde::{Deserialize, Serialize};
-use schemars::{JsonSchema};
-use segment::types::{HnswConfig, Distance};
-use crate::collection_builder::optimizers_builder::OptimizersConfig;
-use wal::WalOptions;
-use crate::collection::{CollectionResult, CollectionError};
+use std::fs::File;
+use std::io::{Read, Write};
 use std::path::Path;
+
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
-use std::io::{Write, Read};
-use std::fs::File;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use wal::WalOptions;
+
+use segment::types::{Distance, HnswConfig};
+
+use crate::collection_builder::optimizers_builder::OptimizersConfig;
+use crate::operations::types::{CollectionError, CollectionResult};
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 

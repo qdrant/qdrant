@@ -1,8 +1,18 @@
-use segment::types::{VectorElementType, PointIdType, TheMap, PayloadKeyType, PayloadType, SeqNumberType, Filter, SearchParams};
+use crossbeam_channel::SendError;
+use futures::io;
+use schemars::JsonSchema;
 use serde;
 use serde::{Deserialize, Serialize};
-use schemars::{JsonSchema};
+use thiserror::Error;
+use serde_json::Error as JsonError;
+use tokio::task::JoinError;
+use std::result;
+
+use segment::entry::entry_point::OperationError;
+use segment::types::{Filter, PayloadKeyType, PayloadType, PointIdType, SearchParams, SeqNumberType, TheMap, VectorElementType};
+
 use crate::config::CollectionConfig;
+use crate::wal::WalError;
 
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
@@ -85,5 +95,62 @@ pub struct RecommendRequest {
     /// Max number of result to return
     pub top: usize,
 }
+
+
+#[derive(Error, Debug, Clone)]
+#[error("{0}")]
+pub enum CollectionError {
+    #[error("Wrong input: {description}")]
+    BadInput { description: String },
+    #[error("No point with id {missed_point_id} found")]
+    NotFound { missed_point_id: PointIdType },
+    #[error("Service internal error: {error}")]
+    ServiceError { error: String },
+    #[error("Bad request: {description}")]
+    BadRequest { description: String },
+}
+
+impl From<OperationError> for CollectionError {
+    fn from(err: OperationError) -> Self {
+        match err {
+            OperationError::WrongVector { .. } => Self::BadInput { description: format!("{}", err) },
+            OperationError::PointIdError { missed_point_id } => Self::NotFound { missed_point_id },
+            OperationError::ServiceError { description } => Self::ServiceError { error: description },
+            OperationError::TypeError { .. } => Self::BadInput { description: format!("{}", err) },
+        }
+    }
+}
+
+impl From<JoinError> for CollectionError {
+    fn from(err: JoinError) -> Self {
+        Self::ServiceError { error: format!("{}", err) }
+    }
+}
+
+impl From<WalError> for CollectionError {
+    fn from(err: WalError) -> Self {
+        Self::ServiceError { error: format!("{}", err) }
+    }
+}
+
+impl<T> From<SendError<T>> for CollectionError {
+    fn from(_err: SendError<T>) -> Self {
+        Self::ServiceError { error: format!("Can't reach one of the workers") }
+    }
+}
+
+impl From<JsonError> for CollectionError {
+    fn from(err: JsonError) -> Self {
+        CollectionError::ServiceError { error: format!("Json error: {}", err) }
+    }
+}
+
+impl From<io::Error> for CollectionError {
+    fn from(err: io::Error) -> Self {
+        CollectionError::ServiceError { error: format!("File IO error: {}", err) }
+    }
+}
+
+pub type CollectionResult<T> = result::Result<T, CollectionError>;
 
 

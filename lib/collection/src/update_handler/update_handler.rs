@@ -10,7 +10,7 @@ use crate::operations::CollectionUpdateOperations;
 use tokio::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 use log::debug;
-use crate::collection::CollectionResult;
+use crate::operations::types::CollectionResult;
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 

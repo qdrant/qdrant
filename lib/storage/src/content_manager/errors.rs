@@ -1,5 +1,5 @@
 use thiserror::Error;
-use collection::collection::CollectionError;
+use collection::operations::types::CollectionError;
 use sled::Error;
 use sled::transaction::TransactionError;
 use std::io::Error as IoError;

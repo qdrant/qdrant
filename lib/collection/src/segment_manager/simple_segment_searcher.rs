@@ -1,7 +1,7 @@
 use crate::segment_manager::holders::segment_holder::{LockedSegment, LockedSegmentHolder};
 use std::sync::Arc;
 use crate::segment_manager::segment_managers::{SegmentSearcher};
-use crate::collection::CollectionResult;
+use crate::operations::types::CollectionResult;
 use segment::types::{ScoredPoint, PointIdType, SeqNumberType};
 use tokio::runtime::Runtime;
 use std::collections::{HashSet, HashMap};

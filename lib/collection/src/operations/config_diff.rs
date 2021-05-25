@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use merge::Merge;
 use serde::de::DeserializeOwned;
 use schemars::{JsonSchema};
-use crate::collection::CollectionResult;
+use crate::operations::types::CollectionResult;
 use segment::types::HnswConfig;
 use crate::config::WalConfig;
 use crate::collection_builder::optimizers_builder::OptimizersConfig;

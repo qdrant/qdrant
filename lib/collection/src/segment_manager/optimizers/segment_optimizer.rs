@@ -1,5 +1,5 @@
 use segment::types::{PointIdType, PayloadKeyType, SegmentConfig, Indexes, StorageType, PayloadIndexType, HnswConfig};
-use crate::collection::CollectionResult;
+use crate::operations::types::CollectionResult;
 use crate::segment_manager::holders::segment_holder::{SegmentId, LockedSegment, LockedSegmentHolder};
 use std::sync::Arc;
 use segment::segment::Segment;

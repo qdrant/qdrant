@@ -1,8 +1,9 @@
-use segment::types::{SeqNumberType, ScoredPoint, PointIdType};
-use crate::collection::{CollectionResult};
-use crate::operations::CollectionUpdateOperations;
-use crate::operations::types::{Record, SearchRequest};
 use std::sync::Arc;
+
+use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
+
+use crate::operations::CollectionUpdateOperations;
+use crate::operations::types::{CollectionResult, Record, SearchRequest};
 
 pub trait SegmentSearcher {
     fn search(&self,

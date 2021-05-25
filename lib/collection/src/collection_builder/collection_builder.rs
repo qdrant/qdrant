@@ -1,22 +1,26 @@
-use crate::collection::{Collection, CollectionResult, CollectionError};
-use crate::segment_manager::holders::segment_holder::SegmentHolder;
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use std::path::Path;
-use crate::wal::SerdeWal;
-use crate::operations::CollectionUpdateOperations;
-use std::sync::Arc;
-use tokio::runtime::Runtime;
-use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
-use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
-use crossbeam_channel::unbounded;
-use crate::update_handler::update_handler::{UpdateHandler, Optimizer};
-use segment::types::{HnswConfig};
 use std::fs::create_dir_all;
-use parking_lot::{RwLock, Mutex};
+use std::path::Path;
+use std::sync::Arc;
+
+use crossbeam_channel::unbounded;
+use parking_lot::{Mutex, RwLock};
+use tokio::runtime;
+use tokio::runtime::Runtime;
+
+use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+use segment::types::HnswConfig;
+
+use crate::collection::Collection;
 use crate::collection_builder::optimizers_builder::build_optimizers;
 use crate::collection_builder::optimizers_builder::OptimizersConfig;
-use tokio::runtime;
-use crate::config::{CollectionConfig, WalConfig, CollectionParams};
+use crate::config::{CollectionConfig, CollectionParams, WalConfig};
+use crate::operations::CollectionUpdateOperations;
+use crate::operations::types::{CollectionError, CollectionResult};
+use crate::segment_manager::holders::segment_holder::SegmentHolder;
+use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
+use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
+use crate::update_handler::update_handler::{Optimizer, UpdateHandler};
+use crate::wal::SerdeWal;
 
 pub fn construct_collection(
     segment_holder: SegmentHolder,

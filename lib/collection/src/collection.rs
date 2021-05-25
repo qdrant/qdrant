@@ -1,85 +1,25 @@
-use thiserror::Error;
-use crate::operations::CollectionUpdateOperations;
-use segment::types::{PointIdType, ScoredPoint, VectorElementType, HasIdCondition};
-use std::result;
-use crate::operations::types::{Record, CollectionInfo, UpdateResult, UpdateStatus, SearchRequest, RecommendRequest};
-use std::sync::Arc;
-use crate::wal::{SerdeWal, WalError};
-use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
-use segment::entry::entry_point::OperationError;
-use tokio::task::JoinError;
-use crossbeam_channel::{Sender, SendError};
-use crate::update_handler::update_handler::{UpdateHandler, UpdateSignal};
-use parking_lot::{Mutex, RwLock};
-use crate::segment_manager::holders::segment_holder::SegmentHolder;
-use tokio::runtime::Runtime;
-use itertools::Itertools;
 use std::collections::HashMap;
-use segment::types::Filter;
-use segment::types::Condition;
-use crate::config::CollectionConfig;
-use serde_json::Error as JsonError;
-use std::io::Error as IoError;
-use crate::collection_builder::optimizers_builder::{build_optimizers};
 use std::path::PathBuf;
-use crate::operations::config_diff::{OptimizersConfigDiff, DiffConfig};
+use std::sync::Arc;
 
+use crossbeam_channel::{Sender};
+use itertools::Itertools;
+use parking_lot::{Mutex, RwLock};
+use tokio::runtime::Runtime;
 
-#[derive(Error, Debug, Clone)]
-#[error("{0}")]
-pub enum CollectionError {
-    #[error("Wrong input: {description}")]
-    BadInput { description: String },
-    #[error("No point with id {missed_point_id} found")]
-    NotFound { missed_point_id: PointIdType },
-    #[error("Service internal error: {error}")]
-    ServiceError { error: String },
-    #[error("Bad request: {description}")]
-    BadRequest { description: String },
-}
+use segment::types::{HasIdCondition, PointIdType, ScoredPoint, VectorElementType};
+use segment::types::Condition;
+use segment::types::Filter;
 
-impl From<OperationError> for CollectionError {
-    fn from(err: OperationError) -> Self {
-        match err {
-            OperationError::WrongVector { .. } => Self::BadInput { description: format!("{}", err) },
-            OperationError::PointIdError { missed_point_id } => Self::NotFound { missed_point_id },
-            OperationError::ServiceError { description } => Self::ServiceError { error: description },
-            OperationError::TypeError { .. } => Self::BadInput { description: format!("{}", err) },
-        }
-    }
-}
-
-impl From<JoinError> for CollectionError {
-    fn from(err: JoinError) -> Self {
-        Self::ServiceError { error: format!("{}", err) }
-    }
-}
-
-impl From<WalError> for CollectionError {
-    fn from(err: WalError) -> Self {
-        Self::ServiceError { error: format!("{}", err) }
-    }
-}
-
-impl<T> From<SendError<T>> for CollectionError {
-    fn from(_err: SendError<T>) -> Self {
-        Self::ServiceError { error: format!("Can't reach one of the workers") }
-    }
-}
-
-impl From<JsonError> for CollectionError {
-    fn from(err: JsonError) -> Self {
-        CollectionError::ServiceError { error: format!("Json error: {}", err) }
-    }
-}
-
-impl From<IoError> for CollectionError {
-    fn from(err: IoError) -> Self {
-        CollectionError::ServiceError { error: format!("File IO error: {}", err) }
-    }
-}
-
-pub type CollectionResult<T> = result::Result<T, CollectionError>;
+use crate::collection_builder::optimizers_builder::build_optimizers;
+use crate::config::CollectionConfig;
+use crate::operations::CollectionUpdateOperations;
+use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
+use crate::operations::types::{CollectionError, CollectionInfo, CollectionResult, RecommendRequest, Record, SearchRequest, UpdateResult, UpdateStatus};
+use crate::segment_manager::holders::segment_holder::SegmentHolder;
+use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
+use crate::update_handler::update_handler::{UpdateHandler, UpdateSignal};
+use crate::wal::{SerdeWal};
 
 pub struct Collection {
     pub segments: Arc<RwLock<SegmentHolder>>,

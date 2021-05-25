@@ -273,7 +273,7 @@ pub enum PayloadInterface {
     KeywordShortcut(PayloadVariant<String>),
     IntShortcut(PayloadVariant<i64>),
     FloatShortcut(PayloadVariant<f64>),
-    Regular(PayloadInterfaceStrict),
+    Payload(PayloadInterfaceStrict),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -289,7 +289,7 @@ pub enum PayloadInterfaceStrict {
 // For tests
 impl From<PayloadInterfaceStrict> for PayloadInterface {
     fn from(x: PayloadInterfaceStrict) -> Self {
-        PayloadInterface::Regular(x)
+        PayloadInterface::Payload(x)
     }
 }
 
@@ -307,7 +307,7 @@ impl From<&PayloadInterfaceStrict> for PayloadType {
 impl From<&PayloadInterface> for PayloadType {
     fn from(interface: &PayloadInterface) -> Self {
         match interface {
-            PayloadInterface::Regular(x) => x.into(),
+            PayloadInterface::Payload(x) => x.into(),
             PayloadInterface::KeywordShortcut(x) => PayloadType::Keyword(x.to_list()),
             PayloadInterface::FloatShortcut(x) => PayloadType::Float(x.to_list()),
             PayloadInterface::IntShortcut(x) => PayloadType::Integer(x.to_list()),
