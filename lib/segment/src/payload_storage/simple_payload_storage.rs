@@ -318,7 +318,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_invalid_serde_input() {
         let data = r#"
         {

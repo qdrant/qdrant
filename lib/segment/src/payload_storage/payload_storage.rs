@@ -7,14 +7,68 @@ use serde_json::value::Value;
 pub trait PayloadStorage {
 
     fn assign_all_with_value(&mut self, point_id: PointOffsetType, payload: TheMap<PayloadKeyType, serde_json::value::Value>) -> OperationResult<()> {
+
         fn _extract_payloads<'a, I>(_payload: I, prefix_key: Option<PayloadKeyType>) -> Vec<(PayloadKeyType, Option<PayloadType>)>
             where I: Iterator<Item=(&'a PayloadKeyType, &'a serde_json::value::Value)> {
-            _payload.flat_map(|(k, value)| {
-                let key = match &prefix_key {
+
+            fn _handle_array(key: PayloadKeyType, x: &Vec<Value>) -> Vec<(PayloadKeyType, Option<PayloadType>)> {
+                let result = {
+                    match &x.first() {
+                        Some(Value::Bool(_)) => {
+                            let vec = x.iter().fold(vec![], |mut data, b| {
+                                match &b.as_bool() {
+                                    Some(ref y) => data.push(y.to_string()),
+                                    None => ()
+                                }
+                                data
+                            });
+                            vec![(key, Some(PayloadType::Keyword(vec)))]
+                        },
+                        Some(Value::String(_)) => {
+                            let vec = x.iter().fold(vec![], |mut data, b| {
+                                match &b.as_str() {
+                                    Some(ref y) => data.push(y.to_string()),
+                                    None => ()
+                                }
+                                data
+                            });
+                            vec![(key, Some(PayloadType::Keyword(vec)))]
+                        },
+                        Some(Value::Number(ref y)) => {
+                            if y.is_f64() {
+                                let vec = x.iter().fold(vec![], |mut data, b| {
+                                    match &b.as_f64() {
+                                        Some(ref y) => data.push(y.clone()),
+                                        None => ()
+                                    }
+                                    data
+                                });
+                                vec![(key, Some(PayloadType::Float(vec)))]
+                            } else if y.is_i64() {
+                                let vec = x.iter().fold(vec![], |mut data, b| {
+                                    match &b.as_i64() {
+                                        Some(ref y) => data.push(y.clone()),
+                                        None => ()
+                                    }
+                                    data
+                                });
+                                vec![(key, Some(PayloadType::Integer(vec)))]
+                            } else {
+                                vec![]
+                            }
+                        },
+                        _ => vec![],
+                    }
+                };
+                result
+            }
+
+            fn _fn(prefix: &Option<PayloadKeyType>, k: &PayloadKeyType, v: &Value) -> Vec<(PayloadKeyType, Option<PayloadType>)> {
+                let key = match &prefix {
                     None => k.to_string(),
                     Some(_k) => (_k.to_owned() + "__" + k).to_string(),
                 };
-                match value {
+                match v {
                     Value::Bool(ref x) => vec![(key, Some(PayloadType::Keyword(vec![x.to_string()])))],
                     Value::String(ref x) => vec![(key, Some(PayloadType::Keyword(vec![x.to_string()])))],
                     Value::Number(ref x) => {
@@ -26,46 +80,13 @@ pub trait PayloadStorage {
                             vec![]
                         }
                     },
-                    Value::Array(ref x) => {
-                        match &x[0] {
-                            Value::Bool(_) => {
-                                let vec = x.iter().fold(vec![], |mut data, b| {
-                                    data.push(b.as_bool().unwrap().to_string());
-                                    data
-                                });
-                                vec![(key, Some(PayloadType::Keyword(vec)))]
-                            },
-                            Value::String(_) => {
-                                let vec = x.iter().fold(vec![], |mut data, b| {
-                                    data.push(b.as_str().unwrap().to_string());
-                                    data
-                                });
-                                vec![(key, Some(PayloadType::Keyword(vec)))]
-                            },
-                            Value::Number(ref y) => {
-                                if y.is_f64() {
-                                    let vec = x.iter().fold(vec![], |mut data, b| {
-                                        data.push(b.as_f64().unwrap());
-                                        data
-                                    });
-                                    vec![(key, Some(PayloadType::Float(vec)))]
-                                } else if y.is_i64() {
-                                    let vec = x.iter().fold(vec![], |mut data, b| {
-                                        data.push(b.as_i64().unwrap());
-                                        data
-                                    });
-                                    vec![(key, Some(PayloadType::Integer(vec)))]
-                                } else {
-                                    vec![]
-                                }
-                            },
-                            _ => vec![],
-                        }
-                    },
+                    Value::Array(ref x) => _handle_array(key, x),
                     Value::Object(ref x) => _extract_payloads(x.iter(), Some(key)),
                     _ => vec![]
                 }
-            } ).collect()
+
+            }
+            _payload.flat_map(|(k, value)| _fn(&prefix_key, k, value)).collect()
         }
         self.drop(point_id)?;
         let inner_payloads = _extract_payloads(payload.iter(), None);
