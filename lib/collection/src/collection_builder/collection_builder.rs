@@ -4,14 +4,13 @@ use segment::segment_constructor::simple_segment_constructor::build_simple_segme
 use std::path::Path;
 use crate::wal::SerdeWal;
 use crate::operations::CollectionUpdateOperations;
-use wal::WalOptions;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
 use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
 use crossbeam_channel::unbounded;
 use crate::update_handler::update_handler::{UpdateHandler, Optimizer};
-use segment::types::SegmentConfig;
+use segment::types::{HnswConfig};
 use std::fs::create_dir_all;
 use parking_lot::{RwLock, Mutex};
 use crate::collection_builder::optimizers_builder::build_optimizers;
@@ -20,11 +19,12 @@ use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use atomicwrites::AtomicFile;
 use std::io::Write;
 use tokio::runtime;
+use crate::config::{CollectionConfig, WalConfig, CollectionParams};
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 
 
-fn save_config(path: &Path, config: &SegmentConfig) -> CollectionResult<()> {
+fn save_config(path: &Path, config: &CollectionConfig) -> CollectionResult<()> {
     let config_path = path.join(COLLECTION_CONFIG_FILE);
     let af = AtomicFile::new(&config_path, AllowOverwrite);
     let state_bytes = serde_json::to_vec(config).unwrap();
@@ -40,11 +40,10 @@ fn save_config(path: &Path, config: &SegmentConfig) -> CollectionResult<()> {
 
 pub fn construct_collection(
     segment_holder: SegmentHolder,
-    config: &SegmentConfig,
+    config: CollectionConfig,
     wal: SerdeWal<CollectionUpdateOperations>,
     search_runtime: Arc<Runtime>,  // from service
     optimizers: Arc<Vec<Box<Optimizer>>>,
-    flush_interval_sec: u64,
 ) -> Collection {
     let segment_holder = Arc::new(RwLock::new(segment_holder));
 
@@ -60,7 +59,7 @@ pub fn construct_collection(
     );
 
     let updater = SimpleSegmentUpdater::new(segment_holder.clone());
-
+    // ToDo: Move tx-rx into updater, so Collection should not know about it.
     let (tx, rx) = unbounded();
 
     let update_handler = Arc::new(UpdateHandler::new(
@@ -69,12 +68,12 @@ pub fn construct_collection(
         optimize_runtime.clone(),
         segment_holder.clone(),
         locked_wal.clone(),
-        flush_interval_sec,
+        config.optimizer_config.flush_interval_sec,
     ));
 
     let collection = Collection {
         segments: segment_holder.clone(),
-        config: config.clone(),
+        config,
         wal: locked_wal,
         searcher: Arc::new(searcher),
         update_handler,
@@ -90,10 +89,11 @@ pub fn construct_collection(
 /// Creates new empty collection with given configuration
 pub fn build_collection(
     collection_path: &Path,
-    wal_options: &WalOptions,  // from config
-    segment_config: &SegmentConfig,  //  from user
+    wal_config: &WalConfig,  // from config
+    collection_params: &CollectionParams,  //  from user
     search_runtime: Arc<Runtime>,  // from service
     optimizers_config: &OptimizersConfig,
+    hnsw_config: &HnswConfig,
 ) -> CollectionResult<Collection> {
     let wal_path = collection_path
         .join("wal");
@@ -115,28 +115,35 @@ pub fn build_collection(
     for _sid in 0..optimizers_config.max_segment_number {
         let segment = build_simple_segment(
             segments_path.as_path(),
-            segment_config.vector_size,
-            segment_config.distance.clone())?;
+            collection_params.vector_size,
+            collection_params.distance)?;
         segment_holder.add(segment);
     }
 
-    let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(wal_path.to_str().unwrap(), wal_options)?;
+    let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(wal_path.to_str().unwrap(), &wal_config.into())?;
 
-    save_config(collection_path, &segment_config)?;
+    let collection_config = CollectionConfig {
+        params: collection_params.clone(),
+        hnsw_config: hnsw_config.clone(),
+        optimizer_config: optimizers_config.clone(),
+        wal_config: wal_config.clone()
+    };
+
+    save_config(collection_path, &collection_config)?;
 
     let optimizers = build_optimizers(
         collection_path,
-        &segment_config,
+        &collection_params,
         &optimizers_config,
+        &collection_config.hnsw_config
     );
 
     let collection = construct_collection(
         segment_holder,
-        segment_config,
+        collection_config,
         wal,
         search_runtime,
         optimizers,
-        optimizers_config.flush_interval_sec,
     );
 
     Ok(collection)

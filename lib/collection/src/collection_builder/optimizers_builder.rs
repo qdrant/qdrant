@@ -1,13 +1,14 @@
 use crate::update_handler::update_handler::Optimizer;
 use std::sync::Arc;
 use crate::segment_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
-use segment::types::SegmentConfig;
+use segment::types::{HnswConfig};
 use crate::segment_manager::optimizers::merge_optimizer::MergeOptimizer;
 use std::path::Path;
 use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};
 use crate::segment_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::segment_manager::optimizers::segment_optimizer::OptimizerThresholds;
+use crate::config::CollectionParams;
 
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -33,8 +34,9 @@ pub struct OptimizersConfig {
 
 pub fn build_optimizers(
     collection_path: &Path,
-    segment_config: &SegmentConfig,
+    collection_params: &CollectionParams,
     optimizers_config: &OptimizersConfig,
+    hnsw_config: &HnswConfig,
 ) -> Arc<Vec<Box<Optimizer>>> {
     let segments_path = collection_path.join("segments");
     let temp_segments_path = collection_path.join("temp_segments");
@@ -51,7 +53,8 @@ pub fn build_optimizers(
                 threshold_config.clone(),
                 segments_path.clone(),
                 temp_segments_path.clone(),
-                segment_config.clone(),
+                collection_params.clone(),
+                hnsw_config.clone(),
             )
         ),
         Box::new(
@@ -60,7 +63,8 @@ pub fn build_optimizers(
                 threshold_config.clone(),
                 segments_path.clone(),
                 temp_segments_path.clone(),
-                segment_config.clone(),
+                collection_params.clone(),
+                hnsw_config.clone(),
             )
         ),
         Box::new(VacuumOptimizer::new(
@@ -69,7 +73,8 @@ pub fn build_optimizers(
             threshold_config.clone(),
             segments_path.clone(),
             temp_segments_path.clone(),
-            segment_config.clone(),
+            collection_params.clone(),
+            hnsw_config.clone(),
         ))
     ])
 }

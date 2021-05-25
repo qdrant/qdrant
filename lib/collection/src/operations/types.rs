@@ -1,7 +1,8 @@
-use segment::types::{VectorElementType, PointIdType, TheMap, PayloadKeyType, PayloadType, SeqNumberType, Filter, SearchParams, SegmentConfig};
+use segment::types::{VectorElementType, PointIdType, TheMap, PayloadKeyType, PayloadType, SeqNumberType, Filter, SearchParams};
 use serde;
 use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};
+use crate::config::CollectionConfig;
 
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
@@ -31,7 +32,7 @@ pub struct CollectionInfo {
     /// RAM used by collection
     pub ram_data_size: usize,
     /// Collection settings
-    pub config: SegmentConfig,
+    pub config: CollectionConfig,
 }
 
 

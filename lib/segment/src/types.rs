@@ -191,12 +191,12 @@ impl Default for StorageType {
 pub struct SegmentConfig {
     /// Size of a vectors used
     pub vector_size: usize,
+    /// Type of distance function used for measuring distance between vectors
+    pub distance: Distance,
     /// Type of index used for search
     pub index: Indexes,
     /// Payload Indexes
     pub payload_index: Option<PayloadIndexType>,
-    /// Type of distance function used for measuring distance between vectors
-    pub distance: Distance,
     /// Type of vector storage
     pub storage_type: StorageType,
 }

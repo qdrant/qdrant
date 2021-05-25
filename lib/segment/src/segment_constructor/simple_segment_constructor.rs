@@ -1,6 +1,6 @@
 use crate::segment::Segment;
 
-use crate::types::{Distance, SegmentConfig, Indexes, DEFAULT_FULL_SCAN_THRESHOLD};
+use crate::types::{Distance, SegmentConfig, Indexes};
 
 use std::path::Path;
 use crate::segment_constructor::segment_constructor::build_segment;

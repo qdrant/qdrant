@@ -1,6 +1,6 @@
 use thiserror::Error;
 use crate::operations::CollectionUpdateOperations;
-use segment::types::{PointIdType, ScoredPoint, SegmentConfig, VectorElementType, HasIdCondition};
+use segment::types::{PointIdType, ScoredPoint, VectorElementType, HasIdCondition};
 use std::result;
 use crate::operations::types::{Record, CollectionInfo, UpdateResult, UpdateStatus, SearchRequest, RecommendRequest};
 use std::sync::Arc;
@@ -17,6 +17,9 @@ use itertools::Itertools;
 use std::collections::HashMap;
 use segment::types::Filter;
 use segment::types::Condition;
+use crate::config::CollectionConfig;
+use serde_json::Error as JsonError;
+
 
 
 #[derive(Error, Debug, Clone)]
@@ -61,11 +64,17 @@ impl<T> From<SendError<T>> for CollectionError {
     }
 }
 
+impl From<JsonError> for CollectionError {
+    fn from(err: JsonError) -> Self {
+        CollectionError::ServiceError { error: format!("Json error: {}", err) }
+    }
+}
+
 pub type CollectionResult<T> = result::Result<T, CollectionError>;
 
 pub struct Collection {
     pub segments: Arc<RwLock<SegmentHolder>>,
-    pub config: SegmentConfig,
+    pub config: CollectionConfig,
     pub wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
     pub searcher: Arc<dyn SegmentSearcher + Sync + Send>,
     pub update_handler: Arc<UpdateHandler>,

@@ -1,6 +1,7 @@
 pub mod types;
 pub mod point_ops;
 pub mod payload_ops;
+pub mod config_diff;
 
 use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};

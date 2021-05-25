@@ -4,19 +4,17 @@ use tokio::runtime::Runtime;
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::wal::SerdeWal;
 use crate::operations::CollectionUpdateOperations;
-use wal::WalOptions;
 use std::fs::{read_dir, File};
 use segment::segment_constructor::segment_constructor::load_segment;
 use crate::collection_builder::collection_builder::{construct_collection, COLLECTION_CONFIG_FILE};
 use indicatif::ProgressBar;
-use crate::collection_builder::optimizers_builder::OptimizersConfig;
 use crate::collection_builder::optimizers_builder::build_optimizers;
-use segment::types::SegmentConfig;
 use std::io::Read;
 use std::sync::Arc;
+use crate::config::CollectionConfig;
 
 
-fn load_config(path: &Path) -> SegmentConfig {
+fn load_config(path: &Path) -> CollectionConfig {
     let config_path = path.join(COLLECTION_CONFIG_FILE);
     let mut contents = String::new();
     let mut file = File::open(config_path).unwrap();
@@ -27,15 +25,18 @@ fn load_config(path: &Path) -> SegmentConfig {
 
 pub fn load_collection(
     collection_path: &Path,
-    wal_options: &WalOptions,  // from config
     search_runtime: Arc<Runtime>,  // from service
-    optimizers_config: &OptimizersConfig,
 ) -> Collection {
     let wal_path = collection_path.join("wal");
     let segments_path = collection_path.join("segments");
     let mut segment_holder = SegmentHolder::new();
 
-    let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(wal_path.to_str().unwrap(), wal_options).expect("Can't read WAL");
+    let collection_config = load_config(&collection_path);
+
+    let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(
+        wal_path.to_str().unwrap(),
+        &(&collection_config.wal_config).into()
+    ).expect("Can't read WAL");
 
     let segment_dirs = read_dir(segments_path.as_path())
         .expect(&format!("Can't read segments directory {}", segments_path.to_str().unwrap()));
@@ -49,21 +50,20 @@ pub fn load_collection(
         segment_holder.add(segment);
     };
 
-    let segment_config = load_config(&collection_path);
 
     let optimizers = build_optimizers(
         collection_path,
-        &segment_config,
-        &optimizers_config,
+        &collection_config.params,
+        &collection_config.optimizer_config,
+        &collection_config.hnsw_config,
     );
 
     let collection = construct_collection(
         segment_holder,
-        &segment_config,
+        collection_config,
         wal,
         search_runtime,
         optimizers,
-        optimizers_config.flush_interval_sec,
     );
 
     {
