@@ -167,10 +167,6 @@ Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/)
 * Subscribe to our [Newsletters](https://tech.us1.list-manage.com/subscribe/post?u=69617d79374ac6280dd2230b2&amp;id=acb2b876fc)
 * Write us an email [info@qdrant.tech](mailto:info@qdrant.tech)
 
-## License
-
-Qdrant is licensed under the Apache License, Version 2.0. View a copy of the [License file](LICENSE).
-
 
 ## Contributors ✨
 
@@ -189,3 +185,7 @@ Thanks to the people who contributed to Qdrant:
 <!-- prettier-ignore-end -->
 
 <!-- ALL-CONTRIBUTORS-LIST:END -->
+
+## License
+
+Qdrant is licensed under the Apache License, Version 2.0. View a copy of the [License file](LICENSE).
