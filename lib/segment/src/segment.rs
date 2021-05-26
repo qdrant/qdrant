@@ -11,7 +11,6 @@ use std::fs::{remove_dir_all};
 use std::io::Write;
 use atomicwrites::{AtomicFile, AllowOverwrite};
 use crate::index::index::PayloadIndex;
-use crate::entry::entry_point::OperationError::ServiceError;
 
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
@@ -181,21 +180,16 @@ impl SegmentEntry for Segment {
         Ok(true)
     }
 
-    fn set_full_payload_with_value(&mut self,
-                        op_num: SeqNumberType,
-                        point_id: PointIdType,
-                        full_payload: &str,
+    fn set_full_payload_with_json(&mut self,
+                                  op_num: SeqNumberType,
+                                  point_id: PointIdType,
+                                  full_payload: &str,
     ) -> OperationResult<bool> {
         if self.skip_by_version(op_num) { return Ok(false); };
         let internal_id = self.lookup_internal_id(point_id)?;
-        let load: Result<TheMap<PayloadKeyType, serde_json::value::Value>, serde_json::Error> = serde_json::from_str(full_payload);
-        match load {
-            Ok(x) => {
-                self.payload_storage.borrow_mut().assign_all_with_value(internal_id, x)?;
-                Ok(true)
-            },
-            Err(e) => Err(ServiceError { description: e.to_string() }),
-        }
+        let payload: TheMap<PayloadKeyType, serde_json::value::Value> = serde_json::from_str(full_payload)?;
+        self.payload_storage.borrow_mut().assign_all_with_value(internal_id, payload)?;
+        Ok(true)
     }
 
     fn set_payload(&mut self,
@@ -372,7 +366,7 @@ mod tests {
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
         segment.upsert_point(0, 0, &vec![1.0 as f32, 1.0 as f32]).unwrap();
-        segment.set_full_payload_with_value(0, 0, &data.to_string()).unwrap();
+        segment.set_full_payload_with_json(0, 0, &data.to_string()).unwrap();
         let payload = segment.payload(0).unwrap();
         let keys: Vec<PayloadKeyType> = payload.keys().cloned().collect();
         assert!(keys.contains(&"geo_data".to_string()));
@@ -519,12 +513,12 @@ mod tests {
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
         segment.upsert_point(0, 0, &vec![1.0 as f32, 1.0 as f32]).unwrap();
-        let result1 = segment.set_full_payload_with_value(0, 0, &data1.to_string());
+        let result1 = segment.set_full_payload_with_json(0, 0, &data1.to_string());
         match result1 {
             Ok(_) => assert!(false),
             Err(_) => assert!(true)
         }
-        let result2 = segment.set_full_payload_with_value(0, 0, &data2.to_string());
+        let result2 = segment.set_full_payload_with_json(0, 0, &data2.to_string());
         match result2 {
             Ok(_) => assert!(false),
             Err(_) => assert!(true)
@@ -555,7 +549,7 @@ mod tests {
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
         segment.upsert_point(0, 0, &vec![1.0 as f32, 1.0 as f32]).unwrap();
-        segment.set_full_payload_with_value(0, 0, &data.to_string()).unwrap();
+        segment.set_full_payload_with_json(0, 0, &data.to_string()).unwrap();
 
         let filter_valid_str = r#"
         {
