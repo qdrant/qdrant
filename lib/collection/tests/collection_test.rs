@@ -8,7 +8,7 @@ use collection::operations::types::{UpdateStatus, SearchRequest, RecommendReques
 use std::sync::Arc;
 use collection::operations::payload_ops::PayloadOps;
 use std::collections::HashMap;
-use segment::types::{PayloadKeyType, PayloadVariant, PayloadInterface};
+use segment::types::{PayloadKeyType, PayloadVariant, PayloadInterfaceStrict};
 use collection::collection_builder::collection_loader::load_collection;
 use wal::WalOptions;
 use tempdir::TempDir;
@@ -88,11 +88,11 @@ fn test_collection_loading() {
 
         collection.update(insert_points, true).unwrap();
 
-        let mut payload: HashMap<PayloadKeyType, PayloadInterface> = Default::default();
+        let mut payload: HashMap<PayloadKeyType, PayloadInterfaceStrict> = Default::default();
 
         payload.insert(
             "color".to_string(),
-            PayloadInterface::Keyword(PayloadVariant::Value("red".to_string())),
+            PayloadInterfaceStrict::Keyword(PayloadVariant::Value("red".to_string())),
         );
 
         let assign_payload = CollectionUpdateOperations::PayloadOperation(

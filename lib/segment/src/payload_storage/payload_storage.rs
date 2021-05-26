@@ -1,5 +1,5 @@
 
-use crate::types::{PointOffsetType, PayloadKeyType, PayloadType, Filter, TheMap, PayloadSchemaType};
+use crate::types::{PointOffsetType, PayloadKeyType, PayloadType, Filter, TheMap, PayloadSchemaType, PayloadInterface};
 use crate::entry::entry_point::OperationResult;
 use serde_json::value::Value;
 
@@ -11,80 +11,22 @@ pub trait PayloadStorage {
         fn _extract_payloads<'a, I>(_payload: I, prefix_key: Option<PayloadKeyType>) -> Vec<(PayloadKeyType, Option<PayloadType>)>
             where I: Iterator<Item=(&'a PayloadKeyType, &'a serde_json::value::Value)> {
 
-            fn _handle_array(key: PayloadKeyType, x: &Vec<Value>) -> Vec<(PayloadKeyType, Option<PayloadType>)> {
-                let result = {
-                    match &x.first() {
-                        Some(Value::Bool(_)) => {
-                            let vec = x.iter().fold(vec![], |mut data, b| {
-                                match &b.as_bool() {
-                                    Some(ref y) => data.push(y.to_string()),
-                                    None => ()
-                                }
-                                data
-                            });
-                            vec![(key, Some(PayloadType::Keyword(vec)))]
-                        },
-                        Some(Value::String(_)) => {
-                            let vec = x.iter().fold(vec![], |mut data, b| {
-                                match &b.as_str() {
-                                    Some(ref y) => data.push(y.to_string()),
-                                    None => ()
-                                }
-                                data
-                            });
-                            vec![(key, Some(PayloadType::Keyword(vec)))]
-                        },
-                        Some(Value::Number(ref y)) => {
-                            if y.is_f64() {
-                                let vec = x.iter().fold(vec![], |mut data, b| {
-                                    match &b.as_f64() {
-                                        Some(ref y) => data.push(y.clone()),
-                                        None => ()
-                                    }
-                                    data
-                                });
-                                vec![(key, Some(PayloadType::Float(vec)))]
-                            } else if y.is_i64() {
-                                let vec = x.iter().fold(vec![], |mut data, b| {
-                                    match &b.as_i64() {
-                                        Some(ref y) => data.push(y.clone()),
-                                        None => ()
-                                    }
-                                    data
-                                });
-                                vec![(key, Some(PayloadType::Integer(vec)))]
-                            } else {
-                                vec![]
-                            }
-                        },
-                        _ => vec![],
-                    }
-                };
-                result
-            }
-
             fn _fn(prefix: &Option<PayloadKeyType>, k: &PayloadKeyType, v: &Value) -> Vec<(PayloadKeyType, Option<PayloadType>)> {
                 let key = match &prefix {
                     None => k.to_string(),
                     Some(_k) => (_k.to_owned() + "__" + k).to_string(),
                 };
-                match v {
-                    Value::Bool(ref x) => vec![(key, Some(PayloadType::Keyword(vec![x.to_string()])))],
-                    Value::String(ref x) => vec![(key, Some(PayloadType::Keyword(vec![x.to_string()])))],
-                    Value::Number(ref x) => {
-                        if x.is_f64() {
-                            vec![(key, Some(PayloadType::Float(vec![x.as_f64().unwrap()])))]
-                        } else if x.is_i64() {
-                            vec![(key, Some(PayloadType::Integer(vec![x.as_i64().unwrap()])))]
-                        } else {
-                            vec![]
+
+                let opt_payload_interface: Result<PayloadInterface, _> = serde_json::from_value(v.to_owned());
+                match opt_payload_interface {
+                    Ok(payload_interface) => vec![(key, Some(PayloadType::from(&payload_interface)))],
+                    _ => {
+                        match v {
+                            Value::Object(ref x) => _extract_payloads(x.iter(), Some(key)),
+                            _ => vec![]
                         }
                     },
-                    Value::Array(ref x) => _handle_array(key, x),
-                    Value::Object(ref x) => _extract_payloads(x.iter(), Some(key)),
-                    _ => vec![]
                 }
-
             }
             _payload.flat_map(|(k, value)| _fn(&prefix_key, k, value)).collect()
         }

@@ -1,7 +1,7 @@
 use serde;
 use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};
-use segment::types::{PointIdType, PayloadKeyType, PayloadInterface};
+use segment::types::{PointIdType, PayloadKeyType, PayloadInterfaceStrict};
 use std::collections::HashMap;
 
 
@@ -12,7 +12,7 @@ use std::collections::HashMap;
 pub enum PayloadOps {
     /// Set payload value, overrides if it is already exists
     SetPayload {
-        payload: HashMap<PayloadKeyType, PayloadInterface>,
+        payload: HashMap<PayloadKeyType, PayloadInterfaceStrict>,
         /// Assigns payload to each point in this list
         points: Vec<PointIdType>,
     },
@@ -60,7 +60,7 @@ mod tests {
                 assert!(payload.contains_key("key1"));
 
                 let payload_interface = payload.get("key1").expect("No key key1");
-                let payload1 = payload_interface.to_payload();
+                let payload1 = payload_interface.into();
 
                 match payload1 {
                     PayloadType::Keyword(x) => assert_eq!(x, vec!["hello".to_owned()]),

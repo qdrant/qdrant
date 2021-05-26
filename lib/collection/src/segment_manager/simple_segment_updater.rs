@@ -3,7 +3,7 @@ use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder};
 use crate::segment_manager::segment_managers::SegmentUpdater;
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use crate::collection::{CollectionResult, CollectionError};
-use segment::types::{SeqNumberType, PointIdType, PayloadKeyType, PayloadInterface};
+use segment::types::{SeqNumberType, PointIdType, PayloadKeyType, PayloadInterfaceStrict};
 use std::collections::{HashSet, HashMap};
 use crate::operations::types::VectorType;
 
@@ -52,7 +52,7 @@ impl SimpleSegmentUpdater {
                      op_num: SeqNumberType,
                      ids: &Vec<PointIdType>,
                      vectors: &Vec<VectorType>,
-                     payloads: &Option<Vec<Option<HashMap<PayloadKeyType, PayloadInterface>>>>,
+                     payloads: &Option<Vec<Option<HashMap<PayloadKeyType, PayloadInterfaceStrict>>>>,
     ) -> CollectionResult<usize> {
         if ids.len() != vectors.len() {
             return Err(CollectionError::BadInput {
@@ -125,7 +125,7 @@ impl SimpleSegmentUpdater {
     fn set_payload(
         &self,
         op_num: SeqNumberType,
-        payload: &HashMap<PayloadKeyType, PayloadInterface>,
+        payload: &HashMap<PayloadKeyType, PayloadInterfaceStrict>,
         points: &Vec<PointIdType>,
     ) -> CollectionResult<usize> {
         let mut updated_points: HashSet<PointIdType> = Default::default();
@@ -137,7 +137,7 @@ impl SimpleSegmentUpdater {
                 updated_points.insert(id);
                 let mut res = true;
                 for (key, payload) in payload {
-                    res = write_segment.set_payload(op_num, id, key, payload.to_payload())? && res;
+                    res = write_segment.set_payload(op_num, id, key, payload.into())? && res;
                 }
                 Ok(res)
             })?;
@@ -352,11 +352,11 @@ mod tests {
             update_lock: Mutex::new(false),
         };
 
-        let mut payload: HashMap<PayloadKeyType, PayloadInterface> = Default::default();
+        let mut payload: HashMap<PayloadKeyType, PayloadInterfaceStrict> = Default::default();
 
         payload.insert(
             "color".to_string(),
-            PayloadInterface::Keyword(PayloadVariant::Value("red".to_string())),
+            PayloadInterfaceStrict::Keyword(PayloadVariant::Value("red".to_string())),
         );
 
         let points = vec![1, 2, 3];

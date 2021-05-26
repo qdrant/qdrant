@@ -342,10 +342,11 @@ mod tests {
         {
             "name": "John Doe",
             "age": 43,
-            "boolean": true,
+            "boolean": "true",
             "floating": 30.5,
             "string_array": ["hello", "world"],
-            "boolean_array": [true, false],
+            "boolean_array": ["true", "false"],
+            "geo_data": {"type": "geo", "value": {"lon": 1.0, "lat": 1.0}},
             "float_array": [1.0, 2.0],
             "integer_array": [1, 2],
             "metadata": {
@@ -374,6 +375,7 @@ mod tests {
         segment.set_full_payload_with_value(0, 0, &data.to_string()).unwrap();
         let payload = segment.payload(0).unwrap();
         let keys: Vec<PayloadKeyType> = payload.keys().cloned().collect();
+        assert!(keys.contains(&"geo_data".to_string()));
         assert!(keys.contains(&"name".to_string()));
         assert!(keys.contains(&"age".to_string()));
         assert!(keys.contains(&"boolean".to_string()));
@@ -481,6 +483,14 @@ mod tests {
                 assert_eq!(x.len(), 2);
                 assert_eq!(x[0], "true");
                 assert_eq!(x[1], "false");
+            },
+            _ => assert!(false)
+        }
+        match &payload[&"geo_data".to_string()] {
+            PayloadType::Geo(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0].lat, 1.0);
+                assert_eq!(x[0].lon, 1.0);
             },
             _ => assert!(false)
         }
