@@ -1,7 +1,7 @@
 use serde;
 use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};
-use segment::types::{PointIdType, PayloadKeyType, PayloadInterfaceStrict};
+use segment::types::{PointIdType, PayloadKeyType, PayloadInterface};
 use std::collections::HashMap;
 
 
@@ -12,7 +12,7 @@ use std::collections::HashMap;
 pub enum PayloadOps {
     /// Set payload value, overrides if it is already exists
     SetPayload {
-        payload: HashMap<PayloadKeyType, PayloadInterfaceStrict>,
+        payload: HashMap<PayloadKeyType, PayloadInterface>,
         /// Assigns payload to each point in this list
         points: Vec<PointIdType>,
     },
