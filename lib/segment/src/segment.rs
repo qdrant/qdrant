@@ -531,4 +531,63 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_from_filter_attributes() {
+        let data = r#"
+        {
+            "name": "John Doe",
+            "age": 43,
+            "metadata": {
+                "height": 50,
+                "width": 60
+            }
+        }"#;
+
+        let dir = TempDir::new("payload_dir").unwrap();
+        let dim = 2;
+        let config = SegmentConfig {
+            vector_size: dim,
+            index: Indexes::Plain {},
+            payload_index: Some(PayloadIndexType::Plain),
+            storage_type: StorageType::InMemory,
+            distance: Distance::Dot,
+        };
+
+        let mut segment = build_segment(dir.path(), &config).unwrap();
+        segment.upsert_point(0, 0, &vec![1.0 as f32, 1.0 as f32]).unwrap();
+        segment.set_full_payload_with_value(0, 0, &data.to_string()).unwrap();
+
+        let filter_valid_str = r#"
+        {
+            "must": [
+                {
+                    "key": "metadata__height",
+                    "match": {
+                        "integer": 50
+                    }
+                }
+            ]
+        }"#;
+
+        let filter_valid: Filter = serde_json::from_str(filter_valid_str).unwrap();
+        let filter_invalid_str = r#"
+        {
+            "must": [
+                {
+                    "key": "metadata__height",
+                    "match": {
+                        "integer": 60
+                    }
+                }
+            ]
+        }"#;
+
+        let filter_invalid: Filter = serde_json::from_str(filter_invalid_str).unwrap();
+        let results_with_valid_filter = segment.search(&vec![1.0 as f32, 1.0 as f32], Some(&filter_valid), 1, None).unwrap();
+        assert_eq!(results_with_valid_filter.len(), 1);
+        assert_eq!(results_with_valid_filter.first().unwrap().id, 0);
+        let results_with_invalid_filter = segment.search(&vec![1.0 as f32, 1.0 as f32], Some(&filter_invalid), 1, None).unwrap();
+        assert!(results_with_invalid_filter.is_empty());
+    }
+
 }

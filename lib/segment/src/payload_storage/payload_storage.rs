@@ -8,10 +8,10 @@ pub trait PayloadStorage {
 
     fn assign_all_with_value(&mut self, point_id: PointOffsetType, payload: TheMap<PayloadKeyType, serde_json::value::Value>) -> OperationResult<()> {
 
-        fn _extract_payloads<'a, I>(_payload: I, prefix_key: Option<PayloadKeyType>) -> Vec<(PayloadKeyType, Option<PayloadType>)>
+        fn _extract_payloads<'a, I>(_payload: I, prefix_key: Option<PayloadKeyType>) -> Vec<(PayloadKeyType, PayloadType)>
             where I: Iterator<Item=(&'a PayloadKeyType, &'a serde_json::value::Value)> {
 
-            fn _fn(prefix: &Option<PayloadKeyType>, k: &PayloadKeyType, v: &Value) -> Vec<(PayloadKeyType, Option<PayloadType>)> {
+            fn _fn(prefix: &Option<PayloadKeyType>, k: &PayloadKeyType, v: &Value) -> Vec<(PayloadKeyType, PayloadType)> {
                 let key = match &prefix {
                     None => k.to_string(),
                     Some(_k) => (_k.to_owned() + "__" + k).to_string(),
@@ -19,7 +19,7 @@ pub trait PayloadStorage {
 
                 let opt_payload_interface: Result<PayloadInterface, _> = serde_json::from_value(v.to_owned());
                 match opt_payload_interface {
-                    Ok(payload_interface) => vec![(key, Some(PayloadType::from(&payload_interface)))],
+                    Ok(payload_interface) => vec![(key, PayloadType::from(&payload_interface))],
                     _ => {
                         match v {
                             Value::Object(ref x) => _extract_payloads(x.iter(), Some(key)),
@@ -33,10 +33,7 @@ pub trait PayloadStorage {
         self.drop(point_id)?;
         let inner_payloads = _extract_payloads(payload.iter(), None);
         for (key, value) in inner_payloads.iter() {
-            match value {
-                Some(ref v) => self.assign(point_id, key, v.to_owned())?,
-                None => (),
-            }
+            self.assign(point_id, key, value.to_owned())?;
         }
         Ok(())
     }
