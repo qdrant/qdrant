@@ -22,6 +22,15 @@
       "contributions": [
         "doc"
       ]
+    },
+    {
+      "login": "JoanFM",
+      "name": "Joan Fontanals",
+      "avatar_url": "https://avatars.githubusercontent.com/u/19825685?v=4",
+      "profile": "http://www.linkedin.com/in/joanfontanalsmartinez/",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
