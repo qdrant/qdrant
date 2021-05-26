@@ -184,7 +184,7 @@ impl SegmentEntry for Segment {
     fn set_full_payload_with_value(&mut self,
                         op_num: SeqNumberType,
                         point_id: PointIdType,
-                        full_payload: &String,
+                        full_payload: &str,
     ) -> OperationResult<bool> {
         if self.skip_by_version(op_num) { return Ok(false); };
         let internal_id = self.lookup_internal_id(point_id)?;

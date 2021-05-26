@@ -160,7 +160,7 @@ impl SegmentEntry for ProxySegment {
         self.write_segment.get().write().set_full_payload(op_num, point_id, full_payload)
     }
 
-    fn set_full_payload_with_value(&mut self, op_num: u64, point_id: u64, full_payload: &String) -> OperationResult<bool> {
+    fn set_full_payload_with_value(&mut self, op_num: u64, point_id: u64, full_payload: &str) -> OperationResult<bool> {
         if self.version() > op_num { return Ok(false); }
         self.move_if_exists(op_num, point_id)?;
         self.write_segment.get().write().set_full_payload_with_value(op_num, point_id, full_payload)

@@ -76,7 +76,7 @@ pub trait SegmentEntry {
 
     fn set_full_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, full_payload: TheMap<PayloadKeyType, PayloadType>) -> OperationResult<bool>;
 
-    fn set_full_payload_with_value(&mut self, op_num: SeqNumberType, point_id: PointIdType, full_payload: &String) -> OperationResult<bool>;
+    fn set_full_payload_with_value(&mut self, op_num: SeqNumberType, point_id: PointIdType, full_payload: &str) -> OperationResult<bool>;
 
     fn set_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, key: &PayloadKeyType, payload: PayloadType) -> OperationResult<bool>;
 
