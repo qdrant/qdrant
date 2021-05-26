@@ -175,4 +175,168 @@ mod tests {
         storage.wipe().unwrap();
         assert_eq!(storage.payload(100).len(), 0);
     }
+
+    #[test]
+    fn test_assign_payload_from_serde_json() {
+        let data = r#"
+        {
+            "name": "John Doe",
+            "age": 43,
+            "boolean": "true",
+            "floating": 30.5,
+            "string_array": ["hello", "world"],
+            "boolean_array": ["true", "false"],
+            "float_array": [1.0, 2.0],
+            "integer_array": [1, 2],
+            "geo_data": {"type": "geo", "value": {"lon": 1.0, "lat": 1.0}},
+            "metadata": {
+                "height": 50,
+                "width": 60,
+                "temperature": 60.5,
+                "nested": {
+                    "feature": 30.5
+                },
+                "integer_array": [1, 2]
+            }
+        }"#;
+
+        let v = serde_json::from_str(data).unwrap();
+        let dir = TempDir::new("storage_dir").unwrap();
+        let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
+        storage.assign_all_with_value(100, v).unwrap();
+        let pload = storage.payload(100);
+        let keys:  Vec<_> = pload.keys().cloned().collect();
+        assert!(keys.contains(&"geo_data".to_string()));
+        assert!(keys.contains(&"name".to_string()));
+        assert!(keys.contains(&"age".to_string()));
+        assert!(keys.contains(&"boolean".to_string()));
+        assert!(keys.contains(&"floating".to_string()));
+        assert!(keys.contains(&"metadata__temperature".to_string()));
+        assert!(keys.contains(&"metadata__width".to_string()));
+        assert!(keys.contains(&"metadata__height".to_string()));
+        assert!(keys.contains(&"metadata__nested__feature".to_string()));
+        assert!(keys.contains(&"string_array".to_string()));
+        assert!(keys.contains(&"float_array".to_string()));
+        assert!(keys.contains(&"integer_array".to_string()));
+        assert!(keys.contains(&"boolean_array".to_string()));
+        assert!(keys.contains(&"metadata__integer_array".to_string()));
+
+        match &pload[&"name".to_string()] {
+            PayloadType::Keyword(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], "John Doe".to_string());
+            },
+            _ => assert!(false)
+        }
+        match &pload[&"age".to_string()] {
+            PayloadType::Integer(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], 43);
+            },
+            _ => assert!(false)
+        }
+        match &pload[&"floating".to_string()] {
+            PayloadType::Float(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], 30.5);
+            },
+            _ => assert!(false)
+        }
+        match &pload[&"boolean".to_string()] {
+            PayloadType::Keyword(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], "true");
+            },
+            _ => assert!(false)
+        }
+        match &pload[&"metadata__temperature".to_string()] {
+            PayloadType::Float(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], 60.5);
+            },
+            _ => assert!(false)
+        }
+        match &pload[&"metadata__width".to_string()] {
+            PayloadType::Integer(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], 60);
+            },
+            _ => assert!(false)
+        }
+        match &pload[&"metadata__height".to_string()] {
+            PayloadType::Integer(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], 50);
+            },
+            _ => assert!(false)
+        }
+        match &pload[&"metadata__nested__feature".to_string()] {
+            PayloadType::Float(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], 30.5);
+            },
+            _ => assert!(false)
+        }
+        match &pload[&"string_array".to_string()] {
+            PayloadType::Keyword(x) => {
+                assert_eq!(x.len(), 2);
+                assert_eq!(x[0], "hello");
+                assert_eq!(x[1], "world");
+            },
+            _ => assert!(false)
+        }
+        match &pload[&"integer_array".to_string()] {
+            PayloadType::Integer(x) => {
+                assert_eq!(x.len(), 2);
+                assert_eq!(x[0], 1);
+                assert_eq!(x[1], 2);
+            },
+            _ => assert!(false)
+        }
+        match &pload[&"metadata__integer_array".to_string()] {
+            PayloadType::Integer(x) => {
+                assert_eq!(x.len(), 2);
+                assert_eq!(x[0], 1);
+                assert_eq!(x[1], 2);
+            },
+            _ => assert!(false)
+        }
+        match &pload[&"float_array".to_string()] {
+            PayloadType::Float(x) => {
+                assert_eq!(x.len(), 2);
+                assert_eq!(x[0], 1.0);
+                assert_eq!(x[1], 2.0);
+            },
+            _ => assert!(false)
+        }
+        match &pload[&"boolean_array".to_string()] {
+            PayloadType::Keyword(x) => {
+                assert_eq!(x.len(), 2);
+                assert_eq!(x[0], "true");
+                assert_eq!(x[1], "false");
+            },
+            _ => assert!(false)
+        }
+        match &pload[&"geo_data".to_string()] {
+            PayloadType::Geo(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0].lat, 1.0);
+                assert_eq!(x[0].lon, 1.0);
+            },
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn test_invalid_serde_input() {
+        let data = r#"
+        {
+            "array": [1, "hey"]
+        }"#;
+
+        let v = serde_json::from_str(data).unwrap();
+        let dir = TempDir::new("storage_dir").unwrap();
+        let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
+        storage.assign_all_with_value(100, v).unwrap();
+    }
 }

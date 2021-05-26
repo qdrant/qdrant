@@ -1,49 +1,9 @@
-
-
 use serde;
 use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};
-use segment::types::{PointIdType, PayloadKeyType, PayloadType, GeoPoint};
+use segment::types::{PointIdType, PayloadKeyType, PayloadInterface};
 use std::collections::HashMap;
 
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
-pub enum PayloadVariant<T> {
-    Value(T),
-    List(Vec<T>)
-}
-
-impl<T: Clone> PayloadVariant<T> {
-    pub fn to_list(&self) -> Vec<T>{
-        match self {
-            PayloadVariant::Value(x) => vec![x.clone()],
-            PayloadVariant::List(vec) => vec.clone(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type",  content = "value")]
-pub enum PayloadInterface {
-    Keyword(PayloadVariant<String>),
-    Integer(PayloadVariant<i64>),
-    Float(PayloadVariant<f64>),
-    Geo(PayloadVariant<GeoPoint>),
-}
-
-impl PayloadInterface {
-    pub fn to_payload(&self) -> PayloadType {
-        match self {
-            PayloadInterface::Keyword(x) => PayloadType::Keyword(x.to_list()),
-            PayloadInterface::Integer(x) => PayloadType::Integer(x.to_list()),
-            PayloadInterface::Float(x) =>  PayloadType::Float(x.to_list()),
-            PayloadInterface::Geo(x) => PayloadType::Geo(x.to_list()),
-        }
-    }
-}
 
 
 /// Define operations description for point payloads manipulation
@@ -72,6 +32,7 @@ pub enum PayloadOps {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use segment::types::PayloadType;
 
     #[test]
     fn test_serialization() {
@@ -99,7 +60,7 @@ mod tests {
                 assert!(payload.contains_key("key1"));
 
                 let payload_interface = payload.get("key1").expect("No key key1");
-                let payload1 = payload_interface.to_payload();
+                let payload1 = payload_interface.into();
 
                 match payload1 {
                     PayloadType::Keyword(x) => assert_eq!(x, vec!["hello".to_owned()]),

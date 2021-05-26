@@ -11,6 +11,7 @@ use std::fs::{remove_dir_all};
 use std::io::Write;
 use atomicwrites::{AtomicFile, AllowOverwrite};
 use crate::index::index::PayloadIndex;
+use crate::entry::entry_point::OperationError::ServiceError;
 
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
@@ -180,6 +181,23 @@ impl SegmentEntry for Segment {
         Ok(true)
     }
 
+    fn set_full_payload_with_value(&mut self,
+                        op_num: SeqNumberType,
+                        point_id: PointIdType,
+                        full_payload: &str,
+    ) -> OperationResult<bool> {
+        if self.skip_by_version(op_num) { return Ok(false); };
+        let internal_id = self.lookup_internal_id(point_id)?;
+        let load: Result<TheMap<PayloadKeyType, serde_json::value::Value>, serde_json::Error> = serde_json::from_str(full_payload);
+        match load {
+            Ok(x) => {
+                self.payload_storage.borrow_mut().assign_all_with_value(internal_id, x)?;
+                Ok(true)
+            },
+            Err(e) => Err(ServiceError { description: e.to_string() }),
+        }
+    }
+
     fn set_payload(&mut self,
                    op_num: SeqNumberType,
                    point_id: PointIdType,
@@ -308,4 +326,268 @@ impl SegmentEntry for Segment {
     fn get_indexed_fields(&self) -> Vec<PayloadKeyType> {
         self.payload_index.borrow().indexed_fields()
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempdir::TempDir;
+    use crate::types::{SegmentConfig, StorageType, Indexes, PayloadIndexType, Distance};
+    use crate::segment_constructor::segment_constructor::build_segment;
+    use crate::entry::entry_point::SegmentEntry;
+
+    #[test]
+    fn test_set_payload_from_json() {
+        let data = r#"
+        {
+            "name": "John Doe",
+            "age": 43,
+            "boolean": "true",
+            "floating": 30.5,
+            "string_array": ["hello", "world"],
+            "boolean_array": ["true", "false"],
+            "geo_data": {"type": "geo", "value": {"lon": 1.0, "lat": 1.0}},
+            "float_array": [1.0, 2.0],
+            "integer_array": [1, 2],
+            "metadata": {
+                "height": 50,
+                "width": 60,
+                "temperature": 60.5,
+                "nested": {
+                    "feature": 30.5
+                },
+                "integer_array": [1, 2]
+            }
+        }"#;
+
+        let dir = TempDir::new("payload_dir").unwrap();
+        let dim = 2;
+        let config = SegmentConfig {
+            vector_size: dim,
+            index: Indexes::Plain {},
+            payload_index: Some(PayloadIndexType::Plain),
+            storage_type: StorageType::InMemory,
+            distance: Distance::Dot,
+        };
+
+        let mut segment = build_segment(dir.path(), &config).unwrap();
+        segment.upsert_point(0, 0, &vec![1.0 as f32, 1.0 as f32]).unwrap();
+        segment.set_full_payload_with_value(0, 0, &data.to_string()).unwrap();
+        let payload = segment.payload(0).unwrap();
+        let keys: Vec<PayloadKeyType> = payload.keys().cloned().collect();
+        assert!(keys.contains(&"geo_data".to_string()));
+        assert!(keys.contains(&"name".to_string()));
+        assert!(keys.contains(&"age".to_string()));
+        assert!(keys.contains(&"boolean".to_string()));
+        assert!(keys.contains(&"floating".to_string()));
+        assert!(keys.contains(&"metadata__temperature".to_string()));
+        assert!(keys.contains(&"metadata__width".to_string()));
+        assert!(keys.contains(&"metadata__height".to_string()));
+        assert!(keys.contains(&"metadata__nested__feature".to_string()));
+        assert!(keys.contains(&"string_array".to_string()));
+        assert!(keys.contains(&"float_array".to_string()));
+        assert!(keys.contains(&"integer_array".to_string()));
+        assert!(keys.contains(&"boolean_array".to_string()));
+        assert!(keys.contains(&"metadata__integer_array".to_string()));
+
+        match &payload[&"name".to_string()] {
+            PayloadType::Keyword(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], "John Doe".to_string());
+            },
+            _ => assert!(false)
+        }
+        match &payload[&"age".to_string()] {
+            PayloadType::Integer(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], 43);
+            },
+            _ => assert!(false)
+        }
+        match &payload[&"floating".to_string()] {
+            PayloadType::Float(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], 30.5);
+            },
+            _ => assert!(false)
+        }
+        match &payload[&"boolean".to_string()] {
+            PayloadType::Keyword(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], "true");
+            },
+            _ => assert!(false)
+        }
+        match &payload[&"metadata__temperature".to_string()] {
+            PayloadType::Float(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], 60.5);
+            },
+            _ => assert!(false)
+        }
+        match &payload[&"metadata__width".to_string()] {
+            PayloadType::Integer(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], 60);
+            },
+            _ => assert!(false)
+        }
+        match &payload[&"metadata__height".to_string()] {
+            PayloadType::Integer(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], 50);
+            },
+            _ => assert!(false)
+        }
+        match &payload[&"metadata__nested__feature".to_string()] {
+            PayloadType::Float(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0], 30.5);
+            },
+            _ => assert!(false)
+        }
+        match &payload[&"string_array".to_string()] {
+            PayloadType::Keyword(x) => {
+                assert_eq!(x.len(), 2);
+                assert_eq!(x[0], "hello");
+                assert_eq!(x[1], "world");
+            },
+            _ => assert!(false)
+        }
+        match &payload[&"integer_array".to_string()] {
+            PayloadType::Integer(x) => {
+                assert_eq!(x.len(), 2);
+                assert_eq!(x[0], 1);
+                assert_eq!(x[1], 2);
+            },
+            _ => assert!(false)
+        }
+        match &payload[&"metadata__integer_array".to_string()] {
+            PayloadType::Integer(x) => {
+                assert_eq!(x.len(), 2);
+                assert_eq!(x[0], 1);
+                assert_eq!(x[1], 2);
+            },
+            _ => assert!(false)
+        }
+        match &payload[&"float_array".to_string()] {
+            PayloadType::Float(x) => {
+                assert_eq!(x.len(), 2);
+                assert_eq!(x[0], 1.0);
+                assert_eq!(x[1], 2.0);
+            },
+            _ => assert!(false)
+        }
+        match &payload[&"boolean_array".to_string()] {
+            PayloadType::Keyword(x) => {
+                assert_eq!(x.len(), 2);
+                assert_eq!(x[0], "true");
+                assert_eq!(x[1], "false");
+            },
+            _ => assert!(false)
+        }
+        match &payload[&"geo_data".to_string()] {
+            PayloadType::Geo(x) => {
+                assert_eq!(x.len(), 1);
+                assert_eq!(x[0].lat, 1.0);
+                assert_eq!(x[0].lon, 1.0);
+            },
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn test_set_invalid_payload_from_json() {
+        let data1 = r#"
+        {
+            "invalid_data"
+        }"#;
+        let data2 = r#"
+        {
+            "array": [1, "hello"],
+        }"#;
+
+        let dir = TempDir::new("payload_dir").unwrap();
+        let dim = 2;
+        let config = SegmentConfig {
+            vector_size: dim,
+            index: Indexes::Plain {},
+            payload_index: Some(PayloadIndexType::Plain),
+            storage_type: StorageType::InMemory,
+            distance: Distance::Dot,
+        };
+
+        let mut segment = build_segment(dir.path(), &config).unwrap();
+        segment.upsert_point(0, 0, &vec![1.0 as f32, 1.0 as f32]).unwrap();
+        let result1 = segment.set_full_payload_with_value(0, 0, &data1.to_string());
+        match result1 {
+            Ok(_) => assert!(false),
+            Err(_) => assert!(true)
+        }
+        let result2 = segment.set_full_payload_with_value(0, 0, &data2.to_string());
+        match result2 {
+            Ok(_) => assert!(false),
+            Err(_) => assert!(true)
+        }
+    }
+
+    #[test]
+    fn test_from_filter_attributes() {
+        let data = r#"
+        {
+            "name": "John Doe",
+            "age": 43,
+            "metadata": {
+                "height": 50,
+                "width": 60
+            }
+        }"#;
+
+        let dir = TempDir::new("payload_dir").unwrap();
+        let dim = 2;
+        let config = SegmentConfig {
+            vector_size: dim,
+            index: Indexes::Plain {},
+            payload_index: Some(PayloadIndexType::Plain),
+            storage_type: StorageType::InMemory,
+            distance: Distance::Dot,
+        };
+
+        let mut segment = build_segment(dir.path(), &config).unwrap();
+        segment.upsert_point(0, 0, &vec![1.0 as f32, 1.0 as f32]).unwrap();
+        segment.set_full_payload_with_value(0, 0, &data.to_string()).unwrap();
+
+        let filter_valid_str = r#"
+        {
+            "must": [
+                {
+                    "key": "metadata__height",
+                    "match": {
+                        "integer": 50
+                    }
+                }
+            ]
+        }"#;
+
+        let filter_valid: Filter = serde_json::from_str(filter_valid_str).unwrap();
+        let filter_invalid_str = r#"
+        {
+            "must": [
+                {
+                    "key": "metadata__height",
+                    "match": {
+                        "integer": 60
+                    }
+                }
+            ]
+        }"#;
+
+        let filter_invalid: Filter = serde_json::from_str(filter_invalid_str).unwrap();
+        let results_with_valid_filter = segment.search(&vec![1.0 as f32, 1.0 as f32], Some(&filter_valid), 1, None).unwrap();
+        assert_eq!(results_with_valid_filter.len(), 1);
+        assert_eq!(results_with_valid_filter.first().unwrap().id, 0);
+        let results_with_invalid_filter = segment.search(&vec![1.0 as f32, 1.0 as f32], Some(&filter_invalid), 1, None).unwrap();
+        assert!(results_with_invalid_filter.is_empty());
+    }
+
 }

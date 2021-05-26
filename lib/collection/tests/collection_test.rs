@@ -6,9 +6,9 @@ use collection::operations::point_ops::{PointOperations, PointStruct};
 use crate::common::{simple_collection_fixture, TEST_OPTIMIZERS_CONFIG};
 use collection::operations::types::{UpdateStatus, SearchRequest, RecommendRequest};
 use std::sync::Arc;
-use collection::operations::payload_ops::{PayloadOps, PayloadInterface, PayloadVariant};
+use collection::operations::payload_ops::PayloadOps;
 use std::collections::HashMap;
-use segment::types::PayloadKeyType;
+use segment::types::{PayloadKeyType, PayloadVariant, PayloadInterface};
 use collection::collection_builder::collection_loader::load_collection;
 use wal::WalOptions;
 use tempdir::TempDir;
@@ -92,7 +92,7 @@ fn test_collection_loading() {
 
         payload.insert(
             "color".to_string(),
-            PayloadInterface::Keyword(PayloadVariant::Value("red".to_string())),
+            PayloadInterface::KeywordShortcut(PayloadVariant::Value("red".to_string())),
         );
 
         let assign_payload = CollectionUpdateOperations::PayloadOperation(
