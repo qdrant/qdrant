@@ -13,6 +13,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "azayarni",
+      "name": "Andre Zayarni",
+      "avatar_url": "https://avatars.githubusercontent.com/u/926368?v=4",
+      "profile": "https://github.com/azayarni",
+      "contributions": [
+        "doc"
+      ]
     }
   ],
   "contributorsPerLine": 7,
