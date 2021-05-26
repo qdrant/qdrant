@@ -1,0 +1,24 @@
+{
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 100,
+  "commit": false,
+  "contributors": [
+    {
+      "login": "generall",
+      "name": "Andrey Vasnetsov",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1935623?v=4",
+      "profile": "https://t.me/neural_network_engineering",
+      "contributions": [
+        "code"
+      ]
+    }
+  ],
+  "contributorsPerLine": 7,
+  "projectName": "qdrant",
+  "projectOwner": "qdrant",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "skipCi": true
+}
