@@ -233,11 +233,13 @@ impl SegmentEntry for Segment {
     fn payload_as_json(&self, point_id: PointIdType) -> OperationResult<String> {
         let internal_id = self.lookup_internal_id(point_id)?;
         let payload = self.payload_storage.borrow().payload(internal_id);
-        let map: TheMap<String, serde_json::value::Value> =
-            payload.iter().map(
-                |(k, v)| {
-                    (k.to_string(), serde_json::to_value(v).unwrap())
-                }).collect();
+        let map: TheMap<String, serde_json::value::Value> = payload.iter().fold( TheMap::new(), |mut acc, (k, v)| {
+            if !k.contains("__") {
+                acc.insert(k.to_string(), serde_json::to_value(v).unwrap());
+            }
+            acc
+        } );
+
         Ok(serde_json::to_string(&map).unwrap())
     }
 
