@@ -109,7 +109,7 @@ impl SegmentSearcher for SimpleSegmentSearcher {
                         if with_payload {
                             if as_json {
                                 //TODO: Unwrapped here
-                                Some(PayloadContent::Payload(segment.payload(id)?))
+                                Some(PayloadContent::Json(segment.payload_as_json(id)?))
                             } else {
                                 Some(PayloadContent::Payload(segment.payload(id)?))
                             }

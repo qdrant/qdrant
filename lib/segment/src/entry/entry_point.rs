@@ -94,7 +94,7 @@ pub trait SegmentEntry {
 
     fn payload(&self, point_id: PointIdType) -> OperationResult<TheMap<PayloadKeyType, PayloadType>>;
 
-    fn payload_unwrapped(&self, point_id: PointIdType) -> OperationResult<TheMap<PayloadKeyType, PayloadInterface>>;
+    fn payload_as_json(&self, point_id: PointIdType) -> OperationResult<String>;
 
     fn iter_points(&self) -> Box<dyn Iterator<Item=PointIdType> + '_>;
 

@@ -11,6 +11,8 @@ use std::fs::{remove_dir_all};
 use std::io::Write;
 use atomicwrites::{AtomicFile, AllowOverwrite};
 use crate::index::index::PayloadIndex;
+use std::collections::BTreeMap;
+use schemars::_serde_json::Error;
 
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
@@ -228,30 +230,15 @@ impl SegmentEntry for Segment {
         Ok(self.payload_storage.borrow().payload(internal_id))
     }
 
-    fn payload_unwrapped(&self, point_id: PointIdType) -> OperationResult<TheMap<PayloadKeyType, PayloadInterface>> {
+    fn payload_as_json(&self, point_id: PointIdType) -> OperationResult<String> {
         let internal_id = self.lookup_internal_id(point_id)?;
-        // let payload = self.payload_storage.borrow().payload(internal_id);
-        // let payload_unwrapped = match self.payload.get(&point_id) {
-        //     Some(payload) => {
-        //         payload.fold(TheMap::new(), |&mut acc, (k, v)| {
-        //             if k.contains("__") {
-        //                 let keys = k.split("__");
-        //                 let mut value: TheMap::new();
-        //                     for key in keys.rev() {
-        //
-        //                     }
-        //                 acc[k] = v;
-        //             } else {
-        //                 acc[k] = v;
-        //             }
-        //             acc
-        //
-        //         } );
-        //         payload.clone()
-        //     },
-        //     None => TheMap::new()
-        // };
-        Ok(TheMap::new())
+        let payload = self.payload_storage.borrow().payload(internal_id);
+        let map: TheMap<String, serde_json::value::Value> =
+            payload.iter().map(
+                |(k, v)| {
+                    (k.to_string(), serde_json::to_value(v).unwrap())
+                }).collect();
+        Ok(serde_json::to_string(&map).unwrap())
     }
 
     fn iter_points(&self) -> Box<dyn Iterator<Item=PointIdType> + '_> {
@@ -549,6 +536,43 @@ mod tests {
             Ok(_) => assert!(false),
             Err(_) => assert!(true)
         }
+    }
+
+    #[test]
+    fn test_get_payload_as_json() {
+        let data = r#"
+        {
+            "name": "John Doe",
+            "age": 43,
+            "string_array": ["hello", "world"],
+            "boolean_array": ["true", "false"],
+            "geo_data": {"type": "geo", "value": {"lon": 1.0, "lat": 1.0}},
+            "metadata": {
+                "height": 50,
+                "width": 60,
+                "temperature": 60.5,
+                "nested": {
+                    "feature": 30.5
+                },
+                "integer_array": [1, 2]
+            }
+        }"#;
+
+        let dir = TempDir::new("payload_dir").unwrap();
+        let dim = 2;
+        let config = SegmentConfig {
+            vector_size: dim,
+            index: Indexes::Plain {},
+            payload_index: Some(PayloadIndexType::Plain),
+            storage_type: StorageType::InMemory,
+            distance: Distance::Dot,
+        };
+
+        let mut segment = build_segment(dir.path(), &config).unwrap();
+        segment.upsert_point(0, 0, &vec![1.0 as f32, 1.0 as f32]).unwrap();
+        segment.set_full_payload_with_json(0, 0, &data.to_string()).unwrap();
+        let output: TheMap<String, serde_json::value::Value> = serde_json::from_str(&segment.payload_as_json(0).unwrap()).unwrap();
+        println!("JSON output {:?}", output)
     }
 
     #[test]
