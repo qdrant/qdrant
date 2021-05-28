@@ -4,7 +4,7 @@ use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::{PointOperations, PointStruct};
 
 use crate::common::{simple_collection_fixture, TEST_OPTIMIZERS_CONFIG};
-use collection::operations::types::{UpdateStatus, SearchRequest, RecommendRequest};
+use collection::operations::types::{UpdateStatus, SearchRequest, RecommendRequest, PayloadContent};
 use std::sync::Arc;
 use collection::operations::payload_ops::PayloadOps;
 use std::collections::HashMap;
@@ -125,7 +125,7 @@ fn test_collection_loading() {
         &TEST_OPTIMIZERS_CONFIG,
     );
 
-    let retrieved = loaded_collection.retrieve(&vec![1, 2], true, true).unwrap();
+    let retrieved = loaded_collection.retrieve(&vec![1, 2], true,  false, true).unwrap();
 
     assert_eq!(retrieved.len(), 2);
 
@@ -133,7 +133,10 @@ fn test_collection_loading() {
         if record.id == 2 {
             let non_empty_payload = record.payload.unwrap();
 
-            assert_eq!(non_empty_payload.len(), 1)
+            match non_empty_payload {
+                PayloadContent::Payload(x) => assert_eq!(x.len(), 1),
+                _ => assert!(false)
+            }
         }
     }
 }

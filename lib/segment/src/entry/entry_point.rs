@@ -1,6 +1,6 @@
 use thiserror::Error;
 use std::path::Path;
-use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentConfig, SegmentType};
+use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentConfig, SegmentType, PayloadInterface};
 use std::result;
 use std::io::Error as IoError;
 use atomicwrites::Error as AtomicIoError;
@@ -93,6 +93,8 @@ pub trait SegmentEntry {
     fn vector(&self, point_id: PointIdType) -> OperationResult<Vec<VectorElementType>>;
 
     fn payload(&self, point_id: PointIdType) -> OperationResult<TheMap<PayloadKeyType, PayloadType>>;
+
+    fn payload_unwrapped(&self, point_id: PointIdType) -> OperationResult<TheMap<PayloadKeyType, PayloadInterface>>;
 
     fn iter_points(&self) -> Box<dyn Iterator<Item=PointIdType> + '_>;
 

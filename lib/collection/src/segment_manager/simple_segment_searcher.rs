@@ -7,7 +7,8 @@ use tokio::runtime::Runtime;
 use std::collections::{HashSet, HashMap};
 use segment::spaces::tools::peek_top_scores_iterable;
 use futures::future::try_join_all;
-use crate::operations::types::{Record, SearchRequest};
+use crate::operations::types::{Record, SearchRequest, PayloadContent};
+use crate::operations::types::PayloadContent::Payload;
 
 /// Simple implementation of segment manager
 ///  - owens segments
@@ -95,7 +96,7 @@ impl SegmentSearcher for SimpleSegmentSearcher {
         Ok(top_scores)
     }
 
-    fn retrieve(&self, points: &Vec<PointIdType>, with_payload: bool, with_vector: bool) -> CollectionResult<Vec<Record>> {
+    fn retrieve(&self, points: &Vec<PointIdType>, with_payload: bool, as_json: bool, with_vector: bool) -> CollectionResult<Vec<Record>> {
         let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut point_records: HashMap<PointIdType, Record> = Default::default();
 
@@ -104,7 +105,18 @@ impl SegmentSearcher for SimpleSegmentSearcher {
             if !point_version.contains_key(&id) || point_version[&id] < segment.version() {
                 point_records.insert(id, Record {
                     id,
-                    payload: if with_payload { Some(segment.payload(id)?) } else { None },
+                    payload: {
+                        if with_payload {
+                            if as_json {
+                                //TODO: Unwrapped here
+                                Some(PayloadContent::Payload(segment.payload(id)?))
+                            } else {
+                                Some(PayloadContent::Payload(segment.payload(id)?))
+                            }
+                        } else {
+                            None
+                        }
+                    },
                     vector: if with_vector { Some(segment.vector(id)?) } else { None },
                 });
                 point_version.insert(id, segment.version());
@@ -174,7 +186,7 @@ mod tests {
             Arc::new(threaded_rt1),
         );
 
-        let records = searcher.retrieve(&vec![1, 2, 3], true, true).unwrap();
+        let records = searcher.retrieve(&vec![1, 2, 3], true, false, true).unwrap();
 
         assert_eq!(records.len(), 3);
     }

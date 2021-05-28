@@ -14,6 +14,7 @@ pub trait SegmentSearcher {
         &self,
         points: &Vec<PointIdType>,
         with_payload: bool,
+        as_json: bool,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>>;
 }

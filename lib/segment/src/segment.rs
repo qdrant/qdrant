@@ -2,7 +2,7 @@ use crate::id_mapper::id_mapper::IdMapper;
 use crate::vector_storage::vector_storage::VectorStorage;
 use crate::payload_storage::payload_storage::{PayloadStorage};
 use crate::entry::entry_point::{SegmentEntry, OperationResult, OperationError};
-use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentType, SegmentConfig, SegmentState, PayloadSchemaInfo};
+use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentType, SegmentConfig, SegmentState, PayloadSchemaInfo, PayloadInterface};
 use crate::query_planner::query_planner::QueryPlanner;
 use std::sync::{Arc, Mutex};
 use atomic_refcell::{AtomicRefCell};
@@ -226,6 +226,32 @@ impl SegmentEntry for Segment {
     fn payload(&self, point_id: PointIdType) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
         let internal_id = self.lookup_internal_id(point_id)?;
         Ok(self.payload_storage.borrow().payload(internal_id))
+    }
+
+    fn payload_unwrapped(&self, point_id: PointIdType) -> OperationResult<TheMap<PayloadKeyType, PayloadInterface>> {
+        let internal_id = self.lookup_internal_id(point_id)?;
+        // let payload = self.payload_storage.borrow().payload(internal_id);
+        // let payload_unwrapped = match self.payload.get(&point_id) {
+        //     Some(payload) => {
+        //         payload.fold(TheMap::new(), |&mut acc, (k, v)| {
+        //             if k.contains("__") {
+        //                 let keys = k.split("__");
+        //                 let mut value: TheMap::new();
+        //                     for key in keys.rev() {
+        //
+        //                     }
+        //                 acc[k] = v;
+        //             } else {
+        //                 acc[k] = v;
+        //             }
+        //             acc
+        //
+        //         } );
+        //         payload.clone()
+        //     },
+        //     None => TheMap::new()
+        // };
+        Ok(TheMap::new())
     }
 
     fn iter_points(&self) -> Box<dyn Iterator<Item=PointIdType> + '_> {

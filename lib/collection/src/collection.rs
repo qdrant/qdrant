@@ -131,9 +131,10 @@ impl Collection {
         &self,
         points: &Vec<PointIdType>,
         with_payload: bool,
+        as_json: bool,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>> {
-        return self.searcher.retrieve(points, with_payload, with_vector);
+        return self.searcher.retrieve(points, with_payload, as_json, with_vector);
     }
 
     pub fn stop(&self) -> CollectionResult<()> {
@@ -180,7 +181,7 @@ impl Collection {
             .cloned()
             .collect_vec();
 
-        let vectors = self.retrieve(&reference_vectors_ids, false, true)?;
+        let vectors = self.retrieve(&reference_vectors_ids, false,  false, true)?;
         let vectors_map: HashMap<PointIdType, Vec<VectorElementType>> = vectors
             .into_iter()
             .map(|rec| (rec.id, rec.vector.unwrap()))

@@ -284,6 +284,7 @@ mod tests {
     use crate::segment_manager::segment_managers::SegmentSearcher;
     use segment::types::PayloadVariant;
     use tempdir::TempDir;
+    use crate::operations::types::PayloadContent;
 
     #[test]
     fn test_point_ops() {
@@ -314,7 +315,7 @@ mod tests {
             Err(_) => assert!(false),
         };
 
-        let records = searcher.retrieve(&vec![1, 2, 500], true, true).unwrap();
+        let records = searcher.retrieve(&vec![1, 2, 500], true, false, true).unwrap();
 
         assert_eq!(records.len(), 3);
 
@@ -331,7 +332,7 @@ mod tests {
 
         updater.delete_points(101, &vec![500]).unwrap();
 
-        let records = searcher.retrieve(&vec![1, 2, 500], true, true).unwrap();
+        let records = searcher.retrieve(&vec![1, 2, 500], true, false, true).unwrap();
 
         for record in records {
             let _v = record.vector.unwrap();
@@ -366,7 +367,7 @@ mod tests {
             points: points.clone(),
         }).unwrap();
 
-        let res = searcher.retrieve(&points, true, false).unwrap();
+        let res = searcher.retrieve(&points, true, false, false).unwrap();
 
         assert_eq!(res.len(), 3);
 
@@ -375,27 +376,38 @@ mod tests {
             Some(r) => match &r.payload {
                 None => assert!(false, "No payload assigned"),
                 Some(payload) => {
-                    assert!(payload.contains_key("color"))
+                    match payload {
+                        PayloadContent::Payload(x) => {assert!(x.contains_key("color"));}
+                        x => assert!(false)
+                    }
                 }
             },
         };
 
         // Test payload delete
-
         updater.delete_payload(101, &vec![3], &vec!["color".to_string(), "empty".to_string()]).unwrap();
-        let res = searcher.retrieve(&vec![3], true, false).unwrap();
+        let res = searcher.retrieve(&vec![3], true, false, false).unwrap();
         assert_eq!(res.len(), 1);
-        assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
+        match res[0].payload.as_ref().unwrap() {
+            PayloadContent::Payload(x) => {assert!(!x.contains_key("color"));}
+            x => assert!(false)
+        }
+
 
         // Test clear payload
-
-        let res = searcher.retrieve(&vec![2], true, false).unwrap();
+        let res = searcher.retrieve(&vec![2], true,  false, false).unwrap();
         assert_eq!(res.len(), 1);
-        assert!(res[0].payload.as_ref().unwrap().contains_key("color"));
+        match res[0].payload.as_ref().unwrap() {
+            PayloadContent::Payload(x) => {assert!(x.contains_key("color"));}
+            x => assert!(false)
+        }
 
         updater.clear_payload(102, &vec![2]).unwrap();
-        let res = searcher.retrieve(&vec![2], true, false).unwrap();
+        let res = searcher.retrieve(&vec![2], true, false, false).unwrap();
         assert_eq!(res.len(), 1);
-        assert!(!res[0].payload.as_ref().unwrap().contains_key("color"))
+        match res[0].payload.as_ref().unwrap() {
+            PayloadContent::Payload(x) => {assert!(!x.contains_key("color"));}
+            x => assert!(false)
+        }
     }
 }

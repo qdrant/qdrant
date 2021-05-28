@@ -6,6 +6,11 @@ use schemars::{JsonSchema};
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub enum PayloadContent {
+    Payload(TheMap<PayloadKeyType, PayloadType>),
+    Json(String),
+}
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -14,7 +19,7 @@ pub struct Record {
     /// Id of the point
     pub id: PointIdType,
     /// Payload - values assigned to the point
-    pub payload: Option<TheMap<PayloadKeyType, PayloadType>>,
+    pub payload: Option<PayloadContent>,
     /// Vector of the point
     pub vector: Option<Vec<VectorElementType>>,
 }

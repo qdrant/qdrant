@@ -1,5 +1,5 @@
 use segment::entry::entry_point::{SegmentEntry, OperationResult};
-use segment::types::{Filter, Condition, SearchParams, ScoredPoint, PayloadKeyType, PayloadType, TheMap, SeqNumberType, VectorElementType, PointIdType, SegmentInfo, SegmentType, SegmentConfig};
+use segment::types::{Filter, Condition, SearchParams, ScoredPoint, PayloadKeyType, PayloadType, TheMap, SeqNumberType, VectorElementType, PointIdType, SegmentInfo, SegmentType, SegmentConfig, PayloadInterface};
 use std::cmp::max;
 use crate::segment_manager::holders::segment_holder::LockedSegment;
 use std::collections::HashSet;
@@ -197,6 +197,14 @@ impl SegmentEntry for ProxySegment {
             self.write_segment.get().read().payload(point_id)
         } else {
             self.wrapped_segment.get().read().payload(point_id)
+        };
+    }
+
+    fn payload_unwrapped(&self, point_id: PointIdType) -> OperationResult<TheMap<PayloadKeyType, PayloadInterface>> {
+        return if self.deleted_points.read().contains(&point_id) {
+            self.write_segment.get().read().payload_unwrapped(point_id)
+        } else {
+            self.wrapped_segment.get().read().payload_unwrapped(point_id)
         };
     }
 
