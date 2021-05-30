@@ -17,6 +17,16 @@ use crate::wal::WalError;
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum CollectionStatus {
+    /// Collection if completely ready for requests
+    Green,
+    /// Collection is available, but some segments might be under optimization
+    Yellow,
+    /// Something is not OK
+    Red
+}
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -33,6 +43,8 @@ pub struct Record {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 /// Current statistics and configuration of the collection.
 pub struct CollectionInfo {
+    /// Status of the collection
+    pub status: CollectionStatus,
     /// Number of vectors in collection
     pub vectors_count: usize,
     /// Number of segments in collection

@@ -7,7 +7,7 @@ use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use tokio::runtime::Runtime;
 
-use segment::types::{HasIdCondition, PointIdType, ScoredPoint, VectorElementType};
+use segment::types::{HasIdCondition, PointIdType, ScoredPoint, VectorElementType, SegmentType};
 use segment::types::Condition;
 use segment::types::Filter;
 
@@ -15,7 +15,7 @@ use crate::collection_builder::optimizers_builder::build_optimizers;
 use crate::config::CollectionConfig;
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
-use crate::operations::types::{CollectionError, CollectionInfo, CollectionResult, RecommendRequest, Record, SearchRequest, UpdateResult, UpdateStatus};
+use crate::operations::types::{CollectionError, CollectionInfo, CollectionResult, RecommendRequest, Record, SearchRequest, UpdateResult, UpdateStatus, CollectionStatus};
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
 use crate::update_handler::update_handler::{UpdateHandler, UpdateSignal};
@@ -66,14 +66,19 @@ impl Collection {
         let mut segments_count = 0;
         let mut ram_size = 0;
         let mut disk_size = 0;
+        let mut status = CollectionStatus::Green;
         for (_idx, segment) in segments.iter() {
             segments_count += 1;
             let segment_info = segment.get().read().info();
+            if segment_info.segment_type == SegmentType::Special {
+                status = CollectionStatus::Yellow;
+            }
             vectors_count += segment_info.num_vectors;
             disk_size += segment_info.disk_usage_bytes;
             ram_size += segment_info.ram_usage_bytes;
         }
         Ok(CollectionInfo {
+            status,
             vectors_count,
             segments_count,
             disk_data_size: disk_size,
