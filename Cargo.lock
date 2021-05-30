@@ -662,7 +662,7 @@ dependencies = [
 
 [[package]]
 name = "collection"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "atomicwrites",
  "criterion",
@@ -2287,7 +2287,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "actix-web",
  "collection",
@@ -2719,7 +2719,7 @@ checksum = "58f57ca1d128a43733fd71d583e837b1f22239a37ebea09cde11d8d9a9080f47"
 
 [[package]]
 name = "segment"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "atomic_refcell",
  "atomicwrites",

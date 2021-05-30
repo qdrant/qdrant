@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};
-use segment::types::{Distance, Indexes, HnswConfig};
-use wal::Wal;
-use collection::config::WalConfig;
-use collection::collection_builder::optimizers_builder::OptimizersConfig;
+use segment::types::{Distance};
 use collection::operations::config_diff::{HnswConfigDiff, WalConfigDiff, OptimizersConfigDiff};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

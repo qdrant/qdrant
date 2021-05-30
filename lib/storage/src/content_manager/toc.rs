@@ -11,18 +11,16 @@ use sled::{Config, Db};
 use sled::transaction::UnabortableTransactionError;
 use tokio::runtime;
 use tokio::runtime::Runtime;
-use wal::WalOptions;
 
 use collection::collection::Collection;
 use collection::collection_builder::collection_builder::build_collection;
 use collection::collection_builder::collection_loader::load_collection;
-use segment::types::SegmentConfig;
 
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::storage_ops::{AliasOperations, StorageOperations};
 use crate::types::StorageConfig;
 use collection::config::CollectionParams;
-use collection::operations::config_diff::{WalConfigDiff, DiffConfig, OptimizersConfigDiff, HnswConfigDiff};
+use collection::operations::config_diff::{DiffConfig};
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 const SLED_CACHE_SIZE: u64 = 1 * 1024 * 1024; // 1 mb
