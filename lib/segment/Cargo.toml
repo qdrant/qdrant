@@ -36,6 +36,7 @@ log = "0.4"
 env_logger = "0.7.1"
 geo = "0.17.0"
 num-traits = "0.2.14"
+sequence_trie = "0.3.6"
 
 [[bench]]
 name = "vector_search"

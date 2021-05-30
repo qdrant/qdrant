@@ -12,8 +12,9 @@ use std::io::Write;
 use atomicwrites::{AtomicFile, AllowOverwrite};
 use crate::index::index::PayloadIndex;
 use std::collections::BTreeMap;
-use schemars::_serde_json::Error;
-
+use schemars::_serde_json::{Error, Value};
+use itertools::{Itertools, rev};
+use sequence_trie::SequenceTrie;
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
@@ -233,12 +234,45 @@ impl SegmentEntry for Segment {
     fn payload_as_json(&self, point_id: PointIdType) -> OperationResult<String> {
         let internal_id = self.lookup_internal_id(point_id)?;
         let payload = self.payload_storage.borrow().payload(internal_id);
-        let map: TheMap<String, serde_json::value::Value> = payload.iter().fold( TheMap::new(), |mut acc, (k, v)| {
-            if !k.contains("__") {
-                acc.insert(k.to_string(), serde_json::to_value(v).unwrap());
+        let mut trie: SequenceTrie<PayloadKeyType, &PayloadType> = SequenceTrie::new();
+        for (key, value) in payload.iter() {
+            let splitted_keys: Vec<&str> = key.split("__").collect();
+            trie.insert(splitted_keys, value);
+        }
+        println!("Sequence trie {:?}", trie);
+
+        for (ik, iv) in trie.iter() {
+            println!("IK {:?}", ik);
+            println!("IV {:?}", iv);
+        }
+        let mut map: TheMap<String, serde_json::value::Value> = payload.iter().fold(
+            TheMap::new(), |mut acc, (key, value)| {
+            if !key.contains("__") {
+                acc.insert(key.to_string(), serde_json::to_value(value).unwrap());
             }
             acc
         } );
+
+        let mut map: TheMap<String, serde_json::value::Value> = TheMap::new();
+        for (keys, value) in trie.iter() {
+            println!("keys {:?}", keys.clone());
+            println!("value {:?}", value.clone());
+            for key in rev(keys) {
+                let mut inner_map: TheMap<String, serde_json::value::Value> = TheMap::new();
+                inner_map.insert(key.to_string(), serde_json::to_value(value).unwrap())
+            }
+            for key in keys {
+                match map.get(key) {
+                    None => {
+                        map.insert(key.to_string(), serde_json::to_value(value).unwrap());
+                        ()
+                    },
+                    Some(_) => ()
+                }
+
+            }
+
+        }
 
         Ok(serde_json::to_string(&map).unwrap())
     }
