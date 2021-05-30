@@ -3,14 +3,13 @@ mod common;
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::{PointOperations, PointStruct};
 
-use crate::common::{simple_collection_fixture, TEST_OPTIMIZERS_CONFIG};
+use crate::common::{simple_collection_fixture};
 use collection::operations::types::{UpdateStatus, SearchRequest, RecommendRequest};
 use std::sync::Arc;
 use collection::operations::payload_ops::PayloadOps;
 use std::collections::HashMap;
 use segment::types::{PayloadKeyType, PayloadVariant, PayloadInterface};
 use collection::collection_builder::collection_loader::load_collection;
-use wal::WalOptions;
 use tempdir::TempDir;
 use tokio::runtime;
 use collection::operations::point_ops::PointInsertOperations::{BatchPoints, PointsList};
@@ -42,7 +41,7 @@ fn test_collection_updater() {
         Ok(res) => {
             assert_eq!(res.status, UpdateStatus::Completed)
         }
-        Err(err) => assert!(false, format!("operation failed: {:?}", err)),
+        Err(err) => assert!(false, "operation failed: {:?}", err),
     }
 
     let search_request = Arc::new(SearchRequest {
@@ -60,7 +59,7 @@ fn test_collection_updater() {
             assert_eq!(res.len(), 3);
             assert_eq!(res[0].id, 2);
         }
-        Err(err) => assert!(false, format!("search failed: {:?}", err)),
+        Err(err) => assert!(false, "search failed: {:?}", err),
     }
 }
 
@@ -105,12 +104,6 @@ fn test_collection_loading() {
         collection.update(assign_payload, true).unwrap();
     }
 
-
-    let wal_options = WalOptions {
-        segment_capacity: 100,
-        segment_queue_len: 0,
-    };
-
     let rt = Arc::new(runtime::Builder::new_multi_thread()
         .max_threads(2)
         .build().unwrap());
@@ -120,9 +113,7 @@ fn test_collection_loading() {
 
     let loaded_collection = load_collection(
         collection_dir.path(),
-        &wal_options,
         rt.clone(),
-        &TEST_OPTIMIZERS_CONFIG,
     );
 
     let retrieved = loaded_collection.retrieve(&vec![1, 2], true, true).unwrap();
@@ -195,9 +186,9 @@ fn test_deserialization2() {
     eprintln!("read_obj = {:#?}", read_obj);
 
 
-    let crob_bytes = rmp_serde::to_vec(&insert_points).unwrap();
+    let raw_bytes = rmp_serde::to_vec(&insert_points).unwrap();
 
-    let read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&crob_bytes).unwrap();
+    let read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&raw_bytes).unwrap();
 
     eprintln!("read_obj2 = {:#?}", read_obj2);
 }

@@ -4,6 +4,7 @@
       "AliasOperations": {
         "anyOf": [
           {
+            "additionalProperties": false,
             "description": "Create alternative name for a collection. Collection will be available under both names for search, retrieve,",
             "properties": {
               "create_alias": {
@@ -28,6 +29,7 @@
             "type": "object"
           },
           {
+            "additionalProperties": false,
             "description": "Delete alias if exists",
             "properties": {
               "delete_alias": {
@@ -48,6 +50,7 @@
             "type": "object"
           },
           {
+            "additionalProperties": false,
             "description": "Change alias to a new one",
             "properties": {
               "rename_alias": {
@@ -73,6 +76,29 @@
           }
         ]
       },
+      "CollectionConfig": {
+        "properties": {
+          "hnsw_config": {
+            "$ref": "#/components/schemas/HnswConfig"
+          },
+          "optimizer_config": {
+            "$ref": "#/components/schemas/OptimizersConfig"
+          },
+          "params": {
+            "$ref": "#/components/schemas/CollectionParams"
+          },
+          "wal_config": {
+            "$ref": "#/components/schemas/WalConfig"
+          }
+        },
+        "required": [
+          "hnsw_config",
+          "optimizer_config",
+          "params",
+          "wal_config"
+        ],
+        "type": "object"
+      },
       "CollectionDescription": {
         "properties": {
           "name": {
@@ -88,7 +114,7 @@
         "description": "Current statistics and configuration of the collection.",
         "properties": {
           "config": {
-            "$ref": "#/components/schemas/SegmentConfig"
+            "$ref": "#/components/schemas/CollectionConfig"
           },
           "disk_data_size": {
             "description": "Disk space, used by collection",
@@ -108,6 +134,9 @@
             "minimum": 0,
             "type": "integer"
           },
+          "status": {
+            "$ref": "#/components/schemas/CollectionStatus"
+          },
           "vectors_count": {
             "description": "Number of vectors in collection",
             "format": "uint",
@@ -120,9 +149,36 @@
           "disk_data_size",
           "ram_data_size",
           "segments_count",
+          "status",
           "vectors_count"
         ],
         "type": "object"
+      },
+      "CollectionParams": {
+        "properties": {
+          "distance": {
+            "$ref": "#/components/schemas/Distance"
+          },
+          "vector_size": {
+            "description": "Size of a vectors used",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "distance",
+          "vector_size"
+        ],
+        "type": "object"
+      },
+      "CollectionStatus": {
+        "enum": [
+          "green",
+          "yellow",
+          "red"
+        ],
+        "type": "string"
       },
       "CollectionUpdateOperations": {
         "anyOf": [
@@ -254,6 +310,7 @@
       "FieldIndexOperations": {
         "anyOf": [
           {
+            "additionalProperties": false,
             "description": "Create index for payload field",
             "properties": {
               "create_index": {
@@ -266,6 +323,7 @@
             "type": "object"
           },
           {
+            "additionalProperties": false,
             "description": "Delete index for the field",
             "properties": {
               "delete_index": {
@@ -366,7 +424,8 @@
               "minimum": 0,
               "type": "integer"
             },
-            "type": "array"
+            "type": "array",
+            "uniqueItems": true
           }
         },
         "required": [
@@ -374,65 +433,59 @@
         ],
         "type": "object"
       },
-      "Indexes": {
-        "anyOf": [
-          {
-            "description": "Do not use any index, scan whole vector collection during search. Guarantee 100% precision, but may be time consuming on large collections.",
-            "properties": {
-              "options": {
-                "type": "object"
-              },
-              "type": {
-                "enum": [
-                  "plain"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "options",
-              "type"
-            ],
-            "type": "object"
+      "HnswConfig": {
+        "properties": {
+          "ef_construct": {
+            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
           },
-          {
-            "description": "Use filterable HNSW index for approximate search. Is very fast even on a very huge collections, but require additional space to store index and additional time to build it.",
-            "properties": {
-              "options": {
-                "properties": {
-                  "ef_construct": {
-                    "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.",
-                    "format": "uint",
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "m": {
-                    "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
-                    "format": "uint",
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "ef_construct",
-                  "m"
-                ],
-                "type": "object"
-              },
-              "type": {
-                "enum": [
-                  "hnsw"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "options",
-              "type"
-            ],
-            "type": "object"
+          "full_scan_threshold": {
+            "description": "Minimal amount of points for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used - in this case full-scan search should be preferred by query planner and additional indexing is not required.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "m": {
+            "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
           }
-        ]
+        },
+        "required": [
+          "ef_construct",
+          "full_scan_threshold",
+          "m"
+        ],
+        "type": "object"
+      },
+      "HnswConfigDiff": {
+        "properties": {
+          "ef_construct": {
+            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "full_scan_threshold": {
+            "description": "Minimal amount of points for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used - in this case full-scan search should be preferred by query planner and additional indexing is not required.",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "m": {
+            "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "type": "object"
       },
       "Match": {
         "properties": {
@@ -450,42 +503,131 @@
         },
         "type": "object"
       },
-      "PayloadIndexType": {
-        "anyOf": [
-          {
-            "description": "Do not index anything, just keep of what should be indexed later",
-            "properties": {
-              "type": {
-                "enum": [
-                  "plain"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "type"
-            ],
-            "type": "object"
+      "OptimizersConfig": {
+        "properties": {
+          "deleted_threshold": {
+            "description": "The minimal fraction of deleted vectors in a segment, required to perform segment optimization",
+            "format": "double",
+            "type": "number"
           },
-          {
-            "description": "Build payload index. Index is saved on disc, but index itself is in RAM",
-            "properties": {
-              "type": {
-                "enum": [
-                  "struct"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "type"
-            ],
-            "type": "object"
+          "flush_interval_sec": {
+            "description": "Minimum interval between forced flushes.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "indexing_threshold": {
+            "description": "Maximum number of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_segment_number": {
+            "description": "If the number of segments exceeds this value, the optimizer will merge the smallest segments.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "memmap_threshold": {
+            "description": "Maximum number of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "payload_indexing_threshold": {
+            "description": "Starting from this amount of vectors per-segment the engine will start building index for payload.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "vacuum_min_vector_number": {
+            "description": "The minimal number of vectors in a segment, required to perform segment optimization",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
           }
+        },
+        "required": [
+          "deleted_threshold",
+          "flush_interval_sec",
+          "indexing_threshold",
+          "max_segment_number",
+          "memmap_threshold",
+          "payload_indexing_threshold",
+          "vacuum_min_vector_number"
         ],
-        "description": "Type of payload index"
+        "type": "object"
+      },
+      "OptimizersConfigDiff": {
+        "properties": {
+          "deleted_threshold": {
+            "description": "The minimal fraction of deleted vectors in a segment, required to perform segment optimization",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "flush_interval_sec": {
+            "description": "Minimum interval between forced flushes.",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "indexing_threshold": {
+            "description": "Maximum number of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "max_segment_number": {
+            "description": "If the number of segments exceeds this value, the optimizer will merge the smallest segments.",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "memmap_threshold": {
+            "description": "Maximum number of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file.",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "payload_indexing_threshold": {
+            "description": "Starting from this amount of vectors per-segment the engine will start building index for payload.",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "vacuum_min_vector_number": {
+            "description": "The minimal number of vectors in a segment, required to perform segment optimization",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "type": "object"
       },
       "PayloadInterface": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PayloadVariant_for_String"
+          },
+          {
+            "$ref": "#/components/schemas/PayloadVariant_for_int64"
+          },
+          {
+            "$ref": "#/components/schemas/PayloadVariant_for_double"
+          },
+          {
+            "$ref": "#/components/schemas/PayloadInterfaceStrict"
+          }
+        ]
+      },
+      "PayloadInterfaceStrict": {
         "anyOf": [
           {
             "properties": {
@@ -564,6 +706,7 @@
       "PayloadOps": {
         "anyOf": [
           {
+            "additionalProperties": false,
             "description": "Set payload value, overrides if it is already exists",
             "properties": {
               "set_payload": {
@@ -597,6 +740,7 @@
             "type": "object"
           },
           {
+            "additionalProperties": false,
             "description": "Deletes specified payload values if they are assigned",
             "properties": {
               "delete_payload": {
@@ -630,6 +774,7 @@
             "type": "object"
           },
           {
+            "additionalProperties": false,
             "description": "Drops all Payload values associated with given points.",
             "properties": {
               "clear_payload": {
@@ -806,6 +951,7 @@
       "PointInsertOperations": {
         "anyOf": [
           {
+            "additionalProperties": false,
             "description": "Inset points from a batch.",
             "properties": {
               "batch": {
@@ -853,6 +999,7 @@
             "type": "object"
           },
           {
+            "additionalProperties": false,
             "description": "Insert points from a list",
             "properties": {
               "points": {
@@ -872,6 +1019,7 @@
       "PointOperations": {
         "anyOf": [
           {
+            "additionalProperties": false,
             "description": "Insert or update points",
             "properties": {
               "upsert_points": {
@@ -884,6 +1032,7 @@
             "type": "object"
           },
           {
+            "additionalProperties": false,
             "description": "Delete point if exists",
             "properties": {
               "delete_points": {
@@ -1096,32 +1245,17 @@
         "type": "object"
       },
       "SearchParams": {
-        "anyOf": [
-          {
-            "description": "Params relevant to HNSW index",
-            "properties": {
-              "hnsw": {
-                "properties": {
-                  "ef": {
-                    "description": "Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.",
-                    "format": "uint",
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "ef"
-                ],
-                "type": "object"
-              }
-            },
-            "required": [
-              "hnsw"
-            ],
-            "type": "object"
+        "description": "Additional parameters of the search",
+        "properties": {
+          "hnsw_ef": {
+            "description": "Params relevant to HNSW index /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
           }
-        ],
-        "description": "Additional parameters of the search"
+        },
+        "type": "object"
       },
       "SearchRequest": {
         "description": "Search request",
@@ -1169,46 +1303,10 @@
         ],
         "type": "object"
       },
-      "SegmentConfig": {
-        "properties": {
-          "distance": {
-            "$ref": "#/components/schemas/Distance"
-          },
-          "index": {
-            "$ref": "#/components/schemas/Indexes"
-          },
-          "payload_index": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PayloadIndexType"
-              },
-              {
-                "nullable": true
-              }
-            ],
-            "description": "Payload Indexes"
-          },
-          "storage_type": {
-            "$ref": "#/components/schemas/StorageType"
-          },
-          "vector_size": {
-            "description": "Size of a vectors used",
-            "format": "uint",
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "distance",
-          "index",
-          "storage_type",
-          "vector_size"
-        ],
-        "type": "object"
-      },
       "StorageOperations": {
         "anyOf": [
           {
+            "additionalProperties": false,
             "description": "Create new collection and (optionally) specify index params",
             "properties": {
               "create_collection": {
@@ -1216,23 +1314,46 @@
                   "distance": {
                     "$ref": "#/components/schemas/Distance"
                   },
-                  "index": {
+                  "hnsw_config": {
                     "anyOf": [
                       {
-                        "$ref": "#/components/schemas/Indexes"
+                        "$ref": "#/components/schemas/HnswConfigDiff"
                       },
                       {
                         "nullable": true
                       }
-                    ]
+                    ],
+                    "description": "Custom params for HNSW index. If none - values from service configuration file are used."
                   },
                   "name": {
                     "type": "string"
+                  },
+                  "optimizers_config": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/OptimizersConfigDiff"
+                      },
+                      {
+                        "nullable": true
+                      }
+                    ],
+                    "description": "Custom params for Optimizers.  If none - values from service configuration file are used."
                   },
                   "vector_size": {
                     "format": "uint",
                     "minimum": 0,
                     "type": "integer"
+                  },
+                  "wal_config": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/WalConfigDiff"
+                      },
+                      {
+                        "nullable": true
+                      }
+                    ],
+                    "description": "Custom params for WAL. If none - values from service configuration file are used."
                   }
                 },
                 "required": [
@@ -1249,6 +1370,39 @@
             "type": "object"
           },
           {
+            "additionalProperties": false,
+            "description": "Update parameters of the existing collection",
+            "properties": {
+              "update_collection": {
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "optimizers_config": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/OptimizersConfigDiff"
+                      },
+                      {
+                        "nullable": true
+                      }
+                    ],
+                    "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "update_collection"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
             "description": "Delete collection with given name",
             "properties": {
               "delete_collection": {
@@ -1261,6 +1415,7 @@
             "type": "object"
           },
           {
+            "additionalProperties": false,
             "description": "Perform changes of collection aliases. Alias changes are atomic, meaning that no collection modifications can happen between alias operations.",
             "properties": {
               "change_aliases": {
@@ -1284,41 +1439,6 @@
             "type": "object"
           }
         ]
-      },
-      "StorageType": {
-        "anyOf": [
-          {
-            "description": "Store vectors in memory and use persistence storage only if vectors are changed",
-            "properties": {
-              "type": {
-                "enum": [
-                  "in_memory"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "type"
-            ],
-            "type": "object"
-          },
-          {
-            "description": "Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM",
-            "properties": {
-              "type": {
-                "enum": [
-                  "mmap"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "type"
-            ],
-            "type": "object"
-          }
-        ],
-        "description": "Type of vector storage"
       },
       "UpdateResult": {
         "properties": {
@@ -1344,6 +1464,46 @@
           "completed"
         ],
         "type": "string"
+      },
+      "WalConfig": {
+        "properties": {
+          "wal_capacity_mb": {
+            "description": "Size of a single WAL segment in MB",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "wal_segments_ahead": {
+            "description": "Number of WAL segments to create ahead of actually used ones",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "wal_capacity_mb",
+          "wal_segments_ahead"
+        ],
+        "type": "object"
+      },
+      "WalConfigDiff": {
+        "properties": {
+          "wal_capacity_mb": {
+            "description": "Size of a single WAL segment in MB",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "wal_segments_ahead": {
+            "description": "Number of WAL segments to create ahead of actually used ones",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "type": "object"
       }
     }
   },
@@ -1355,13 +1515,13 @@
     "contact": {
       "email": "andrey@vasnetsov.com"
     },
-    "description": "\nAPI description for Qdrant vector search engine.\n\nThis document describes CRUD and search operations on collections of points (vectors with payload).\n\nQdrant supports any combinations of `should`, `must` and `must_not` conditions, which makes it possible to use in applications when object could not be described solely by vector. It could be location features, availability flags, and other custom properties businesses should take into account.\n## Examples\nThis examples cover the most basic use-cases - collection creation and basic vector search.\n### Create collection\nFirst - let's create a collection with dot-production metric.\n```\ncurl -X POST 'http://localhost:6333/collections' \\\n  -H 'Content-Type: application/json' \\\n  --data-raw '{\n      \"create_collection\": {\n          \"name\": \"test_collection\",\n          \"vector_size\": 4,\n          \"distance\": \"Dot\"\n      }\n  }'\n```\nExpected response:\n```\n{\n    \"result\": true,\n    \"status\": \"ok\",\n    \"time\": 0.031095451\n}\n```\nWe can ensure that collection was created:\n```\ncurl 'http://localhost:6333/collections/test_collection'\n```\nExpected response:\n```\n{\n  \"result\": {\n    \"vectors_count\": 0,\n    \"segments_count\": 5,\n    \"disk_data_size\": 0,\n    \"ram_data_size\": 0,\n    \"config\": {\n      \"vector_size\": 4,\n      \"index\": {\n        \"type\": \"plain\",\n        \"options\": {}\n      },\n      \"distance\": \"Dot\",\n      \"storage_type\": {\n        \"type\": \"in_memory\"\n      }\n    }\n  },\n  \"status\": \"ok\",\n  \"time\": 2.1199e-05\n}\n```\n\n### Add points\nLet's now add vectors with some payload:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection?wait=true' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n  \"upsert_points\": {\n    \"points\": [\n      {\"id\": 1, \"vector\": [0.05, 0.61, 0.76, 0.74], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Berlin\"}}},\n      {\"id\": 2, \"vector\": [0.19, 0.81, 0.75, 0.11], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}},\n      {\"id\": 3, \"vector\": [0.36, 0.55, 0.47, 0.94], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"Moscow\"] }}},\n      {\"id\": 4, \"vector\": [0.18, 0.01, 0.85, 0.80], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"London\", \"Moscow\"]}}},\n      {\"id\": 5, \"vector\": [0.24, 0.18, 0.22, 0.44], \"payload\": {\"count\": {\"type\": \"integer\", \"value\": [0]}}},\n      {\"id\": 6, \"vector\": [0.35, 0.08, 0.11, 0.44]}\n    ]\n  }\n}'\n```\nExpected response:\n```\n{\n    \"result\": {\n        \"operation_id\": 0,\n        \"status\": \"completed\"\n    },\n    \"status\": \"ok\",\n    \"time\": 0.000206061\n}\n```\n### Search with filtering\nLet's start with a basic request:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"vector\": [0.2,0.1,0.9,0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362 },\n        { \"id\": 1, \"score\": 1.273 },\n        { \"id\": 3, \"score\": 1.208 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000055785\n}\n```\nBut result is different if we add a filter:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"filter\": {\n        \"should\": [\n            {\n                \"key\": \"city\",\n                \"match\": {\n                    \"keyword\": \"London\"\n                }\n            }\n        ]\n    },\n    \"vector\": [0.2, 0.1, 0.9, 0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362 },\n        { \"id\": 2, \"score\": 0.871 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000093972\n}\n```\n",
+    "description": "\nAPI description for Qdrant vector search engine.\n\nThis document describes CRUD and search operations on collections of points (vectors with payload).\n\nQdrant supports any combinations of `should`, `must` and `must_not` conditions, which makes it possible to use in applications when object could not be described solely by vector. It could be location features, availability flags, and other custom properties businesses should take into account.\n## Examples\nThis examples cover the most basic use-cases - collection creation and basic vector search.\n### Create collection\nFirst - let's create a collection with dot-production metric.\n```\ncurl -X POST 'http://localhost:6333/collections' \\\n  -H 'Content-Type: application/json' \\\n  --data-raw '{\n      \"create_collection\": {\n          \"name\": \"test_collection\",\n          \"vector_size\": 4,\n          \"distance\": \"Dot\"\n      }\n  }'\n```\nExpected response:\n```\n{\n    \"result\": true,\n    \"status\": \"ok\",\n    \"time\": 0.031095451\n}\n```\nWe can ensure that collection was created:\n```\ncurl 'http://localhost:6333/collections/test_collection'\n```\nExpected response:\n```\n{\n  \"result\": {\n    \"status\": \"green\",\n    \"vectors_count\": 0,\n    \"segments_count\": 5,\n    \"disk_data_size\": 0,\n    \"ram_data_size\": 0,\n    \"config\": {\n      \"params\": {\n        \"vector_size\": 4,\n        \"distance\": \"Dot\"\n      },\n      \"hnsw_config\": {\n        \"m\": 16,\n        \"ef_construct\": 100,\n        \"full_scan_threshold\": 10000\n      },\n      \"optimizer_config\": {\n        \"deleted_threshold\": 0.2,\n        \"vacuum_min_vector_number\": 1000,\n        \"max_segment_number\": 5,\n        \"memmap_threshold\": 50000,\n        \"indexing_threshold\": 20000,\n        \"payload_indexing_threshold\": 10000,\n        \"flush_interval_sec\": 1\n      },\n      \"wal_config\": {\n        \"wal_capacity_mb\": 32,\n        \"wal_segments_ahead\": 0\n      }\n    }\n  },\n  \"status\": \"ok\",\n  \"time\": 2.1199e-05\n}\n```\n\n### Add points\nLet's now add vectors with some payload:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection?wait=true' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n  \"upsert_points\": {\n    \"points\": [\n      {\"id\": 1, \"vector\": [0.05, 0.61, 0.76, 0.74], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Berlin\"}}},\n      {\"id\": 2, \"vector\": [0.19, 0.81, 0.75, 0.11], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}},\n      {\"id\": 3, \"vector\": [0.36, 0.55, 0.47, 0.94], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"Moscow\"] }}},\n      {\"id\": 4, \"vector\": [0.18, 0.01, 0.85, 0.80], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"London\", \"Moscow\"]}}},\n      {\"id\": 5, \"vector\": [0.24, 0.18, 0.22, 0.44], \"payload\": {\"count\": {\"type\": \"integer\", \"value\": [0]}}},\n      {\"id\": 6, \"vector\": [0.35, 0.08, 0.11, 0.44]}\n    ]\n  }\n}'\n```\nExpected response:\n```\n{\n    \"result\": {\n        \"operation_id\": 0,\n        \"status\": \"completed\"\n    },\n    \"status\": \"ok\",\n    \"time\": 0.000206061\n}\n```\n### Search with filtering\nLet's start with a basic request:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"vector\": [0.2,0.1,0.9,0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362 },\n        { \"id\": 1, \"score\": 1.273 },\n        { \"id\": 3, \"score\": 1.208 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000055785\n}\n```\nBut result is different if we add a filter:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"filter\": {\n        \"should\": [\n            {\n                \"key\": \"city\",\n                \"match\": {\n                    \"keyword\": \"London\"\n                }\n            }\n        ]\n    },\n    \"vector\": [0.2, 0.1, 0.9, 0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362 },\n        { \"id\": 2, \"score\": 0.871 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000093972\n}\n```\n",
     "license": {
       "name": "Apache 2.0",
       "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
     },
     "title": "Qdrant API",
-    "version": "0.2.1"
+    "version": "0.3.0"
   },
   "openapi": "3.0.1",
   "paths": {

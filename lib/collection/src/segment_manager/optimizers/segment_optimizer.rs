@@ -1,5 +1,5 @@
-use segment::types::{PointIdType, PayloadKeyType, SegmentConfig, Indexes, StorageType, PayloadIndexType};
-use crate::collection::CollectionResult;
+use segment::types::{PointIdType, PayloadKeyType, SegmentConfig, Indexes, StorageType, PayloadIndexType, HnswConfig};
+use crate::operations::types::CollectionResult;
 use crate::segment_manager::holders::segment_holder::{SegmentId, LockedSegment, LockedSegmentHolder};
 use std::sync::Arc;
 use segment::segment::Segment;
@@ -12,6 +12,7 @@ use segment::segment_constructor::segment_builder::SegmentBuilder;
 use std::convert::TryInto;
 use std::path::Path;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+use crate::config::CollectionParams;
 
 
 #[derive(Debug, Clone)]
@@ -29,7 +30,10 @@ pub trait SegmentOptimizer {
     fn temp_path(&self) -> &Path;
 
     /// Get basic segment config
-    fn base_segment_config(&self) -> SegmentConfig;
+    fn collection_params(&self) -> CollectionParams;
+
+    /// Get HNSW config
+    fn hnsw_config(&self) -> HnswConfig;
 
     /// Get thresholds configuration for the current optimizer
     fn threshold_config(&self) -> &OptimizerThresholds;
@@ -39,7 +43,14 @@ pub trait SegmentOptimizer {
 
     /// Build temp segment
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {
-        let config = self.base_segment_config();
+        let collection_params = self.collection_params();
+        let config = SegmentConfig {
+            vector_size: collection_params.vector_size,
+            distance: collection_params.distance,
+            index: Indexes::Plain {},
+            payload_index: Some(PayloadIndexType::Plain),
+            storage_type: StorageType::InMemory
+        };
         Ok(LockedSegment::new(build_simple_segment(
             self.collection_path(),
             config.vector_size,
@@ -55,31 +66,23 @@ pub trait SegmentOptimizer {
         let have_indexed_fields = optimizing_segments.iter()
             .any(|s| !s.get().read().get_indexed_fields().is_empty());
 
-        let mut optimized_config = self.base_segment_config();
-
         let thresholds = self.threshold_config();
+        let collection_params = self.collection_params();
 
-        if total_vectors < thresholds.memmap_threshold {
-            optimized_config.storage_type = StorageType::InMemory;
-        } else {
-            optimized_config.storage_type = StorageType::Mmap;
-        }
-
-        if total_vectors < thresholds.indexing_threshold {
-            optimized_config.index = Indexes::Plain {};
-        } else {
-            optimized_config.index = match optimized_config.index {
-                Indexes::Plain { } => Indexes::default_hnsw(),
-                _ => optimized_config.index
-            }
-        }
+        let is_indexed = total_vectors >= thresholds.indexing_threshold;
 
         // Create structure index only if there is something to index
-        if total_vectors < thresholds.payload_indexing_threshold || !have_indexed_fields {
-            optimized_config.payload_index = Some(PayloadIndexType::Plain)
-        } else {
-            optimized_config.payload_index = Some(PayloadIndexType::Struct);
-        }
+        let is_payload_indexed = total_vectors >= thresholds.payload_indexing_threshold && have_indexed_fields;
+
+        let is_on_disk = total_vectors >= thresholds.memmap_threshold;
+
+        let optimized_config = SegmentConfig {
+            vector_size: collection_params.vector_size,
+            distance: collection_params.distance,
+            index: if is_indexed { Indexes::Hnsw(self.hnsw_config()) } else { Indexes::Plain {} },
+            payload_index: Some(if is_payload_indexed { PayloadIndexType::Struct } else { PayloadIndexType::Plain }),
+            storage_type: if is_on_disk { StorageType::Mmap } else { StorageType::InMemory }
+        };
 
         Ok(SegmentBuilder::new(
             self.collection_path(),

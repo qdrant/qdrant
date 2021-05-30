@@ -1,10 +1,10 @@
 use crate::types::{Filter, PointOffsetType, VectorElementType, SearchParams, PayloadKeyType};
 use crate::vector_storage::vector_storage::ScoredPointOffset;
 use crate::entry::entry_point::OperationResult;
-use crate::index::field_index::CardinalityEstimation;
+use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 
 /// Trait for vector searching
-pub trait Index {
+pub trait VectorIndex {
     /// Return list of Ids with fitting
     fn search(&self,
               vector: &Vec<VectorElementType>,
@@ -32,5 +32,9 @@ pub trait PayloadIndex {
     fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation;
 
     /// Return list of all point ids, which satisfy filtering criteria
-    fn query_points(&self, query: &Filter) -> Box<dyn Iterator<Item=PointOffsetType> + '_>;
+    fn query_points<'a>(&'a self, query: &'a Filter) -> Box<dyn Iterator<Item=PointOffsetType> + 'a>;
+
+    /// Iterate conditions for payload blocks with minimum size of `threshold`
+    /// Required for building HNSW index
+    fn payload_blocks(&self, threshold: usize) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_>;
 }

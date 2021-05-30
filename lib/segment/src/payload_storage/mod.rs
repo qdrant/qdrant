@@ -1,6 +1,6 @@
 pub mod query_checker;
 pub mod simple_payload_storage;
 pub mod payload_storage;
-mod condition_checker;
+pub mod condition_checker;
 
 

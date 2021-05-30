@@ -60,19 +60,33 @@ info:
 
     {
       "result": {
+        "status": "green",
         "vectors_count": 0,
         "segments_count": 5,
         "disk_data_size": 0,
         "ram_data_size": 0,
         "config": {
-          "vector_size": 4,
-          "index": {
-            "type": "plain",
-            "options": {}
+          "params": {
+            "vector_size": 4,
+            "distance": "Dot"
           },
-          "distance": "Dot",
-          "storage_type": {
-            "type": "in_memory"
+          "hnsw_config": {
+            "m": 16,
+            "ef_construct": 100,
+            "full_scan_threshold": 10000
+          },
+          "optimizer_config": {
+            "deleted_threshold": 0.2,
+            "vacuum_min_vector_number": 1000,
+            "max_segment_number": 5,
+            "memmap_threshold": 50000,
+            "indexing_threshold": 20000,
+            "payload_indexing_threshold": 10000,
+            "flush_interval_sec": 1
+          },
+          "wal_config": {
+            "wal_capacity_mb": 32,
+            "wal_segments_ahead": 0
           }
         }
       },
@@ -563,7 +577,8 @@ components:
 
     AliasOperations:
       anyOf:
-      - description: Create alternative name for a collection. Collection will be
+      - additionalProperties: false
+        description: Create alternative name for a collection. Collection will be
           available under both names for search, retrieve,
         properties:
           create_alias:
@@ -579,7 +594,8 @@ components:
         required:
         - create_alias
         type: object
-      - description: Delete alias if exists
+      - additionalProperties: false
+        description: Delete alias if exists
         properties:
           delete_alias:
             properties:
@@ -591,7 +607,8 @@ components:
         required:
         - delete_alias
         type: object
-      - description: Change alias to a new one
+      - additionalProperties: false
+        description: Change alias to a new one
         properties:
           rename_alias:
             properties:
@@ -606,6 +623,22 @@ components:
         required:
         - rename_alias
         type: object
+    CollectionConfig:
+      properties:
+        hnsw_config:
+          $ref: '#/components/schemas/HnswConfig'
+        optimizer_config:
+          $ref: '#/components/schemas/OptimizersConfig'
+        params:
+          $ref: '#/components/schemas/CollectionParams'
+        wal_config:
+          $ref: '#/components/schemas/WalConfig'
+      required:
+      - hnsw_config
+      - optimizer_config
+      - params
+      - wal_config
+      type: object
     CollectionDescription:
       properties:
         name:
@@ -617,7 +650,7 @@ components:
       description: Current statistics and configuration of the collection.
       properties:
         config:
-          $ref: '#/components/schemas/SegmentConfig'
+          $ref: '#/components/schemas/CollectionConfig'
         disk_data_size:
           description: Disk space, used by collection
           format: uint
@@ -633,6 +666,8 @@ components:
           format: uint
           minimum: 0
           type: integer
+        status:
+          $ref: '#/components/schemas/CollectionStatus'
         vectors_count:
           description: Number of vectors in collection
           format: uint
@@ -643,8 +678,28 @@ components:
       - disk_data_size
       - ram_data_size
       - segments_count
+      - status
       - vectors_count
       type: object
+    CollectionParams:
+      properties:
+        distance:
+          $ref: '#/components/schemas/Distance'
+        vector_size:
+          description: Size of a vectors used
+          format: uint
+          minimum: 0
+          type: integer
+      required:
+      - distance
+      - vector_size
+      type: object
+    CollectionStatus:
+      enum:
+      - green
+      - yellow
+      - red
+      type: string
     CollectionUpdateOperations:
       anyOf:
       - $ref: '#/components/schemas/PointOperations'
@@ -701,14 +756,16 @@ components:
       type: object
     FieldIndexOperations:
       anyOf:
-      - description: Create index for payload field
+      - additionalProperties: false
+        description: Create index for payload field
         properties:
           create_index:
             type: string
         required:
         - create_index
         type: object
-      - description: Delete index for the field
+      - additionalProperties: false
+        description: Delete index for the field
         properties:
           delete_index:
             type: string
@@ -779,55 +836,65 @@ components:
             minimum: 0
             type: integer
           type: array
+          uniqueItems: true
       required:
       - has_id
       type: object
-    Indexes:
-      anyOf:
-      - description: Do not use any index, scan whole vector collection during search.
-          Guarantee 100% precision, but may be time consuming on large collections.
-        properties:
-          options:
-            type: object
-          type:
-            enum:
-            - plain
-            type: string
-        required:
-        - options
-        - type
-        type: object
-      - description: Use filterable HNSW index for approximate search. Is very fast
-          even on a very huge collections, but require additional space to store index
-          and additional time to build it.
-        properties:
-          options:
-            properties:
-              ef_construct:
-                description: Number of neighbours to consider during the index building.
-                  Larger the value - more accurate the search, more time required
-                  to build index.
-                format: uint
-                minimum: 0
-                type: integer
-              m:
-                description: Number of edges per node in the index graph. Larger the
-                  value - more accurate the search, more space required.
-                format: uint
-                minimum: 0
-                type: integer
-            required:
-            - ef_construct
-            - m
-            type: object
-          type:
-            enum:
-            - hnsw
-            type: string
-        required:
-        - options
-        - type
-        type: object
+    HnswConfig:
+      properties:
+        ef_construct:
+          description: Number of neighbours to consider during the index building.
+            Larger the value - more accurate the search, more time required to build
+            index.
+          format: uint
+          minimum: 0
+          type: integer
+        full_scan_threshold:
+          description: Minimal amount of points for additional payload-based indexing.
+            If payload chunk is smaller than `full_scan_threshold` additional indexing
+            won't be used - in this case full-scan search should be preferred by query
+            planner and additional indexing is not required.
+          format: uint
+          minimum: 0
+          type: integer
+        m:
+          description: Number of edges per node in the index graph. Larger the value
+            - more accurate the search, more space required.
+          format: uint
+          minimum: 0
+          type: integer
+      required:
+      - ef_construct
+      - full_scan_threshold
+      - m
+      type: object
+    HnswConfigDiff:
+      properties:
+        ef_construct:
+          description: Number of neighbours to consider during the index building.
+            Larger the value - more accurate the search, more time required to build
+            index.
+          format: uint
+          minimum: 0
+          nullable: true
+          type: integer
+        full_scan_threshold:
+          description: Minimal amount of points for additional payload-based indexing.
+            If payload chunk is smaller than `full_scan_threshold` additional indexing
+            won't be used - in this case full-scan search should be preferred by query
+            planner and additional indexing is not required.
+          format: uint
+          minimum: 0
+          nullable: true
+          type: integer
+        m:
+          description: Number of edges per node in the index graph. Larger the value
+            - more accurate the search, more space required.
+          format: uint
+          minimum: 0
+          nullable: true
+          type: integer
+      type: object
     Match:
       properties:
         integer:
@@ -840,29 +907,114 @@ components:
           nullable: true
           type: string
       type: object
-    PayloadIndexType:
-      anyOf:
-      - description: Do not index anything, just keep of what should be indexed later
-        properties:
-          type:
-            enum:
-            - plain
-            type: string
-        required:
-        - type
-        type: object
-      - description: Build payload index. Index is saved on disc, but index itself
-          is in RAM
-        properties:
-          type:
-            enum:
-            - struct
-            type: string
-        required:
-        - type
-        type: object
-      description: Type of payload index
+    OptimizersConfig:
+      properties:
+        deleted_threshold:
+          description: The minimal fraction of deleted vectors in a segment, required
+            to perform segment optimization
+          format: double
+          type: number
+        flush_interval_sec:
+          description: Minimum interval between forced flushes.
+          format: uint64
+          minimum: 0
+          type: integer
+        indexing_threshold:
+          description: Maximum number of vectors allowed for plain index. Default
+            value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
+          format: uint
+          minimum: 0
+          type: integer
+        max_segment_number:
+          description: If the number of segments exceeds this value, the optimizer
+            will merge the smallest segments.
+          format: uint
+          minimum: 0
+          type: integer
+        memmap_threshold:
+          description: Maximum number of vectors to store in-memory per segment. Segments
+            larger than this threshold will be stored as read-only memmaped file.
+          format: uint
+          minimum: 0
+          type: integer
+        payload_indexing_threshold:
+          description: Starting from this amount of vectors per-segment the engine
+            will start building index for payload.
+          format: uint
+          minimum: 0
+          type: integer
+        vacuum_min_vector_number:
+          description: The minimal number of vectors in a segment, required to perform
+            segment optimization
+          format: uint
+          minimum: 0
+          type: integer
+      required:
+      - deleted_threshold
+      - flush_interval_sec
+      - indexing_threshold
+      - max_segment_number
+      - memmap_threshold
+      - payload_indexing_threshold
+      - vacuum_min_vector_number
+      type: object
+    OptimizersConfigDiff:
+      properties:
+        deleted_threshold:
+          description: The minimal fraction of deleted vectors in a segment, required
+            to perform segment optimization
+          format: double
+          nullable: true
+          type: number
+        flush_interval_sec:
+          description: Minimum interval between forced flushes.
+          format: uint64
+          minimum: 0
+          nullable: true
+          type: integer
+        indexing_threshold:
+          description: Maximum number of vectors allowed for plain index. Default
+            value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
+          format: uint
+          minimum: 0
+          nullable: true
+          type: integer
+        max_segment_number:
+          description: If the number of segments exceeds this value, the optimizer
+            will merge the smallest segments.
+          format: uint
+          minimum: 0
+          nullable: true
+          type: integer
+        memmap_threshold:
+          description: Maximum number of vectors to store in-memory per segment. Segments
+            larger than this threshold will be stored as read-only memmaped file.
+          format: uint
+          minimum: 0
+          nullable: true
+          type: integer
+        payload_indexing_threshold:
+          description: Starting from this amount of vectors per-segment the engine
+            will start building index for payload.
+          format: uint
+          minimum: 0
+          nullable: true
+          type: integer
+        vacuum_min_vector_number:
+          description: The minimal number of vectors in a segment, required to perform
+            segment optimization
+          format: uint
+          minimum: 0
+          nullable: true
+          type: integer
+      type: object
     PayloadInterface:
+      anyOf:
+      - $ref: '#/components/schemas/PayloadVariant_for_String'
+      - $ref: '#/components/schemas/PayloadVariant_for_int64'
+      - $ref: '#/components/schemas/PayloadVariant_for_double'
+      - $ref: '#/components/schemas/PayloadInterfaceStrict'
+    PayloadInterfaceStrict:
       anyOf:
       - properties:
           type:
@@ -910,7 +1062,8 @@ components:
         type: object
     PayloadOps:
       anyOf:
-      - description: Set payload value, overrides if it is already exists
+      - additionalProperties: false
+        description: Set payload value, overrides if it is already exists
         properties:
           set_payload:
             properties:
@@ -932,7 +1085,8 @@ components:
         required:
         - set_payload
         type: object
-      - description: Deletes specified payload values if they are assigned
+      - additionalProperties: false
+        description: Deletes specified payload values if they are assigned
         properties:
           delete_payload:
             properties:
@@ -954,7 +1108,8 @@ components:
         required:
         - delete_payload
         type: object
-      - description: Drops all Payload values associated with given points.
+      - additionalProperties: false
+        description: Drops all Payload values associated with given points.
         properties:
           clear_payload:
             properties:
@@ -1057,7 +1212,8 @@ components:
         type: array
     PointInsertOperations:
       anyOf:
-      - description: Inset points from a batch.
+      - additionalProperties: false
+        description: Inset points from a batch.
         properties:
           batch:
             properties:
@@ -1089,7 +1245,8 @@ components:
         required:
         - batch
         type: object
-      - description: Insert points from a list
+      - additionalProperties: false
+        description: Insert points from a list
         properties:
           points:
             items:
@@ -1100,14 +1257,16 @@ components:
         type: object
     PointOperations:
       anyOf:
-      - description: Insert or update points
+      - additionalProperties: false
+        description: Insert or update points
         properties:
           upsert_points:
             $ref: '#/components/schemas/PointInsertOperations'
         required:
         - upsert_points
         type: object
-      - description: Delete point if exists
+      - additionalProperties: false
+        description: Delete point if exists
         properties:
           delete_points:
             properties:
@@ -1257,24 +1416,16 @@ components:
       - score
       type: object
     SearchParams:
-      anyOf:
-      - description: Params relevant to HNSW index
-        properties:
-          hnsw:
-            properties:
-              ef:
-                description: Size of the beam in a beam-search. Larger the value -
-                  more accurate the result, more time required for search.
-                format: uint
-                minimum: 0
-                type: integer
-            required:
-            - ef
-            type: object
-        required:
-        - hnsw
-        type: object
       description: Additional parameters of the search
+      properties:
+        hnsw_ef:
+          description: Params relevant to HNSW index /// Size of the beam in a beam-search.
+            Larger the value - more accurate the result, more time required for search.
+          format: uint
+          minimum: 0
+          nullable: true
+          type: integer
+      type: object
     SearchRequest:
       description: Search request
       properties:
@@ -1303,48 +1454,39 @@ components:
       - top
       - vector
       type: object
-    SegmentConfig:
-      properties:
-        distance:
-          $ref: '#/components/schemas/Distance'
-        index:
-          $ref: '#/components/schemas/Indexes'
-        payload_index:
-          anyOf:
-          - $ref: '#/components/schemas/PayloadIndexType'
-          - nullable: true
-          description: Payload Indexes
-        storage_type:
-          $ref: '#/components/schemas/StorageType'
-        vector_size:
-          description: Size of a vectors used
-          format: uint
-          minimum: 0
-          type: integer
-      required:
-      - distance
-      - index
-      - storage_type
-      - vector_size
-      type: object
     StorageOperations:
       anyOf:
-      - description: Create new collection and (optionally) specify index params
+      - additionalProperties: false
+        description: Create new collection and (optionally) specify index params
         properties:
           create_collection:
             properties:
               distance:
                 $ref: '#/components/schemas/Distance'
-              index:
+              hnsw_config:
                 anyOf:
-                - $ref: '#/components/schemas/Indexes'
+                - $ref: '#/components/schemas/HnswConfigDiff'
                 - nullable: true
+                description: Custom params for HNSW index. If none - values from service
+                  configuration file are used.
               name:
                 type: string
+              optimizers_config:
+                anyOf:
+                - $ref: '#/components/schemas/OptimizersConfigDiff'
+                - nullable: true
+                description: Custom params for Optimizers.  If none - values from
+                  service configuration file are used.
               vector_size:
                 format: uint
                 minimum: 0
                 type: integer
+              wal_config:
+                anyOf:
+                - $ref: '#/components/schemas/WalConfigDiff'
+                - nullable: true
+                description: Custom params for WAL. If none - values from service
+                  configuration file are used.
             required:
             - distance
             - name
@@ -1353,14 +1495,36 @@ components:
         required:
         - create_collection
         type: object
-      - description: Delete collection with given name
+      - additionalProperties: false
+        description: Update parameters of the existing collection
+        properties:
+          update_collection:
+            properties:
+              name:
+                type: string
+              optimizers_config:
+                anyOf:
+                - $ref: '#/components/schemas/OptimizersConfigDiff'
+                - nullable: true
+                description: Custom params for Optimizers.  If none - values from
+                  service configuration file are used. This operation is blocking,
+                  it will only proceed ones all current optimizations are complete
+            required:
+            - name
+            type: object
+        required:
+        - update_collection
+        type: object
+      - additionalProperties: false
+        description: Delete collection with given name
         properties:
           delete_collection:
             type: string
         required:
         - delete_collection
         type: object
-      - description: Perform changes of collection aliases. Alias changes are atomic,
+      - additionalProperties: false
+        description: Perform changes of collection aliases. Alias changes are atomic,
           meaning that no collection modifications can happen between alias operations.
         properties:
           change_aliases:
@@ -1375,29 +1539,6 @@ components:
         required:
         - change_aliases
         type: object
-    StorageType:
-      anyOf:
-      - description: Store vectors in memory and use persistence storage only if vectors
-          are changed
-        properties:
-          type:
-            enum:
-            - in_memory
-            type: string
-        required:
-        - type
-        type: object
-      - description: Use memmap to store vectors, a little slower than `InMemory`,
-          but requires little RAM
-        properties:
-          type:
-            enum:
-            - mmap
-            type: string
-        required:
-        - type
-        type: object
-      description: Type of vector storage
     UpdateResult:
       properties:
         operation_id:
@@ -1416,3 +1557,34 @@ components:
       - acknowledged
       - completed
       type: string
+    WalConfig:
+      properties:
+        wal_capacity_mb:
+          description: Size of a single WAL segment in MB
+          format: uint
+          minimum: 0
+          type: integer
+        wal_segments_ahead:
+          description: Number of WAL segments to create ahead of actually used ones
+          format: uint
+          minimum: 0
+          type: integer
+      required:
+      - wal_capacity_mb
+      - wal_segments_ahead
+      type: object
+    WalConfigDiff:
+      properties:
+        wal_capacity_mb:
+          description: Size of a single WAL segment in MB
+          format: uint
+          minimum: 0
+          nullable: true
+          type: integer
+        wal_segments_ahead:
+          description: Number of WAL segments to create ahead of actually used ones
+          format: uint
+          minimum: 0
+          nullable: true
+          type: integer
+      type: object

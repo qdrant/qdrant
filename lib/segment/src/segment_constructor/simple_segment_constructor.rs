@@ -21,7 +21,7 @@ pub fn build_simple_segment(path: &Path, dim: usize, distance: Distance) -> Oper
             index: Indexes::Plain {},
             payload_index: None,
             distance,
-            storage_type: Default::default()
+            storage_type: Default::default(),
         },
     )
 }

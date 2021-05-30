@@ -1,122 +1,81 @@
 #[cfg(test)]
 mod tests {
-    use rand::prelude::ThreadRng;
-    use rand::seq::SliceRandom;
-    use segment::types::{PayloadType, VectorElementType, SegmentConfig, Indexes, PayloadIndexType, Distance, StorageType, TheMap, PayloadKeyType, Filter, Condition, FieldCondition, Match, Range as RangeConditionl};
-    use rand::Rng;
+    use segment::fixtures::payload_fixtures::{random_vector, random_keyword_payload, random_int_payload, random_filter};
     use tempdir::TempDir;
+    use segment::types::{SegmentConfig, Indexes, PayloadIndexType, StorageType, Distance, TheMap, PayloadKeyType, PayloadType, Filter, Condition, FieldCondition, Range};
     use segment::segment_constructor::segment_constructor::build_segment;
     use segment::entry::entry_point::SegmentEntry;
     use itertools::Itertools;
-    use std::ops::Range;
 
-    const ADJECTIVE: &'static [&'static str] = &[
-        "jobless",
-        "rightful",
-        "breakable",
-        "impartial",
-        "shocking",
-        "faded",
-        "phobic",
-        "overt",
-        "like",
-        "wide-eyed",
-        "broad",
-    ];
+    #[test]
+    fn test_cardinality_estimation() {
+        let mut rnd = rand::thread_rng();
 
-    const NOUN: &'static [&'static str] = &[
-        "territory",
-        "jam",
-        "neck",
-        "chicken",
-        "cap",
-        "kiss",
-        "veil",
-        "trail",
-        "size",
-        "digestion",
-        "rod",
-        "seed",
-    ];
+        let dir1 = TempDir::new("segment1_dir").unwrap();
+        let dim = 5;
 
-    const INT_RANGE: Range<i64> = 0..500;
+        let
+            config = SegmentConfig {
+            vector_size: dim,
+            index: Indexes::Plain {},
+            payload_index: Some(PayloadIndexType::Struct),
+            storage_type: StorageType::InMemory,
+            distance: Distance::Dot,
+        };
 
-    fn random_keyword(rnd_gen: &mut ThreadRng) -> String {
-        let random_adj = ADJECTIVE.choose(rnd_gen).unwrap();
-        let random_noun = NOUN.choose(rnd_gen).unwrap();
-        format!("{} {}", random_adj, random_noun)
-    }
+        let str_key = "kvd".to_string();
+        let int_key = "int".to_string();
 
-    fn random_keyword_payload(rnd_gen: &mut ThreadRng) -> PayloadType {
-        PayloadType::Keyword(vec![random_keyword(rnd_gen)])
-    }
+        let num_points = 10000;
+        let mut struct_segment = build_segment(dir1.path(), &config).unwrap();
 
-    fn random_int_payload(rnd_gen: &mut ThreadRng) -> PayloadType {
-        let val1: i64 = rnd_gen.gen_range(INT_RANGE);
-        let val2: i64 = rnd_gen.gen_range(INT_RANGE);
-        PayloadType::Integer(vec![val1, val2])
-    }
+        let mut opnum = 0;
+        for idx in 0..num_points {
+            let vector = random_vector(&mut rnd, dim);
+            let mut payload: TheMap<PayloadKeyType, PayloadType> = Default::default();
+            payload.insert(str_key.clone(), random_keyword_payload(&mut rnd));
+            payload.insert(int_key.clone(), random_int_payload(&mut rnd, 2));
 
-    fn random_vector(rnd_gen: &mut ThreadRng, size: usize) -> Vec<VectorElementType> {
-        (0..size).map(|_| rnd_gen.gen()).collect()
-    }
+            struct_segment.upsert_point(opnum, idx, &vector).unwrap();
+            struct_segment.set_full_payload(opnum, idx, payload.clone()).unwrap();
 
-    fn random_field_condition(rnd_gen: &mut ThreadRng) -> Condition {
-        let kv_or_int: bool = rnd_gen.gen();
-        match kv_or_int {
-            true => Condition::Field(FieldCondition {
-                key: "kvd".to_string(),
-                r#match: Some(Match {
-                    keyword: Some(random_keyword(rnd_gen)),
-                    integer: None,
-                }),
-                range: None,
-                geo_bounding_box: None,
-                geo_radius: None,
+            opnum += 1;
+        }
+
+        struct_segment.create_field_index(opnum, &str_key).unwrap();
+        struct_segment.create_field_index(opnum, &int_key).unwrap();
+
+        let filter = Filter::new_must(Condition::Field(FieldCondition {
+            key: int_key,
+            r#match: None,
+            range: Some(Range {
+                lt: None,
+                gt: None,
+                gte: Some(50.),
+                lte: Some(100.),
             }),
-            false => Condition::Field(FieldCondition {
-                key: "int".to_string(),
-                r#match: None,
-                range: Some(RangeConditionl {
-                    lt: None,
-                    gt: None,
-                    gte: Some(rnd_gen.gen_range(INT_RANGE) as f64),
-                    lte: Some(rnd_gen.gen_range(INT_RANGE) as f64),
-                }),
-                geo_bounding_box: None,
-                geo_radius: None,
-            })
-        }
-    }
+            geo_bounding_box: None,
+            geo_radius: None,
+        }));
 
-    fn random_filter(rnd_gen: &mut ThreadRng) -> Filter {
-        let mut rnd1 = rand::thread_rng();
+        let estimation = struct_segment.payload_index
+            .borrow()
+            .estimate_cardinality(&filter);
 
-        let should_conditions = (0..=2)
-            .take_while(|_| rnd1.gen::<f64>() > 0.6)
-            .map(|_| random_field_condition(rnd_gen))
-            .collect_vec();
+        let checker = struct_segment.condition_checker.borrow();
 
-        let should_conditions_opt = match should_conditions.is_empty() {
-            false => Some(should_conditions),
-            true => None,
-        };
+        let exact = struct_segment.vector_storage
+            .borrow()
+            .iter_ids()
+            .filter(|x| checker.check(*x,  &filter))
+            .collect_vec()
+            .len();
 
-        let must_conditions = (0..=2)
-            .take_while(|_| rnd1.gen::<f64>() > 0.6)
-            .map(|_| random_field_condition(rnd_gen))
-            .collect_vec();
+        eprintln!("exact = {:#?}", exact);
+        eprintln!("estimation = {:#?}", estimation);
 
-        let must_conditions_opt = match must_conditions.is_empty() {
-            false => Some(must_conditions),
-            true => None,
-        };
-
-        Filter {
-            should: should_conditions_opt,
-            must: must_conditions_opt,
-            must_not: None,
-        }
+        assert!(exact <= estimation.max);
+        assert!(exact >= estimation.min);
     }
 
     #[test]
@@ -145,13 +104,14 @@ mod tests {
         let int_key = "int".to_string();
 
         let num_points = 1000;
+        let num_int_values = 2;
 
         let mut opnum = 0;
         for idx in 0..num_points {
             let vector = random_vector(&mut rnd, dim);
             let mut payload: TheMap<PayloadKeyType, PayloadType> = Default::default();
             payload.insert(str_key.clone(), random_keyword_payload(&mut rnd));
-            payload.insert(int_key.clone(), random_int_payload(&mut rnd));
+            payload.insert(int_key.clone(), random_int_payload(&mut rnd, num_int_values));
 
             plain_segment.upsert_point(idx, idx, &vector).unwrap();
             struct_segment.upsert_point(idx, idx, &vector).unwrap();
@@ -165,8 +125,8 @@ mod tests {
         struct_segment.create_field_index(opnum, &str_key).unwrap();
         struct_segment.create_field_index(opnum, &int_key).unwrap();
 
-
-        for _i in 0..100 {
+        let attempts = 100;
+        for _i in 0..attempts {
             let query_vector = random_vector(&mut rnd, dim);
             let query_filter = random_filter(&mut rnd);
 
@@ -175,9 +135,9 @@ mod tests {
 
             let estimation = struct_segment.payload_index.borrow().estimate_cardinality(&query_filter);
 
-            assert!(estimation.min <= estimation.exp);
-            assert!(estimation.exp <= estimation.max);
-            assert!(estimation.max <= num_points as usize);
+            assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
+            assert!(estimation.exp <= estimation.max, "{:#?}", estimation);
+            assert!(estimation.max <= num_points as usize, "{:#?}", estimation);
 
             plain_result
                 .iter()

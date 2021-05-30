@@ -81,7 +81,7 @@ impl TryInto<Segment> for SegmentBuilder {
                 segment.create_field_index(segment.version, field)?;
             }
 
-            segment.query_planner.borrow_mut().build_index()?;
+            segment.vector_index.borrow_mut().build_index()?;
 
             segment.flush()?;
             // Now segment is going to be evicted from RAM

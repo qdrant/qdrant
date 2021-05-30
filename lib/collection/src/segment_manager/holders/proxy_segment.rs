@@ -328,7 +328,7 @@ mod tests {
         let mut seen_points: HashSet<PointIdType> = Default::default();
         for res in search_result {
             if seen_points.contains(&res.id) {
-                assert!(false, format!("point {} appears multiple times", res.id));
+                assert!(false, "point {} appears multiple times", res.id);
             }
             seen_points.insert(res.id);
         }

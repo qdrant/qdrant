@@ -4,9 +4,9 @@ use std::{mem, iter};
 
 use serde::{Deserialize, Serialize};
 
-use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
+use crate::index::field_index::{CardinalityEstimation, PrimaryCondition, PayloadBlockCondition};
 use crate::index::field_index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
-use crate::types::{IntPayloadType, PayloadType, PointOffsetType, FieldCondition};
+use crate::types::{IntPayloadType, PayloadType, PointOffsetType, FieldCondition, PayloadKeyType, Match};
 
 #[derive(Serialize, Deserialize)]
 pub struct PersistedMapIndex<N: Hash + Eq + Clone> {
@@ -75,6 +75,28 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
                 })
         )
     }
+
+    fn payload_blocks(&self, threshold: usize, key: PayloadKeyType) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+        let iter = self.map
+            .iter()
+            .filter(move |(_value, point_ids)| point_ids.len() > threshold)
+            .map(move |(value, point_ids)| {
+                PayloadBlockCondition {
+                    condition: FieldCondition {
+                        key: key.clone(),
+                        r#match: Some(Match {
+                            keyword: Some(value.to_owned()),
+                            integer: None,
+                        }),
+                        range: None,
+                        geo_bounding_box: None,
+                        geo_radius: None,
+                    },
+                    cardinality: point_ids.len(),
+                }
+            });
+        Box::new(iter)
+    }
 }
 
 impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
@@ -94,10 +116,32 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
                     estimation
                 }))
     }
+
+    fn payload_blocks(&self, threshold: usize, key: PayloadKeyType) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+        let iter = self.map
+            .iter()
+            .filter(move |(_value, point_ids)| point_ids.len() >= threshold)
+            .map(move |(value, point_ids)| {
+                PayloadBlockCondition {
+                    condition: FieldCondition {
+                        key: key.clone(),
+                        r#match: Some(Match {
+                            keyword: None,
+                            integer: Some(*value),
+                        }),
+                        range: None,
+                        geo_bounding_box: None,
+                        geo_radius: None,
+                    },
+                    cardinality: point_ids.len(),
+                }
+            });
+        Box::new(iter)
+    }
 }
 
 impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
-    fn add(&mut self, id: usize, value: &PayloadType) {
+    fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
         match value {
             PayloadType::Keyword(keywords) => self.add_many(id, keywords),
             _ => panic!("Unexpected payload type: {:?}", value)
@@ -114,7 +158,7 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
 }
 
 impl PayloadFieldIndexBuilder for PersistedMapIndex<IntPayloadType> {
-    fn add(&mut self, id: usize, value: &PayloadType) {
+    fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
         match value {
             PayloadType::Integer(numbers) => self.add_many(id, numbers),
             _ => panic!("Unexpected payload type: {:?}", value)

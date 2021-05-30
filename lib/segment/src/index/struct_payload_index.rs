@@ -14,10 +14,11 @@ use crate::index::index::PayloadIndex;
 use crate::index::payload_config::PayloadConfig;
 use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage};
 use crate::types::{Filter, PayloadKeyType, FieldCondition, Condition, PointOffsetType};
-use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
-use crate::index::query_estimator::estimate_filter;
+use crate::index::field_index::{CardinalityEstimation, PrimaryCondition, PayloadBlockCondition};
+use crate::index::query_estimator::{estimate_filter};
 use crate::vector_storage::vector_storage::VectorStorage;
 use crate::id_mapper::id_mapper::IdMapper;
+use crate::index::visited_pool::VisitedPool;
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 
@@ -31,6 +32,7 @@ pub struct StructPayloadIndex {
     field_indexes: IndexesMap,
     config: PayloadConfig,
     path: PathBuf,
+    visited_pool: VisitedPool,
 }
 
 impl StructPayloadIndex {
@@ -143,7 +145,8 @@ impl StructPayloadIndex {
             id_mapper,
             field_indexes: Default::default(),
             config,
-            path: path.to_owned()
+            path: path.to_owned(),
+            visited_pool: Default::default(),
         };
 
         if !index.config_path().exists() {
@@ -241,7 +244,7 @@ impl PayloadIndex for StructPayloadIndex {
     }
 
     fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
-        let total = self.total_points();
+        let total_points = self.total_points();
 
         let estimator = |condition: &Condition| {
             match condition {
@@ -265,16 +268,30 @@ impl PayloadIndex for StructPayloadIndex {
             }
         };
 
-        estimate_filter(&estimator, query, total)
+        estimate_filter(&estimator, query, total_points)
     }
 
-    fn query_points(&self, query: &Filter) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+    fn payload_blocks(&self, threshold: usize) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+        let iter = self.field_indexes
+            .iter()
+            .map(move |(key, indexes)| {
+                indexes
+                    .iter()
+                    .map(move |field_index| field_index.payload_blocks(threshold, key.clone()))
+                    .flatten()
+            }).flatten();
+
+        Box::new(iter)
+    }
+
+    fn query_points<'a>(&'a self, query: &'a Filter) -> Box<dyn Iterator<Item=PointOffsetType> + 'a> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
-        let query_cardinality = self.estimate_cardinality(query);
-        let condition_checker = self.condition_checker.borrow();
         let vector_storage_ref = self.vector_storage.borrow();
-        let full_scan_iterator = vector_storage_ref.iter_ids(); // Should not be used if filter restricted by indexed fields
+        let condition_checker = self.condition_checker.borrow();
+
+        let query_cardinality = self.estimate_cardinality(query);
         return if query_cardinality.primary_clauses.is_empty() {
+            let full_scan_iterator = vector_storage_ref.iter_ids();
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points = full_scan_iterator
                 .filter(|i| condition_checker.check(*i, query))
@@ -283,7 +300,10 @@ impl PayloadIndex for StructPayloadIndex {
             Box::new(matched_points.into_iter())
         } else {
             // CPU-optimized strategy here: points are made unique before applying other filters.
-            let preselected: HashSet<PointOffsetType> = query_cardinality.primary_clauses.iter()
+            // ToDo: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
+            let mut visited_list = self.visited_pool.get(vector_storage_ref.total_vector_count());
+
+            let preselected: Vec<PointOffsetType> = query_cardinality.primary_clauses.iter()
                 .map(|clause| {
                     match clause {
                         PrimaryCondition::Condition(field_condition) => self.query_field(field_condition)
@@ -291,12 +311,16 @@ impl PayloadIndex for StructPayloadIndex {
                         PrimaryCondition::Ids(ids) => Box::new(ids.iter().cloned())
                     }
                 })
-                .flat_map(|x| x)
+                .flatten()
+                .filter(|id| !visited_list.check_and_update_visited(*id))
+                .filter(move |i| condition_checker.check(*i, query))
                 .collect();
-            let matched_points = preselected.into_iter()
-                .filter(|i| condition_checker.check(*i, query))
-                .collect_vec();
-            Box::new(matched_points.into_iter())
+
+            self.visited_pool.return_back(visited_list);
+
+            let matched_points_iter = preselected.into_iter();
+            Box::new(matched_points_iter)
         };
     }
+
 }

@@ -1,16 +1,16 @@
 use crate::id_mapper::id_mapper::IdMapper;
 use crate::vector_storage::vector_storage::VectorStorage;
-use crate::payload_storage::payload_storage::{PayloadStorage};
+use crate::payload_storage::payload_storage::{PayloadStorage, ConditionChecker};
 use crate::entry::entry_point::{SegmentEntry, OperationResult, OperationError};
 use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentType, SegmentConfig, SegmentState, PayloadSchemaInfo};
-use crate::query_planner::query_planner::QueryPlanner;
 use std::sync::{Arc, Mutex};
 use atomic_refcell::{AtomicRefCell};
 use std::path::PathBuf;
 use std::fs::{remove_dir_all};
 use std::io::Write;
 use atomicwrites::{AtomicFile, AllowOverwrite};
-use crate::index::index::PayloadIndex;
+use crate::index::index::{PayloadIndex, VectorIndex};
+use crate::spaces::tools::mertic_object;
 
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
@@ -24,8 +24,8 @@ pub struct Segment {
     pub vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     pub payload_storage: Arc<AtomicRefCell<dyn PayloadStorage>>,
     pub payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
-    /// User for writing only here.
-    pub query_planner: Arc<AtomicRefCell<dyn QueryPlanner>>,
+    pub condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+    pub vector_index: Arc<AtomicRefCell<dyn VectorIndex>>,
     pub appendable_flag: bool,
     pub segment_type: SegmentType,
     pub segment_config: SegmentConfig,
@@ -36,7 +36,7 @@ impl Segment {
 
     fn update_vector(&mut self,
                      old_internal_id: PointOffsetType,
-                     vector: &Vec<VectorElementType>,
+                     vector: Vec<VectorElementType>,
     ) -> OperationResult<PointOffsetType> {
         let new_internal_index = {
             let mut vector_storage = self.vector_storage.borrow_mut();
@@ -112,7 +112,7 @@ impl SegmentEntry for Segment {
             });
         }
 
-        let internal_result = self.query_planner.borrow().search(vector, filter, top, params);
+        let internal_result = self.vector_index.borrow().search(vector, filter, top, params);
 
 
         let id_mapper = self.id_mapper.borrow();
@@ -139,6 +139,9 @@ impl SegmentEntry for Segment {
             return Err(OperationError::WrongVector { expected_dim: vector_dim, received_dim: vector.len() });
         }
 
+        let metric = mertic_object(&self.segment_config.distance);
+        let processed_vector = metric.preprocess(vector.clone());
+
         let stored_internal_point = {
             let id_mapped = self.id_mapper.borrow();
             id_mapped.internal_id(point_id)
@@ -146,9 +149,9 @@ impl SegmentEntry for Segment {
 
         let (was_replaced, new_index) = match stored_internal_point {
             Some(existing_internal_id) =>
-                (true, self.update_vector(existing_internal_id, vector)?),
+                (true, self.update_vector(existing_internal_id, processed_vector)?),
             None =>
-                (false, self.vector_storage.borrow_mut().put_vector(vector)?)
+                (false, self.vector_storage.borrow_mut().put_vector(processed_vector)?)
         };
 
         self.id_mapper.borrow_mut().set_link(point_id, new_index)?;

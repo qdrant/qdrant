@@ -1,4 +1,5 @@
 pub mod collection_builder;
+pub mod config;
 mod update_handler;
 pub mod operations;
 pub mod collection;

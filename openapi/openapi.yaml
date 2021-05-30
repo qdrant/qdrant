@@ -60,19 +60,33 @@ info:
 
     {
       "result": {
+        "status": "green",
         "vectors_count": 0,
         "segments_count": 5,
         "disk_data_size": 0,
         "ram_data_size": 0,
         "config": {
-          "vector_size": 4,
-          "index": {
-            "type": "plain",
-            "options": {}
+          "params": {
+            "vector_size": 4,
+            "distance": "Dot"
           },
-          "distance": "Dot",
-          "storage_type": {
-            "type": "in_memory"
+          "hnsw_config": {
+            "m": 16,
+            "ef_construct": 100,
+            "full_scan_threshold": 10000
+          },
+          "optimizer_config": {
+            "deleted_threshold": 0.2,
+            "vacuum_min_vector_number": 1000,
+            "max_segment_number": 5,
+            "memmap_threshold": 50000,
+            "indexing_threshold": 20000,
+            "payload_indexing_threshold": 10000,
+            "flush_interval_sec": 1
+          },
+          "wal_config": {
+            "wal_capacity_mb": 32,
+            "wal_segments_ahead": 0
           }
         }
       },

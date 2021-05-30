@@ -3,7 +3,6 @@ use crate::id_mapper::simple_id_mapper::SimpleIdMapper;
 use crate::vector_storage::simple_vector_storage::SimpleVectorStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::index::plain_payload_index::{PlainPayloadIndex, PlainIndex};
-use crate::query_planner::simple_query_planner::SimpleQueryPlanner;
 use crate::types::{SegmentType, SegmentConfig, Indexes, SegmentState, SeqNumberType, StorageType, PayloadIndexType};
 use std::sync::{Arc, Mutex};
 use atomic_refcell::AtomicRefCell;
@@ -16,7 +15,8 @@ use std::io::Read;
 use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
 use crate::vector_storage::vector_storage::VectorStorage;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::index::PayloadIndex;
+use crate::index::index::{PayloadIndex, VectorIndex};
+use crate::index::hnsw_index::hnsw::HNSWIndex;
 
 
 fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> { Arc::new(AtomicRefCell::new(t)) }
@@ -27,13 +27,22 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
     let payload_storage_path = segment_path.join("payload_storage");
     let payload_index_path = segment_path.join("payload_index");
     let vector_storage_path = segment_path.join("vector_storage");
+    let vector_index_path = segment_path.join("vector_index");
 
     let id_mapper = sp(SimpleIdMapper::open(mapper_path.as_path())?);
 
 
     let vector_storage: Arc<AtomicRefCell<dyn VectorStorage>> = match config.storage_type {
-        StorageType::InMemory => sp(SimpleVectorStorage::open(vector_storage_path.as_path(), config.vector_size)?),
-        StorageType::Mmap => sp(MemmapVectorStorage::open(vector_storage_path.as_path(), config.vector_size)?),
+        StorageType::InMemory => sp(SimpleVectorStorage::open(
+            vector_storage_path.as_path(),
+            config.vector_size,
+            config.distance,
+        )?),
+        StorageType::Mmap => sp(MemmapVectorStorage::open(
+            vector_storage_path.as_path(),
+            config.vector_size,
+            config.distance,
+        )?),
     };
 
     let payload_storage = sp(SimplePayloadStorage::open(payload_storage_path.as_path())?);
@@ -45,29 +54,31 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
     ));
 
     let payload_index: Arc<AtomicRefCell<dyn PayloadIndex>> = match config.payload_index.unwrap_or_default() {
-        PayloadIndexType::Plain => sp(PlainPayloadIndex::open(condition_checker, vector_storage.clone(), &payload_index_path)?),
+        PayloadIndexType::Plain => sp(PlainPayloadIndex::open(
+            condition_checker.clone(),
+            vector_storage.clone(),
+            &payload_index_path)?),
         PayloadIndexType::Struct => sp(StructPayloadIndex::open(
-            condition_checker,
+            condition_checker.clone(),
             vector_storage.clone(),
             payload_storage.clone(),
             id_mapper.clone(),
             &payload_index_path)?),
     };
 
-    let index = sp(match config.index {
-        Indexes::Plain { .. } => PlainIndex::new(
+    let vector_index: Arc<AtomicRefCell<dyn VectorIndex>> = match config.index {
+        Indexes::Plain { .. } => sp(PlainIndex::new(
             vector_storage.clone(),
             payload_index.clone(),
-            config.distance
-        ),
-        _ => PlainIndex::new(
+        )),
+        Indexes::Hnsw(hnsw_config) => sp(HNSWIndex::open(
+            &vector_index_path,
+            condition_checker.clone(),
             vector_storage.clone(),
             payload_index.clone(),
-            config.distance
-        )
-        // ToDo: Add HNSW index init here
-        // Indexes::Hnsw { .. } => unimplemented!(),
-    });
+            hnsw_config
+        )?)
+    };
 
     let segment_type = match config.index {
         Indexes::Plain { .. } => match config.payload_index.unwrap_or_default() {
@@ -77,20 +88,19 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
         Indexes::Hnsw { .. } => SegmentType::Indexed,
     };
 
-    let appendable = segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
-
-    let query_planer = SimpleQueryPlanner::new(index);
+    let appendable_flag = segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
 
     return Ok(Segment {
         version,
         persisted_version: Arc::new(Mutex::new(version)),
         current_path: segment_path.to_owned(),
-        id_mapper: id_mapper.clone(),
+        id_mapper,
         vector_storage,
-        payload_storage: payload_storage.clone(),
-        payload_index: payload_index.clone(),
-        query_planner: sp(query_planer),
-        appendable_flag: appendable,
+        payload_storage,
+        payload_index,
+        condition_checker,
+        vector_index,
+        appendable_flag,
         segment_type,
         segment_config: config.clone(),
     });

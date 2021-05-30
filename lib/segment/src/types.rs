@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashSet, HashMap};
 
 pub type PointIdType = u64;
 /// Type of point index across all segments
-pub type PointOffsetType = usize;
+pub type PointOffsetType = u32;
 /// Type of point index inside a segment
 pub type PayloadKeyType = String;
 pub type SeqNumberType = u64;
@@ -95,12 +95,10 @@ pub struct SegmentInfo {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 /// Additional parameters of the search
-pub enum SearchParams {
+pub struct SearchParams {
     /// Params relevant to HNSW index
-    Hnsw {
-        /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
-        ef: usize
-    }
+    /// /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
+    pub hnsw_ef: Option<usize>
 }
 
 /// This function only stores mapping between distance and preferred result order
@@ -121,20 +119,29 @@ pub enum Indexes {
     Plain {},
     /// Use filterable HNSW index for approximate search. Is very fast even on a very huge collections,
     /// but require additional space to store index and additional time to build it.
-    Hnsw {
-        /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
-        m: usize,
-        /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
-        ef_construct: usize,
-    },
+    Hnsw(HnswConfig),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct HnswConfig {
+    /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+    pub m: usize,
+    /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
+    pub ef_construct: usize,
+    /// Minimal amount of points for additional payload-based indexing.
+    /// If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
+    /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
+    pub full_scan_threshold: usize
+}
+
+impl Default for HnswConfig {
+    fn default() -> Self { HnswConfig { m: 16, ef_construct: 100, full_scan_threshold: DEFAULT_FULL_SCAN_THRESHOLD }}
 }
 
 impl Indexes {
     pub fn default_hnsw() -> Self {
-        Indexes::Hnsw {
-            m: 16,
-            ef_construct: 100,
-        }
+        Indexes::Hnsw(Default::default())
     }
 }
 
@@ -184,15 +191,18 @@ impl Default for StorageType {
 pub struct SegmentConfig {
     /// Size of a vectors used
     pub vector_size: usize,
+    /// Type of distance function used for measuring distance between vectors
+    pub distance: Distance,
     /// Type of index used for search
     pub index: Indexes,
     /// Payload Indexes
     pub payload_index: Option<PayloadIndexType>,
-    /// Type of distance function used for measuring distance between vectors
-    pub distance: Distance,
     /// Type of vector storage
     pub storage_type: StorageType,
 }
+
+/// Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
+pub const DEFAULT_FULL_SCAN_THRESHOLD: usize = 20_000;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -263,7 +273,7 @@ pub enum PayloadInterface {
     KeywordShortcut(PayloadVariant<String>),
     IntShortcut(PayloadVariant<i64>),
     FloatShortcut(PayloadVariant<f64>),
-    Regular(PayloadInterfaceStrict),
+    Payload(PayloadInterfaceStrict),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -279,7 +289,7 @@ pub enum PayloadInterfaceStrict {
 // For tests
 impl From<PayloadInterfaceStrict> for PayloadInterface {
     fn from(x: PayloadInterfaceStrict) -> Self {
-        PayloadInterface::Regular(x)
+        PayloadInterface::Payload(x)
     }
 }
 
@@ -297,7 +307,7 @@ impl From<&PayloadInterfaceStrict> for PayloadType {
 impl From<&PayloadInterface> for PayloadType {
     fn from(interface: &PayloadInterface) -> Self {
         match interface {
-            PayloadInterface::Regular(x) => x.into(),
+            PayloadInterface::Payload(x) => x.into(),
             PayloadInterface::KeywordShortcut(x) => PayloadType::Keyword(x.to_list()),
             PayloadInterface::FloatShortcut(x) => PayloadType::Float(x.to_list()),
             PayloadInterface::IntShortcut(x) => PayloadType::Integer(x.to_list()),
@@ -550,7 +560,7 @@ mod tests {
 
     #[test]
     fn test_deny_unknown_fields() {
-         let query1 = r#"
+        let query1 = r#"
          {
             "wrong": "query"
          }

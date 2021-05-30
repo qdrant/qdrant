@@ -1,77 +1,36 @@
-use thiserror::Error;
-use crate::operations::CollectionUpdateOperations;
-use segment::types::{PointIdType, ScoredPoint, SegmentConfig, VectorElementType, HasIdCondition};
-use std::result;
-use crate::operations::types::{Record, CollectionInfo, UpdateResult, UpdateStatus, SearchRequest, RecommendRequest};
-use std::sync::Arc;
-use crate::wal::{SerdeWal, WalError};
-use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
-use segment::entry::entry_point::OperationError;
-use tokio::task::JoinError;
-use crossbeam_channel::{Sender, SendError};
-use crate::update_handler::update_handler::{UpdateHandler, UpdateSignal};
-use parking_lot::{Mutex, RwLock};
-use crate::segment_manager::holders::segment_holder::SegmentHolder;
-use tokio::runtime::Runtime;
-use itertools::Itertools;
 use std::collections::HashMap;
-use segment::types::Filter;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use crossbeam_channel::{Sender};
+use itertools::Itertools;
+use parking_lot::{Mutex, RwLock};
+use tokio::runtime::Runtime;
+
+use segment::types::{HasIdCondition, PointIdType, ScoredPoint, VectorElementType, SegmentType};
 use segment::types::Condition;
+use segment::types::Filter;
 
-
-#[derive(Error, Debug, Clone)]
-#[error("{0}")]
-pub enum CollectionError {
-    #[error("Wrong input: {description}")]
-    BadInput { description: String },
-    #[error("No point with id {missed_point_id} found")]
-    NotFound { missed_point_id: PointIdType },
-    #[error("Service internal error: {error}")]
-    ServiceError { error: String },
-    #[error("Bad request: {description}")]
-    BadRequest { description: String },
-}
-
-impl From<OperationError> for CollectionError {
-    fn from(err: OperationError) -> Self {
-        match err {
-            OperationError::WrongVector { .. } => Self::BadInput { description: format!("{}", err) },
-            OperationError::PointIdError { missed_point_id } => Self::NotFound { missed_point_id },
-            OperationError::ServiceError { description } => Self::ServiceError { error: description },
-            OperationError::TypeError { .. } => Self::BadInput { description: format!("{}", err) },
-        }
-    }
-}
-
-impl From<JoinError> for CollectionError {
-    fn from(err: JoinError) -> Self {
-        Self::ServiceError { error: format!("{}", err) }
-    }
-}
-
-impl From<WalError> for CollectionError {
-    fn from(err: WalError) -> Self {
-        Self::ServiceError { error: format!("{}", err) }
-    }
-}
-
-impl<T> From<SendError<T>> for CollectionError {
-    fn from(_err: SendError<T>) -> Self {
-        Self::ServiceError { error: format!("Can't reach one of the workers") }
-    }
-}
-
-pub type CollectionResult<T> = result::Result<T, CollectionError>;
+use crate::collection_builder::optimizers_builder::build_optimizers;
+use crate::config::CollectionConfig;
+use crate::operations::CollectionUpdateOperations;
+use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
+use crate::operations::types::{CollectionError, CollectionInfo, CollectionResult, RecommendRequest, Record, SearchRequest, UpdateResult, UpdateStatus, CollectionStatus};
+use crate::segment_manager::holders::segment_holder::SegmentHolder;
+use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
+use crate::update_handler::update_handler::{UpdateHandler, UpdateSignal};
+use crate::wal::{SerdeWal};
 
 pub struct Collection {
     pub segments: Arc<RwLock<SegmentHolder>>,
-    pub config: SegmentConfig,
+    pub config: Arc<RwLock<CollectionConfig>>,
     pub wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
     pub searcher: Arc<dyn SegmentSearcher + Sync + Send>,
-    pub update_handler: Arc<UpdateHandler>,
+    pub update_handler: Arc<Mutex<UpdateHandler>>,
     pub updater: Arc<dyn SegmentUpdater + Sync + Send>,
     pub runtime_handle: Arc<Runtime>,
     pub update_sender: Sender<UpdateSignal>,
+    pub path: PathBuf
 }
 
 
@@ -107,19 +66,24 @@ impl Collection {
         let mut segments_count = 0;
         let mut ram_size = 0;
         let mut disk_size = 0;
+        let mut status = CollectionStatus::Green;
         for (_idx, segment) in segments.iter() {
             segments_count += 1;
             let segment_info = segment.get().read().info();
+            if segment_info.segment_type == SegmentType::Special {
+                status = CollectionStatus::Yellow;
+            }
             vectors_count += segment_info.num_vectors;
             disk_size += segment_info.disk_usage_bytes;
             ram_size += segment_info.ram_usage_bytes;
         }
         Ok(CollectionInfo {
+            status,
             vectors_count,
             segments_count,
             disk_data_size: disk_size,
             ram_data_size: ram_size,
-            config: self.config.clone(),
+            config: self.config.read().clone(),
         })
     }
 
@@ -229,6 +193,34 @@ impl Collection {
         };
 
         self.search(Arc::new(search_request))
+    }
+
+    /// Updates collection optimization params:
+    /// - Saves new params on disk
+    /// - Stops existing optimization loop
+    /// - Runs new optimizers with new params
+    pub fn update_optimizer_params(&self, optimizer_config_diff: OptimizersConfigDiff) -> CollectionResult<()> {
+        {
+            let mut config = self.config.write();
+            config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
+            config.save(self.path.as_path())?;
+        }
+        let config = self.config.read();
+        let mut update_handler = self.update_handler.lock();
+        self.stop()?;
+        update_handler.wait_worker_stops()?;
+        let new_optimizers = build_optimizers(
+            self.path.as_path(),
+            &config.params,
+            &config.optimizer_config,
+            &config.hnsw_config
+        );
+        update_handler.optimizers = new_optimizers;
+        update_handler.flush_timeout_sec = config.optimizer_config.flush_interval_sec;
+        update_handler.run_worker();
+        self.update_sender.send(UpdateSignal::Nop)?;
+
+        Ok(())
     }
 }
 

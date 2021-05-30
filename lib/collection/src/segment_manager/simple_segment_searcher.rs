@@ -1,7 +1,7 @@
 use crate::segment_manager::holders::segment_holder::{LockedSegment, LockedSegmentHolder};
 use std::sync::Arc;
 use crate::segment_manager::segment_managers::{SegmentSearcher};
-use crate::collection::CollectionResult;
+use crate::operations::types::CollectionResult;
 use segment::types::{ScoredPoint, PointIdType, SeqNumberType};
 use tokio::runtime::Runtime;
 use std::collections::{HashSet, HashMap};
@@ -55,8 +55,6 @@ impl SegmentSearcher for SimpleSegmentSearcher {
             return Ok(vec![]);
         }
 
-        let distance = some_segment.unwrap().1.get().read().config().distance;
-
         let searches: Vec<_> = segments
             .iter()
             .map(|(_id, segment)|
@@ -89,7 +87,6 @@ impl SegmentSearcher for SimpleSegmentSearcher {
                     !res
                 }),
             request.top,
-            &distance,
         );
 
         Ok(top_scores)

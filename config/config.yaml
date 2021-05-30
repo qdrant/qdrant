@@ -39,6 +39,16 @@ storage:
     # Minimum interval between forced flushes.
     flush_interval_sec: 10
 
+  # Default parameters of HNSW Index. Could be override for each collection individually
+  hnsw_index:
+    # Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+    m: 16
+    # Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
+    ef_construct: 100
+    # Minimal amount of points for additional payload-based indexing.
+    # If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
+    # in this case full-scan search should be preferred by query planner and additional indexing is not required.
+    full_scan_threshold: 10000
 
 service:
 
