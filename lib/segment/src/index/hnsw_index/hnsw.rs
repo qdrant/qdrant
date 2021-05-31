@@ -17,6 +17,7 @@ use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::types::Condition::Field;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::sample_estimation::sample_check_cardinality;
+use log::debug;
 
 
 const HNSW_USE_HEURISTIC: bool = true;
@@ -207,6 +208,8 @@ impl VectorIndex for HNSWIndex {
         let mut rng = thread_rng();
 
         let total_points = vector_storage.total_vector_count();
+
+        debug!("building hnsw for {}", total_points);
         self.graph = GraphLayers::new(
             total_points,
             self.config.m,
@@ -229,6 +232,8 @@ impl VectorIndex for HNSWIndex {
             self.graph.link_new_point(vector_id, level, &points_scorer);
         }
 
+        debug!("finish main graph");
+
         let total_vectors_count = vector_storage.total_vector_count();
         let mut block_condition_checker = BuildConditionChecker::new(total_vectors_count);
 
@@ -239,6 +244,7 @@ impl VectorIndex for HNSWIndex {
             let block_graph = self.build_filtered_graph(payload_block.condition, &mut block_condition_checker);
             self.graph.merge_from_other(block_graph);
         }
+        debug!("finish payload");
         self.save()
     }
 }

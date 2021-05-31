@@ -49,7 +49,7 @@ pub trait SegmentOptimizer {
             distance: collection_params.distance,
             index: Indexes::Plain {},
             payload_index: Some(PayloadIndexType::Plain),
-            storage_type: StorageType::InMemory
+            storage_type: StorageType::InMemory,
         };
         Ok(LockedSegment::new(build_simple_segment(
             self.collection_path(),
@@ -81,13 +81,13 @@ pub trait SegmentOptimizer {
             distance: collection_params.distance,
             index: if is_indexed { Indexes::Hnsw(self.hnsw_config()) } else { Indexes::Plain {} },
             payload_index: Some(if is_payload_indexed { PayloadIndexType::Struct } else { PayloadIndexType::Plain }),
-            storage_type: if is_on_disk { StorageType::Mmap } else { StorageType::InMemory }
+            storage_type: if is_on_disk { StorageType::Mmap } else { StorageType::InMemory },
         };
 
         Ok(SegmentBuilder::new(
             self.collection_path(),
             self.temp_path(),
-            &optimized_config
+            &optimized_config,
         )?)
     }
 
