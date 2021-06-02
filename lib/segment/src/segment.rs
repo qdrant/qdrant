@@ -2,7 +2,7 @@ use crate::id_mapper::id_mapper::IdMapper;
 use crate::vector_storage::vector_storage::VectorStorage;
 use crate::payload_storage::payload_storage::{PayloadStorage};
 use crate::entry::entry_point::{SegmentEntry, OperationResult, OperationError};
-use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentType, SegmentConfig, SegmentState, PayloadSchemaInfo, PayloadInterface};
+use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentType, SegmentConfig, SegmentState, PayloadSchemaInfo};
 use crate::query_planner::query_planner::QueryPlanner;
 use std::sync::{Arc, Mutex};
 use atomic_refcell::{AtomicRefCell};
@@ -11,9 +11,7 @@ use std::fs::{remove_dir_all};
 use std::io::Write;
 use atomicwrites::{AtomicFile, AllowOverwrite};
 use crate::index::index::PayloadIndex;
-use std::collections::BTreeMap;
-use schemars::_serde_json::{Error, Value};
-use itertools::{Itertools, rev};
+use schemars::_serde_json::Value;
 use sequence_trie::SequenceTrie;
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
@@ -240,89 +238,36 @@ impl SegmentEntry for Segment {
             let splitted_keys: Vec<&str> = key.split("__").collect();
             trie.insert(splitted_keys, value);
         }
-        println!("Sequence trie {:?}", trie);
-
-
-
-        for (ik, iv) in trie.iter() {
-            println!("IK {:?}", ik);
-            println!("IV {:?}", iv);
-        }
-        // let mut map: TheMap<String, serde_json::value::Value> = payload.iter().fold(
-        //     TheMap::new(), |mut acc, (key, value)| {
-        //     if !key.contains("__") {
-        //         acc.insert(key.to_string(), serde_json::to_value(value).unwrap());
-        //     }
-        //     acc
-        // } );
 
         fn _fill_map_from_trie(map: &mut TheMap<String, Value>,
-                               option_inner_map: Option<serde_json::Map<String, Value>>,
                                trie: &SequenceTrie<PayloadKeyType, &PayloadType>) {
 
-            for (key, subtrie) in trie.children_with_keys() {
-                //let mut key_value: Option<serde_json::Map<String, Value>> =
-                println!("key {:?} and subtrie {:?} and accum {:?}", key, subtrie, option_inner_map);
-                match subtrie.value() {
-                    None => {
-                        match option_inner_map.clone() {
-                            None => {
-                                let mut inner_map = serde_json::Map::new();
-                                _fill_map_from_trie(map, Some(inner_map), subtrie);
-                            }
-                            Some(mut inner_map) => {
-                                inner_map.insert(key.to_string(), Value::String("hey".to_string()));
-                                _fill_map_from_trie(map, Some(inner_map), subtrie);
-                                ()
-                            }
-                        }
-
-                    },
-                    Some(value) => {
-                        // I am a leaf, decide what to actually insert
-                        let serde_value = serde_json::to_value(value).unwrap();
-                        let insert_value = match option_inner_map.clone() {
-                            None => {
-                                serde_value
-                            }
-                            Some(mut inner_map) => {
-                                inner_map.insert(key.to_string(), Value::String("hey".to_string()));
-                                Value::Object(inner_map)
-                            }
-                        };
-                        println!("MAP INSERT {:?} => {:?}", key, insert_value);
-                        map.insert(key.to_string(), insert_value);
-                        ()
+            fn _get_value_for_subtrie(current_value: Value, trie: &SequenceTrie<PayloadKeyType, &PayloadType>) -> Value {
+                if trie.is_leaf() {
+                    serde_json::to_value(trie.value()).unwrap()
+                } else {
+                    let mut new_current_value = current_value.clone();
+                    for (key, subtrie) in trie.children_with_keys() {
+                        let inner_v = _get_value_for_subtrie(new_current_value.clone(), subtrie);
+                        new_current_value.as_object_mut().unwrap().insert(key.to_string(), inner_v);
                     }
+                    serde_json::to_value(new_current_value).unwrap()
                 }
+            }
+
+            for (key, subtrie) in trie.children_with_keys() {
+                let key_value = _get_value_for_subtrie(Value::Object(serde_json::Map::new()), subtrie);
+                map.insert(key.to_string(), key_value);
             }
         }
 
         let mut map: TheMap<String, Value> = TheMap::new();
-        _fill_map_from_trie(&mut map, None, &trie);
-
-
-        // for (keys, value) in trie.iter() {
-        //     println!("keys {:?}", keys.clone());
-        //     println!("value {:?}", value.clone());
-        //     // for key in rev(keys) {
-        //     //     let mut inner_map: TheMap<String, serde_json::value::Value> = TheMap::new();
-        //     //     inner_map.insert(key.to_string(), serde_json::to_value(value).unwrap())
-        //     // }
-        //     for key in keys {
-        //         match map.get(key) {
-        //             None => {
-        //                 map.insert(key.to_string(), serde_json::to_value(value).unwrap());
-        //                 ()
-        //             },
-        //             Some(_) => ()
-        //         }
-        //
-        //     }
-        //
-        // }
-
+        _fill_map_from_trie(&mut map, &trie);
         println!("MAP HERE JOAN {:?}", map);
+        for (key, v) in map.iter() {
+            println!("key {:?}", key);
+            println!("v {:?}", v);
+        }
         Ok(serde_json::to_string(&map).unwrap())
     }
 

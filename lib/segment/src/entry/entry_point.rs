@@ -1,6 +1,6 @@
 use thiserror::Error;
 use std::path::Path;
-use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentConfig, SegmentType, PayloadInterface};
+use crate::types::{SeqNumberType, VectorElementType, Filter, PointIdType, PayloadKeyType, PayloadType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentConfig, SegmentType};
 use std::result;
 use std::io::Error as IoError;
 use atomicwrites::Error as AtomicIoError;
