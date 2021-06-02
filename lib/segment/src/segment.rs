@@ -235,45 +235,94 @@ impl SegmentEntry for Segment {
         let internal_id = self.lookup_internal_id(point_id)?;
         let payload = self.payload_storage.borrow().payload(internal_id);
         let mut trie: SequenceTrie<PayloadKeyType, &PayloadType> = SequenceTrie::new();
+
         for (key, value) in payload.iter() {
             let splitted_keys: Vec<&str> = key.split("__").collect();
             trie.insert(splitted_keys, value);
         }
         println!("Sequence trie {:?}", trie);
 
+
+
         for (ik, iv) in trie.iter() {
             println!("IK {:?}", ik);
             println!("IV {:?}", iv);
         }
-        let mut map: TheMap<String, serde_json::value::Value> = payload.iter().fold(
-            TheMap::new(), |mut acc, (key, value)| {
-            if !key.contains("__") {
-                acc.insert(key.to_string(), serde_json::to_value(value).unwrap());
-            }
-            acc
-        } );
+        // let mut map: TheMap<String, serde_json::value::Value> = payload.iter().fold(
+        //     TheMap::new(), |mut acc, (key, value)| {
+        //     if !key.contains("__") {
+        //         acc.insert(key.to_string(), serde_json::to_value(value).unwrap());
+        //     }
+        //     acc
+        // } );
 
-        let mut map: TheMap<String, serde_json::value::Value> = TheMap::new();
-        for (keys, value) in trie.iter() {
-            println!("keys {:?}", keys.clone());
-            println!("value {:?}", value.clone());
-            for key in rev(keys) {
-                let mut inner_map: TheMap<String, serde_json::value::Value> = TheMap::new();
-                inner_map.insert(key.to_string(), serde_json::to_value(value).unwrap())
-            }
-            for key in keys {
-                match map.get(key) {
+        fn _fill_map_from_trie(map: &mut TheMap<String, Value>,
+                               option_inner_map: Option<serde_json::Map<String, Value>>,
+                               trie: &SequenceTrie<PayloadKeyType, &PayloadType>) {
+
+            for (key, subtrie) in trie.children_with_keys() {
+                //let mut key_value: Option<serde_json::Map<String, Value>> =
+                println!("key {:?} and subtrie {:?} and accum {:?}", key, subtrie, option_inner_map);
+                match subtrie.value() {
                     None => {
-                        map.insert(key.to_string(), serde_json::to_value(value).unwrap());
-                        ()
+                        match option_inner_map.clone() {
+                            None => {
+                                let mut inner_map = serde_json::Map::new();
+                                _fill_map_from_trie(map, Some(inner_map), subtrie);
+                            }
+                            Some(mut inner_map) => {
+                                inner_map.insert(key.to_string(), Value::String("hey".to_string()));
+                                _fill_map_from_trie(map, Some(inner_map), subtrie);
+                                ()
+                            }
+                        }
+
                     },
-                    Some(_) => ()
+                    Some(value) => {
+                        // I am a leaf, decide what to actually insert
+                        let serde_value = serde_json::to_value(value).unwrap();
+                        let insert_value = match option_inner_map.clone() {
+                            None => {
+                                serde_value
+                            }
+                            Some(mut inner_map) => {
+                                inner_map.insert(key.to_string(), Value::String("hey".to_string()));
+                                Value::Object(inner_map)
+                            }
+                        };
+                        println!("MAP INSERT {:?} => {:?}", key, insert_value);
+                        map.insert(key.to_string(), insert_value);
+                        ()
+                    }
                 }
-
             }
-
         }
 
+        let mut map: TheMap<String, Value> = TheMap::new();
+        _fill_map_from_trie(&mut map, None, &trie);
+
+
+        // for (keys, value) in trie.iter() {
+        //     println!("keys {:?}", keys.clone());
+        //     println!("value {:?}", value.clone());
+        //     // for key in rev(keys) {
+        //     //     let mut inner_map: TheMap<String, serde_json::value::Value> = TheMap::new();
+        //     //     inner_map.insert(key.to_string(), serde_json::to_value(value).unwrap())
+        //     // }
+        //     for key in keys {
+        //         match map.get(key) {
+        //             None => {
+        //                 map.insert(key.to_string(), serde_json::to_value(value).unwrap());
+        //                 ()
+        //             },
+        //             Some(_) => ()
+        //         }
+        //
+        //     }
+        //
+        // }
+
+        println!("MAP HERE JOAN {:?}", map);
         Ok(serde_json::to_string(&map).unwrap())
     }
 
@@ -588,11 +637,22 @@ mod tests {
                 "width": 60,
                 "temperature": 60.5,
                 "nested": {
-                    "feature": 30.5
+                    "feature": 30.5,
+                    "subnested": {
+                        "subfeature": 40.5
+                    }
                 },
                 "integer_array": [1, 2]
             }
         }"#;
+
+        // height
+        // nested - > feature
+        //        -> subnested -> subfeature
+        // temperature,
+        // width
+        // integer_array
+
 
         let dir = TempDir::new("payload_dir").unwrap();
         let dim = 2;
