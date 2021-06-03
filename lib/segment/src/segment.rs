@@ -596,14 +596,6 @@ mod tests {
             }
         }"#;
 
-        // height
-        // nested - > feature
-        //        -> subnested -> subfeature
-        // temperature,
-        // width
-        // integer_array
-
-
         let dir = TempDir::new("payload_dir").unwrap();
         let dim = 2;
         let config = SegmentConfig {
@@ -617,8 +609,44 @@ mod tests {
         let mut segment = build_segment(dir.path(), &config).unwrap();
         segment.upsert_point(0, 0, &vec![1.0 as f32, 1.0 as f32]).unwrap();
         segment.set_full_payload_with_json(0, 0, &data.to_string()).unwrap();
-        let output: TheMap<String, serde_json::value::Value> = serde_json::from_str(&segment.payload_as_json(0).unwrap()).unwrap();
-        println!("JSON output {:?}", output)
+        let json = segment.payload_as_json(0).unwrap();
+        println!("json {}", json);
+        let output: TheMap<String, serde_json::value::Value> = serde_json::from_str(&json).unwrap();
+        let keys: Vec<PayloadKeyType> = output.keys().cloned().collect();
+        assert_eq!(keys.len(), 6);
+        assert!(keys.contains(&"name".to_string()));
+        assert!(keys.contains(&"age".to_string()));
+        assert!(keys.contains(&"string_array".to_string()));
+        assert!(keys.contains(&"boolean_array".to_string()));
+        assert!(keys.contains(&"geo_data".to_string()));
+        assert!(keys.contains(&"metadata".to_string()));
+        assert!(!keys.contains(&"metadata__width".to_string()));
+
+        let metadata = output.get("metadata").unwrap().as_object().unwrap();
+        let metadata_keys: Vec<PayloadKeyType> = metadata.keys().cloned().collect();
+        assert_eq!(metadata_keys.len(), 5);
+        assert!(metadata_keys.contains(&"height".to_string()));
+        assert!(metadata_keys.contains(&"width".to_string()));
+        assert!(metadata_keys.contains(&"temperature".to_string()));
+        assert!(metadata_keys.contains(&"nested".to_string()));
+        assert!(metadata_keys.contains(&"integer_array".to_string()));
+
+        let metadata_nested = metadata.get("nested").unwrap().as_object().unwrap();
+        let metadata_nested_keys: Vec<PayloadKeyType> = metadata_nested.keys().cloned().collect();
+        assert_eq!(metadata_nested_keys.len(), 2);
+        assert!(metadata_nested_keys.contains(&"feature".to_string()));
+        assert!(metadata_nested_keys.contains(&"subnested".to_string()));
+
+        let metadata_nested_subnested = metadata_nested.get("subnested").unwrap().as_object().unwrap();
+        let metadata_nested_subnested_keys: Vec<PayloadKeyType> = metadata_nested_subnested.keys().cloned().collect();
+        assert_eq!(metadata_nested_subnested_keys.len(), 1);
+        assert!(metadata_nested_subnested_keys.contains(&"subfeature".to_string()));
+        match &metadata_nested_subnested[&"subfeature".to_string()] {
+            Value::Number(x) => {
+                assert_eq!(x.as_f64().unwrap(), 40.5);
+            },
+            _ => assert!(false)
+        }
     }
 
     #[test]
