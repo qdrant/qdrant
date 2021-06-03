@@ -245,16 +245,19 @@ impl SegmentEntry for Segment {
 
         fn _fill_map_from_trie(map: &mut TheMap<String, Value>,
                                trie: &SequenceTrie<PayloadKeyType, &PayloadType>) {
-
             fn _get_value_for_subtrie(current_value: Value, trie: &SequenceTrie<PayloadKeyType, &PayloadType>) -> Value {
                 if trie.is_leaf() {
                     let pinterface: PayloadInterface = PayloadInterface::from(*trie.value().unwrap());
                     serde_json::to_value(pinterface).unwrap()
                 } else {
                     let mut new_current_value = current_value.clone();
+                    let mut sub_values: Vec<(String, Value)> = Vec::new();
                     for (key, subtrie) in trie.children_with_keys() {
                         let inner_v = _get_value_for_subtrie(new_current_value.clone(), subtrie);
-                        new_current_value.as_object_mut().unwrap().insert(key.to_string(), inner_v);
+                        sub_values.push((key.to_string(), inner_v));
+                    }
+                    for (key, inner_value) in sub_values.into_iter() {
+                        new_current_value.as_object_mut().unwrap().insert(key, inner_value);
                     }
                     serde_json::to_value(new_current_value).unwrap()
                 }
@@ -268,11 +271,6 @@ impl SegmentEntry for Segment {
 
         let mut map: TheMap<String, Value> = TheMap::new();
         _fill_map_from_trie(&mut map, &trie);
-        println!("MAP HERE JOAN {:?}", map);
-        for (key, v) in map.iter() {
-            println!("key {:?}", key);
-            println!("v {:?}", v);
-        }
         Ok(serde_json::to_string(&map).unwrap())
     }
 
@@ -630,12 +628,44 @@ mod tests {
         assert!(metadata_keys.contains(&"temperature".to_string()));
         assert!(metadata_keys.contains(&"nested".to_string()));
         assert!(metadata_keys.contains(&"integer_array".to_string()));
+        match &metadata[&"height".to_string()] {
+            Value::Number(x) => {
+                assert_eq!(x.as_i64().unwrap(), 50);
+            },
+            _ => assert!(false)
+        }
+        match &metadata[&"width".to_string()] {
+            Value::Number(x) => {
+                assert_eq!(x.as_i64().unwrap(), 60);
+            },
+            _ => assert!(false)
+        }
+        match &metadata[&"temperature".to_string()] {
+            Value::Number(x) => {
+                assert_eq!(x.as_f64().unwrap(), 60.5);
+            },
+            _ => assert!(false)
+        }
+        match &metadata[&"integer_array".to_string()] {
+            Value::Array(x) => {
+                assert_eq!(x.len(), 2);
+                assert_eq!(x[0].as_i64().unwrap(), 1);
+                assert_eq!(x[1].as_i64().unwrap(), 2);
+            },
+            _ => assert!(false)
+        }
 
         let metadata_nested = metadata.get("nested").unwrap().as_object().unwrap();
         let metadata_nested_keys: Vec<PayloadKeyType> = metadata_nested.keys().cloned().collect();
         assert_eq!(metadata_nested_keys.len(), 2);
         assert!(metadata_nested_keys.contains(&"feature".to_string()));
         assert!(metadata_nested_keys.contains(&"subnested".to_string()));
+        match &metadata_nested[&"feature".to_string()] {
+            Value::Number(x) => {
+                assert_eq!(x.as_f64().unwrap(), 30.5);
+            },
+            _ => assert!(false)
+        }
 
         let metadata_nested_subnested = metadata_nested.get("subnested").unwrap().as_object().unwrap();
         let metadata_nested_subnested_keys: Vec<PayloadKeyType> = metadata_nested_subnested.keys().cloned().collect();
