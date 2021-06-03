@@ -1,5 +1,5 @@
 use segment::entry::entry_point::{SegmentEntry, OperationResult};
-use segment::types::{Filter, Condition, SearchParams, ScoredPoint, PayloadKeyType, PayloadType, TheMap, SeqNumberType, VectorElementType, PointIdType, SegmentInfo, SegmentType, SegmentConfig, PayloadInterface};
+use segment::types::{Filter, Condition, SearchParams, ScoredPoint, PayloadKeyType, PayloadType, TheMap, SeqNumberType, VectorElementType, PointIdType, SegmentInfo, SegmentType, SegmentConfig};
 use std::cmp::max;
 use crate::segment_manager::holders::segment_holder::LockedSegment;
 use std::collections::HashSet;

@@ -8,7 +8,6 @@ use std::collections::{HashSet, HashMap};
 use segment::spaces::tools::peek_top_scores_iterable;
 use futures::future::try_join_all;
 use crate::operations::types::{Record, SearchRequest, PayloadContent};
-use crate::operations::types::PayloadContent::Payload;
 
 /// Simple implementation of segment manager
 ///  - owens segments

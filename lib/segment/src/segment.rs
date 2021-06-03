@@ -6,7 +6,7 @@ use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorEle
 use std::sync::{Arc, Mutex};
 use atomic_refcell::{AtomicRefCell};
 use std::path::PathBuf;
-use std::fs::{remove_dir_all};
+use std::fs::remove_dir_all;
 use std::io::Write;
 use atomicwrites::{AtomicFile, AllowOverwrite};
 use crate::index::index::{PayloadIndex, VectorIndex};
@@ -234,6 +234,53 @@ impl SegmentEntry for Segment {
     }
 
     fn payload_as_json(&self, point_id: PointIdType) -> OperationResult<String> {
+        fn _fill_map_from_trie(map: &mut TheMap<String, Value>,
+                               trie: &SequenceTrie<PayloadKeyType, &PayloadType>) -> OperationResult<u8> {
+
+            fn _get_value_for_subtrie(current_value: &Value, trie: &SequenceTrie<PayloadKeyType, &PayloadType>) -> OperationResult<Value> {
+                if trie.is_leaf() {
+                    match trie.value() {
+                        Some(v) => {
+                            let pinterface: PayloadInterface = PayloadInterface::from(*v);
+                            match serde_json::to_value(pinterface) {
+                                Ok(v) => Ok(v),
+                                Err(e) => Err(OperationError::ServiceError { description: e.to_string()})
+                            }
+                        }
+                        None => return Err(OperationError::ServiceError { description: format!("Error extracting value for trie {:?}", trie)})
+                    }
+                } else {
+                    let mut new_current_value = current_value.clone();
+                    let mut sub_values: Vec<(String, Value)> = Vec::new();
+                    for (key, subtrie) in trie.children_with_keys() {
+                        match _get_value_for_subtrie(&new_current_value, subtrie) {
+                            Ok(inner_v) => sub_values.push((key.to_string(), inner_v)),
+                            Err(e) => return Err(e)
+                        }
+                    }
+                    for (key, inner_value) in sub_values.into_iter() {
+                        new_current_value.as_object_mut().unwrap().insert(key, inner_value);
+                    }
+                    match serde_json::to_value(new_current_value) {
+                        Ok(v) => Ok(v),
+                        Err(e) => Err(OperationError::ServiceError { description: e.to_string()})
+                    }
+                }
+            }
+
+            for (key, subtrie) in trie.children_with_keys() {
+                let init_v = Value::Object(serde_json::Map::new());
+                match _get_value_for_subtrie(&init_v, subtrie) {
+                    Err(e) => return Err(e),
+                    Ok(key_value) => {
+                        map.insert(key.to_string(), key_value);
+                        ()
+                    }
+                }
+            }
+            Ok(1)
+        }
+        
         let internal_id = self.lookup_internal_id(point_id)?;
         let payload = self.payload_storage.borrow().payload(internal_id);
         let mut trie: SequenceTrie<PayloadKeyType, &PayloadType> = SequenceTrie::new();
@@ -243,35 +290,11 @@ impl SegmentEntry for Segment {
             trie.insert(splitted_keys, value);
         }
 
-        fn _fill_map_from_trie(map: &mut TheMap<String, Value>,
-                               trie: &SequenceTrie<PayloadKeyType, &PayloadType>) {
-            fn _get_value_for_subtrie(current_value: Value, trie: &SequenceTrie<PayloadKeyType, &PayloadType>) -> Value {
-                if trie.is_leaf() {
-                    let pinterface: PayloadInterface = PayloadInterface::from(*trie.value().unwrap());
-                    serde_json::to_value(pinterface).unwrap()
-                } else {
-                    let mut new_current_value = current_value.clone();
-                    let mut sub_values: Vec<(String, Value)> = Vec::new();
-                    for (key, subtrie) in trie.children_with_keys() {
-                        let inner_v = _get_value_for_subtrie(new_current_value.clone(), subtrie);
-                        sub_values.push((key.to_string(), inner_v));
-                    }
-                    for (key, inner_value) in sub_values.into_iter() {
-                        new_current_value.as_object_mut().unwrap().insert(key, inner_value);
-                    }
-                    serde_json::to_value(new_current_value).unwrap()
-                }
-            }
-
-            for (key, subtrie) in trie.children_with_keys() {
-                let key_value = _get_value_for_subtrie(Value::Object(serde_json::Map::new()), subtrie);
-                map.insert(key.to_string(), key_value);
-            }
-        }
-
         let mut map: TheMap<String, Value> = TheMap::new();
-        _fill_map_from_trie(&mut map, &trie);
-        Ok(serde_json::to_string(&map).unwrap())
+        match _fill_map_from_trie(&mut map, &trie) {
+            Ok(_) => Ok(serde_json::to_string(&map).unwrap()),
+            Err(e) => Err(e)
+        }
     }
 
     fn iter_points(&self) -> Box<dyn Iterator<Item=PointIdType> + '_> {
