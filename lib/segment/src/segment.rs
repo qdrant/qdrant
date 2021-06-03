@@ -2,7 +2,7 @@ use crate::id_mapper::id_mapper::IdMapper;
 use crate::vector_storage::vector_storage::VectorStorage;
 use crate::payload_storage::payload_storage::{PayloadStorage};
 use crate::entry::entry_point::{SegmentEntry, OperationResult, OperationError};
-use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentType, SegmentConfig, SegmentState, PayloadSchemaInfo};
+use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorElementType, PointIdType, PointOffsetType, SearchParams, ScoredPoint, TheMap, SegmentInfo, SegmentType, SegmentConfig, SegmentState, PayloadSchemaInfo, PayloadInterface};
 use crate::query_planner::query_planner::QueryPlanner;
 use std::sync::{Arc, Mutex};
 use atomic_refcell::{AtomicRefCell};
@@ -244,7 +244,8 @@ impl SegmentEntry for Segment {
 
             fn _get_value_for_subtrie(current_value: Value, trie: &SequenceTrie<PayloadKeyType, &PayloadType>) -> Value {
                 if trie.is_leaf() {
-                    serde_json::to_value(trie.value()).unwrap()
+                    let pinterface: PayloadInterface = PayloadInterface::from(*trie.value().unwrap());
+                    serde_json::to_value(pinterface).unwrap()
                 } else {
                     let mut new_current_value = current_value.clone();
                     for (key, subtrie) in trie.children_with_keys() {

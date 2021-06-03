@@ -283,6 +283,37 @@ impl From<PayloadInterfaceStrict> for PayloadInterface {
     }
 }
 
+impl From<&PayloadType> for PayloadInterface {
+    fn from(payload: &PayloadType) -> Self {
+        match payload {
+            PayloadType::Keyword(x) => {
+                match x.len() {
+                    1 => PayloadInterface::KeywordShortcut(PayloadVariant::Value(x.first().unwrap().to_string())),
+                    _ => PayloadInterface::KeywordShortcut(PayloadVariant::List(x.clone())),
+                }
+            }
+            PayloadType::Integer(x) => {
+                match x.len() {
+                    1 => PayloadInterface::IntShortcut(PayloadVariant::Value(*x.first().unwrap())),
+                    _ => PayloadInterface::IntShortcut(PayloadVariant::List(x.clone())),
+                }
+            }
+            PayloadType::Float(x) => {
+                match x.len() {
+                    1 => PayloadInterface::FloatShortcut(PayloadVariant::Value(*x.first().unwrap())),
+                    _ => PayloadInterface::FloatShortcut(PayloadVariant::List(x.clone())),
+                }
+            }
+            PayloadType::Geo(x) => {
+                match x.len() {
+                    1 => PayloadInterface::Regular(PayloadInterfaceStrict::Geo(PayloadVariant::Value(x.first().unwrap().clone()))),
+                    _ => PayloadInterface::Regular(PayloadInterfaceStrict::Geo(PayloadVariant::List(x.clone())))
+                }
+            }
+        }
+    }
+}
+
 impl From<&PayloadInterfaceStrict> for PayloadType {
     fn from(interface: &PayloadInterfaceStrict) -> Self {
         match interface {
