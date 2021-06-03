@@ -1,15 +1,17 @@
 use std::path::{PathBuf, Path};
-use segment::types::{SegmentConfig, SegmentType};
+use segment::types::{SegmentType, HnswConfig};
 use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId, LockedSegment};
 use std::cmp::min;
 use crate::segment_manager::optimizers::segment_optimizer::{SegmentOptimizer, OptimizerThresholds};
+use crate::config::CollectionParams;
 
 
 pub struct IndexingOptimizer {
     thresholds_config: OptimizerThresholds,
     segments_path: PathBuf,
     collection_temp_dir: PathBuf,
-    config: SegmentConfig,
+    collection_params: CollectionParams,
+    hnsw_config: HnswConfig,
 }
 
 impl IndexingOptimizer {
@@ -17,13 +19,15 @@ impl IndexingOptimizer {
         thresholds_config: OptimizerThresholds,
         segments_path: PathBuf,
         collection_temp_dir: PathBuf,
-        config: SegmentConfig,
+        collection_params: CollectionParams,
+        hnsw_config: HnswConfig,
     ) -> Self {
         IndexingOptimizer {
             thresholds_config,
             segments_path,
             collection_temp_dir,
-            config,
+            collection_params,
+            hnsw_config,
         }
     }
 
@@ -61,8 +65,12 @@ impl SegmentOptimizer for IndexingOptimizer {
         self.collection_temp_dir.as_path()
     }
 
-    fn base_segment_config(&self) -> SegmentConfig {
-        self.config.clone()
+    fn collection_params(&self) -> CollectionParams {
+        self.collection_params.clone()
+    }
+
+    fn hnsw_config(&self) -> HnswConfig {
+        self.hnsw_config.clone()
     }
 
     fn threshold_config(&self) -> &OptimizerThresholds {
@@ -128,13 +136,11 @@ mod tests {
             },
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
-            SegmentConfig {
+            CollectionParams {
                 vector_size: segment_config.vector_size,
-                index: Default::default(),
-                payload_index: Some(Default::default()),
                 distance: segment_config.distance,
-                storage_type: StorageType::default(),
             },
+            Default::default()
         );
 
         let locked_holder = Arc::new(RwLock::new(holder));
@@ -156,7 +162,10 @@ mod tests {
         // ------ Plain -> Mmap & Indexed payload
         let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
         assert!(suggested_to_optimize.contains(&large_segment_id));
+        eprintln!("suggested_to_optimize = {:#?}", suggested_to_optimize);
         index_optimizer.optimize(locked_holder.clone(), suggested_to_optimize).unwrap();
+        eprintln!("Done");
+
 
          // ------ Plain -> Indexed payload
         let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());

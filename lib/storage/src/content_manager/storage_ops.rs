@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};
-use segment::types::{Distance, Indexes};
+use segment::types::{Distance};
+use collection::operations::config_diff::{HnswConfigDiff, WalConfigDiff, OptimizersConfigDiff};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -30,7 +31,20 @@ pub enum StorageOperations {
         name: String,
         vector_size: usize,
         distance: Distance,
-        index: Option<Indexes>,
+        /// Custom params for HNSW index. If none - values from service configuration file are used.
+        hnsw_config: Option<HnswConfigDiff>,
+        /// Custom params for WAL. If none - values from service configuration file are used.
+        wal_config: Option<WalConfigDiff>,
+        /// Custom params for Optimizers.  If none - values from service configuration file are used.
+        optimizers_config: Option<OptimizersConfigDiff>
+    },
+    /// Update parameters of the existing collection
+    UpdateCollection {
+        name: String,
+        /// Custom params for Optimizers.  If none - values from service configuration file are used.
+        /// This operation is blocking, it will only proceed ones all current optimizations are complete
+        optimizers_config: Option<OptimizersConfigDiff>
+        // ToDo: Allow updates for other configuration params as well
     },
     /// Delete collection with given name
     DeleteCollection(String),

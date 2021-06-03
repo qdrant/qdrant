@@ -113,9 +113,7 @@ impl<'s> SegmentHolder {
         return key;
     }
 
-    /// Replace old segments with a new one
-    pub fn swap<T>(&mut self, segment: T, remove_ids: &Vec<SegmentId>, drop_data: bool) -> OperationResult<SegmentId> where T: Into<LockedSegment> {
-        let new_id = self.add(segment);
+    pub fn remove(&mut self, remove_ids: &Vec<SegmentId>, drop_data: bool) -> OperationResult<()> {
         for remove_id in remove_ids {
             let removed_segment = self.segments.remove(remove_id);
 
@@ -126,6 +124,13 @@ impl<'s> SegmentHolder {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Replace old segments with a new one
+    pub fn swap<T>(&mut self, segment: T, remove_ids: &Vec<SegmentId>, drop_data: bool) -> OperationResult<SegmentId> where T: Into<LockedSegment> {
+        let new_id = self.add(segment);
+        self.remove(remove_ids, drop_data)?;
         return Ok(new_id);
     }
 
@@ -133,6 +138,14 @@ impl<'s> SegmentHolder {
         return self.segments.get(&id);
     }
 
+    pub fn appendable_ids(&self) -> Vec<SegmentId> {
+        self.segments
+            .iter()
+            .filter(|(_, x)| x.get().read().is_appendable())
+            .map(|(id, _)| id)
+            .cloned()
+            .collect()
+    }
 
     pub fn random_appendable_segment(&self) -> Option<LockedSegment> {
         let segments: Vec<_> = self.segments

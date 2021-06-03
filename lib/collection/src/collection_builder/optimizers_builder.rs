@@ -1,31 +1,42 @@
 use crate::update_handler::update_handler::Optimizer;
 use std::sync::Arc;
 use crate::segment_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
-use segment::types::SegmentConfig;
+use segment::types::{HnswConfig};
 use crate::segment_manager::optimizers::merge_optimizer::MergeOptimizer;
 use std::path::Path;
 use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};
 use crate::segment_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::segment_manager::optimizers::segment_optimizer::OptimizerThresholds;
+use crate::config::CollectionParams;
 
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct OptimizersConfig {
+    /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     pub deleted_threshold: f64,
+    /// The minimal number of vectors in a segment, required to perform segment optimization
     pub vacuum_min_vector_number: usize,
+    /// If the number of segments exceeds this value, the optimizer will merge the smallest segments.
     pub max_segment_number: usize,
+    /// Maximum number of vectors to store in-memory per segment.
+    /// Segments larger than this threshold will be stored as read-only memmaped file.
     pub memmap_threshold: usize,
+    /// Maximum number of vectors allowed for plain index.
+    /// Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
     pub indexing_threshold: usize,
+    /// Starting from this amount of vectors per-segment the engine will start building index for payload.
     pub payload_indexing_threshold: usize,
+    /// Minimum interval between forced flushes.
     pub flush_interval_sec: u64,
 }
 
 
 pub fn build_optimizers(
     collection_path: &Path,
-    segment_config: &SegmentConfig,
+    collection_params: &CollectionParams,
     optimizers_config: &OptimizersConfig,
+    hnsw_config: &HnswConfig,
 ) -> Arc<Vec<Box<Optimizer>>> {
     let segments_path = collection_path.join("segments");
     let temp_segments_path = collection_path.join("temp_segments");
@@ -42,7 +53,8 @@ pub fn build_optimizers(
                 threshold_config.clone(),
                 segments_path.clone(),
                 temp_segments_path.clone(),
-                segment_config.clone(),
+                collection_params.clone(),
+                hnsw_config.clone(),
             )
         ),
         Box::new(
@@ -51,7 +63,8 @@ pub fn build_optimizers(
                 threshold_config.clone(),
                 segments_path.clone(),
                 temp_segments_path.clone(),
-                segment_config.clone(),
+                collection_params.clone(),
+                hnsw_config.clone(),
             )
         ),
         Box::new(VacuumOptimizer::new(
@@ -60,7 +73,8 @@ pub fn build_optimizers(
             threshold_config.clone(),
             segments_path.clone(),
             temp_segments_path.clone(),
-            segment_config.clone(),
+            collection_params.clone(),
+            hnsw_config.clone(),
         ))
     ])
 }

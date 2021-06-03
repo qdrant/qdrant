@@ -1,8 +1,9 @@
 use crate::segment_manager::holders::segment_holder::{SegmentId, LockedSegment, LockedSegmentHolder};
-use segment::types::{SegmentType, SegmentConfig};
+use segment::types::{SegmentType, HnswConfig};
 use ordered_float::OrderedFloat;
 use crate::segment_manager::optimizers::segment_optimizer::{SegmentOptimizer, OptimizerThresholds};
 use std::path::{PathBuf, Path};
+use crate::config::CollectionParams;
 
 
 pub struct VacuumOptimizer {
@@ -11,7 +12,8 @@ pub struct VacuumOptimizer {
     thresholds_config: OptimizerThresholds,
     segments_path: PathBuf,
     collection_temp_dir: PathBuf,
-    config: SegmentConfig,
+    collection_params: CollectionParams,
+    hnsw_config: HnswConfig,
 }
 
 
@@ -21,14 +23,17 @@ impl VacuumOptimizer {
                thresholds_config: OptimizerThresholds,
                segments_path: PathBuf,
                collection_temp_dir: PathBuf,
-               config: SegmentConfig) -> Self {
+               collection_params: CollectionParams,
+               hnsw_config: HnswConfig,
+    ) -> Self {
         VacuumOptimizer {
             deleted_threshold,
             min_vectors_number,
             thresholds_config,
             segments_path,
             collection_temp_dir,
-            config,
+            collection_params,
+            hnsw_config
         }
     }
 
@@ -64,8 +69,12 @@ impl SegmentOptimizer for VacuumOptimizer {
         self.collection_temp_dir.as_path()
     }
 
-    fn base_segment_config(&self) -> SegmentConfig {
-        self.config.clone()
+    fn collection_params(&self) -> CollectionParams {
+        self.collection_params.clone()
+    }
+
+    fn hnsw_config(&self) -> HnswConfig {
+        self.hnsw_config.clone()
     }
 
     fn threshold_config(&self) -> &OptimizerThresholds {
@@ -89,7 +98,7 @@ mod tests {
     use itertools::Itertools;
     use rand::Rng;
     use std::sync::Arc;
-    use segment::types::{Distance, Indexes, PayloadType, StorageType};
+    use segment::types::{Distance, PayloadType};
     use tempdir::TempDir;
     use parking_lot::RwLock;
 
@@ -154,20 +163,18 @@ mod tests {
         let vacuum_optimizer = VacuumOptimizer::new(
             0.2,
             50,
-            OptimizerThresholds{
+            OptimizerThresholds {
                 memmap_threshold: 1000000,
                 indexing_threshold: 1000000,
-                payload_indexing_threshold: 1000000
+                payload_indexing_threshold: 1000000,
             },
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
-            SegmentConfig {
+            CollectionParams {
                 vector_size: 4,
-                index: Indexes::Plain {},
-                payload_index: Some(Default::default()),
                 distance: Distance::Dot,
-                storage_type: StorageType::InMemory,
             },
+            Default::default()
         );
 
         let suggested_to_optimize = vacuum_optimizer.check_condition(locked_holder.clone());

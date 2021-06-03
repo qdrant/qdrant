@@ -11,16 +11,16 @@ use sled::{Config, Db};
 use sled::transaction::UnabortableTransactionError;
 use tokio::runtime;
 use tokio::runtime::Runtime;
-use wal::WalOptions;
 
 use collection::collection::Collection;
 use collection::collection_builder::collection_builder::build_collection;
 use collection::collection_builder::collection_loader::load_collection;
-use segment::types::SegmentConfig;
 
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::storage_ops::{AliasOperations, StorageOperations};
 use crate::types::StorageConfig;
+use collection::config::CollectionParams;
+use collection::operations::config_diff::{DiffConfig};
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 const SLED_CACHE_SIZE: u64 = 1 * 1024 * 1024; // 1 mb
@@ -59,16 +59,10 @@ impl TableOfContent {
         for entry in collection_paths {
             let collection_path = entry.unwrap().path();
             let collection_name = collection_path.file_name().unwrap().to_str().unwrap().to_string();
-            let wal_options = WalOptions {
-                segment_capacity: storage_config.wal.wal_capacity_mb * 1024 * 1024,
-                segment_queue_len: storage_config.wal.wal_segments_ahead,
-            };
 
             let collection = load_collection(
                 collection_path.as_path(),
-                &wal_options,
                 search_runtime.clone(),
-                &storage_config.optimizers,
             );
 
             collections.insert(collection_name, Arc::new(collection));
@@ -151,36 +145,56 @@ impl TableOfContent {
                 name: collection_name,
                 vector_size,
                 distance,
-                index
+                hnsw_config: hnsw_config_diff,
+                wal_config: wal_config_diff,
+                optimizers_config: optimizers_config_diff,
             } => {
                 self.validate_collection_not_exists(&collection_name)?;
-
-                let wal_options = WalOptions {
-                    segment_capacity: self.storage_config.wal.wal_capacity_mb * 1024 * 1024,
-                    segment_queue_len: self.storage_config.wal.wal_segments_ahead,
-                };
-
                 let collection_path = self.create_collection_path(&collection_name)?;
 
-
-                let segment_config = SegmentConfig {
+                let collection_params = CollectionParams {
                     vector_size,
-                    index: index.unwrap_or(Default::default()),
-                    payload_index: Some(Default::default()),
                     distance,
-                    storage_type: Default::default(),
+                };
+                let wal_config = match wal_config_diff {
+                    None => self.storage_config.wal.clone(),
+                    Some(diff) => diff.update(&self.storage_config.wal)?
                 };
 
-                let segment = build_collection(
+                let optimizers_config = match optimizers_config_diff {
+                    None => self.storage_config.optimizers.clone(),
+                    Some(diff) => diff.update(&self.storage_config.optimizers)?,
+                };
+
+                let hnsw_config = match hnsw_config_diff {
+                    None => self.storage_config.hnsw_index.clone(),
+                    Some(diff) => diff.update(&self.storage_config.hnsw_index)?
+                };
+
+                let collection = build_collection(
                     Path::new(&collection_path),
-                    &wal_options,
-                    &segment_config,
+                    &wal_config,
+                    &collection_params,
                     self.search_runtime.clone(),
-                    &self.storage_config.optimizers,
+                    &optimizers_config,
+                    &hnsw_config,
                 )?;
 
                 let mut write_collections = self.collections.write();
-                write_collections.insert(collection_name, Arc::new(segment));
+                write_collections.insert(collection_name, Arc::new(collection));
+                Ok(true)
+            }
+            StorageOperations::UpdateCollection {
+                name,
+                optimizers_config
+            } => {
+                let collection = self.get_collection(&name)?;
+                match optimizers_config {
+                    None => {}
+                    Some(new_optimizers_config) => {
+                        collection.update_optimizer_params(new_optimizers_config)?
+                    }
+                }
                 Ok(true)
             }
             StorageOperations::DeleteCollection(collection_name) => {
@@ -233,6 +247,7 @@ impl TableOfContent {
     pub fn get_collection(&self, collection_name: &str) -> Result<Arc<Collection>, StorageError> {
         let read_collection = self.collections.read();
         let real_collection_name = self.resolve_name(collection_name)?;
+        // resolve_name already checked collection existence, unwrap is safe here
         Ok(read_collection.get(&real_collection_name).unwrap().clone())
     }
 

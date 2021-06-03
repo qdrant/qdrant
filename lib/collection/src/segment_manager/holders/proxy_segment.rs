@@ -200,11 +200,11 @@ impl SegmentEntry for ProxySegment {
         };
     }
 
-    fn payload_unwrapped(&self, point_id: PointIdType) -> OperationResult<TheMap<PayloadKeyType, PayloadInterface>> {
+    fn payload_as_json(&self, point_id: PointIdType) -> OperationResult<String> {
         return if self.deleted_points.read().contains(&point_id) {
-            self.write_segment.get().read().payload_unwrapped(point_id)
+            self.write_segment.get().read().payload_as_json(point_id)
         } else {
-            self.wrapped_segment.get().read().payload_unwrapped(point_id)
+            self.wrapped_segment.get().read().payload_as_json(point_id)
         };
     }
 
@@ -330,13 +330,12 @@ mod tests {
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
         let search_result = proxy_segment.search(&query_vector, None, 10, None).unwrap();
 
-
         eprintln!("search_result = {:#?}", search_result);
 
         let mut seen_points: HashSet<PointIdType> = Default::default();
         for res in search_result {
             if seen_points.contains(&res.id) {
-                assert!(false, format!("point {} appears multiple times", res.id));
+                assert!(false, "point {} appears multiple times", res.id);
             }
             seen_points.insert(res.id);
         }

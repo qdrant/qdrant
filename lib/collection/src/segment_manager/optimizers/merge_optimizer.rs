@@ -1,8 +1,9 @@
 use crate::segment_manager::optimizers::segment_optimizer::{SegmentOptimizer, OptimizerThresholds};
 use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
-use segment::types::{SegmentType, SegmentConfig};
+use segment::types::{SegmentType, HnswConfig};
 use itertools::Itertools;
 use std::path::{PathBuf, Path};
+use crate::config::CollectionParams;
 
 
 /// Optimizer that tries to reduce number of segments until it fits configured value
@@ -11,7 +12,8 @@ pub struct MergeOptimizer {
     thresholds_config: OptimizerThresholds,
     segments_path: PathBuf,
     collection_temp_dir: PathBuf,
-    config: SegmentConfig,
+    collection_params: CollectionParams,
+    hnsw_config: HnswConfig,
 }
 
 impl MergeOptimizer {
@@ -20,13 +22,16 @@ impl MergeOptimizer {
         thresholds_config: OptimizerThresholds,
         segments_path: PathBuf,
         collection_temp_dir: PathBuf,
-        config: SegmentConfig) -> Self {
+        collection_params: CollectionParams,
+        hnsw_config: HnswConfig,
+    ) -> Self {
         return MergeOptimizer {
             max_segments,
             thresholds_config,
             segments_path,
             collection_temp_dir,
-            config,
+            collection_params,
+            hnsw_config,
         };
     }
 }
@@ -41,14 +46,17 @@ impl SegmentOptimizer for MergeOptimizer {
         self.collection_temp_dir.as_path()
     }
 
-    fn base_segment_config(&self) -> SegmentConfig {
-        self.config.clone()
+    fn collection_params(&self) -> CollectionParams {
+        self.collection_params.clone()
+    }
+
+    fn hnsw_config(&self) -> HnswConfig {
+        self.hnsw_config.clone()
     }
 
     fn threshold_config(&self) -> &OptimizerThresholds {
         &self.thresholds_config
     }
-
 
     fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId> {
         let read_segments = segments.read();
@@ -82,7 +90,7 @@ mod tests {
     use super::*;
     use crate::segment_manager::fixtures::{random_segment};
     use crate::segment_manager::holders::segment_holder::{SegmentHolder, LockedSegment};
-    use segment::types::{Distance, Indexes};
+    use segment::types::{Distance};
     use std::sync::{Arc};
     use tempdir::TempDir;
     use parking_lot::RwLock;
@@ -119,13 +127,12 @@ mod tests {
             },
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
-            SegmentConfig {
+            CollectionParams {
                 vector_size: 4,
-                index: Indexes::Plain {},
-                payload_index: Some(Default::default()),
                 distance: Distance::Dot,
-                storage_type: Default::default(),
-            });
+            },
+            Default::default()
+        );
 
         let locked_holder = Arc::new(RwLock::new(holder));
 

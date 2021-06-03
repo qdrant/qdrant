@@ -13,6 +13,12 @@ pub enum PrimaryCondition {
     Ids(HashSet<PointOffsetType>),
 }
 
+#[derive(Debug, Clone)]
+pub struct PayloadBlockCondition {
+    pub condition: FieldCondition,
+    pub cardinality: usize
+}
+
 #[derive(Debug)]
 pub struct CardinalityEstimation {
     /// Conditions that could be used to mane a primary point selection.

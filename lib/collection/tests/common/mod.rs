@@ -1,13 +1,13 @@
 use collection::collection_builder::collection_builder::build_collection;
-use wal::WalOptions;
 use collection::collection::Collection;
-use segment::types::{Distance, SegmentConfig, Indexes};
+use segment::types::{Distance};
 use tokio::runtime::Runtime;
 use tokio::runtime;
 use std::sync::Arc;
 use std::path::Path;
 use collection::collection_builder::optimizers_builder::OptimizersConfig;
 use collection::collection_builder::collection_loader::load_collection;
+use collection::config::{WalConfig, CollectionParams};
 
 
 pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
@@ -23,11 +23,6 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
 
 #[allow(dead_code)]
 pub fn load_collection_fixture(collection_path: &Path) -> (Arc<Runtime>, Collection) {
-    let wal_options = WalOptions {
-        segment_capacity: 100,
-        segment_queue_len: 0,
-    };
-
     let threaded_rt = Arc::new(runtime::Builder::new_multi_thread()
         .max_threads(2)
         .build().unwrap());
@@ -35,29 +30,21 @@ pub fn load_collection_fixture(collection_path: &Path) -> (Arc<Runtime>, Collect
 
     let collection = load_collection(
         collection_path,
-        &wal_options,
         threaded_rt.clone(),
-        &TEST_OPTIMIZERS_CONFIG,
     );
 
     return (threaded_rt, collection);
 }
 
 pub fn simple_collection_fixture(collection_path: &Path) -> (Arc<Runtime>, Collection) {
-    let wal_options = WalOptions {
-        segment_capacity: 100,
-        segment_queue_len: 0,
+    let wal_config = WalConfig {
+        wal_capacity_mb: 1,
+        wal_segments_ahead: 0
     };
 
-    let collection_config = SegmentConfig {
+    let collection_params = CollectionParams {
         vector_size: 4,
-        index: Indexes::Hnsw {
-            m: 16,
-            ef_construct: 128,
-        },
-        payload_index: Some(Default::default()),
         distance: Distance::Dot,
-        storage_type: Default::default(),
     };
 
     let threaded_rt = Arc::new(runtime::Builder::new_multi_thread()
@@ -67,10 +54,11 @@ pub fn simple_collection_fixture(collection_path: &Path) -> (Arc<Runtime>, Colle
 
     let collection = build_collection(
         collection_path,
-        &wal_options,
-        &collection_config,
+        &wal_config,
+        &collection_params,
         threaded_rt.clone(),
         &TEST_OPTIMIZERS_CONFIG,
+        &Default::default()
     ).unwrap();
 
     return (threaded_rt, collection);

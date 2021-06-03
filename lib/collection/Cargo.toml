@@ -1,6 +1,6 @@
 [package]
 name = "collection"
-version = "0.1.0"
+version = "0.3.0"
 authors = ["Andrey Vasnetsov <vasnetsov93@gmail.com>"]
 edition = "2018"
 
@@ -30,6 +30,7 @@ crossbeam-channel = "0.4.3"
 atomicwrites = "0.2.5"
 log = "0.4"
 env_logger = "0.7.1"
+merge = "0.1.0"
 
 segment = {path = "../segment"}
 

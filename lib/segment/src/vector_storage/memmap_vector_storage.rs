@@ -1,169 +1,125 @@
-use crate::vector_storage::vector_storage::{VectorStorage, ScoredPointOffset};
+use crate::vector_storage::vector_storage::{VectorStorage, ScoredPointOffset, RawScorer};
 use crate::entry::entry_point::OperationResult;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::fs::{File, OpenOptions, create_dir_all};
-use memmap::{MmapOptions, Mmap, MmapMut};
-use std::mem::{size_of, transmute};
-use crate::types::{VectorElementType, PointOffsetType, Distance};
+use std::fs::{OpenOptions, create_dir_all};
+use std::mem::{size_of};
+use crate::types::{VectorElementType, PointOffsetType, Distance, ScoreType};
 use std::io::Write;
-use crate::spaces::tools::{mertic_object, peek_top_scores};
-use crate::common::error_logging::LogError;
+use crate::spaces::tools::{mertic_object, peek_top_scores_iterable};
+use crate::spaces::metric::Metric;
+use crate::vector_storage::mmap_vectors::MmapVectors;
 
-pub struct MemmapVectorStorage {
-    dim: usize,
-    num_vectors: usize,
-    mmap: Option<Mmap>,
-    deleted_mmap: Option<MmapMut>,
-    data_path: PathBuf,
-    deleted_path: PathBuf,
-    deleted_count: usize,
-}
-
-const HEADER_SIZE: usize = 4;
 
 fn vf_to_u8<T>(v: &Vec<T>) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * size_of::<T>()) }
 }
 
+pub struct MemmapRawScorer<'a> {
+    query: Vec<VectorElementType>,
+    metric: &'a Box<dyn Metric>,
+    mmap_store: &'a MmapVectors,
+}
+
+impl RawScorer for MemmapRawScorer<'_> {
+    fn score_points<'a>(&'a self, points: &'a mut dyn Iterator<Item=PointOffsetType>) -> Box<dyn Iterator<Item=ScoredPointOffset> + 'a> {
+        let res_iter = points
+            .filter(move |point| !self.mmap_store.deleted(*point).unwrap_or(true))
+            .map(move |point| {
+                let other_vector = self.mmap_store.raw_vector(point).unwrap();
+                ScoredPointOffset {
+                    idx: point,
+                    score: self.metric.similarity(&self.query, other_vector),
+                }
+            });
+        Box::new(res_iter)
+    }
+
+    fn check_point(&self, point: PointOffsetType) -> bool {
+        (point < self.mmap_store.num_vectors as PointOffsetType) && !self.mmap_store.deleted(point).unwrap_or(true)
+    }
+
+    fn score_point(&self, point: PointOffsetType) -> ScoreType {
+        let other_vector = self.mmap_store.raw_vector(point).unwrap();
+        self.metric.similarity(&self.query, other_vector)
+    }
+
+    fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
+        let vector_a = self.mmap_store.raw_vector(point_a).unwrap();
+        let vector_b = self.mmap_store.raw_vector(point_b).unwrap();
+        return self.metric.similarity(vector_a, vector_b)
+    }
+}
+
+
+pub struct MemmapVectorStorage {
+    vectors_path: PathBuf,
+    deleted_path: PathBuf,
+    mmap_store: Option<MmapVectors>,
+    metric: Box<dyn Metric>
+}
 
 impl MemmapVectorStorage {
-    fn ensure_data_file_exists(path: &Path) -> OperationResult<()> {
-        if path.exists() {
-            return Ok(());
-        }
-        let mut file = File::create(path)?;
-        file.write(b"data")?;
-        Ok(())
-    }
-
-    fn ensure_deleted_file_exists(path: &Path) -> OperationResult<()> {
-        if path.exists() {
-            return Ok(());
-        }
-        let mut file = File::create(path)?;
-        file.write(b"drop")?;
-        Ok(())
-    }
-
-    fn open_read(path: &Path) -> OperationResult<Mmap> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(false)
-            .append(true)
-            .create(true)
-            .open(path)?;
-
-        let mmap = unsafe { MmapOptions::new().map(&file)? };
-        return Ok(mmap);
-    }
-
-    fn open_write(path: &Path) -> OperationResult<MmapMut> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(false)
-            .open(path)?;
-
-        let mmap = unsafe { MmapMut::map_mut(&file)? };
-        return Ok(mmap);
-    }
-
-
-    pub fn open(path: &Path, dim: usize) -> OperationResult<Self> {
+    pub fn open(path: &Path, dim: usize, distance: Distance) -> OperationResult<Self> {
         create_dir_all(path)?;
 
-        let data_path = path.join("matrix.dat");
+        let vectors_path = path.join("matrix.dat");
         let deleted_path = path.join("deleted.dat");
 
-        MemmapVectorStorage::ensure_data_file_exists(data_path.as_path()).describe("Create mmap data file")?;
-        MemmapVectorStorage::ensure_deleted_file_exists(deleted_path.as_path()).describe("Create mmap deleted flags file")?;
+        let mmap_store = MmapVectors::open(
+            vectors_path.as_path(),
+            deleted_path.as_path(),
+            dim,
+        )?;
 
-        let mmap = MemmapVectorStorage::open_read(&data_path).describe("Open mmap for reading")?;
-        let num_vectors = (mmap.len() - HEADER_SIZE) / dim / size_of::<VectorElementType>();
-
-        let deleted_mmap = MemmapVectorStorage::open_write(&deleted_path).describe("Open mmap for writing")?;
-
-        let deleted_count = (HEADER_SIZE..deleted_mmap.len())
-            .map(|idx| *deleted_mmap.get(idx).unwrap() as usize).sum();
+        let metric = mertic_object(&distance);
 
         Ok(MemmapVectorStorage {
-            dim,
-            num_vectors,
-            mmap: Some(mmap),
-            deleted_mmap: Some(deleted_mmap),
-            data_path,
+            vectors_path,
             deleted_path,
-            deleted_count,
+            mmap_store: Some(mmap_store),
+            metric
         })
-    }
-
-    fn data_offset(&self, key: PointOffsetType) -> Option<usize> {
-        let vector_data_length = self.dim * size_of::<VectorElementType>();
-        let offset = key * vector_data_length + HEADER_SIZE;
-        if key >= self.num_vectors {
-            return None;
-        }
-        Some(offset)
-    }
-
-    fn raw_size(&self) -> usize {
-        self.dim * size_of::<VectorElementType>()
-    }
-
-    fn raw_vector_offset(&self, offset: usize) -> &[VectorElementType] {
-        let byte_slice = &self.mmap.as_ref().unwrap()[offset..(offset + self.raw_size())];
-        let arr: &[VectorElementType] = unsafe { transmute(byte_slice) };
-        return &arr[0..self.dim];
-    }
-
-    fn raw_vector(&self, key: PointOffsetType) -> Option<&[VectorElementType]> {
-        self.data_offset(key).map(|offset| self.raw_vector_offset(offset))
-    }
-
-    fn deleted(&self, key: PointOffsetType) -> Option<bool> {
-        self.deleted_mmap.as_ref().unwrap().get(HEADER_SIZE + key).map(|x| *x > 0)
     }
 }
 
 
 impl VectorStorage for MemmapVectorStorage {
     fn vector_dim(&self) -> usize {
-        self.dim
+        self.mmap_store.as_ref().unwrap().dim
     }
 
     fn vector_count(&self) -> usize {
-        self.num_vectors - self.deleted_count
+        self.mmap_store.as_ref().map(|store| store.num_vectors - store.deleted_count).unwrap()
     }
 
     fn deleted_count(&self) -> usize {
-        self.deleted_count
+        self.mmap_store.as_ref().unwrap().deleted_count
+    }
+
+    fn total_vector_count(&self) -> usize {
+        self.mmap_store.as_ref().unwrap().num_vectors
     }
 
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
-        match self.deleted(key) {
-            None => None,
-            Some(false) => self.data_offset(key).map(|offset| {
-                self.raw_vector_offset(offset).to_vec()
-            }),
-            Some(true) => None
-        }
+        self.mmap_store.as_ref().and_then(|x| x.get_vector(key))
     }
 
-    fn put_vector(&mut self, _vector: &Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
+    fn put_vector(&mut self, _vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
         panic!("Can't put vector in mmap storage")
     }
 
-    fn update_vector(&mut self, _key: usize, _vector: &Vec<VectorElementType>) -> OperationResult<usize> {
+    fn update_vector(&mut self, _key: PointOffsetType, _vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
         panic!("Can't directly update vector in mmap storage")
     }
 
     fn update_from(&mut self, other: &dyn VectorStorage) -> OperationResult<Range<PointOffsetType>> {
-        self.mmap = None;
-        self.deleted_mmap = None;
+        let dim = self.vector_dim();
 
-        let start_index = self.num_vectors;
-        let mut end_index = self.num_vectors;
+        let start_index = self.mmap_store.as_ref().unwrap().num_vectors as PointOffsetType;
+        let mut end_index = start_index;
+
+        self.mmap_store = None;
 
         {
             let mut file = OpenOptions::new()
@@ -171,7 +127,7 @@ impl VectorStorage for MemmapVectorStorage {
                 .write(false)
                 .append(true)
                 .create(false)
-                .open(self.data_path.as_path())?;
+                .open(self.vectors_path.as_path())?;
 
             for id in other.iter_ids() {
                 let vector = &other.get_vector(id).unwrap();
@@ -190,92 +146,103 @@ impl VectorStorage for MemmapVectorStorage {
                 .create(false)
                 .open(self.deleted_path.as_path())?;
 
-            let flags: Vec<u8> = vec![0; end_index - start_index];
+            let flags: Vec<u8> = vec![0; (end_index - start_index) as usize];
             let flag_bytes = vf_to_u8(&flags);
             file.write(flag_bytes)?;
             file.flush()?;
         }
 
-
-        let tmp_storage = Self::open(self.data_path.parent().unwrap(), self.dim)?;
-
-        self.mmap = tmp_storage.mmap;
-        self.deleted_mmap = tmp_storage.deleted_mmap;
-        self.num_vectors = tmp_storage.num_vectors;
-        self.deleted_count = tmp_storage.deleted_count;
+        self.mmap_store = Some(MmapVectors::open(
+            self.vectors_path.as_path(),
+            self.deleted_path.as_path(),
+            dim,
+        )?);
 
         return Ok(start_index..end_index);
     }
 
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
-        if key < self.num_vectors {
-            let mmap = self.deleted_mmap.as_mut().unwrap();
-            let flag = mmap.get_mut(key + HEADER_SIZE).unwrap();
+        self.mmap_store.as_mut().unwrap().delete(key)
+    }
 
-            if *flag == 0 {
-                *flag = 1;
-                self.deleted_count += 1;
-            }
-        }
-        Ok(())
+    fn is_deleted(&self, key: PointOffsetType) -> bool {
+        self.mmap_store.as_ref().unwrap().deleted(key).unwrap_or(false)
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
-        let iter = (0..self.num_vectors)
-            .filter(move |id| !self.deleted(*id).unwrap());
+        let num_vectors = self.mmap_store.as_ref().unwrap().num_vectors;
+        let iter = (0..(num_vectors as PointOffsetType))
+            .filter(move |id| !self.mmap_store.as_ref().unwrap().deleted(*id).unwrap());
         return Box::new(iter);
     }
 
     fn flush(&self) -> OperationResult<()> {
-        self.deleted_mmap.as_ref().unwrap().flush()?;
-        Ok(())
+        match self.mmap_store.as_ref() {
+            None => Ok(()),
+            Some(x) => x.flush()
+        }
+    }
+
+    fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
+        Box::new(
+            MemmapRawScorer {
+                query: self.metric.preprocess(vector),
+                metric: &self.metric,
+                mmap_store: &self.mmap_store.as_ref().unwrap(),
+            }
+        )
+    }
+
+    fn raw_scorer_internal(&self, point_id: PointOffsetType) -> Box<dyn RawScorer + '_> {
+        Box::new(
+            MemmapRawScorer {
+                query: self.get_vector(point_id).unwrap(),
+                metric: &self.metric,
+                mmap_store: &self.mmap_store.as_ref().unwrap(),
+            }
+        )
     }
 
     fn score_points(
         &self, vector: &Vec<VectorElementType>,
-        points: &[PointOffsetType],
+        points: &mut dyn Iterator<Item=PointOffsetType>,
         top: usize,
-        distance: &Distance,
     ) -> Vec<ScoredPointOffset> {
-        let metric = mertic_object(distance);
-        let preprocessed_vector = metric.preprocess(vector.clone());
-        let scores: Vec<ScoredPointOffset> = points.iter()
-            .cloned()
-            .filter(|point| !self.deleted(*point).unwrap_or(true))
+        let preprocessed_vector = self.metric.preprocess(vector.clone());
+        let scores = points
+            .filter(|point| !self.mmap_store.as_ref().unwrap().deleted(*point).unwrap_or(true))
             .map(|point| {
-                let other_vector =self.raw_vector(point).unwrap();
+                let other_vector = self.mmap_store.as_ref().unwrap().raw_vector(point).unwrap();
                 ScoredPointOffset {
                     idx: point,
-                    score: metric.similarity(&preprocessed_vector, &other_vector),
+                    score: self.metric.similarity(&preprocessed_vector, &other_vector),
                 }
-            }).collect();
-        return peek_top_scores(&scores, top, distance);
+            });
+        return peek_top_scores_iterable(scores, top);
     }
 
-    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize, distance: &Distance) -> Vec<ScoredPointOffset> {
-        let metric = mertic_object(distance);
-        let preprocessed_vector = metric.preprocess(vector.clone());
-        let scores: Vec<ScoredPointOffset> = self.iter_ids()
+    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize) -> Vec<ScoredPointOffset> {
+        let preprocessed_vector = self.metric.preprocess(vector.clone());
+        let scores = self.iter_ids()
             .map(|point| {
-                let other_vector = self.raw_vector(point).unwrap();
+                let other_vector = self.mmap_store.as_ref().unwrap().raw_vector(point).unwrap();
                 ScoredPointOffset {
                     idx: point,
-                    score: metric.similarity(&preprocessed_vector, other_vector),
+                    score: self.metric.similarity(&preprocessed_vector, other_vector),
                 }
-            }).collect();
+            });
 
-        return peek_top_scores(&scores, top, distance);
+        return peek_top_scores_iterable(scores, top);
     }
 
     fn score_internal(
         &self,
         point: PointOffsetType,
-        points: &[PointOffsetType],
+        points: &mut dyn Iterator<Item=PointOffsetType>,
         top: usize,
-        distance: &Distance,
     ) -> Vec<ScoredPointOffset> {
         let vector = self.get_vector(point).unwrap();
-        return self.score_points(&vector, points, top, distance);
+        return self.score_points(&vector, points, top);
     }
 }
 
@@ -285,11 +252,13 @@ mod tests {
     use tempdir::TempDir;
     use std::mem::transmute;
     use crate::vector_storage::simple_vector_storage::SimpleVectorStorage;
+    use itertools::Itertools;
 
     #[test]
     fn test_basic_persistence() {
+        let dist = Distance::Dot;
         let dir = TempDir::new("storage_dir").unwrap();
-        let mut storage = MemmapVectorStorage::open(dir.path(), 4).unwrap();
+        let mut storage = MemmapVectorStorage::open(dir.path(), 4, dist).unwrap();
 
         let vec1 = vec![1.0, 0.0, 1.0, 1.0];
         let vec2 = vec![1.0, 0.0, 1.0, 0.0];
@@ -299,11 +268,11 @@ mod tests {
 
         {
             let dir2 = TempDir::new("storage_dir2").unwrap();
-            let mut storage2 = SimpleVectorStorage::open(dir2.path(), 4).unwrap();
+            let mut storage2 = SimpleVectorStorage::open(dir2.path(), 4, dist).unwrap();
 
-            storage2.put_vector(&vec1).unwrap();
-            storage2.put_vector(&vec2).unwrap();
-            storage2.put_vector(&vec3).unwrap();
+            storage2.put_vector(vec1.clone()).unwrap();
+            storage2.put_vector(vec2.clone()).unwrap();
+            storage2.put_vector(vec3.clone()).unwrap();
             storage.update_from(&storage2).unwrap();
         }
 
@@ -319,9 +288,9 @@ mod tests {
 
         {
             let dir2 = TempDir::new("storage_dir2").unwrap();
-            let mut storage2 = SimpleVectorStorage::open(dir2.path(), 4).unwrap();
-            storage2.put_vector(&vec4).unwrap();
-            storage2.put_vector(&vec5).unwrap();
+            let mut storage2 = SimpleVectorStorage::open(dir2.path(), 4, dist).unwrap();
+            storage2.put_vector(vec4.clone()).unwrap();
+            storage2.put_vector(vec5.clone()).unwrap();
             storage.update_from(&storage2).unwrap();
         }
 
@@ -333,17 +302,56 @@ mod tests {
         assert_eq!(stored_ids, vec![0, 1, 3, 4]);
 
 
-        let res = storage.score_all(&vec3, 2, &Distance::Dot);
+        let res = storage.score_all(&vec3, 2);
 
         assert_eq!(res.len(), 2);
 
         assert_ne!(res[0].idx, 2);
 
         let res = storage.score_points(
-            &vec3, &vec![0, 1, 2, 3, 4], 2, &Distance::Dot);
+            &vec3, &mut vec![0, 1, 2, 3, 4].iter().cloned(), 2);
 
         assert_eq!(res.len(), 2);
         assert_ne!(res[0].idx, 2);
+    }
+
+    #[test]
+    fn test_mmap_raw_scorer() {
+        let dist = Distance::Dot;
+        let dir = TempDir::new("storage_dir").unwrap();
+        let mut storage = MemmapVectorStorage::open(dir.path(), 4, dist).unwrap();
+
+        let vec1 = vec![1.0, 0.0, 1.0, 1.0];
+        let vec2 = vec![1.0, 0.0, 1.0, 0.0];
+        let vec3 = vec![1.0, 1.0, 1.0, 1.0];
+        let vec4 = vec![1.0, 1.0, 0.0, 1.0];
+        let vec5 = vec![1.0, 0.0, 0.0, 0.0];
+
+        {
+            let dir2 = TempDir::new("storage_dir2").unwrap();
+            let mut storage2 = SimpleVectorStorage::open(dir2.path(), 4, dist).unwrap();
+
+            storage2.put_vector(vec1.clone()).unwrap();
+            storage2.put_vector(vec2.clone()).unwrap();
+            storage2.put_vector(vec3.clone()).unwrap();
+            storage2.put_vector(vec4.clone()).unwrap();
+            storage2.put_vector(vec5.clone()).unwrap();
+            storage.update_from(&storage2).unwrap();
+        }
+
+        let query = vec![-1.0, -1.0, -1.0, -1.0];
+        let query_points: Vec<PointOffsetType> = vec![0, 2, 4];
+
+        let scorer = storage.raw_scorer(query.clone());
+
+        let res = scorer.score_points(&mut query_points.iter().cloned()).collect_vec();
+
+        assert_eq!(res.len(), 3);
+        assert_eq!(res[0].idx, 0);
+        assert_eq!(res[1].idx, 2);
+        assert_eq!(res[2].idx, 4);
+
+        assert_eq!(res[2].score, -1.0);
     }
 
 

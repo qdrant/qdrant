@@ -1,6 +1,6 @@
 use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
-use crate::index::index::{Index, PayloadIndex};
-use crate::types::{Filter, VectorElementType, Distance, SearchParams, PointOffsetType, PayloadKeyType};
+use crate::index::index::{VectorIndex, PayloadIndex};
+use crate::types::{Filter, VectorElementType, SearchParams, PointOffsetType, PayloadKeyType};
 use crate::payload_storage::payload_storage::{ConditionChecker};
 
 use std::sync::Arc;
@@ -9,8 +9,7 @@ use crate::entry::entry_point::OperationResult;
 use crate::index::payload_config::PayloadConfig;
 use std::path::{Path, PathBuf};
 use std::fs::create_dir_all;
-use crate::index::field_index::CardinalityEstimation;
-use itertools::Itertools;
+use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 
 
 pub struct PlainPayloadIndex {
@@ -79,23 +78,17 @@ impl PayloadIndex for PlainPayloadIndex {
         self.save_config()
     }
 
-    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
-        let mut matched_points = 0;
-        let condition_checker = self.condition_checker.borrow();
-        for i in self.vector_storage.borrow().iter_ids() {
-            if condition_checker.check(i, query) {
-                matched_points += 1;
-            }
-        }
+    fn estimate_cardinality(&self, _query: &Filter) -> CardinalityEstimation {
+        let total_points = self.vector_storage.borrow().vector_count();
         CardinalityEstimation {
             primary_clauses: vec![],
-            min: matched_points,
-            exp: matched_points,
-            max: matched_points
+            min: 0,
+            exp: total_points / 2,
+            max: total_points
         }
     }
 
-    fn query_points(&self, query: &Filter) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+    fn query_points<'a>(&'a self, query: &'a Filter) -> Box<dyn Iterator<Item=PointOffsetType> + 'a> {
         let mut matched_points = vec![];
         let condition_checker = self.condition_checker.borrow();
         for i in self.vector_storage.borrow().iter_ids() {
@@ -105,31 +98,33 @@ impl PayloadIndex for PlainPayloadIndex {
         }
         return Box::new(matched_points.into_iter());
     }
+
+    fn payload_blocks(&self, _threshold: usize) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+        // No blocks for un-indexed payload
+        Box::new(vec![].into_iter())
+    }
 }
 
 
 pub struct PlainIndex {
     vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
-    distance: Distance,
 }
 
 impl PlainIndex {
     pub fn new(
         vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
-        payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
-        distance: Distance,
+        payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>
     ) -> PlainIndex {
         return PlainIndex {
             vector_storage,
-            payload_index,
-            distance,
+            payload_index
         };
     }
 }
 
 
-impl Index for PlainIndex {
+impl VectorIndex for PlainIndex {
     fn search(
         &self,
         vector: &Vec<VectorElementType>,
@@ -139,10 +134,11 @@ impl Index for PlainIndex {
     ) -> Vec<ScoredPointOffset> {
         match filter {
             Some(filter) => {
-                let filtered_ids = self.payload_index.borrow().query_points(filter).collect_vec();
-                self.vector_storage.borrow().score_points(vector, &filtered_ids, top, &self.distance)
+                let borrowed_payload_index = self.payload_index.borrow();
+                let mut filtered_ids = borrowed_payload_index.query_points(filter);
+                self.vector_storage.borrow().score_points(vector, &mut filtered_ids, top)
             }
-            None => self.vector_storage.borrow().score_all(vector, top, &self.distance)
+            None => self.vector_storage.borrow().score_all(vector, top)
         }
     }
 
