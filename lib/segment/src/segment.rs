@@ -6,7 +6,7 @@ use crate::types::{Filter, PayloadKeyType, PayloadType, SeqNumberType, VectorEle
 use std::sync::{Arc, Mutex};
 use atomic_refcell::{AtomicRefCell};
 use std::path::PathBuf;
-use std::fs::{remove_dir_all};
+use std::fs::{remove_dir_all, rename};
 use std::io::Write;
 use atomicwrites::{AtomicFile, AllowOverwrite};
 use crate::index::index::{PayloadIndex, VectorIndex};
@@ -305,7 +305,10 @@ impl SegmentEntry for Segment {
     }
 
     fn drop_data(&mut self) -> OperationResult<()> {
-        Ok(remove_dir_all(&self.current_path)?)
+        let mut deleted_path = self.current_path.clone();
+        deleted_path.set_extension("deleted");
+        rename(self.current_path.as_path(), deleted_path.as_path())?;
+        Ok(remove_dir_all(&deleted_path)?)
     }
 
     fn delete_field_index(&mut self, op_num: u64, key: &PayloadKeyType) -> OperationResult<bool> {

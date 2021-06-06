@@ -1,4 +1,4 @@
-use std::fs::read_dir;
+use std::fs::{read_dir, remove_dir_all};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -37,6 +37,11 @@ pub fn load_collection(
 
     for entry in segment_dirs {
         let segments_path = entry.unwrap().path();
+        if segments_path.ends_with("deleted") {
+            remove_dir_all(segments_path.as_path())
+                .expect(&format!("Can't remove marked-for-remove segment {}", segments_path.to_str().unwrap()));
+            continue;
+        }
         let segment = match load_segment(segments_path.as_path()) {
             Ok(x) => x,
             Err(err) => panic!("Can't load segments from {}, error: {}", segments_path.to_str().unwrap(), err),

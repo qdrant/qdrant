@@ -1,7 +1,6 @@
 use std::path::{PathBuf, Path};
-use segment::types::{SegmentType, HnswConfig};
+use segment::types::{SegmentType, HnswConfig, Indexes, PayloadIndexType, StorageType};
 use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId, LockedSegment};
-use std::cmp::min;
 use crate::segment_manager::optimizers::segment_optimizer::{SegmentOptimizer, OptimizerThresholds};
 use crate::config::CollectionParams;
 
@@ -38,15 +37,39 @@ impl IndexingOptimizer {
                 let read_segment = segment_entry.read();
                 let vector_count = read_segment.vectors_count();
 
+                let segment_config = read_segment.config();
+
+                if read_segment.segment_type() == SegmentType::Special {
+                    return None  // Never optimize already optimized segment
+                }
+
                 // Apply indexing to plain segments which have grown too big
-                let is_plain = read_segment.segment_type() == SegmentType::Plain;
-                let is_big_for_index = vector_count >= min(self.thresholds_config.memmap_threshold, self.thresholds_config.indexing_threshold);
-                let is_big_for_payload_index = vector_count >= self.thresholds_config.payload_indexing_threshold;
+                let is_vector_indexed = match segment_config.index {
+                    Indexes::Plain { .. } => false,
+                    Indexes::Hnsw(_) => true,
+                };
+
+                let is_payload_indexed = match segment_config.payload_index.unwrap_or_default() {
+                    PayloadIndexType::Plain => false,
+                    PayloadIndexType::Struct => true,
+                };
+
+                let is_memmaped = match segment_config.storage_type {
+                    StorageType::InMemory => false,
+                    StorageType::Mmap => true,
+                };
+
+                let big_for_mmap = vector_count >= self.thresholds_config.memmap_threshold;
+                let big_for_index = vector_count >= self.thresholds_config.indexing_threshold;
+                let big_for_payload_index = vector_count >= self.thresholds_config.payload_indexing_threshold;
+
                 let has_payload = !read_segment.get_indexed_fields().is_empty();
 
-                let require_indexing = is_big_for_index || (has_payload && is_big_for_payload_index);
+                let require_indexing = (big_for_mmap && !is_memmaped)
+                    || (big_for_index && !is_vector_indexed)
+                    || (has_payload && big_for_payload_index && !is_payload_indexed);
 
-                match is_plain && require_indexing {
+                match require_indexing {
                     true => Some((*idx, vector_count)),
                     false => None
                 }

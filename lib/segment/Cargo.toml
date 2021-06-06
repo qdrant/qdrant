@@ -47,3 +47,7 @@ harness = false
 [[bench]]
 name = "hnsw_build_graph"
 harness = false
+
+[[bench]]
+name = "hnsw_search_graph"
+harness = false

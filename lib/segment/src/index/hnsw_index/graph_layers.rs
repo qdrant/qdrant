@@ -128,8 +128,11 @@ impl GraphLayers {
 
     /// Greedy search for closest points within a single graph layer
     fn _search_on_level(&self, searcher: &mut SearchContext, level: usize, visited_list: &mut VisitedList, points_scorer: &FilteredScorer) {
-        while let Some(index) = searcher.candidates.pop() {
-            let mut links_iter = self.links(index, level)
+        while let Some(candidate) = searcher.candidates.pop() {
+            if candidate.score < searcher.lower_bound() {
+                break;
+            }
+            let mut links_iter = self.links(candidate.idx, level)
                 .iter()
                 .cloned()
                 .filter(|point_id| !visited_list.check_and_update_visited(*point_id));

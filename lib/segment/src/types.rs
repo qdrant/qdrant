@@ -64,7 +64,7 @@ impl PartialOrd for ScoredPoint {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum SegmentType {
-    /// Segment cheap insert & delete operations
+    /// There are no index built for the segment
     Plain,
     /// Segment with some sort of index built. Optimized for search, appending new points will require reindexing
     Indexed,
