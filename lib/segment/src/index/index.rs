@@ -36,5 +36,5 @@ pub trait PayloadIndex {
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index
-    fn payload_blocks(&self, threshold: usize) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_>;
+    fn payload_blocks(&self, field: &PayloadKeyType, threshold: usize) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_>;
 }

@@ -324,7 +324,7 @@ pub struct Match {
     pub integer: Option<IntPayloadType>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct Range {
     /// point.key < range.lt

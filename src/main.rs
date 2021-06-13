@@ -81,7 +81,7 @@ async fn main() -> std::io::Result<()> {
 
         app
     })
-        // .workers(1)
+        // .workers(4)
         .bind(format!("{}:{}", settings.service.host, settings.service.port))?
         .run()
         .await

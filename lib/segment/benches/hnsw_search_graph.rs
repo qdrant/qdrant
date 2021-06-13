@@ -8,7 +8,7 @@ use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::fixtures::index_fixtures::{TestRawScorerProducer, FakeConditionChecker, random_vector};
 
 
-const NUM_VECTORS: usize = 50000;
+const NUM_VECTORS: usize = 100000;
 const DIM: usize = 64;
 const M: usize = 16;
 const TOP: usize = 10;
@@ -72,9 +72,6 @@ fn hnsw_benchmark(c: &mut Criterion) {
                 |score| {
                     if score.score > top_score { top_score = score.score }
                 });
-            if top_score > 0.99 {
-                eprintln!("top_score = {:#?}", top_score);
-            }
         })
     });
 

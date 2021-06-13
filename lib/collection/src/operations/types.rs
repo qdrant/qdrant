@@ -9,10 +9,11 @@ use tokio::task::JoinError;
 use std::result;
 
 use segment::entry::entry_point::OperationError;
-use segment::types::{Filter, PayloadKeyType, PayloadType, PointIdType, SearchParams, SeqNumberType, TheMap, VectorElementType};
+use segment::types::{Filter, PayloadKeyType, PayloadType, PointIdType, SearchParams, SeqNumberType, TheMap, VectorElementType, PayloadSchemaInfo};
 
 use crate::config::CollectionConfig;
 use crate::wal::WalError;
+use std::collections::HashMap;
 
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
@@ -55,6 +56,8 @@ pub struct CollectionInfo {
     pub ram_data_size: usize,
     /// Collection settings
     pub config: CollectionConfig,
+    /// Types of stored payload
+    pub payload_schema: HashMap<PayloadKeyType, PayloadSchemaInfo>
 }
 
 

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition, PayloadBlockCondition};
 use crate::index::field_index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
 use crate::types::{FloatPayloadType, IntPayloadType, PayloadType, PointOffsetType, Range, FieldCondition, PayloadKeyType};
+use itertools::Itertools;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Element<N> {
@@ -134,28 +135,38 @@ impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
         let value_per_point = num_elements as f64 / self.points_count as f64;
         let effective_threshold = (threshold as f64 * value_per_point) as usize;
 
-        let iter = (0..num_elements).step_by(effective_threshold / 2).map(move |init_offset| {
-            let upper_index = min(num_elements - 1, init_offset + effective_threshold);
+        let iter = (0..num_elements).step_by(effective_threshold / 2)
+            .filter_map(move |init_offset| {
+                let upper_index = min(num_elements - 1, init_offset + effective_threshold);
 
-            let upper_value = self.elements[upper_index].value.to_f64();
-            let lower_value = self.elements[init_offset].value.to_f64();
+                let upper_value = self.elements[upper_index].value.to_f64();
+                let lower_value = self.elements[init_offset].value.to_f64();
 
-            PayloadBlockCondition {
-                condition: FieldCondition {
-                    key: key.clone(),
-                    r#match: None,
-                    range: Some(Range {
-                        lt: None,
-                        gt: None,
-                        gte: lower_value,
-                        lte: upper_value,
-                    }),
-                    geo_bounding_box: None,
-                    geo_radius: None,
-                },
-                cardinality: ((upper_index - init_offset) as f64 / value_per_point) as usize,
-            }
-        });
+                if upper_value == lower_value {
+                    return None; // Range blocks makes no sense within a single value
+                }
+                Some(Range {
+                    lt: None,
+                    gt: None,
+                    gte: lower_value,
+                    lte: upper_value,
+                })
+            })
+            .dedup()
+            .map(move |range| {
+                let cardinality = self.range_cardinality(&range);
+
+                PayloadBlockCondition {
+                    condition: FieldCondition {
+                        key: key.clone(),
+                        r#match: None,
+                        range: Some(range),
+                        geo_bounding_box: None,
+                        geo_radius: None,
+                    },
+                    cardinality: cardinality.exp,
+                }
+            });
 
         Box::new(iter)
     }
@@ -201,6 +212,30 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<IntPayloadType> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_payload_blocks() {
+        let threshold = 4;
+        let index = PersistedNumericIndex {
+            points_count: 9,
+            elements: vec![
+                Element { id: 1, value: 1.0 },
+                Element { id: 2, value: 1.0 },
+                Element { id: 3, value: 1.0 },
+                Element { id: 4, value: 1.0 },
+                Element { id: 5, value: 1.0 },
+                Element { id: 6, value: 2.0 },
+                Element { id: 7, value: 2.0 },
+                Element { id: 8, value: 2.0 },
+                Element { id: 9, value: 2.0 },
+            ],
+        };
+
+        let blocks = index.payload_blocks(threshold, "test".to_owned()).collect_vec();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].condition.range.expect("range condition").gte.expect("gte"), 1.0);
+        assert_eq!(blocks[0].condition.range.expect("range condition").lte.expect("lte"), 2.0);
+    }
 
     #[test]
     fn test_bsearch() {

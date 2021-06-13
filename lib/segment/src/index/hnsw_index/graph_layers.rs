@@ -52,7 +52,7 @@ impl GraphLayers {
         ef_construct: usize,
         entry_points_num: usize, // Depends on number of points
         use_heuristic: bool,
-        reserve: bool
+        reserve: bool,
     ) -> Self {
         let mut links_layers: Vec<LayersContainer> = vec![];
 
@@ -145,12 +145,28 @@ impl GraphLayers {
         }
     }
 
-    fn search_on_level(&self, level_entry: ScoredPointOffset, level: usize, ef: usize, points_scorer: &FilteredScorer) -> FixedLengthPriorityQueue<ScoredPointOffset> {
+    fn search_on_level(
+        &self,
+        level_entry: ScoredPointOffset,
+        level: usize,
+        ef: usize,
+        points_scorer: &FilteredScorer,
+        existing_links: &LinkContainer,
+    ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
         let mut visited_list = self.visited_pool.get(self.num_points());
         visited_list.check_and_update_visited(level_entry.idx);
         let mut search_context = SearchContext::new(level_entry, ef);
 
         self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
+
+        for existing_link in existing_links.iter().cloned() {
+            if !visited_list.check(existing_link) {
+                search_context.process_candidate(ScoredPointOffset {
+                    idx: existing_link,
+                    score: points_scorer.score_point(existing_link),
+                })
+            }
+        }
 
         self.visited_pool.return_back(visited_list);
         search_context.nearest
@@ -296,12 +312,13 @@ impl GraphLayers {
 
                 for curr_level in (0..=linking_level).rev() {
                     let level_m = self.get_m(curr_level);
+                    let existing_links = &self.links_layers[point_id as usize][curr_level];
+
                     let nearest_points = self.search_on_level(
-                        level_entry, curr_level, self.ef_construct, points_scorer,
+                        level_entry, curr_level, self.ef_construct, points_scorer, existing_links,
                     );
 
                     if self.use_heuristic {
-
                         let selected_nearest = Self::select_candidates_with_heuristic(
                             nearest_points, level_m, scorer);
                         self.links_layers[point_id as usize][curr_level].clone_from(&selected_nearest);
@@ -374,7 +391,7 @@ impl GraphLayers {
                 } else {
                     visited_list.next_iteration();
                     let current_links = &mut current_layers[level];
-                    current_links.iter().cloned().for_each(|x| {visited_list.check_and_update_visited(x);});
+                    current_links.iter().cloned().for_each(|x| { visited_list.check_and_update_visited(x); });
                     for other_link in other_links.into_iter().filter(|x| !visited_list.check_and_update_visited(*x)) {
                         current_links.push(other_link)
                     }
@@ -399,7 +416,13 @@ impl GraphLayers {
             points_scorer,
         );
 
-        let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), points_scorer);
+        let nearest = self.search_on_level(
+            zero_level_entry,
+            0,
+            max(top, ef),
+            points_scorer,
+            &vec![],
+        );
         nearest.into_iter().take(top).collect_vec()
     }
 
@@ -567,6 +590,7 @@ mod tests {
             0,
             32,
             &scorer,
+            &vec![]
         );
 
         assert_eq!(nearest_on_level.len(), graph_layers.links_layers[0][0].len() + 1);
@@ -575,7 +599,6 @@ mod tests {
             // eprintln!("nearest = {:#?}", nearest);
             assert_eq!(nearest.score, scorer.score_internal(linking_idx, nearest.idx))
         }
-
     }
 
     #[test]
@@ -647,7 +670,6 @@ mod tests {
         let graph_search = search_in_graph(&query, top, &vector_holder, &graph_layers);
 
         assert_eq!(reference_top.into_vec(), graph_search);
-
     }
 
     #[test]

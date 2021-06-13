@@ -271,17 +271,17 @@ impl PayloadIndex for StructPayloadIndex {
         estimate_filter(&estimator, query, total_points)
     }
 
-    fn payload_blocks(&self, threshold: usize) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
-        let iter = self.field_indexes
-            .iter()
-            .map(move |(key, indexes)| {
-                indexes
+    fn payload_blocks(&self, field: &PayloadKeyType, threshold: usize) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+        match self.field_indexes.get(field) {
+            None => Box::new(vec![].into_iter()),
+            Some(indexes) => {
+                let field_clone = field.clone();
+                Box::new(indexes
                     .iter()
-                    .map(move |field_index| field_index.payload_blocks(threshold, key.clone()))
-                    .flatten()
-            }).flatten();
-
-        Box::new(iter)
+                    .map(move |field_index| field_index.payload_blocks(threshold, field_clone.clone()))
+                    .flatten())
+            }
+        }
     }
 
     fn query_points<'a>(&'a self, query: &'a Filter) -> Box<dyn Iterator<Item=PointOffsetType> + 'a> {

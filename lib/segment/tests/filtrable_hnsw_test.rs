@@ -79,7 +79,11 @@ mod tests {
 
         payload_index_ptr.borrow_mut().set_indexed(&int_key).unwrap();
         let borrowed_payload_index = payload_index_ptr.borrow();
-        let blocks = borrowed_payload_index.payload_blocks(indexing_threshold).collect_vec();
+        let blocks = borrowed_payload_index.payload_blocks(&int_key, indexing_threshold).collect_vec();
+        for block in blocks.iter() {
+            assert!(block.condition.range.is_some(), "only range conditions should be generated for this type of payload");
+        }
+
         assert_eq!(blocks.len(), num_vectors as usize / indexing_threshold * 2);
 
         hnsw_index.build_index().unwrap();
@@ -124,7 +128,7 @@ mod tests {
                 hits += 1;
             }
         }
-        assert!(attempts - hits < 5);  // Not more than 5% failures
+        assert!(attempts - hits < 5, "hits: {} of {}", hits, attempts);  // Not more than 5% failures
         eprintln!("hits = {:#?} out of {}", hits, attempts);
     }
 }

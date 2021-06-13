@@ -7,7 +7,7 @@ use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use tokio::runtime::Runtime;
 
-use segment::types::{HasIdCondition, PointIdType, ScoredPoint, VectorElementType, SegmentType};
+use segment::types::{HasIdCondition, PointIdType, ScoredPoint, VectorElementType, SegmentType, PayloadKeyType, PayloadSchemaInfo};
 use segment::types::Condition;
 use segment::types::Filter;
 
@@ -67,6 +67,7 @@ impl Collection {
         let mut ram_size = 0;
         let mut disk_size = 0;
         let mut status = CollectionStatus::Green;
+        let mut schema: HashMap<PayloadKeyType, PayloadSchemaInfo> = Default::default();
         for (_idx, segment) in segments.iter() {
             segments_count += 1;
             let segment_info = segment.get().read().info();
@@ -76,6 +77,9 @@ impl Collection {
             vectors_count += segment_info.num_vectors;
             disk_size += segment_info.disk_usage_bytes;
             ram_size += segment_info.ram_usage_bytes;
+            for (key, val) in segment_info.schema.into_iter() {
+                schema.insert(key, val);
+            }
         }
         Ok(CollectionInfo {
             status,
@@ -84,6 +88,7 @@ impl Collection {
             disk_data_size: disk_size,
             ram_data_size: ram_size,
             config: self.config.read().clone(),
+            payload_schema: schema,
         })
     }
 

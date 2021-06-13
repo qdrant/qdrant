@@ -116,6 +116,7 @@
                 "required": [
                     "config",
                     "disk_data_size",
+                    "payload_schema",
                     "ram_data_size",
                     "segments_count",
                     "status",
@@ -130,6 +131,13 @@
                         "type": "integer",
                         "format": "uint",
                         "minimum": 0
+                    },
+                    "payload_schema": {
+                        "description": "Types of stored payload",
+                        "type": "object",
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/PayloadSchemaInfo"
+                        }
                     },
                     "ram_data_size": {
                         "description": "RAM used by collection",
@@ -776,6 +784,81 @@
                             }
                         },
                         "additionalProperties": false
+                    }
+                ]
+            },
+            "PayloadSchemaInfo": {
+                "type": "object",
+                "required": [
+                    "data_type",
+                    "indexed"
+                ],
+                "properties": {
+                    "data_type": {
+                        "$ref": "#/components/schemas/PayloadSchemaType"
+                    },
+                    "indexed": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "PayloadSchemaType": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "required": [
+                            "type"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "keyword"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "type"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "integer"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "type"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "float"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": [
+                            "type"
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "geo"
+                                ]
+                            }
+                        }
                     }
                 ]
             },

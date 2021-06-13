@@ -98,7 +98,7 @@ impl HNSWIndex {
         self.graph.link_new_point(point_id, point_level, points_scorer);
     }
 
-    pub fn build_filtered_graph(&self, condition: FieldCondition, block_condition_checker: &mut BuildConditionChecker) -> GraphLayers {
+    pub fn build_filtered_graph(&self, graph: &mut GraphLayers, condition: FieldCondition, block_condition_checker: &mut BuildConditionChecker) {
         block_condition_checker.filter_list.next_iteration();
 
         let filter = Filter::new_must(Field(condition));
@@ -110,18 +110,10 @@ impl HNSWIndex {
             block_condition_checker.filter_list.check_and_update_visited(block_point_id);
         }
 
-        let mut graph = GraphLayers::new(
-            self.vector_storage.borrow().total_vector_count(),
-            self.config.m,
-            self.config.m0,
-            self.config.ef_construct,
-            1,
-            HNSW_USE_HEURISTIC,
-        );
-
         for block_point_id in payload_index.query_points(&filter) {
             let vector = vector_storage.get_vector(block_point_id).unwrap();
             let raw_scorer = vector_storage.raw_scorer(vector);
+            block_condition_checker.current_point = block_point_id;
             let points_scorer = FilteredScorer {
                 raw_scorer: raw_scorer.as_ref(),
                 condition_checker: block_condition_checker,
@@ -131,8 +123,6 @@ impl HNSWIndex {
             let level = self.graph.point_level(block_point_id);
             graph.link_new_point(block_point_id, level, &points_scorer);
         }
-
-        graph
     }
 
     pub fn search_with_graph(&self, vector: &Vec<VectorElementType>, filter: Option<&Filter>, top: usize, params: Option<&SearchParams>) -> Vec<ScoredPointOffset> {
@@ -168,6 +158,8 @@ impl VectorIndex for HNSWIndex {
                 let payload_index = self.payload_index.borrow();
                 let query_cardinality = payload_index.estimate_cardinality(query_filter);
 
+                // debug!("query_cardinality: {:#?}", query_cardinality);
+
                 let vector_storage = self.vector_storage.borrow();
 
                 if query_cardinality.max < self.config.indexing_threshold {
@@ -188,7 +180,7 @@ impl VectorIndex for HNSWIndex {
                     vector_storage.sample_ids(),
                     |idx| condition_checker.check(idx, query_filter),
                     self.config.indexing_threshold,
-                    vector_storage.vector_count()
+                    vector_storage.vector_count(),
                 ) {
                     // if cardinality is high enough - use HNSW index
                     self.search_with_graph(vector, filter, top, params)
@@ -239,12 +231,26 @@ impl VectorIndex for HNSWIndex {
 
         let payload_index = self.payload_index.borrow();
 
-        // ToDo: Think about using connectivity threshold (based on m0) instead of `indexing_threshold`
-        for payload_block in payload_index.payload_blocks(self.config.indexing_threshold) {
-            let block_graph = self.build_filtered_graph(payload_block.condition, &mut block_condition_checker);
-            self.graph.merge_from_other(block_graph);
+        for field in payload_index.indexed_fields() {
+            debug!("building additional index for field {}", &field);
+
+            // ToDo: Think about using connectivity threshold (based on 1/m0) instead of `indexing_threshold`
+            for payload_block in payload_index.payload_blocks(&field, self.config.indexing_threshold) {
+                // ToDo: re-use graph layer for same payload
+                let mut additional_graph = GraphLayers::new_with_params(
+                    self.vector_storage.borrow().total_vector_count(),
+                    self.config.m,
+                    self.config.m0,
+                    self.config.ef_construct,
+                    1,
+                    HNSW_USE_HEURISTIC,
+                    false,
+                );
+                self.build_filtered_graph(&mut additional_graph, payload_block.condition, &mut block_condition_checker);
+                self.graph.merge_from_other(additional_graph);
+            }
         }
-        debug!("finish payload");
+        debug!("finish additional payload field indexing");
         self.save()
     }
 }

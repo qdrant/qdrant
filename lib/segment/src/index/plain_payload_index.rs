@@ -99,7 +99,7 @@ impl PayloadIndex for PlainPayloadIndex {
         return Box::new(matched_points.into_iter());
     }
 
-    fn payload_blocks(&self, _threshold: usize) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+    fn payload_blocks(&self, _field: &PayloadKeyType, _threshold: usize) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
         // No blocks for un-indexed payload
         Box::new(vec![].into_iter())
     }

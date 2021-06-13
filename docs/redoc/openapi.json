@@ -122,6 +122,13 @@
             "minimum": 0,
             "type": "integer"
           },
+          "payload_schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PayloadSchemaInfo"
+            },
+            "description": "Types of stored payload",
+            "type": "object"
+          },
           "ram_data_size": {
             "description": "RAM used by collection",
             "format": "uint",
@@ -147,6 +154,7 @@
         "required": [
           "config",
           "disk_data_size",
+          "payload_schema",
           "ram_data_size",
           "segments_count",
           "status",
@@ -801,6 +809,81 @@
           }
         ],
         "description": "Define operations description for point payloads manipulation"
+      },
+      "PayloadSchemaInfo": {
+        "properties": {
+          "data_type": {
+            "$ref": "#/components/schemas/PayloadSchemaType"
+          },
+          "indexed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "data_type",
+          "indexed"
+        ],
+        "type": "object"
+      },
+      "PayloadSchemaType": {
+        "anyOf": [
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "keyword"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "integer"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "float"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "geo"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "PayloadType": {
         "anyOf": [
@@ -1521,7 +1604,7 @@
       "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
     },
     "title": "Qdrant API",
-    "version": "0.3.0"
+    "version": "0.3.2"
   },
   "openapi": "3.0.1",
   "paths": {
