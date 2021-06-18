@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crossbeam_channel::unbounded;
 use parking_lot::{Mutex, RwLock};
 use tokio::runtime;
-use tokio::runtime::Runtime;
+use tokio::runtime::{Handle};
 
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::HnswConfig;
@@ -26,14 +26,14 @@ pub fn construct_collection(
     segment_holder: SegmentHolder,
     config: CollectionConfig,
     wal: SerdeWal<CollectionUpdateOperations>,
-    search_runtime: Arc<Runtime>,  // from service
+    search_runtime: Handle,  // from service
     optimizers: Arc<Vec<Box<Optimizer>>>,
     collection_path: &Path,
 ) -> Collection {
     let segment_holder = Arc::new(RwLock::new(segment_holder));
 
     let optimize_runtime = Arc::new(runtime::Builder::new_multi_thread()
-        .max_threads(2)
+        .worker_threads(2)
         .build().unwrap());
 
     let locked_wal = Arc::new(Mutex::new(wal));
@@ -50,7 +50,7 @@ pub fn construct_collection(
     let update_handler = Arc::new(Mutex::new(UpdateHandler::new(
         optimizers,
         rx,
-        optimize_runtime.clone(),
+        optimize_runtime.handle().clone(),
         segment_holder.clone(),
         locked_wal.clone(),
         config.optimizer_config.flush_interval_sec,
@@ -77,7 +77,7 @@ pub fn build_collection(
     collection_path: &Path,
     wal_config: &WalConfig,  // from config
     collection_params: &CollectionParams,  //  from user
-    search_runtime: Arc<Runtime>,  // from service
+    search_runtime: Handle,  // from service
     optimizers_config: &OptimizersConfig,
     hnsw_config: &HnswConfig,
 ) -> CollectionResult<Collection> {

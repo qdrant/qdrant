@@ -571,12 +571,6 @@ checksum = "0e4cec68f03f32e44924783795810fa50a7035d8c8ebe78580ad7e6c703fba38"
 
 [[package]]
 name = "bytes"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0dcbc35f504eb6fc275a6d20e4ebcda18cf50d40ba6fabff8c711fa16cb3b16"
-
-[[package]]
-name = "bytes"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b700ce4376041dcd0a327fd0097c41095743c4c8af8887265942faf1100bd040"
@@ -684,7 +678,7 @@ dependencies = [
  "serde_json",
  "tempdir",
  "thiserror",
- "tokio 0.3.7",
+ "tokio 1.7.0",
  "wal",
 ]
 
@@ -2322,7 +2316,7 @@ dependencies = [
  "storage",
  "tempdir",
  "thiserror",
- "tokio 0.3.7",
+ "tokio 1.7.0",
 ]
 
 [[package]]
@@ -3066,7 +3060,7 @@ dependencies = [
  "serde 1.0.126",
  "sled",
  "thiserror",
- "tokio 0.3.7",
+ "tokio 1.7.0",
  "wal",
 ]
 
@@ -3321,13 +3315,12 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "0.3.7"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46409491c9375a693ce7032101970a54f8a2010efb77e13f70788f0d84489e39"
+checksum = "c79ba603c337335df6ba6dd6afc38c38a7d5e1b0c871678439ea973cd62a118e"
 dependencies = [
  "autocfg",
- "bytes 0.6.0",
- "futures-core",
+ "bytes 1.0.1",
  "libc",
  "memchr 2.4.0",
  "mio 0.7.11",
@@ -3336,16 +3329,15 @@ dependencies = [
  "parking_lot",
  "pin-project-lite 0.2.6",
  "signal-hook-registry",
- "slab",
  "tokio-macros",
  "winapi 0.3.9",
 ]
 
 [[package]]
 name = "tokio-macros"
-version = "0.3.2"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46dfffa59fc3c8aad216ed61bdc2c263d2b9d87a9c8ac9de0c11a813e51b6db7"
+checksum = "c49e3df43841dafb86046472506755d8501c5615673955f6aa17181125d13c37"
 dependencies = [
  "proc-macro2",
  "quote",

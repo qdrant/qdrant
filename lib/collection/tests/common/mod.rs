@@ -3,7 +3,6 @@ use collection::collection::Collection;
 use segment::types::{Distance};
 use tokio::runtime::Runtime;
 use tokio::runtime;
-use std::sync::Arc;
 use std::path::Path;
 use collection::collection_builder::optimizers_builder::OptimizersConfig;
 use collection::collection_builder::collection_loader::load_collection;
@@ -22,21 +21,21 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
 
 
 #[allow(dead_code)]
-pub fn load_collection_fixture(collection_path: &Path) -> (Arc<Runtime>, Collection) {
-    let threaded_rt = Arc::new(runtime::Builder::new_multi_thread()
-        .max_threads(2)
-        .build().unwrap());
+pub fn load_collection_fixture(collection_path: &Path) -> (Runtime, Collection) {
+    let threaded_rt = runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .build().unwrap();
 
 
     let collection = load_collection(
         collection_path,
-        threaded_rt.clone(),
+        threaded_rt.handle().clone(),
     );
 
     return (threaded_rt, collection);
 }
 
-pub fn simple_collection_fixture(collection_path: &Path) -> (Arc<Runtime>, Collection) {
+pub fn simple_collection_fixture(collection_path: &Path) -> (Runtime, Collection) {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
         wal_segments_ahead: 0
@@ -47,16 +46,16 @@ pub fn simple_collection_fixture(collection_path: &Path) -> (Arc<Runtime>, Colle
         distance: Distance::Dot,
     };
 
-    let threaded_rt = Arc::new(runtime::Builder::new_multi_thread()
-        .max_threads(2)
-        .build().unwrap());
+    let threaded_rt = runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .build().unwrap();
 
 
     let collection = build_collection(
         collection_path,
         &wal_config,
         &collection_params,
-        threaded_rt.clone(),
+        threaded_rt.handle().clone(),
         &TEST_OPTIMIZERS_CONFIG,
         &Default::default()
     ).unwrap();
