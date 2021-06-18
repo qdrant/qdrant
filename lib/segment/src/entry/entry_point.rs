@@ -96,6 +96,9 @@ pub trait SegmentEntry {
 
     fn iter_points(&self) -> Box<dyn Iterator<Item=PointIdType> + '_>;
 
+    /// Iterate over points which satisfies filtering condition starting with `offset` id including.
+    fn iter_filtered(&self, offset: PointIdType, filter: Option<&Filter>) -> Box<dyn Iterator<Item=PointIdType> + '_>;
+
     /// Check if there is point with `point_id` in this segment.
     fn has_point(&self, point_id: PointIdType) -> bool;
 

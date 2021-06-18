@@ -239,6 +239,20 @@ impl SegmentEntry for Segment {
         unsafe { self.id_mapper.as_ptr().as_ref().unwrap().iter_external() }
     }
 
+    fn iter_filtered(&self, offset: PointIdType, filter: Option<&Filter>) -> Box<dyn Iterator<Item=PointIdType> + '_> {
+        unimplemented!();
+        // let points_iter = self.id_mapper.as_ptr().iter_from(offset);
+        //
+        // match filter {
+        //     None => Box::new(points_iter.map(|x| x.0)),
+        //     Some(condition) => Box::new(
+        //         points_iter
+        //             .filter(|(point_id, internal_id)| self.condition_checker.as_ptr().check(*internal_id, condition))
+        //             .map(|x| x.0)
+        //     )
+        // }
+    }
+
     fn has_point(&self, point_id: PointIdType) -> bool {
         self.id_mapper.borrow().internal_id(point_id).is_some()
     }

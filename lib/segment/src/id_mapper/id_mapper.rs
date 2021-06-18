@@ -22,6 +22,9 @@ pub trait IdMapper {
     /// Iterate over all external ids
     fn iter_external(&self) -> Box<dyn Iterator<Item=PointIdType> + '_>;
 
+    /// Iterate starting from a given ID
+    fn iter_from(&self, external_id: PointIdType) -> Box<dyn Iterator<Item=(PointIdType, PointOffsetType)> + '_>;
+
     /// Force persistence of current mapper state.
     fn flush(&self) -> OperationResult<()>;
 
