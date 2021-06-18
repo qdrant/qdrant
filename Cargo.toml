@@ -28,7 +28,7 @@ itertools = "0.9"
 config = "~0.10.1"
 
 actix-web = "3"
-tokio = {version = "~0.3", features = ["full"]}
+tokio = {version = "~1.7", features = ["full"]}
 
 
 segment = {path = "lib/segment"}

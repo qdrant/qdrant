@@ -30,7 +30,7 @@ const COLLECTIONS_DIR: &str = "collections";
 pub struct TableOfContent {
     collections: Arc<RwLock<HashMap<String, Arc<Collection>>>>,
     storage_config: StorageConfig,
-    search_runtime: Arc<Runtime>,
+    search_runtime: Runtime,
     alias_persistence: Db,
 }
 
@@ -44,9 +44,9 @@ impl TableOfContent {
             search_threads = max(1, num_cpu - 1);
         }
 
-        let search_runtime = Arc::new(runtime::Builder::new_multi_thread()
-            .max_threads(search_threads)
-            .build().unwrap());
+        let search_runtime = runtime::Builder::new_multi_thread()
+            .worker_threads(search_threads)
+            .build().unwrap();
 
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
 
@@ -62,7 +62,7 @@ impl TableOfContent {
 
             let collection = load_collection(
                 collection_path.as_path(),
-                search_runtime.clone(),
+                search_runtime.handle().clone(),
             );
 
             collections.insert(collection_name, Arc::new(collection));
@@ -175,7 +175,7 @@ impl TableOfContent {
                     Path::new(&collection_path),
                     &wal_config,
                     &collection_params,
-                    self.search_runtime.clone(),
+                    self.search_runtime.handle().clone(),
                     &optimizers_config,
                     &hnsw_config,
                 )?;
