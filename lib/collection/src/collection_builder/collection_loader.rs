@@ -1,9 +1,8 @@
 use std::fs::{read_dir, remove_dir_all};
 use std::path::Path;
-use std::sync::Arc;
 
 use indicatif::ProgressBar;
-use tokio::runtime::Runtime;
+use tokio::runtime::{Handle};
 
 use segment::segment_constructor::segment_constructor::load_segment;
 
@@ -18,7 +17,7 @@ use crate::wal::SerdeWal;
 
 pub fn load_collection(
     collection_path: &Path,
-    search_runtime: Arc<Runtime>,  // from service
+    search_runtime: Handle,  // from service
 ) -> Collection {
     let wal_path = collection_path.join("wal");
     let segments_path = collection_path.join("segments");

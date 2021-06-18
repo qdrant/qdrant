@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use crate::wal::SerdeWal;
 use crate::operations::CollectionUpdateOperations;
 use tokio::time::{Duration, Instant};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Handle};
 use log::debug;
 use crate::operations::types::CollectionResult;
 
@@ -29,7 +29,7 @@ pub struct UpdateHandler {
     segments: LockedSegmentHolder,
     receiver: Receiver<UpdateSignal>,
     worker: Option<JoinHandle<()>>,
-    runtime_handle: Arc<Runtime>,
+    runtime_handle: Handle,
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
 }
 
@@ -38,7 +38,7 @@ impl UpdateHandler {
     pub fn new(
         optimizers: Arc<Vec<Box<Optimizer>>>,
         receiver: Receiver<UpdateSignal>,
-        runtime_handle: Arc<Runtime>,
+        runtime_handle: Handle,
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
         flush_timeout_sec: u64,

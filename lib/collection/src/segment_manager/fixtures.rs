@@ -111,16 +111,16 @@ pub fn build_test_holder(path: &Path) -> SegmentHolder {
     return holder;
 }
 
-pub fn build_searcher(path: &Path) -> (Arc<Runtime>, SimpleSegmentSearcher) {
+pub fn build_searcher(path: &Path) -> (Runtime, SimpleSegmentSearcher) {
     let segment_holder = build_test_holder(path);
 
-    let threaded_rt1 = Arc::new(runtime::Builder::new_multi_thread()
-        .max_threads(2)
-        .build().unwrap());
+    let threaded_rt1 = runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .build().unwrap();
 
     let searcher = SimpleSegmentSearcher::new(
         Arc::new(RwLock::new(segment_holder)),
-        threaded_rt1.clone(),
+        threaded_rt1.handle().clone(),
     );
 
     (threaded_rt1, searcher)

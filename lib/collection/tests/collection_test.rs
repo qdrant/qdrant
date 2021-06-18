@@ -104,16 +104,16 @@ fn test_collection_loading() {
         collection.update(assign_payload, true).unwrap();
     }
 
-    let rt = Arc::new(runtime::Builder::new_multi_thread()
-        .max_threads(2)
-        .build().unwrap());
+    let rt = runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .build().unwrap();
 
 
     // sleep(Duration::from_secs(120));
 
     let loaded_collection = load_collection(
         collection_dir.path(),
-        rt.clone(),
+        rt.handle().clone(),
     );
 
     let retrieved = loaded_collection.retrieve(&vec![1, 2], true, true).unwrap();

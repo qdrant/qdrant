@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::segment_manager::segment_managers::{SegmentSearcher};
 use crate::operations::types::CollectionResult;
 use segment::types::{ScoredPoint, PointIdType, SeqNumberType};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Handle};
 use std::collections::{HashSet, HashMap};
 use segment::spaces::tools::peek_top_scores_iterable;
 use futures::future::try_join_all;
@@ -16,11 +16,11 @@ use crate::operations::types::{Record, SearchRequest};
 ///
 pub struct SimpleSegmentSearcher {
     pub segments: LockedSegmentHolder,
-    pub runtime_handle: Arc<Runtime>,
+    pub runtime_handle: Handle,
 }
 
 impl SimpleSegmentSearcher {
-    pub fn new(segments: LockedSegmentHolder, runtime_handle: Arc<Runtime>) -> Self {
+    pub fn new(segments: LockedSegmentHolder, runtime_handle: Handle) -> Self {
         return SimpleSegmentSearcher {
             segments,
             runtime_handle,
@@ -129,13 +129,13 @@ mod tests {
         let segment_holder = build_test_holder(dir.path());
 
         let threaded_rt1: Runtime = runtime::Builder::new_multi_thread()
-            .max_threads(2)
+            .worker_threads(2)
             .build().unwrap();
 
 
         let searcher = SimpleSegmentSearcher::new(
             Arc::new(RwLock::new(segment_holder)),
-            Arc::new(threaded_rt1),
+            threaded_rt1.handle().clone(),
         );
 
         let query = vec![1.0, 1.0, 1.0, 1.0];
@@ -163,12 +163,12 @@ mod tests {
         let segment_holder = build_test_holder(dir.path());
 
         let threaded_rt1: Runtime = runtime::Builder::new_multi_thread()
-            .max_threads(2)
+            .worker_threads(2)
             .build().unwrap();
 
         let searcher = SimpleSegmentSearcher::new(
             Arc::new(RwLock::new(segment_holder)),
-            Arc::new(threaded_rt1),
+            threaded_rt1.handle().clone(),
         );
 
         let records = searcher.retrieve(&vec![1, 2, 3], true, true).unwrap();
