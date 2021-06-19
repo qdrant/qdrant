@@ -96,8 +96,8 @@ pub trait SegmentEntry {
 
     fn iter_points(&self) -> Box<dyn Iterator<Item=PointIdType> + '_>;
 
-    /// Iterate over points which satisfies filtering condition starting with `offset` id including.
-    fn iter_filtered(&self, offset: PointIdType, filter: Option<&Filter>) -> Box<dyn Iterator<Item=PointIdType> + '_>;
+    /// Paginate over points which satisfies filtering condition starting with `offset` id including.
+    fn read_filtered<'a>(&'a self, offset: PointIdType, limit: usize, filter: Option<&'a Filter>) -> Vec<PointIdType>;
 
     /// Check if there is point with `point_id` in this segment.
     fn has_point(&self, point_id: PointIdType) -> bool;
