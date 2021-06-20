@@ -33,7 +33,6 @@ pub struct Segment {
 
 
 impl Segment {
-
     fn update_vector(&mut self,
                      old_internal_id: PointOffsetType,
                      vector: Vec<VectorElementType>,
@@ -239,6 +238,20 @@ impl SegmentEntry for Segment {
         unsafe { self.id_mapper.as_ptr().as_ref().unwrap().iter_external() }
     }
 
+    fn read_filtered<'a>(&'a self, offset: PointIdType, limit: usize, filter: Option<&'a Filter>) -> Vec<PointIdType> {
+        let checker = self.condition_checker.borrow();
+        let storage = self.vector_storage.borrow();
+        match filter {
+            None => self.id_mapper.borrow().iter_from(offset).map(|x| x.0).take(limit).collect(),
+            Some(condition) => self.id_mapper.borrow().iter_from(offset)
+                .filter(move |(_, internal_id)| !storage.is_deleted(*internal_id))
+                .filter(move |(_, internal_id)| checker.check(*internal_id, condition))
+                .map(|x| x.0)
+                .take(limit)
+                .collect()
+        }
+    }
+
     fn has_point(&self, point_id: PointIdType) -> bool {
         self.id_mapper.borrow().internal_id(point_id).is_some()
     }
@@ -394,56 +407,56 @@ mod tests {
             PayloadType::Keyword(x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], "John Doe".to_string());
-            },
+            }
             _ => assert!(false)
         }
         match &payload[&"age".to_string()] {
             PayloadType::Integer(x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], 43);
-            },
+            }
             _ => assert!(false)
         }
         match &payload[&"floating".to_string()] {
             PayloadType::Float(x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], 30.5);
-            },
+            }
             _ => assert!(false)
         }
         match &payload[&"boolean".to_string()] {
             PayloadType::Keyword(x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], "true");
-            },
+            }
             _ => assert!(false)
         }
         match &payload[&"metadata__temperature".to_string()] {
             PayloadType::Float(x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], 60.5);
-            },
+            }
             _ => assert!(false)
         }
         match &payload[&"metadata__width".to_string()] {
             PayloadType::Integer(x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], 60);
-            },
+            }
             _ => assert!(false)
         }
         match &payload[&"metadata__height".to_string()] {
             PayloadType::Integer(x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], 50);
-            },
+            }
             _ => assert!(false)
         }
         match &payload[&"metadata__nested__feature".to_string()] {
             PayloadType::Float(x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], 30.5);
-            },
+            }
             _ => assert!(false)
         }
         match &payload[&"string_array".to_string()] {
@@ -451,7 +464,7 @@ mod tests {
                 assert_eq!(x.len(), 2);
                 assert_eq!(x[0], "hello");
                 assert_eq!(x[1], "world");
-            },
+            }
             _ => assert!(false)
         }
         match &payload[&"integer_array".to_string()] {
@@ -459,7 +472,7 @@ mod tests {
                 assert_eq!(x.len(), 2);
                 assert_eq!(x[0], 1);
                 assert_eq!(x[1], 2);
-            },
+            }
             _ => assert!(false)
         }
         match &payload[&"metadata__integer_array".to_string()] {
@@ -467,7 +480,7 @@ mod tests {
                 assert_eq!(x.len(), 2);
                 assert_eq!(x[0], 1);
                 assert_eq!(x[1], 2);
-            },
+            }
             _ => assert!(false)
         }
         match &payload[&"float_array".to_string()] {
@@ -475,7 +488,7 @@ mod tests {
                 assert_eq!(x.len(), 2);
                 assert_eq!(x[0], 1.0);
                 assert_eq!(x[1], 2.0);
-            },
+            }
             _ => assert!(false)
         }
         match &payload[&"boolean_array".to_string()] {
@@ -483,7 +496,7 @@ mod tests {
                 assert_eq!(x.len(), 2);
                 assert_eq!(x[0], "true");
                 assert_eq!(x[1], "false");
-            },
+            }
             _ => assert!(false)
         }
         match &payload[&"geo_data".to_string()] {
@@ -491,7 +504,7 @@ mod tests {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0].lat, 1.0);
                 assert_eq!(x[0].lon, 1.0);
-            },
+            }
             _ => assert!(false)
         }
     }
@@ -589,5 +602,4 @@ mod tests {
         let results_with_invalid_filter = segment.search(&vec![1.0 as f32, 1.0 as f32], Some(&filter_invalid), 1, None).unwrap();
         assert!(results_with_invalid_filter.is_empty());
     }
-
 }

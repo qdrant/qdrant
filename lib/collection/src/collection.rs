@@ -15,7 +15,7 @@ use crate::collection_builder::optimizers_builder::build_optimizers;
 use crate::config::CollectionConfig;
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
-use crate::operations::types::{CollectionError, CollectionInfo, CollectionResult, RecommendRequest, Record, SearchRequest, UpdateResult, UpdateStatus, CollectionStatus};
+use crate::operations::types::{CollectionError, CollectionInfo, CollectionResult, RecommendRequest, Record, SearchRequest, UpdateResult, UpdateStatus, CollectionStatus, ScrollRequest, ScrollResult};
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
 use crate::update_handler::update_handler::{UpdateHandler, UpdateSignal};
@@ -30,7 +30,7 @@ pub struct Collection {
     pub updater: Arc<dyn SegmentUpdater + Sync + Send>,
     pub runtime_handle: Arc<Runtime>,
     pub update_sender: Sender<UpdateSignal>,
-    pub path: PathBuf
+    pub path: PathBuf,
 }
 
 
@@ -94,6 +94,31 @@ impl Collection {
 
     pub fn search(&self, request: Arc<SearchRequest>) -> CollectionResult<Vec<ScoredPoint>> {
         return self.searcher.search(request);
+    }
+
+    pub fn scroll(&self, request: Arc<ScrollRequest>) -> CollectionResult<ScrollResult> {
+        let default_request = ScrollRequest::default();
+
+        let offset = request.offset.unwrap_or(default_request.offset.unwrap());
+        let limit = request.limit.unwrap_or(default_request.limit.unwrap());
+        let with_payload = request.with_payload.unwrap_or(default_request.with_payload.unwrap());
+        let with_vector = request.with_vector.unwrap_or(default_request.with_vector.unwrap());
+
+        // ToDo: Make faster points selection with a set
+        let point_ids = self.segments.read().iter()
+            .map(|(_, segment)| segment.get().read().read_filtered(offset, limit, request.filter.as_ref()).into_iter())
+            .flatten()
+            .sorted()
+            .dedup()
+            .take(limit)
+            .collect_vec();
+
+        let mut points = self.retrieve(&point_ids, with_payload, with_vector)?;
+        points.sort_by_key(|point| point.id);
+
+        let next_page_offset = if point_ids.len() < limit { None } else { Some(point_ids.last().unwrap() + 1) };
+
+        Ok(ScrollResult { points, next_page_offset })
     }
 
     pub fn retrieve(
@@ -218,7 +243,7 @@ impl Collection {
             self.path.as_path(),
             &config.params,
             &config.optimizer_config,
-            &config.hnsw_config
+            &config.hnsw_config,
         );
         update_handler.optimizers = new_optimizers;
         update_handler.flush_timeout_sec = config.optimizer_config.flush_interval_sec;

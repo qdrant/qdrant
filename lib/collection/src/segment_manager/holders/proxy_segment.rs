@@ -19,7 +19,7 @@ pub struct ProxySegment {
     /// Points which should not longer used from wrapped_segment
     deleted_points: LockedRmSet,
     deleted_indexes: LockedFieldsSet,
-    created_indexes: LockedFieldsSet
+    created_indexes: LockedFieldsSet,
 }
 
 
@@ -36,7 +36,7 @@ impl ProxySegment {
             wrapped_segment: segment,
             deleted_points,
             created_indexes,
-            deleted_indexes
+            deleted_indexes,
         }
     }
 
@@ -67,6 +67,31 @@ impl ProxySegment {
         }
         Ok(false)
     }
+
+    fn add_deleted_points_condition_to_filter(&self, filter: Option<&Filter>) -> Filter {
+        let deleted_points = self.deleted_points.read();
+        let wrapper_condition = Condition::HasId(deleted_points.clone().into());
+        let wrapped_filter = match filter {
+            None => {
+                Filter::new_must_not(wrapper_condition)
+            }
+            Some(f) => {
+                let mut new_filter = f.clone();
+                let must_not = new_filter.must_not;
+
+                let new_must_not = match must_not {
+                    None => Some(vec![wrapper_condition]),
+                    Some(mut conditions) => {
+                        conditions.push(wrapper_condition);
+                        Some(conditions)
+                    }
+                };
+                new_filter.must_not = new_must_not;
+                new_filter
+            }
+        };
+        wrapped_filter
+    }
 }
 
 impl SegmentEntry for ProxySegment {
@@ -88,30 +113,11 @@ impl SegmentEntry for ProxySegment {
             // ToDo: Come up with better way to pass deleted points into Filter
             // e.g. implement AtomicRefCell for Serializer.
             // This copy might slow process down if there will be a lot of deleted points
-            let wrapper_condition = Condition::HasId(deleted_points.clone().into());
-            let wrapped_filter = match filter {
-                None => {
-                    Some(Filter::new_must_not(wrapper_condition))
-                }
-                Some(f) => {
-                    let mut new_filter = f.clone();
-                    let must_not = new_filter.must_not;
-
-                    let new_must_not = match must_not {
-                        None => Some(vec![wrapper_condition]),
-                        Some(mut conditions) => {
-                            conditions.push(wrapper_condition);
-                            Some(conditions)
-                        }
-                    };
-                    new_filter.must_not = new_must_not;
-                    Some(new_filter)
-                }
-            };
+            let wrapped_filter = self.add_deleted_points_condition_to_filter(filter);
 
             self.wrapped_segment.get().read().search(
                 vector,
-                wrapped_filter.as_ref(),
+                Some(&wrapped_filter),
                 top,
                 params,
             )?
@@ -207,6 +213,16 @@ impl SegmentEntry for ProxySegment {
         unimplemented!()
     }
 
+    fn read_filtered<'a>(&'a self, offset: PointIdType, limit: usize, filter: Option<&'a Filter>) -> Vec<PointIdType> {
+        let deleted_points = self.deleted_points.read();
+        if deleted_points.is_empty() {
+            self.wrapped_segment.get().read().read_filtered(offset, limit, filter)
+        } else {
+            let wrapped_filter = self.add_deleted_points_condition_to_filter(filter);
+            self.wrapped_segment.get().read().read_filtered(offset, limit, Some(&wrapped_filter))
+        }
+    }
+
     fn has_point(&self, point_id: PointIdType) -> bool {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment.get().read().has_point(point_id)
@@ -242,7 +258,7 @@ impl SegmentEntry for ProxySegment {
             ram_usage_bytes: wrapped_info.ram_usage_bytes + write_info.ram_usage_bytes,
             disk_usage_bytes: wrapped_info.disk_usage_bytes + write_info.disk_usage_bytes,
             is_appendable: false,
-            schema: wrapped_info.schema
+            schema: wrapped_info.schema,
         };
     }
 
@@ -293,6 +309,7 @@ mod tests {
     use super::*;
     use crate::segment_manager::fixtures::{build_segment_1, empty_segment};
     use tempdir::TempDir;
+    use segment::types::{FieldCondition, Match};
 
     #[test]
     fn test_writing() {
@@ -309,7 +326,7 @@ mod tests {
             write_segment,
             deleted_points,
             deleted_indexes.clone(),
-            created_indexes.clone()
+            created_indexes.clone(),
         );
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
@@ -343,5 +360,50 @@ mod tests {
         proxy_segment.delete_payload(103, 2, &payload_key).unwrap();
 
         assert!(proxy_segment.write_segment.get().read().has_point(2))
+    }
+
+    #[test]
+    fn test_read_filter() {
+        let dir = TempDir::new("segment_dir").unwrap();
+        let original_segment = LockedSegment::new(build_segment_1(dir.path()));
+
+        let filter = Filter::new_must_not(Condition::Field(FieldCondition {
+            key: "color".to_string(),
+            r#match: Some(Match {
+                keyword: Some("blue".to_string()),
+                integer: None
+            }),
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None
+        }));
+
+
+        let original_points = original_segment.get().read().read_filtered(0, 100, None);
+
+        let original_points_filtered = original_segment.get().read().read_filtered(0, 100, Some(&filter));
+
+        let write_segment = LockedSegment::new(empty_segment(dir.path()));
+        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+
+        let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+        let created_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+
+        let mut proxy_segment = ProxySegment::new(
+            original_segment,
+            write_segment,
+            deleted_points,
+            deleted_indexes.clone(),
+            created_indexes.clone(),
+        );
+
+        proxy_segment.delete_point(100, 2).unwrap();
+
+        let proxy_res = proxy_segment.read_filtered(0, 100, None);
+        let proxy_res_filtered = proxy_segment.read_filtered(0, 100, Some(&filter));
+
+        assert_eq!(original_points_filtered.len() - 1, proxy_res_filtered.len());
+        assert_eq!(original_points.len() - 1, proxy_res.len());
+
     }
 }

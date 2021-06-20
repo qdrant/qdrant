@@ -209,7 +209,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 0.3.2
+  version: 0.3.4
 externalDocs:
   description: Find out more about Qdrant aplications and demo
   url: demo.qdrant.tech
@@ -456,6 +456,51 @@ paths:
                     type: array
                     items:
                       $ref: "./models.json#/components/schemas/Record"
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /collections/{name}/points/scroll:
+    post:
+      tags:
+        - points
+      summary: Scroll points
+      description: Scroll request - paginate over all points which matches given condition
+      operationId: scroll_points
+      requestBody:
+        description: Pagination and filter parameters
+        content:
+          application/json:
+            schema:
+              $ref: "./models.json#/components/schemas/ScrollRequest"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to retrieve from
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: ["ok"]
+                  result:
+                    $ref: "./models.json#/components/schemas/ScrollResult"
         default:
           description: error
           content:

@@ -23,6 +23,6 @@ cat ./openapi/openapi.yaml | sed -e 's%./models.json#%#%g' > ./openapi/openapi-m
 
 docker run --rm -i simplealpine/json2yaml <./openapi/models.json | tail -n +3 >> ./openapi/openapi-merged.yaml
 
-docker run --rm -i simplealpine/yaml2json <./openapi/openapi-merged.yaml > ./openapi/openapi-merged.json
+docker run --rm -i simplealpine/yaml2json <./openapi/openapi-merged.yaml | jq > ./openapi/openapi-merged.json
 
 cp ./openapi/openapi-merged.json ./docs/redoc/openapi.json

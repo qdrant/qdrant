@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use crate::types::{PointOffsetType, PointIdType};
 use crate::id_mapper::id_mapper::IdMapper;
 use crate::entry::entry_point::OperationResult;
@@ -11,7 +11,7 @@ const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 
 pub struct SimpleIdMapper {
     internal_to_external: HashMap<PointOffsetType, PointIdType>,
-    external_to_internal: HashMap<PointIdType, PointOffsetType>,
+    external_to_internal: BTreeMap<PointIdType, PointOffsetType>,
     store: DB,
 }
 
@@ -24,7 +24,7 @@ impl SimpleIdMapper {
         let store = DB::open(&options, path)?;
 
         let mut internal_to_external: HashMap<PointOffsetType, PointIdType> = Default::default();
-        let mut external_to_internal: HashMap<PointIdType, PointOffsetType> = Default::default();
+        let mut external_to_internal: BTreeMap<PointIdType, PointOffsetType> = Default::default();
 
         for (key, val) in store.iterator(IteratorMode::Start) {
             let external_id: PointIdType = bincode::deserialize(&key).unwrap();
@@ -75,8 +75,47 @@ impl IdMapper for SimpleIdMapper {
         Box::new(self.external_to_internal.keys().cloned())
     }
 
+    fn iter_from(&self, external_id: PointIdType) -> Box<dyn Iterator<Item=(PointIdType, PointOffsetType)> + '_> {
+        Box::new(self.external_to_internal
+            .range(external_id..PointIdType::MAX)
+            .map(|(key, value)| (*key, *value))
+        )
+    }
+
     fn flush(&self) -> OperationResult<()> {
         Ok(self.store.flush()?)
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempdir::TempDir;
+    use itertools::Itertools;
+
+    #[test]
+    fn test_iterator() {
+        let dir = TempDir::new("storage_dir").unwrap();
+
+        let mut id_mapper = SimpleIdMapper::open(dir.path()).unwrap();
+
+        id_mapper.set_link(200, 0).unwrap();
+        id_mapper.set_link(100, 1).unwrap();
+        id_mapper.set_link(150, 2).unwrap();
+        id_mapper.set_link(120, 3).unwrap();
+        id_mapper.set_link(180, 4).unwrap();
+        id_mapper.set_link(110, 5).unwrap();
+        id_mapper.set_link(115, 6).unwrap();
+        id_mapper.set_link(190, 7).unwrap();
+        id_mapper.set_link(177, 8).unwrap();
+        id_mapper.set_link(118, 9).unwrap();
+
+        let first_four = id_mapper.iter_from(0).take(4).collect_vec();
+
+        assert_eq!(first_four.len(), 4);
+        assert_eq!(first_four[0].0, 100);
+
+        let last = id_mapper.iter_from(first_four[3].0 + 1).collect_vec();
+        assert_eq!(last.len(), 6);
+    }
+}

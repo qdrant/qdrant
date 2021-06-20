@@ -80,6 +80,45 @@ pub struct UpdateResult {
     pub status: UpdateStatus,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+/// Scroll request - paginate over all points which matches given condition
+pub struct ScrollRequest {
+    /// Start ID to read points from. Default: 0
+    pub offset: Option<PointIdType>,
+    /// Page size. Default: 10
+    pub limit: Option<usize>,
+    /// Look only for points which satisfies this conditions. If not provided - all points.
+    pub filter: Option<Filter>,
+    /// Return point payload with the result. Default: true
+    pub with_payload: Option<bool>,
+    /// Return point vector with the result. Default: false
+    pub with_vector: Option<bool>
+}
+
+impl Default for ScrollRequest {
+    fn default() -> Self {
+        ScrollRequest {
+            offset: Some(0),
+            limit: Some(10),
+            filter: None,
+            with_payload: Some(true),
+            with_vector: Some(false)
+        }
+    }
+}
+
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+/// Result of the points read request. Contains
+pub struct ScrollResult {
+    /// List of retrieved points
+    pub points: Vec<Record>,
+    /// Offset which should be used to retrieve a next page result
+    pub next_page_offset: Option<PointIdType>
+}
+
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
