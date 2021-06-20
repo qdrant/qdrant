@@ -2081,9 +2081,7 @@
                 "schema": {
                   "properties": {
                     "result": {
-                      "schema": {
-                        "$ref": "#/components/schemas/ScrollResult"
-                      }
+                      "$ref": "#/components/schemas/ScrollResult"
                     },
                     "status": {
                       "enum": [

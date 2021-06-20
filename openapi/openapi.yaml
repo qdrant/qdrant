@@ -500,8 +500,7 @@ paths:
                     type: string
                     enum: ["ok"]
                   result:
-                    schema:
-                      $ref: "./models.json#/components/schemas/ScrollResult"
+                    $ref: "./models.json#/components/schemas/ScrollResult"
         default:
           description: error
           content:
