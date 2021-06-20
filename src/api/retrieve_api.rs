@@ -6,6 +6,8 @@ use segment::types::PointIdType;
 use serde::{Deserialize, Serialize};
 use schemars::{JsonSchema};
 use storage::content_manager::errors::StorageError;
+use collection::operations::types::ScrollRequest;
+use std::sync::Arc;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct PointRequest {
@@ -41,7 +43,7 @@ pub async fn get_point(
 
 
 #[post("/collections/{name}/points")]
-pub async fn get_vectors(
+pub async fn get_points(
     toc: web::Data<TableOfContent>,
     web::Path(name): web::Path<String>,
     request: web::Json<PointRequest>,
@@ -52,6 +54,26 @@ pub async fn get_vectors(
         toc.get_collection(&name)
             .and_then(|collection| collection
                 .retrieve(&request.ids, true, true)
+                .map_err(|err| err.into())
+            )
+    };
+
+    process_response(response, timing)
+}
+
+
+#[post("/collections/{name}/points/scroll")]
+pub async fn scroll_points(
+    toc: web::Data<TableOfContent>,
+    web::Path(name): web::Path<String>,
+    request: web::Json<ScrollRequest>,
+) -> impl Responder {
+    let timing = Instant::now();
+
+    let response = {
+        toc.get_collection(&name)
+            .and_then(|collection| collection
+                .scroll(Arc::new(request.0))
                 .map_err(|err| err.into())
             )
     };

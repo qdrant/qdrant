@@ -7,7 +7,7 @@ use serde_json;
 use crate::api::models::CollectionsResponse;
 use crate::api::retrieve_api::PointRequest;
 
-use collection::operations::types::{CollectionInfo, Record, SearchRequest, UpdateResult, RecommendRequest};
+use collection::operations::types::{CollectionInfo, Record, SearchRequest, UpdateResult, RecommendRequest, ScrollRequest, ScrollResult};
 use storage::content_manager::storage_ops::StorageOperations;
 use serde::{Deserialize, Serialize};
 use segment::types::ScoredPoint;
@@ -24,7 +24,9 @@ struct AllDefinitions {
     a7: ScoredPoint,
     a8: UpdateResult,
     a9: CollectionUpdateOperations,
-    aa: RecommendRequest
+    aa: RecommendRequest,
+    ab: ScrollRequest,
+    ac: ScrollResult
 }
 
 

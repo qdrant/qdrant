@@ -1192,25 +1192,25 @@
       "Range": {
         "properties": {
           "gt": {
-            "description": "point.key \u003e range.gt",
+            "description": "point.key > range.gt",
             "format": "double",
             "nullable": true,
             "type": "number"
           },
           "gte": {
-            "description": "point.key \u003e= range.gte",
+            "description": "point.key >= range.gte",
             "format": "double",
             "nullable": true,
             "type": "number"
           },
           "lt": {
-            "description": "point.key \u003c range.lt",
+            "description": "point.key < range.lt",
             "format": "double",
             "nullable": true,
             "type": "number"
           },
           "lte": {
-            "description": "point.key \u003c= range.lte",
+            "description": "point.key <= range.lte",
             "format": "double",
             "nullable": true,
             "type": "number"
@@ -1324,6 +1324,70 @@
         "required": [
           "id",
           "score"
+        ],
+        "type": "object"
+      },
+      "ScrollRequest": {
+        "description": "Scroll request - paginate over all points which matches given condition",
+        "properties": {
+          "filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Look only for points which satisfies this conditions. If not provided - all points."
+          },
+          "limit": {
+            "description": "Page size. Default: 10",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "offset": {
+            "description": "Start ID to read points from. Default: 0",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "with_payload": {
+            "description": "Return point payload with the result. Default: true",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "with_vector": {
+            "description": "Return point vector with the result. Default: false",
+            "nullable": true,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "ScrollResult": {
+        "description": "Result of the points read request. Contains",
+        "properties": {
+          "next_page_offset": {
+            "description": "Offset which should be used to retrieve a next page result",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "points": {
+            "description": "List of retrieved points",
+            "items": {
+              "$ref": "#/components/schemas/Record"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "points"
         ],
         "type": "object"
       },
@@ -1604,7 +1668,7 @@
       "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
     },
     "title": "Qdrant API",
-    "version": "0.3.2"
+    "version": "0.3.4"
   },
   "openapi": "3.0.1",
   "paths": {
@@ -1980,6 +2044,77 @@
           }
         },
         "summary": "Recommend points",
+        "tags": [
+          "points"
+        ]
+      }
+    },
+    "/collections/{name}/points/scroll": {
+      "post": {
+        "description": "Scroll request - paginate over all points which matches given condition",
+        "operationId": "scroll_points",
+        "parameters": [
+          {
+            "description": "Name of the collection to retrieve from",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScrollRequest"
+              }
+            }
+          },
+          "description": "Pagination and filter parameters"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "schema": {
+                        "$ref": "#/components/schemas/ScrollResult"
+                      }
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Scroll points",
         "tags": [
           "points"
         ]

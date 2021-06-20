@@ -1304,6 +1304,70 @@
                     }
                 }
             },
+            "ScrollRequest": {
+                "description": "Scroll request - paginate over all points which matches given condition",
+                "type": "object",
+                "properties": {
+                    "filter": {
+                        "description": "Look only for points which satisfies this conditions. If not provided - all points.",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/Filter"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    },
+                    "limit": {
+                        "description": "Page size. Default: 10",
+                        "type": "integer",
+                        "format": "uint",
+                        "minimum": 0,
+                        "nullable": true
+                    },
+                    "offset": {
+                        "description": "Start ID to read points from. Default: 0",
+                        "type": "integer",
+                        "format": "uint64",
+                        "minimum": 0,
+                        "nullable": true
+                    },
+                    "with_payload": {
+                        "description": "Return point payload with the result. Default: true",
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "with_vector": {
+                        "description": "Return point vector with the result. Default: false",
+                        "type": "boolean",
+                        "nullable": true
+                    }
+                }
+            },
+            "ScrollResult": {
+                "description": "Result of the points read request. Contains",
+                "type": "object",
+                "required": [
+                    "points"
+                ],
+                "properties": {
+                    "next_page_offset": {
+                        "description": "Offset which should be used to retrieve a next page result",
+                        "type": "integer",
+                        "format": "uint64",
+                        "minimum": 0,
+                        "nullable": true
+                    },
+                    "points": {
+                        "description": "List of retrieved points",
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Record"
+                        }
+                    }
+                }
+            },
             "SearchParams": {
                 "description": "Additional parameters of the search",
                 "type": "object",

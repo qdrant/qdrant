@@ -4,7 +4,7 @@ use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::{PointOperations, PointStruct};
 
 use crate::common::{simple_collection_fixture};
-use collection::operations::types::{UpdateStatus, SearchRequest, RecommendRequest};
+use collection::operations::types::{UpdateStatus, SearchRequest, RecommendRequest, ScrollRequest};
 use std::sync::Arc;
 use collection::operations::payload_ops::PayloadOps;
 use std::collections::HashMap;
@@ -230,4 +230,42 @@ fn test_recommendation_api() {
     let top1 = result[0];
 
     assert!(top1.id == 5 || top1.id == 6);
+}
+
+#[test]
+fn test_read_api() {
+    let collection_dir = TempDir::new("collection").unwrap();
+    let (_rt, collection) = simple_collection_fixture(collection_dir.path());
+
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        PointOperations::UpsertPoints(BatchPoints {
+            ids: vec![0, 1, 2, 3, 4, 5, 6, 7, 8],
+            vectors: vec![
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 0.0, 1.0],
+                vec![0.0, 0.0, 0.0, 1.0],
+            ],
+            payloads: None,
+        })
+    );
+
+    collection.update(insert_points, true).unwrap();
+
+    let result = collection.scroll(Arc::new(ScrollRequest {
+        offset: Some(0),
+        limit: Some(2),
+        filter: None,
+        with_payload: Some(true),
+        with_vector: None
+    })).unwrap();
+
+
+    assert_eq!(result.next_page_offset, Some(2));
+    assert_eq!(result.points.len(), 2);
 }
