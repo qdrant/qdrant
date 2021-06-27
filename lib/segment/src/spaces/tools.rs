@@ -55,7 +55,7 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     }
 }
 
-pub fn peek_top_scores_iterable<I, E: Ord + Clone>(scores: I, top: usize) -> Vec<E>
+pub fn peek_top_scores_iterable<I, E: Ord>(scores: I, top: usize) -> Vec<E>
     where
         I: Iterator<Item=E>,
 {
@@ -67,7 +67,7 @@ pub fn peek_top_scores_iterable<I, E: Ord + Clone>(scores: I, top: usize) -> Vec
     // Hence is should be min-heap
     let mut pq = FixedLengthPriorityQueue::new(top);
     for score_point in scores {
-        pq.push(score_point.clone());
+        pq.push(score_point);
     }
     pq.into_vec()
 }
