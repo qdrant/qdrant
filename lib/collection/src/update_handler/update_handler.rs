@@ -1,16 +1,16 @@
-use crossbeam_channel::Receiver;
-use segment::types::SeqNumberType;
-use std::sync::{Arc};
-use tokio::task::JoinHandle;
-use crate::segment_manager::optimizers::segment_optimizer::SegmentOptimizer;
-use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder};
-use parking_lot::Mutex;
-use crate::wal::SerdeWal;
-use crate::operations::CollectionUpdateOperations;
-use tokio::time::{Duration, Instant};
-use tokio::runtime::{Handle};
-use log::debug;
 use crate::operations::types::CollectionResult;
+use crate::operations::CollectionUpdateOperations;
+use crate::segment_manager::holders::segment_holder::LockedSegmentHolder;
+use crate::segment_manager::optimizers::segment_optimizer::SegmentOptimizer;
+use crate::wal::SerdeWal;
+use crossbeam_channel::Receiver;
+use log::debug;
+use parking_lot::Mutex;
+use segment::types::SeqNumberType;
+use std::sync::Arc;
+use tokio::runtime::Handle;
+use tokio::task::JoinHandle;
+use tokio::time::{Duration, Instant};
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
@@ -32,7 +32,6 @@ pub struct UpdateHandler {
     runtime_handle: Handle,
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
 }
-
 
 impl UpdateHandler {
     pub fn new(
@@ -57,15 +56,13 @@ impl UpdateHandler {
     }
 
     pub fn run_worker(&mut self) {
-        self.worker = Some(self.runtime_handle.spawn(
-            Self::worker_fn(
-                self.optimizers.clone(),
-                self.receiver.clone(),
-                self.segments.clone(),
-                self.wal.clone(),
-                self.flush_timeout_sec,
-            ),
-        ));
+        self.worker = Some(self.runtime_handle.spawn(Self::worker_fn(
+            self.optimizers.clone(),
+            self.receiver.clone(),
+            self.segments.clone(),
+            self.wal.clone(),
+            self.flush_timeout_sec,
+        )));
     }
 
     /// Gracefully wait before all optimizations stop.
@@ -74,24 +71,26 @@ impl UpdateHandler {
     pub fn wait_worker_stops(&mut self) -> CollectionResult<()> {
         let res = match &mut self.worker {
             None => (),
-            Some(handle) => self.runtime_handle.block_on(handle)?
+            Some(handle) => self.runtime_handle.block_on(handle)?,
         };
 
         self.worker = None;
         Ok(res)
     }
 
-    fn process_optimization(
-        optimizers: Arc<Vec<Box<Optimizer>>>,
-        segments: LockedSegmentHolder,
-    ) {
+    fn process_optimization(optimizers: Arc<Vec<Box<Optimizer>>>, segments: LockedSegmentHolder) {
         for optimizer in optimizers.iter() {
             let mut nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
             while !nonoptimal_segment_ids.is_empty() {
-                debug!("Start optimization on segments: {:?}", nonoptimal_segment_ids);
+                debug!(
+                    "Start optimization on segments: {:?}",
+                    nonoptimal_segment_ids
+                );
                 // If optimization fails, it could not be reported to anywhere except for console.
                 // So the only recovery here is to stop optimization and await for restart
-                optimizer.optimize(segments.clone(), nonoptimal_segment_ids).unwrap();
+                optimizer
+                    .optimize(segments.clone(), nonoptimal_segment_ids)
+                    .unwrap();
                 nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
             }
         }

@@ -1,5 +1,5 @@
-use std::cmp::{min, max};
-use crate::types::{PointOffsetType};
+use crate::types::PointOffsetType;
+use std::cmp::{max, min};
 
 const MAX_ESTIMATED_POINTS: usize = 1000;
 
@@ -15,7 +15,6 @@ fn estimate_required_sample_size(total: usize, confidence_interval: usize) -> us
     return max(estimated_size as usize, 10);
 }
 
-
 /// Returns (expected cardinality ± confidence interval at 0.99)
 /// Based on https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval#Agresti%E2%80%93Coull_interval
 fn confidence_agresti_coull_interval(trials: usize, positive: usize, total: usize) -> (i64, i64) {
@@ -29,34 +28,34 @@ fn confidence_agresti_coull_interval(trials: usize, positive: usize, total: usiz
     return (expected, delta);
 }
 
-
 /// Tests if given `query` have cardinality higher than the `threshold`
 /// Iteratively samples points until the decision could be made with confidence
 pub fn sample_check_cardinality(
-    sample_points: impl Iterator<Item=PointOffsetType>,
+    sample_points: impl Iterator<Item = PointOffsetType>,
     checker: impl Fn(PointOffsetType) -> bool,
     threshold: usize,
-    total_points: usize
+    total_points: usize,
 ) -> bool {
     let mut matched_points = 0;
     let mut total_checked = 0;
 
     let mut exp = 0;
-    let mut interval ;
+    let mut interval;
     for idx in sample_points.take(MAX_ESTIMATED_POINTS) {
         matched_points += checker(idx) as usize;
         total_checked += 1;
 
-        let estimation = confidence_agresti_coull_interval(total_checked, matched_points, total_points);
+        let estimation =
+            confidence_agresti_coull_interval(total_checked, matched_points, total_points);
         exp = estimation.0;
         interval = estimation.1;
 
         if exp - interval > threshold as i64 {
-            return true
+            return true;
         }
 
         if exp + interval < threshold as i64 {
-            return false
+            return false;
         }
     }
 
@@ -82,7 +81,10 @@ mod tests {
                 let interval = confidence_agresti_coull_interval(i, positive, total);
                 assert!(interval.1 < delta);
                 delta = interval.1;
-                eprintln!("confidence_agresti_coull_interval({}, {}, {}) = {:#?}", i, positive, total, interval);
+                eprintln!(
+                    "confidence_agresti_coull_interval({}, {}, {}) = {:#?}",
+                    i, positive, total, interval
+                );
             }
         }
     }
@@ -90,13 +92,12 @@ mod tests {
     #[test]
     fn test_sample_check_cardinality() {
         let res = sample_check_cardinality(
-            vec![1,2,3,4,5,6,7,8,9,10,11,12].into_iter(),
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].into_iter(),
             |idx| idx % 2 == 0,
             10_000,
-            100_000
+            100_000,
         );
 
         assert!(res)
     }
-
 }

@@ -1,15 +1,14 @@
-mod id_mapper;
-pub mod payload_storage;
-pub mod index;
-pub mod vector_storage;
-pub mod segment;
-pub mod spaces;
-pub mod segment_constructor;
-pub mod entry;
-pub mod types;
-pub mod fixtures;
 mod common;
-
+pub mod entry;
+pub mod fixtures;
+mod id_mapper;
+pub mod index;
+pub mod payload_storage;
+pub mod segment;
+pub mod segment_constructor;
+pub mod spaces;
+pub mod types;
+pub mod vector_storage;
 
 #[cfg(test)]
 mod tests {

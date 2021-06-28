@@ -1,9 +1,9 @@
 mod common;
 
-use crate::common::{simple_collection_fixture, load_collection_fixture};
-use tempdir::TempDir;
+use crate::common::{load_collection_fixture, simple_collection_fixture};
+use collection::operations::point_ops::{PointInsertOperations, PointOperations};
 use collection::operations::CollectionUpdateOperations;
-use collection::operations::point_ops::{PointOperations, PointInsertOperations};
+use tempdir::TempDir;
 
 #[test]
 fn test_collection_reloading() {
@@ -18,12 +18,9 @@ fn test_collection_reloading() {
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::BatchPoints {
                 ids: vec![0, 1],
-                vectors: vec![
-                    vec![1.0, 0.0, 1.0, 1.0],
-                    vec![1.0, 0.0, 1.0, 0.0],
-                ],
+                vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
                 payloads: None,
-            })
+            }),
         );
         collection.update(insert_points, true).unwrap();
     }
@@ -31,5 +28,4 @@ fn test_collection_reloading() {
     let (_rt, collection) = load_collection_fixture(collection_dir.path());
 
     assert_eq!(collection.info().unwrap().vectors_count, 2)
-
 }

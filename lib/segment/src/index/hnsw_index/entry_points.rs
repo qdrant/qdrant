@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
-use crate::types::PointOffsetType;
-use std::cmp::Ordering;
 use crate::spaces::tools::FixedLengthPriorityQueue;
+use crate::types::PointOffsetType;
+use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct EntryPoint {
@@ -42,8 +42,14 @@ impl EntryPoints {
         // Do not merge `extra_entry_points` to prevent duplications
     }
 
-    pub fn new_point<F>(&mut self, new_point: PointOffsetType, level: usize, checker: F) -> Option<EntryPoint>
-    where F: Fn(PointOffsetType) -> bool
+    pub fn new_point<F>(
+        &mut self,
+        new_point: PointOffsetType,
+        level: usize,
+        checker: F,
+    ) -> Option<EntryPoint>
+    where
+        F: Fn(PointOffsetType) -> bool,
     {
         // there are 3 cases:
         // - There is proper entry point for a new point higher or same level - return the point
@@ -87,21 +93,24 @@ impl EntryPoints {
 
     /// Find the highest EntryPoint which satisfies filtering condition of `checker`
     pub fn get_entry_point<F>(&self, checker: F) -> Option<EntryPoint>
-    where F: Fn(PointOffsetType) -> bool
+    where
+        F: Fn(PointOffsetType) -> bool,
     {
-        self.entry_points.iter()
+        self.entry_points
+            .iter()
             .filter(|entry| checker(entry.point_id))
-            .cloned().next().or_else(|| {
-            // Searching for at least some entry point
-            self.extra_entry_points
-                .iter()
-                .filter(|entry| checker(entry.point_id))
-                .cloned()
-                .max_by_key(|ep| ep.level)
-        })
+            .cloned()
+            .next()
+            .or_else(|| {
+                // Searching for at least some entry point
+                self.extra_entry_points
+                    .iter()
+                    .filter(|entry| checker(entry.point_id))
+                    .cloned()
+                    .max_by_key(|ep| ep.level)
+            })
     }
 }
-
 
 #[cfg(test)]
 mod tests {

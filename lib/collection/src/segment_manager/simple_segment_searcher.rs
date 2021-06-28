@@ -1,13 +1,13 @@
-use crate::segment_manager::holders::segment_holder::{LockedSegment, LockedSegmentHolder};
-use std::sync::Arc;
-use crate::segment_manager::segment_managers::{SegmentSearcher};
 use crate::operations::types::CollectionResult;
-use segment::types::{ScoredPoint, PointIdType, SeqNumberType};
-use tokio::runtime::{Handle};
-use std::collections::{HashSet, HashMap};
-use segment::spaces::tools::peek_top_scores_iterable;
-use futures::future::try_join_all;
 use crate::operations::types::{Record, SearchRequest};
+use crate::segment_manager::holders::segment_holder::{LockedSegment, LockedSegmentHolder};
+use crate::segment_manager::segment_managers::SegmentSearcher;
+use futures::future::try_join_all;
+use segment::spaces::tools::peek_top_scores_iterable;
+use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use tokio::runtime::Handle;
 
 /// Simple implementation of segment manager
 ///  - owens segments
@@ -43,10 +43,7 @@ impl SimpleSegmentSearcher {
 }
 
 impl SegmentSearcher for SimpleSegmentSearcher {
-    fn search(
-        &self,
-        request: Arc<SearchRequest>,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
+    fn search(&self, request: Arc<SearchRequest>) -> CollectionResult<Vec<ScoredPoint>> {
         let segments = self.segments.read();
 
         let some_segment = segments.iter().next();
@@ -57,19 +54,20 @@ impl SegmentSearcher for SimpleSegmentSearcher {
 
         let searches: Vec<_> = segments
             .iter()
-            .map(|(_id, segment)|
+            .map(|(_id, segment)| {
                 SimpleSegmentSearcher::search_in_segment(segment.clone(), request.clone())
-            )
+            })
             .map(|f| self.runtime_handle.spawn(f))
             .collect();
-
 
         let all_searches = try_join_all(searches);
         let all_search_results = self.runtime_handle.block_on(all_searches)?;
 
-        match all_search_results.iter()
+        match all_search_results
+            .iter()
             .filter_map(|res| res.to_owned().err())
-            .next() {
+            .next()
+        {
             None => {}
             Some(error) => return Err(error),
         }
@@ -92,18 +90,34 @@ impl SegmentSearcher for SimpleSegmentSearcher {
         Ok(top_scores)
     }
 
-    fn retrieve(&self, points: &Vec<PointIdType>, with_payload: bool, with_vector: bool) -> CollectionResult<Vec<Record>> {
+    fn retrieve(
+        &self,
+        points: &Vec<PointIdType>,
+        with_payload: bool,
+        with_vector: bool,
+    ) -> CollectionResult<Vec<Record>> {
         let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut point_records: HashMap<PointIdType, Record> = Default::default();
 
         self.segments.read().read_points(points, |id, segment| {
             // If this point was not found yet or this segment have later version
             if !point_version.contains_key(&id) || point_version[&id] < segment.version() {
-                point_records.insert(id, Record {
+                point_records.insert(
                     id,
-                    payload: if with_payload { Some(segment.payload(id)?) } else { None },
-                    vector: if with_vector { Some(segment.vector(id)?) } else { None },
-                });
+                    Record {
+                        id,
+                        payload: if with_payload {
+                            Some(segment.payload(id)?)
+                        } else {
+                            None
+                        },
+                        vector: if with_vector {
+                            Some(segment.vector(id)?)
+                        } else {
+                            None
+                        },
+                    },
+                );
                 point_version.insert(id, segment.version());
             }
             Ok(true)
@@ -112,15 +126,14 @@ impl SegmentSearcher for SimpleSegmentSearcher {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::runtime::Runtime;
-    use tokio::runtime;
     use crate::segment_manager::fixtures::build_test_holder;
-    use tempdir::TempDir;
     use parking_lot::RwLock;
+    use tempdir::TempDir;
+    use tokio::runtime;
+    use tokio::runtime::Runtime;
 
     #[test]
     fn test_segments_search() {
@@ -130,8 +143,8 @@ mod tests {
 
         let threaded_rt1: Runtime = runtime::Builder::new_multi_thread()
             .worker_threads(2)
-            .build().unwrap();
-
+            .build()
+            .unwrap();
 
         let searcher = SimpleSegmentSearcher::new(
             Arc::new(RwLock::new(segment_holder)),
@@ -164,7 +177,8 @@ mod tests {
 
         let threaded_rt1: Runtime = runtime::Builder::new_multi_thread()
             .worker_threads(2)
-            .build().unwrap();
+            .build()
+            .unwrap();
 
         let searcher = SimpleSegmentSearcher::new(
             Arc::new(RwLock::new(segment_holder)),

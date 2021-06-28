@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use num_cpus;
 use parking_lot::RwLock;
-use sled::{Config, Db};
 use sled::transaction::UnabortableTransactionError;
+use sled::{Config, Db};
 use tokio::runtime;
 use tokio::runtime::Runtime;
 
@@ -20,7 +20,7 @@ use crate::content_manager::errors::StorageError;
 use crate::content_manager::storage_ops::{AliasOperations, StorageOperations};
 use crate::types::StorageConfig;
 use collection::config::CollectionParams;
-use collection::operations::config_diff::{DiffConfig};
+use collection::operations::config_diff::DiffConfig;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 const SLED_CACHE_SIZE: u64 = 1 * 1024 * 1024; // 1 mb
@@ -34,7 +34,6 @@ pub struct TableOfContent {
     alias_persistence: Db,
 }
 
-
 impl TableOfContent {
     pub fn new(storage_config: &StorageConfig) -> Self {
         let mut search_threads = storage_config.performance.max_search_threads;
@@ -46,7 +45,8 @@ impl TableOfContent {
 
         let search_runtime = runtime::Builder::new_multi_thread()
             .worker_threads(search_threads)
-            .build().unwrap();
+            .build()
+            .unwrap();
 
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
 
@@ -58,20 +58,23 @@ impl TableOfContent {
 
         for entry in collection_paths {
             let collection_path = entry.unwrap().path();
-            let collection_name = collection_path.file_name().unwrap().to_str().unwrap().to_string();
+            let collection_name = collection_path
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string();
 
-            let collection = load_collection(
-                collection_path.as_path(),
-                search_runtime.handle().clone(),
-            );
+            let collection =
+                load_collection(collection_path.as_path(), search_runtime.handle().clone());
 
             collections.insert(collection_name, Arc::new(collection));
-        };
+        }
 
-        let alias_path = Path::new(&storage_config.storage_path)
-            .join("aliases.sled");
+        let alias_path = Path::new(&storage_config.storage_path).join("aliases.sled");
 
-        let alias_persistence = Config::new().cache_capacity(SLED_CACHE_SIZE)
+        let alias_persistence = Config::new()
+            .cache_capacity(SLED_CACHE_SIZE)
             .path(alias_path.as_path())
             .open()
             .unwrap();
@@ -93,10 +96,14 @@ impl TableOfContent {
     fn create_collection_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
         let path = self.get_collection_path(collection_name);
 
-        create_dir_all(&path)
-            .or_else(|err| Err(StorageError::ServiceError {
-                description: format!("Can't create directory for collection {}. Error: {}", collection_name, err)
-            }))?;
+        create_dir_all(&path).or_else(|err| {
+            Err(StorageError::ServiceError {
+                description: format!(
+                    "Can't create directory for collection {}. Error: {}",
+                    collection_name, err
+                ),
+            })
+        })?;
 
         Ok(path)
     }
@@ -104,32 +111,27 @@ impl TableOfContent {
     fn validate_collection_not_exists(&self, collection_name: &str) -> Result<(), StorageError> {
         if self.is_collection_exists(collection_name) {
             return Err(StorageError::BadInput {
-                description: format!("Collection `{}` already exists!", collection_name)
+                description: format!("Collection `{}` already exists!", collection_name),
             });
         }
         Ok(())
     }
-
 
     fn validate_collection_exists(&self, collection_name: &str) -> Result<(), StorageError> {
         if !self.is_collection_exists(collection_name) {
             return Err(StorageError::BadInput {
-                description: format!("Collection `{}` doesn't exist!", collection_name)
+                description: format!("Collection `{}` doesn't exist!", collection_name),
             });
         }
         Ok(())
     }
 
-
     fn resolve_name(&self, collection_name: &str) -> Result<String, StorageError> {
-        let alias_collection_name = self.alias_persistence
-            .get(collection_name.as_bytes())?;
+        let alias_collection_name = self.alias_persistence.get(collection_name.as_bytes())?;
 
         let resolved_name = match alias_collection_name {
             None => collection_name.to_string(),
-            Some(resolved_alias) => {
-                from_utf8(&resolved_alias).unwrap().to_string()
-            }
+            Some(resolved_alias) => from_utf8(&resolved_alias).unwrap().to_string(),
         };
         self.validate_collection_exists(&resolved_name)?;
         Ok(resolved_name)
@@ -139,7 +141,10 @@ impl TableOfContent {
         self.collections.read().contains_key(collection_name)
     }
 
-    pub fn perform_collection_operation(&self, operation: StorageOperations) -> Result<bool, StorageError> {
+    pub fn perform_collection_operation(
+        &self,
+        operation: StorageOperations,
+    ) -> Result<bool, StorageError> {
         match operation {
             StorageOperations::CreateCollection {
                 name: collection_name,
@@ -158,7 +163,7 @@ impl TableOfContent {
                 };
                 let wal_config = match wal_config_diff {
                     None => self.storage_config.wal.clone(),
-                    Some(diff) => diff.update(&self.storage_config.wal)?
+                    Some(diff) => diff.update(&self.storage_config.wal)?,
                 };
 
                 let optimizers_config = match optimizers_config_diff {
@@ -168,7 +173,7 @@ impl TableOfContent {
 
                 let hnsw_config = match hnsw_config_diff {
                     None => self.storage_config.hnsw_index.clone(),
-                    Some(diff) => diff.update(&self.storage_config.hnsw_index)?
+                    Some(diff) => diff.update(&self.storage_config.hnsw_index)?,
                 };
 
                 let collection = build_collection(
@@ -186,7 +191,7 @@ impl TableOfContent {
             }
             StorageOperations::UpdateCollection {
                 name,
-                optimizers_config
+                optimizers_config,
             } => {
                 let collection = self.get_collection(&name)?;
                 match optimizers_config {
@@ -201,10 +206,14 @@ impl TableOfContent {
                 let removed = self.collections.write().remove(&collection_name).is_some();
                 if removed {
                     let path = self.get_collection_path(&collection_name);
-                    remove_dir_all(path).or_else(
-                        |err| Err(StorageError::ServiceError {
-                            description: format!("Can't delete collection {}, error: {}", collection_name, err)
-                        }))?;
+                    remove_dir_all(path).or_else(|err| {
+                        Err(StorageError::ServiceError {
+                            description: format!(
+                                "Can't delete collection {}, error: {}",
+                                collection_name, err
+                            ),
+                        })
+                    })?;
                 }
                 Ok(removed)
             }
@@ -212,18 +221,33 @@ impl TableOfContent {
                 let _collection_lock = self.collections.write(); // Make alias change atomic
                 for action in actions {
                     match action {
-                        AliasOperations::CreateAlias { collection_name, alias_name } => {
+                        AliasOperations::CreateAlias {
+                            collection_name,
+                            alias_name,
+                        } => {
                             self.validate_collection_exists(&collection_name)?;
                             self.validate_collection_not_exists(&alias_name)?;
 
-                            self.alias_persistence.insert(alias_name.as_bytes(), collection_name.as_bytes())?;
+                            self.alias_persistence
+                                .insert(alias_name.as_bytes(), collection_name.as_bytes())?;
                         }
                         AliasOperations::DeleteAlias { alias_name } => {
                             self.alias_persistence.remove(alias_name.as_bytes())?;
                         }
-                        AliasOperations::RenameAlias { old_alias_name, new_alias_name } => {
-                            if !self.alias_persistence.contains_key(old_alias_name.as_bytes())? {
-                                return Err(StorageError::NotFound { description: format!("Alias {} does not exists!", old_alias_name) });
+                        AliasOperations::RenameAlias {
+                            old_alias_name,
+                            new_alias_name,
+                        } => {
+                            if !self
+                                .alias_persistence
+                                .contains_key(old_alias_name.as_bytes())?
+                            {
+                                return Err(StorageError::NotFound {
+                                    description: format!(
+                                        "Alias {} does not exists!",
+                                        old_alias_name
+                                    ),
+                                });
                             }
 
                             let transaction_res = self.alias_persistence.transaction(|tx_db| {

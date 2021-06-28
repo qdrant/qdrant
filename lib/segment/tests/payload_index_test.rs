@@ -1,11 +1,16 @@
 #[cfg(test)]
 mod tests {
-    use segment::fixtures::payload_fixtures::{random_vector, random_keyword_payload, random_int_payload, random_filter};
-    use tempdir::TempDir;
-    use segment::types::{SegmentConfig, Indexes, PayloadIndexType, StorageType, Distance, TheMap, PayloadKeyType, PayloadType, Filter, Condition, FieldCondition, Range};
-    use segment::segment_constructor::segment_constructor::build_segment;
-    use segment::entry::entry_point::SegmentEntry;
     use itertools::Itertools;
+    use segment::entry::entry_point::SegmentEntry;
+    use segment::fixtures::payload_fixtures::{
+        random_filter, random_int_payload, random_keyword_payload, random_vector,
+    };
+    use segment::segment_constructor::segment_constructor::build_segment;
+    use segment::types::{
+        Condition, Distance, FieldCondition, Filter, Indexes, PayloadIndexType, PayloadKeyType,
+        PayloadType, Range, SegmentConfig, StorageType, TheMap,
+    };
+    use tempdir::TempDir;
 
     #[test]
     fn test_cardinality_estimation() {
@@ -14,8 +19,7 @@ mod tests {
         let dir1 = TempDir::new("segment1_dir").unwrap();
         let dim = 5;
 
-        let
-            config = SegmentConfig {
+        let config = SegmentConfig {
             vector_size: dim,
             index: Indexes::Plain {},
             payload_index: Some(PayloadIndexType::Struct),
@@ -37,7 +41,9 @@ mod tests {
             payload.insert(int_key.clone(), random_int_payload(&mut rnd, 2));
 
             struct_segment.upsert_point(opnum, idx, &vector).unwrap();
-            struct_segment.set_full_payload(opnum, idx, payload.clone()).unwrap();
+            struct_segment
+                .set_full_payload(opnum, idx, payload.clone())
+                .unwrap();
 
             opnum += 1;
         }
@@ -58,16 +64,18 @@ mod tests {
             geo_radius: None,
         }));
 
-        let estimation = struct_segment.payload_index
+        let estimation = struct_segment
+            .payload_index
             .borrow()
             .estimate_cardinality(&filter);
 
         let checker = struct_segment.condition_checker.borrow();
 
-        let exact = struct_segment.vector_storage
+        let exact = struct_segment
+            .vector_storage
             .borrow()
             .iter_ids()
-            .filter(|x| checker.check(*x,  &filter))
+            .filter(|x| checker.check(*x, &filter))
             .collect_vec()
             .len();
 
@@ -111,13 +119,20 @@ mod tests {
             let vector = random_vector(&mut rnd, dim);
             let mut payload: TheMap<PayloadKeyType, PayloadType> = Default::default();
             payload.insert(str_key.clone(), random_keyword_payload(&mut rnd));
-            payload.insert(int_key.clone(), random_int_payload(&mut rnd, num_int_values));
+            payload.insert(
+                int_key.clone(),
+                random_int_payload(&mut rnd, num_int_values),
+            );
 
             plain_segment.upsert_point(idx, idx, &vector).unwrap();
             struct_segment.upsert_point(idx, idx, &vector).unwrap();
 
-            plain_segment.set_full_payload(idx, idx, payload.clone()).unwrap();
-            struct_segment.set_full_payload(idx, idx, payload.clone()).unwrap();
+            plain_segment
+                .set_full_payload(idx, idx, payload.clone())
+                .unwrap();
+            struct_segment
+                .set_full_payload(idx, idx, payload.clone())
+                .unwrap();
 
             opnum += 1;
         }
@@ -130,10 +145,17 @@ mod tests {
             let query_vector = random_vector(&mut rnd, dim);
             let query_filter = random_filter(&mut rnd);
 
-            let plain_result = plain_segment.search(&query_vector, Some(&query_filter), 5, None).unwrap();
-            let struct_result = struct_segment.search(&query_vector, Some(&query_filter), 5, None).unwrap();
+            let plain_result = plain_segment
+                .search(&query_vector, Some(&query_filter), 5, None)
+                .unwrap();
+            let struct_result = struct_segment
+                .search(&query_vector, Some(&query_filter), 5, None)
+                .unwrap();
 
-            let estimation = struct_segment.payload_index.borrow().estimate_cardinality(&query_filter);
+            let estimation = struct_segment
+                .payload_index
+                .borrow()
+                .estimate_cardinality(&query_filter);
 
             assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
             assert!(estimation.exp <= estimation.max, "{:#?}", estimation);

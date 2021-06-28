@@ -1,5 +1,5 @@
-mod common;
 mod api;
+mod common;
 
 use schemars::{schema_for, JsonSchema};
 use serde_json;
@@ -7,11 +7,14 @@ use serde_json;
 use crate::api::models::CollectionsResponse;
 use crate::api::retrieve_api::PointRequest;
 
-use collection::operations::types::{CollectionInfo, Record, SearchRequest, UpdateResult, RecommendRequest, ScrollRequest, ScrollResult};
-use storage::content_manager::storage_ops::StorageOperations;
-use serde::{Deserialize, Serialize};
-use segment::types::ScoredPoint;
+use collection::operations::types::{
+    CollectionInfo, RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
+    UpdateResult,
+};
 use collection::operations::CollectionUpdateOperations;
+use segment::types::ScoredPoint;
+use serde::{Deserialize, Serialize};
+use storage::content_manager::storage_ops::StorageOperations;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 struct AllDefinitions {
@@ -26,16 +29,14 @@ struct AllDefinitions {
     a9: CollectionUpdateOperations,
     aa: RecommendRequest,
     ab: ScrollRequest,
-    ac: ScrollResult
+    ac: ScrollResult,
 }
 
-
-fn save_schema<T:JsonSchema>() {
+fn save_schema<T: JsonSchema>() {
     let schema = schema_for!(T);
     let schema_str = serde_json::to_string_pretty(&schema).unwrap();
     println!("{}", schema_str)
 }
-
 
 fn main() {
     save_schema::<AllDefinitions>();

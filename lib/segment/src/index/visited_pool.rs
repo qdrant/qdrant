@@ -13,7 +13,6 @@ pub struct VisitedList {
     visit_counters: Vec<usize>,
 }
 
-
 impl VisitedList {
     pub fn new(num_points: usize) -> Self {
         VisitedList {
@@ -47,17 +46,15 @@ impl VisitedList {
     }
 }
 
-
 #[derive(Debug)]
 pub struct VisitedPool {
-    pool: RwLock<Vec<VisitedList>>
+    pool: RwLock<Vec<VisitedList>>,
 }
-
 
 impl VisitedPool {
     pub fn new() -> Self {
         VisitedPool {
-            pool: RwLock::new(vec![])
+            pool: RwLock::new(vec![]),
         }
     }
 

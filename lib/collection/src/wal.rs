@@ -4,13 +4,12 @@ extern crate wal;
 use std::marker::PhantomData;
 use std::result;
 
-use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 use thiserror::Error;
 use wal::Wal;
 use wal::WalOptions;
-use std::fmt::Debug;
-
 
 #[derive(Error, Debug)]
 #[error("{0}")]
@@ -22,7 +21,6 @@ pub enum WalError {
     #[error("Can't truncate WAL: {0}")]
     TruncateWalError(String),
 }
-
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -69,7 +67,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
             .map_err(|err| WalError::WriteWalError(format!("{:?}", err)))
     }
 
-    pub fn read_all(&'s self) -> impl Iterator<Item=(u64, R)> + 's {
+    pub fn read_all(&'s self) -> impl Iterator<Item = (u64, R)> + 's {
         self.read(self.wal.first_index())
     }
 
@@ -77,23 +75,24 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         self.wal.num_entries()
     }
 
-    pub fn read(&'s self, start_from: u64) -> impl Iterator<Item=(u64, R)> + 's {
+    pub fn read(&'s self, start_from: u64) -> impl Iterator<Item = (u64, R)> + 's {
         let first_index = self.wal.first_index();
         let num_entries = self.wal.num_entries();
 
-        let iter = (start_from..(first_index + num_entries))
-            .map(move |idx| {
-                let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
-                let record: R = rmp_serde::from_read_ref(&record_bin.to_vec())
-                    .expect("Can't deserialize entry, probably corrupted WAL on version mismatch");
-                (idx, record)
-            });
+        let iter = (start_from..(first_index + num_entries)).map(move |idx| {
+            let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
+            let record: R = rmp_serde::from_read_ref(&record_bin.to_vec())
+                .expect("Can't deserialize entry, probably corrupted WAL on version mismatch");
+            (idx, record)
+        });
 
         return iter;
     }
 
     pub fn ack(&mut self, until_index: u64) -> Result<()> {
-        self.wal.prefix_truncate(until_index).map_err(|err| WalError::TruncateWalError(format!("{:?}", err)))
+        self.wal
+            .prefix_truncate(until_index)
+            .map_err(|err| WalError::TruncateWalError(format!("{:?}", err)))
     }
 }
 
@@ -113,7 +112,8 @@ mod tests {
             segment_queue_len: 0,
         };
 
-        let mut serde_wal: SerdeWal<TestRecord> = SerdeWal::new(dir.path().to_str().unwrap(), &wal_options).unwrap();
+        let mut serde_wal: SerdeWal<TestRecord> =
+            SerdeWal::new(dir.path().to_str().unwrap(), &wal_options).unwrap();
 
         let record = TestRecord::Struct1(TestInternalStruct1 { data: 10 });
 
@@ -135,7 +135,6 @@ mod tests {
         assert_eq!(idx1, 0);
         assert_eq!(idx2, 1);
 
-
         match record1 {
             TestRecord::Struct1(x) => assert_eq!(x.data, 10),
             TestRecord::Struct2(_) => panic!("Wrong structure"),
@@ -146,7 +145,7 @@ mod tests {
             TestRecord::Struct2(x) => {
                 assert_eq!(x.a, 12);
                 assert_eq!(x.b, 13);
-            },
+            }
         }
     }
 }

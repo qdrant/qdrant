@@ -1,28 +1,22 @@
-use segment::segment::Segment;
-use segment::entry::entry_point::SegmentEntry;
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, PayloadType, SeqNumberType};
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
-use tokio::runtime::Runtime;
-use tokio::runtime;
-use std::sync::Arc;
-use rand::Rng;
-use std::path::Path;
 use parking_lot::RwLock;
+use rand::Rng;
+use segment::entry::entry_point::SegmentEntry;
+use segment::segment::Segment;
+use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+use segment::types::{Distance, PayloadType, SeqNumberType};
+use std::path::Path;
+use std::sync::Arc;
+use tokio::runtime;
+use tokio::runtime::Runtime;
 
 pub fn empty_segment(path: &Path) -> Segment {
     let segment = build_simple_segment(path, 4, Distance::Dot).unwrap();
     return segment;
 }
 
-
-pub fn random_segment(
-    path: &Path,
-    opnum: SeqNumberType,
-    num_vectors: u64,
-    dim: usize
-) -> Segment {
+pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: usize) -> Segment {
     let mut segment = build_simple_segment(path, dim, Distance::Dot).unwrap();
     let mut rnd = rand::thread_rng();
     let payload_key = "number".to_owned();
@@ -30,17 +24,17 @@ pub fn random_segment(
         let random_vector: Vec<_> = (0..dim).map(|_| rnd.gen_range(0.0, 1.0)).collect();
         let point_id = rnd.gen_range(1, 100_000_000);
         let payload_value = rnd.gen_range(1, 1_000);
-        segment.upsert_point(
-            opnum,
-            point_id,
-            &random_vector,
-        ).unwrap();
-        segment.set_payload(
-            opnum,
-            point_id,
-            &payload_key,
-            PayloadType::Integer(vec![payload_value]),
-        ).unwrap();
+        segment
+            .upsert_point(opnum, point_id, &random_vector)
+            .unwrap();
+        segment
+            .set_payload(
+                opnum,
+                point_id,
+                &payload_key,
+                PayloadType::Integer(vec![payload_value]),
+            )
+            .unwrap();
     }
     segment
 }
@@ -66,11 +60,21 @@ pub fn build_segment_1(path: &Path) -> Segment {
     let payload_option2 = PayloadType::Keyword(vec!["red".to_owned(), "blue".to_owned()]);
     let payload_option3 = PayloadType::Keyword(vec!["blue".to_owned()]);
 
-    segment1.set_payload(6, 1, &payload_key, payload_option1.clone()).unwrap();
-    segment1.set_payload(6, 2, &payload_key, payload_option1.clone()).unwrap();
-    segment1.set_payload(6, 3, &payload_key, payload_option3.clone()).unwrap();
-    segment1.set_payload(6, 4, &payload_key, payload_option2.clone()).unwrap();
-    segment1.set_payload(6, 5, &payload_key, payload_option2.clone()).unwrap();
+    segment1
+        .set_payload(6, 1, &payload_key, payload_option1.clone())
+        .unwrap();
+    segment1
+        .set_payload(6, 2, &payload_key, payload_option1.clone())
+        .unwrap();
+    segment1
+        .set_payload(6, 3, &payload_key, payload_option3.clone())
+        .unwrap();
+    segment1
+        .set_payload(6, 4, &payload_key, payload_option2.clone())
+        .unwrap();
+    segment1
+        .set_payload(6, 5, &payload_key, payload_option2.clone())
+        .unwrap();
 
     return segment1;
 }
@@ -116,7 +120,8 @@ pub fn build_searcher(path: &Path) -> (Runtime, SimpleSegmentSearcher) {
 
     let threaded_rt1 = runtime::Builder::new_multi_thread()
         .worker_threads(2)
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     let searcher = SimpleSegmentSearcher::new(
         Arc::new(RwLock::new(segment_holder)),
@@ -125,4 +130,3 @@ pub fn build_searcher(path: &Path) -> (Runtime, SimpleSegmentSearcher) {
 
     (threaded_rt1, searcher)
 }
-

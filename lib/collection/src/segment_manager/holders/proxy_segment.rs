@@ -1,14 +1,16 @@
-use segment::entry::entry_point::{SegmentEntry, OperationResult};
-use segment::types::{Filter, Condition, SearchParams, ScoredPoint, PayloadKeyType, PayloadType, TheMap, SeqNumberType, VectorElementType, PointIdType, SegmentInfo, SegmentType, SegmentConfig};
-use std::cmp::max;
 use crate::segment_manager::holders::segment_holder::LockedSegment;
+use parking_lot::RwLock;
+use segment::entry::entry_point::{OperationResult, SegmentEntry};
+use segment::types::{
+    Condition, Filter, PayloadKeyType, PayloadType, PointIdType, ScoredPoint, SearchParams,
+    SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap, VectorElementType,
+};
+use std::cmp::max;
 use std::collections::HashSet;
 use std::sync::Arc;
-use parking_lot::RwLock;
 
 type LockedRmSet = Arc<RwLock<HashSet<PointIdType>>>;
 type LockedFieldsSet = Arc<RwLock<HashSet<PayloadKeyType>>>;
-
 
 /// This object is a wrapper around read-only segment.
 /// It could be used to provide all read and write operations while wrapped segment is being optimized (i.e. not available for writing)
@@ -21,7 +23,6 @@ pub struct ProxySegment {
     deleted_indexes: LockedFieldsSet,
     created_indexes: LockedFieldsSet,
 }
-
 
 impl ProxySegment {
     pub fn new(
@@ -59,7 +60,11 @@ impl ProxySegment {
         Ok(true)
     }
 
-    fn move_if_exists(&self, op_num: SeqNumberType, point_id: PointIdType) -> OperationResult<bool> {
+    fn move_if_exists(
+        &self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+    ) -> OperationResult<bool> {
         let wrapped_has_point = self.wrapped_segment.get().read().has_point(point_id);
         let already_deleted = self.deleted_points.read().contains(&point_id);
         if wrapped_has_point && !already_deleted {
@@ -72,9 +77,7 @@ impl ProxySegment {
         let deleted_points = self.deleted_points.read();
         let wrapper_condition = Condition::HasId(deleted_points.clone().into());
         let wrapped_filter = match filter {
-            None => {
-                Filter::new_must_not(wrapper_condition)
-            }
+            None => Filter::new_must_not(wrapper_condition),
             Some(f) => {
                 let mut new_filter = f.clone();
                 let must_not = new_filter.must_not;
@@ -102,7 +105,13 @@ impl SegmentEntry for ProxySegment {
         )
     }
 
-    fn search(&self, vector: &Vec<VectorElementType>, filter: Option<&Filter>, top: usize, params: Option<&SearchParams>) -> OperationResult<Vec<ScoredPoint>> {
+    fn search(
+        &self,
+        vector: &Vec<VectorElementType>,
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> OperationResult<Vec<ScoredPoint>> {
         let deleted_points = self.deleted_points.read();
 
         // Some point might be deleted after temporary segment creation
@@ -115,79 +124,144 @@ impl SegmentEntry for ProxySegment {
             // This copy might slow process down if there will be a lot of deleted points
             let wrapped_filter = self.add_deleted_points_condition_to_filter(filter);
 
-            self.wrapped_segment.get().read().search(
-                vector,
-                Some(&wrapped_filter),
-                top,
-                params,
-            )?
+            self.wrapped_segment
+                .get()
+                .read()
+                .search(vector, Some(&wrapped_filter), top, params)?
         } else {
-            self.wrapped_segment.get().read().search(
-                vector,
-                filter,
-                top,
-                params,
-            )?
+            self.wrapped_segment
+                .get()
+                .read()
+                .search(vector, filter, top, params)?
         };
 
-        let mut write_result = self.write_segment.get().read().search(
-            vector,
-            filter,
-            top,
-            params,
-        )?;
+        let mut write_result = self
+            .write_segment
+            .get()
+            .read()
+            .search(vector, filter, top, params)?;
 
         wrapped_result.append(&mut write_result);
         return Ok(wrapped_result);
     }
 
-    fn upsert_point(&mut self, op_num: SeqNumberType, point_id: PointIdType, vector: &Vec<VectorElementType>) -> OperationResult<bool> {
-        if self.version() > op_num { return Ok(false); }
+    fn upsert_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vector: &Vec<VectorElementType>,
+    ) -> OperationResult<bool> {
+        if self.version() > op_num {
+            return Ok(false);
+        }
         self.move_if_exists(op_num, point_id)?;
-        self.write_segment.get().write().upsert_point(op_num, point_id, vector)
+        self.write_segment
+            .get()
+            .write()
+            .upsert_point(op_num, point_id, vector)
     }
 
-    fn delete_point(&mut self, op_num: SeqNumberType, point_id: PointIdType) -> OperationResult<bool> {
-        if self.version() > op_num { return Ok(false); }
+    fn delete_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+    ) -> OperationResult<bool> {
+        if self.version() > op_num {
+            return Ok(false);
+        }
         let mut was_deleted = false;
         if self.wrapped_segment.get().read().has_point(point_id) {
             self.deleted_points.write().insert(point_id);
             was_deleted = true;
         }
-        let was_deleted_in_writable = self.write_segment.get().write().delete_point(op_num, point_id)?;
+        let was_deleted_in_writable = self
+            .write_segment
+            .get()
+            .write()
+            .delete_point(op_num, point_id)?;
 
         Ok(was_deleted || was_deleted_in_writable)
     }
 
-    fn set_full_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, full_payload: TheMap<PayloadKeyType, PayloadType>) -> OperationResult<bool> {
-        if self.version() > op_num { return Ok(false); }
+    fn set_full_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        full_payload: TheMap<PayloadKeyType, PayloadType>,
+    ) -> OperationResult<bool> {
+        if self.version() > op_num {
+            return Ok(false);
+        }
         self.move_if_exists(op_num, point_id)?;
 
-        self.write_segment.get().write().set_full_payload(op_num, point_id, full_payload)
+        self.write_segment
+            .get()
+            .write()
+            .set_full_payload(op_num, point_id, full_payload)
     }
 
-    fn set_full_payload_with_json(&mut self, op_num: u64, point_id: u64, full_payload: &str) -> OperationResult<bool> {
-        if self.version() > op_num { return Ok(false); }
+    fn set_full_payload_with_json(
+        &mut self,
+        op_num: u64,
+        point_id: u64,
+        full_payload: &str,
+    ) -> OperationResult<bool> {
+        if self.version() > op_num {
+            return Ok(false);
+        }
         self.move_if_exists(op_num, point_id)?;
-        self.write_segment.get().write().set_full_payload_with_json(op_num, point_id, full_payload)
+        self.write_segment
+            .get()
+            .write()
+            .set_full_payload_with_json(op_num, point_id, full_payload)
     }
 
-    fn set_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, key: &PayloadKeyType, payload: PayloadType) -> OperationResult<bool> {
-        if self.version() > op_num { return Ok(false); }
+    fn set_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        key: &PayloadKeyType,
+        payload: PayloadType,
+    ) -> OperationResult<bool> {
+        if self.version() > op_num {
+            return Ok(false);
+        }
         self.move_if_exists(op_num, point_id)?;
-        self.write_segment.get().write().set_payload(op_num, point_id, key, payload)
+        self.write_segment
+            .get()
+            .write()
+            .set_payload(op_num, point_id, key, payload)
     }
 
-    fn delete_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType, key: &PayloadKeyType) -> OperationResult<bool> {
-        if self.version() > op_num { return Ok(false); }
+    fn delete_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        key: &PayloadKeyType,
+    ) -> OperationResult<bool> {
+        if self.version() > op_num {
+            return Ok(false);
+        }
         self.move_if_exists(op_num, point_id)?;
-        self.write_segment.get().write().delete_payload(op_num, point_id, key)
+        self.write_segment
+            .get()
+            .write()
+            .delete_payload(op_num, point_id, key)
     }
 
-    fn clear_payload(&mut self, op_num: SeqNumberType, point_id: PointIdType) -> OperationResult<bool> {
-        if self.version() > op_num { return Ok(false); }
+    fn clear_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+    ) -> OperationResult<bool> {
+        if self.version() > op_num {
+            return Ok(false);
+        }
         self.move_if_exists(op_num, point_id)?;
-        self.write_segment.get().write().clear_payload(op_num, point_id)
+        self.write_segment
+            .get()
+            .write()
+            .clear_payload(op_num, point_id)
     }
 
     fn vector(&self, point_id: PointIdType) -> OperationResult<Vec<VectorElementType>> {
@@ -198,7 +272,10 @@ impl SegmentEntry for ProxySegment {
         };
     }
 
-    fn payload(&self, point_id: PointIdType) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
+    fn payload(
+        &self,
+        point_id: PointIdType,
+    ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment.get().read().payload(point_id)
         } else {
@@ -207,19 +284,30 @@ impl SegmentEntry for ProxySegment {
     }
 
     /// Not implemented for proxy
-    fn iter_points(&self) -> Box<dyn Iterator<Item=u64> + '_> {
+    fn iter_points(&self) -> Box<dyn Iterator<Item = u64> + '_> {
         // iter_points is not available for Proxy implementation
         // Due to internal locks it is almost impossible to return iterator with proper owning, lifetimes, e.t.c.
         unimplemented!()
     }
 
-    fn read_filtered<'a>(&'a self, offset: PointIdType, limit: usize, filter: Option<&'a Filter>) -> Vec<PointIdType> {
+    fn read_filtered<'a>(
+        &'a self,
+        offset: PointIdType,
+        limit: usize,
+        filter: Option<&'a Filter>,
+    ) -> Vec<PointIdType> {
         let deleted_points = self.deleted_points.read();
         if deleted_points.is_empty() {
-            self.wrapped_segment.get().read().read_filtered(offset, limit, filter)
+            self.wrapped_segment
+                .get()
+                .read()
+                .read_filtered(offset, limit, filter)
         } else {
             let wrapped_filter = self.add_deleted_points_condition_to_filter(filter);
-            self.wrapped_segment.get().read().read_filtered(offset, limit, Some(&wrapped_filter))
+            self.wrapped_segment
+                .get()
+                .read()
+                .read_filtered(offset, limit, Some(&wrapped_filter))
         }
     }
 
@@ -280,17 +368,27 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn delete_field_index(&mut self, op_num: u64, key: &PayloadKeyType) -> OperationResult<bool> {
-        if self.version() > op_num { return Ok(false); }
+        if self.version() > op_num {
+            return Ok(false);
+        }
         self.deleted_indexes.write().insert(key.clone());
         self.created_indexes.write().remove(key);
-        self.write_segment.get().write().delete_field_index(op_num, key)
+        self.write_segment
+            .get()
+            .write()
+            .delete_field_index(op_num, key)
     }
 
     fn create_field_index(&mut self, op_num: u64, key: &PayloadKeyType) -> OperationResult<bool> {
-        if self.version() > op_num { return Ok(false); }
+        if self.version() > op_num {
+            return Ok(false);
+        }
         self.created_indexes.write().insert(key.clone());
         self.deleted_indexes.write().remove(key);
-        self.write_segment.get().write().create_field_index(op_num, key)
+        self.write_segment
+            .get()
+            .write()
+            .create_field_index(op_num, key)
     }
 
     fn get_indexed_fields(&self) -> Vec<PayloadKeyType> {
@@ -303,13 +401,12 @@ impl SegmentEntry for ProxySegment {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::segment_manager::fixtures::{build_segment_1, empty_segment};
-    use tempdir::TempDir;
     use segment::types::{FieldCondition, Match};
+    use tempdir::TempDir;
 
     #[test]
     fn test_writing() {
@@ -335,10 +432,8 @@ mod tests {
         proxy_segment.upsert_point(101, 6, &vec6).unwrap();
         proxy_segment.delete_point(102, 1).unwrap();
 
-
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
         let search_result = proxy_segment.search(&query_vector, None, 10, None).unwrap();
-
 
         eprintln!("search_result = {:#?}", search_result);
 
@@ -371,17 +466,20 @@ mod tests {
             key: "color".to_string(),
             r#match: Some(Match {
                 keyword: Some("blue".to_string()),
-                integer: None
+                integer: None,
             }),
             range: None,
             geo_bounding_box: None,
-            geo_radius: None
+            geo_radius: None,
         }));
-
 
         let original_points = original_segment.get().read().read_filtered(0, 100, None);
 
-        let original_points_filtered = original_segment.get().read().read_filtered(0, 100, Some(&filter));
+        let original_points_filtered =
+            original_segment
+                .get()
+                .read()
+                .read_filtered(0, 100, Some(&filter));
 
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
@@ -404,6 +502,5 @@ mod tests {
 
         assert_eq!(original_points_filtered.len() - 1, proxy_res_filtered.len());
         assert_eq!(original_points.len() - 1, proxy_res.len());
-
     }
 }

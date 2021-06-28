@@ -1,24 +1,25 @@
 use crate::entry::entry_point::OperationResult;
-use std::path::{Path, PathBuf};
-use std::fs::create_dir_all;
-use crate::index::index::{VectorIndex, PayloadIndex};
-use crate::types::{SearchParams, Filter, PointOffsetType, VectorElementType, FieldCondition, HnswConfig};
-use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
-use std::sync::Arc;
-use atomic_refcell::AtomicRefCell;
-use crate::payload_storage::payload_storage::ConditionChecker;
-use std::cmp::max;
-use std::ops::Deref;
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use rand::thread_rng;
-use rand::prelude::ThreadRng;
+use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
-use crate::types::Condition::Field;
-use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
+use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::index::index::{PayloadIndex, VectorIndex};
 use crate::index::sample_estimation::sample_check_cardinality;
+use crate::payload_storage::payload_storage::ConditionChecker;
+use crate::types::Condition::Field;
+use crate::types::{
+    FieldCondition, Filter, HnswConfig, PointOffsetType, SearchParams, VectorElementType,
+};
+use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
+use atomic_refcell::AtomicRefCell;
 use log::debug;
-
+use rand::prelude::ThreadRng;
+use rand::thread_rng;
+use std::cmp::max;
+use std::fs::create_dir_all;
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 const HNSW_USE_HEURISTIC: bool = true;
 
@@ -31,7 +32,6 @@ pub struct HNSWIndex {
     thread_rng: ThreadRng,
     graph: GraphLayers,
 }
-
 
 impl HNSWIndex {
     pub fn open(
@@ -48,7 +48,11 @@ impl HNSWIndex {
         let config = if config_path.exists() {
             HnswGraphConfig::load(&config_path)?
         } else {
-            HnswGraphConfig::new(hnsw_config.m, hnsw_config.ef_construct, hnsw_config.full_scan_threshold)
+            HnswGraphConfig::new(
+                hnsw_config.m,
+                hnsw_config.ef_construct,
+                hnsw_config.full_scan_threshold,
+            )
         };
 
         let graph_path = GraphLayers::get_path(path);
@@ -95,10 +99,16 @@ impl HNSWIndex {
 
     pub fn link_point(&mut self, point_id: PointOffsetType, points_scorer: &FilteredScorer) {
         let point_level = self.graph.get_random_layer(&mut self.thread_rng);
-        self.graph.link_new_point(point_id, point_level, points_scorer);
+        self.graph
+            .link_new_point(point_id, point_level, points_scorer);
     }
 
-    pub fn build_filtered_graph(&self, graph: &mut GraphLayers, condition: FieldCondition, block_condition_checker: &mut BuildConditionChecker) {
+    pub fn build_filtered_graph(
+        &self,
+        graph: &mut GraphLayers,
+        condition: FieldCondition,
+        block_condition_checker: &mut BuildConditionChecker,
+    ) {
         block_condition_checker.filter_list.next_iteration();
 
         let filter = Filter::new_must(Field(condition));
@@ -107,7 +117,9 @@ impl HNSWIndex {
         let vector_storage = self.vector_storage.borrow();
 
         for block_point_id in payload_index.query_points(&filter) {
-            block_condition_checker.filter_list.check_and_update_visited(block_point_id);
+            block_condition_checker
+                .filter_list
+                .check_and_update_visited(block_point_id);
         }
 
         for block_point_id in payload_index.query_points(&filter) {
@@ -125,8 +137,16 @@ impl HNSWIndex {
         }
     }
 
-    pub fn search_with_graph(&self, vector: &Vec<VectorElementType>, filter: Option<&Filter>, top: usize, params: Option<&SearchParams>) -> Vec<ScoredPointOffset> {
-        let req_ef = params.and_then(|params| params.hnsw_ef).unwrap_or(self.config.ef);
+    pub fn search_with_graph(
+        &self,
+        vector: &Vec<VectorElementType>,
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> Vec<ScoredPointOffset> {
+        let req_ef = params
+            .and_then(|params| params.hnsw_ef)
+            .unwrap_or(self.config.ef);
 
         // ef should always be bigger that required top
         let ef = max(req_ef, top);
@@ -145,9 +165,14 @@ impl HNSWIndex {
     }
 }
 
-
 impl VectorIndex for HNSWIndex {
-    fn search(&self, vector: &Vec<VectorElementType>, filter: Option<&Filter>, top: usize, params: Option<&SearchParams>) -> Vec<ScoredPointOffset> {
+    fn search(
+        &self,
+        vector: &Vec<VectorElementType>,
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> Vec<ScoredPointOffset> {
         match filter {
             None => self.search_with_graph(vector, None, top, params),
             Some(query_filter) => {
@@ -235,7 +260,9 @@ impl VectorIndex for HNSWIndex {
             debug!("building additional index for field {}", &field);
 
             // ToDo: Think about using connectivity threshold (based on 1/m0) instead of `indexing_threshold`
-            for payload_block in payload_index.payload_blocks(&field, self.config.indexing_threshold) {
+            for payload_block in
+                payload_index.payload_blocks(&field, self.config.indexing_threshold)
+            {
                 // ToDo: re-use graph layer for same payload
                 let mut additional_graph = GraphLayers::new_with_params(
                     self.vector_storage.borrow().total_vector_count(),
@@ -246,7 +273,11 @@ impl VectorIndex for HNSWIndex {
                     HNSW_USE_HEURISTIC,
                     false,
                 );
-                self.build_filtered_graph(&mut additional_graph, payload_block.condition, &mut block_condition_checker);
+                self.build_filtered_graph(
+                    &mut additional_graph,
+                    payload_block.condition,
+                    &mut block_condition_checker,
+                );
                 self.graph.merge_from_other(additional_graph);
             }
         }

@@ -1,28 +1,34 @@
-use crate::segment::{Segment, SEGMENT_STATE_FILE};
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_mapper::simple_id_mapper::SimpleIdMapper;
-use crate::vector_storage::simple_vector_storage::SimpleVectorStorage;
-use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
-use crate::index::plain_payload_index::{PlainPayloadIndex, PlainIndex};
-use crate::types::{SegmentType, SegmentConfig, Indexes, SegmentState, SeqNumberType, StorageType, PayloadIndexType};
-use std::sync::{Arc, Mutex};
-use atomic_refcell::AtomicRefCell;
-use crate::payload_storage::query_checker::SimpleConditionChecker;
-use std::path::Path;
-use uuid::Uuid;
-use std::fs::{File, create_dir_all};
-use crate::entry::entry_point::{OperationResult, OperationError};
-use std::io::Read;
-use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
-use crate::vector_storage::vector_storage::VectorStorage;
-use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::index::{PayloadIndex, VectorIndex};
 use crate::index::hnsw_index::hnsw::HNSWIndex;
+use crate::index::index::{PayloadIndex, VectorIndex};
+use crate::index::plain_payload_index::{PlainIndex, PlainPayloadIndex};
+use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::payload_storage::query_checker::SimpleConditionChecker;
+use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
+use crate::segment::{Segment, SEGMENT_STATE_FILE};
+use crate::types::{
+    Indexes, PayloadIndexType, SegmentConfig, SegmentState, SegmentType, SeqNumberType, StorageType,
+};
+use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
+use crate::vector_storage::simple_vector_storage::SimpleVectorStorage;
+use crate::vector_storage::vector_storage::VectorStorage;
+use atomic_refcell::AtomicRefCell;
+use std::fs::{create_dir_all, File};
+use std::io::Read;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use uuid::Uuid;
 
+fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> {
+    Arc::new(AtomicRefCell::new(t))
+}
 
-fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> { Arc::new(AtomicRefCell::new(t)) }
-
-
-fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentConfig) -> OperationResult<Segment> {
+fn create_segment(
+    version: SeqNumberType,
+    segment_path: &Path,
+    config: &SegmentConfig,
+) -> OperationResult<Segment> {
     let mapper_path = segment_path.join("id_mapper");
     let payload_storage_path = segment_path.join("payload_storage");
     let payload_index_path = segment_path.join("payload_index");
@@ -30,7 +36,6 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
     let vector_index_path = segment_path.join("vector_index");
 
     let id_mapper = sp(SimpleIdMapper::open(mapper_path.as_path())?);
-
 
     let vector_storage: Arc<AtomicRefCell<dyn VectorStorage>> = match config.storage_type {
         StorageType::InMemory => sp(SimpleVectorStorage::open(
@@ -47,24 +52,26 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
 
     let payload_storage = sp(SimplePayloadStorage::open(payload_storage_path.as_path())?);
 
-
     let condition_checker = sp(SimpleConditionChecker::new(
         payload_storage.clone(),
         id_mapper.clone(),
     ));
 
-    let payload_index: Arc<AtomicRefCell<dyn PayloadIndex>> = match config.payload_index.unwrap_or_default() {
-        PayloadIndexType::Plain => sp(PlainPayloadIndex::open(
-            condition_checker.clone(),
-            vector_storage.clone(),
-            &payload_index_path)?),
-        PayloadIndexType::Struct => sp(StructPayloadIndex::open(
-            condition_checker.clone(),
-            vector_storage.clone(),
-            payload_storage.clone(),
-            id_mapper.clone(),
-            &payload_index_path)?),
-    };
+    let payload_index: Arc<AtomicRefCell<dyn PayloadIndex>> =
+        match config.payload_index.unwrap_or_default() {
+            PayloadIndexType::Plain => sp(PlainPayloadIndex::open(
+                condition_checker.clone(),
+                vector_storage.clone(),
+                &payload_index_path,
+            )?),
+            PayloadIndexType::Struct => sp(StructPayloadIndex::open(
+                condition_checker.clone(),
+                vector_storage.clone(),
+                payload_storage.clone(),
+                id_mapper.clone(),
+                &payload_index_path,
+            )?),
+        };
 
     let vector_index: Arc<AtomicRefCell<dyn VectorIndex>> = match config.index {
         Indexes::Plain { .. } => sp(PlainIndex::new(
@@ -76,19 +83,20 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
             condition_checker.clone(),
             vector_storage.clone(),
             payload_index.clone(),
-            hnsw_config
-        )?)
+            hnsw_config,
+        )?),
     };
 
     let segment_type = match config.index {
         Indexes::Plain { .. } => match config.payload_index.unwrap_or_default() {
             PayloadIndexType::Plain => SegmentType::Plain,
-            PayloadIndexType::Struct => SegmentType::Indexed
+            PayloadIndexType::Struct => SegmentType::Indexed,
         },
         Indexes::Hnsw { .. } => SegmentType::Indexed,
     };
 
-    let appendable_flag = segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
+    let appendable_flag =
+        segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
 
     return Ok(Segment {
         version,
@@ -106,7 +114,6 @@ fn create_segment(version: SeqNumberType, segment_path: &Path, config: &SegmentC
     });
 }
 
-
 pub fn load_segment(path: &Path) -> OperationResult<Segment> {
     let segment_config_path = path.join(SEGMENT_STATE_FILE);
     let mut contents = String::new();
@@ -116,13 +123,16 @@ pub fn load_segment(path: &Path) -> OperationResult<Segment> {
 
     let segment_state: SegmentState = serde_json::from_str(&contents).or_else(|err| {
         Err(OperationError::ServiceError {
-            description: format!("Failed to read segment {}. Error: {}", path.to_str().unwrap(), err)
+            description: format!(
+                "Failed to read segment {}. Error: {}",
+                path.to_str().unwrap(),
+                err
+            ),
         })
     })?;
 
     create_segment(segment_state.version, path, &segment_state.config)
 }
-
 
 /// Build segment instance using given configuration.
 /// Builder will generate folder for the segment and store all segment information inside it.
@@ -143,4 +153,3 @@ pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Seg
 
     Ok(segment)
 }
-

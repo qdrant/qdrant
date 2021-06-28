@@ -1,8 +1,7 @@
-use crate::types::{ScoreType, PointOffsetType};
-use std::hash::{Hasher, Hash};
-use std::cmp::{min, max};
+use crate::types::{PointOffsetType, ScoreType};
 use fasthash::SeaHasher;
-
+use std::cmp::{max, min};
+use std::hash::{Hash, Hasher};
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 struct PointPair {
@@ -29,7 +28,7 @@ struct CacheObj {
 pub struct DistanceCache {
     cache: Vec<Option<CacheObj>>,
     pub hits: usize,
-    pub misses: usize
+    pub misses: usize,
 }
 
 #[allow(dead_code)]
@@ -44,7 +43,7 @@ impl DistanceCache {
         DistanceCache {
             cache,
             hits: 0,
-            misses: 0
+            misses: 0,
         }
     }
 
@@ -54,7 +53,13 @@ impl DistanceCache {
         points.hash(&mut s);
         let idx = s.finish() as usize % self.cache.len();
 
-        self.cache[idx].as_ref().and_then(|x| if x.points == points { Some(x.value) } else { None })
+        self.cache[idx].as_ref().and_then(|x| {
+            if x.points == points {
+                Some(x.value)
+            } else {
+                None
+            }
+        })
     }
 
     pub fn put(&mut self, point_a: PointOffsetType, point_b: PointOffsetType, value: ScoreType) {
@@ -87,7 +92,6 @@ mod tests {
         assert_eq!(cache.get(12, 99), None);
         assert_eq!(cache.get(10, 100), Some(0.8));
         assert_eq!(cache.get(10, 101), Some(0.7));
-
     }
 
     #[test]
@@ -100,6 +104,5 @@ mod tests {
         assert_eq!(cache.get(1, 2), None);
         assert_eq!(cache.get(2, 1), None);
         assert_eq!(cache.get(4, 3), Some(0.7));
-
     }
 }

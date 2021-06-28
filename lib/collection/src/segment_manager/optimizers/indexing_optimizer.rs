@@ -1,9 +1,12 @@
-use std::path::{PathBuf, Path};
-use segment::types::{SegmentType, HnswConfig, Indexes, PayloadIndexType, StorageType};
-use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId, LockedSegment};
-use crate::segment_manager::optimizers::segment_optimizer::{SegmentOptimizer, OptimizerThresholds};
 use crate::config::CollectionParams;
-
+use crate::segment_manager::holders::segment_holder::{
+    LockedSegment, LockedSegmentHolder, SegmentId,
+};
+use crate::segment_manager::optimizers::segment_optimizer::{
+    OptimizerThresholds, SegmentOptimizer,
+};
+use segment::types::{HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType};
+use std::path::{Path, PathBuf};
 
 pub struct IndexingOptimizer {
     thresholds_config: OptimizerThresholds,
@@ -31,7 +34,9 @@ impl IndexingOptimizer {
     }
 
     fn worst_segment(&self, segments: LockedSegmentHolder) -> Option<(SegmentId, LockedSegment)> {
-        segments.read().iter()
+        segments
+            .read()
+            .iter()
             .filter_map(|(idx, segment)| {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
@@ -40,7 +45,7 @@ impl IndexingOptimizer {
                 let segment_config = read_segment.config();
 
                 if read_segment.segment_type() == SegmentType::Special {
-                    return None  // Never optimize already optimized segment
+                    return None; // Never optimize already optimized segment
                 }
 
                 // Apply indexing to plain segments which have grown too big
@@ -61,7 +66,8 @@ impl IndexingOptimizer {
 
                 let big_for_mmap = vector_count >= self.thresholds_config.memmap_threshold;
                 let big_for_index = vector_count >= self.thresholds_config.indexing_threshold;
-                let big_for_payload_index = vector_count >= self.thresholds_config.payload_indexing_threshold;
+                let big_for_payload_index =
+                    vector_count >= self.thresholds_config.payload_indexing_threshold;
 
                 let has_payload = !read_segment.get_indexed_fields().is_empty();
 
@@ -71,7 +77,7 @@ impl IndexingOptimizer {
 
                 match require_indexing {
                     true => Some((*idx, vector_count)),
-                    false => None
+                    false => None,
                 }
             })
             .max_by_key(|(_, num_vectors)| *num_vectors)
@@ -111,17 +117,16 @@ impl SegmentOptimizer for IndexingOptimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempdir::TempDir;
-    use crate::segment_manager::holders::segment_holder::SegmentHolder;
-    use crate::segment_manager::fixtures::random_segment;
-    use std::sync::Arc;
-    use parking_lot::lock_api::RwLock;
-    use itertools::Itertools;
-    use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
+    use crate::operations::point_ops::{PointInsertOperations, PointOperations};
     use crate::operations::FieldIndexOperations;
-    use crate::operations::point_ops::{PointOperations, PointInsertOperations};
+    use crate::segment_manager::fixtures::random_segment;
+    use crate::segment_manager::holders::segment_holder::SegmentHolder;
+    use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
+    use itertools::Itertools;
+    use parking_lot::lock_api::RwLock;
     use segment::types::StorageType;
-
+    use std::sync::Arc;
+    use tempdir::TempDir;
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -152,10 +157,10 @@ mod tests {
         let large_segment_id = holder.add(large_segment);
 
         let mut index_optimizer = IndexingOptimizer::new(
-            OptimizerThresholds{
+            OptimizerThresholds {
                 memmap_threshold: 1000,
                 indexing_threshold: 1000,
-                payload_indexing_threshold: 50
+                payload_indexing_threshold: 50,
             },
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
@@ -163,7 +168,7 @@ mod tests {
                 vector_size: segment_config.vector_size,
                 distance: segment_config.distance,
             },
-            Default::default()
+            Default::default(),
         );
 
         let locked_holder = Arc::new(RwLock::new(holder));
@@ -180,42 +185,84 @@ mod tests {
 
         // ----- CREATE AN INDEXED FIELD ------
         let updater = SimpleSegmentUpdater::new(locked_holder.clone());
-        updater.process_field_index_operation(opnum.next().unwrap(), &FieldIndexOperations::CreateIndex(payload_field.clone())).unwrap();
+        updater
+            .process_field_index_operation(
+                opnum.next().unwrap(),
+                &FieldIndexOperations::CreateIndex(payload_field.clone()),
+            )
+            .unwrap();
 
         // ------ Plain -> Mmap & Indexed payload
         let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
         assert!(suggested_to_optimize.contains(&large_segment_id));
         eprintln!("suggested_to_optimize = {:#?}", suggested_to_optimize);
-        index_optimizer.optimize(locked_holder.clone(), suggested_to_optimize).unwrap();
+        index_optimizer
+            .optimize(locked_holder.clone(), suggested_to_optimize)
+            .unwrap();
         eprintln!("Done");
 
-
-         // ------ Plain -> Indexed payload
+        // ------ Plain -> Indexed payload
         let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
         assert!(suggested_to_optimize.contains(&middle_segment_id));
-        index_optimizer.optimize(locked_holder.clone(), suggested_to_optimize).unwrap();
+        index_optimizer
+            .optimize(locked_holder.clone(), suggested_to_optimize)
+            .unwrap();
 
         // ------- Keep smallest segment without changes
         let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
         assert!(suggested_to_optimize.is_empty());
 
-        assert_eq!(locked_holder.read().len(), 3, "Testing no new segments were created");
+        assert_eq!(
+            locked_holder.read().len(),
+            3,
+            "Testing no new segments were created"
+        );
 
-        let infos = locked_holder.read().iter().map(|(_sid, segment)| segment.get().read().info()).collect_vec();
-        let configs = locked_holder.read().iter().map(|(_sid, segment)| segment.get().read().config()).collect_vec();
+        let infos = locked_holder
+            .read()
+            .iter()
+            .map(|(_sid, segment)| segment.get().read().info())
+            .collect_vec();
+        let configs = locked_holder
+            .read()
+            .iter()
+            .map(|(_sid, segment)| segment.get().read().config())
+            .collect_vec();
 
-        let indexed_count = infos.iter().filter(|info| info.segment_type == SegmentType::Indexed).count();
-        assert_eq!(indexed_count, 2, "Testing that 2 segments are actually indexed");
+        let indexed_count = infos
+            .iter()
+            .filter(|info| info.segment_type == SegmentType::Indexed)
+            .count();
+        assert_eq!(
+            indexed_count, 2,
+            "Testing that 2 segments are actually indexed"
+        );
 
-        let mmap_count = configs.iter().filter(|config| config.storage_type == StorageType::Mmap).count();
-        assert_eq!(mmap_count, 1, "Testing that only largest segment is not Mmap");
+        let mmap_count = configs
+            .iter()
+            .filter(|config| config.storage_type == StorageType::Mmap)
+            .count();
+        assert_eq!(
+            mmap_count, 1,
+            "Testing that only largest segment is not Mmap"
+        );
 
         let segment_dirs = segments_dir.path().read_dir().unwrap().collect_vec();
-        assert_eq!(segment_dirs.len(), locked_holder.read().len(), "Testing that new segments are persisted and old data is removed");
+        assert_eq!(
+            segment_dirs.len(),
+            locked_holder.read().len(),
+            "Testing that new segments are persisted and old data is removed"
+        );
 
         for info in infos.iter() {
-            assert!(info.schema.contains_key(&payload_field), "Testing that payload is not lost");
-            assert!(info.schema[&payload_field].indexed, "Testing that payload index is not lost");
+            assert!(
+                info.schema.contains_key(&payload_field),
+                "Testing that payload is not lost"
+            );
+            assert!(
+                info.schema[&payload_field].indexed,
+                "Testing that payload index is not lost"
+            );
         }
 
         let insert_point_ops = PointOperations::UpsertPoints(PointInsertOperations::BatchPoints {
@@ -228,15 +275,32 @@ mod tests {
             payloads: None,
         });
 
-        let smallest_size = infos.iter().min_by_key(|info| info.num_vectors).unwrap().num_vectors;
+        let smallest_size = infos
+            .iter()
+            .min_by_key(|info| info.num_vectors)
+            .unwrap()
+            .num_vectors;
 
-        updater.process_point_operation(opnum.next().unwrap(), insert_point_ops).unwrap();
+        updater
+            .process_point_operation(opnum.next().unwrap(), insert_point_ops)
+            .unwrap();
 
-        let new_infos = locked_holder.read().iter().map(|(_sid, segment)| segment.get().read().info()).collect_vec();
-        let new_smallest_size = new_infos.iter().min_by_key(|info| info.num_vectors).unwrap().num_vectors;
+        let new_infos = locked_holder
+            .read()
+            .iter()
+            .map(|(_sid, segment)| segment.get().read().info())
+            .collect_vec();
+        let new_smallest_size = new_infos
+            .iter()
+            .min_by_key(|info| info.num_vectors)
+            .unwrap()
+            .num_vectors;
 
-
-        assert_eq!(new_smallest_size, smallest_size + 3, "Testing that new data is added to an appendable segment only");
+        assert_eq!(
+            new_smallest_size,
+            smallest_size + 3,
+            "Testing that new data is added to an appendable segment only"
+        );
 
         // ---- New appendable segment should be created if none left
 
@@ -244,11 +308,20 @@ mod tests {
         index_optimizer.thresholds_config.payload_indexing_threshold = 20;
         let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
         assert!(suggested_to_optimize.contains(&small_segment_id));
-        index_optimizer.optimize(locked_holder.clone(), suggested_to_optimize).unwrap();
+        index_optimizer
+            .optimize(locked_holder.clone(), suggested_to_optimize)
+            .unwrap();
 
-        let new_infos2 = locked_holder.read().iter().map(|(_sid, segment)| segment.get().read().info()).collect_vec();
+        let new_infos2 = locked_holder
+            .read()
+            .iter()
+            .map(|(_sid, segment)| segment.get().read().info())
+            .collect_vec();
 
-        assert!(new_infos2.len() > new_infos.len(), "Check that new appendable segment was created");
+        assert!(
+            new_infos2.len() > new_infos.len(),
+            "Check that new appendable segment was created"
+        );
 
         let insert_point_ops = PointOperations::UpsertPoints(PointInsertOperations::BatchPoints {
             ids: vec![601, 602, 603],
@@ -260,6 +333,8 @@ mod tests {
             payloads: None,
         });
 
-        updater.process_point_operation(opnum.next().unwrap(), insert_point_ops).unwrap();
+        updater
+            .process_point_operation(opnum.next().unwrap(), insert_point_ops)
+            .unwrap();
     }
 }

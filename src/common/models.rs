@@ -1,5 +1,5 @@
-use serde::{Serialize, Deserialize};
-use schemars::{JsonSchema};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -9,7 +9,6 @@ pub enum ApiStatus {
     Error(String),
 }
 
-
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct ApiResponse<D: Serialize + Debug> {
@@ -17,4 +16,3 @@ pub struct ApiResponse<D: Serialize + Debug> {
     pub status: ApiStatus,
     pub time: f64,
 }
-

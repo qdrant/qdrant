@@ -1,13 +1,12 @@
-use collection::collection_builder::collection_builder::build_collection;
 use collection::collection::Collection;
-use segment::types::{Distance};
-use tokio::runtime::Runtime;
-use tokio::runtime;
-use std::path::Path;
-use collection::collection_builder::optimizers_builder::OptimizersConfig;
+use collection::collection_builder::collection_builder::build_collection;
 use collection::collection_builder::collection_loader::load_collection;
-use collection::config::{WalConfig, CollectionParams};
-
+use collection::collection_builder::optimizers_builder::OptimizersConfig;
+use collection::config::{CollectionParams, WalConfig};
+use segment::types::Distance;
+use std::path::Path;
+use tokio::runtime;
+use tokio::runtime::Runtime;
 
 pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
@@ -19,18 +18,14 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     flush_interval_sec: 30,
 };
 
-
 #[allow(dead_code)]
 pub fn load_collection_fixture(collection_path: &Path) -> (Runtime, Collection) {
     let threaded_rt = runtime::Builder::new_multi_thread()
         .worker_threads(2)
-        .build().unwrap();
+        .build()
+        .unwrap();
 
-
-    let collection = load_collection(
-        collection_path,
-        threaded_rt.handle().clone(),
-    );
+    let collection = load_collection(collection_path, threaded_rt.handle().clone());
 
     return (threaded_rt, collection);
 }
@@ -38,7 +33,7 @@ pub fn load_collection_fixture(collection_path: &Path) -> (Runtime, Collection) 
 pub fn simple_collection_fixture(collection_path: &Path) -> (Runtime, Collection) {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
-        wal_segments_ahead: 0
+        wal_segments_ahead: 0,
     };
 
     let collection_params = CollectionParams {
@@ -48,8 +43,8 @@ pub fn simple_collection_fixture(collection_path: &Path) -> (Runtime, Collection
 
     let threaded_rt = runtime::Builder::new_multi_thread()
         .worker_threads(2)
-        .build().unwrap();
-
+        .build()
+        .unwrap();
 
     let collection = build_collection(
         collection_path,
@@ -57,8 +52,9 @@ pub fn simple_collection_fixture(collection_path: &Path) -> (Runtime, Collection
         &collection_params,
         threaded_rt.handle().clone(),
         &TEST_OPTIMIZERS_CONFIG,
-        &Default::default()
-    ).unwrap();
+        &Default::default(),
+    )
+    .unwrap();
 
     return (threaded_rt, collection);
 }

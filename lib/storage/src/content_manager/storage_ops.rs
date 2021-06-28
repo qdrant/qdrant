@@ -1,7 +1,7 @@
+use collection::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
+use schemars::JsonSchema;
+use segment::types::Distance;
 use serde::{Deserialize, Serialize};
-use schemars::{JsonSchema};
-use segment::types::{Distance};
-use collection::operations::config_diff::{HnswConfigDiff, WalConfigDiff, OptimizersConfigDiff};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -13,9 +13,7 @@ pub enum AliasOperations {
         alias_name: String,
     },
     /// Delete alias if exists
-    DeleteAlias {
-        alias_name: String,
-    },
+    DeleteAlias { alias_name: String },
     /// Change alias to a new one
     RenameAlias {
         old_alias_name: String,
@@ -36,22 +34,19 @@ pub enum StorageOperations {
         /// Custom params for WAL. If none - values from service configuration file are used.
         wal_config: Option<WalConfigDiff>,
         /// Custom params for Optimizers.  If none - values from service configuration file are used.
-        optimizers_config: Option<OptimizersConfigDiff>
+        optimizers_config: Option<OptimizersConfigDiff>,
     },
     /// Update parameters of the existing collection
     UpdateCollection {
         name: String,
         /// Custom params for Optimizers.  If none - values from service configuration file are used.
         /// This operation is blocking, it will only proceed ones all current optimizations are complete
-        optimizers_config: Option<OptimizersConfigDiff>
-        // ToDo: Allow updates for other configuration params as well
+        optimizers_config: Option<OptimizersConfigDiff>, // ToDo: Allow updates for other configuration params as well
     },
     /// Delete collection with given name
     DeleteCollection(String),
     /// Perform changes of collection aliases.
     /// Alias changes are atomic, meaning that no collection modifications can happen between
     /// alias operations.
-    ChangeAliases {
-        actions: Vec<AliasOperations>,
-    }
+    ChangeAliases { actions: Vec<AliasOperations> },
 }

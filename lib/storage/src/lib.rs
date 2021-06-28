@@ -1,5 +1,5 @@
-pub mod types;
 pub mod content_manager;
+pub mod types;
 
 #[cfg(test)]
 mod tests {

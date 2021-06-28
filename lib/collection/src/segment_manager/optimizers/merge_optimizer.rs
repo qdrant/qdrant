@@ -1,10 +1,11 @@
-use crate::segment_manager::optimizers::segment_optimizer::{SegmentOptimizer, OptimizerThresholds};
-use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
-use segment::types::{SegmentType, HnswConfig};
-use itertools::Itertools;
-use std::path::{PathBuf, Path};
 use crate::config::CollectionParams;
-
+use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
+use crate::segment_manager::optimizers::segment_optimizer::{
+    OptimizerThresholds, SegmentOptimizer,
+};
+use itertools::Itertools;
+use segment::types::{HnswConfig, SegmentType};
+use std::path::{Path, PathBuf};
 
 /// Optimizer that tries to reduce number of segments until it fits configured value
 pub struct MergeOptimizer {
@@ -35,7 +36,6 @@ impl MergeOptimizer {
         };
     }
 }
-
 
 impl SegmentOptimizer for MergeOptimizer {
     fn collection_path(&self) -> &Path {
@@ -68,13 +68,14 @@ impl SegmentOptimizer for MergeOptimizer {
         // Find top-3 smallest segments to join.
         // We need 3 segments because in this case we can guarantee that total segments number will be less
 
-        read_segments.iter()
+        read_segments
+            .iter()
             .filter_map(|(idx, segment)| {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 match read_segment.segment_type() != SegmentType::Special {
                     true => Some((*idx, read_segment.vectors_count())),
-                    false => None
+                    false => None,
                 }
             })
             .sorted_by_key(|(_, size)| *size)
@@ -84,16 +85,15 @@ impl SegmentOptimizer for MergeOptimizer {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::segment_manager::fixtures::{random_segment};
-    use crate::segment_manager::holders::segment_holder::{SegmentHolder, LockedSegment};
-    use segment::types::{Distance};
-    use std::sync::{Arc};
-    use tempdir::TempDir;
+    use crate::segment_manager::fixtures::random_segment;
+    use crate::segment_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
     use parking_lot::RwLock;
+    use segment::types::Distance;
+    use std::sync::Arc;
+    use tempdir::TempDir;
 
     #[test]
     fn test_merge_optimizer() {
@@ -102,13 +102,11 @@ mod tests {
 
         let mut holder = SegmentHolder::new();
 
-
         let mut segments_to_merge = vec![];
 
         segments_to_merge.push(holder.add(random_segment(dir.path(), 100, 3, 4)));
         segments_to_merge.push(holder.add(random_segment(dir.path(), 100, 3, 4)));
         segments_to_merge.push(holder.add(random_segment(dir.path(), 100, 3, 4)));
-
 
         let mut other_segment_ids: Vec<SegmentId> = vec![];
 
@@ -117,13 +115,12 @@ mod tests {
         other_segment_ids.push(holder.add(random_segment(dir.path(), 100, 20, 4)));
         other_segment_ids.push(holder.add(random_segment(dir.path(), 100, 20, 4)));
 
-
         let merge_optimizer = MergeOptimizer::new(
             5,
-            OptimizerThresholds{
+            OptimizerThresholds {
                 memmap_threshold: 1000000,
                 indexing_threshold: 1000000,
-                payload_indexing_threshold: 1000000
+                payload_indexing_threshold: 1000000,
             },
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
@@ -131,7 +128,7 @@ mod tests {
                 vector_size: 4,
                 distance: Distance::Dot,
             },
-            Default::default()
+            Default::default(),
         );
 
         let locked_holder = Arc::new(RwLock::new(holder));
@@ -144,22 +141,20 @@ mod tests {
             assert!(segments_to_merge.contains(&segment_in));
         }
 
-        let old_path = segments_to_merge.iter()
-            .map(|sid| {
-                match locked_holder.read().get(*sid).unwrap() {
-                    LockedSegment::Original(x) => x.read().current_path.clone(),
-                    LockedSegment::Proxy(_) => panic!("Not expected"),
-                }
-            }).collect_vec();
-
-        merge_optimizer.optimize(locked_holder.clone(), suggested_for_merge).unwrap();
-
-        let after_optimization_segments = locked_holder
-            .read()
+        let old_path = segments_to_merge
             .iter()
-            .map(|(x, _)| *x)
+            .map(|sid| match locked_holder.read().get(*sid).unwrap() {
+                LockedSegment::Original(x) => x.read().current_path.clone(),
+                LockedSegment::Proxy(_) => panic!("Not expected"),
+            })
             .collect_vec();
 
+        merge_optimizer
+            .optimize(locked_holder.clone(), suggested_for_merge)
+            .unwrap();
+
+        let after_optimization_segments =
+            locked_holder.read().iter().map(|(x, _)| *x).collect_vec();
 
         // Check proper number of segments after optimization
         assert_eq!(after_optimization_segments.len(), 5);

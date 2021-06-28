@@ -1,12 +1,13 @@
 mod prof;
 
-use criterion::{Criterion, criterion_group, criterion_main};
-use segment::types::{Distance, PointOffsetType};
+use criterion::{criterion_group, criterion_main, Criterion};
 use rand::thread_rng;
+use segment::fixtures::index_fixtures::{
+    random_vector, FakeConditionChecker, TestRawScorerProducer,
+};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
-use segment::fixtures::index_fixtures::{TestRawScorerProducer, FakeConditionChecker, random_vector};
-
+use segment::types::{Distance, PointOffsetType};
 
 const NUM_VECTORS: usize = 100000;
 const DIM: usize = 64;
@@ -16,16 +17,13 @@ const EF_CONSTRUCT: usize = 100;
 const EF: usize = 100;
 const USE_HEURISTIC: bool = true;
 
-
 fn hnsw_benchmark(c: &mut Criterion) {
     let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, Distance::Cosine);
     let mut group = c.benchmark_group("hnsw-index-build-group");
     let mut rng = thread_rng();
     let fake_condition_checker = FakeConditionChecker {};
 
-    let mut graph_layers = GraphLayers::new(
-        NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC,
-    );
+    let mut graph_layers = GraphLayers::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
     for idx in 0..(NUM_VECTORS as PointOffsetType) {
         let added_vector = vector_holder.vectors[idx as usize].to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector);
@@ -66,18 +64,16 @@ fn hnsw_benchmark(c: &mut Criterion) {
 
             let mut iter = (0..NUM_VECTORS as PointOffsetType).into_iter();
             let mut top_score = 0.;
-            scorer.score_iterable_points(
-                &mut iter,
-                NUM_VECTORS,
-                |score| {
-                    if score.score > top_score { top_score = score.score }
-                });
+            scorer.score_iterable_points(&mut iter, NUM_VECTORS, |score| {
+                if score.score > top_score {
+                    top_score = score.score
+                }
+            });
         })
     });
 
     group.finish();
 }
-
 
 criterion_group! {
     name = benches;
