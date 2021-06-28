@@ -39,7 +39,9 @@ We use GitHub issues to track public bugs. Report a bug by [opening a new issue]
 
 ## Use a Consistent Coding Style
 
-If you are modifying Rust code, make sure it have no warnings from Cargo and follow [Rust code style](https://doc.rust-lang.org/1.0.0/style/)
+If you are modifying Rust code, make sure it has no warnings from Cargo and follow [Rust code style](https://doc.rust-lang.org/1.0.0/style/).
+The project uses [rustfmt](https://github.com/rust-lang/rustfmt) formatter. Please ensure to run it using the 
+```cargo fmt``` command.
 
 ## License
 By contributing, you agree that your contributions will be licensed under its Apache License 2.0.
