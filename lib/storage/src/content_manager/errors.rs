@@ -1,9 +1,8 @@
-use thiserror::Error;
 use collection::operations::types::CollectionError;
-use sled::Error;
 use sled::transaction::TransactionError;
+use sled::Error;
 use std::io::Error as IoError;
-
+use thiserror::Error;
 
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
@@ -22,8 +21,12 @@ impl From<CollectionError> for StorageError {
     fn from(err: CollectionError) -> Self {
         match err {
             CollectionError::BadInput { description } => StorageError::BadInput { description },
-            err @ CollectionError::NotFound { .. } => StorageError::NotFound { description: format!("{}", err) },
-            CollectionError::ServiceError { error } => StorageError::ServiceError { description: error },
+            err @ CollectionError::NotFound { .. } => StorageError::NotFound {
+                description: format!("{}", err),
+            },
+            CollectionError::ServiceError { error } => {
+                StorageError::ServiceError { description: error }
+            }
             CollectionError::BadRequest { description } => StorageError::BadRequest { description },
         }
     }
@@ -31,18 +34,24 @@ impl From<CollectionError> for StorageError {
 
 impl From<Error> for StorageError {
     fn from(err: Error) -> Self {
-        StorageError::ServiceError { description: format!("Persistence error: {:?}", err) }
+        StorageError::ServiceError {
+            description: format!("Persistence error: {:?}", err),
+        }
     }
 }
 
 impl From<TransactionError> for StorageError {
     fn from(err: TransactionError) -> Self {
-        StorageError::ServiceError { description: format!("Persistence error: {}", err) }
+        StorageError::ServiceError {
+            description: format!("Persistence error: {}", err),
+        }
     }
 }
 
 impl From<IoError> for StorageError {
     fn from(err: IoError) -> Self {
-        StorageError::ServiceError { description: format!("{}", err) }
+        StorageError::ServiceError {
+            description: format!("{}", err),
+        }
     }
 }

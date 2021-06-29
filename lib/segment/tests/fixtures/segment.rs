@@ -1,7 +1,7 @@
+use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{Distance, PayloadType};
-use segment::entry::entry_point::SegmentEntry;
 use std::path::Path;
 
 pub fn empty_segment(path: &Path) -> Segment {
@@ -30,11 +30,21 @@ pub fn build_segment_1(path: &Path) -> Segment {
     let payload_option2 = PayloadType::Keyword(vec!["red".to_owned(), "blue".to_owned()]);
     let payload_option3 = PayloadType::Keyword(vec!["blue".to_owned()]);
 
-    segment1.set_payload(6, 1, &payload_key, payload_option1.clone()).unwrap();
-    segment1.set_payload(6, 2, &payload_key, payload_option1.clone()).unwrap();
-    segment1.set_payload(6, 3, &payload_key, payload_option3.clone()).unwrap();
-    segment1.set_payload(6, 4, &payload_key, payload_option2.clone()).unwrap();
-    segment1.set_payload(6, 5, &payload_key, payload_option2.clone()).unwrap();
+    segment1
+        .set_payload(6, 1, &payload_key, payload_option1.clone())
+        .unwrap();
+    segment1
+        .set_payload(6, 2, &payload_key, payload_option1.clone())
+        .unwrap();
+    segment1
+        .set_payload(6, 3, &payload_key, payload_option3.clone())
+        .unwrap();
+    segment1
+        .set_payload(6, 4, &payload_key, payload_option2.clone())
+        .unwrap();
+    segment1
+        .set_payload(6, 5, &payload_key, payload_option2.clone())
+        .unwrap();
 
     return segment1;
 }
@@ -61,11 +71,21 @@ pub fn build_segment_2(path: &Path) -> Segment {
     let payload_option2 = PayloadType::Keyword(vec!["red".to_owned(), "blue".to_owned()]);
     let payload_option3 = PayloadType::Keyword(vec!["blue".to_owned()]);
 
-    segment2.set_payload(16, 11, &payload_key, payload_option1.clone()).unwrap();
-    segment2.set_payload(16, 12, &payload_key, payload_option1.clone()).unwrap();
-    segment2.set_payload(16, 13, &payload_key, payload_option3.clone()).unwrap();
-    segment2.set_payload(16, 14, &payload_key, payload_option2.clone()).unwrap();
-    segment2.set_payload(16, 15, &payload_key, payload_option2.clone()).unwrap();
+    segment2
+        .set_payload(16, 11, &payload_key, payload_option1.clone())
+        .unwrap();
+    segment2
+        .set_payload(16, 12, &payload_key, payload_option1.clone())
+        .unwrap();
+    segment2
+        .set_payload(16, 13, &payload_key, payload_option3.clone())
+        .unwrap();
+    segment2
+        .set_payload(16, 14, &payload_key, payload_option2.clone())
+        .unwrap();
+    segment2
+        .set_payload(16, 15, &payload_key, payload_option2.clone())
+        .unwrap();
 
     return segment2;
 }

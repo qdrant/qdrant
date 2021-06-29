@@ -1,7 +1,7 @@
+use crate::common::file_operations::{atomic_save_json, read_json};
+use crate::entry::entry_point::OperationResult;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use crate::entry::entry_point::OperationResult;
-use crate::common::file_operations::{read_json, atomic_save_json};
 
 pub const HNSW_INDEX_CONFIG_FILE: &str = "hnsw_config.json";
 
@@ -19,14 +19,13 @@ pub struct HnswGraphConfig {
 }
 
 impl HnswGraphConfig {
-
     pub fn new(m: usize, ef_construct: usize, indexing_threshold: usize) -> Self {
         HnswGraphConfig {
             m,
             m0: m * 2,
             ef_construct,
             ef: ef_construct,
-            indexing_threshold
+            indexing_threshold,
         }
     }
 
@@ -42,4 +41,3 @@ impl HnswGraphConfig {
         atomic_save_json(path, self)
     }
 }
-

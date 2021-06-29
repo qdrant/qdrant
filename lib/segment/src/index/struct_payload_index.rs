@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::{create_dir_all, File, remove_file};
+use std::fs::{create_dir_all, remove_file, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -8,17 +8,17 @@ use itertools::Itertools;
 use log::debug;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::id_mapper::id_mapper::IdMapper;
 use crate::index::field_index::field_index::{FieldIndex, PayloadFieldIndex};
 use crate::index::field_index::index_selector::index_selector;
+use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::index::PayloadIndex;
 use crate::index::payload_config::PayloadConfig;
-use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage};
-use crate::types::{Filter, PayloadKeyType, FieldCondition, Condition, PointOffsetType};
-use crate::index::field_index::{CardinalityEstimation, PrimaryCondition, PayloadBlockCondition};
-use crate::index::query_estimator::{estimate_filter};
-use crate::vector_storage::vector_storage::VectorStorage;
-use crate::id_mapper::id_mapper::IdMapper;
+use crate::index::query_estimator::estimate_filter;
 use crate::index::visited_pool::VisitedPool;
+use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage};
+use crate::types::{Condition, FieldCondition, Filter, PayloadKeyType, PointOffsetType};
+use crate::vector_storage::vector_storage::VectorStorage;
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 
@@ -36,7 +36,10 @@ pub struct StructPayloadIndex {
 }
 
 impl StructPayloadIndex {
-    pub fn estimate_field_condition(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    pub fn estimate_field_condition(
+        &self,
+        condition: &FieldCondition,
+    ) -> Option<CardinalityEstimation> {
         self.field_indexes.get(&condition.key).and_then(|indexes| {
             let mut result_estimation: Option<CardinalityEstimation> = None;
             for index in indexes {
@@ -49,17 +52,21 @@ impl StructPayloadIndex {
         })
     }
 
-    fn query_field(&self, field_condition: &FieldCondition) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
-        let indexes = self.field_indexes
+    fn query_field(
+        &self,
+        field_condition: &FieldCondition,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+        let indexes = self
+            .field_indexes
             .get(&field_condition.key)
-            .and_then(|indexes|
+            .and_then(|indexes| {
                 indexes
                     .iter()
                     .map(|field_index| field_index.filter(field_condition))
                     .skip_while(|filter_iter| filter_iter.is_none())
                     .next()
                     .map(|filter_iter| filter_iter.unwrap())
-            );
+            });
         indexes
     }
 
@@ -89,24 +96,40 @@ impl StructPayloadIndex {
             None => {}
             Some(indexes) => {
                 let file = File::create(field_index_path.as_path())?;
-                serde_cbor::to_writer(file, indexes)
-                    .map_err(|err| OperationError::ServiceError { description: format!("Unable to save index: {:?}", err) })?;
+                serde_cbor::to_writer(file, indexes).map_err(|err| {
+                    OperationError::ServiceError {
+                        description: format!("Unable to save index: {:?}", err),
+                    }
+                })?;
             }
         }
         Ok(())
     }
 
-    fn load_or_build_field_index(&self, field: &PayloadKeyType) -> OperationResult<Vec<FieldIndex>> {
+    fn load_or_build_field_index(
+        &self,
+        field: &PayloadKeyType,
+    ) -> OperationResult<Vec<FieldIndex>> {
         let field_index_path = Self::get_field_index_path(&self.path, field);
         if field_index_path.exists() {
-            debug!("Loading field `{}` index from {}", field, field_index_path.to_str().unwrap());
+            debug!(
+                "Loading field `{}` index from {}",
+                field,
+                field_index_path.to_str().unwrap()
+            );
             let file = File::open(field_index_path)?;
-            let field_indexes: Vec<FieldIndex> = serde_cbor::from_reader(file)
-                .map_err(|err| OperationError::ServiceError { description: format!("Unable to load index: {:?}", err) })?;
+            let field_indexes: Vec<FieldIndex> =
+                serde_cbor::from_reader(file).map_err(|err| OperationError::ServiceError {
+                    description: format!("Unable to load index: {:?}", err),
+                })?;
 
             Ok(field_indexes)
         } else {
-            debug!("Index for field `{}` not found in {}, building now", field, field_index_path.to_str().unwrap());
+            debug!(
+                "Index for field `{}` not found in {}, building now",
+                field,
+                field_index_path.to_str().unwrap()
+            );
             let res = self.build_field_index(field)?;
             self.save_field_index(field)?;
             Ok(res)
@@ -123,12 +146,12 @@ impl StructPayloadIndex {
         Ok(())
     }
 
-
-    pub fn open(condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
-                vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
-                payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
-                id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
-                path: &Path,
+    pub fn open(
+        condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+        vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
+        payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
+        id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
+        path: &Path,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
         let config_path = PayloadConfig::get_config_path(path);
@@ -187,7 +210,10 @@ impl StructPayloadIndex {
             }
         }
 
-        let field_indexes = builders.iter_mut().map(|builder| builder.build()).collect_vec();
+        let field_indexes = builders
+            .iter_mut()
+            .map(|builder| builder.build())
+            .collect_vec();
 
         Ok(field_indexes)
     }
@@ -199,10 +225,7 @@ impl StructPayloadIndex {
         }
 
         let field_indexes = self.build_field_index(field)?;
-        self.field_indexes.insert(
-            field.clone(),
-            field_indexes,
-        );
+        self.field_indexes.insert(field.clone(), field_indexes);
 
         self.save_field_index(field)?;
 
@@ -213,7 +236,6 @@ impl StructPayloadIndex {
         self.vector_storage.borrow().vector_count()
     }
 }
-
 
 impl PayloadIndex for StructPayloadIndex {
     fn indexed_fields(&self) -> Vec<PayloadKeyType> {
@@ -230,7 +252,13 @@ impl PayloadIndex for StructPayloadIndex {
     }
 
     fn drop_index(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
-        self.config.indexed_fields = self.config.indexed_fields.iter().cloned().filter(|x| x != field).collect();
+        self.config.indexed_fields = self
+            .config
+            .indexed_fields
+            .iter()
+            .cloned()
+            .filter(|x| x != field)
+            .collect();
         self.save_config()?;
         self.field_indexes.remove(field);
 
@@ -246,45 +274,56 @@ impl PayloadIndex for StructPayloadIndex {
     fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
         let total_points = self.total_points();
 
-        let estimator = |condition: &Condition| {
-            match condition {
-                Condition::Filter(_) => panic!("Unexpected branching"),
-                Condition::HasId(has_id) => {
-                    let id_mapper_ref = self.id_mapper.borrow();
-                    let mapped_ids: HashSet<PointOffsetType> = has_id.has_id.iter()
-                        .filter_map(|external_id| id_mapper_ref.internal_id(*external_id))
-                        .collect();
-                    let num_ids = mapped_ids.len();
-                    CardinalityEstimation {
-                        primary_clauses: vec![PrimaryCondition::Ids(mapped_ids)],
-                        min: num_ids,
-                        exp: num_ids,
-                        max: num_ids,
-                    }
+        let estimator = |condition: &Condition| match condition {
+            Condition::Filter(_) => panic!("Unexpected branching"),
+            Condition::HasId(has_id) => {
+                let id_mapper_ref = self.id_mapper.borrow();
+                let mapped_ids: HashSet<PointOffsetType> = has_id
+                    .has_id
+                    .iter()
+                    .filter_map(|external_id| id_mapper_ref.internal_id(*external_id))
+                    .collect();
+                let num_ids = mapped_ids.len();
+                CardinalityEstimation {
+                    primary_clauses: vec![PrimaryCondition::Ids(mapped_ids)],
+                    min: num_ids,
+                    exp: num_ids,
+                    max: num_ids,
                 }
-                Condition::Field(field_condition) => self
-                    .estimate_field_condition(field_condition)
-                    .unwrap_or(CardinalityEstimation::unknown(self.total_points())),
             }
+            Condition::Field(field_condition) => self
+                .estimate_field_condition(field_condition)
+                .unwrap_or(CardinalityEstimation::unknown(self.total_points())),
         };
 
         estimate_filter(&estimator, query, total_points)
     }
 
-    fn payload_blocks(&self, field: &PayloadKeyType, threshold: usize) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+    fn payload_blocks(
+        &self,
+        field: &PayloadKeyType,
+        threshold: usize,
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         match self.field_indexes.get(field) {
             None => Box::new(vec![].into_iter()),
             Some(indexes) => {
                 let field_clone = field.clone();
-                Box::new(indexes
-                    .iter()
-                    .map(move |field_index| field_index.payload_blocks(threshold, field_clone.clone()))
-                    .flatten())
+                Box::new(
+                    indexes
+                        .iter()
+                        .map(move |field_index| {
+                            field_index.payload_blocks(threshold, field_clone.clone())
+                        })
+                        .flatten(),
+                )
             }
         }
     }
 
-    fn query_points<'a>(&'a self, query: &'a Filter) -> Box<dyn Iterator<Item=PointOffsetType> + 'a> {
+    fn query_points<'a>(
+        &'a self,
+        query: &'a Filter,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let vector_storage_ref = self.vector_storage.borrow();
         let condition_checker = self.condition_checker.borrow();
@@ -301,14 +340,19 @@ impl PayloadIndex for StructPayloadIndex {
         } else {
             // CPU-optimized strategy here: points are made unique before applying other filters.
             // ToDo: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
-            let mut visited_list = self.visited_pool.get(vector_storage_ref.total_vector_count());
+            let mut visited_list = self
+                .visited_pool
+                .get(vector_storage_ref.total_vector_count());
 
-            let preselected: Vec<PointOffsetType> = query_cardinality.primary_clauses.iter()
+            let preselected: Vec<PointOffsetType> = query_cardinality
+                .primary_clauses
+                .iter()
                 .map(|clause| {
                     match clause {
-                        PrimaryCondition::Condition(field_condition) => self.query_field(field_condition)
+                        PrimaryCondition::Condition(field_condition) => self
+                            .query_field(field_condition)
                             .unwrap_or(vector_storage_ref.iter_ids() /* index is not built */),
-                        PrimaryCondition::Ids(ids) => Box::new(ids.iter().cloned())
+                        PrimaryCondition::Ids(ids) => Box::new(ids.iter().cloned()),
                     }
                 })
                 .flatten()
@@ -322,5 +366,4 @@ impl PayloadIndex for StructPayloadIndex {
             Box::new(matched_points_iter)
         };
     }
-
 }

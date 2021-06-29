@@ -1,11 +1,11 @@
-use memmap::{Mmap, MmapMut, MmapOptions};
+use crate::common::error_logging::LogError;
 use crate::entry::entry_point::OperationResult;
-use std::fs::{OpenOptions, File};
-use std::path::Path;
+use crate::types::{PointOffsetType, VectorElementType};
+use memmap::{Mmap, MmapMut, MmapOptions};
+use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::mem::{size_of, transmute};
-use crate::common::error_logging::LogError;
-use crate::types::{VectorElementType, PointOffsetType};
+use std::path::Path;
 
 const HEADER_SIZE: usize = 4;
 const DELETED_HEADER: &[u8; 4] = b"drop";
@@ -51,11 +51,11 @@ fn ensure_mmap_file_exists(path: &Path, header: &[u8]) -> OperationResult<()> {
     Ok(())
 }
 
-
 impl MmapVectors {
     pub fn open(vectors_path: &Path, deleted_path: &Path, dim: usize) -> OperationResult<Self> {
         ensure_mmap_file_exists(vectors_path, VECTORS_HEADER).describe("Create mmap data file")?;
-        ensure_mmap_file_exists(deleted_path, DELETED_HEADER).describe("Create mmap deleted flags file")?;
+        ensure_mmap_file_exists(deleted_path, DELETED_HEADER)
+            .describe("Create mmap deleted flags file")?;
 
         let mmap = open_read(vectors_path).describe("Open mmap for reading")?;
         let num_vectors = (mmap.len() - HEADER_SIZE) / dim / size_of::<VectorElementType>();
@@ -63,7 +63,8 @@ impl MmapVectors {
         let deleted_mmap = open_write(deleted_path).describe("Open mmap for writing")?;
 
         let deleted_count = (HEADER_SIZE..deleted_mmap.len())
-            .map(|idx| *deleted_mmap.get(idx).unwrap() as usize).sum();
+            .map(|idx| *deleted_mmap.get(idx).unwrap() as usize)
+            .sum();
 
         Ok(MmapVectors {
             dim,
@@ -94,27 +95,33 @@ impl MmapVectors {
     }
 
     pub fn raw_vector(&self, key: PointOffsetType) -> Option<&[VectorElementType]> {
-        self.data_offset(key).map(|offset| self.raw_vector_offset(offset))
+        self.data_offset(key)
+            .map(|offset| self.raw_vector_offset(offset))
     }
 
     pub fn deleted(&self, key: PointOffsetType) -> Option<bool> {
-        self.deleted_mmap.get(HEADER_SIZE + (key as usize)).map(|x| *x > 0)
+        self.deleted_mmap
+            .get(HEADER_SIZE + (key as usize))
+            .map(|x| *x > 0)
     }
 
     /// Creates returns owned vector (copy of internal vector)
     pub fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
         match self.deleted(key) {
             None => None,
-            Some(false) => self.data_offset(key).map(|offset| {
-                self.raw_vector_offset(offset).to_vec()
-            }),
-            Some(true) => None
+            Some(false) => self
+                .data_offset(key)
+                .map(|offset| self.raw_vector_offset(offset).to_vec()),
+            Some(true) => None,
         }
     }
 
     pub fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
         if key < (self.num_vectors as PointOffsetType) {
-            let flag = self.deleted_mmap.get_mut((key as usize) + HEADER_SIZE).unwrap();
+            let flag = self
+                .deleted_mmap
+                .get_mut((key as usize) + HEADER_SIZE)
+                .unwrap();
 
             if *flag == 0 {
                 *flag = 1;

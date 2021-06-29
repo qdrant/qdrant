@@ -1,15 +1,13 @@
-use storage::content_manager::toc::TableOfContent;
-use actix_web::{get, post, web, Responder};
-use itertools::Itertools;
+use crate::api::models::{CollectionDescription, CollectionsResponse};
 use crate::common::helpers::process_response;
 use actix_web::rt::time::Instant;
+use actix_web::{get, post, web, Responder};
+use itertools::Itertools;
 use storage::content_manager::storage_ops::StorageOperations;
-use crate::api::models::{CollectionDescription, CollectionsResponse};
+use storage::content_manager::toc::TableOfContent;
 
 #[get("/collections")]
-pub async fn get_collections(
-    toc: web::Data<TableOfContent>
-) -> impl Responder {
+pub async fn get_collections(toc: web::Data<TableOfContent>) -> impl Responder {
     let timing = Instant::now();
 
     let response = {
@@ -47,9 +45,7 @@ pub async fn update_collections(
 ) -> impl Responder {
     let timing = Instant::now();
 
-    let response = {
-        toc.perform_collection_operation(operation.0)
-    };
+    let response = { toc.perform_collection_operation(operation.0) };
 
     process_response(response, timing)
 }

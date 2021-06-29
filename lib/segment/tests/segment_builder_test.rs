@@ -3,11 +3,11 @@ mod fixtures;
 #[cfg(test)]
 mod tests {
     use crate::fixtures::segment::{build_segment_1, build_segment_2};
-    use tempdir::TempDir;
-    use segment::segment_constructor::segment_builder::SegmentBuilder;
-    use segment::segment::Segment;
-    use std::convert::TryInto;
     use segment::entry::entry_point::SegmentEntry;
+    use segment::segment::Segment;
+    use segment::segment_constructor::segment_builder::SegmentBuilder;
+    use std::convert::TryInto;
+    use tempdir::TempDir;
 
     #[test]
     fn test_building_new_segment() {
@@ -20,11 +20,8 @@ mod tests {
         let segment1 = build_segment_1(dir.path());
         let segment2 = build_segment_2(dir.path());
 
-        let mut builder = SegmentBuilder::new(
-            dir.path(),
-            temp_dir.path(),
-            &segment1.segment_config
-        ).unwrap();
+        let mut builder =
+            SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
 
         builder.update_from(&segment1).unwrap();
         builder.update_from(&segment2).unwrap();
@@ -47,7 +44,9 @@ mod tests {
 
         assert_eq!(new_segment_count, 3);
 
-        assert_eq!(merged_segment.vectors_count(), segment1.vectors_count() + segment2.vectors_count())
-
+        assert_eq!(
+            merged_segment.vectors_count(),
+            segment1.vectors_count() + segment2.vectors_count()
+        )
     }
 }

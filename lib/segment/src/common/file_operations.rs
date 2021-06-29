@@ -1,14 +1,16 @@
-use std::fs::File;
-use std::io::{Read, Write, BufWriter};
 use crate::entry::entry_point::{OperationError, OperationResult};
-use serde::Serialize;
-use std::path::Path;
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
+use std::fs::File;
+use std::io::{BufWriter, Read, Write};
+use std::path::Path;
 
-
-pub fn atomic_save_bin<N: DeserializeOwned + Serialize>(path: &Path, object: &N) -> OperationResult<()> {
+pub fn atomic_save_bin<N: DeserializeOwned + Serialize>(
+    path: &Path,
+    object: &N,
+) -> OperationResult<()> {
     let af = AtomicFile::new(path, AllowOverwrite);
     af.write(|f| {
         let mut writer = BufWriter::new(f);
@@ -17,12 +19,13 @@ pub fn atomic_save_bin<N: DeserializeOwned + Serialize>(path: &Path, object: &N)
     Ok(())
 }
 
-pub fn atomic_save_json<N: DeserializeOwned + Serialize>(path: &Path, object: &N) -> OperationResult<()> {
+pub fn atomic_save_json<N: DeserializeOwned + Serialize>(
+    path: &Path,
+    object: &N,
+) -> OperationResult<()> {
     let af = AtomicFile::new(path, AllowOverwrite);
     let state_bytes = serde_json::to_vec(object).unwrap();
-    af.write(|f| {
-        f.write_all(&state_bytes)
-    })?;
+    af.write(|f| f.write_all(&state_bytes))?;
     Ok(())
 }
 
@@ -34,7 +37,11 @@ pub fn read_json<N: DeserializeOwned + Serialize>(path: &Path) -> OperationResul
 
     let result: N = serde_json::from_str(&contents).or_else(|err| {
         Err(OperationError::ServiceError {
-            description: format!("Failed to read data {}. Error: {}", path.to_str().unwrap(), err)
+            description: format!(
+                "Failed to read data {}. Error: {}",
+                path.to_str().unwrap(),
+                err
+            ),
         })
     })?;
 
@@ -46,7 +53,11 @@ pub fn read_bin<N: DeserializeOwned + Serialize>(path: &Path) -> OperationResult
 
     let result: N = bincode::deserialize_from(&mut file).or_else(|err| {
         Err(OperationError::ServiceError {
-            description: format!("Failed to read data {}. Error: {}", path.to_str().unwrap(), err)
+            description: format!(
+                "Failed to read data {}. Error: {}",
+                path.to_str().unwrap(),
+                err
+            ),
         })
     })?;
 

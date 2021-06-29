@@ -1,14 +1,19 @@
-use std::cmp::{max, min};
 use std::cmp::Ordering::{Greater, Less};
+use std::cmp::{max, min};
 use std::mem;
 
 use num_traits::ToPrimitive;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
-use crate::index::field_index::{CardinalityEstimation, PrimaryCondition, PayloadBlockCondition};
-use crate::index::field_index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
-use crate::types::{FloatPayloadType, IntPayloadType, PayloadType, PointOffsetType, Range, FieldCondition, PayloadKeyType};
+use crate::index::field_index::field_index::{
+    FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder,
+};
+use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
+use crate::types::{
+    FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PayloadType, PointOffsetType,
+    Range,
+};
 use itertools::Itertools;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -25,7 +30,6 @@ pub struct PersistedNumericIndex<N: ToPrimitive + Clone> {
     elements: Vec<Element<N>>,
 }
 
-
 impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
     pub fn new() -> Self {
         Self {
@@ -39,30 +43,62 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
         let mut upper_index = self.elements.len();
 
         range.gt.map(|thr| {
-            let index = self.elements.binary_search_by(|x| {
-                if x.value.to_f64().unwrap() <= thr { Less } else { Greater }
-            }).err().unwrap();
+            let index = self
+                .elements
+                .binary_search_by(|x| {
+                    if x.value.to_f64().unwrap() <= thr {
+                        Less
+                    } else {
+                        Greater
+                    }
+                })
+                .err()
+                .unwrap();
             lower_index = max(lower_index, index);
         });
 
         range.gte.map(|thr| {
-            let index = self.elements.binary_search_by(|x| {
-                if x.value.to_f64().unwrap() < thr { Less } else { Greater }
-            }).err().unwrap();
+            let index = self
+                .elements
+                .binary_search_by(|x| {
+                    if x.value.to_f64().unwrap() < thr {
+                        Less
+                    } else {
+                        Greater
+                    }
+                })
+                .err()
+                .unwrap();
             lower_index = max(lower_index, index);
         });
 
         range.lt.map(|thr| {
-            let index = self.elements.binary_search_by(|x| {
-                if x.value.to_f64().unwrap() < thr { Less } else { Greater }
-            }).err().unwrap();
+            let index = self
+                .elements
+                .binary_search_by(|x| {
+                    if x.value.to_f64().unwrap() < thr {
+                        Less
+                    } else {
+                        Greater
+                    }
+                })
+                .err()
+                .unwrap();
             upper_index = min(upper_index, index);
         });
 
         range.lte.map(|thr| {
-            let index = self.elements.binary_search_by(|x| {
-                if x.value.to_f64().unwrap() <= thr { Less } else { Greater }
-            }).err().unwrap();
+            let index = self
+                .elements
+                .binary_search_by(|x| {
+                    if x.value.to_f64().unwrap() <= thr {
+                        Less
+                    } else {
+                        Greater
+                    }
+                })
+                .err()
+                .unwrap();
             upper_index = min(upper_index, index);
         });
         return if lower_index > upper_index {
@@ -92,7 +128,10 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
         // max = min(1000, 500) = 500
         CardinalityEstimation {
             primary_clauses: vec![],
-            min: max(min(1, values_count), values_count - (total_values - self.points_count as i64)) as usize,
+            min: max(
+                min(1, values_count),
+                values_count - (total_values - self.points_count as i64),
+            ) as usize,
             exp: (values_count as f64 / value_per_point) as usize,
             max: min(self.points_count as i64, values_count) as usize,
         }
@@ -105,37 +144,49 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
         self.points_count += 1
     }
 
-    fn condition_iter(&self, range: &Range) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+    fn condition_iter(&self, range: &Range) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let (lower_index, upper_index) = self.search_range(range);
-        Box::new((&self.elements[lower_index..upper_index]).iter().map(|element| element.id))
+        Box::new(
+            (&self.elements[lower_index..upper_index])
+                .iter()
+                .map(|element| element.id),
+        )
     }
 }
 
-
 impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
-    fn filter(&self, condition: &FieldCondition) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
-        condition.range
+    fn filter(
+        &self,
+        condition: &FieldCondition,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+        condition
+            .range
             .as_ref()
             .map(|range| self.condition_iter(range))
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
-        condition.range
-            .as_ref()
-            .map(|range| {
-                let mut cardinality = self.range_cardinality(range);
-                cardinality.primary_clauses.push(PrimaryCondition::Condition(condition.clone()));
-                cardinality
-            })
+        condition.range.as_ref().map(|range| {
+            let mut cardinality = self.range_cardinality(range);
+            cardinality
+                .primary_clauses
+                .push(PrimaryCondition::Condition(condition.clone()));
+            cardinality
+        })
     }
 
-    fn payload_blocks(&self, threshold: usize, key: PayloadKeyType) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+    fn payload_blocks(
+        &self,
+        threshold: usize,
+        key: PayloadKeyType,
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         // Creates half-overlapped ranges of points.
         let num_elements = self.elements.len();
         let value_per_point = num_elements as f64 / self.points_count as f64;
         let effective_threshold = (threshold as f64 * value_per_point) as usize;
 
-        let iter = (0..num_elements).step_by(effective_threshold / 2)
+        let iter = (0..num_elements)
+            .step_by(effective_threshold / 2)
             .filter_map(move |init_offset| {
                 let upper_index = min(num_elements - 1, init_offset + effective_threshold);
 
@@ -176,7 +227,7 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<FloatPayloadType> {
     fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
         match value {
             PayloadType::Float(number) => self.add_many(id, number),
-            _ => panic!("Unexpected payload type: {:?}", value)
+            _ => panic!("Unexpected payload type: {:?}", value),
         }
     }
 
@@ -194,7 +245,7 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<IntPayloadType> {
     fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
         match value {
             PayloadType::Integer(number) => self.add_many(id, number),
-            _ => panic!("Unexpected payload type: {:?}", value)
+            _ => panic!("Unexpected payload type: {:?}", value),
         }
     }
 
@@ -207,7 +258,6 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<IntPayloadType> {
         })
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -231,10 +281,28 @@ mod tests {
             ],
         };
 
-        let blocks = index.payload_blocks(threshold, "test".to_owned()).collect_vec();
+        let blocks = index
+            .payload_blocks(threshold, "test".to_owned())
+            .collect_vec();
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].condition.range.expect("range condition").gte.expect("gte"), 1.0);
-        assert_eq!(blocks[0].condition.range.expect("range condition").lte.expect("lte"), 2.0);
+        assert_eq!(
+            blocks[0]
+                .condition
+                .range
+                .expect("range condition")
+                .gte
+                .expect("gte"),
+            1.0
+        );
+        assert_eq!(
+            blocks[0]
+                .condition
+                .range
+                .expect("range condition")
+                .lte
+                .expect("lte"),
+            2.0
+        );
     }
 
     #[test]
@@ -315,10 +383,7 @@ mod tests {
     fn test_serde() {
         let index = PersistedNumericIndex {
             points_count: 9,
-            elements: vec![
-                Element { id: 1, value: 1 },
-                Element { id: 2, value: 3 }
-            ],
+            elements: vec![Element { id: 1, value: 1 }, Element { id: 2, value: 3 }],
         };
 
         let json = serde_json::to_string_pretty(&index).unwrap();

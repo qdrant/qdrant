@@ -1,10 +1,10 @@
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
-use ndarray::{Array, Array1, Array2, ArrayBase, ShapeBuilder, Axis};
+use ndarray::{Array, Array1, Array2, ArrayBase, Axis, ShapeBuilder};
 use tempdir::TempDir;
 
 use segment::spaces::tools::{peek_top_scores, peek_top_scores_iterable};
-use segment::types::{Distance, VectorElementType, PointOffsetType};
+use segment::types::{Distance, PointOffsetType, VectorElementType};
 use segment::vector_storage::simple_vector_storage::SimpleVectorStorage;
 use segment::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
 
@@ -15,11 +15,16 @@ fn random_vector(size: usize) -> Vec<VectorElementType> {
     let mut vec: Vec<VectorElementType> = Vec::with_capacity(size);
     for _ in 0..vec.capacity() {
         vec.push(rand::random());
-    };
+    }
     return vec;
 }
 
-fn init_vector_storage(dir: &TempDir, dim: usize, num: usize, dist: Distance) -> SimpleVectorStorage {
+fn init_vector_storage(
+    dir: &TempDir,
+    dim: usize,
+    num: usize,
+    dist: Distance,
+) -> SimpleVectorStorage {
     let mut storage = SimpleVectorStorage::open(dir.path(), dim, dist).unwrap();
 
     for _i in 0..num {
@@ -36,11 +41,12 @@ fn benchmark_naive(c: &mut Criterion) {
     let dist = Distance::Dot;
     let storage = init_vector_storage(&dir, DIM, NUM_VECTORS, dist);
 
-    c.bench_function("storage vector search",
-                     |b| b.iter(|| {
-                         let vector = random_vector(DIM);
-                         storage.score_all(&vector, 10)
-                     }));
+    c.bench_function("storage vector search", |b| {
+        b.iter(|| {
+            let vector = random_vector(DIM);
+            storage.score_all(&vector, 10)
+        })
+    });
 }
 
 fn benchmark_ndarray(c: &mut Criterion) {
@@ -53,21 +59,24 @@ fn benchmark_ndarray(c: &mut Criterion) {
 
     eprintln!("matrix.shape() = {:#?}", matrix.shape());
 
+    c.bench_function("ndarray BLAS dot production", |b| {
+        b.iter(|| {
+            let vector = Array::from(random_vector(DIM));
+            let mut production_result = matrix.dot(&vector);
 
-    c.bench_function("ndarray BLAS dot production",
-                     |b| b.iter(|| {
-                         let vector = Array::from(random_vector(DIM));
-                         let mut production_result = matrix.dot(&vector);
-
-                         let top = peek_top_scores_iterable(
-                             production_result.iter()
-                                 .cloned()
-                                 .enumerate()
-                                 .map(
-                                     |(idx, score)| ScoredPointOffset { idx: idx as PointOffsetType, score }),
-                             10
-                         );
-                     }));
+            let top = peek_top_scores_iterable(
+                production_result
+                    .iter()
+                    .cloned()
+                    .enumerate()
+                    .map(|(idx, score)| ScoredPointOffset {
+                        idx: idx as PointOffsetType,
+                        score,
+                    }),
+                10,
+            );
+        })
+    });
 }
 
 criterion_group!(benches, benchmark_ndarray, benchmark_naive);

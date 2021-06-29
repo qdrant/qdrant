@@ -1,14 +1,13 @@
-use ndarray::{Array1, Array};
-use crate::types::{VectorElementType, PointOffsetType, Distance, Filter};
+use crate::payload_storage::payload_storage::ConditionChecker;
 use crate::spaces::metric::Metric;
 use crate::spaces::tools::mertic_object;
+use crate::types::{Distance, Filter, PointOffsetType, VectorElementType};
 use crate::vector_storage::simple_vector_storage::SimpleRawScorer;
-use crate::payload_storage::payload_storage::ConditionChecker;
+use bit_vec::BitVec;
 use itertools::Itertools;
+use ndarray::{Array, Array1};
 use rand::prelude::ThreadRng;
 use rand::Rng;
-use bit_vec::BitVec;
-
 
 pub fn random_vector(rnd_gen: &mut ThreadRng, size: usize) -> Vec<VectorElementType> {
     (0..size).map(|_| rnd_gen.gen()).collect()
@@ -17,7 +16,9 @@ pub fn random_vector(rnd_gen: &mut ThreadRng, size: usize) -> Vec<VectorElementT
 pub struct FakeConditionChecker {}
 
 impl ConditionChecker for FakeConditionChecker {
-    fn check(&self, _point_id: PointOffsetType, _query: &Filter) -> bool { true }
+    fn check(&self, _point_id: PointOffsetType, _query: &Filter) -> bool {
+        true
+    }
 }
 
 pub struct TestRawScorerProducer {
@@ -25,7 +26,6 @@ pub struct TestRawScorerProducer {
     pub deleted: BitVec,
     pub metric: Box<dyn Metric>,
 }
-
 
 impl TestRawScorerProducer {
     pub fn new(dim: usize, num_vectors: usize, distance: Distance) -> Self {
@@ -53,4 +53,3 @@ impl TestRawScorerProducer {
         }
     }
 }
-

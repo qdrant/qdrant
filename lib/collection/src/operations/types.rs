@@ -3,13 +3,16 @@ use futures::io;
 use schemars::JsonSchema;
 use serde;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use serde_json::Error as JsonError;
-use tokio::task::JoinError;
 use std::result;
+use thiserror::Error;
+use tokio::task::JoinError;
 
 use segment::entry::entry_point::OperationError;
-use segment::types::{Filter, PayloadKeyType, PayloadType, PointIdType, SearchParams, SeqNumberType, TheMap, VectorElementType, PayloadSchemaInfo};
+use segment::types::{
+    Filter, PayloadKeyType, PayloadSchemaInfo, PayloadType, PointIdType, SearchParams,
+    SeqNumberType, TheMap, VectorElementType,
+};
 
 use crate::config::CollectionConfig;
 use crate::wal::WalError;
@@ -26,7 +29,7 @@ pub enum CollectionStatus {
     /// Collection is available, but some segments might be under optimization
     Yellow,
     /// Something is not OK
-    Red
+    Red,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -57,9 +60,8 @@ pub struct CollectionInfo {
     /// Collection settings
     pub config: CollectionConfig,
     /// Types of stored payload
-    pub payload_schema: HashMap<PayloadKeyType, PayloadSchemaInfo>
+    pub payload_schema: HashMap<PayloadKeyType, PayloadSchemaInfo>,
 }
-
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -69,7 +71,6 @@ pub enum UpdateStatus {
     /// Request is completed, changes are actual
     Completed,
 }
-
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -93,7 +94,7 @@ pub struct ScrollRequest {
     /// Return point payload with the result. Default: true
     pub with_payload: Option<bool>,
     /// Return point vector with the result. Default: false
-    pub with_vector: Option<bool>
+    pub with_vector: Option<bool>,
 }
 
 impl Default for ScrollRequest {
@@ -103,11 +104,10 @@ impl Default for ScrollRequest {
             limit: Some(10),
             filter: None,
             with_payload: Some(true),
-            with_vector: Some(false)
+            with_vector: Some(false),
         }
     }
 }
-
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -116,9 +116,8 @@ pub struct ScrollResult {
     /// List of retrieved points
     pub points: Vec<Record>,
     /// Offset which should be used to retrieve a next page result
-    pub next_page_offset: Option<PointIdType>
+    pub next_page_offset: Option<PointIdType>,
 }
-
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -150,7 +149,6 @@ pub struct RecommendRequest {
     pub top: usize,
 }
 
-
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
 pub enum CollectionError {
@@ -167,44 +165,58 @@ pub enum CollectionError {
 impl From<OperationError> for CollectionError {
     fn from(err: OperationError) -> Self {
         match err {
-            OperationError::WrongVector { .. } => Self::BadInput { description: format!("{}", err) },
+            OperationError::WrongVector { .. } => Self::BadInput {
+                description: format!("{}", err),
+            },
             OperationError::PointIdError { missed_point_id } => Self::NotFound { missed_point_id },
-            OperationError::ServiceError { description } => Self::ServiceError { error: description },
-            OperationError::TypeError { .. } => Self::BadInput { description: format!("{}", err) },
+            OperationError::ServiceError { description } => {
+                Self::ServiceError { error: description }
+            }
+            OperationError::TypeError { .. } => Self::BadInput {
+                description: format!("{}", err),
+            },
         }
     }
 }
 
 impl From<JoinError> for CollectionError {
     fn from(err: JoinError) -> Self {
-        Self::ServiceError { error: format!("{}", err) }
+        Self::ServiceError {
+            error: format!("{}", err),
+        }
     }
 }
 
 impl From<WalError> for CollectionError {
     fn from(err: WalError) -> Self {
-        Self::ServiceError { error: format!("{}", err) }
+        Self::ServiceError {
+            error: format!("{}", err),
+        }
     }
 }
 
 impl<T> From<SendError<T>> for CollectionError {
     fn from(_err: SendError<T>) -> Self {
-        Self::ServiceError { error: format!("Can't reach one of the workers") }
+        Self::ServiceError {
+            error: format!("Can't reach one of the workers"),
+        }
     }
 }
 
 impl From<JsonError> for CollectionError {
     fn from(err: JsonError) -> Self {
-        CollectionError::ServiceError { error: format!("Json error: {}", err) }
+        CollectionError::ServiceError {
+            error: format!("Json error: {}", err),
+        }
     }
 }
 
 impl From<io::Error> for CollectionError {
     fn from(err: io::Error) -> Self {
-        CollectionError::ServiceError { error: format!("File IO error: {}", err) }
+        CollectionError::ServiceError {
+            error: format!("File IO error: {}", err),
+        }
     }
 }
 
 pub type CollectionResult<T> = result::Result<T, CollectionError>;
-
-

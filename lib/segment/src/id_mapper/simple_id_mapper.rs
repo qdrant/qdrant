@@ -1,10 +1,10 @@
-use std::collections::{HashMap, BTreeMap};
-use crate::types::{PointOffsetType, PointIdType};
-use crate::id_mapper::id_mapper::IdMapper;
 use crate::entry::entry_point::OperationResult;
+use crate::id_mapper::id_mapper::IdMapper;
+use crate::types::{PointIdType, PointOffsetType};
 use bincode;
+use rocksdb::{IteratorMode, Options, DB};
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
-use rocksdb::{Options, DB, IteratorMode};
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
@@ -16,7 +16,6 @@ pub struct SimpleIdMapper {
 }
 
 impl SimpleIdMapper {
-
     pub fn open(path: &Path) -> OperationResult<Self> {
         let mut options: Options = Options::default();
         options.set_write_buffer_size(DB_CACHE_SIZE);
@@ -41,7 +40,6 @@ impl SimpleIdMapper {
     }
 }
 
-
 impl IdMapper for SimpleIdMapper {
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
         self.external_to_internal.get(&external_id).cloned()
@@ -51,13 +49,18 @@ impl IdMapper for SimpleIdMapper {
         self.internal_to_external.get(&internal_id).cloned()
     }
 
-    fn set_link(&mut self, external_id: PointIdType, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn set_link(
+        &mut self,
+        external_id: PointIdType,
+        internal_id: PointOffsetType,
+    ) -> OperationResult<()> {
         self.external_to_internal.insert(external_id, internal_id);
         self.internal_to_external.insert(internal_id, external_id);
 
         self.store.put(
             bincode::serialize(&external_id).unwrap(),
-            bincode::serialize(&internal_id).unwrap())?;
+            bincode::serialize(&internal_id).unwrap(),
+        )?;
         Ok(())
     }
 
@@ -65,20 +68,25 @@ impl IdMapper for SimpleIdMapper {
         let internal_id = self.external_to_internal.remove(&external_id);
         match internal_id {
             Some(x) => self.internal_to_external.remove(&x),
-            None => None
+            None => None,
         };
-        self.store.delete(bincode::serialize(&external_id).unwrap())?;
+        self.store
+            .delete(bincode::serialize(&external_id).unwrap())?;
         Ok(())
     }
 
-    fn iter_external(&self) -> Box<dyn Iterator<Item=PointIdType> + '_> {
+    fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
         Box::new(self.external_to_internal.keys().cloned())
     }
 
-    fn iter_from(&self, external_id: PointIdType) -> Box<dyn Iterator<Item=(PointIdType, PointOffsetType)> + '_> {
-        Box::new(self.external_to_internal
-            .range(external_id..PointIdType::MAX)
-            .map(|(key, value)| (*key, *value))
+    fn iter_from(
+        &self,
+        external_id: PointIdType,
+    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
+        Box::new(
+            self.external_to_internal
+                .range(external_id..PointIdType::MAX)
+                .map(|(key, value)| (*key, *value)),
         )
     }
 
@@ -90,8 +98,8 @@ impl IdMapper for SimpleIdMapper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempdir::TempDir;
     use itertools::Itertools;
+    use tempdir::TempDir;
 
     #[test]
     fn test_iterator() {

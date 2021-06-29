@@ -1,5 +1,5 @@
-pub mod optimizers;
 pub mod holders;
+pub mod optimizers;
 pub mod simple_segment_updater;
 
 #[allow(dead_code)]

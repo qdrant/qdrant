@@ -2,24 +2,30 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crossbeam_channel::{Sender};
+use crossbeam_channel::Sender;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use tokio::runtime::Runtime;
 
-use segment::types::{HasIdCondition, PointIdType, ScoredPoint, VectorElementType, SegmentType, PayloadKeyType, PayloadSchemaInfo};
 use segment::types::Condition;
 use segment::types::Filter;
+use segment::types::{
+    HasIdCondition, PayloadKeyType, PayloadSchemaInfo, PointIdType, ScoredPoint, SegmentType,
+    VectorElementType,
+};
 
 use crate::collection_builder::optimizers_builder::build_optimizers;
 use crate::config::CollectionConfig;
-use crate::operations::CollectionUpdateOperations;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
-use crate::operations::types::{CollectionError, CollectionInfo, CollectionResult, RecommendRequest, Record, SearchRequest, UpdateResult, UpdateStatus, CollectionStatus, ScrollRequest, ScrollResult};
+use crate::operations::types::{
+    CollectionError, CollectionInfo, CollectionResult, CollectionStatus, RecommendRequest, Record,
+    ScrollRequest, ScrollResult, SearchRequest, UpdateResult, UpdateStatus,
+};
+use crate::operations::CollectionUpdateOperations;
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
 use crate::update_handler::update_handler::{UpdateHandler, UpdateSignal};
-use crate::wal::{SerdeWal};
+use crate::wal::SerdeWal;
 
 pub struct Collection {
     pub segments: Arc<RwLock<SegmentHolder>>,
@@ -33,13 +39,16 @@ pub struct Collection {
     pub path: PathBuf,
 }
 
-
 /// Collection holds information about segments and WAL.
 impl Collection {
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
-    pub fn update(&self, operation: CollectionUpdateOperations, wait: bool) -> CollectionResult<UpdateResult> {
+    pub fn update(
+        &self,
+        operation: CollectionUpdateOperations,
+        wait: bool,
+    ) -> CollectionResult<UpdateResult> {
         let operation_id = self.wal.lock().write(&operation)?;
 
         let upd = self.updater.clone();
@@ -53,11 +62,17 @@ impl Collection {
         let update_handler = self.runtime_handle.spawn(update_future);
 
         if !wait {
-            return Ok(UpdateResult { operation_id, status: UpdateStatus::Acknowledged });
+            return Ok(UpdateResult {
+                operation_id,
+                status: UpdateStatus::Acknowledged,
+            });
         }
 
         let _res: usize = self.runtime_handle.block_on(update_handler)??;
-        Ok(UpdateResult { operation_id, status: UpdateStatus::Completed })
+        Ok(UpdateResult {
+            operation_id,
+            status: UpdateStatus::Completed,
+        })
     }
 
     pub fn info(&self) -> CollectionResult<CollectionInfo> {
@@ -101,12 +116,25 @@ impl Collection {
 
         let offset = request.offset.unwrap_or(default_request.offset.unwrap());
         let limit = request.limit.unwrap_or(default_request.limit.unwrap());
-        let with_payload = request.with_payload.unwrap_or(default_request.with_payload.unwrap());
-        let with_vector = request.with_vector.unwrap_or(default_request.with_vector.unwrap());
+        let with_payload = request
+            .with_payload
+            .unwrap_or(default_request.with_payload.unwrap());
+        let with_vector = request
+            .with_vector
+            .unwrap_or(default_request.with_vector.unwrap());
 
         // ToDo: Make faster points selection with a set
-        let point_ids = self.segments.read().iter()
-            .map(|(_, segment)| segment.get().read().read_filtered(offset, limit, request.filter.as_ref()).into_iter())
+        let point_ids = self
+            .segments
+            .read()
+            .iter()
+            .map(|(_, segment)| {
+                segment
+                    .get()
+                    .read()
+                    .read_filtered(offset, limit, request.filter.as_ref())
+                    .into_iter()
+            })
             .flatten()
             .sorted()
             .dedup()
@@ -116,9 +144,16 @@ impl Collection {
         let mut points = self.retrieve(&point_ids, with_payload, with_vector)?;
         points.sort_by_key(|point| point.id);
 
-        let next_page_offset = if point_ids.len() < limit { None } else { Some(point_ids.last().unwrap() + 1) };
+        let next_page_offset = if point_ids.len() < limit {
+            None
+        } else {
+            Some(point_ids.last().unwrap() + 1)
+        };
 
-        Ok(ScrollResult { points, next_page_offset })
+        Ok(ScrollResult {
+            points,
+            next_page_offset,
+        })
     }
 
     pub fn retrieve(
@@ -140,7 +175,9 @@ impl Collection {
         Ok(())
     }
 
-    fn avg_vectors<'a>(vectors: impl Iterator<Item=&'a Vec<VectorElementType>>) -> Vec<VectorElementType> {
+    fn avg_vectors<'a>(
+        vectors: impl Iterator<Item = &'a Vec<VectorElementType>>,
+    ) -> Vec<VectorElementType> {
         let mut count: usize = 0;
         let mut avg_vector: Vec<VectorElementType> = vec![];
         for vector in vectors {
@@ -164,11 +201,12 @@ impl Collection {
     pub fn recommend(&self, request: Arc<RecommendRequest>) -> CollectionResult<Vec<ScoredPoint>> {
         if request.positive.is_empty() {
             return Err(CollectionError::BadRequest {
-                description: format!("At least one positive vector ID required")
+                description: format!("At least one positive vector ID required"),
             });
         }
 
-        let reference_vectors_ids = request.positive
+        let reference_vectors_ids = request
+            .positive
             .iter()
             .chain(request.negative.iter())
             .cloned()
@@ -183,21 +221,27 @@ impl Collection {
         for point_id in reference_vectors_ids.iter().cloned() {
             if !vectors_map.contains_key(&point_id) {
                 return Err(CollectionError::NotFound {
-                    missed_point_id: point_id
+                    missed_point_id: point_id,
                 });
             }
         }
 
-        let avg_positive = Collection::avg_vectors(request.positive
-            .iter()
-            .map(|vid| vectors_map.get(vid).unwrap()));
+        let avg_positive = Collection::avg_vectors(
+            request
+                .positive
+                .iter()
+                .map(|vid| vectors_map.get(vid).unwrap()),
+        );
 
         let search_vector = if request.negative.is_empty() {
             avg_positive
         } else {
-            let avg_negative = Collection::avg_vectors(request.negative
-                .iter()
-                .map(|vid| vectors_map.get(vid).unwrap()));
+            let avg_negative = Collection::avg_vectors(
+                request
+                    .negative
+                    .iter()
+                    .map(|vid| vectors_map.get(vid).unwrap()),
+            );
 
             avg_positive
                 .iter()
@@ -207,16 +251,17 @@ impl Collection {
                 .collect()
         };
 
-
         let search_request = SearchRequest {
             vector: search_vector,
             filter: Some(Filter {
                 should: None,
                 must: match request.filter.clone() {
                     None => None,
-                    Some(filter) => Some(vec![Condition::Filter(filter)])
+                    Some(filter) => Some(vec![Condition::Filter(filter)]),
                 },
-                must_not: Some(vec![Condition::HasId(HasIdCondition { has_id: reference_vectors_ids.iter().cloned().collect() })]),
+                must_not: Some(vec![Condition::HasId(HasIdCondition {
+                    has_id: reference_vectors_ids.iter().cloned().collect(),
+                })]),
             }),
             params: request.params.clone(),
             top: request.top,
@@ -229,7 +274,10 @@ impl Collection {
     /// - Saves new params on disk
     /// - Stops existing optimization loop
     /// - Runs new optimizers with new params
-    pub fn update_optimizer_params(&self, optimizer_config_diff: OptimizersConfigDiff) -> CollectionResult<()> {
+    pub fn update_optimizer_params(
+        &self,
+        optimizer_config_diff: OptimizersConfigDiff,
+    ) -> CollectionResult<()> {
         {
             let mut config = self.config.write();
             config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;

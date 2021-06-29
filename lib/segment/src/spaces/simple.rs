@@ -12,17 +12,32 @@ pub struct CosineMetric {}
 
 pub struct EuclidMetric {}
 
-
 impl Metric for EuclidMetric {
-    fn distance(&self) -> Distance { Distance::Euclid }
+    fn distance(&self) -> Distance {
+        Distance::Euclid
+    }
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        let s: ScoreType = v1.iter().cloned().zip(v2.iter().cloned()).map(|(a, b)| (a - b).powi(2)).sum();
+        let s: ScoreType = v1
+            .iter()
+            .cloned()
+            .zip(v2.iter().cloned())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum();
         return -s.sqrt();
     }
 
-    fn blas_similarity(&self, v1: &Array1<VectorElementType>, v2: &Array1<VectorElementType>) -> ScoreType {
-        let s: ScoreType = v1.iter().cloned().zip(v2.iter().cloned()).map(|(a, b)| (a - b).powi(2)).sum();
+    fn blas_similarity(
+        &self,
+        v1: &Array1<VectorElementType>,
+        v2: &Array1<VectorElementType>,
+    ) -> ScoreType {
+        let s: ScoreType = v1
+            .iter()
+            .cloned()
+            .zip(v2.iter().cloned())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum();
         return -s.sqrt();
     }
 
@@ -41,7 +56,11 @@ impl Metric for DotProductMetric {
         return ip;
     }
 
-    fn blas_similarity(&self, v1: &Array1<VectorElementType>, v2: &Array1<VectorElementType>) -> ScoreType {
+    fn blas_similarity(
+        &self,
+        v1: &Array1<VectorElementType>,
+        v2: &Array1<VectorElementType>,
+    ) -> ScoreType {
         v1.dot(v2)
     }
 
@@ -60,7 +79,11 @@ impl Metric for CosineMetric {
         return cos;
     }
 
-    fn blas_similarity(&self, v1: &Array1<VectorElementType>, v2: &Array1<VectorElementType>) -> ScoreType {
+    fn blas_similarity(
+        &self,
+        v1: &Array1<VectorElementType>,
+        v2: &Array1<VectorElementType>,
+    ) -> ScoreType {
         v1.dot(v2)
     }
 

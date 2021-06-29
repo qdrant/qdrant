@@ -3,7 +3,6 @@ extern crate log;
 
 mod settings;
 
-
 use storage::content_manager::toc::TableOfContent;
 
 fn main() {

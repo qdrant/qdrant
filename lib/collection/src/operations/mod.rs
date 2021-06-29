@@ -1,10 +1,10 @@
-pub mod types;
-pub mod point_ops;
-pub mod payload_ops;
 pub mod config_diff;
+pub mod payload_ops;
+pub mod point_ops;
+pub mod types;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use schemars::{JsonSchema};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -21,9 +21,8 @@ pub enum FieldIndexOperations {
 pub enum CollectionUpdateOperations {
     PointOperation(point_ops::PointOperations),
     PayloadOperation(payload_ops::PayloadOps),
-    FieldIndexOperation(FieldIndexOperations)
+    FieldIndexOperation(FieldIndexOperations),
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -32,11 +31,10 @@ mod tests {
 
     #[test]
     fn test_deserialize() {
-        let op = CollectionUpdateOperations::PayloadOperation(
-            payload_ops::PayloadOps::ClearPayload {
+        let op =
+            CollectionUpdateOperations::PayloadOperation(payload_ops::PayloadOps::ClearPayload {
                 points: vec![1, 2, 3],
-            }
-        );
+            });
 
         let json = serde_json::to_string_pretty(&op).unwrap();
         println!("{}", json)

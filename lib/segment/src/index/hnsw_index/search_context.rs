@@ -1,9 +1,8 @@
 use crate::spaces::tools::FixedLengthPriorityQueue;
-use crate::vector_storage::vector_storage::ScoredPointOffset;
 use crate::types::ScoreType;
-use std::collections::BinaryHeap;
+use crate::vector_storage::vector_storage::ScoredPointOffset;
 use num_traits::float::FloatCore;
-
+use std::collections::BinaryHeap;
 
 /// Structure that holds context of the search
 pub struct SearchContext {
@@ -11,21 +10,20 @@ pub struct SearchContext {
     pub candidates: BinaryHeap<ScoredPointOffset>,
 }
 
-
 impl SearchContext {
     pub fn new(entry_point: ScoredPointOffset, ef: usize) -> Self {
         let mut nearest = FixedLengthPriorityQueue::new(ef);
         nearest.push(entry_point);
         SearchContext {
             nearest,
-            candidates: BinaryHeap::from(vec![entry_point])
+            candidates: BinaryHeap::from(vec![entry_point]),
         }
     }
 
     pub fn lower_bound(&self) -> ScoreType {
         match self.nearest.top() {
             None => ScoreType::min_value(),
-            Some(worst_of_the_best) => worst_of_the_best.score
+            Some(worst_of_the_best) => worst_of_the_best.score,
         }
     }
 
@@ -34,7 +32,7 @@ impl SearchContext {
     pub fn process_candidate(&mut self, score_point: ScoredPointOffset) {
         let was_added = match self.nearest.push(score_point.clone()) {
             None => true,
-            Some(removed) => removed.idx != score_point.idx
+            Some(removed) => removed.idx != score_point.idx,
         };
         if was_added {
             self.candidates.push(score_point)

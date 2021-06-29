@@ -1,11 +1,11 @@
 use crate::types::{FieldCondition, PointOffsetType};
 use std::collections::HashSet;
 
-pub mod numeric_index;
-pub mod geo_index;
-pub mod map_index;
 pub mod field_index;
+pub mod geo_index;
 pub mod index_selector;
+pub mod map_index;
+pub mod numeric_index;
 
 #[derive(Debug, Clone)]
 pub enum PrimaryCondition {
@@ -16,7 +16,7 @@ pub enum PrimaryCondition {
 #[derive(Debug, Clone)]
 pub struct PayloadBlockCondition {
     pub condition: FieldCondition,
-    pub cardinality: usize
+    pub cardinality: usize,
 }
 
 #[derive(Debug)]

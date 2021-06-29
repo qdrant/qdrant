@@ -1,10 +1,12 @@
+use crate::types::{
+    Condition, FieldCondition, Filter, Match, PayloadType, Range as RangeCondition,
+    VectorElementType,
+};
+use itertools::Itertools;
 use rand::prelude::ThreadRng;
 use rand::seq::SliceRandom;
-use crate::types::{Filter, PayloadType, VectorElementType, Condition, FieldCondition, Match, Range as RangeCondition};
 use rand::Rng;
-use itertools::Itertools;
 use std::ops::Range;
-
 
 const ADJECTIVE: &'static [&'static str] = &[
     "jobless",
@@ -48,7 +50,11 @@ pub fn random_keyword_payload(rnd_gen: &mut ThreadRng) -> PayloadType {
 }
 
 pub fn random_int_payload(rnd_gen: &mut ThreadRng, num_values: usize) -> PayloadType {
-    PayloadType::Integer((0..num_values).map(|_| rnd_gen.gen_range(INT_RANGE)).collect_vec())
+    PayloadType::Integer(
+        (0..num_values)
+            .map(|_| rnd_gen.gen_range(INT_RANGE))
+            .collect_vec(),
+    )
 }
 
 pub fn random_vector(rnd_gen: &mut ThreadRng, size: usize) -> Vec<VectorElementType> {
@@ -79,7 +85,7 @@ pub fn random_field_condition(rnd_gen: &mut ThreadRng) -> Condition {
             }),
             geo_bounding_box: None,
             geo_radius: None,
-        })
+        }),
     }
 }
 

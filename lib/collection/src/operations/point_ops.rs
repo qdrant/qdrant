@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
-use schemars::{JsonSchema};
-use segment::types::{PointIdType, PayloadKeyType, PayloadInterface};
 use crate::operations::types::VectorType;
+use schemars::JsonSchema;
+use segment::types::{PayloadInterface, PayloadKeyType, PointIdType};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -14,7 +14,6 @@ pub struct PointStruct {
     /// Payload values (optional)
     pub payload: Option<HashMap<PayloadKeyType, PayloadInterface>>,
 }
-
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -31,14 +30,11 @@ pub enum PointInsertOperations {
     PointsList(Vec<PointStruct>),
 }
 
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PointOperations {
     /// Insert or update points
     UpsertPoints(PointInsertOperations),
     /// Delete point if exists
-    DeletePoints {
-        ids: Vec<PointIdType>,
-    },
+    DeletePoints { ids: Vec<PointIdType> },
 }

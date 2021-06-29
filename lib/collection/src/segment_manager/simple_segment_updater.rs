@@ -1,13 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
-use segment::types::{PayloadKeyType, PointIdType, SeqNumberType, PayloadInterface};
+use segment::types::{PayloadInterface, PayloadKeyType, PointIdType, SeqNumberType};
 
-use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
+use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointInsertOperations, PointOperations};
 use crate::operations::types::{CollectionError, CollectionResult, VectorType};
+use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use crate::segment_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::segment_manager::segment_managers::SegmentUpdater;
-use crate::operations::payload_ops::PayloadOps;
 
 pub struct SimpleSegmentUpdater {
     segments: LockedSegmentHolder,
@@ -22,7 +22,10 @@ impl SimpleSegmentUpdater {
         }
     }
 
-    fn check_unprocessed_points(points: &Vec<PointIdType>, processed: &HashSet<PointIdType>) -> CollectionResult<usize> {
+    fn check_unprocessed_points(
+        points: &Vec<PointIdType>,
+        processed: &HashSet<PointIdType>,
+    ) -> CollectionResult<usize> {
         let missed_point = points
             .iter()
             .cloned()
@@ -30,46 +33,65 @@ impl SimpleSegmentUpdater {
             .next();
         match missed_point {
             None => Ok(processed.len()),
-            Some(missed_point) => Err(CollectionError::NotFound { missed_point_id: missed_point }),
+            Some(missed_point) => Err(CollectionError::NotFound {
+                missed_point_id: missed_point,
+            }),
         }
     }
 
     /// Tries to delete points from all segments, returns number of actually deleted points
-    fn delete_points(&self, op_num: SeqNumberType, ids: &Vec<PointIdType>) -> CollectionResult<usize> {
-        let res = self.segments.read()
-            .apply_points(op_num, ids, |id, write_segment|
-                write_segment.delete_point(op_num, id),
-            )?;
+    fn delete_points(
+        &self,
+        op_num: SeqNumberType,
+        ids: &Vec<PointIdType>,
+    ) -> CollectionResult<usize> {
+        let res = self
+            .segments
+            .read()
+            .apply_points(op_num, ids, |id, write_segment| {
+                write_segment.delete_point(op_num, id)
+            })?;
         Ok(res)
     }
-
 
     /// Checks point id in each segment, update point if found.
     /// All not found points are inserted into random segment.
     /// Returns: number of updated points.
-    fn upsert_points(&self,
-                     op_num: SeqNumberType,
-                     ids: &Vec<PointIdType>,
-                     vectors: &Vec<VectorType>,
-                     payloads: &Option<Vec<Option<HashMap<PayloadKeyType, PayloadInterface>>>>,
+    fn upsert_points(
+        &self,
+        op_num: SeqNumberType,
+        ids: &Vec<PointIdType>,
+        vectors: &Vec<VectorType>,
+        payloads: &Option<Vec<Option<HashMap<PayloadKeyType, PayloadInterface>>>>,
     ) -> CollectionResult<usize> {
         if ids.len() != vectors.len() {
             return Err(CollectionError::BadInput {
-                description: format!("Amount of ids ({}) and vectors ({}) does not match", ids.len(), vectors.len())
+                description: format!(
+                    "Amount of ids ({}) and vectors ({}) does not match",
+                    ids.len(),
+                    vectors.len()
+                ),
             });
         }
 
         match payloads {
             None => {}
-            Some(payload_vector) => if payload_vector.len() != ids.len() {
-                return Err(CollectionError::BadInput {
-                    description: format!("Amount of ids ({}) and payloads ({}) does not match", ids.len(), payload_vector.len())
-                });
+            Some(payload_vector) => {
+                if payload_vector.len() != ids.len() {
+                    return Err(CollectionError::BadInput {
+                        description: format!(
+                            "Amount of ids ({}) and payloads ({}) does not match",
+                            ids.len(),
+                            payload_vector.len()
+                        ),
+                    });
+                }
             }
         }
 
         let mut updated_points: HashSet<PointIdType> = Default::default();
-        let points_map: HashMap<PointIdType, &VectorType> = ids.iter().cloned().zip(vectors).collect();
+        let points_map: HashMap<PointIdType, &VectorType> =
+            ids.iter().cloned().zip(vectors).collect();
 
         let segments = self.segments.read();
 
@@ -82,23 +104,21 @@ impl SimpleSegmentUpdater {
         })?;
 
         // Update points in writable segments
-        let res = segments.apply_points_to_appendable(
-            op_num,
-            ids,
-            |id, write_segment| {
-                updated_points.insert(id);
-                write_segment.upsert_point(op_num, id, points_map[&id])
-            })?;
+        let res = segments.apply_points_to_appendable(op_num, ids, |id, write_segment| {
+            updated_points.insert(id);
+            write_segment.upsert_point(op_num, id, points_map[&id])
+        })?;
 
         // Insert new points, which was not updated.
-        let new_point_ids = ids
-            .iter()
-            .cloned()
-            .filter(|x| !updated_points.contains(x));
+        let new_point_ids = ids.iter().cloned().filter(|x| !updated_points.contains(x));
 
         {
-            let default_write_segment = segments.random_appendable_segment()
-                .ok_or(CollectionError::ServiceError { error: "No segments exists, expected at least one".to_string() })?;
+            let default_write_segment =
+                segments
+                    .random_appendable_segment()
+                    .ok_or(CollectionError::ServiceError {
+                        error: "No segments exists, expected at least one".to_string(),
+                    })?;
 
             let segment_arc = default_write_segment.get();
             let mut write_segment = segment_arc.write();
@@ -139,7 +159,8 @@ impl SimpleSegmentUpdater {
                     res = write_segment.set_payload(op_num, id, key, payload.into())? && res;
                 }
                 Ok(res)
-            })?;
+            },
+        )?;
 
         SimpleSegmentUpdater::check_unprocessed_points(points, &updated_points)?;
         Ok(res)
@@ -153,19 +174,18 @@ impl SimpleSegmentUpdater {
     ) -> CollectionResult<usize> {
         let mut updated_points: HashSet<PointIdType> = Default::default();
 
-        let res = self.segments
-            .read()
-            .apply_points_to_appendable(
-                op_num,
-                points,
-                |id, write_segment| {
-                    updated_points.insert(id);
-                    let mut res = true;
-                    for key in keys {
-                        res = write_segment.delete_payload(op_num, id, key)? && res;
-                    }
-                    Ok(res)
-                })?;
+        let res = self.segments.read().apply_points_to_appendable(
+            op_num,
+            points,
+            |id, write_segment| {
+                updated_points.insert(id);
+                let mut res = true;
+                for key in keys {
+                    res = write_segment.delete_payload(op_num, id, key)? && res;
+                }
+                Ok(res)
+            },
+        )?;
 
         SimpleSegmentUpdater::check_unprocessed_points(points, &updated_points)?;
         Ok(res)
@@ -177,22 +197,26 @@ impl SimpleSegmentUpdater {
         points: &Vec<PointIdType>,
     ) -> CollectionResult<usize> {
         let mut updated_points: HashSet<PointIdType> = Default::default();
-        let res = self.segments
-            .read()
-            .apply_points_to_appendable(
-                op_num,
-                points,
-                |id, write_segment| {
-                    updated_points.insert(id);
-                    write_segment.clear_payload(op_num, id)
-                })?;
+        let res = self.segments.read().apply_points_to_appendable(
+            op_num,
+            points,
+            |id, write_segment| {
+                updated_points.insert(id);
+                write_segment.clear_payload(op_num, id)
+            },
+        )?;
 
         SimpleSegmentUpdater::check_unprocessed_points(points, &updated_points)?;
         Ok(res)
     }
 
-    fn create_field_index(&self, op_num: SeqNumberType, field_name: &PayloadKeyType) -> CollectionResult<usize> {
-        let res = self.segments
+    fn create_field_index(
+        &self,
+        op_num: SeqNumberType,
+        field_name: &PayloadKeyType,
+    ) -> CollectionResult<usize> {
+        let res = self
+            .segments
             .read()
             .apply_segments(op_num, |write_segment| {
                 write_segment.create_field_index(op_num, field_name)
@@ -200,8 +224,13 @@ impl SimpleSegmentUpdater {
         Ok(res)
     }
 
-    fn delete_field_index(&self, op_num: SeqNumberType, field_name: &PayloadKeyType) -> CollectionResult<usize> {
-        let res = self.segments
+    fn delete_field_index(
+        &self,
+        op_num: SeqNumberType,
+        field_name: &PayloadKeyType,
+    ) -> CollectionResult<usize> {
+        let res = self
+            .segments
             .read()
             .apply_segments(op_num, |write_segment| {
                 write_segment.delete_field_index(op_num, field_name)
@@ -209,14 +238,21 @@ impl SimpleSegmentUpdater {
         Ok(res)
     }
 
-    pub fn process_point_operation(&self, op_num: SeqNumberType, point_operation: PointOperations) -> CollectionResult<usize> {
+    pub fn process_point_operation(
+        &self,
+        op_num: SeqNumberType,
+        point_operation: PointOperations,
+    ) -> CollectionResult<usize> {
         match point_operation {
             PointOperations::DeletePoints { ids, .. } => self.delete_points(op_num, &ids),
             PointOperations::UpsertPoints(operation) => {
                 let (ids, vectors, payloads) = match operation {
-                    PointInsertOperations::BatchPoints { ids, vectors, payloads, .. } => {
-                        (ids, vectors, payloads)
-                    }
+                    PointInsertOperations::BatchPoints {
+                        ids,
+                        vectors,
+                        payloads,
+                        ..
+                    } => (ids, vectors, payloads),
                     PointInsertOperations::PointsList(points) => {
                         let mut ids = vec![];
                         let mut vectors = vec![];
@@ -235,54 +271,67 @@ impl SimpleSegmentUpdater {
         }
     }
 
-
-    pub fn process_payload_operation(&self, op_num: SeqNumberType, payload_operation: &PayloadOps) -> CollectionResult<usize> {
+    pub fn process_payload_operation(
+        &self,
+        op_num: SeqNumberType,
+        payload_operation: &PayloadOps,
+    ) -> CollectionResult<usize> {
         match payload_operation {
             PayloadOps::SetPayload {
-                payload,
-                points,
-                ..
+                payload, points, ..
             } => self.set_payload(op_num, payload, points),
-            PayloadOps::DeletePayload {
-                keys,
-                points,
-                ..
-            } => self.delete_payload(op_num, points, keys),
-            PayloadOps::ClearPayload {
-                points, ..
-            } => self.clear_payload(op_num, points),
+            PayloadOps::DeletePayload { keys, points, .. } => {
+                self.delete_payload(op_num, points, keys)
+            }
+            PayloadOps::ClearPayload { points, .. } => self.clear_payload(op_num, points),
         }
     }
 
-    pub fn process_field_index_operation(&self, op_num: SeqNumberType, field_index_operation: &FieldIndexOperations) -> CollectionResult<usize> {
+    pub fn process_field_index_operation(
+        &self,
+        op_num: SeqNumberType,
+        field_index_operation: &FieldIndexOperations,
+    ) -> CollectionResult<usize> {
         match field_index_operation {
-            FieldIndexOperations::CreateIndex(field_name) => self.create_field_index(op_num, field_name),
-            FieldIndexOperations::DeleteIndex(field_name) => self.delete_field_index(op_num, field_name),
+            FieldIndexOperations::CreateIndex(field_name) => {
+                self.create_field_index(op_num, field_name)
+            }
+            FieldIndexOperations::DeleteIndex(field_name) => {
+                self.delete_field_index(op_num, field_name)
+            }
         }
     }
 }
 
-
 impl SegmentUpdater for SimpleSegmentUpdater {
-    fn update(&self, op_num: SeqNumberType, operation: CollectionUpdateOperations) -> CollectionResult<usize> {
+    fn update(
+        &self,
+        op_num: SeqNumberType,
+        operation: CollectionUpdateOperations,
+    ) -> CollectionResult<usize> {
         // Allow only one update at a time, ensure no data races between segments.
         // let _lock = self.update_lock.lock().unwrap();
         match operation {
-            CollectionUpdateOperations::PointOperation(point_operation) => self.process_point_operation(op_num, point_operation),
-            CollectionUpdateOperations::PayloadOperation(payload_operation) => self.process_payload_operation(op_num, &payload_operation),
-            CollectionUpdateOperations::FieldIndexOperation(index_operation) => self.process_field_index_operation(op_num, &index_operation),
+            CollectionUpdateOperations::PointOperation(point_operation) => {
+                self.process_point_operation(op_num, point_operation)
+            }
+            CollectionUpdateOperations::PayloadOperation(payload_operation) => {
+                self.process_payload_operation(op_num, &payload_operation)
+            }
+            CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
+                self.process_field_index_operation(op_num, &index_operation)
+            }
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     use tempdir::TempDir;
 
-    use segment::types::PayloadVariant;
     use crate::segment_manager::fixtures::build_searcher;
     use crate::segment_manager::segment_managers::SegmentSearcher;
+    use segment::types::PayloadVariant;
 
     use super::*;
 
@@ -297,17 +346,9 @@ mod tests {
         };
         let points = vec![1, 500];
 
-        let vectors = vec![
-            vec![2., 2., 2., 2.],
-            vec![2., 0., 2., 0.],
-        ];
+        let vectors = vec![vec![2., 2., 2., 2.], vec![2., 0., 2., 0.]];
 
-        let res = updater.upsert_points(
-            100,
-            &points,
-            &vectors,
-            &None,
-        );
+        let res = updater.upsert_points(100, &points, &vectors, &None);
 
         match res {
             Ok(updated) => assert_eq!(updated, 1),
@@ -360,10 +401,15 @@ mod tests {
 
         let points = vec![1, 2, 3];
 
-        updater.process_payload_operation(100, &PayloadOps::SetPayload {
-            payload,
-            points: points.clone(),
-        }).unwrap();
+        updater
+            .process_payload_operation(
+                100,
+                &PayloadOps::SetPayload {
+                    payload,
+                    points: points.clone(),
+                },
+            )
+            .unwrap();
 
         let res = searcher.retrieve(&points, true, false).unwrap();
 
@@ -381,7 +427,13 @@ mod tests {
 
         // Test payload delete
 
-        updater.delete_payload(101, &vec![3], &vec!["color".to_string(), "empty".to_string()]).unwrap();
+        updater
+            .delete_payload(
+                101,
+                &vec![3],
+                &vec!["color".to_string(), "empty".to_string()],
+            )
+            .unwrap();
         let res = searcher.retrieve(&vec![3], true, false).unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));

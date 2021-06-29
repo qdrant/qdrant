@@ -2,19 +2,19 @@ use std::ops::Range;
 use std::path::Path;
 
 use log::debug;
-use rocksdb::{DB, IteratorMode, Options};
+use rocksdb::{IteratorMode, Options, DB};
 use serde::{Deserialize, Serialize};
 
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::tools::{mertic_object, peek_top_scores_iterable};
-use crate::types::{Distance, PointOffsetType, VectorElementType, ScoreType};
-use crate::vector_storage::vector_storage::{ScoredPointOffset, RawScorer};
+use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
+use crate::vector_storage::vector_storage::{RawScorer, ScoredPointOffset};
 
 use super::vector_storage::VectorStorage;
-use std::mem::size_of;
-use ndarray::{Array1, Array};
 use crate::spaces::metric::Metric;
 use bit_vec::BitVec;
+use ndarray::{Array, Array1};
+use std::mem::size_of;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
@@ -27,7 +27,6 @@ pub struct SimpleVectorStorage {
     deleted_count: usize,
     store: DB,
 }
-
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct StoredRecord {
@@ -43,7 +42,10 @@ pub struct SimpleRawScorer<'a> {
 }
 
 impl RawScorer for SimpleRawScorer<'_> {
-    fn score_points<'a>(&'a self, points: &'a mut dyn Iterator<Item=PointOffsetType>) -> Box<dyn Iterator<Item=ScoredPointOffset> + 'a> {
+    fn score_points<'a>(
+        &'a self,
+        points: &'a mut dyn Iterator<Item = PointOffsetType>,
+    ) -> Box<dyn Iterator<Item = ScoredPointOffset> + 'a> {
         let res_iter = points
             .filter(move |point| !self.deleted[*point as usize])
             .map(move |point| {
@@ -71,7 +73,6 @@ impl RawScorer for SimpleRawScorer<'_> {
         return self.metric.blas_similarity(vector_a, vector_b);
     }
 }
-
 
 impl SimpleVectorStorage {
     pub fn open(path: &Path, dim: usize, distance: Distance) -> OperationResult<Self> {
@@ -106,8 +107,10 @@ impl SimpleVectorStorage {
         let metric = mertic_object(&distance);
 
         debug!("Segment vectors: {}", vectors.len());
-        debug!("Estimated segment size {} MB", vectors.len() * dim * size_of::<VectorElementType>() / 1024 / 1024);
-
+        debug!(
+            "Estimated segment size {} MB",
+            vectors.len() * dim * size_of::<VectorElementType>() / 1024 / 1024
+        );
 
         return Ok(SimpleVectorStorage {
             dim,
@@ -135,7 +138,6 @@ impl SimpleVectorStorage {
     }
 }
 
-
 impl VectorStorage for SimpleVectorStorage {
     fn vector_dim(&self) -> usize {
         self.dim
@@ -154,7 +156,9 @@ impl VectorStorage for SimpleVectorStorage {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
-        if self.deleted.get(key as usize).unwrap_or(true) { return None; }
+        if self.deleted.get(key as usize).unwrap_or(true) {
+            return None;
+        }
         let vec = self.vectors.get(key as usize)?.clone();
         return Some(vec.to_vec());
     }
@@ -168,13 +172,20 @@ impl VectorStorage for SimpleVectorStorage {
         return Ok(new_id);
     }
 
-    fn update_vector(&mut self, key: PointOffsetType, vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
+    fn update_vector(
+        &mut self,
+        key: PointOffsetType,
+        vector: Vec<VectorElementType>,
+    ) -> OperationResult<PointOffsetType> {
         self.vectors[key as usize].assign(&Array::from(vector));
         self.update_stored(key)?;
         return Ok(key);
     }
 
-    fn update_from(&mut self, other: &dyn VectorStorage) -> OperationResult<Range<PointOffsetType>> {
+    fn update_from(
+        &mut self,
+        other: &dyn VectorStorage,
+    ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors.len() as PointOffsetType;
         for id in other.iter_ids() {
             let other_vector = other.get_vector(id).unwrap();
@@ -190,7 +201,7 @@ impl VectorStorage for SimpleVectorStorage {
 
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
         if (key as usize) >= self.deleted.len() {
-            return Ok(())
+            return Ok(());
         }
         if !self.deleted[key as usize] {
             self.deleted_count += 1
@@ -200,9 +211,11 @@ impl VectorStorage for SimpleVectorStorage {
         Ok(())
     }
 
-    fn is_deleted(&self, key: PointOffsetType) -> bool { self.deleted[key as usize] }
+    fn is_deleted(&self, key: PointOffsetType) -> bool {
+        self.deleted[key as usize]
+    }
 
-    fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let iter = (0..self.vectors.len() as PointOffsetType)
             .filter(move |id| !self.deleted[*id as usize]);
         return Box::new(iter);
@@ -233,8 +246,8 @@ impl VectorStorage for SimpleVectorStorage {
     fn score_points(
         &self,
         vector: &Vec<VectorElementType>,
-        points: &mut dyn Iterator<Item=PointOffsetType>,
-        top: usize
+        points: &mut dyn Iterator<Item = PointOffsetType>,
+        top: usize,
     ) -> Vec<ScoredPointOffset> {
         let preprocessed_vector = Array::from(self.metric.preprocess(vector.clone()));
         let scores = points
@@ -243,21 +256,26 @@ impl VectorStorage for SimpleVectorStorage {
                 let other_vector = self.vectors.get(point as usize).unwrap();
                 ScoredPointOffset {
                     idx: point,
-                    score: self.metric.blas_similarity(&preprocessed_vector, other_vector),
+                    score: self
+                        .metric
+                        .blas_similarity(&preprocessed_vector, other_vector),
                 }
             });
         return peek_top_scores_iterable(scores, top);
     }
 
-
     fn score_all(&self, vector: &Vec<VectorElementType>, top: usize) -> Vec<ScoredPointOffset> {
         let preprocessed_vector = Array::from(self.metric.preprocess(vector.clone()));
-        let scores = self.vectors.iter()
+        let scores = self
+            .vectors
+            .iter()
             .enumerate()
             .filter(|(point, _)| !self.deleted[*point])
             .map(|(point, other_vector)| ScoredPointOffset {
                 idx: point as PointOffsetType,
-                score: self.metric.blas_similarity(&preprocessed_vector, other_vector),
+                score: self
+                    .metric
+                    .blas_similarity(&preprocessed_vector, other_vector),
             });
         return peek_top_scores_iterable(scores, top);
     }
@@ -265,14 +283,13 @@ impl VectorStorage for SimpleVectorStorage {
     fn score_internal(
         &self,
         point: PointOffsetType,
-        points: &mut dyn Iterator<Item=PointOffsetType>,
+        points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset> {
         let vector = self.get_vector(point).unwrap();
         return self.score_points(&vector, points, top);
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -304,11 +321,7 @@ mod tests {
 
         let query = vec![0.0, 1.0, 1.1, 1.0];
 
-        let closest = storage.score_points(
-            &query,
-            &mut [0, 1, 2, 3, 4].iter().cloned(),
-            2,
-        );
+        let closest = storage.score_points(&query, &mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
         let top_idx = match closest.get(0) {
             Some(scored_point) => {
@@ -323,11 +336,7 @@ mod tests {
 
         storage.delete(top_idx).unwrap();
 
-        let closest = storage.score_points(
-            &query,
-            &mut [0, 1, 2, 3, 4].iter().cloned(),
-            2,
-        );
+        let closest = storage.score_points(&query, &mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
         let raw_scorer = storage.raw_scorer(query.clone());
 
@@ -340,13 +349,14 @@ mod tests {
 
         assert_eq!(raw_res1, raw_res2);
 
-
         let _top_idx = match closest.get(0) {
             Some(scored_point) => {
                 assert_ne!(scored_point.idx, 2);
                 assert_eq!(&raw_res1[scored_point.idx as usize], scored_point);
             }
-            None => { assert!(false, "No close vector found!") }
+            None => {
+                assert!(false, "No close vector found!")
+            }
         };
 
         let all_ids1: Vec<_> = storage.iter_ids().collect();

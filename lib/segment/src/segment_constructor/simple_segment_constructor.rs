@@ -1,11 +1,10 @@
 use crate::segment::Segment;
 
-use crate::types::{Distance, SegmentConfig, Indexes};
+use crate::types::{Distance, Indexes, SegmentConfig};
 
-use std::path::Path;
-use crate::segment_constructor::segment_constructor::build_segment;
 use crate::entry::entry_point::OperationResult;
-
+use crate::segment_constructor::segment_constructor::build_segment;
+use std::path::Path;
 
 /// Build new segment with plain index in given directory
 ///
@@ -13,7 +12,11 @@ use crate::entry::entry_point::OperationResult;
 ///
 /// * `path` - path to collection`s segment directory
 ///
-pub fn build_simple_segment(path: &Path, dim: usize, distance: Distance) -> OperationResult<Segment> {
+pub fn build_simple_segment(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+) -> OperationResult<Segment> {
     build_segment(
         path,
         &SegmentConfig {
@@ -25,7 +28,6 @@ pub fn build_simple_segment(path: &Path, dim: usize, distance: Distance) -> Oper
         },
     )
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -59,7 +61,7 @@ mod tests {
                 OperationError::WrongVector { .. } => (),
                 _ => assert!(false, "Wrong error"),
             },
-            Ok(_) => assert!(false, "Operation with wrong vector should fail")
+            Ok(_) => assert!(false, "Operation with wrong vector should fail"),
         };
 
         segment.upsert_point(2, 1, &vec1).unwrap();
@@ -70,45 +72,41 @@ mod tests {
 
         let payload_key = "color".to_string();
 
-        segment.set_payload(
-            3,
-            1,
-            &payload_key,
-            PayloadType::Keyword(vec![
-                "red".to_owned(),
-                "green".to_owned()
-            ]),
-        ).unwrap();
+        segment
+            .set_payload(
+                3,
+                1,
+                &payload_key,
+                PayloadType::Keyword(vec!["red".to_owned(), "green".to_owned()]),
+            )
+            .unwrap();
 
-        segment.set_payload(
-            3,
-            2,
-            &payload_key,
-            PayloadType::Keyword(vec![
-                "red".to_owned(),
-                "blue".to_owned()
-            ]),
-        ).unwrap();
+        segment
+            .set_payload(
+                3,
+                2,
+                &payload_key,
+                PayloadType::Keyword(vec!["red".to_owned(), "blue".to_owned()]),
+            )
+            .unwrap();
 
-        segment.set_payload(
-            3,
-            3,
-            &payload_key,
-            PayloadType::Keyword(vec![
-                "red".to_owned(),
-                "yellow".to_owned()
-            ]),
-        ).unwrap();
+        segment
+            .set_payload(
+                3,
+                3,
+                &payload_key,
+                PayloadType::Keyword(vec!["red".to_owned(), "yellow".to_owned()]),
+            )
+            .unwrap();
 
-        segment.set_payload(
-            3,
-            4,
-            &payload_key,
-            PayloadType::Keyword(vec![
-                "red".to_owned(),
-                "green".to_owned()
-            ]),
-        ).unwrap();
+        segment
+            .set_payload(
+                3,
+                4,
+                &payload_key,
+                PayloadType::Keyword(vec!["red".to_owned(), "green".to_owned()]),
+            )
+            .unwrap();
 
         // Replace vectors
         segment.upsert_point(4, 1, &vec1).unwrap();
@@ -116,7 +114,6 @@ mod tests {
         segment.upsert_point(6, 3, &vec3).unwrap();
         segment.upsert_point(7, 4, &vec4).unwrap();
         segment.upsert_point(8, 5, &vec5).unwrap();
-
 
         assert_eq!(segment.version(), 8);
 

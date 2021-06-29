@@ -1,10 +1,8 @@
+use schemars::JsonSchema;
+use segment::types::{PayloadInterface, PayloadKeyType, PointIdType};
 use serde;
 use serde::{Deserialize, Serialize};
-use schemars::{JsonSchema};
-use segment::types::{PointIdType, PayloadKeyType, PayloadInterface};
 use std::collections::HashMap;
-
-
 
 /// Define operations description for point payloads manipulation
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -23,11 +21,8 @@ pub enum PayloadOps {
         points: Vec<PointIdType>,
     },
     /// Drops all Payload values associated with given points.
-    ClearPayload {
-        points: Vec<PointIdType>,
-    }
+    ClearPayload { points: Vec<PointIdType> },
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -51,10 +46,7 @@ mod tests {
         let operation: PayloadOps = serde_json::from_str(query1).unwrap();
 
         match operation {
-            PayloadOps::SetPayload {
-                payload,
-                points: _
-            } => {
+            PayloadOps::SetPayload { payload, points: _ } => {
                 assert_eq!(payload.len(), 2);
 
                 assert!(payload.contains_key("key1"));
@@ -66,7 +58,7 @@ mod tests {
                     PayloadType::Keyword(x) => assert_eq!(x, vec!["hello".to_owned()]),
                     _ => assert!(false, "Wrong payload type"),
                 }
-            },
+            }
             _ => assert!(false, "Wrong operation"),
         }
     }
