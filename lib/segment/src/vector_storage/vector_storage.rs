@@ -76,11 +76,11 @@ pub trait VectorStorage {
 
     fn score_points(
         &self,
-        vector: &Vec<VectorElementType>,
+        vector: &[VectorElementType],
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset>;
-    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize) -> Vec<ScoredPointOffset>;
+    fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset>;
     fn score_internal(
         &self,
         point: PointOffsetType,

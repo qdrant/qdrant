@@ -196,7 +196,7 @@ impl VectorStorage for MemmapVectorStorage {
 
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
         Box::new(MemmapRawScorer {
-            query: self.metric.preprocess(vector),
+            query: self.metric.preprocess(&vector).unwrap_or(vector),
             metric: &self.metric,
             mmap_store: &self.mmap_store.as_ref().unwrap(),
         })
@@ -212,11 +212,15 @@ impl VectorStorage for MemmapVectorStorage {
 
     fn score_points(
         &self,
-        vector: &Vec<VectorElementType>,
+        vector: &[VectorElementType],
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector = self.metric.preprocess(vector.clone());
+        let preprocessed_vector_opt = self.metric.preprocess(vector);
+        let preprocessed_vector = preprocessed_vector_opt
+            .as_ref()
+            .map(|x| x as &[_])
+            .unwrap_or(vector);
         let scores = points
             .filter(|point| {
                 !self
@@ -230,14 +234,18 @@ impl VectorStorage for MemmapVectorStorage {
                 let other_vector = self.mmap_store.as_ref().unwrap().raw_vector(point).unwrap();
                 ScoredPointOffset {
                     idx: point,
-                    score: self.metric.similarity(&preprocessed_vector, &other_vector),
+                    score: self.metric.similarity(preprocessed_vector, &other_vector),
                 }
             });
         return peek_top_scores_iterable(scores, top);
     }
 
-    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector = self.metric.preprocess(vector.clone());
+    fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
+        let preprocessed_vector_opt = self.metric.preprocess(vector);
+        let preprocessed_vector = preprocessed_vector_opt
+            .as_ref()
+            .map(|x| x as &[_])
+            .unwrap_or(vector);
         let scores = self.iter_ids().map(|point| {
             let other_vector = self.mmap_store.as_ref().unwrap().raw_vector(point).unwrap();
             ScoredPointOffset {

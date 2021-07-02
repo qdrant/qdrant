@@ -227,7 +227,7 @@ impl VectorStorage for SimpleVectorStorage {
 
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
         Box::new(SimpleRawScorer {
-            query: Array::from(self.metric.preprocess(vector)),
+            query: Array::from(self.metric.preprocess(&vector).unwrap_or(vector)),
             metric: &self.metric,
             vectors: &self.vectors,
             deleted: &self.deleted,
@@ -245,11 +245,15 @@ impl VectorStorage for SimpleVectorStorage {
 
     fn score_points(
         &self,
-        vector: &Vec<VectorElementType>,
+        vector: &[VectorElementType],
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector = Array::from(self.metric.preprocess(vector.clone()));
+        let preprocessed_vector = Array::from(
+            self.metric
+                .preprocess(vector)
+                .unwrap_or_else(|| vector.to_owned()),
+        );
         let scores = points
             .filter(|point| !self.deleted[*point as usize])
             .map(|point| {
@@ -264,8 +268,12 @@ impl VectorStorage for SimpleVectorStorage {
         return peek_top_scores_iterable(scores, top);
     }
 
-    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector = Array::from(self.metric.preprocess(vector.clone()));
+    fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
+        let preprocessed_vector = Array::from(
+            self.metric
+                .preprocess(vector)
+                .unwrap_or_else(|| vector.to_owned()),
+        );
         let scores = self
             .vectors
             .iter()

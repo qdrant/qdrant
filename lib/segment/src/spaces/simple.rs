@@ -24,7 +24,7 @@ impl Metric for EuclidMetric {
             .zip(v2.iter().cloned())
             .map(|(a, b)| (a - b).powi(2))
             .sum();
-        return -s.sqrt();
+        -s.sqrt()
     }
 
     fn blas_similarity(
@@ -38,11 +38,11 @@ impl Metric for EuclidMetric {
             .zip(v2.iter().cloned())
             .map(|(a, b)| (a - b).powi(2))
             .sum();
-        return -s.sqrt();
+        -s.sqrt()
     }
 
-    fn preprocess(&self, vector: Vec<VectorElementType>) -> Vec<VectorElementType> {
-        return vector;
+    fn preprocess(&self, _vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
+        None
     }
 }
 
@@ -52,8 +52,7 @@ impl Metric for DotProductMetric {
     }
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        let ip: ScoreType = v1.iter().zip(v2).map(|(a, b)| a * b).sum();
-        return ip;
+        v1.iter().zip(v2).map(|(a, b)| a * b).sum()
     }
 
     fn blas_similarity(
@@ -64,8 +63,8 @@ impl Metric for DotProductMetric {
         v1.dot(v2)
     }
 
-    fn preprocess(&self, vector: Vec<VectorElementType>) -> Vec<VectorElementType> {
-        return vector;
+    fn preprocess(&self, _vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
+        None
     }
 }
 
@@ -75,8 +74,7 @@ impl Metric for CosineMetric {
     }
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        let cos: VectorElementType = v1.iter().zip(v2).map(|(a, b)| a * b).sum();
-        return cos;
+        v1.iter().zip(v2).map(|(a, b)| a * b).sum()
     }
 
     fn blas_similarity(
@@ -87,10 +85,10 @@ impl Metric for CosineMetric {
         v1.dot(v2)
     }
 
-    fn preprocess(&self, vector: Vec<VectorElementType>) -> Vec<VectorElementType> {
+    fn preprocess(&self, vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
         let mut length: f32 = vector.iter().map(|x| x * x).sum();
         length = length.sqrt();
         let norm_vector = vector.iter().map(|x| x / length).collect();
-        return norm_vector;
+        Some(norm_vector)
     }
 }

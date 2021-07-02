@@ -83,7 +83,7 @@ pub trait SegmentEntry {
 
     fn search(
         &self,
-        vector: &Vec<VectorElementType>,
+        vector: &[VectorElementType],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -93,7 +93,7 @@ pub trait SegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vector: &Vec<VectorElementType>,
+        vector: &[VectorElementType],
     ) -> OperationResult<bool>;
 
     fn delete_point(

@@ -104,7 +104,7 @@ impl SegmentEntry for Segment {
 
     fn search(
         &self,
-        vector: &Vec<VectorElementType>,
+        vector: &[VectorElementType],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -146,7 +146,7 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vector: &Vec<VectorElementType>,
+        vector: &[VectorElementType],
     ) -> OperationResult<bool> {
         if self.skip_by_version(op_num) {
             return Ok(false);
@@ -161,7 +161,9 @@ impl SegmentEntry for Segment {
         }
 
         let metric = mertic_object(&self.segment_config.distance);
-        let processed_vector = metric.preprocess(vector.clone());
+        let processed_vector = metric
+            .preprocess(vector)
+            .unwrap_or_else(|| vector.to_owned());
 
         let stored_internal_point = {
             let id_mapped = self.id_mapper.borrow();

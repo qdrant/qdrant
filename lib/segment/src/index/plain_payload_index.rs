@@ -134,7 +134,7 @@ impl PlainIndex {
 impl VectorIndex for PlainIndex {
     fn search(
         &self,
-        vector: &Vec<VectorElementType>,
+        vector: &[VectorElementType],
         filter: Option<&Filter>,
         top: usize,
         _params: Option<&SearchParams>,

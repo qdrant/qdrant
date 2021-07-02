@@ -15,5 +15,6 @@ pub trait Metric {
     ) -> ScoreType;
 
     /// Necessary vector transformations performed before adding it to the collection (like normalization)
-    fn preprocess(&self, vector: Vec<VectorElementType>) -> Vec<VectorElementType>;
+    /// Return None if metric does not required preprocessing
+    fn preprocess(&self, vector: &[VectorElementType]) -> Option<Vec<VectorElementType>>;
 }

@@ -551,13 +551,13 @@ mod tests {
     }
 
     fn search_in_graph(
-        query: &Vec<VectorElementType>,
+        query: &[VectorElementType],
         top: usize,
         vector_storage: &TestRawScorerProducer,
         graph: &GraphLayers,
     ) -> Vec<ScoredPointOffset> {
         let fake_condition_checker = FakeConditionChecker {};
-        let raw_scorer = vector_storage.get_raw_scorer(query.clone());
+        let raw_scorer = vector_storage.get_raw_scorer(query.to_owned());
         let scorer = FilteredScorer {
             raw_scorer: &raw_scorer,
             condition_checker: &fake_condition_checker,
@@ -715,7 +715,12 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
-        let processed_query = Array::from(vector_holder.metric.preprocess(query.clone()));
+        let processed_query = Array::from(
+            vector_holder
+                .metric
+                .preprocess(&query)
+                .unwrap_or_else(|| query.clone()),
+        );
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for (idx, vec) in vector_holder.vectors.iter().enumerate() {
             reference_top.push(ScoredPointOffset {
