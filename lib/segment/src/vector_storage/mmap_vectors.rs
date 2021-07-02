@@ -47,7 +47,7 @@ fn ensure_mmap_file_exists(path: &Path, header: &[u8]) -> OperationResult<()> {
         return Ok(());
     }
     let mut file = File::create(path)?;
-    file.write(header)?;
+    file.write_all(header)?;
     Ok(())
 }
 

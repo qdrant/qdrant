@@ -139,7 +139,7 @@ impl VectorStorage for MemmapVectorStorage {
             for id in other.iter_ids() {
                 let vector = &other.get_vector(id).unwrap();
                 let raw_bites = vf_to_u8(vector);
-                file.write(raw_bites)?;
+                file.write_all(raw_bites)?;
                 end_index += 1;
             }
 
@@ -155,7 +155,7 @@ impl VectorStorage for MemmapVectorStorage {
 
             let flags: Vec<u8> = vec![0; (end_index - start_index) as usize];
             let flag_bytes = vf_to_u8(&flags);
-            file.write(flag_bytes)?;
+            file.write_all(flag_bytes)?;
             file.flush()?;
         }
 
