@@ -10,7 +10,7 @@ use crate::payload_storage::payload_storage::PayloadStorage;
 /// Since sled is used for reading only during the initialization, large read cache is not required
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024;
 // 10 mb
-const DB_NAME: &'static str = "payload";
+const DB_NAME: &str = "payload";
 
 pub struct SimplePayloadStorage {
     payload: HashMap<PointOffsetType, TheMap<PayloadKeyType, PayloadType>>,
@@ -168,11 +168,11 @@ impl PayloadStorage for SimplePayloadStorage {
     }
 
     fn schema(&self) -> TheMap<PayloadKeyType, PayloadSchemaType> {
-        return self.schema.clone();
+        self.schema.clone()
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        return Box::new(self.payload.keys().cloned());
+        Box::new(self.payload.keys().cloned())
     }
 }
 

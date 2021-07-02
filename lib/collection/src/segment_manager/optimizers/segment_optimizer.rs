@@ -64,7 +64,7 @@ pub trait SegmentOptimizer {
     /// Build optimized segment
     fn optimized_segment_builder(
         &self,
-        optimizing_segments: &Vec<LockedSegment>,
+        optimizing_segments: &[LockedSegment],
     ) -> CollectionResult<SegmentBuilder> {
         let total_vectors: usize = optimizing_segments
             .iter()
@@ -132,7 +132,7 @@ pub trait SegmentOptimizer {
             ids.iter()
                 .cloned()
                 .map(|id| read_segments.get(id))
-                .filter_map(|x| x.and_then(|x| Some(x.clone())))
+                .filter_map(|x| x.cloned())
                 .collect()
         };
 
@@ -156,7 +156,7 @@ pub trait SegmentOptimizer {
             proxies
                 .into_iter()
                 .zip(ids.iter().cloned())
-                .map(|(proxy, idx)| write_segments.swap(proxy, &vec![idx], false).unwrap())
+                .map(|(proxy, idx)| write_segments.swap(proxy, &[idx], false).unwrap())
                 .collect()
         };
 

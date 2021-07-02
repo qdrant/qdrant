@@ -22,9 +22,9 @@ fn check_filter<F>(checker: &F, filter: &Filter) -> bool
 where
     F: Fn(&Condition) -> bool,
 {
-    return check_should(checker, &filter.should)
+    check_should(checker, &filter.should)
         && check_must(checker, &filter.must)
-        && check_must_not(checker, &filter.must_not);
+        && check_must_not(checker, &filter.must_not)
 }
 
 fn check_should<F>(checker: &F, should: &Option<Vec<Condition>>) -> bool

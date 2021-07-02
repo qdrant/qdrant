@@ -27,8 +27,7 @@ fn open_read(path: &Path) -> OperationResult<Mmap> {
         .create(true)
         .open(path)?;
 
-    let mmap = unsafe { MmapOptions::new().map(&file)? };
-    return Ok(mmap);
+    Ok(unsafe { MmapOptions::new().map(&file)? })
 }
 
 fn open_write(path: &Path) -> OperationResult<MmapMut> {
@@ -38,8 +37,7 @@ fn open_write(path: &Path) -> OperationResult<MmapMut> {
         .create(false)
         .open(path)?;
 
-    let mmap = unsafe { MmapMut::map_mut(&file)? };
-    return Ok(mmap);
+    Ok(unsafe { MmapMut::map_mut(&file)? })
 }
 
 fn ensure_mmap_file_exists(path: &Path, header: &[u8]) -> OperationResult<()> {
@@ -91,7 +89,7 @@ impl MmapVectors {
     pub fn raw_vector_offset(&self, offset: usize) -> &[VectorElementType] {
         let byte_slice = &self.mmap[offset..(offset + self.raw_size())];
         let arr: &[VectorElementType] = unsafe { transmute(byte_slice) };
-        return &arr[0..self.dim];
+        &arr[0..self.dim]
     }
 
     pub fn raw_vector(&self, key: PointOffsetType) -> Option<&[VectorElementType]> {

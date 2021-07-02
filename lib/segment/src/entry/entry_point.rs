@@ -42,7 +42,7 @@ impl<E> From<AtomicIoError<E>> for OperationError {
         match err {
             AtomicIoError::Internal(io_err) => OperationError::from(io_err),
             AtomicIoError::User(_user_err) => OperationError::ServiceError {
-                description: format!("Unknown atomic write error"),
+                description: "Unknown atomic write error".to_owned(),
             },
         }
     }

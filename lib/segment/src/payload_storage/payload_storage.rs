@@ -26,7 +26,7 @@ pub trait PayloadStorage {
             ) -> Vec<(PayloadKeyType, PayloadType)> {
                 let key = match &prefix {
                     None => k.to_string(),
-                    Some(_k) => (_k.to_owned() + "__" + k).to_string(),
+                    Some(_k) => (_k.to_owned() + "__" + k),
                 };
 
                 let opt_payload_interface: Result<PayloadInterface, _> =

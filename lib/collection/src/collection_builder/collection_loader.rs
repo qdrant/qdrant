@@ -21,12 +21,14 @@ pub fn load_collection(
 ) -> Collection {
     let wal_path = collection_path.join("wal");
     let segments_path = collection_path.join("segments");
-    let mut segment_holder = SegmentHolder::new();
+    let mut segment_holder = SegmentHolder::default();
 
-    let collection_config = CollectionConfig::load(&collection_path).expect(&format!(
-        "Can't read collection config at {}",
-        collection_path.to_str().unwrap()
-    ));
+    let collection_config = CollectionConfig::load(&collection_path).unwrap_or_else(|_| {
+        panic!(
+            "Can't read collection config at {}",
+            collection_path.to_str().unwrap()
+        )
+    });
 
     let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(
         wal_path.to_str().unwrap(),
@@ -34,18 +36,22 @@ pub fn load_collection(
     )
     .expect("Can't read WAL");
 
-    let segment_dirs = read_dir(segments_path.as_path()).expect(&format!(
-        "Can't read segments directory {}",
-        segments_path.to_str().unwrap()
-    ));
+    let segment_dirs = read_dir(segments_path.as_path()).unwrap_or_else(|_| {
+        panic!(
+            "Can't read segments directory {}",
+            segments_path.to_str().unwrap()
+        )
+    });
 
     for entry in segment_dirs {
         let segments_path = entry.unwrap().path();
         if segments_path.ends_with("deleted") {
-            remove_dir_all(segments_path.as_path()).expect(&format!(
-                "Can't remove marked-for-remove segment {}",
-                segments_path.to_str().unwrap()
-            ));
+            remove_dir_all(segments_path.as_path()).unwrap_or_else(|_| {
+                panic!(
+                    "Can't remove marked-for-remove segment {}",
+                    segments_path.to_str().unwrap()
+                )
+            });
             continue;
         }
         let segment = match load_segment(segments_path.as_path()) {
@@ -82,14 +88,10 @@ pub fn load_collection(
 
         for (op_num, update) in wal.read_all() {
             // Panic only in case of internal error. If wrong formatting - skip
-            match collection.updater.update(op_num, update) {
-                Ok(_) => {}
-                Err(err) => match err {
-                    CollectionError::ServiceError { error } => {
-                        panic!("Can't apply WAL operation: {}", error)
-                    }
-                    _ => {}
-                },
+            if let Err(CollectionError::ServiceError { error }) =
+                collection.updater.update(op_num, update)
+            {
+                panic!("Can't apply WAL operation: {}", error)
             }
             bar.inc(1);
         }

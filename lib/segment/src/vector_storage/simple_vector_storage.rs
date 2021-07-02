@@ -36,7 +36,7 @@ struct StoredRecord {
 
 pub struct SimpleRawScorer<'a> {
     pub query: Array1<VectorElementType>,
-    pub metric: &'a Box<dyn Metric>,
+    pub metric: &'a dyn Metric,
     pub vectors: &'a Vec<Array1<VectorElementType>>,
     pub deleted: &'a BitVec,
 }
@@ -70,7 +70,7 @@ impl RawScorer for SimpleRawScorer<'_> {
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let vector_a = &self.vectors[point_a as usize];
         let vector_b = &self.vectors[point_b as usize];
-        return self.metric.blas_similarity(vector_a, vector_b);
+        self.metric.blas_similarity(vector_a, vector_b)
     }
 }
 
@@ -112,14 +112,14 @@ impl SimpleVectorStorage {
             vectors.len() * dim * size_of::<VectorElementType>() / 1024 / 1024
         );
 
-        return Ok(SimpleVectorStorage {
+        Ok(SimpleVectorStorage {
             dim,
             metric,
             vectors,
             deleted,
             deleted_count,
             store,
-        });
+        })
     }
 
     fn update_stored(&self, point_id: PointOffsetType) -> OperationResult<()> {
@@ -160,7 +160,7 @@ impl VectorStorage for SimpleVectorStorage {
             return None;
         }
         let vec = self.vectors.get(key as usize)?.clone();
-        return Some(vec.to_vec());
+        Some(vec.to_vec())
     }
 
     fn put_vector(&mut self, vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
@@ -169,7 +169,7 @@ impl VectorStorage for SimpleVectorStorage {
         self.deleted.push(false);
         let new_id = (self.vectors.len() - 1) as PointOffsetType;
         self.update_stored(new_id)?;
-        return Ok(new_id);
+        Ok(new_id)
     }
 
     fn update_vector(
@@ -179,7 +179,7 @@ impl VectorStorage for SimpleVectorStorage {
     ) -> OperationResult<PointOffsetType> {
         self.vectors[key as usize].assign(&Array::from(vector));
         self.update_stored(key)?;
-        return Ok(key);
+        Ok(key)
     }
 
     fn update_from(
@@ -196,7 +196,7 @@ impl VectorStorage for SimpleVectorStorage {
             self.update_stored(new_id)?;
         }
         let end_index = self.vectors.len() as PointOffsetType;
-        return Ok(start_index..end_index);
+        Ok(start_index..end_index)
     }
 
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
@@ -218,7 +218,7 @@ impl VectorStorage for SimpleVectorStorage {
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let iter = (0..self.vectors.len() as PointOffsetType)
             .filter(move |id| !self.deleted[*id as usize]);
-        return Box::new(iter);
+        Box::new(iter)
     }
 
     fn flush(&self) -> OperationResult<()> {
@@ -228,7 +228,7 @@ impl VectorStorage for SimpleVectorStorage {
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
         Box::new(SimpleRawScorer {
             query: Array::from(self.metric.preprocess(&vector).unwrap_or(vector)),
-            metric: &self.metric,
+            metric: self.metric.as_ref(),
             vectors: &self.vectors,
             deleted: &self.deleted,
         })
@@ -237,7 +237,7 @@ impl VectorStorage for SimpleVectorStorage {
     fn raw_scorer_internal(&self, point_id: PointOffsetType) -> Box<dyn RawScorer + '_> {
         Box::new(SimpleRawScorer {
             query: self.vectors[point_id as usize].clone(),
-            metric: &self.metric,
+            metric: self.metric.as_ref(),
             vectors: &self.vectors,
             deleted: &self.deleted,
         })
@@ -265,7 +265,7 @@ impl VectorStorage for SimpleVectorStorage {
                         .blas_similarity(&preprocessed_vector, other_vector),
                 }
             });
-        return peek_top_scores_iterable(scores, top);
+        peek_top_scores_iterable(scores, top)
     }
 
     fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
@@ -285,7 +285,7 @@ impl VectorStorage for SimpleVectorStorage {
                     .metric
                     .blas_similarity(&preprocessed_vector, other_vector),
             });
-        return peek_top_scores_iterable(scores, top);
+        peek_top_scores_iterable(scores, top)
     }
 
     fn score_internal(
@@ -295,7 +295,7 @@ impl VectorStorage for SimpleVectorStorage {
         top: usize,
     ) -> Vec<ScoredPointOffset> {
         let vector = self.get_vector(point).unwrap();
-        return self.score_points(&vector, points, top);
+        self.score_points(&vector, points, top)
     }
 }
 
@@ -337,8 +337,7 @@ mod tests {
                 scored_point.idx
             }
             None => {
-                assert!(false, "No close vector found!");
-                0
+                panic!("No close vector found!")
             }
         };
 
@@ -363,7 +362,7 @@ mod tests {
                 assert_eq!(&raw_res1[scored_point.idx as usize], scored_point);
             }
             None => {
-                assert!(false, "No close vector found!")
+                panic!("No close vector found!")
             }
         };
 

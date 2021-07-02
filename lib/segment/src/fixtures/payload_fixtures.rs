@@ -8,7 +8,7 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use std::ops::Range;
 
-const ADJECTIVE: &'static [&'static str] = &[
+const ADJECTIVE: &[&str] = &[
     "jobless",
     "rightful",
     "breakable",
@@ -22,7 +22,7 @@ const ADJECTIVE: &'static [&'static str] = &[
     "broad",
 ];
 
-const NOUN: &'static [&'static str] = &[
+const NOUN: &[&str] = &[
     "territory",
     "jam",
     "neck",

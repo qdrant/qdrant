@@ -46,12 +46,10 @@ impl Segment {
         }?;
         if new_internal_index != old_internal_id {
             let payload = self.payload_storage.borrow_mut().drop(old_internal_id)?;
-            match payload {
-                Some(payload) => self
-                    .payload_storage
+            if let Some(payload) = payload {
+                self.payload_storage
                     .borrow_mut()
-                    .assign_all(new_internal_index, payload)?,
-                None => (),
+                    .assign_all(new_internal_index, payload)?
             }
         }
 
@@ -59,12 +57,12 @@ impl Segment {
     }
 
     fn skip_by_version(&mut self, op_num: SeqNumberType) -> bool {
-        return if self.version > op_num {
+        if self.version > op_num {
             true
         } else {
             self.version = op_num;
             false
-        };
+        }
     }
 
     fn lookup_internal_id(&self, point_id: PointIdType) -> OperationResult<PointOffsetType> {
@@ -125,21 +123,19 @@ impl SegmentEntry for Segment {
         let id_mapper = self.id_mapper.borrow();
         let res = internal_result
             .iter()
-            .map(|&scored_point_offset| {
-                (ScoredPoint {
-                    id: id_mapper
-                        .external_id(scored_point_offset.idx)
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "Corrupter id_mapper, no external value for {}",
-                                scored_point_offset.idx
-                            )
-                        }),
-                    score: scored_point_offset.score,
-                })
+            .map(|&scored_point_offset| ScoredPoint {
+                id: id_mapper
+                    .external_id(scored_point_offset.idx)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Corrupter id_mapper, no external value for {}",
+                            scored_point_offset.idx
+                        )
+                    }),
+                score: scored_point_offset.score,
             })
             .collect();
-        return Ok(res);
+        Ok(res)
     }
 
     fn upsert_point(
@@ -366,7 +362,7 @@ impl SegmentEntry for Segment {
                 (
                     key,
                     PayloadSchemaInfo {
-                        data_type: data_type.clone(),
+                        data_type: data_type,
                         indexed: is_indexed,
                     },
                 )

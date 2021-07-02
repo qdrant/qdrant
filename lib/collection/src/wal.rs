@@ -54,10 +54,10 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     pub fn new(dir: &str, wal_options: &WalOptions) -> Result<SerdeWal<R>> {
         let wal = Wal::with_options(dir, wal_options)
             .map_err(|err| WalError::InitWalError(format!("{:?}", err)))?;
-        return Ok(SerdeWal {
+        Ok(SerdeWal {
             record: PhantomData,
             wal,
-        });
+        })
     }
 
     pub fn write(&mut self, entity: &R) -> Result<u64> {
@@ -79,14 +79,12 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         let first_index = self.wal.first_index();
         let num_entries = self.wal.num_entries();
 
-        let iter = (start_from..(first_index + num_entries)).map(move |idx| {
+        (start_from..(first_index + num_entries)).map(move |idx| {
             let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
             let record: R = rmp_serde::from_read_ref(&record_bin.to_vec())
                 .expect("Can't deserialize entry, probably corrupted WAL on version mismatch");
             (idx, record)
-        });
-
-        return iter;
+        })
     }
 
     pub fn ack(&mut self, until_index: u64) -> Result<()> {

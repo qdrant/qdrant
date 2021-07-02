@@ -28,10 +28,10 @@ impl LockedSegment {
     }
 
     pub fn get(&self) -> Arc<RwLock<dyn SegmentEntry>> {
-        return match self {
+        match self {
             LockedSegment::Original(segment) => segment.clone(),
             LockedSegment::Proxy(proxy) => proxy.clone(),
-        };
+        }
     }
 
     pub fn drop_data(self) -> OperationResult<()> {
@@ -69,6 +69,7 @@ unsafe impl Sync for LockedSegment {}
 
 unsafe impl Send for LockedSegment {}
 
+#[derive(Default)]
 pub struct SegmentHolder {
     segments: HashMap<SegmentId, LockedSegment>,
 }
@@ -76,12 +77,6 @@ pub struct SegmentHolder {
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
 
 impl<'s> SegmentHolder {
-    pub fn new() -> Self {
-        SegmentHolder {
-            segments: Default::default(),
-        }
-    }
-
     pub fn iter(&'s self) -> impl Iterator<Item = (&SegmentId, &LockedSegment)> + 's {
         self.segments.iter()
     }
@@ -92,11 +87,11 @@ impl<'s> SegmentHolder {
 
     fn generate_new_key(&self) -> SegmentId {
         let key = thread_rng().gen::<SegmentId>();
-        return if self.segments.contains_key(&key) {
+        if self.segments.contains_key(&key) {
             self.generate_new_key()
         } else {
             key
-        };
+        }
     }
 
     /// Add new segment to storage
@@ -106,17 +101,17 @@ impl<'s> SegmentHolder {
     {
         let key = self.generate_new_key();
         self.segments.insert(key, segment.into());
-        return key;
+        key
     }
 
     /// Add new segment to storage which is already LockedSegment
     pub fn add_locked(&mut self, segment: LockedSegment) -> SegmentId {
         let key = self.generate_new_key();
         self.segments.insert(key, segment);
-        return key;
+        key
     }
 
-    pub fn remove(&mut self, remove_ids: &Vec<SegmentId>, drop_data: bool) -> OperationResult<()> {
+    pub fn remove(&mut self, remove_ids: &[SegmentId], drop_data: bool) -> OperationResult<()> {
         for remove_id in remove_ids {
             let removed_segment = self.segments.remove(remove_id);
 
@@ -134,7 +129,7 @@ impl<'s> SegmentHolder {
     pub fn swap<T>(
         &mut self,
         segment: T,
-        remove_ids: &Vec<SegmentId>,
+        remove_ids: &[SegmentId],
         drop_data: bool,
     ) -> OperationResult<SegmentId>
     where
@@ -142,11 +137,11 @@ impl<'s> SegmentHolder {
     {
         let new_id = self.add(segment);
         self.remove(remove_ids, drop_data)?;
-        return Ok(new_id);
+        Ok(new_id)
     }
 
     pub fn get(&self, id: SegmentId) -> Option<&LockedSegment> {
-        return self.segments.get(&id);
+        self.segments.get(&id)
     }
 
     pub fn appendable_ids(&self) -> Vec<SegmentId> {
@@ -164,15 +159,11 @@ impl<'s> SegmentHolder {
             .values()
             .filter(|x| x.get().read().is_appendable())
             .collect();
-        let segment = segments
-            .choose(&mut rand::thread_rng())
-            .cloned()
-            .map(|x| x.clone());
-        segment
+        segments.choose(&mut rand::thread_rng()).cloned().cloned()
     }
 
     /// Selects point ids, which is stored in this segment
-    fn segment_points(&self, ids: &Vec<PointIdType>, segment: &LockedSegment) -> Vec<PointIdType> {
+    fn segment_points(&self, ids: &[PointIdType], segment: &LockedSegment) -> Vec<PointIdType> {
         let segment_arc = segment.get();
         let entry = segment_arc.read();
         ids.iter()
@@ -201,7 +192,7 @@ impl<'s> SegmentHolder {
     pub fn apply_points<F>(
         &self,
         op_num: SeqNumberType,
-        ids: &Vec<PointIdType>,
+        ids: &[PointIdType],
         mut f: F,
     ) -> OperationResult<usize>
     where
@@ -232,7 +223,7 @@ impl<'s> SegmentHolder {
     pub fn apply_points_to_appendable<F>(
         &self,
         op_num: SeqNumberType,
-        ids: &Vec<PointIdType>,
+        ids: &[PointIdType],
         mut f: F,
     ) -> OperationResult<usize>
     where
@@ -266,7 +257,7 @@ impl<'s> SegmentHolder {
         Ok(applied_points)
     }
 
-    pub fn read_points<F>(&self, ids: &Vec<PointIdType>, mut f: F) -> OperationResult<usize>
+    pub fn read_points<F>(&self, ids: &[PointIdType], mut f: F) -> OperationResult<usize>
     where
         F: FnMut(PointIdType, &RwLockReadGuard<dyn SegmentEntry>) -> OperationResult<bool>,
     {
@@ -310,7 +301,7 @@ mod tests {
         let segment1 = build_segment_1(dir.path());
         let segment2 = build_segment_2(dir.path());
 
-        let mut holder = SegmentHolder::new();
+        let mut holder = SegmentHolder::default();
 
         let sid1 = holder.add(segment1);
         let sid2 = holder.add(segment2);

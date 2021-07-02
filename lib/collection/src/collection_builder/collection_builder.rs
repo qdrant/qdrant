@@ -56,8 +56,8 @@ pub fn construct_collection(
         config.optimizer_config.flush_interval_sec,
     )));
 
-    let collection = Collection {
-        segments: segment_holder.clone(),
+    Collection {
+        segments: segment_holder,
         config: Arc::new(RwLock::new(config)),
         wal: locked_wal,
         searcher: Arc::new(searcher),
@@ -66,9 +66,7 @@ pub fn construct_collection(
         runtime_handle: optimize_runtime,
         update_sender: tx,
         path: collection_path.to_owned(),
-    };
-
-    return collection;
+    }
 }
 
 /// Creates new empty collection with given configuration
@@ -82,21 +80,17 @@ pub fn build_collection(
 ) -> CollectionResult<Collection> {
     let wal_path = collection_path.join("wal");
 
-    create_dir_all(&wal_path).or_else(|err| {
-        Err(CollectionError::ServiceError {
-            error: format!("Can't create collection directory. Error: {}", err),
-        })
+    create_dir_all(&wal_path).map_err(|err| CollectionError::ServiceError {
+        error: format!("Can't create collection directory. Error: {}", err),
     })?;
 
     let segments_path = collection_path.join("segments");
 
-    create_dir_all(&segments_path).or_else(|err| {
-        Err(CollectionError::ServiceError {
-            error: format!("Can't create collection directory. Error: {}", err),
-        })
+    create_dir_all(&segments_path).map_err(|err| CollectionError::ServiceError {
+        error: format!("Can't create collection directory. Error: {}", err),
     })?;
 
-    let mut segment_holder = SegmentHolder::new();
+    let mut segment_holder = SegmentHolder::default();
 
     for _sid in 0..optimizers_config.max_segment_number {
         let segment = build_simple_segment(
@@ -112,7 +106,7 @@ pub fn build_collection(
 
     let collection_config = CollectionConfig {
         params: collection_params.clone(),
-        hnsw_config: hnsw_config.clone(),
+        hnsw_config: *hnsw_config,
         optimizer_config: optimizers_config.clone(),
         wal_config: wal_config.clone(),
     };

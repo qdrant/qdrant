@@ -98,7 +98,7 @@ fn create_segment(
     let appendable_flag =
         segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
 
-    return Ok(Segment {
+    Ok(Segment {
         version,
         persisted_version: Arc::new(Mutex::new(version)),
         current_path: segment_path.to_owned(),
@@ -111,7 +111,7 @@ fn create_segment(
         appendable_flag,
         segment_type,
         segment_config: config.clone(),
-    });
+    })
 }
 
 pub fn load_segment(path: &Path) -> OperationResult<Segment> {
@@ -121,15 +121,14 @@ pub fn load_segment(path: &Path) -> OperationResult<Segment> {
     let mut file = File::open(segment_config_path)?;
     file.read_to_string(&mut contents)?;
 
-    let segment_state: SegmentState = serde_json::from_str(&contents).or_else(|err| {
-        Err(OperationError::ServiceError {
+    let segment_state: SegmentState =
+        serde_json::from_str(&contents).map_err(|err| OperationError::ServiceError {
             description: format!(
                 "Failed to read segment {}. Error: {}",
                 path.to_str().unwrap(),
                 err
             ),
-        })
-    })?;
+        })?;
 
     create_segment(segment_state.version, path, &segment_state.config)
 }

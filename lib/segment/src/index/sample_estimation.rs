@@ -12,7 +12,7 @@ fn estimate_required_sample_size(total: usize, confidence_interval: usize) -> us
     let index_fraction = confidence_interval as f64 / total as f64 / 2.0;
     let h = 0.5; // success rate which requires most number of estimations
     let estimated_size = h * (1. - h) / (index_fraction / z).powi(2);
-    return max(estimated_size as usize, 10);
+    max(estimated_size as usize, 10)
 }
 
 /// Returns (expected cardinality ± confidence interval at 0.99)
@@ -25,7 +25,7 @@ fn confidence_agresti_coull_interval(trials: usize, positive: usize, total: usiz
 
     let expected = (phat * total as f64) as i64;
     let delta = (interval * total as f64) as i64;
-    return (expected, delta);
+    (expected, delta)
 }
 
 /// Tests if given `query` have cardinality higher than the `threshold`

@@ -87,7 +87,7 @@ impl EntryPoints {
             point_id: new_point,
             level,
         };
-        self.entry_points.push(new_entry.clone());
+        self.entry_points.push(new_entry);
         None
     }
 

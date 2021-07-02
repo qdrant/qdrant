@@ -63,8 +63,7 @@ impl StructPayloadIndex {
                 indexes
                     .iter()
                     .map(|field_index| field_index.filter(field_condition))
-                    .skip_while(|filter_iter| filter_iter.is_none())
-                    .next()
+                    .find(|filter_iter| filter_iter.is_some())
                     .map(|filter_iter| filter_iter.unwrap())
             });
         indexes
@@ -293,7 +292,7 @@ impl PayloadIndex for StructPayloadIndex {
             }
             Condition::Field(field_condition) => self
                 .estimate_field_condition(field_condition)
-                .unwrap_or(CardinalityEstimation::unknown(self.total_points())),
+                .unwrap_or_else(|| CardinalityEstimation::unknown(self.total_points())),
         };
 
         estimate_filter(&estimator, query, total_points)
@@ -349,9 +348,11 @@ impl PayloadIndex for StructPayloadIndex {
                 .iter()
                 .map(|clause| {
                     match clause {
-                        PrimaryCondition::Condition(field_condition) => self
-                            .query_field(field_condition)
-                            .unwrap_or(vector_storage_ref.iter_ids() /* index is not built */),
+                        PrimaryCondition::Condition(field_condition) => {
+                            self.query_field(field_condition).unwrap_or_else(
+                                || vector_storage_ref.iter_ids(), /* index is not built */
+                            )
+                        }
                         PrimaryCondition::Ids(ids) => Box::new(ids.iter().cloned()),
                     }
                 })

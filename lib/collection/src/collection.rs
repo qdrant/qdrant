@@ -108,20 +108,24 @@ impl Collection {
     }
 
     pub fn search(&self, request: Arc<SearchRequest>) -> CollectionResult<Vec<ScoredPoint>> {
-        return self.searcher.search(request);
+        self.searcher.search(request)
     }
 
     pub fn scroll(&self, request: Arc<ScrollRequest>) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequest::default();
 
-        let offset = request.offset.unwrap_or(default_request.offset.unwrap());
-        let limit = request.limit.unwrap_or(default_request.limit.unwrap());
+        let offset = request
+            .offset
+            .unwrap_or_else(|| default_request.offset.unwrap());
+        let limit = request
+            .limit
+            .unwrap_or_else(|| default_request.limit.unwrap());
         let with_payload = request
             .with_payload
-            .unwrap_or(default_request.with_payload.unwrap());
+            .unwrap_or_else(|| default_request.with_payload.unwrap());
         let with_vector = request
             .with_vector
-            .unwrap_or(default_request.with_vector.unwrap());
+            .unwrap_or_else(|| default_request.with_vector.unwrap());
 
         // ToDo: Make faster points selection with a set
         let point_ids = self
@@ -158,11 +162,11 @@ impl Collection {
 
     pub fn retrieve(
         &self,
-        points: &Vec<PointIdType>,
+        points: &[PointIdType],
         with_payload: bool,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>> {
-        return self.searcher.retrieve(points, with_payload, with_vector);
+        self.searcher.retrieve(points, with_payload, with_vector)
     }
 
     pub fn stop(&self) -> CollectionResult<()> {
@@ -186,13 +190,13 @@ impl Collection {
                 if i >= avg_vector.len() {
                     avg_vector.push(vector[i])
                 } else {
-                    avg_vector[i] = avg_vector[i] + vector[i];
+                    avg_vector[i] += vector[i];
                 }
             }
         }
 
-        for i in 0..avg_vector.len() {
-            avg_vector[i] = avg_vector[i] / (count as VectorElementType);
+        for item in &mut avg_vector {
+            *item /= count as VectorElementType;
         }
 
         avg_vector
@@ -201,7 +205,7 @@ impl Collection {
     pub fn recommend(&self, request: Arc<RecommendRequest>) -> CollectionResult<Vec<ScoredPoint>> {
         if request.positive.is_empty() {
             return Err(CollectionError::BadRequest {
-                description: format!("At least one positive vector ID required"),
+                description: "At least one positive vector ID required".to_owned(),
             });
         }
 
@@ -255,15 +259,15 @@ impl Collection {
             vector: search_vector,
             filter: Some(Filter {
                 should: None,
-                must: match request.filter.clone() {
-                    None => None,
-                    Some(filter) => Some(vec![Condition::Filter(filter)]),
-                },
+                must: request
+                    .filter
+                    .clone()
+                    .map(|filter| vec![Condition::Filter(filter)]),
                 must_not: Some(vec![Condition::HasId(HasIdCondition {
                     has_id: reference_vectors_ids.iter().cloned().collect(),
                 })]),
             }),
-            params: request.params.clone(),
+            params: request.params,
             top: request.top,
         };
 

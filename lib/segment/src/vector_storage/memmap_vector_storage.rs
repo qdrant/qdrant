@@ -10,13 +10,13 @@ use std::mem::size_of;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-fn vf_to_u8<T>(v: &Vec<T>) -> &[u8] {
+fn vf_to_u8<T>(v: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * size_of::<T>()) }
 }
 
 pub struct MemmapRawScorer<'a> {
     query: Vec<VectorElementType>,
-    metric: &'a Box<dyn Metric>,
+    metric: &'a dyn Metric,
     mmap_store: &'a MmapVectors,
 }
 
@@ -50,7 +50,7 @@ impl RawScorer for MemmapRawScorer<'_> {
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let vector_a = self.mmap_store.raw_vector(point_a).unwrap();
         let vector_b = self.mmap_store.raw_vector(point_b).unwrap();
-        return self.metric.similarity(vector_a, vector_b);
+        self.metric.similarity(vector_a, vector_b)
     }
 }
 
@@ -165,7 +165,7 @@ impl VectorStorage for MemmapVectorStorage {
             dim,
         )?);
 
-        return Ok(start_index..end_index);
+        Ok(start_index..end_index)
     }
 
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
@@ -184,7 +184,7 @@ impl VectorStorage for MemmapVectorStorage {
         let num_vectors = self.mmap_store.as_ref().unwrap().num_vectors;
         let iter = (0..(num_vectors as PointOffsetType))
             .filter(move |id| !self.mmap_store.as_ref().unwrap().deleted(*id).unwrap());
-        return Box::new(iter);
+        Box::new(iter)
     }
 
     fn flush(&self) -> OperationResult<()> {
@@ -197,7 +197,7 @@ impl VectorStorage for MemmapVectorStorage {
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
         Box::new(MemmapRawScorer {
             query: self.metric.preprocess(&vector).unwrap_or(vector),
-            metric: &self.metric,
+            metric: self.metric.as_ref(),
             mmap_store: &self.mmap_store.as_ref().unwrap(),
         })
     }
@@ -205,7 +205,7 @@ impl VectorStorage for MemmapVectorStorage {
     fn raw_scorer_internal(&self, point_id: PointOffsetType) -> Box<dyn RawScorer + '_> {
         Box::new(MemmapRawScorer {
             query: self.get_vector(point_id).unwrap(),
-            metric: &self.metric,
+            metric: self.metric.as_ref(),
             mmap_store: &self.mmap_store.as_ref().unwrap(),
         })
     }
@@ -237,7 +237,7 @@ impl VectorStorage for MemmapVectorStorage {
                     score: self.metric.similarity(preprocessed_vector, &other_vector),
                 }
             });
-        return peek_top_scores_iterable(scores, top);
+        peek_top_scores_iterable(scores, top)
     }
 
     fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
@@ -254,7 +254,7 @@ impl VectorStorage for MemmapVectorStorage {
             }
         });
 
-        return peek_top_scores_iterable(scores, top);
+        peek_top_scores_iterable(scores, top)
     }
 
     fn score_internal(
@@ -264,7 +264,7 @@ impl VectorStorage for MemmapVectorStorage {
         top: usize,
     ) -> Vec<ScoredPointOffset> {
         let vector = self.get_vector(point).unwrap();
-        return self.score_points(&vector, points, top);
+        self.score_points(&vector, points, top)
     }
 }
 

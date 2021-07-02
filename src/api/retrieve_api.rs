@@ -24,7 +24,7 @@ pub async fn get_point(
     let response = {
         toc.get_collection(&name).and_then(|collection| {
             collection
-                .retrieve(&vec![point_id], true, true)
+                .retrieve(&[point_id], true, true)
                 .map_err(|err| err.into())
                 .map(|points| points.into_iter().next())
         })

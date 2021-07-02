@@ -2,7 +2,6 @@ mod api;
 mod common;
 
 use schemars::{schema_for, JsonSchema};
-use serde_json;
 
 use crate::api::models::CollectionsResponse;
 use crate::api::retrieve_api::PointRequest;

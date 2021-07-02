@@ -76,7 +76,7 @@ impl ProxySegment {
     fn add_deleted_points_condition_to_filter(&self, filter: Option<&Filter>) -> Filter {
         let deleted_points = self.deleted_points.read();
         let wrapper_condition = Condition::HasId(deleted_points.clone().into());
-        let wrapped_filter = match filter {
+        match filter {
             None => Filter::new_must_not(wrapper_condition),
             Some(f) => {
                 let mut new_filter = f.clone();
@@ -92,8 +92,7 @@ impl ProxySegment {
                 new_filter.must_not = new_must_not;
                 new_filter
             }
-        };
-        wrapped_filter
+        }
     }
 }
 
@@ -142,7 +141,7 @@ impl SegmentEntry for ProxySegment {
             .search(vector, filter, top, params)?;
 
         wrapped_result.append(&mut write_result);
-        return Ok(wrapped_result);
+        Ok(wrapped_result)
     }
 
     fn upsert_point(
@@ -339,7 +338,7 @@ impl SegmentEntry for ProxySegment {
         let wrapped_info = self.wrapped_segment.get().read().info();
         let write_info = self.write_segment.get().read().info();
 
-        return SegmentInfo {
+        SegmentInfo {
             segment_type: SegmentType::Special,
             num_vectors: self.vectors_count(),
             num_deleted_vectors: write_info.num_deleted_vectors,
@@ -347,7 +346,7 @@ impl SegmentEntry for ProxySegment {
             disk_usage_bytes: wrapped_info.disk_usage_bytes + write_info.disk_usage_bytes,
             is_appendable: false,
             schema: wrapped_info.schema,
-        };
+        }
     }
 
     fn config(&self) -> SegmentConfig {
