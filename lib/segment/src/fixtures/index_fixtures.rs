@@ -41,7 +41,7 @@ impl TestRawScorerProducer {
             .collect_vec();
 
         TestRawScorerProducer {
-            vectors: vectors.into_iter().map(|v| Array::from(v)).collect(),
+            vectors: vectors.into_iter().map(Array::from).collect(),
             deleted: BitVec::from_elem(num_vectors, false),
             metric,
         }
@@ -50,7 +50,7 @@ impl TestRawScorerProducer {
     pub fn get_raw_scorer(&self, query: Vec<VectorElementType>) -> SimpleRawScorer {
         SimpleRawScorer {
             query: Array::from(self.metric.preprocess(&query).unwrap_or(query)),
-            metric: &self.metric,
+            metric: self.metric.as_ref(),
             vectors: &self.vectors,
             deleted: &self.deleted,
         }

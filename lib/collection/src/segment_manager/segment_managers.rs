@@ -14,7 +14,7 @@ pub trait SegmentSearcher {
 
     fn retrieve(
         &self,
-        points: &Vec<PointIdType>,
+        points: &[PointIdType],
         with_payload: bool,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>>;

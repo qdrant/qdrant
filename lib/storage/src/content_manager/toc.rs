@@ -23,6 +23,7 @@ use collection::config::CollectionParams;
 use collection::operations::config_diff::DiffConfig;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
+#[allow(clippy::identity_op)]
 const SLED_CACHE_SIZE: u64 = 1 * 1024 * 1024; // 1 mb
 
 const COLLECTIONS_DIR: &str = "collections";
@@ -96,13 +97,11 @@ impl TableOfContent {
     fn create_collection_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
         let path = self.get_collection_path(collection_name);
 
-        create_dir_all(&path).or_else(|err| {
-            Err(StorageError::ServiceError {
-                description: format!(
-                    "Can't create directory for collection {}. Error: {}",
-                    collection_name, err
-                ),
-            })
+        create_dir_all(&path).map_err(|err| StorageError::ServiceError {
+            description: format!(
+                "Can't create directory for collection {}. Error: {}",
+                collection_name, err
+            ),
         })?;
 
         Ok(path)
@@ -172,7 +171,7 @@ impl TableOfContent {
                 };
 
                 let hnsw_config = match hnsw_config_diff {
-                    None => self.storage_config.hnsw_index.clone(),
+                    None => self.storage_config.hnsw_index,
                     Some(diff) => diff.update(&self.storage_config.hnsw_index)?,
                 };
 
@@ -206,13 +205,11 @@ impl TableOfContent {
                 let removed = self.collections.write().remove(&collection_name).is_some();
                 if removed {
                     let path = self.get_collection_path(&collection_name);
-                    remove_dir_all(path).or_else(|err| {
-                        Err(StorageError::ServiceError {
-                            description: format!(
-                                "Can't delete collection {}, error: {}",
-                                collection_name, err
-                            ),
-                        })
+                    remove_dir_all(path).map_err(|err| StorageError::ServiceError {
+                        description: format!(
+                            "Can't delete collection {}, error: {}",
+                            collection_name, err
+                        ),
                     })?;
                 }
                 Ok(removed)

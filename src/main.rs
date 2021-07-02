@@ -15,7 +15,6 @@ use crate::api::recommend_api::recommend_points;
 use crate::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::api::search_api::search_points;
 use crate::api::update_api::update_points;
-use env_logger;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::toc::TableOfContent;
 
@@ -62,7 +61,7 @@ async fn main() -> std::io::Result<()> {
     let toc_data = web::Data::new(toc);
 
     HttpServer::new(move || {
-        let app = App::new()
+        App::new()
             .wrap(Logger::default())
             .app_data(toc_data.clone())
             .data(
@@ -79,9 +78,7 @@ async fn main() -> std::io::Result<()> {
             .service(get_points)
             .service(scroll_points)
             .service(search_points)
-            .service(recommend_points);
-
-        app
+            .service(recommend_points)
     })
     // .workers(4)
     .bind(format!(

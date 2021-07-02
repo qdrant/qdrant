@@ -12,8 +12,7 @@ use tokio::runtime;
 use tokio::runtime::Runtime;
 
 pub fn empty_segment(path: &Path) -> Segment {
-    let segment = build_simple_segment(path, 4, Distance::Dot).unwrap();
-    return segment;
+    build_simple_segment(path, 4, Distance::Dot).unwrap()
 }
 
 pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: usize) -> Segment {
@@ -64,19 +63,19 @@ pub fn build_segment_1(path: &Path) -> Segment {
         .set_payload(6, 1, &payload_key, payload_option1.clone())
         .unwrap();
     segment1
-        .set_payload(6, 2, &payload_key, payload_option1.clone())
+        .set_payload(6, 2, &payload_key, payload_option1)
         .unwrap();
     segment1
-        .set_payload(6, 3, &payload_key, payload_option3.clone())
+        .set_payload(6, 3, &payload_key, payload_option3)
         .unwrap();
     segment1
         .set_payload(6, 4, &payload_key, payload_option2.clone())
         .unwrap();
     segment1
-        .set_payload(6, 5, &payload_key, payload_option2.clone())
+        .set_payload(6, 5, &payload_key, payload_option2)
         .unwrap();
 
-    return segment1;
+    segment1
 }
 
 pub fn build_segment_2(path: &Path) -> Segment {
@@ -100,19 +99,19 @@ pub fn build_segment_2(path: &Path) -> Segment {
     segment2.upsert_point(14, 14, &vec14).unwrap();
     segment2.upsert_point(15, 15, &vec15).unwrap();
 
-    return segment2;
+    segment2
 }
 
 pub fn build_test_holder(path: &Path) -> SegmentHolder {
     let segment1 = build_segment_1(path);
     let segment2 = build_segment_2(path);
 
-    let mut holder = SegmentHolder::new();
+    let mut holder = SegmentHolder::default();
 
     let _sid1 = holder.add(segment1);
     let _sid2 = holder.add(segment2);
 
-    return holder;
+    holder
 }
 
 pub fn build_searcher(path: &Path) -> (Runtime, SimpleSegmentSearcher) {

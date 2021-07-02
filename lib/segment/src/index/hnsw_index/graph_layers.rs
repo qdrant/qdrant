@@ -110,7 +110,11 @@ impl GraphLayers {
 
     /// Get M based on current level
     fn get_m(&self, level: usize) -> usize {
-        return if level == 0 { self.m0 } else { self.m };
+        if level == 0 {
+            self.m0
+        } else {
+            self.m
+        }
     }
 
     /// Generate random level for a new point, according to geometric distribution
@@ -118,7 +122,7 @@ impl GraphLayers {
         let distribution = Uniform::new(0.0, 1.0);
         let sample: f64 = thread_rng.sample(distribution);
         let picked_level = -sample.ln() * self.level_factor;
-        return picked_level.round() as usize;
+        picked_level.round() as usize
     }
 
     fn set_levels(&mut self, point_id: PointOffsetType, level: usize) {
@@ -230,8 +234,8 @@ impl GraphLayers {
         let new_to_target = score_internal(target_point_id, new_point_id);
 
         let mut id_to_insert = links.len();
-        for i in 0..links.len() {
-            let target_to_link = score_internal(target_point_id, links[i]);
+        for (i, &item) in links.iter().enumerate() {
+            let target_to_link = score_internal(target_point_id, item);
             if target_to_link < new_to_target {
                 id_to_insert = i;
                 break;
@@ -240,11 +244,9 @@ impl GraphLayers {
 
         if links.len() < level_m {
             links.insert(id_to_insert, new_point_id)
-        } else {
-            if id_to_insert != links.len() {
-                links.pop();
-                links.insert(id_to_insert, new_point_id)
-            }
+        } else if id_to_insert != links.len() {
+            links.pop();
+            links.insert(id_to_insert, new_point_id)
         }
     }
 
@@ -289,7 +291,7 @@ impl GraphLayers {
         F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     {
         let closest_iter = candidates.into_iter();
-        return Self::select_candidate_with_heuristic_from_sorted(closest_iter, m, score_internal);
+        Self::select_candidate_with_heuristic_from_sorted(closest_iter, m, score_internal)
     }
 
     pub fn link_new_point(
@@ -405,7 +407,7 @@ impl GraphLayers {
                                 scorer,
                             );
                             if nearest_point.score > level_entry.score {
-                                level_entry = nearest_point.clone()
+                                level_entry = *nearest_point
                             }
                         }
                     }

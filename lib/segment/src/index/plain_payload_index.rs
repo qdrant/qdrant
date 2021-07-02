@@ -101,7 +101,7 @@ impl PayloadIndex for PlainPayloadIndex {
                 matched_points.push(i);
             }
         }
-        return Box::new(matched_points.into_iter());
+        Box::new(matched_points.into_iter())
     }
 
     fn payload_blocks(
@@ -124,10 +124,10 @@ impl PlainIndex {
         vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
         payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
     ) -> PlainIndex {
-        return PlainIndex {
+        PlainIndex {
             vector_storage,
             payload_index,
-        };
+        }
     }
 }
 

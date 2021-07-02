@@ -30,7 +30,7 @@ impl SearchContext {
     /// Updates search context with new scored point.
     /// If it is closer than existing - also add it to candidates for further search
     pub fn process_candidate(&mut self, score_point: ScoredPointOffset) {
-        let was_added = match self.nearest.push(score_point.clone()) {
+        let was_added = match self.nearest.push(score_point) {
             None => true,
             Some(removed) => removed.idx != score_point.idx,
         };

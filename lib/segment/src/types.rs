@@ -377,9 +377,9 @@ pub struct HasIdCondition {
     pub has_id: HashSet<PointIdType>,
 }
 
-impl Into<HasIdCondition> for HashSet<PointIdType> {
-    fn into(self) -> HasIdCondition {
-        HasIdCondition { has_id: self }
+impl From<HashSet<PointIdType>> for HasIdCondition {
+    fn from(set: HashSet<PointIdType>) -> Self {
+        HasIdCondition { has_id: set }
     }
 }
 

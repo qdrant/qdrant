@@ -81,7 +81,7 @@ impl IndexingOptimizer {
                 }
             })
             .max_by_key(|(_, num_vectors)| *num_vectors)
-            .and_then(|(idx, _)| Some((idx, segments.read().get(idx).unwrap().clone())))
+            .map(|(idx, _)| (idx, segments.read().get(idx).unwrap().clone()))
     }
 }
 
@@ -99,7 +99,7 @@ impl SegmentOptimizer for IndexingOptimizer {
     }
 
     fn hnsw_config(&self) -> HnswConfig {
-        self.hnsw_config.clone()
+        self.hnsw_config
     }
 
     fn threshold_config(&self) -> &OptimizerThresholds {
@@ -136,7 +136,7 @@ mod tests {
     fn test_indexing_optimizer() {
         init();
 
-        let mut holder = SegmentHolder::new();
+        let mut holder = SegmentHolder::default();
 
         let payload_field = "number".to_owned();
 

@@ -23,14 +23,10 @@ impl SimpleSegmentUpdater {
     }
 
     fn check_unprocessed_points(
-        points: &Vec<PointIdType>,
+        points: &[PointIdType],
         processed: &HashSet<PointIdType>,
     ) -> CollectionResult<usize> {
-        let missed_point = points
-            .iter()
-            .cloned()
-            .filter(|p| !processed.contains(p))
-            .next();
+        let missed_point = points.iter().cloned().find(|p| !processed.contains(p));
         match missed_point {
             None => Ok(processed.len()),
             Some(missed_point) => Err(CollectionError::NotFound {
@@ -40,11 +36,7 @@ impl SimpleSegmentUpdater {
     }
 
     /// Tries to delete points from all segments, returns number of actually deleted points
-    fn delete_points(
-        &self,
-        op_num: SeqNumberType,
-        ids: &Vec<PointIdType>,
-    ) -> CollectionResult<usize> {
+    fn delete_points(&self, op_num: SeqNumberType, ids: &[PointIdType]) -> CollectionResult<usize> {
         let res = self
             .segments
             .read()
@@ -60,8 +52,8 @@ impl SimpleSegmentUpdater {
     fn upsert_points(
         &self,
         op_num: SeqNumberType,
-        ids: &Vec<PointIdType>,
-        vectors: &Vec<VectorType>,
+        ids: &[PointIdType],
+        vectors: &[VectorType],
         payloads: &Option<Vec<Option<HashMap<PayloadKeyType, PayloadInterface>>>>,
     ) -> CollectionResult<usize> {
         if ids.len() != vectors.len() {
@@ -127,15 +119,12 @@ impl SimpleSegmentUpdater {
             }
         }
 
-        match payloads {
-            Some(payload_vector) => {
-                for (point_id, payload) in ids.iter().zip(payload_vector.iter()) {
-                    if payload.is_some() {
-                        self.set_payload(op_num, payload.as_ref().unwrap(), &vec![*point_id])?;
-                    }
+        if let Some(payload_vector) = payloads {
+            for (point_id, payload) in ids.iter().zip(payload_vector.iter()) {
+                if payload.is_some() {
+                    self.set_payload(op_num, payload.as_ref().unwrap(), &[*point_id])?;
                 }
             }
-            _ => {}
         }
 
         Ok(res)
@@ -145,7 +134,7 @@ impl SimpleSegmentUpdater {
         &self,
         op_num: SeqNumberType,
         payload: &HashMap<PayloadKeyType, PayloadInterface>,
-        points: &Vec<PointIdType>,
+        points: &[PointIdType],
     ) -> CollectionResult<usize> {
         let mut updated_points: HashSet<PointIdType> = Default::default();
 
@@ -169,8 +158,8 @@ impl SimpleSegmentUpdater {
     fn delete_payload(
         &self,
         op_num: SeqNumberType,
-        points: &Vec<PointIdType>,
-        keys: &Vec<PayloadKeyType>,
+        points: &[PointIdType],
+        keys: &[PayloadKeyType],
     ) -> CollectionResult<usize> {
         let mut updated_points: HashSet<PointIdType> = Default::default();
 
@@ -194,7 +183,7 @@ impl SimpleSegmentUpdater {
     fn clear_payload(
         &self,
         op_num: SeqNumberType,
-        points: &Vec<PointIdType>,
+        points: &[PointIdType],
     ) -> CollectionResult<usize> {
         let mut updated_points: HashSet<PointIdType> = Default::default();
         let res = self.segments.read().apply_points_to_appendable(

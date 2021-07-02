@@ -61,7 +61,7 @@ impl VacuumOptimizer {
                 }
             })
             .max_by_key(|(_, ratio)| OrderedFloat(*ratio))
-            .and_then(|(idx, _)| Some((idx, segments.read().get(idx).unwrap().clone())))
+            .map(|(idx, _)| (idx, segments.read().get(idx).unwrap().clone()))
     }
 }
 
@@ -79,7 +79,7 @@ impl SegmentOptimizer for VacuumOptimizer {
     }
 
     fn hnsw_config(&self) -> HnswConfig {
-        self.hnsw_config.clone()
+        self.hnsw_config
     }
 
     fn threshold_config(&self) -> &OptimizerThresholds {
@@ -110,7 +110,7 @@ mod tests {
     fn test_vacuum_conditions() {
         let temp_dir = TempDir::new("segment_temp_dir").unwrap();
         let dir = TempDir::new("segment_dir").unwrap();
-        let mut holder = SegmentHolder::new();
+        let mut holder = SegmentHolder::default();
         let segment_id = holder.add(random_segment(dir.path(), 100, 200, 4));
 
         let segment = holder.get(segment_id).unwrap();

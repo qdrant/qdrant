@@ -4,7 +4,7 @@ use itertools::Itertools;
 use std::cmp::{max, min};
 
 fn combine_must_estimations(
-    estimations: &Vec<CardinalityEstimation>,
+    estimations: &[CardinalityEstimation],
     total: usize,
 ) -> CardinalityEstimation {
     let min_estimation = estimations
@@ -28,7 +28,7 @@ fn combine_must_estimations(
         .filter(|x| !x.primary_clauses.is_empty())
         .min_by_key(|x| x.exp)
         .map(|x| x.primary_clauses.clone())
-        .unwrap_or(vec![]);
+        .unwrap_or_default();
 
     CardinalityEstimation {
         primary_clauses: clauses,
@@ -88,7 +88,7 @@ where
 
 fn estimate_should<F>(
     estimator: &F,
-    conditions: &Vec<Condition>,
+    conditions: &[Condition],
     total: usize,
 ) -> CardinalityEstimation
 where
@@ -122,11 +122,7 @@ where
     }
 }
 
-fn estimate_must<F>(
-    estimator: &F,
-    conditions: &Vec<Condition>,
-    total: usize,
-) -> CardinalityEstimation
+fn estimate_must<F>(estimator: &F, conditions: &[Condition], total: usize) -> CardinalityEstimation
 where
     F: Fn(&Condition) -> CardinalityEstimation,
 {
@@ -147,7 +143,7 @@ fn invert_estimation(estimation: &CardinalityEstimation, total: usize) -> Cardin
 
 fn estimate_must_not<F>(
     estimator: &F,
-    conditions: &Vec<Condition>,
+    conditions: &[Condition],
     total: usize,
 ) -> CardinalityEstimation
 where

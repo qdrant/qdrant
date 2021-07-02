@@ -22,7 +22,7 @@ pub struct Element<N> {
     pub value: N,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct PersistedNumericIndex<N: ToPrimitive + Clone> {
     /// Number of unique element ids.
     /// Each point can have several values
@@ -31,18 +31,11 @@ pub struct PersistedNumericIndex<N: ToPrimitive + Clone> {
 }
 
 impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
-    pub fn new() -> Self {
-        Self {
-            points_count: 0,
-            elements: vec![],
-        }
-    }
-
     fn search_range(&self, range: &Range) -> (usize, usize) {
         let mut lower_index = 0;
         let mut upper_index = self.elements.len();
 
-        range.gt.map(|thr| {
+        if let Some(thr) = range.gt {
             let index = self
                 .elements
                 .binary_search_by(|x| {
@@ -55,9 +48,9 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
                 .err()
                 .unwrap();
             lower_index = max(lower_index, index);
-        });
+        }
 
-        range.gte.map(|thr| {
+        if let Some(thr) = range.gte {
             let index = self
                 .elements
                 .binary_search_by(|x| {
@@ -70,9 +63,9 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
                 .err()
                 .unwrap();
             lower_index = max(lower_index, index);
-        });
+        }
 
-        range.lt.map(|thr| {
+        if let Some(thr) = range.lt {
             let index = self
                 .elements
                 .binary_search_by(|x| {
@@ -85,9 +78,9 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
                 .err()
                 .unwrap();
             upper_index = min(upper_index, index);
-        });
+        };
 
-        range.lte.map(|thr| {
+        if let Some(thr) = range.lte {
             let index = self
                 .elements
                 .binary_search_by(|x| {
@@ -100,12 +93,12 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
                 .err()
                 .unwrap();
             upper_index = min(upper_index, index);
-        });
-        return if lower_index > upper_index {
+        }
+        if lower_index > upper_index {
             (0, 0)
         } else {
             (lower_index, upper_index)
-        };
+        }
     }
 
     pub fn range_cardinality(&self, range: &Range) -> CardinalityEstimation {
@@ -137,7 +130,7 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
         }
     }
 
-    fn add_many(&mut self, id: PointOffsetType, values: &Vec<N>) {
+    fn add_many(&mut self, id: PointOffsetType, values: &[N]) {
         for value in values.iter().cloned() {
             self.elements.push(Element { id, value })
         }
@@ -232,7 +225,7 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<FloatPayloadType> {
     }
 
     fn build(&mut self) -> FieldIndex {
-        let mut elements = mem::replace(&mut self.elements, vec![]);
+        let mut elements = mem::take(&mut self.elements);
         elements.sort_by_key(|el| OrderedFloat(el.value));
         FieldIndex::FloatIndex(PersistedNumericIndex {
             points_count: self.points_count,
@@ -250,7 +243,7 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<IntPayloadType> {
     }
 
     fn build(&mut self) -> FieldIndex {
-        let mut elements = mem::replace(&mut self.elements, vec![]);
+        let mut elements = mem::take(&mut self.elements);
         elements.sort_by_key(|el| el.value);
         FieldIndex::IntIndex(PersistedNumericIndex {
             points_count: self.points_count,

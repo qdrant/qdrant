@@ -12,18 +12,12 @@ use crate::types::{
     FieldCondition, IntPayloadType, Match, PayloadKeyType, PayloadType, PointOffsetType,
 };
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct PersistedMapIndex<N: Hash + Eq + Clone> {
     map: HashMap<N, Vec<PointOffsetType>>,
 }
 
 impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
-    pub fn new() -> PersistedMapIndex<N> {
-        PersistedMapIndex {
-            map: Default::default(),
-        }
-    }
-
     pub fn match_cardinality(&self, value: &N) -> CardinalityEstimation {
         let values_count = match self.map.get(value) {
             None => 0,
@@ -38,7 +32,7 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
         }
     }
 
-    fn add_many(&mut self, idx: PointOffsetType, values: &Vec<N>) {
+    fn add_many(&mut self, idx: PointOffsetType, values: &[N]) {
         for value in values {
             let vec = match self.map.get_mut(&value) {
                 None => {
@@ -56,7 +50,7 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
         self.map
             .get(value)
             .map(|ids| Box::new(ids.iter().cloned()) as Box<dyn Iterator<Item = PointOffsetType>>)
-            .unwrap_or(Box::new(iter::empty::<PointOffsetType>()))
+            .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>()))
     }
 }
 
@@ -171,7 +165,7 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
     }
 
     fn build(&mut self) -> FieldIndex {
-        let data = mem::replace(&mut self.map, Default::default());
+        let data = mem::take(&mut self.map);
 
         FieldIndex::KeywordIndex(PersistedMapIndex { map: data })
     }
@@ -186,7 +180,7 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<IntPayloadType> {
     }
 
     fn build(&mut self) -> FieldIndex {
-        let data = mem::replace(&mut self.map, Default::default());
+        let data = mem::take(&mut self.map);
 
         FieldIndex::IntMapIndex(PersistedMapIndex { map: data })
     }

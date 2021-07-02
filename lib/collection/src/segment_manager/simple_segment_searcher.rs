@@ -21,10 +21,10 @@ pub struct SimpleSegmentSearcher {
 
 impl SimpleSegmentSearcher {
     pub fn new(segments: LockedSegmentHolder, runtime_handle: Handle) -> Self {
-        return SimpleSegmentSearcher {
+        SimpleSegmentSearcher {
             segments,
             runtime_handle,
-        };
+        }
     }
 
     pub async fn search_in_segment(
@@ -92,7 +92,7 @@ impl SegmentSearcher for SimpleSegmentSearcher {
 
     fn retrieve(
         &self,
-        points: &Vec<PointIdType>,
+        points: &[PointIdType],
         with_payload: bool,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>> {

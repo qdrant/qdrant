@@ -198,7 +198,7 @@ impl From<WalError> for CollectionError {
 impl<T> From<SendError<T>> for CollectionError {
     fn from(_err: SendError<T>) -> Self {
         Self::ServiceError {
-            error: format!("Can't reach one of the workers"),
+            error: "Can't reach one of the workers".to_owned(),
         }
     }
 }

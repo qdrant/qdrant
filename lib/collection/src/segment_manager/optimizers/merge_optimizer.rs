@@ -26,14 +26,14 @@ impl MergeOptimizer {
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
     ) -> Self {
-        return MergeOptimizer {
+        MergeOptimizer {
             max_segments,
             thresholds_config,
             segments_path,
             collection_temp_dir,
             collection_params,
             hnsw_config,
-        };
+        }
     }
 }
 
@@ -51,7 +51,7 @@ impl SegmentOptimizer for MergeOptimizer {
     }
 
     fn hnsw_config(&self) -> HnswConfig {
-        self.hnsw_config.clone()
+        self.hnsw_config
     }
 
     fn threshold_config(&self) -> &OptimizerThresholds {
@@ -100,7 +100,7 @@ mod tests {
         let dir = TempDir::new("segment_dir").unwrap();
         let temp_dir = TempDir::new("segment_temp_dir").unwrap();
 
-        let mut holder = SegmentHolder::new();
+        let mut holder = SegmentHolder::default();
 
         let mut segments_to_merge = vec![];
 
