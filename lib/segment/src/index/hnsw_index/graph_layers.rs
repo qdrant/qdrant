@@ -715,7 +715,7 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
-        let processed_query = Array::from(vector_holder.metric.preprocess(query.clone()));
+        let processed_query = vector_holder.metric.preprocess(&query).unwrap_or_else(|| query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for (idx, vec) in vector_holder.vectors.iter().enumerate() {
             reference_top.push(ScoredPointOffset {

@@ -161,7 +161,7 @@ impl SegmentEntry for Segment {
         }
 
         let metric = mertic_object(&self.segment_config.distance);
-        let processed_vector = metric.preprocess(vector.clone());
+        let processed_vector = metric.preprocess(vector).unwrap_or_else(|| vector.clone());
 
         let stored_internal_point = {
             let id_mapped = self.id_mapper.borrow();

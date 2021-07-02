@@ -34,7 +34,10 @@ impl TestRawScorerProducer {
         let metric = mertic_object(&distance);
 
         let vectors = (0..num_vectors)
-            .map(|_x| metric.preprocess(random_vector(&mut rnd, dim)))
+            .map(|_x| {
+                let rnd_vec = random_vector(&mut rnd, dim);
+                metric.preprocess(&rnd_vec).unwrap_or(rnd_vec)
+            })
             .collect_vec();
 
         TestRawScorerProducer {
@@ -46,7 +49,7 @@ impl TestRawScorerProducer {
 
     pub fn get_raw_scorer(&self, query: Vec<VectorElementType>) -> SimpleRawScorer {
         SimpleRawScorer {
-            query: Array::from(self.metric.preprocess(query)),
+            query: Array::from(self.metric.preprocess(&query).unwrap_or(query)),
             metric: &self.metric,
             vectors: &self.vectors,
             deleted: &self.deleted,
