@@ -2,8 +2,9 @@ use crate::segment_manager::holders::segment_holder::LockedSegment;
 use parking_lot::RwLock;
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
 use segment::types::{
-    Condition, Filter, PayloadKeyType, PayloadType, PointIdType, ScoredPoint, SearchParams,
-    SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap, VectorElementType,
+    Condition, Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType, ScoredPoint,
+    SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap,
+    VectorElementType,
 };
 use std::cmp::max;
 use std::collections::HashSet;
@@ -219,7 +220,7 @@ impl SegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        key: &PayloadKeyType,
+        key: PayloadKeyTypeRef,
         payload: PayloadType,
     ) -> OperationResult<bool> {
         if self.version() > op_num {
@@ -236,7 +237,7 @@ impl SegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        key: &PayloadKeyType,
+        key: PayloadKeyTypeRef,
     ) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);
@@ -366,11 +367,11 @@ impl SegmentEntry for ProxySegment {
         Ok(())
     }
 
-    fn delete_field_index(&mut self, op_num: u64, key: &PayloadKeyType) -> OperationResult<bool> {
+    fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);
         }
-        self.deleted_indexes.write().insert(key.clone());
+        self.deleted_indexes.write().insert(key.into());
         self.created_indexes.write().remove(key);
         self.write_segment
             .get()
@@ -378,11 +379,11 @@ impl SegmentEntry for ProxySegment {
             .delete_field_index(op_num, key)
     }
 
-    fn create_field_index(&mut self, op_num: u64, key: &PayloadKeyType) -> OperationResult<bool> {
+    fn create_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);
         }
-        self.created_indexes.write().insert(key.clone());
+        self.created_indexes.write().insert(key.into());
         self.deleted_indexes.write().remove(key);
         self.write_segment
             .get()

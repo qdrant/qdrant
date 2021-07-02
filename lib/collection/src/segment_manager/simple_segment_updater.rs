@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use segment::types::{PayloadInterface, PayloadKeyType, PointIdType, SeqNumberType};
+use segment::types::{
+    PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType,
+};
 
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointInsertOperations, PointOperations};
@@ -202,7 +204,7 @@ impl SimpleSegmentUpdater {
     fn create_field_index(
         &self,
         op_num: SeqNumberType,
-        field_name: &PayloadKeyType,
+        field_name: PayloadKeyTypeRef,
     ) -> CollectionResult<usize> {
         let res = self
             .segments
@@ -216,7 +218,7 @@ impl SimpleSegmentUpdater {
     fn delete_field_index(
         &self,
         op_num: SeqNumberType,
-        field_name: &PayloadKeyType,
+        field_name: PayloadKeyTypeRef,
     ) -> CollectionResult<usize> {
         let res = self
             .segments

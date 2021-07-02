@@ -1,4 +1,6 @@
-use crate::types::{PayloadKeyType, PayloadSchemaType, PayloadType, PointOffsetType, TheMap};
+use crate::types::{
+    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PayloadType, PointOffsetType, TheMap,
+};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -48,7 +50,7 @@ impl SimplePayloadStorage {
 
     fn update_schema_value(
         schema: &mut TheMap<PayloadKeyType, PayloadSchemaType>,
-        key: &PayloadKeyType,
+        key: PayloadKeyTypeRef,
         value: &PayloadType,
     ) -> OperationResult<()> {
         return match schema.get(key) {
@@ -106,7 +108,7 @@ impl PayloadStorage for SimplePayloadStorage {
     fn assign(
         &mut self,
         point_id: PointOffsetType,
-        key: &PayloadKeyType,
+        key: PayloadKeyTypeRef,
         payload: PayloadType,
     ) -> OperationResult<()> {
         SimplePayloadStorage::update_schema_value(&mut self.schema, key, &payload)?;
@@ -134,7 +136,7 @@ impl PayloadStorage for SimplePayloadStorage {
     fn delete(
         &mut self,
         point_id: PointOffsetType,
-        key: &PayloadKeyType,
+        key: PayloadKeyTypeRef,
     ) -> OperationResult<Option<PayloadType>> {
         let point_payload = self.payload.get_mut(&point_id).unwrap();
         let res = point_payload.remove(key);
