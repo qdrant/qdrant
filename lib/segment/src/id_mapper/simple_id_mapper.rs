@@ -1,5 +1,5 @@
 use crate::entry::entry_point::OperationResult;
-use crate::id_mapper::id_mapper::IdMapper;
+use crate::id_mapper::IdMapper;
 use crate::types::{PointIdType, PointOffsetType};
 use bincode;
 use rocksdb::{IteratorMode, Options, DB};

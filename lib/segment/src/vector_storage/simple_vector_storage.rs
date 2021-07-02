@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::tools::{mertic_object, peek_top_scores_iterable};
 use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
-use crate::vector_storage::vector_storage::{RawScorer, ScoredPointOffset};
+use crate::vector_storage::{RawScorer, ScoredPointOffset};
 
-use super::vector_storage::VectorStorage;
+use super::vector_storage_base::VectorStorage;
 use crate::spaces::metric::Metric;
 use bit_vec::BitVec;
 use ndarray::{Array, Array1};

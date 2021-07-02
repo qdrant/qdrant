@@ -4,10 +4,8 @@ use std::{iter, mem};
 
 use serde::{Deserialize, Serialize};
 
-use crate::index::field_index::field_index::{
-    FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder,
-};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
+use crate::index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
 use crate::types::{
     FieldCondition, IntPayloadType, Match, PayloadKeyType, PayloadType, PointOffsetType,
 };

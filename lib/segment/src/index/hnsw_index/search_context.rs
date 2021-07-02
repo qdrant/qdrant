@@ -1,6 +1,6 @@
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::ScoreType;
-use crate::vector_storage::vector_storage::ScoredPointOffset;
+use crate::vector_storage::ScoredPointOffset;
 use num_traits::float::FloatCore;
 use std::collections::BinaryHeap;
 

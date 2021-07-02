@@ -1,9 +1,9 @@
-use crate::index::index::{PayloadIndex, VectorIndex};
-use crate::payload_storage::payload_storage::ConditionChecker;
+use crate::index::{PayloadIndex, VectorIndex};
+use crate::payload_storage::ConditionChecker;
 use crate::types::{
     Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType, SearchParams, VectorElementType,
 };
-use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
+use crate::vector_storage::{ScoredPointOffset, VectorStorage};
 
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};

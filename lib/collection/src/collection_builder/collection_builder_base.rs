@@ -19,7 +19,7 @@ use crate::operations::CollectionUpdateOperations;
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
 use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
-use crate::update_handler::update_handler::{Optimizer, UpdateHandler};
+use crate::update_handler::{Optimizer, UpdateHandler};
 use crate::wal::SerdeWal;
 
 pub fn construct_collection(

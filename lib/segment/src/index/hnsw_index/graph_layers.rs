@@ -7,7 +7,7 @@ use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedList, VisitedPool};
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
-use crate::vector_storage::vector_storage::ScoredPointOffset;
+use crate::vector_storage::ScoredPointOffset;
 use itertools::Itertools;
 use rand::distributions::Uniform;
 use rand::prelude::ThreadRng;

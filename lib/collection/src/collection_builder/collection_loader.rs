@@ -4,10 +4,10 @@ use std::path::Path;
 use indicatif::ProgressBar;
 use tokio::runtime::Handle;
 
-use segment::segment_constructor::segment_constructor::load_segment;
+use segment::segment_constructor::load_segment;
 
 use crate::collection::Collection;
-use crate::collection_builder::collection_builder::construct_collection;
+use crate::collection_builder::construct_collection;
 use crate::collection_builder::optimizers_builder::build_optimizers;
 use crate::config::CollectionConfig;
 use crate::operations::types::CollectionError;

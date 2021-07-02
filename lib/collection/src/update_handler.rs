@@ -65,7 +65,7 @@ impl UpdateHandler {
         )));
     }
 
-    /// Gracefully wait before all optimizations stop.
+    /// Gracefully wait before all optimizations stop
     /// If some optimization is in progress - it will be finished before shutdown.
     /// Blocking function.
     pub fn wait_worker_stops(&mut self) -> CollectionResult<()> {

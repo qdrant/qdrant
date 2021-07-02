@@ -3,7 +3,7 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::types::{
     Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType, SearchParams, VectorElementType,
 };
-use crate::vector_storage::vector_storage::ScoredPointOffset;
+use crate::vector_storage::ScoredPointOffset;
 
 /// Trait for vector searching
 pub trait VectorIndex {

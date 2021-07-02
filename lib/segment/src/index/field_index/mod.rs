@@ -1,11 +1,13 @@
 use crate::types::{FieldCondition, PointOffsetType};
 use std::collections::HashSet;
 
-pub mod field_index;
+mod field_index_base;
 pub mod geo_index;
 pub mod index_selector;
 pub mod map_index;
 pub mod numeric_index;
+
+pub use field_index_base::*;
 
 #[derive(Debug, Clone)]
 pub enum PrimaryCondition {

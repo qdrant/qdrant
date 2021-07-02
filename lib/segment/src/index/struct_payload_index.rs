@@ -8,19 +8,19 @@ use itertools::Itertools;
 use log::debug;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::id_mapper::id_mapper::IdMapper;
-use crate::index::field_index::field_index::{FieldIndex, PayloadFieldIndex};
+use crate::id_mapper::IdMapper;
 use crate::index::field_index::index_selector::index_selector;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
-use crate::index::index::PayloadIndex;
+use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
 use crate::index::visited_pool::VisitedPool;
-use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage};
+use crate::index::PayloadIndex;
+use crate::payload_storage::{ConditionChecker, PayloadStorage};
 use crate::types::{
     Condition, FieldCondition, Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType,
 };
-use crate::vector_storage::vector_storage::VectorStorage;
+use crate::vector_storage::VectorStorage;
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 

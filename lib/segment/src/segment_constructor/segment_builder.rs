@@ -1,7 +1,7 @@
 use crate::common::error_logging::LogError;
 use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
 use crate::segment::Segment;
-use crate::segment_constructor::segment_constructor::{build_segment, load_segment};
+use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{PayloadKeyType, SegmentConfig};
 use core::cmp;
 use std::collections::HashSet;

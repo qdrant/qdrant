@@ -24,7 +24,7 @@ use crate::operations::types::{
 use crate::operations::CollectionUpdateOperations;
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
-use crate::update_handler::update_handler::{UpdateHandler, UpdateSignal};
+use crate::update_handler::{UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 
 pub struct Collection {

@@ -1,5 +1,5 @@
 use collection::collection::Collection;
-use collection::collection_builder::collection_builder::build_collection;
+use collection::collection_builder::build_collection;
 use collection::collection_builder::collection_loader::load_collection;
 use collection::collection_builder::optimizers_builder::OptimizersConfig;
 use collection::config::{CollectionParams, WalConfig};

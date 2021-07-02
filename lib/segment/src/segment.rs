@@ -1,14 +1,14 @@
 use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
-use crate::id_mapper::id_mapper::IdMapper;
-use crate::index::index::{PayloadIndex, VectorIndex};
-use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage};
+use crate::id_mapper::IdMapper;
+use crate::index::{PayloadIndex, VectorIndex};
+use crate::payload_storage::{ConditionChecker, PayloadStorage};
 use crate::spaces::tools::mertic_object;
 use crate::types::{
     Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo, PayloadType, PointIdType,
     PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState,
     SegmentType, SeqNumberType, TheMap, VectorElementType,
 };
-use crate::vector_storage::vector_storage::VectorStorage;
+use crate::vector_storage::VectorStorage;
 use atomic_refcell::AtomicRefCell;
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use std::fs::{remove_dir_all, rename};
@@ -437,7 +437,7 @@ impl SegmentEntry for Segment {
 mod tests {
     use super::*;
     use crate::entry::entry_point::SegmentEntry;
-    use crate::segment_constructor::segment_constructor::build_segment;
+    use crate::segment_constructor::build_segment;
     use crate::types::{Distance, Indexes, PayloadIndexType, SegmentConfig, StorageType};
     use tempdir::TempDir;
 

@@ -1,9 +1,9 @@
-use crate::id_mapper::id_mapper::IdMapper;
+use crate::id_mapper::IdMapper;
 use crate::payload_storage::condition_checker::{
     match_geo, match_geo_radius, match_payload, match_range,
 };
-use crate::payload_storage::payload_storage::ConditionChecker;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
+use crate::payload_storage::ConditionChecker;
 use crate::types::{Condition, Filter, PayloadKeyType, PayloadType, PointOffsetType, TheMap};
 use atomic_refcell::AtomicRefCell;
 use std::sync::Arc;
@@ -147,7 +147,7 @@ impl ConditionChecker for SimpleConditionChecker {
 mod tests {
     use super::*;
     use crate::id_mapper::simple_id_mapper::SimpleIdMapper;
-    use crate::payload_storage::payload_storage::PayloadStorage;
+    use crate::payload_storage::PayloadStorage;
     use crate::types::GeoPoint;
     use crate::types::{FieldCondition, GeoBoundingBox, Match, PayloadType, Range};
     use std::collections::HashSet;

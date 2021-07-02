@@ -1,5 +1,5 @@
 use crate::index::visited_pool::VisitedList;
-use crate::payload_storage::payload_storage::ConditionChecker;
+use crate::payload_storage::ConditionChecker;
 use crate::types::{Filter, PointOffsetType};
 
 pub struct BuildConditionChecker {
