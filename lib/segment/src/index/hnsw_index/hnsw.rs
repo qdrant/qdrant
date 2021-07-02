@@ -139,7 +139,7 @@ impl HNSWIndex {
 
     pub fn search_with_graph(
         &self,
-        vector: &Vec<VectorElementType>,
+        vector: &[VectorElementType],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -152,7 +152,7 @@ impl HNSWIndex {
         let ef = max(req_ef, top);
 
         let vector_storage = self.vector_storage.borrow();
-        let raw_scorer = vector_storage.raw_scorer(vector.clone());
+        let raw_scorer = vector_storage.raw_scorer(vector.to_owned());
         let condition_checker = self.condition_checker.borrow();
 
         let points_scorer = FilteredScorer {
@@ -168,7 +168,7 @@ impl HNSWIndex {
 impl VectorIndex for HNSWIndex {
     fn search(
         &self,
-        vector: &Vec<VectorElementType>,
+        vector: &[VectorElementType],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,

@@ -212,12 +212,15 @@ impl VectorStorage for MemmapVectorStorage {
 
     fn score_points(
         &self,
-        vector: &Vec<VectorElementType>,
+        vector: &[VectorElementType],
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset> {
         let preprocessed_vector_opt = self.metric.preprocess(vector);
-        let preprocessed_vector = preprocessed_vector_opt.as_ref().unwrap_or(vector);
+        let preprocessed_vector = preprocessed_vector_opt
+            .as_ref()
+            .map(|x| x as &[_])
+            .unwrap_or(vector);
         let scores = points
             .filter(|point| {
                 !self
@@ -237,9 +240,12 @@ impl VectorStorage for MemmapVectorStorage {
         return peek_top_scores_iterable(scores, top);
     }
 
-    fn score_all(&self, vector: &Vec<VectorElementType>, top: usize) -> Vec<ScoredPointOffset> {
+    fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
         let preprocessed_vector_opt = self.metric.preprocess(vector);
-        let preprocessed_vector = preprocessed_vector_opt.as_ref().unwrap_or(vector);
+        let preprocessed_vector = preprocessed_vector_opt
+            .as_ref()
+            .map(|x| x as &[_])
+            .unwrap_or(vector);
         let scores = self.iter_ids().map(|point| {
             let other_vector = self.mmap_store.as_ref().unwrap().raw_vector(point).unwrap();
             ScoredPointOffset {

@@ -85,7 +85,7 @@ impl Metric for CosineMetric {
         v1.dot(v2)
     }
 
-    fn preprocess(&self, vector: &[VectorElementType]) -> Option<Vec<VectorElementType>>{
+    fn preprocess(&self, vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
         let mut length: f32 = vector.iter().map(|x| x * x).sum();
         length = length.sqrt();
         let norm_vector = vector.iter().map(|x| x / length).collect();

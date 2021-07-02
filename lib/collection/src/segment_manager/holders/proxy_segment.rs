@@ -107,7 +107,7 @@ impl SegmentEntry for ProxySegment {
 
     fn search(
         &self,
-        vector: &Vec<VectorElementType>,
+        vector: &[VectorElementType],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -149,7 +149,7 @@ impl SegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vector: &Vec<VectorElementType>,
+        vector: &[VectorElementType],
     ) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);

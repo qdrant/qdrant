@@ -8,7 +8,7 @@ pub trait VectorIndex {
     /// Return list of Ids with fitting
     fn search(
         &self,
-        vector: &Vec<VectorElementType>,
+        vector: &[VectorElementType],
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
