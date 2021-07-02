@@ -43,7 +43,7 @@ fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error
 pub async fn index() -> impl Responder {
     HttpResponse::Ok().json(VersionInfo {
         title: "qdrant - vector search engine".to_string(),
-        version: option_env!("CARGO_PKG_VERSION").unwrap().to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
     })
 }
 
