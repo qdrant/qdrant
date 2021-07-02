@@ -25,6 +25,8 @@ jobs:
       run: sudo apt-get install clang libopenblas-dev libgfortran-9-dev
     - name: Check code formatting
       run: cargo fmt --all -- --check
+    - name: Check cargo clippy warnings
+      run: cargo clippy --all-targets --all-features -- -D warnings
     - name: Run tests
       run: OPENBLAS_TARGET=CORE2 cargo test --all
 

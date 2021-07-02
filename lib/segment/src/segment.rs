@@ -362,7 +362,7 @@ impl SegmentEntry for Segment {
                 (
                     key,
                     PayloadSchemaInfo {
-                        data_type: data_type,
+                        data_type,
                         indexed: is_indexed,
                     },
                 )

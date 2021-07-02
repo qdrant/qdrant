@@ -291,7 +291,7 @@ impl GraphLayers {
     where
         F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     {
-        let closest_iter = candidates.into_iter();
+        let closest_iter = candidates.into_iterator();
         Self::select_candidate_with_heuristic_from_sorted(closest_iter, m, score_internal)
     }
 
@@ -465,7 +465,7 @@ impl GraphLayers {
             self.search_entry(entry_point.point_id, entry_point.level, 0, points_scorer);
 
         let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), points_scorer, &[]);
-        nearest.into_iter().take(top).collect_vec()
+        nearest.into_iterator().take(top).collect_vec()
     }
 
     pub fn get_path(path: &Path) -> PathBuf {
