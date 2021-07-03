@@ -8,9 +8,10 @@ use storage::content_manager::toc::TableOfContent;
 #[post("/collections/{name}/points/recommend")]
 pub async fn recommend_points(
     toc: web::Data<TableOfContent>,
-    web::Path(name): web::Path<String>,
+    path: web::Path<String>,
     request: web::Json<RecommendRequest>,
 ) -> impl Responder {
+    let name = path.into_inner();
     let timing = Instant::now();
 
     let response = {

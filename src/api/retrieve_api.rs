@@ -17,8 +17,9 @@ pub struct PointRequest {
 #[get("/collections/{name}/points/{id}")]
 pub async fn get_point(
     toc: web::Data<TableOfContent>,
-    web::Path((name, point_id)): web::Path<(String, PointIdType)>,
+    path: web::Path<(String, PointIdType)>,
 ) -> impl Responder {
+    let (name, point_id) = path.into_inner();
     let timing = Instant::now();
 
     let response = {
@@ -46,9 +47,10 @@ pub async fn get_point(
 #[post("/collections/{name}/points")]
 pub async fn get_points(
     toc: web::Data<TableOfContent>,
-    web::Path(name): web::Path<String>,
+    path: web::Path<String>,
     request: web::Json<PointRequest>,
 ) -> impl Responder {
+    let name = path.into_inner();
     let timing = Instant::now();
 
     let response = {
@@ -65,9 +67,10 @@ pub async fn get_points(
 #[post("/collections/{name}/points/scroll")]
 pub async fn scroll_points(
     toc: web::Data<TableOfContent>,
-    web::Path(name): web::Path<String>,
+    path: web::Path<String>,
     request: web::Json<ScrollRequest>,
 ) -> impl Responder {
+    let name = path.into_inner();
     let timing = Instant::now();
 
     let response = {

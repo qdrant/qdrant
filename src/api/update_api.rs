@@ -15,10 +15,11 @@ pub struct UpdateParam {
 #[post("/collections/{name}")]
 pub async fn update_points(
     toc: web::Data<TableOfContent>,
-    web::Path(name): web::Path<String>,
+    path: web::Path<String>,
     operation: web::Json<CollectionUpdateOperations>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
+    let name = path.into_inner();
     let timing = Instant::now();
 
     let response = {

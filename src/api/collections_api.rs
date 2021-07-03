@@ -26,8 +26,9 @@ pub async fn get_collections(toc: web::Data<TableOfContent>) -> impl Responder {
 #[get("/collections/{name}")]
 pub async fn get_collection(
     toc: web::Data<TableOfContent>,
-    web::Path(name): web::Path<String>,
+    path: web::Path<String>,
 ) -> impl Responder {
+    let name = path.into_inner();
     let timing = Instant::now();
 
     let response = {
