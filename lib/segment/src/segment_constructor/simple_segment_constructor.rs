@@ -3,7 +3,7 @@ use crate::segment::Segment;
 use crate::types::{Distance, Indexes, SegmentConfig};
 
 use crate::entry::entry_point::OperationResult;
-use crate::segment_constructor::segment_constructor::build_segment;
+use crate::segment_constructor::build_segment;
 use std::path::Path;
 
 /// Build new segment with plain index in given directory

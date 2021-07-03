@@ -8,17 +8,19 @@ use itertools::Itertools;
 use log::debug;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::id_mapper::id_mapper::IdMapper;
-use crate::index::field_index::field_index::{FieldIndex, PayloadFieldIndex};
+use crate::id_mapper::IdMapper;
 use crate::index::field_index::index_selector::index_selector;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
-use crate::index::index::PayloadIndex;
+use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
 use crate::index::visited_pool::VisitedPool;
-use crate::payload_storage::payload_storage::{ConditionChecker, PayloadStorage};
-use crate::types::{Condition, FieldCondition, Filter, PayloadKeyType, PointOffsetType};
-use crate::vector_storage::vector_storage::VectorStorage;
+use crate::index::PayloadIndex;
+use crate::payload_storage::{ConditionChecker, PayloadStorage};
+use crate::types::{
+    Condition, FieldCondition, Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType,
+};
+use crate::vector_storage::VectorStorage;
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 
@@ -82,11 +84,11 @@ impl StructPayloadIndex {
         path.join(PAYLOAD_FIELD_INDEX_PATH)
     }
 
-    fn get_field_index_path(path: &Path, field: &PayloadKeyType) -> PathBuf {
+    fn get_field_index_path(path: &Path, field: PayloadKeyTypeRef) -> PathBuf {
         Self::get_field_index_dir(path).join(format!("{}.idx", field))
     }
 
-    fn save_field_index(&self, field: &PayloadKeyType) -> OperationResult<()> {
+    fn save_field_index(&self, field: PayloadKeyTypeRef) -> OperationResult<()> {
         let field_index_dir = Self::get_field_index_dir(&self.path);
         let field_index_path = Self::get_field_index_path(&self.path, field);
         create_dir_all(field_index_dir)?;
@@ -107,7 +109,7 @@ impl StructPayloadIndex {
 
     fn load_or_build_field_index(
         &self,
-        field: &PayloadKeyType,
+        field: PayloadKeyTypeRef,
     ) -> OperationResult<Vec<FieldIndex>> {
         let field_index_path = Self::get_field_index_path(&self.path, field);
         if field_index_path.exists() {
@@ -181,7 +183,7 @@ impl StructPayloadIndex {
         Ok(index)
     }
 
-    pub fn build_field_index(&self, field: &PayloadKeyType) -> OperationResult<Vec<FieldIndex>> {
+    pub fn build_field_index(&self, field: PayloadKeyTypeRef) -> OperationResult<Vec<FieldIndex>> {
         let payload_ref = self.payload.borrow();
         let schema = payload_ref.schema();
 
@@ -217,14 +219,14 @@ impl StructPayloadIndex {
         Ok(field_indexes)
     }
 
-    fn build_and_save(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
-        if !self.config.indexed_fields.contains(field) {
-            self.config.indexed_fields.push(field.clone());
+    fn build_and_save(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
+        if !self.config.indexed_fields.iter().any(|x| x == field) {
+            self.config.indexed_fields.push(field.into());
             self.save_config()?;
         }
 
         let field_indexes = self.build_field_index(field)?;
-        self.field_indexes.insert(field.clone(), field_indexes);
+        self.field_indexes.insert(field.into(), field_indexes);
 
         self.save_field_index(field)?;
 
@@ -241,16 +243,16 @@ impl PayloadIndex for StructPayloadIndex {
         self.config.indexed_fields.clone()
     }
 
-    fn set_indexed(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
-        if !self.config.indexed_fields.contains(field) {
-            self.config.indexed_fields.push(field.clone());
+    fn set_indexed(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
+        if !self.config.indexed_fields.iter().any(|x| x == field) {
+            self.config.indexed_fields.push(field.into());
             self.save_config()?;
             self.build_and_save(field)?;
         }
         Ok(())
     }
 
-    fn drop_index(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
+    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
         self.config.indexed_fields = self
             .config
             .indexed_fields
@@ -300,13 +302,13 @@ impl PayloadIndex for StructPayloadIndex {
 
     fn payload_blocks(
         &self,
-        field: &PayloadKeyType,
+        field: PayloadKeyTypeRef,
         threshold: usize,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         match self.field_indexes.get(field) {
             None => Box::new(vec![].into_iter()),
             Some(indexes) => {
-                let field_clone = field.clone();
+                let field_clone = field.to_owned();
                 Box::new(
                     indexes
                         .iter()

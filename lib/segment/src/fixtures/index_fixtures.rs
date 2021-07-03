@@ -1,4 +1,4 @@
-use crate::payload_storage::payload_storage::ConditionChecker;
+use crate::payload_storage::ConditionChecker;
 use crate::spaces::metric::Metric;
 use crate::spaces::tools::mertic_object;
 use crate::types::{Distance, Filter, PointOffsetType, VectorElementType};

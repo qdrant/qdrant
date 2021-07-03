@@ -6,9 +6,9 @@ mod tests {
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
     use segment::index::hnsw_index::hnsw::HNSWIndex;
-    use segment::index::index::{PayloadIndex, VectorIndex};
     use segment::index::struct_payload_index::StructPayloadIndex;
-    use segment::segment_constructor::segment_constructor::build_segment;
+    use segment::index::{PayloadIndex, VectorIndex};
+    use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, PayloadIndexType,
         PayloadKeyType, PayloadType, PointIdType, Range, SearchParams, SegmentConfig,

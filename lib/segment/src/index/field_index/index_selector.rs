@@ -1,6 +1,6 @@
-use crate::index::field_index::field_index::PayloadFieldIndexBuilder;
 use crate::index::field_index::map_index::PersistedMapIndex;
 use crate::index::field_index::numeric_index::PersistedNumericIndex;
+use crate::index::field_index::PayloadFieldIndexBuilder;
 use crate::types::{FloatPayloadType, IntPayloadType, PayloadSchemaType};
 
 pub fn index_selector(payload_type: &PayloadSchemaType) -> Vec<Box<dyn PayloadFieldIndexBuilder>> {

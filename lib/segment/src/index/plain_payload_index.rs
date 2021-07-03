@@ -1,7 +1,9 @@
-use crate::index::index::{PayloadIndex, VectorIndex};
-use crate::payload_storage::payload_storage::ConditionChecker;
-use crate::types::{Filter, PayloadKeyType, PointOffsetType, SearchParams, VectorElementType};
-use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
+use crate::index::{PayloadIndex, VectorIndex};
+use crate::payload_storage::ConditionChecker;
+use crate::types::{
+    Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType, SearchParams, VectorElementType,
+};
+use crate::vector_storage::{ScoredPointOffset, VectorStorage};
 
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
@@ -61,15 +63,15 @@ impl PayloadIndex for PlainPayloadIndex {
         self.config.indexed_fields.clone()
     }
 
-    fn set_indexed(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
-        if !self.config.indexed_fields.contains(field) {
-            self.config.indexed_fields.push(field.clone());
+    fn set_indexed(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
+        if !self.config.indexed_fields.iter().any(|x| x == field) {
+            self.config.indexed_fields.push(field.into());
             return self.save_config();
         }
         Ok(())
     }
 
-    fn drop_index(&mut self, field: &PayloadKeyType) -> OperationResult<()> {
+    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
         self.config.indexed_fields = self
             .config
             .indexed_fields
@@ -106,7 +108,7 @@ impl PayloadIndex for PlainPayloadIndex {
 
     fn payload_blocks(
         &self,
-        _field: &PayloadKeyType,
+        _field: PayloadKeyTypeRef,
         _threshold: usize,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         // No blocks for un-indexed payload

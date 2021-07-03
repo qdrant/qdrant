@@ -1,6 +1,6 @@
 use crate::types::{
-    Filter, PayloadKeyType, PayloadType, PointIdType, ScoredPoint, SearchParams, SegmentConfig,
-    SegmentInfo, SegmentType, SeqNumberType, TheMap, VectorElementType,
+    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType, ScoredPoint, SearchParams,
+    SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap, VectorElementType,
 };
 use atomicwrites::Error as AtomicIoError;
 use rocksdb::Error;
@@ -120,7 +120,7 @@ pub trait SegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        key: &PayloadKeyType,
+        key: PayloadKeyTypeRef,
         payload: PayloadType,
     ) -> OperationResult<bool>;
 
@@ -128,7 +128,7 @@ pub trait SegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        key: &PayloadKeyType,
+        key: PayloadKeyTypeRef,
     ) -> OperationResult<bool>;
 
     fn clear_payload(
@@ -186,14 +186,14 @@ pub trait SegmentEntry {
     fn delete_field_index(
         &mut self,
         op_num: SeqNumberType,
-        key: &PayloadKeyType,
+        key: PayloadKeyTypeRef,
     ) -> OperationResult<bool>;
 
     /// Create index for a payload field, if not exists
     fn create_field_index(
         &mut self,
         op_num: SeqNumberType,
-        key: &PayloadKeyType,
+        key: PayloadKeyTypeRef,
     ) -> OperationResult<bool>;
 
     /// Get indexed fields

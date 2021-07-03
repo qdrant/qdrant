@@ -1,3 +1,5 @@
 pub mod segment_builder;
-pub mod segment_constructor;
+mod segment_constructor_base;
 pub mod simple_segment_constructor;
+
+pub use segment_constructor_base::*;

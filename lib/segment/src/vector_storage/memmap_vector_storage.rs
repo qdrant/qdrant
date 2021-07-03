@@ -3,7 +3,7 @@ use crate::spaces::metric::Metric;
 use crate::spaces::tools::{mertic_object, peek_top_scores_iterable};
 use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
 use crate::vector_storage::mmap_vectors::MmapVectors;
-use crate::vector_storage::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage};
+use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage};
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
 use std::mem::size_of;

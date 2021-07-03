@@ -9,6 +9,7 @@ pub type PointIdType = u64;
 pub type PointOffsetType = u32;
 /// Type of point index inside a segment
 pub type PayloadKeyType = String;
+pub type PayloadKeyTypeRef<'a> = &'a str;
 pub type SeqNumberType = u64;
 /// Sequential number of modification, applied to segemnt
 pub type ScoreType = f32;

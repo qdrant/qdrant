@@ -3,7 +3,7 @@ use crate::segment_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::segment_manager::optimizers::merge_optimizer::MergeOptimizer;
 use crate::segment_manager::optimizers::segment_optimizer::OptimizerThresholds;
 use crate::segment_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
-use crate::update_handler::update_handler::Optimizer;
+use crate::update_handler::Optimizer;
 use schemars::JsonSchema;
 use segment::types::HnswConfig;
 use serde::{Deserialize, Serialize};

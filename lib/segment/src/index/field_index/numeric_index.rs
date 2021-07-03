@@ -6,10 +6,8 @@ use num_traits::ToPrimitive;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
-use crate::index::field_index::field_index::{
-    FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder,
-};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
+use crate::index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
 use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PayloadType, PointOffsetType,
     Range,

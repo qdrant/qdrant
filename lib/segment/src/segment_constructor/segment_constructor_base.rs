@@ -1,9 +1,9 @@
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_mapper::simple_id_mapper::SimpleIdMapper;
 use crate::index::hnsw_index::hnsw::HNSWIndex;
-use crate::index::index::{PayloadIndex, VectorIndex};
 use crate::index::plain_payload_index::{PlainIndex, PlainPayloadIndex};
 use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::query_checker::SimpleConditionChecker;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SEGMENT_STATE_FILE};
@@ -12,7 +12,7 @@ use crate::types::{
 };
 use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
 use crate::vector_storage::simple_vector_storage::SimpleVectorStorage;
-use crate::vector_storage::vector_storage::VectorStorage;
+use crate::vector_storage::VectorStorage;
 use atomic_refcell::AtomicRefCell;
 use std::fs::{create_dir_all, File};
 use std::io::Read;

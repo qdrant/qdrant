@@ -1,6 +1,6 @@
-use crate::payload_storage::payload_storage::ConditionChecker;
+use crate::payload_storage::ConditionChecker;
 use crate::types::{Filter, PointOffsetType, ScoreType};
-use crate::vector_storage::vector_storage::{RawScorer, ScoredPointOffset};
+use crate::vector_storage::{RawScorer, ScoredPointOffset};
 
 pub struct FilteredScorer<'a> {
     pub raw_scorer: &'a dyn RawScorer,

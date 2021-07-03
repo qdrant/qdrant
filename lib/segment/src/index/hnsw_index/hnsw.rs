@@ -3,14 +3,14 @@ use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::index::index::{PayloadIndex, VectorIndex};
 use crate::index::sample_estimation::sample_check_cardinality;
-use crate::payload_storage::payload_storage::ConditionChecker;
+use crate::index::{PayloadIndex, VectorIndex};
+use crate::payload_storage::ConditionChecker;
 use crate::types::Condition::Field;
 use crate::types::{
     FieldCondition, Filter, HnswConfig, PointOffsetType, SearchParams, VectorElementType,
 };
-use crate::vector_storage::vector_storage::{ScoredPointOffset, VectorStorage};
+use crate::vector_storage::{ScoredPointOffset, VectorStorage};
 use atomic_refcell::AtomicRefCell;
 use log::debug;
 use rand::prelude::ThreadRng;

@@ -42,7 +42,7 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
             .collect()
     }
 
-    pub fn into_iter(self) -> impl Iterator<Item = T> {
+    pub fn into_iterator(self) -> impl Iterator<Item = T> {
         self.heap.into_sorted_vec().into_iter().map(|x| x.0)
     }
 
@@ -54,9 +54,14 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
         self.heap.peek().map(|x| &x.0)
     }
 
-    /// Return actual length of the queue
+    /// Returns actual length of the queue
     pub fn len(&self) -> usize {
         self.heap.len()
+    }
+
+    /// Checks if the queue is empty
+    pub fn is_empty(&self) -> bool {
+        self.heap.is_empty()
     }
 }
 

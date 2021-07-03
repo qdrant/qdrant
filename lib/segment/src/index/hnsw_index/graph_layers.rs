@@ -7,7 +7,7 @@ use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedList, VisitedPool};
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
-use crate::vector_storage::vector_storage::ScoredPointOffset;
+use crate::vector_storage::ScoredPointOffset;
 use itertools::Itertools;
 use rand::distributions::Uniform;
 use rand::prelude::ThreadRng;
@@ -18,6 +18,7 @@ use std::collections::BinaryHeap;
 use std::path::{Path, PathBuf};
 
 pub type LinkContainer = Vec<PointOffsetType>;
+pub type LinkContainerRef<'a> = &'a [PointOffsetType];
 pub type LayersContainer = Vec<LinkContainer>;
 
 pub const HNSW_GRAPH_FILE: &str = "graph.bin";
@@ -104,7 +105,7 @@ impl GraphLayers {
     }
 
     /// Get links of current point
-    fn links(&self, point_id: PointOffsetType, level: usize) -> &LinkContainer {
+    fn links(&self, point_id: PointOffsetType, level: usize) -> LinkContainerRef {
         &self.links_layers[point_id as usize][level]
     }
 
@@ -170,7 +171,7 @@ impl GraphLayers {
         level: usize,
         ef: usize,
         points_scorer: &FilteredScorer,
-        existing_links: &LinkContainer,
+        existing_links: LinkContainerRef,
     ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
         let mut visited_list = self.visited_pool.get(self.num_points());
         visited_list.check_and_update_visited(level_entry.idx);
@@ -290,7 +291,7 @@ impl GraphLayers {
     where
         F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     {
-        let closest_iter = candidates.into_iter();
+        let closest_iter = candidates.into_iterator();
         Self::select_candidate_with_heuristic_from_sorted(closest_iter, m, score_internal)
     }
 
@@ -463,9 +464,8 @@ impl GraphLayers {
         let zero_level_entry =
             self.search_entry(entry_point.point_id, entry_point.level, 0, points_scorer);
 
-        let nearest =
-            self.search_on_level(zero_level_entry, 0, max(top, ef), points_scorer, &vec![]);
-        nearest.into_iter().take(top).collect_vec()
+        let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), points_scorer, &[]);
+        nearest.into_iterator().take(top).collect_vec()
     }
 
     pub fn get_path(path: &Path) -> PathBuf {
