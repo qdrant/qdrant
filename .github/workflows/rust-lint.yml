@@ -1,4 +1,4 @@
-name: Tests
+name: Formatter and linter
 
 on:
   push:
@@ -23,12 +23,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: Install dependencies
       run: sudo apt-get install clang libopenblas-dev libgfortran-9-dev
-    - name: Run tests
-      run: OPENBLAS_TARGET=CORE2 cargo test --all
-
-#   build:
-#     runs-on: ubuntu-latest
-#     steps:
-#     - uses: actions/checkout@v2
-#     - name: Build
-#       run: docker build . --tag=qdrant
+    - name: Check code formatting
+      run: cargo fmt --all -- --check
+    - name: Check cargo clippy warnings
+      run: cargo clippy --all-targets --all-features -- -D warnings
