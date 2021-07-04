@@ -8,7 +8,8 @@ use segment::segment_constructor::simple_segment_constructor::build_simple_segme
 use segment::types::{Distance, PayloadType, SeqNumberType};
 use std::path::Path;
 use std::sync::Arc;
-use tokio::runtime::Handle;
+use tokio::runtime;
+use tokio::runtime::Runtime;
 
 pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()
@@ -113,8 +114,18 @@ pub fn build_test_holder(path: &Path) -> SegmentHolder {
     holder
 }
 
-pub async fn build_searcher(path: &Path) -> SimpleSegmentSearcher {
+pub fn build_searcher(path: &Path) -> (Runtime, SimpleSegmentSearcher) {
     let segment_holder = build_test_holder(path);
 
-    SimpleSegmentSearcher::new(Arc::new(RwLock::new(segment_holder)), Handle::current())
+    let threaded_rt1 = runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .build()
+        .unwrap();
+
+    let searcher = SimpleSegmentSearcher::new(
+        Arc::new(RwLock::new(segment_holder)),
+        threaded_rt1.handle().clone(),
+    );
+
+    (threaded_rt1, searcher)
 }

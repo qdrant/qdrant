@@ -1,10 +1,12 @@
 use collection::collection::Collection;
 use collection::collection_builder::build_collection;
+use collection::collection_builder::collection_loader::load_collection;
 use collection::collection_builder::optimizers_builder::OptimizersConfig;
 use collection::config::{CollectionParams, WalConfig};
 use segment::types::Distance;
 use std::path::Path;
-use tokio::runtime::Handle;
+use tokio::runtime;
+use tokio::runtime::Runtime;
 
 pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
@@ -17,7 +19,18 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
 };
 
 #[allow(dead_code)]
-pub async fn simple_collection_fixture(collection_path: &Path) -> Collection {
+pub fn load_collection_fixture(collection_path: &Path) -> (Runtime, Collection) {
+    let threaded_rt = runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .build()
+        .unwrap();
+
+    let collection = load_collection(collection_path, threaded_rt.handle().clone());
+
+    return (threaded_rt, collection);
+}
+
+pub fn simple_collection_fixture(collection_path: &Path) -> (Runtime, Collection) {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
         wal_segments_ahead: 0,
@@ -28,13 +41,20 @@ pub async fn simple_collection_fixture(collection_path: &Path) -> Collection {
         distance: Distance::Dot,
     };
 
-    build_collection(
+    let threaded_rt = runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .build()
+        .unwrap();
+
+    let collection = build_collection(
         collection_path,
         &wal_config,
         &collection_params,
-        Handle::current(),
+        threaded_rt.handle().clone(),
         &TEST_OPTIMIZERS_CONFIG,
         &Default::default(),
     )
-    .unwrap()
+    .unwrap();
+
+    return (threaded_rt, collection);
 }

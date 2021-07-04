@@ -5,7 +5,6 @@ use std::sync::Arc;
 use crossbeam_channel::Sender;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
-use std::thread;
 use tokio::runtime::Runtime;
 
 use segment::types::Condition;
@@ -35,7 +34,7 @@ pub struct Collection {
     pub searcher: Arc<dyn SegmentSearcher + Sync + Send>,
     pub update_handler: Arc<Mutex<UpdateHandler>>,
     pub updater: Arc<dyn SegmentUpdater + Sync + Send>,
-    pub runtime_handle: Option<Runtime>,
+    pub runtime_handle: Arc<Runtime>,
     pub update_sender: Sender<UpdateSignal>,
     pub path: PathBuf,
 }
@@ -45,7 +44,7 @@ impl Collection {
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
-    pub async fn update(
+    pub fn update(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
@@ -60,31 +59,20 @@ impl Collection {
             res
         };
 
-        if let Some(handle) = self.runtime_handle.as_ref() {
-            let update_handler = handle.spawn(update_future);
-            if !wait {
-                return Ok(UpdateResult {
-                    operation_id,
-                    status: UpdateStatus::Acknowledged,
-                });
-            }
+        let update_handler = self.runtime_handle.spawn(update_future);
 
-            let _res: usize = update_handler.await??;
-            Ok(UpdateResult {
+        if !wait {
+            return Ok(UpdateResult {
                 operation_id,
-                status: UpdateStatus::Completed,
-            })
-        } else {
-            // The above error could only happen if update is called in parallel with
-            // drop. That means the drop method has already shut down the update runtime
-            // If you see this error, most likely you have synchronization issue
-            // with updating collection and dropping it at the same time.
-            // It is almost not possible to achieve in safe rust as the caller of update you
-            // have a reference to update handler, so the drop is not called yet.
-            Err(CollectionError::ServiceError {
-                error: "Calling update on removed collection".to_owned(),
-            })
+                status: UpdateStatus::Acknowledged,
+            });
         }
+
+        let _res: usize = self.runtime_handle.block_on(update_handler)??;
+        Ok(UpdateResult {
+            operation_id,
+            status: UpdateStatus::Completed,
+        })
     }
 
     pub fn info(&self) -> CollectionResult<CollectionInfo> {
@@ -119,11 +107,11 @@ impl Collection {
         })
     }
 
-    pub async fn search(&self, request: Arc<SearchRequest>) -> CollectionResult<Vec<ScoredPoint>> {
-        self.searcher.search(request).await
+    pub fn search(&self, request: Arc<SearchRequest>) -> CollectionResult<Vec<ScoredPoint>> {
+        self.searcher.search(request)
     }
 
-    pub async fn scroll(&self, request: Arc<ScrollRequest>) -> CollectionResult<ScrollResult> {
+    pub fn scroll(&self, request: Arc<ScrollRequest>) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequest::default();
 
         let offset = request
@@ -157,7 +145,7 @@ impl Collection {
             .take(limit)
             .collect_vec();
 
-        let mut points = self.retrieve(&point_ids, with_payload, with_vector).await?;
+        let mut points = self.retrieve(&point_ids, with_payload, with_vector)?;
         points.sort_by_key(|point| point.id);
 
         let next_page_offset = if point_ids.len() < limit {
@@ -172,15 +160,13 @@ impl Collection {
         })
     }
 
-    pub async fn retrieve(
+    pub fn retrieve(
         &self,
         points: &[PointIdType],
         with_payload: bool,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>> {
-        self.searcher
-            .retrieve(points, with_payload, with_vector)
-            .await
+        self.searcher.retrieve(points, with_payload, with_vector)
     }
 
     pub fn stop(&self) -> CollectionResult<()> {
@@ -216,10 +202,7 @@ impl Collection {
         avg_vector
     }
 
-    pub async fn recommend(
-        &self,
-        request: Arc<RecommendRequest>,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
+    pub fn recommend(&self, request: Arc<RecommendRequest>) -> CollectionResult<Vec<ScoredPoint>> {
         if request.positive.is_empty() {
             return Err(CollectionError::BadRequest {
                 description: "At least one positive vector ID required".to_owned(),
@@ -233,7 +216,7 @@ impl Collection {
             .cloned()
             .collect_vec();
 
-        let vectors = self.retrieve(&reference_vectors_ids, false, true).await?;
+        let vectors = self.retrieve(&reference_vectors_ids, false, true)?;
         let vectors_map: HashMap<PointIdType, Vec<VectorElementType>> = vectors
             .into_iter()
             .map(|rec| (rec.id, rec.vector.unwrap()))
@@ -288,14 +271,14 @@ impl Collection {
             top: request.top,
         };
 
-        self.search(Arc::new(search_request)).await
+        self.search(Arc::new(search_request))
     }
 
     /// Updates collection optimization params:
     /// - Saves new params on disk
     /// - Stops existing optimization loop
     /// - Runs new optimizers with new params
-    pub async fn update_optimizer_params(
+    pub fn update_optimizer_params(
         &self,
         optimizer_config_diff: OptimizersConfigDiff,
     ) -> CollectionResult<()> {
@@ -307,7 +290,7 @@ impl Collection {
         let config = self.config.read();
         let mut update_handler = self.update_handler.lock();
         self.stop()?;
-        update_handler.wait_worker_stops().await?;
+        update_handler.wait_worker_stops()?;
         let new_optimizers = build_optimizers(
             self.path.as_path(),
             &config.params,
@@ -325,17 +308,6 @@ impl Collection {
 
 impl Drop for Collection {
     fn drop(&mut self) {
-        self.stop().unwrap(); // Finishes update tasks right before destructor stuck to do so with runtime
-
-        // The drop could be called from the tokio context, e.g. from perform_collection_operation method.
-        // Calling remove from there would lead to the following error in a new version of tokio:
-        // "Cannot drop a runtime in a context where blocking is not allowed. This happens when a runtime is dropped from within an asynchronous context."
-        // So the workaround for move out the runtime handler and drop it in the separate thread.
-        // The proper solution is to reconsider the collection to be an owner of the runtime
-        let handle = self.runtime_handle.take();
-        let thread_handler = thread::spawn(move || {
-            drop(handle);
-        });
-        thread_handler.join().unwrap();
+        self.stop().unwrap(); // Finishes update tasks right before destructor stucks to do so with runtime
     }
 }
