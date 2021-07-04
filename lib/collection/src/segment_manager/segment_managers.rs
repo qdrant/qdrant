@@ -5,15 +5,14 @@ use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
 use crate::operations::types::{CollectionResult, Record, SearchRequest};
 use crate::operations::CollectionUpdateOperations;
 
-#[async_trait::async_trait]
 pub trait SegmentSearcher {
-    async fn search(
+    fn search(
         &self,
         // Request is supposed to be a read only, that is why no mutex used
         request: Arc<SearchRequest>,
     ) -> CollectionResult<Vec<ScoredPoint>>;
 
-    async fn retrieve(
+    fn retrieve(
         &self,
         points: &[PointIdType],
         with_payload: bool,

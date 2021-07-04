@@ -12,13 +12,13 @@ use segment::types::{PayloadInterface, PayloadKeyType, PayloadVariant};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tempdir::TempDir;
-use tokio::runtime::Handle;
+use tokio::runtime;
 
-#[tokio::test]
-async fn test_collection_updater() {
+#[test]
+fn test_collection_updater() {
     let collection_dir = TempDir::new("collection").unwrap();
 
-    let collection = simple_collection_fixture(collection_dir.path()).await;
+    let (_rt, collection) = simple_collection_fixture(collection_dir.path());
 
     let insert_points =
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(BatchPoints {
@@ -33,13 +33,13 @@ async fn test_collection_updater() {
             payloads: None,
         }));
 
-    let insert_result = collection.update(insert_points, true).await;
+    let insert_result = collection.update(insert_points, true);
 
     match insert_result {
         Ok(res) => {
             assert_eq!(res.status, UpdateStatus::Completed)
         }
-        Err(err) => panic!("operation failed: {:?}", err),
+        Err(err) => assert!(false, "operation failed: {:?}", err),
     }
 
     let search_request = Arc::new(SearchRequest {
@@ -49,23 +49,24 @@ async fn test_collection_updater() {
         top: 3,
     });
 
-    let search_res = collection.search(search_request).await;
+    let search_res = collection.search(search_request);
 
     match search_res {
         Ok(res) => {
             assert_eq!(res.len(), 3);
             assert_eq!(res[0].id, 2);
         }
-        Err(err) => panic!("search failed: {:?}", err),
+        Err(err) => assert!(false, "search failed: {:?}", err),
     }
 }
 
-#[tokio::test]
-async fn test_collection_loading() {
+#[test]
+fn test_collection_loading() {
     let collection_dir = TempDir::new("collection").unwrap();
 
     {
-        let collection = simple_collection_fixture(collection_dir.path()).await;
+        let (_rt, collection) = simple_collection_fixture(collection_dir.path());
+
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(BatchPoints {
                 ids: vec![0, 1, 2, 3, 4],
@@ -80,7 +81,7 @@ async fn test_collection_loading() {
             }),
         );
 
-        collection.update(insert_points, true).await.unwrap();
+        collection.update(insert_points, true).unwrap();
 
         let mut payload: HashMap<PayloadKeyType, PayloadInterface> = Default::default();
 
@@ -94,14 +95,19 @@ async fn test_collection_loading() {
             points: vec![2, 3],
         });
 
-        collection.update(assign_payload, true).await.unwrap();
+        collection.update(assign_payload, true).unwrap();
     }
 
-    let loaded_collection = load_collection(collection_dir.path(), Handle::current());
-    let retrieved = loaded_collection
-        .retrieve(&[1, 2], true, true)
-        .await
+    let rt = runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .build()
         .unwrap();
+
+    // sleep(Duration::from_secs(120));
+
+    let loaded_collection = load_collection(collection_dir.path(), rt.handle().clone());
+
+    let retrieved = loaded_collection.retrieve(&vec![1, 2], true, true).unwrap();
 
     assert_eq!(retrieved.len(), 2);
 
@@ -170,10 +176,10 @@ fn test_deserialization2() {
     eprintln!("read_obj2 = {:#?}", read_obj2);
 }
 
-#[tokio::test]
-async fn test_recommendation_api() {
+#[test]
+fn test_recommendation_api() {
     let collection_dir = TempDir::new("collection").unwrap();
-    let collection = simple_collection_fixture(collection_dir.path()).await;
+    let (_rt, collection) = simple_collection_fixture(collection_dir.path());
 
     let insert_points =
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(BatchPoints {
@@ -192,7 +198,7 @@ async fn test_recommendation_api() {
             payloads: None,
         }));
 
-    collection.update(insert_points, true).await.unwrap();
+    collection.update(insert_points, true).unwrap();
 
     let result = collection
         .recommend(Arc::new(RecommendRequest {
@@ -202,7 +208,6 @@ async fn test_recommendation_api() {
             params: None,
             top: 5,
         }))
-        .await
         .unwrap();
     assert!(result.len() > 0);
     let top1 = result[0];
@@ -210,10 +215,10 @@ async fn test_recommendation_api() {
     assert!(top1.id == 5 || top1.id == 6);
 }
 
-#[tokio::test]
-async fn test_read_api() {
+#[test]
+fn test_read_api() {
     let collection_dir = TempDir::new("collection").unwrap();
-    let collection = simple_collection_fixture(collection_dir.path()).await;
+    let (_rt, collection) = simple_collection_fixture(collection_dir.path());
 
     let insert_points =
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(BatchPoints {
@@ -232,7 +237,7 @@ async fn test_read_api() {
             payloads: None,
         }));
 
-    collection.update(insert_points, true).await.unwrap();
+    collection.update(insert_points, true).unwrap();
 
     let result = collection
         .scroll(Arc::new(ScrollRequest {
@@ -242,7 +247,6 @@ async fn test_read_api() {
             with_payload: Some(true),
             with_vector: None,
         }))
-        .await
         .unwrap();
 
     assert_eq!(result.next_page_offset, Some(2));

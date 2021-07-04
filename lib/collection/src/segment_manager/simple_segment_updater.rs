@@ -326,11 +326,11 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
-    async fn test_point_ops() {
+    #[test]
+    fn test_point_ops() {
         let dir = TempDir::new("segment_dir").unwrap();
 
-        let searcher = build_searcher(dir.path()).await;
+        let (_rt, searcher) = build_searcher(dir.path());
 
         let updater = SimpleSegmentUpdater {
             segments: searcher.segments.clone(),
@@ -340,9 +340,13 @@ mod tests {
         let vectors = vec![vec![2., 2., 2., 2.], vec![2., 0., 2., 0.]];
 
         let res = updater.upsert_points(100, &points, &vectors, &None);
-        assert!(matches!(res, Ok(1)));
 
-        let records = searcher.retrieve(&[1, 2, 500], true, true).await.unwrap();
+        match res {
+            Ok(updated) => assert_eq!(updated, 1),
+            Err(_) => assert!(false),
+        };
+
+        let records = searcher.retrieve(&vec![1, 2, 500], true, true).unwrap();
 
         assert_eq!(records.len(), 3);
 
@@ -357,20 +361,23 @@ mod tests {
             }
         }
 
-        updater.delete_points(101, &[500]).unwrap();
+        updater.delete_points(101, &vec![500]).unwrap();
 
-        let records = searcher.retrieve(&[1, 2, 500], true, true).await.unwrap();
+        let records = searcher.retrieve(&vec![1, 2, 500], true, true).unwrap();
 
         for record in records {
             let _v = record.vector.unwrap();
-            assert_ne!(record.id, 500);
+
+            if record.id == 500 {
+                assert!(false)
+            }
         }
     }
 
-    #[tokio::test]
-    async fn test_payload_ops() {
+    #[test]
+    fn test_payload_ops() {
         let dir = TempDir::new("segment_dir").unwrap();
-        let searcher = build_searcher(dir.path()).await;
+        let (_rt, searcher) = build_searcher(dir.path());
 
         let updater = SimpleSegmentUpdater {
             segments: searcher.segments.clone(),
@@ -395,14 +402,14 @@ mod tests {
             )
             .unwrap();
 
-        let res = searcher.retrieve(&points, true, false).await.unwrap();
+        let res = searcher.retrieve(&points, true, false).unwrap();
 
         assert_eq!(res.len(), 3);
 
         match res.get(0) {
-            None => panic!(),
+            None => assert!(false),
             Some(r) => match &r.payload {
-                None => panic!("No payload assigned"),
+                None => assert!(false, "No payload assigned"),
                 Some(payload) => {
                     assert!(payload.contains_key("color"))
                 }
@@ -412,21 +419,25 @@ mod tests {
         // Test payload delete
 
         updater
-            .delete_payload(101, &[3], &["color".to_string(), "empty".to_string()])
+            .delete_payload(
+                101,
+                &vec![3],
+                &vec!["color".to_string(), "empty".to_string()],
+            )
             .unwrap();
-        let res = searcher.retrieve(&[3], true, false).await.unwrap();
+        let res = searcher.retrieve(&vec![3], true, false).unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
 
         // Test clear payload
 
-        let res = searcher.retrieve(&[2], true, false).await.unwrap();
+        let res = searcher.retrieve(&vec![2], true, false).unwrap();
         assert_eq!(res.len(), 1);
         assert!(res[0].payload.as_ref().unwrap().contains_key("color"));
 
-        updater.clear_payload(102, &[2]).unwrap();
-        let res = searcher.retrieve(&[2], true, false).await.unwrap();
+        updater.clear_payload(102, &vec![2]).unwrap();
+        let res = searcher.retrieve(&vec![2], true, false).unwrap();
         assert_eq!(res.len(), 1);
-        assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
+        assert!(!res[0].payload.as_ref().unwrap().contains_key("color"))
     }
 }
