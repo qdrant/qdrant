@@ -42,26 +42,32 @@ impl SimpleSegmentSearcher {
     }
 }
 
+#[async_trait::async_trait]
 impl SegmentSearcher for SimpleSegmentSearcher {
-    fn search(&self, request: Arc<SearchRequest>) -> CollectionResult<Vec<ScoredPoint>> {
-        let segments = self.segments.read();
+    async fn search(&self, request: Arc<SearchRequest>) -> CollectionResult<Vec<ScoredPoint>> {
+        // Using { } block to ensure segments variable is dropped in the end of it
+        // and is not transferred across the all_searches.await? boundary as it
+        // does not impl Send trait
+        let searches: Vec<_> = {
+            let segments = self.segments.read();
 
-        let some_segment = segments.iter().next();
+            let some_segment = segments.iter().next();
 
-        if some_segment.is_none() {
-            return Ok(vec![]);
-        }
+            if some_segment.is_none() {
+                return Ok(vec![]);
+            }
 
-        let searches: Vec<_> = segments
-            .iter()
-            .map(|(_id, segment)| {
-                SimpleSegmentSearcher::search_in_segment(segment.clone(), request.clone())
-            })
-            .map(|f| self.runtime_handle.spawn(f))
-            .collect();
+            segments
+                .iter()
+                .map(|(_id, segment)| {
+                    SimpleSegmentSearcher::search_in_segment(segment.clone(), request.clone())
+                })
+                .map(|f| self.runtime_handle.spawn(f))
+                .collect()
+        };
 
         let all_searches = try_join_all(searches);
-        let all_search_results = self.runtime_handle.block_on(all_searches)?;
+        let all_search_results = all_searches.await?;
 
         match all_search_results
             .iter()
@@ -90,7 +96,7 @@ impl SegmentSearcher for SimpleSegmentSearcher {
         Ok(top_scores)
     }
 
-    fn retrieve(
+    async fn retrieve(
         &self,
         points: &[PointIdType],
         with_payload: bool,
@@ -132,24 +138,15 @@ mod tests {
     use crate::segment_manager::fixtures::build_test_holder;
     use parking_lot::RwLock;
     use tempdir::TempDir;
-    use tokio::runtime;
-    use tokio::runtime::Runtime;
 
-    #[test]
-    fn test_segments_search() {
+    #[tokio::test]
+    async fn test_segments_search() {
         let dir = TempDir::new("segment_dir").unwrap();
 
         let segment_holder = build_test_holder(dir.path());
 
-        let threaded_rt1: Runtime = runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .build()
-            .unwrap();
-
-        let searcher = SimpleSegmentSearcher::new(
-            Arc::new(RwLock::new(segment_holder)),
-            threaded_rt1.handle().clone(),
-        );
+        let searcher =
+            SimpleSegmentSearcher::new(Arc::new(RwLock::new(segment_holder)), Handle::current());
 
         let query = vec![1.0, 1.0, 1.0, 1.0];
 
@@ -160,7 +157,7 @@ mod tests {
             top: 5,
         });
 
-        let result = searcher.search(req).unwrap();
+        let result = searcher.search(req).await.unwrap();
 
         // eprintln!("result = {:?}", &result);
 
@@ -170,23 +167,15 @@ mod tests {
         assert!(result[1].id == 3 || result[1].id == 11);
     }
 
-    #[test]
-    fn test_retrieve() {
+    #[tokio::test]
+    async fn test_retrieve() {
         let dir = TempDir::new("segment_dir").unwrap();
         let segment_holder = build_test_holder(dir.path());
 
-        let threaded_rt1: Runtime = runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .build()
-            .unwrap();
+        let searcher =
+            SimpleSegmentSearcher::new(Arc::new(RwLock::new(segment_holder)), Handle::current());
 
-        let searcher = SimpleSegmentSearcher::new(
-            Arc::new(RwLock::new(segment_holder)),
-            threaded_rt1.handle().clone(),
-        );
-
-        let records = searcher.retrieve(&vec![1, 2, 3], true, true).unwrap();
-
+        let records = searcher.retrieve(&[1, 2, 3], true, true).await.unwrap();
         assert_eq!(records.len(), 3);
     }
 }

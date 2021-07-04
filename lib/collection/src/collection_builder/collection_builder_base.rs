@@ -32,12 +32,10 @@ pub fn construct_collection(
 ) -> Collection {
     let segment_holder = Arc::new(RwLock::new(segment_holder));
 
-    let optimize_runtime = Arc::new(
-        runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .build()
-            .unwrap(),
-    );
+    let optimize_runtime = runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .build()
+        .unwrap();
 
     let locked_wal = Arc::new(Mutex::new(wal));
 
@@ -63,7 +61,7 @@ pub fn construct_collection(
         searcher: Arc::new(searcher),
         update_handler,
         updater: Arc::new(updater),
-        runtime_handle: optimize_runtime,
+        runtime_handle: Some(optimize_runtime),
         update_sender: tx,
         path: collection_path.to_owned(),
     }

@@ -68,14 +68,12 @@ impl UpdateHandler {
     /// Gracefully wait before all optimizations stop
     /// If some optimization is in progress - it will be finished before shutdown.
     /// Blocking function.
-    pub fn wait_worker_stops(&mut self) -> CollectionResult<()> {
-        let res = match &mut self.worker {
-            None => (),
-            Some(handle) => self.runtime_handle.block_on(handle)?,
-        };
-
-        self.worker = None;
-        Ok(res)
+    pub async fn wait_worker_stops(&mut self) -> CollectionResult<()> {
+        let maybe_handle = self.worker.take();
+        if let Some(handle) = maybe_handle {
+            handle.await?;
+        }
+        Ok(())
     }
 
     fn process_optimization(optimizers: Arc<Vec<Box<Optimizer>>>, segments: LockedSegmentHolder) {
