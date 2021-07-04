@@ -46,7 +46,7 @@ pub async fn update_collections(
 ) -> impl Responder {
     let timing = Instant::now();
 
-    let response = { toc.perform_collection_operation(operation.0) };
+    let response = toc.perform_collection_operation(operation.0).await;
 
     process_response(response, timing)
 }

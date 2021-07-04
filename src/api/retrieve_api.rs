@@ -1,7 +1,7 @@
 use crate::common::helpers::process_response;
 use actix_web::rt::time::Instant;
 use actix_web::{get, post, web, Responder};
-use collection::operations::types::ScrollRequest;
+use collection::operations::types::{Record, ScrollRequest, ScrollResult};
 use schemars::JsonSchema;
 use segment::types::PointIdType;
 use serde::{Deserialize, Serialize};
@@ -14,6 +14,40 @@ pub struct PointRequest {
     pub ids: Vec<PointIdType>,
 }
 
+async fn do_get_point(
+    toc: &TableOfContent,
+    name: &str,
+    point_id: PointIdType,
+) -> Result<Option<Record>, StorageError> {
+    toc.get_collection(&name)?
+        .retrieve(&[point_id], true, true)
+        .await
+        .map_err(|err| err.into())
+        .map(|points| points.into_iter().next())
+}
+
+async fn do_get_points(
+    toc: &TableOfContent,
+    name: &str,
+    request: PointRequest,
+) -> Result<Vec<Record>, StorageError> {
+    toc.get_collection(&name)?
+        .retrieve(&request.ids, true, true)
+        .await
+        .map_err(|err| err.into())
+}
+
+async fn scroll_get_points(
+    toc: &TableOfContent,
+    name: &str,
+    request: ScrollRequest,
+) -> Result<ScrollResult, StorageError> {
+    toc.get_collection(&name)?
+        .scroll(Arc::new(request))
+        .await
+        .map_err(|err| err.into())
+}
+
 #[get("/collections/{name}/points/{id}")]
 pub async fn get_point(
     toc: web::Data<TableOfContent>,
@@ -22,14 +56,7 @@ pub async fn get_point(
     let (name, point_id) = path.into_inner();
     let timing = Instant::now();
 
-    let response = {
-        toc.get_collection(&name).and_then(|collection| {
-            collection
-                .retrieve(&[point_id], true, true)
-                .map_err(|err| err.into())
-                .map(|points| points.into_iter().next())
-        })
-    };
+    let response = do_get_point(toc.into_inner().as_ref(), &name, point_id).await;
 
     let response = match response {
         Ok(record) => match record {
@@ -40,7 +67,6 @@ pub async fn get_point(
         },
         Err(e) => Err(e),
     };
-
     process_response(response, timing)
 }
 
@@ -53,14 +79,7 @@ pub async fn get_points(
     let name = path.into_inner();
     let timing = Instant::now();
 
-    let response = {
-        toc.get_collection(&name).and_then(|collection| {
-            collection
-                .retrieve(&request.ids, true, true)
-                .map_err(|err| err.into())
-        })
-    };
-
+    let response = do_get_points(toc.into_inner().as_ref(), &name, request.into_inner()).await;
     process_response(response, timing)
 }
 
@@ -73,13 +92,6 @@ pub async fn scroll_points(
     let name = path.into_inner();
     let timing = Instant::now();
 
-    let response = {
-        toc.get_collection(&name).and_then(|collection| {
-            collection
-                .scroll(Arc::new(request.0))
-                .map_err(|err| err.into())
-        })
-    };
-
+    let response = scroll_get_points(toc.into_inner().as_ref(), &name, request.into_inner()).await;
     process_response(response, timing)
 }
