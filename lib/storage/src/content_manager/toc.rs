@@ -140,7 +140,7 @@ impl TableOfContent {
         self.collections.read().contains_key(collection_name)
     }
 
-    pub fn perform_collection_operation(
+    pub async fn perform_collection_operation(
         &self,
         operation: StorageOperations,
     ) -> Result<bool, StorageError> {
@@ -196,14 +196,22 @@ impl TableOfContent {
                 match optimizers_config {
                     None => {}
                     Some(new_optimizers_config) => {
-                        collection.update_optimizer_params(new_optimizers_config)?
+                        collection
+                            .update_optimizer_params(new_optimizers_config)
+                            .await?
                     }
                 }
                 Ok(true)
             }
             StorageOperations::DeleteCollection(collection_name) => {
-                let removed = self.collections.write().remove(&collection_name).is_some();
-                if removed {
+                if let Some(removed) = self.collections.write().remove(&collection_name) {
+                    removed.stop()?;
+                    {
+                        // Wait for optimizer to finish.
+                        // TODO: Enhance optimizer to shutdown faster
+                        let mut update_handler = removed.update_handler.lock();
+                        update_handler.wait_worker_stops().await?;
+                    }
                     let path = self.get_collection_path(&collection_name);
                     remove_dir_all(path).map_err(|err| StorageError::ServiceError {
                         description: format!(
@@ -211,8 +219,10 @@ impl TableOfContent {
                             collection_name, err
                         ),
                     })?;
+                    Ok(true)
+                } else {
+                    Ok(false)
                 }
-                Ok(removed)
             }
             StorageOperations::ChangeAliases { actions } => {
                 let _collection_lock = self.collections.write(); // Make alias change atomic

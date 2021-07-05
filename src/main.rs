@@ -15,6 +15,7 @@ use crate::api::recommend_api::recommend_points;
 use crate::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::api::search_api::search_points;
 use crate::api::update_api::update_points;
+use actix_web::web::Data;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::toc::TableOfContent;
 
@@ -64,11 +65,11 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(Logger::default())
             .app_data(toc_data.clone())
-            .data(
+            .app_data(Data::new(
                 web::JsonConfig::default()
                     .limit(33554432)
                     .error_handler(json_error_handler),
-            ) // 32 Mb
+            )) // 32 Mb
             .service(index)
             .service(get_collections)
             .service(update_collections)
