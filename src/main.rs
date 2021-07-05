@@ -1,23 +1,23 @@
 #[macro_use]
 extern crate log;
 
-mod settings;
-
 mod api;
 mod common;
+mod settings;
 
 use actix_web::middleware::Logger;
-
+use actix_web::web::Data;
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use serde::{Deserialize, Serialize};
+use storage::content_manager::toc::TableOfContent;
 
 use crate::api::collections_api::{get_collection, get_collections, update_collections};
 use crate::api::recommend_api::recommend_points;
 use crate::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::api::search_api::search_points;
 use crate::api::update_api::update_points;
-use actix_web::web::Data;
-use serde::{Deserialize, Serialize};
-use storage::content_manager::toc::TableOfContent;
+use crate::common::helpers::create_search_runtime;
+use crate::settings::Settings;
 
 #[derive(Serialize, Deserialize)]
 pub struct VersionInfo {
@@ -47,45 +47,51 @@ pub async fn index() -> impl Responder {
     })
 }
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    let settings = settings::Settings::new().expect("Can't read config.");
-    std::env::set_var("RUST_LOG", settings.log_level);
+fn main() -> std::io::Result<()> {
+    let settings = Settings::new().expect("Can't read config.");
+    std::env::set_var("RUST_LOG", &settings.log_level);
     env_logger::init();
 
-    let toc = TableOfContent::new(&settings.storage);
+    // Create and own search runtime out of the scope of async context to ensure correct
+    // destruction of it
+    let runtime = create_search_runtime(settings.storage.performance.max_search_threads).unwrap();
+    let handle = runtime.handle().clone();
 
-    for collection in toc.all_collections() {
-        info!("loaded collection: {}", collection);
-    }
+    actix_web::rt::System::new().block_on(async {
+        let toc = TableOfContent::new(&settings.storage, handle);
 
-    let toc_data = web::Data::new(toc);
+        for collection in toc.all_collections() {
+            info!("loaded collection: {}", collection);
+        }
 
-    HttpServer::new(move || {
-        App::new()
-            .wrap(Logger::default())
-            .app_data(toc_data.clone())
-            .app_data(Data::new(
-                web::JsonConfig::default()
-                    .limit(33554432)
-                    .error_handler(json_error_handler),
-            )) // 32 Mb
-            .service(index)
-            .service(get_collections)
-            .service(update_collections)
-            .service(get_collection)
-            .service(update_points)
-            .service(get_point)
-            .service(get_points)
-            .service(scroll_points)
-            .service(search_points)
-            .service(recommend_points)
+        let toc_data = web::Data::new(toc);
+
+        HttpServer::new(move || {
+            App::new()
+                .wrap(Logger::default())
+                .app_data(toc_data.clone())
+                .app_data(Data::new(
+                    web::JsonConfig::default()
+                        .limit(33554432)
+                        .error_handler(json_error_handler),
+                )) // 32 Mb
+                .service(index)
+                .service(get_collections)
+                .service(update_collections)
+                .service(get_collection)
+                .service(update_points)
+                .service(get_point)
+                .service(get_points)
+                .service(scroll_points)
+                .service(search_points)
+                .service(recommend_points)
+        })
+        // .workers(4)
+        .bind(format!(
+            "{}:{}",
+            settings.service.host, settings.service.port
+        ))?
+        .run()
+        .await
     })
-    // .workers(4)
-    .bind(format!(
-        "{}:{}",
-        settings.service.host, settings.service.port
-    ))?
-    .run()
-    .await
 }
