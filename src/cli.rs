@@ -1,16 +1,20 @@
 #[macro_use]
 extern crate log;
 
+mod common;
 mod settings;
 
-use storage::content_manager::toc::TableOfContent;
+use crate::common::helpers::create_search_runtime;
+use crate::storage::content_manager::toc::TableOfContent;
 
 fn main() {
     let settings = settings::Settings::new().expect("Can't read config.");
     std::env::set_var("RUST_LOG", settings.log_level);
     env_logger::init();
 
-    let toc = TableOfContent::new(&settings.storage);
+    let runtime = create_search_runtime(settings.storage.performance.max_search_threads).unwrap();
+    let handle = runtime.handle().clone();
+    let toc = TableOfContent::new(&settings.storage, handle);
 
     for collection in toc.all_collections() {
         info!("loaded collection: {}", collection);
