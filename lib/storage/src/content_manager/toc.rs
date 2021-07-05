@@ -1,20 +1,16 @@
-use std::cmp::max;
 use std::collections::HashMap;
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 use std::sync::Arc;
 
-use num_cpus;
-use parking_lot::RwLock;
-use sled::transaction::UnabortableTransactionError;
-use sled::{Config, Db};
-use tokio::runtime;
-use tokio::runtime::Runtime;
-
 use collection::collection::Collection;
 use collection::collection_builder::build_collection;
 use collection::collection_builder::collection_loader::load_collection;
+use parking_lot::RwLock;
+use sled::transaction::UnabortableTransactionError;
+use sled::{Config, Db};
+use tokio::runtime::Handle;
 
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::storage_ops::{AliasOperations, StorageOperations};
@@ -31,24 +27,12 @@ const COLLECTIONS_DIR: &str = "collections";
 pub struct TableOfContent {
     collections: Arc<RwLock<HashMap<String, Arc<Collection>>>>,
     storage_config: StorageConfig,
-    search_runtime: Runtime,
+    search_runtime_handle: Handle,
     alias_persistence: Db,
 }
 
 impl TableOfContent {
-    pub fn new(storage_config: &StorageConfig) -> Self {
-        let mut search_threads = storage_config.performance.max_search_threads;
-
-        if search_threads == 0 {
-            let num_cpu = num_cpus::get();
-            search_threads = max(1, num_cpu - 1);
-        }
-
-        let search_runtime = runtime::Builder::new_multi_thread()
-            .worker_threads(search_threads)
-            .build()
-            .unwrap();
-
+    pub fn new(storage_config: &StorageConfig, search_runtime_handle: Handle) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
 
         create_dir_all(&collections_path).unwrap();
@@ -67,7 +51,7 @@ impl TableOfContent {
                 .to_string();
 
             let collection =
-                load_collection(collection_path.as_path(), search_runtime.handle().clone());
+                load_collection(collection_path.as_path(), search_runtime_handle.clone());
 
             collections.insert(collection_name, Arc::new(collection));
         }
@@ -83,7 +67,7 @@ impl TableOfContent {
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: storage_config.clone(),
-            search_runtime,
+            search_runtime_handle,
             alias_persistence,
         }
     }
@@ -179,7 +163,7 @@ impl TableOfContent {
                     Path::new(&collection_path),
                     &wal_config,
                     &collection_params,
-                    self.search_runtime.handle().clone(),
+                    self.search_runtime_handle.clone(),
                     &optimizers_config,
                     &hnsw_config,
                 )?;

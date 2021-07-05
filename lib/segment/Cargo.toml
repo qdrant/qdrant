@@ -19,7 +19,7 @@ openblas-src = { version = "0.10", default-features = false, features = ["cblas"
 
 parking_lot = "0.11"
 itertools = "0.10"
-rocksdb = "0.15.0"
+rocksdb = { version = "0.15.0", default-features = false, features = [ "snappy" ] }
 uuid = { version = "0.8", features = ["v4"] }
 bincode = "1.3"
 serde = { version = "~1.0", features = ["derive", "rc"] }
