@@ -61,7 +61,8 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     }
 
     pub fn write(&mut self, entity: &R) -> Result<u64> {
-        let binary_entity = rmp_serde::to_vec(&entity).unwrap();
+        // ToDo: Replace back to faster rmp, once this https://github.com/serde-rs/serde/issues/2055 solved
+        let binary_entity = serde_cbor::to_vec(&entity).unwrap();
         self.wal
             .append(&binary_entity)
             .map_err(|err| WalError::WriteWalError(format!("{:?}", err)))
@@ -81,7 +82,8 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 
         (start_from..(first_index + num_entries)).map(move |idx| {
             let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
-            let record: R = rmp_serde::from_read_ref(&record_bin.to_vec())
+            let record: R = serde_cbor::from_slice(&record_bin.to_vec())
+                .or_else(|_err| rmp_serde::from_read_ref(&record_bin.to_vec()))
                 .expect("Can't deserialize entry, probably corrupted WAL on version mismatch");
             (idx, record)
         })

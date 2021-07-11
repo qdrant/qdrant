@@ -215,7 +215,7 @@ pub struct SegmentState {
     pub config: SegmentConfig,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoPoint {
     pub lon: f64,
@@ -253,12 +253,12 @@ impl From<&PayloadType> for PayloadSchemaType {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum PayloadVariant<T> {
-    Value(T),
     List(Vec<T>),
+    Value(T),
 }
 
 impl<T: Clone> PayloadVariant<T> {
@@ -270,7 +270,7 @@ impl<T: Clone> PayloadVariant<T> {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum PayloadInterface {
@@ -280,7 +280,7 @@ pub enum PayloadInterface {
     Payload(PayloadInterfaceStrict),
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "value")]
 pub enum PayloadInterfaceStrict {
@@ -429,6 +429,7 @@ impl Filter {
 mod tests {
     use super::*;
 
+    use serde::de::DeserializeOwned;
     use serde_json;
 
     #[test]
@@ -550,6 +551,105 @@ mod tests {
             }
             _ => assert!(false),
         }
+    }
+
+    #[allow(dead_code)]
+    fn check_rms_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(
+        record: T,
+    ) {
+        let binary_entity = rmp_serde::to_vec(&record).expect("serialization ok");
+        let de_record: T = rmp_serde::from_slice(&binary_entity).expect("deserialization ok");
+
+        assert_eq!(record, de_record);
+    }
+
+    fn check_cbor_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(
+        record: T,
+    ) {
+        let binary_entity = serde_cbor::to_vec(&record).expect("serialization ok");
+        let de_record: T = serde_cbor::from_slice(&binary_entity).expect("deserialization ok");
+
+        assert_eq!(record, de_record);
+    }
+
+    fn check_json_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(
+        record: T,
+    ) {
+        let binary_entity = serde_json::to_vec(&record).expect("serialization ok");
+        let de_record: T = serde_json::from_slice(&binary_entity).expect("deserialization ok");
+
+        assert_eq!(record, de_record);
+    }
+
+    #[test]
+    fn test_strict_deserialize() {
+        let de_record: PayloadInterface =
+            serde_json::from_str(r#"[1, 2]"#).expect("deserialization ok");
+        eprintln!("de_record = {:#?}", de_record);
+    }
+
+    #[test]
+    fn test_rmp_vs_cbor_deserialize() {
+        let payload = PayloadInterface::KeywordShortcut(PayloadVariant::Value("val".to_string()));
+        let raw = rmp_serde::to_vec(&payload).unwrap();
+        let de_record: PayloadInterface = serde_cbor::from_slice(&raw).unwrap();
+        eprintln!("payload = {:#?}", payload);
+        eprintln!("de_record = {:#?}", de_record);
+    }
+
+    #[test]
+    fn test_rms_serialization() {
+        let payload = PayloadInterface::Payload(PayloadInterfaceStrict::Keyword(
+            PayloadVariant::Value("val".to_string()),
+        ));
+        check_cbor_serialization(payload.clone());
+        check_json_serialization(payload);
+
+        let payload = PayloadVariant::Value("val".to_string());
+        check_cbor_serialization(payload.clone());
+        check_json_serialization(payload);
+
+        let payload = PayloadVariant::Value(1.22);
+        check_cbor_serialization(payload.clone());
+        check_json_serialization(payload);
+
+        let payload = PayloadVariant::Value(1.);
+        check_cbor_serialization(payload.clone());
+        check_json_serialization(payload);
+
+        let payload = PayloadVariant::Value(1);
+        check_cbor_serialization(payload.clone());
+        check_json_serialization(payload);
+
+        let payload = PayloadVariant::List(vec!["val".to_string(), "val2".to_string()]);
+        check_cbor_serialization(payload.clone());
+        check_json_serialization(payload);
+
+        let payload =
+            PayloadInterface::Payload(PayloadInterfaceStrict::Integer(PayloadVariant::List(vec![
+                1, 2,
+            ])));
+        check_cbor_serialization(payload.clone());
+        check_json_serialization(payload);
+
+        let payload = PayloadVariant::List(vec![1, 2]);
+        check_cbor_serialization(payload.clone());
+        check_json_serialization(payload);
+
+        let payload = PayloadInterface::IntShortcut(PayloadVariant::List(vec![1, 2]));
+        check_cbor_serialization(payload.clone());
+        check_json_serialization(payload);
+
+        let payload = PayloadInterface::KeywordShortcut(PayloadVariant::Value("val".to_string()));
+        check_cbor_serialization(payload.clone());
+        check_json_serialization(payload);
+
+        let payload = PayloadInterface::KeywordShortcut(PayloadVariant::List(vec![
+            "val".to_string(),
+            "val2".to_string(),
+        ]));
+        check_cbor_serialization(payload.clone());
+        check_json_serialization(payload);
     }
 
     #[test]

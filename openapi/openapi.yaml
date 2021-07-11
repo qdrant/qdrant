@@ -209,7 +209,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 0.3.4
+  version: 0.3.5
 externalDocs:
   description: Find out more about Qdrant aplications and demo
   url: demo.qdrant.tech

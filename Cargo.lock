@@ -2075,7 +2075,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "actix-web",
  "collection",
@@ -2525,6 +2525,7 @@ dependencies = [
  "parking_lot",
  "pprof",
  "rand 0.8.3",
+ "rmp-serde",
  "rocksdb",
  "schemars",
  "serde 1.0.126",
