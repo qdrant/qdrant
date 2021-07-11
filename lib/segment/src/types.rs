@@ -589,6 +589,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_rmp_vs_cbor_deserialize() {
         let payload = PayloadInterface::KeywordShortcut(PayloadVariant::Value("val".to_string()));
         let raw = rmp_serde::to_vec(&payload).unwrap();
