@@ -37,7 +37,7 @@ In the case of food, people rely more on appearance than description and ingredi
 So why not let people choose their next lunch by its appearance, even if they don’t know the name of the dish?
 [Check it out!](https://food-discovery.qdrant.tech/)
 
-### Extreme classification - E-commerce product categorisation :tv:
+### Extreme classification - E-commerce Product Categorization :tv:
 
 Extreme classification is a rapidly growing research area within machine learning focusing on multi-class and multi-label problems involving an extremely large number of labels.
 Sometimes it is millions and tens of millions classes.
