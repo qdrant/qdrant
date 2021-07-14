@@ -54,7 +54,8 @@ fn main() -> std::io::Result<()> {
 
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it
-    let runtime = create_search_runtime(settings.storage.performance.max_search_threads).expect("Can't create runtime.");
+    let runtime = create_search_runtime(settings.storage.performance.max_search_threads)
+        .expect("Can't create runtime.");
     let handle = runtime.handle().clone();
 
     actix_web::rt::System::new().block_on(async {
