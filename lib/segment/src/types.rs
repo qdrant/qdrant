@@ -408,6 +408,14 @@ pub struct Filter {
 }
 
 impl Filter {
+    pub fn new_should(condition: Condition) -> Self {
+        Filter {
+            should: Some(vec![condition]),
+            must: None,
+            must_not: None,
+        }
+    }
+
     pub fn new_must(condition: Condition) -> Self {
         Filter {
             should: None,

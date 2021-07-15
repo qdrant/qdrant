@@ -54,7 +54,8 @@ fn main() -> std::io::Result<()> {
 
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it
-    let runtime = create_search_runtime(settings.storage.performance.max_search_threads).unwrap();
+    let runtime = create_search_runtime(settings.storage.performance.max_search_threads)
+        .expect("Can't create runtime.");
     let handle = runtime.handle().clone();
 
     actix_web::rt::System::new().block_on(async {
@@ -72,7 +73,7 @@ fn main() -> std::io::Result<()> {
                 .app_data(toc_data.clone())
                 .app_data(Data::new(
                     web::JsonConfig::default()
-                        .limit(33554432)
+                        .limit(32 * 1024 * 1024)
                         .error_handler(json_error_handler),
                 )) // 32 Mb
                 .service(index)

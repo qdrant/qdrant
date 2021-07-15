@@ -35,19 +35,22 @@ impl TableOfContent {
     pub fn new(storage_config: &StorageConfig, search_runtime_handle: Handle) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
 
-        create_dir_all(&collections_path).unwrap();
+        create_dir_all(&collections_path).expect("Can't create Collections directory");
 
-        let collection_paths = read_dir(&collections_path).unwrap();
+        let collection_paths =
+            read_dir(&collections_path).expect("Can't read Collections directory");
 
         let mut collections: HashMap<String, Arc<Collection>> = Default::default();
 
         for entry in collection_paths {
-            let collection_path = entry.unwrap().path();
+            let collection_path = entry
+                .expect("Can't access of one of the collection files")
+                .path();
             let collection_name = collection_path
                 .file_name()
-                .unwrap()
+                .expect("Can't resolve a filename of one of the collection files")
                 .to_str()
-                .unwrap()
+                .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
 
             let collection =
@@ -62,7 +65,7 @@ impl TableOfContent {
             .cache_capacity(SLED_CACHE_SIZE)
             .path(alias_path.as_path())
             .open()
-            .unwrap();
+            .expect("Can't open database by the provided config");
 
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
