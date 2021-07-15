@@ -193,6 +193,7 @@ Thanks to the people who contributed to Qdrant:
     <td align="center"><a href="http://www.linkedin.com/in/joanfontanalsmartinez/"><img src="https://avatars.githubusercontent.com/u/19825685?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Joan Fontanals</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=JoanFM" title="Code">💻</a></td>
     <td align="center"><a href="https://github.com/trean"><img src="https://avatars.githubusercontent.com/u/7085263?v=4?s=50" width="50px;" alt=""/><br /><sub><b>trean</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=trean" title="Code">💻</a></td>
     <td align="center"><a href="https://github.com/kgrech"><img src="https://avatars.githubusercontent.com/u/9020133?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Konstantin</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=kgrech" title="Code">💻</a></td>
+    <td align="center"><a href="https://github.com/kekonen"><img src="https://avatars.githubusercontent.com/u/11177808?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Daniil Naumetc</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=kekonen" title="Code">💻</a></td>
   </tr>
 </table>
 
