@@ -37,12 +37,15 @@ impl TableOfContent {
 
         create_dir_all(&collections_path).expect("Can't create Collections directory");
 
-        let collection_paths = read_dir(&collections_path).expect("Can't read Collections directory");
+        let collection_paths =
+            read_dir(&collections_path).expect("Can't read Collections directory");
 
         let mut collections: HashMap<String, Arc<Collection>> = Default::default();
 
         for entry in collection_paths {
-            let collection_path = entry.expect("Can't access of one of the collection files").path();
+            let collection_path = entry
+                .expect("Can't access of one of the collection files")
+                .path();
             let collection_name = collection_path
                 .file_name()
                 .expect("Can't resolve a filename of one of the collection files")
