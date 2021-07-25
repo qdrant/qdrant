@@ -10,6 +10,7 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
 use atomic_refcell::AtomicRefCell;
 use std::fs::create_dir_all;
+use std::mem;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -114,6 +115,14 @@ impl PayloadIndex for PlainPayloadIndex {
         // No blocks for un-indexed payload
         Box::new(vec![].into_iter())
     }
+
+    fn memory_size(&self) -> usize {
+        let mut size = self.path.as_os_str().len();
+        size += mem::size_of::<PayloadConfig>();
+        size += mem::size_of_val(&self.condition_checker);
+        size += self.vector_storage.borrow().memory_size();
+        size
+    }
 }
 
 pub struct PlainIndex {
@@ -155,5 +164,8 @@ impl VectorIndex for PlainIndex {
 
     fn build_index(&mut self) -> OperationResult<()> {
         Ok(())
+    }
+    fn memory_size(&self) -> usize {
+        self.vector_storage.borrow().memory_size() + self.payload_index.borrow().memory_size()
     }
 }

@@ -6,7 +6,7 @@ use crate::vector_storage::mmap_vectors::MmapVectors;
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage};
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
-use std::mem::size_of;
+use std::mem::{self, size_of};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
@@ -265,6 +265,15 @@ impl VectorStorage for MemmapVectorStorage {
     ) -> Vec<ScoredPointOffset> {
         let vector = self.get_vector(point).unwrap();
         self.score_points(&vector, points, top)
+    }
+    fn memory_size(&self) -> usize {
+        let mut size = self.vectors_path.capacity();
+        size += self.deleted_path.capacity();
+        size += mem::size_of_val(&self.metric);
+        if let Some(store) = &self.mmap_store {
+            size += mem::size_of_val(&store)
+        }
+        size
     }
 }
 

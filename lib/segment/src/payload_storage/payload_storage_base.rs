@@ -100,6 +100,8 @@ pub trait PayloadStorage {
 
     /// Iterate all point ids with payload
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
+
+    fn memory_size(&self) -> usize;
 }
 
 pub trait ConditionChecker {

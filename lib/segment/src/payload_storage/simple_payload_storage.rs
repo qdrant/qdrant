@@ -2,6 +2,7 @@ use crate::types::{
     PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PayloadType, PointOffsetType, TheMap,
 };
 use std::collections::HashMap;
+use std::mem;
 use std::path::Path;
 
 use rocksdb::{IteratorMode, Options, DB};
@@ -175,6 +176,25 @@ impl PayloadStorage for SimplePayloadStorage {
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         Box::new(self.payload.keys().cloned())
+    }
+
+    fn memory_size(&self) -> usize {
+        let mut size = 0; // ToDo: can be not enough for some users.
+
+        for (_offset, value) in self.payload.iter() {
+            size += mem::size_of::<u32>();
+            for (payload_key, _payload_type) in value.iter() {
+                size += payload_key.len() + mem::size_of::<PayloadType>();
+            }
+        }
+
+        for (scheme_key, _scheme_type) in self.schema.iter() {
+            size += scheme_key.len() + mem::size_of::<PayloadSchemaType>();
+        }
+
+        size += mem::size_of::<DB>();
+
+        size
     }
 }
 

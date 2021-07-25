@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, remove_file, File};
+use std::mem;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -368,5 +369,24 @@ impl PayloadIndex for StructPayloadIndex {
             let matched_points_iter = preselected.into_iter();
             Box::new(matched_points_iter)
         };
+    }
+    fn memory_size(&self) -> usize {
+        let mut size = 0;
+        size += self.vector_storage.borrow().memory_size();
+        size += self.payload.borrow().memory_size();
+
+        size += mem::size_of_val(&self.condition_checker);
+        size += mem::size_of_val(&self.id_mapper);
+
+        size += mem::size_of::<PayloadConfig>();
+        size += self.path.as_os_str().len();
+        size += mem::size_of::<VisitedPool>();
+
+        for (key, value) in self.field_indexes.iter() {
+            size += key.len();
+            size += mem::size_of_val(&value);
+        }
+
+        size
     }
 }

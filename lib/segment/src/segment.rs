@@ -13,6 +13,7 @@ use atomic_refcell::AtomicRefCell;
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use std::fs::{remove_dir_all, rename};
 use std::io::Write;
+use std::mem;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -369,12 +370,25 @@ impl SegmentEntry for Segment {
             })
             .collect();
 
+        let mut ram_usage_bytes = 0;
+        ram_usage_bytes += mem::size_of::<SegmentType>();
+        ram_usage_bytes += mem::size_of::<SeqNumberType>();
+        ram_usage_bytes += mem::size_of::<SegmentConfig>();
+        ram_usage_bytes += mem::size_of::<bool>();
+        ram_usage_bytes += self.current_path.as_os_str().len();
+        ram_usage_bytes += mem::size_of_val(&self.id_mapper);
+        ram_usage_bytes += mem::size_of_val(&self.condition_checker);
+
+        ram_usage_bytes += self.payload_storage.borrow().memory_size();
+        ram_usage_bytes += self.vector_storage.borrow().memory_size();
+        ram_usage_bytes += self.vector_index.borrow().memory_size();
+        ram_usage_bytes += self.payload_index.borrow().memory_size();
+
         SegmentInfo {
             segment_type: self.segment_type,
             num_vectors: self.vectors_count(),
             num_deleted_vectors: self.vector_storage.borrow().deleted_count(),
-            ram_usage_bytes: 0,  // ToDo: Implement
-            disk_usage_bytes: 0, // ToDo: Implement
+            ram_usage_bytes: ram_usage_bytes,
             is_appendable: self.appendable_flag,
             schema,
         }

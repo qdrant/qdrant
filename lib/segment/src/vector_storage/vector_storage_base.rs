@@ -98,6 +98,7 @@ pub trait VectorStorage {
                 .filter(move |x| !self.is_deleted(*x)),
         )
     }
+    fn memory_size(&self) -> usize;
 }
 
 #[cfg(test)]

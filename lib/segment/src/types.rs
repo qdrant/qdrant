@@ -86,7 +86,6 @@ pub struct SegmentInfo {
     pub num_vectors: usize,
     pub num_deleted_vectors: usize,
     pub ram_usage_bytes: usize,
-    pub disk_usage_bytes: usize,
     pub is_appendable: bool,
     pub schema: HashMap<PayloadKeyType, PayloadSchemaInfo>,
 }

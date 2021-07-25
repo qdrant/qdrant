@@ -1,9 +1,8 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use itertools::Itertools;
-use ndarray::{Array, Array1, Array2, ArrayBase, Axis, ShapeBuilder};
+use ndarray::{Array, Array2};
 use tempdir::TempDir;
 
-use segment::spaces::tools::{peek_top_scores, peek_top_scores_iterable};
+use segment::spaces::tools::peek_top_scores_iterable;
 use segment::types::{Distance, PointOffsetType, VectorElementType};
 use segment::vector_storage::simple_vector_storage::SimpleVectorStorage;
 use segment::vector_storage::{ScoredPointOffset, VectorStorage};

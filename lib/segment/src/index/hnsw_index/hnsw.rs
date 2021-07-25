@@ -17,6 +17,7 @@ use rand::prelude::ThreadRng;
 use rand::thread_rng;
 use std::cmp::max;
 use std::fs::create_dir_all;
+use std::mem;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -283,5 +284,17 @@ impl VectorIndex for HNSWIndex {
         }
         debug!("finish additional payload field indexing");
         self.save()
+    }
+    fn memory_size(&self) -> usize {
+        let mut size = 0;
+        size += mem::size_of_val(&self.condition_checker);
+        size += self.vector_storage.borrow().memory_size();
+        size += self.payload_index.borrow().memory_size();
+        size += mem::size_of::<HnswGraphConfig>();
+        size += self.path.as_os_str().len();
+        size += mem::size_of::<ThreadRng>();
+        size += mem::size_of_val(&self.graph);
+
+        size
     }
 }

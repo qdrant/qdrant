@@ -14,7 +14,7 @@ use super::vector_storage_base::VectorStorage;
 use crate::spaces::metric::Metric;
 use bit_vec::BitVec;
 use ndarray::{Array, Array1};
-use std::mem::size_of;
+use std::mem::{self, size_of};
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
@@ -296,6 +296,13 @@ impl VectorStorage for SimpleVectorStorage {
     ) -> Vec<ScoredPointOffset> {
         let vector = self.get_vector(point).unwrap();
         self.score_points(&vector, points, top)
+    }
+    fn memory_size(&self) -> usize {
+        let mut size = mem::size_of::<usize>() * 2;
+        size += mem::size_of_val(&self.metric);
+        size += mem::size_of_val(&self.vectors);
+        size += self.deleted.len();
+        size
     }
 }
 

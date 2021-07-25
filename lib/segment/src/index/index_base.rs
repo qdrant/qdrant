@@ -18,6 +18,8 @@ pub trait VectorIndex {
 
     /// Force internal index rebuild.
     fn build_index(&mut self) -> OperationResult<()>;
+
+    fn memory_size(&self) -> usize;
 }
 
 pub trait PayloadIndex {
@@ -46,4 +48,6 @@ pub trait PayloadIndex {
         field: PayloadKeyTypeRef,
         threshold: usize,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
+
+    fn memory_size(&self) -> usize;
 }

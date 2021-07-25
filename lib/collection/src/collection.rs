@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use crossbeam_channel::Sender;
+use fs_extra::dir::get_size;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use std::thread;
@@ -92,9 +94,10 @@ impl Collection {
         let mut vectors_count = 0;
         let mut segments_count = 0;
         let mut ram_size = 0;
-        let mut disk_size = 0;
         let mut status = CollectionStatus::Green;
         let mut schema: HashMap<PayloadKeyType, PayloadSchemaInfo> = Default::default();
+        let folder_size = usize::try_from(get_size(&self.path).unwrap_or(0)).unwrap_or(0);
+
         for (_idx, segment) in segments.iter() {
             segments_count += 1;
             let segment_info = segment.get().read().info();
@@ -102,7 +105,6 @@ impl Collection {
                 status = CollectionStatus::Yellow;
             }
             vectors_count += segment_info.num_vectors;
-            disk_size += segment_info.disk_usage_bytes;
             ram_size += segment_info.ram_usage_bytes;
             for (key, val) in segment_info.schema.into_iter() {
                 schema.insert(key, val);
@@ -112,7 +114,7 @@ impl Collection {
             status,
             vectors_count,
             segments_count,
-            disk_data_size: disk_size,
+            disk_data_size: folder_size,
             ram_data_size: ram_size,
             config: self.config.read().clone(),
             payload_schema: schema,
