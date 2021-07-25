@@ -6,7 +6,8 @@ use storage::types::StorageConfig;
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServiceConfig {
     pub host: String,
-    pub port: usize,
+    pub port: u16,
+    pub grpc_port: u16,
     pub max_request_size_mb: usize,
 }
 
@@ -19,6 +20,7 @@ pub struct Settings {
 }
 
 impl Settings {
+    #[allow(dead_code)]
     pub fn new() -> Result<Self, ConfigError> {
         let mut s = Config::new();
 

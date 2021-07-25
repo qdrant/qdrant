@@ -1,4 +1,4 @@
-use crate::common::helpers::process_response;
+use crate::actix::helpers::process_response;
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{post, web, Responder};
@@ -6,6 +6,7 @@ use collection::operations::types::UpdateResult;
 use collection::operations::CollectionUpdateOperations;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 
@@ -28,7 +29,7 @@ async fn do_update_points(
 
 #[post("/collections/{name}")]
 pub async fn update_points(
-    toc: web::Data<TableOfContent>,
+    toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,
     operation: web::Json<CollectionUpdateOperations>,
     params: Query<UpdateParam>,

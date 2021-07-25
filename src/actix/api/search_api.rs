@@ -1,4 +1,4 @@
-use crate::common::helpers::process_response;
+use crate::actix::helpers::process_response;
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use collection::operations::types::SearchRequest;
@@ -20,7 +20,7 @@ async fn do_search_points(
 
 #[post("/collections/{name}/points/search")]
 pub async fn search_points(
-    toc: web::Data<TableOfContent>,
+    toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,
     request: web::Json<SearchRequest>,
 ) -> impl Responder {

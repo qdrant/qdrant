@@ -7,6 +7,11 @@ doctest = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = [ "web" ]
+web = ["actix-web"]
+grpc = ["tonic", "tonic-build", "prost"]
+
 [dev-dependencies]
 tempdir = "0.3.7"
 criterion = "0.3"
@@ -27,13 +32,18 @@ itertools = "0.9"
 
 config = "~0.10.1"
 
-actix-web = "4.0.0-beta.8"
 tokio = { version = "~1.7", features = ["full"] }
 
+actix-web = { version = "4.0.0-beta.8", optional = true }
+tonic =  { version = "0.5.0", optional = true }
+prost = { version = "0.8", optional = true }
 
-segment = {path = "lib/segment"}
-collection = {path = "lib/collection"}
-storage = {path = "lib/storage"}
+segment = { path = "lib/segment" }
+collection = { path = "lib/collection" }
+storage = { path = "lib/storage" }
+
+[build-dependencies]
+tonic-build = { version = "0.5.0", features = ["prost"], optional = true }
 
 [[bin]]
 name = "schema_generator"

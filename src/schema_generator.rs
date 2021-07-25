@@ -1,10 +1,5 @@
-mod api;
-mod common;
-
 use schemars::{schema_for, JsonSchema};
-
-use crate::api::models::CollectionsResponse;
-use crate::api::retrieve_api::PointRequest;
+use serde::{Deserialize, Serialize};
 
 use collection::operations::types::{
     CollectionInfo, RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
@@ -12,8 +7,14 @@ use collection::operations::types::{
 };
 use collection::operations::CollectionUpdateOperations;
 use segment::types::ScoredPoint;
-use serde::{Deserialize, Serialize};
 use storage::content_manager::storage_ops::StorageOperations;
+
+use crate::actix::api::models::CollectionsResponse;
+use crate::actix::api::retrieve_api::PointRequest;
+
+mod actix;
+mod common;
+mod settings;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 struct AllDefinitions {

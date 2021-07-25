@@ -5,6 +5,8 @@ log_level: DEBUG,sled=INFO
 service:
   host: 127.0.0.1
   port: 6333
+  grpc_port: 6334
+
 
 storage:
   performance:

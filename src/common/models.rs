@@ -16,3 +16,18 @@ pub struct ApiResponse<D: Serialize + Debug> {
     pub status: ApiStatus,
     pub time: f64,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct VersionInfo {
+    pub title: String,
+    pub version: String,
+}
+
+impl Default for VersionInfo {
+    fn default() -> Self {
+        VersionInfo {
+            title: "qdrant - vector search engine".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        }
+    }
+}
