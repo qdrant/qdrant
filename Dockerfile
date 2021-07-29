@@ -3,7 +3,7 @@ FROM rust:1.51 as builder
 COPY . ./qdrant
 WORKDIR ./qdrant
 
-ENV OPENBLAS_TARGET=CORE2
+ENV OPENBLAS_ARGS='DYNAMIC_ARCH=1'
 RUN apt-get update ; apt-get install -y clang libopenblas-dev libgfortran-8-dev gfortran
 
 # Build actual target here

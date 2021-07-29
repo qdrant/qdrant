@@ -92,3 +92,16 @@ impl Metric for CosineMetric {
         Some(norm_vector)
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cosine_preprocessing() {
+        let metric = CosineMetric {};
+        let res =  metric.preprocess(&vec![0.0, 0.0, 0.0, 0.0]);
+        eprintln!("res = {:#?}", res);
+    }
+}
