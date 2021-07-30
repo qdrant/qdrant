@@ -198,7 +198,7 @@ impl VectorStorage for MemmapVectorStorage {
         Box::new(MemmapRawScorer {
             query: self.metric.preprocess(&vector).unwrap_or(vector),
             metric: self.metric.as_ref(),
-            mmap_store: &self.mmap_store.as_ref().unwrap(),
+            mmap_store: self.mmap_store.as_ref().unwrap(),
         })
     }
 
@@ -206,7 +206,7 @@ impl VectorStorage for MemmapVectorStorage {
         Box::new(MemmapRawScorer {
             query: self.get_vector(point_id).unwrap(),
             metric: self.metric.as_ref(),
-            mmap_store: &self.mmap_store.as_ref().unwrap(),
+            mmap_store: self.mmap_store.as_ref().unwrap(),
         })
     }
 
@@ -234,7 +234,7 @@ impl VectorStorage for MemmapVectorStorage {
                 let other_vector = self.mmap_store.as_ref().unwrap().raw_vector(point).unwrap();
                 ScoredPointOffset {
                     idx: point,
-                    score: self.metric.similarity(preprocessed_vector, &other_vector),
+                    score: self.metric.similarity(preprocessed_vector, other_vector),
                 }
             });
         peek_top_scores_iterable(scores, top)
@@ -250,7 +250,7 @@ impl VectorStorage for MemmapVectorStorage {
             let other_vector = self.mmap_store.as_ref().unwrap().raw_vector(point).unwrap();
             ScoredPointOffset {
                 idx: point,
-                score: self.metric.similarity(&preprocessed_vector, other_vector),
+                score: self.metric.similarity(preprocessed_vector, other_vector),
             }
         });
 

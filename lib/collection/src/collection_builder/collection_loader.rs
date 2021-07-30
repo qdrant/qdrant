@@ -23,7 +23,7 @@ pub fn load_collection(
     let segments_path = collection_path.join("segments");
     let mut segment_holder = SegmentHolder::default();
 
-    let collection_config = CollectionConfig::load(&collection_path).unwrap_or_else(|_| {
+    let collection_config = CollectionConfig::load(collection_path).unwrap_or_else(|_| {
         panic!(
             "Can't read collection config at {}",
             collection_path.to_str().unwrap()

@@ -31,6 +31,8 @@ pub trait PayloadFieldIndexBuilder {
     fn build(&mut self) -> FieldIndex;
 }
 
+/// ToDo: Rename with major release
+#[allow(clippy::enum_variant_names)]
 #[derive(Serialize, Deserialize)]
 pub enum FieldIndex {
     IntIndex(PersistedNumericIndex<IntPayloadType>),

@@ -113,8 +113,8 @@ pub fn build_collection(
 
     let optimizers = build_optimizers(
         collection_path,
-        &collection_params,
-        &optimizers_config,
+        collection_params,
+        optimizers_config,
         &collection_config.hnsw_config,
     );
 

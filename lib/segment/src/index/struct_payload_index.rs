@@ -345,6 +345,7 @@ impl PayloadIndex for StructPayloadIndex {
                 .visited_pool
                 .get(vector_storage_ref.total_vector_count());
 
+            #[allow(clippy::needless_collect)]
             let preselected: Vec<PointOffsetType> = query_cardinality
                 .primary_clauses
                 .iter()

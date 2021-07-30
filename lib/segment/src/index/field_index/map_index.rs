@@ -32,11 +32,11 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
 
     fn add_many(&mut self, idx: PointOffsetType, values: &[N]) {
         for value in values {
-            let vec = match self.map.get_mut(&value) {
+            let vec = match self.map.get_mut(value) {
                 None => {
                     let new_vec = vec![];
                     self.map.insert(value.clone(), new_vec);
-                    self.map.get_mut(&value).unwrap()
+                    self.map.get_mut(value).unwrap()
                 }
                 Some(vec) => vec,
             };

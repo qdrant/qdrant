@@ -19,7 +19,7 @@ async fn do_get_point(
     name: &str,
     point_id: PointIdType,
 ) -> Result<Option<Record>, StorageError> {
-    toc.get_collection(&name)?
+    toc.get_collection(name)?
         .retrieve(&[point_id], true, true)
         .await
         .map_err(|err| err.into())
@@ -31,7 +31,7 @@ async fn do_get_points(
     name: &str,
     request: PointRequest,
 ) -> Result<Vec<Record>, StorageError> {
-    toc.get_collection(&name)?
+    toc.get_collection(name)?
         .retrieve(&request.ids, true, true)
         .await
         .map_err(|err| err.into())
@@ -42,7 +42,7 @@ async fn scroll_get_points(
     name: &str,
     request: ScrollRequest,
 ) -> Result<ScrollResult, StorageError> {
-    toc.get_collection(&name)?
+    toc.get_collection(name)?
         .scroll(Arc::new(request))
         .await
         .map_err(|err| err.into())

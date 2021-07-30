@@ -138,23 +138,19 @@ pub trait SegmentOptimizer {
 
         let mut segment_builder = self.optimized_segment_builder(&optimizing_segments)?;
 
-        let proxies: Vec<_> = optimizing_segments
-            .iter()
-            .map(|sg| {
-                ProxySegment::new(
-                    sg.clone(),
-                    tmp_segment.clone(),
-                    proxy_deleted_points.clone(),
-                    proxy_deleted_indexes.clone(),
-                    proxy_created_indexes.clone(),
-                )
-            })
-            .collect();
+        let proxies = optimizing_segments.iter().map(|sg| {
+            ProxySegment::new(
+                sg.clone(),
+                tmp_segment.clone(),
+                proxy_deleted_points.clone(),
+                proxy_deleted_indexes.clone(),
+                proxy_created_indexes.clone(),
+            )
+        });
 
         let proxy_ids: Vec<_> = {
             let mut write_segments = segments.write();
             proxies
-                .into_iter()
                 .zip(ids.iter().cloned())
                 .map(|(proxy, idx)| write_segments.swap(proxy, &[idx], false).unwrap())
                 .collect()
