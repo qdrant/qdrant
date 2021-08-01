@@ -1,4 +1,4 @@
-use crate::common::helpers::process_response;
+use crate::actix::helpers::process_response;
 use actix_web::rt::time::Instant;
 use actix_web::{get, post, web, Responder};
 use collection::operations::types::{Record, ScrollRequest, ScrollResult};
@@ -50,7 +50,7 @@ async fn scroll_get_points(
 
 #[get("/collections/{name}/points/{id}")]
 pub async fn get_point(
-    toc: web::Data<TableOfContent>,
+    toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<(String, PointIdType)>,
 ) -> impl Responder {
     let (name, point_id) = path.into_inner();
@@ -72,7 +72,7 @@ pub async fn get_point(
 
 #[post("/collections/{name}/points")]
 pub async fn get_points(
-    toc: web::Data<TableOfContent>,
+    toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,
     request: web::Json<PointRequest>,
 ) -> impl Responder {
@@ -85,7 +85,7 @@ pub async fn get_points(
 
 #[post("/collections/{name}/points/scroll")]
 pub async fn scroll_points(
-    toc: web::Data<TableOfContent>,
+    toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,
     request: web::Json<ScrollRequest>,
 ) -> impl Responder {

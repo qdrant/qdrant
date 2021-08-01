@@ -58,5 +58,8 @@ service:
   # Host to bind the service on
   host: 0.0.0.0
 
-  # Port to bind the service on
+  # HTTP port to bind the service on
   port: 6333
+
+  # GRPC port to bind the service on
+  grpc_port: 6334

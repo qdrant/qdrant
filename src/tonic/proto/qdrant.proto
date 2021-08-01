@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "tech.qdrant.grpc";
+option java_outer_classname = "QdrantProto";
+
+package qdrant;
+
+service Qdrant {
+  rpc HealthCheck (HealthCheckRequest) returns (HealthCheckReply) {}
+}
+
+message HealthCheckRequest {
+}
+
+message HealthCheckReply {
+  string title = 1;
+  string version = 2;
+}

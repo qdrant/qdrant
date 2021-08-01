@@ -1,4 +1,4 @@
-use crate::common::helpers::process_response;
+use crate::actix::helpers::process_response;
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use collection::operations::types::RecommendRequest;
@@ -18,7 +18,7 @@ async fn do_recommend_points(
 
 #[post("/collections/{name}/points/recommend")]
 pub async fn recommend_points(
-    toc: web::Data<TableOfContent>,
+    toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,
     request: web::Json<RecommendRequest>,
 ) -> impl Responder {

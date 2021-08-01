@@ -17,6 +17,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 6333
+EXPOSE 6334
 
 ENV TZ=Etc/UTC \
     RUN_MODE=production \
