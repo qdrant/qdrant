@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 use std::sync::Arc;
 
-use sled::{Config, Db};
 use sled::transaction::UnabortableTransactionError;
+use sled::{Config, Db};
 use tokio::runtime::Handle;
 
 use collection::collection::Collection;
@@ -268,7 +268,9 @@ impl TableOfContent {
     }
 
     pub fn visit_all_collection_names<F, R>(&self, visitor: F) -> R
-        where F: Fn(std::collections::hash_map::Keys<String, Arc<Collection>>) -> R {
+    where
+        F: Fn(std::collections::hash_map::Keys<String, Arc<Collection>>) -> R,
+    {
         self.collections.visit_keys(visitor)
     }
 

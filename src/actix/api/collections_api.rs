@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use actix_web::{get, post, Responder, web};
 use actix_web::rt::time::Instant;
+use actix_web::{get, post, web, Responder};
 
 use storage::content_manager::storage_ops::StorageOperations;
 use storage::content_manager::toc::TableOfContent;
@@ -14,8 +14,11 @@ pub async fn get_collections(toc: web::Data<Arc<TableOfContent>>) -> impl Respon
     let timing = Instant::now();
 
     let response = {
-        let collections = toc.get_all_collection_names().into_iter()
-            .map(|name| CollectionDescription { name }).collect();
+        let collections = toc
+            .get_all_collection_names()
+            .into_iter()
+            .map(|name| CollectionDescription { name })
+            .collect();
 
         Ok(CollectionsResponse { collections })
     };

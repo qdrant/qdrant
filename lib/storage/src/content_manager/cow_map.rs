@@ -3,10 +3,10 @@ use std::borrow::Borrow;
 use std::collections::hash_map::Keys;
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
-use crossbeam_epoch::{Atomic, Owned, pin};
+use crossbeam_epoch::{pin, Atomic, Owned};
 
 /// Thread-safe lock-free implementation of hash table that re-creates an underlying `HashMap` on
 /// each modification. Memory reclamation is implemented by epoch-based GC from `crossbeam-epoch`
@@ -34,17 +34,17 @@ impl<K: Hash + Eq + Clone, V> CopyOnWriteMap<K, V> {
     }
 
     pub fn remove<Q>(&self, key: &Q) -> Option<Arc<V>>
-        where
-            Q: ?Sized + Hash + Eq,
-            K: Borrow<Q>,
+    where
+        Q: ?Sized + Hash + Eq,
+        K: Borrow<Q>,
     {
         self.cas_modify(|new_map| new_map.remove(key))
     }
 
     pub fn contains_key<Q>(&self, key: &Q) -> bool
-        where
-            Q: ?Sized + Hash + Eq,
-            K: Borrow<Q>,
+    where
+        Q: ?Sized + Hash + Eq,
+        K: Borrow<Q>,
     {
         self.load().contains_key(key)
     }
@@ -54,15 +54,15 @@ impl<K: Hash + Eq + Clone, V> CopyOnWriteMap<K, V> {
     }
 
     pub fn visit_keys<F, R>(&self, visitor: F) -> R
-        where
-            F: Fn(Keys<K, Arc<V>>) -> R,
+    where
+        F: Fn(Keys<K, Arc<V>>) -> R,
     {
         visitor(self.load().keys())
     }
 
     fn cas_modify<F, R>(&self, updater: F) -> R
-        where
-            F: Fn(&mut HashMap<K, Arc<V>>) -> R,
+    where
+        F: Fn(&mut HashMap<K, Arc<V>>) -> R,
     {
         loop {
             let guard = &pin();
