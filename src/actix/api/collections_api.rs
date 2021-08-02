@@ -1,22 +1,21 @@
-use crate::actix::api::models::{CollectionDescription, CollectionsResponse};
-use crate::actix::helpers::process_response;
-use actix_web::rt::time::Instant;
-use actix_web::{get, post, web, Responder};
-use itertools::Itertools;
 use std::sync::Arc;
+
+use actix_web::{get, post, Responder, web};
+use actix_web::rt::time::Instant;
+
 use storage::content_manager::storage_ops::StorageOperations;
 use storage::content_manager::toc::TableOfContent;
+
+use crate::actix::api::models::{CollectionDescription, CollectionsResponse};
+use crate::actix::helpers::process_response;
 
 #[get("/collections")]
 pub async fn get_collections(toc: web::Data<Arc<TableOfContent>>) -> impl Responder {
     let timing = Instant::now();
 
     let response = {
-        let collections = toc
-            .all_collections()
-            .into_iter()
-            .map(|name| CollectionDescription { name })
-            .collect_vec();
+        let collections = toc.get_all_collection_names().into_iter()
+            .map(|name| CollectionDescription { name }).collect();
 
         Ok(CollectionsResponse { collections })
     };

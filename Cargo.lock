@@ -2985,6 +2985,7 @@ name = "storage"
 version = "0.2.0"
 dependencies = [
  "collection",
+ "crossbeam-epoch",
  "num_cpus",
  "parking_lot",
  "rand 0.7.3",

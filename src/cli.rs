@@ -16,7 +16,9 @@ fn main() {
     let handle = runtime.handle().clone();
     let toc = TableOfContent::new(&settings.storage, handle);
 
-    for collection in toc.all_collections() {
-        info!("loaded collection: {}", collection);
-    }
+    toc.visit_all_collection_names(|keys| {
+        for collection in keys {
+            info!("loaded collection: {}", collection);
+        }
+    });
 }

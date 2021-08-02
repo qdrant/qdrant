@@ -4,19 +4,20 @@ use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 use std::sync::Arc;
 
+use sled::{Config, Db};
+use sled::transaction::UnabortableTransactionError;
+use tokio::runtime::Handle;
+
 use collection::collection::Collection;
 use collection::collection_builder::build_collection;
 use collection::collection_builder::collection_loader::load_collection;
-use parking_lot::RwLock;
-use sled::transaction::UnabortableTransactionError;
-use sled::{Config, Db};
-use tokio::runtime::Handle;
+use collection::config::CollectionParams;
+use collection::operations::config_diff::DiffConfig;
 
+use crate::content_manager::cow_map::CopyOnWriteMap;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::storage_ops::{AliasOperations, StorageOperations};
 use crate::types::StorageConfig;
-use collection::config::CollectionParams;
-use collection::operations::config_diff::DiffConfig;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 #[allow(clippy::identity_op)]
@@ -25,7 +26,7 @@ const SLED_CACHE_SIZE: u64 = 1 * 1024 * 1024; // 1 mb
 const COLLECTIONS_DIR: &str = "collections";
 
 pub struct TableOfContent {
-    collections: Arc<RwLock<HashMap<String, Arc<Collection>>>>,
+    collections: CopyOnWriteMap<String, Collection>,
     storage_config: StorageConfig,
     search_runtime_handle: Handle,
     alias_persistence: Db,
@@ -68,7 +69,7 @@ impl TableOfContent {
             .expect("Can't open database by the provided config");
 
         TableOfContent {
-            collections: Arc::new(RwLock::new(collections)),
+            collections: CopyOnWriteMap::new(collections),
             storage_config: storage_config.clone(),
             search_runtime_handle,
             alias_persistence,
@@ -124,7 +125,7 @@ impl TableOfContent {
     }
 
     pub fn is_collection_exists(&self, collection_name: &str) -> bool {
-        self.collections.read().contains_key(collection_name)
+        self.collections.contains_key(collection_name)
     }
 
     pub async fn perform_collection_operation(
@@ -171,8 +172,7 @@ impl TableOfContent {
                     &hnsw_config,
                 )?;
 
-                let mut write_collections = self.collections.write();
-                write_collections.insert(collection_name, Arc::new(collection));
+                self.collections.insert(collection_name, collection);
                 Ok(true)
             }
             StorageOperations::UpdateCollection {
@@ -191,7 +191,7 @@ impl TableOfContent {
                 Ok(true)
             }
             StorageOperations::DeleteCollection(collection_name) => {
-                if let Some(removed) = self.collections.write().remove(&collection_name) {
+                if let Some(removed) = self.collections.remove(&collection_name) {
                     removed.stop()?;
                     {
                         // Wait for optimizer to finish.
@@ -212,7 +212,6 @@ impl TableOfContent {
                 }
             }
             StorageOperations::ChangeAliases { actions } => {
-                let _collection_lock = self.collections.write(); // Make alias change atomic
                 for action in actions {
                     match action {
                         AliasOperations::CreateAlias {
@@ -263,15 +262,18 @@ impl TableOfContent {
     }
 
     pub fn get_collection(&self, collection_name: &str) -> Result<Arc<Collection>, StorageError> {
-        let read_collection = self.collections.read();
         let real_collection_name = self.resolve_name(collection_name)?;
         // resolve_name already checked collection existence, unwrap is safe here
-        Ok(read_collection.get(&real_collection_name).unwrap().clone())
+        Ok(self.collections.get(&real_collection_name).unwrap())
     }
 
-    /// List of all collections
-    pub fn all_collections(&self) -> Vec<String> {
-        self.collections.read().keys().cloned().collect()
+    pub fn visit_all_collection_names<F, R>(&self, visitor: F) -> R
+        where F: Fn(std::collections::hash_map::Keys<String, Arc<Collection>>) -> R {
+        self.collections.visit_keys(visitor)
+    }
+
+    pub fn get_all_collection_names(&self) -> Vec<String> {
+        self.collections.clone_keys()
     }
 
     /// List of all aliases for a given collection
