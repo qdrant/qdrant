@@ -24,7 +24,7 @@ use std::sync::Arc;
 const HNSW_USE_HEURISTIC: bool = true;
 
 pub struct HNSWIndex {
-    condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+    condition_checker: Arc<dyn ConditionChecker>,
     vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
     config: HnswGraphConfig,
@@ -36,7 +36,7 @@ pub struct HNSWIndex {
 impl HNSWIndex {
     pub fn open(
         path: &Path,
-        condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+        condition_checker: Arc<dyn ConditionChecker>,
         vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
         payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
         hnsw_config: HnswConfig,
@@ -153,11 +153,10 @@ impl HNSWIndex {
 
         let vector_storage = self.vector_storage.borrow();
         let raw_scorer = vector_storage.raw_scorer(vector.to_owned());
-        let condition_checker = self.condition_checker.borrow();
 
         let points_scorer = FilteredScorer {
             raw_scorer: raw_scorer.as_ref(),
-            condition_checker: condition_checker.deref(),
+            condition_checker: self.condition_checker.deref(),
             filter,
         };
 
@@ -200,10 +199,9 @@ impl VectorIndex for HNSWIndex {
 
                 // Fast cardinality estimation is not enough, do sample estimation of cardinality
 
-                let condition_checker = self.condition_checker.borrow();
                 return if sample_check_cardinality(
                     vector_storage.sample_ids(),
-                    |idx| condition_checker.check(idx, query_filter),
+                    |idx| self.condition_checker.check(idx, query_filter),
                     self.config.indexing_threshold,
                     vector_storage.vector_count(),
                 ) {
@@ -221,7 +219,6 @@ impl VectorIndex for HNSWIndex {
     fn build_index(&mut self) -> OperationResult<()> {
         // Build main index graph
         let vector_storage = self.vector_storage.borrow();
-        let condition_checker = self.condition_checker.borrow();
         let mut rng = thread_rng();
 
         let total_points = vector_storage.total_vector_count();
@@ -241,7 +238,7 @@ impl VectorIndex for HNSWIndex {
             let raw_scorer = vector_storage.raw_scorer(vector);
             let points_scorer = FilteredScorer {
                 raw_scorer: raw_scorer.as_ref(),
-                condition_checker: condition_checker.deref(),
+                condition_checker: self.condition_checker.deref(),
                 filter: None,
             };
 

@@ -27,7 +27,7 @@ pub struct Segment {
     pub vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     pub payload_storage: Arc<AtomicRefCell<dyn PayloadStorage>>,
     pub payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
-    pub condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+    pub condition_checker: Arc<dyn ConditionChecker>,
     pub vector_index: Arc<AtomicRefCell<dyn VectorIndex>>,
     pub appendable_flag: bool,
     pub segment_type: SegmentType,
@@ -312,7 +312,6 @@ impl SegmentEntry for Segment {
         limit: usize,
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType> {
-        let checker = self.condition_checker.borrow();
         let storage = self.vector_storage.borrow();
         match filter {
             None => self
@@ -327,7 +326,9 @@ impl SegmentEntry for Segment {
                 .borrow()
                 .iter_from(offset)
                 .filter(move |(_, internal_id)| !storage.is_deleted(*internal_id))
-                .filter(move |(_, internal_id)| checker.check(*internal_id, condition))
+                .filter(move |(_, internal_id)| {
+                    self.condition_checker.check(*internal_id, condition)
+                })
                 .map(|x| x.0)
                 .take(limit)
                 .collect(),
