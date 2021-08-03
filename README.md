@@ -196,6 +196,9 @@ Thanks to the people who contributed to Qdrant:
     <td align="center"><a href="https://github.com/kekonen"><img src="https://avatars.githubusercontent.com/u/11177808?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Daniil Naumetc</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=kekonen" title="Code">💻</a></td>
     <td align="center"><a href="https://dev.to/vearutop"><img src="https://avatars.githubusercontent.com/u/1381436?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Viacheslav Poturaev</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=vearutop" title="Documentation">📖</a></td>
   </tr>
+  <tr>
+    <td align="center"><a href="https://github.com/galibey"><img src="https://avatars.githubusercontent.com/u/48586936?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Alexander Galibey</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=galibey" title="Code">💻</a></td>
+  </tr>
 </table>
 
 <!-- markdownlint-restore -->
