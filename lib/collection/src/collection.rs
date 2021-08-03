@@ -1,18 +1,19 @@
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread;
 
 use crossbeam_channel::Sender;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
-use std::thread;
-use tokio::runtime::Runtime;
+use tokio::runtime::{Handle, Runtime};
 
 use segment::types::Condition;
 use segment::types::Filter;
 use segment::types::{
     HasIdCondition, PayloadKeyType, PayloadSchemaInfo, PointIdType, ScoredPoint, SegmentType,
-    VectorElementType,
+    SeqNumberType, VectorElementType,
 };
 
 use crate::collection_builder::optimizers_builder::build_optimizers;
@@ -25,23 +26,43 @@ use crate::operations::types::{
 use crate::operations::CollectionUpdateOperations;
 use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
+use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
+use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
 use crate::update_handler::{UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 
 pub struct Collection {
-    pub segments: Arc<RwLock<SegmentHolder>>,
-    pub config: Arc<RwLock<CollectionConfig>>,
-    pub wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-    pub searcher: Arc<dyn SegmentSearcher + Sync + Send>,
-    pub update_handler: Arc<Mutex<UpdateHandler>>,
-    pub updater: Arc<dyn SegmentUpdater + Sync + Send>,
-    pub runtime_handle: Option<Runtime>,
-    pub update_sender: Sender<UpdateSignal>,
-    pub path: PathBuf,
+    segments: Arc<RwLock<SegmentHolder>>,
+    config: Arc<RwLock<CollectionConfig>>,
+    wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+    update_handler: Arc<Mutex<UpdateHandler>>,
+    runtime_handle: Option<Runtime>,
+    update_sender: Sender<UpdateSignal>,
+    path: PathBuf,
 }
 
 /// Collection holds information about segments and WAL.
 impl Collection {
+    pub fn new(
+        segments: Arc<RwLock<SegmentHolder>>,
+        config: CollectionConfig,
+        wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+        update_handler: UpdateHandler,
+        runtime_handle: Runtime,
+        update_sender: Sender<UpdateSignal>,
+        path: PathBuf,
+    ) -> Self {
+        Self {
+            segments,
+            config: Arc::new(RwLock::new(config)),
+            wal,
+            update_handler: Arc::new(Mutex::new(update_handler)),
+            runtime_handle: Some(runtime_handle),
+            update_sender,
+            path,
+        }
+    }
+
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
@@ -52,10 +73,10 @@ impl Collection {
     ) -> CollectionResult<UpdateResult> {
         let operation_id = self.wal.lock().write(&operation)?;
 
-        let upd = self.updater.clone();
         let sndr = self.update_sender.clone();
+        let segments = self.segments.clone();
         let update_future = async move {
-            let res = upd.update(operation_id, operation);
+            let res = SimpleSegmentUpdater::update(segments.deref(), operation_id, operation);
             sndr.send(UpdateSignal::Operation(operation_id))?;
             res
         };
@@ -119,8 +140,13 @@ impl Collection {
         })
     }
 
-    pub async fn search(&self, request: Arc<SearchRequest>) -> CollectionResult<Vec<ScoredPoint>> {
-        self.searcher.search(request).await
+    pub async fn search(
+        &self,
+        request: SearchRequest,
+        runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        SimpleSegmentSearcher::search(self.segments.deref(), Arc::new(request), runtime_handle)
+            .await
     }
 
     pub async fn scroll(&self, request: Arc<ScrollRequest>) -> CollectionResult<ScrollResult> {
@@ -178,8 +204,7 @@ impl Collection {
         with_payload: bool,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>> {
-        self.searcher
-            .retrieve(points, with_payload, with_vector)
+        SimpleSegmentSearcher::retrieve(self.segments.deref(), points, with_payload, with_vector)
             .await
     }
 
@@ -219,6 +244,7 @@ impl Collection {
     pub async fn recommend(
         &self,
         request: Arc<RecommendRequest>,
+        search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.positive.is_empty() {
             return Err(CollectionError::BadRequest {
@@ -288,7 +314,7 @@ impl Collection {
             top: request.top,
         };
 
-        self.search(Arc::new(search_request)).await
+        self.search(search_request, search_runtime_handle).await
     }
 
     /// Updates collection optimization params:
@@ -320,6 +346,23 @@ impl Collection {
         self.update_sender.send(UpdateSignal::Nop)?;
 
         Ok(())
+    }
+
+    pub async fn wait_update_worker_stops(&self) -> CollectionResult<()> {
+        let mut update_handler = self.update_handler.lock();
+        update_handler.wait_worker_stops().await
+    }
+
+    pub(crate) fn get_wal(&self) -> &Mutex<SerdeWal<CollectionUpdateOperations>> {
+        self.wal.deref()
+    }
+
+    pub(crate) fn update_segment(
+        &self,
+        op_num: SeqNumberType,
+        operation: CollectionUpdateOperations,
+    ) -> CollectionResult<usize> {
+        SimpleSegmentUpdater::update(&self.segments, op_num, operation)
     }
 }
 

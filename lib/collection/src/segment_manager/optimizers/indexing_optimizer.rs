@@ -1,3 +1,7 @@
+use std::path::{Path, PathBuf};
+
+use segment::types::{HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType};
+
 use crate::config::CollectionParams;
 use crate::segment_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
@@ -5,8 +9,6 @@ use crate::segment_manager::holders::segment_holder::{
 use crate::segment_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
-use segment::types::{HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType};
-use std::path::{Path, PathBuf};
 
 pub struct IndexingOptimizer {
     thresholds_config: OptimizerThresholds,
@@ -116,17 +118,24 @@ impl SegmentOptimizer for IndexingOptimizer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::ops::Deref;
+    use std::sync::Arc;
+
+    use itertools::Itertools;
+    use parking_lot::lock_api::RwLock;
+    use tempdir::TempDir;
+
+    use segment::types::StorageType;
+
     use crate::operations::point_ops::{PointInsertOperations, PointOperations};
     use crate::operations::FieldIndexOperations;
     use crate::segment_manager::fixtures::random_segment;
     use crate::segment_manager::holders::segment_holder::SegmentHolder;
-    use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
-    use itertools::Itertools;
-    use parking_lot::lock_api::RwLock;
-    use segment::types::StorageType;
-    use std::sync::Arc;
-    use tempdir::TempDir;
+    use crate::segment_manager::simple_segment_updater::{
+        process_field_index_operation, process_point_operation,
+    };
+
+    use super::*;
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -184,13 +193,12 @@ mod tests {
         assert!(suggested_to_optimize.contains(&large_segment_id));
 
         // ----- CREATE AN INDEXED FIELD ------
-        let updater = SimpleSegmentUpdater::new(locked_holder.clone());
-        updater
-            .process_field_index_operation(
-                opnum.next().unwrap(),
-                &FieldIndexOperations::CreateIndex(payload_field.clone()),
-            )
-            .unwrap();
+        process_field_index_operation(
+            locked_holder.deref(),
+            opnum.next().unwrap(),
+            &FieldIndexOperations::CreateIndex(payload_field.clone()),
+        )
+        .unwrap();
 
         // ------ Plain -> Mmap & Indexed payload
         let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
@@ -281,9 +289,12 @@ mod tests {
             .unwrap()
             .num_vectors;
 
-        updater
-            .process_point_operation(opnum.next().unwrap(), insert_point_ops)
-            .unwrap();
+        process_point_operation(
+            locked_holder.deref(),
+            opnum.next().unwrap(),
+            insert_point_ops,
+        )
+        .unwrap();
 
         let new_infos = locked_holder
             .read()
@@ -333,8 +344,11 @@ mod tests {
             payloads: None,
         });
 
-        updater
-            .process_point_operation(opnum.next().unwrap(), insert_point_ops)
-            .unwrap();
+        process_point_operation(
+            locked_holder.deref(),
+            opnum.next().unwrap(),
+            insert_point_ops,
+        )
+        .unwrap();
     }
 }

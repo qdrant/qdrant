@@ -4,19 +4,22 @@ use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 use std::sync::Arc;
 
-use collection::collection::Collection;
-use collection::collection_builder::build_collection;
-use collection::collection_builder::collection_loader::load_collection;
 use parking_lot::RwLock;
 use sled::transaction::UnabortableTransactionError;
 use sled::{Config, Db};
-use tokio::runtime::Handle;
+use tokio::runtime::Runtime;
+
+use collection::collection::Collection;
+use collection::collection_builder::build_collection;
+use collection::collection_builder::collection_loader::load_collection;
+use collection::config::CollectionParams;
+use collection::operations::config_diff::DiffConfig;
+use collection::operations::types::{RecommendRequest, SearchRequest};
+use segment::types::ScoredPoint;
 
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::storage_ops::{AliasOperations, StorageOperations};
 use crate::types::StorageConfig;
-use collection::config::CollectionParams;
-use collection::operations::config_diff::DiffConfig;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 #[allow(clippy::identity_op)]
@@ -27,12 +30,12 @@ const COLLECTIONS_DIR: &str = "collections";
 pub struct TableOfContent {
     collections: Arc<RwLock<HashMap<String, Arc<Collection>>>>,
     storage_config: StorageConfig,
-    search_runtime_handle: Handle,
+    search_runtime: Runtime,
     alias_persistence: Db,
 }
 
 impl TableOfContent {
-    pub fn new(storage_config: &StorageConfig, search_runtime_handle: Handle) -> Self {
+    pub fn new(storage_config: &StorageConfig, search_runtime: Runtime) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
 
         create_dir_all(&collections_path).expect("Can't create Collections directory");
@@ -53,8 +56,7 @@ impl TableOfContent {
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
 
-            let collection =
-                load_collection(collection_path.as_path(), search_runtime_handle.clone());
+            let collection = load_collection(collection_path.as_path());
 
             collections.insert(collection_name, Arc::new(collection));
         }
@@ -70,7 +72,7 @@ impl TableOfContent {
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: storage_config.clone(),
-            search_runtime_handle,
+            search_runtime,
             alias_persistence,
         }
     }
@@ -166,7 +168,6 @@ impl TableOfContent {
                     Path::new(&collection_path),
                     &wal_config,
                     &collection_params,
-                    self.search_runtime_handle.clone(),
                     &optimizers_config,
                     &hnsw_config,
                 )?;
@@ -196,8 +197,7 @@ impl TableOfContent {
                     {
                         // Wait for optimizer to finish.
                         // TODO: Enhance optimizer to shutdown faster
-                        let mut update_handler = removed.update_handler.lock();
-                        update_handler.wait_worker_stops().await?;
+                        removed.wait_update_worker_stops().await?;
                     }
                     let path = self.get_collection_path(&collection_name);
                     remove_dir_all(path).map_err(|err| StorageError::ServiceError {
@@ -267,6 +267,28 @@ impl TableOfContent {
         let real_collection_name = self.resolve_name(collection_name)?;
         // resolve_name already checked collection existence, unwrap is safe here
         Ok(read_collection.get(&real_collection_name).unwrap().clone())
+    }
+
+    pub async fn recommend(
+        &self,
+        collection_name: &str,
+        request: Arc<RecommendRequest>,
+    ) -> Result<Vec<ScoredPoint>, StorageError> {
+        self.get_collection(collection_name)?
+            .recommend(request, self.search_runtime.handle())
+            .await
+            .map_err(|err| err.into())
+    }
+
+    pub async fn search(
+        &self,
+        collection_name: &str,
+        request: SearchRequest,
+    ) -> Result<Vec<ScoredPoint>, StorageError> {
+        self.get_collection(collection_name)?
+            .search(request, self.search_runtime.handle())
+            .await
+            .map_err(|err| err.into())
     }
 
     /// List of all collections

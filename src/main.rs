@@ -26,9 +26,8 @@ fn main() -> std::io::Result<()> {
     // destruction of it
     let runtime = create_search_runtime(settings.storage.performance.max_search_threads)
         .expect("Can't create runtime.");
-    let search_runtime_handle = runtime.handle().clone();
 
-    let toc = TableOfContent::new(&settings.storage, search_runtime_handle);
+    let toc = TableOfContent::new(&settings.storage, runtime);
     for collection in toc.all_collections() {
         info!("loaded collection: {}", collection);
     }

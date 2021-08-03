@@ -8,7 +8,6 @@ use collection::operations::CollectionUpdateOperations;
 use segment::types::PayloadType;
 use std::sync::Arc;
 use tempdir::TempDir;
-use tokio::runtime::Handle;
 
 #[tokio::test]
 async fn test_collection_reloading() {
@@ -19,7 +18,7 @@ async fn test_collection_reloading() {
     }
 
     for _i in 0..5 {
-        let collection = load_collection(collection_dir.path(), Handle::current());
+        let collection = load_collection(collection_dir.path());
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::BatchPoints {
                 ids: vec![0, 1],
@@ -30,7 +29,7 @@ async fn test_collection_reloading() {
         collection.update(insert_points, true).await.unwrap();
     }
 
-    let collection = load_collection(collection_dir.path(), Handle::current());
+    let collection = load_collection(collection_dir.path());
     assert_eq!(collection.info().unwrap().vectors_count, 2)
 }
 
@@ -53,7 +52,7 @@ async fn test_collection_payload_reloading() {
         collection.update(insert_points, true).await.unwrap();
     }
 
-    let collection = load_collection(collection_dir.path(), Handle::current());
+    let collection = load_collection(collection_dir.path());
 
     let res = collection
         .scroll(Arc::new(ScrollRequest {

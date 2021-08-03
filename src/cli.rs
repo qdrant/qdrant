@@ -13,8 +13,7 @@ fn main() {
     env_logger::init();
 
     let runtime = create_search_runtime(settings.storage.performance.max_search_threads).unwrap();
-    let handle = runtime.handle().clone();
-    let toc = TableOfContent::new(&settings.storage, handle);
+    let toc = TableOfContent::new(&settings.storage, runtime);
 
     for collection in toc.all_collections() {
         info!("loaded collection: {}", collection);

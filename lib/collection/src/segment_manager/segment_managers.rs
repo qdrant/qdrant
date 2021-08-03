@@ -1,20 +1,25 @@
 use std::sync::Arc;
 
+use parking_lot::RwLock;
+use tokio::runtime::Handle;
+
 use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
 
 use crate::operations::types::{CollectionResult, Record, SearchRequest};
 use crate::operations::CollectionUpdateOperations;
+use crate::segment_manager::holders::segment_holder::SegmentHolder;
 
 #[async_trait::async_trait]
 pub trait SegmentSearcher {
     async fn search(
-        &self,
+        segments: &RwLock<SegmentHolder>,
         // Request is supposed to be a read only, that is why no mutex used
         request: Arc<SearchRequest>,
+        runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>>;
 
     async fn retrieve(
-        &self,
+        segments: &RwLock<SegmentHolder>,
         points: &[PointIdType],
         with_payload: bool,
         with_vector: bool,
@@ -23,7 +28,7 @@ pub trait SegmentSearcher {
 
 pub trait SegmentUpdater {
     fn update(
-        &self,
+        segments: &RwLock<SegmentHolder>,
         op_num: SeqNumberType,
         operation: CollectionUpdateOperations,
     ) -> CollectionResult<usize>;

@@ -1,18 +1,20 @@
-mod common;
+use std::collections::HashMap;
+use std::sync::Arc;
 
-use collection::operations::point_ops::{PointOperations, PointStruct};
-use collection::operations::CollectionUpdateOperations;
+use tempdir::TempDir;
+use tokio::runtime::Handle;
 
-use crate::common::simple_collection_fixture;
 use collection::collection_builder::collection_loader::load_collection;
 use collection::operations::payload_ops::PayloadOps;
 use collection::operations::point_ops::PointInsertOperations::{BatchPoints, PointsList};
+use collection::operations::point_ops::{PointOperations, PointStruct};
 use collection::operations::types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus};
+use collection::operations::CollectionUpdateOperations;
 use segment::types::{PayloadInterface, PayloadKeyType, PayloadVariant};
-use std::collections::HashMap;
-use std::sync::Arc;
-use tempdir::TempDir;
-use tokio::runtime::Handle;
+
+use crate::common::simple_collection_fixture;
+
+mod common;
 
 #[tokio::test]
 async fn test_collection_updater() {
@@ -42,14 +44,14 @@ async fn test_collection_updater() {
         Err(err) => panic!("operation failed: {:?}", err),
     }
 
-    let search_request = Arc::new(SearchRequest {
+    let search_request = SearchRequest {
         vector: vec![1.0, 1.0, 1.0, 1.0],
         filter: None,
         params: None,
         top: 3,
-    });
+    };
 
-    let search_res = collection.search(search_request).await;
+    let search_res = collection.search(search_request, &Handle::current()).await;
 
     match search_res {
         Ok(res) => {
@@ -97,7 +99,7 @@ async fn test_collection_loading() {
         collection.update(assign_payload, true).await.unwrap();
     }
 
-    let loaded_collection = load_collection(collection_dir.path(), Handle::current());
+    let loaded_collection = load_collection(collection_dir.path());
     let retrieved = loaded_collection
         .retrieve(&[1, 2], true, true)
         .await
@@ -195,13 +197,16 @@ async fn test_recommendation_api() {
     collection.update(insert_points, true).await.unwrap();
 
     let result = collection
-        .recommend(Arc::new(RecommendRequest {
-            positive: vec![0],
-            negative: vec![8],
-            filter: None,
-            params: None,
-            top: 5,
-        }))
+        .recommend(
+            Arc::new(RecommendRequest {
+                positive: vec![0],
+                negative: vec![8],
+                filter: None,
+                params: None,
+                top: 5,
+            }),
+            &Handle::current(),
+        )
         .await
         .unwrap();
     assert!(result.len() > 0);
