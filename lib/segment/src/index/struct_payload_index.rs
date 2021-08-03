@@ -27,7 +27,7 @@ pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
 
 pub struct StructPayloadIndex {
-    condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+    condition_checker: Arc<dyn ConditionChecker>,
     vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
     id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
@@ -148,7 +148,7 @@ impl StructPayloadIndex {
     }
 
     pub fn open(
-        condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+        condition_checker: Arc<dyn ConditionChecker>,
         vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
         payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
         id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
@@ -327,14 +327,13 @@ impl PayloadIndex for StructPayloadIndex {
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let vector_storage_ref = self.vector_storage.borrow();
-        let condition_checker = self.condition_checker.borrow();
 
         let query_cardinality = self.estimate_cardinality(query);
         return if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = vector_storage_ref.iter_ids();
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points = full_scan_iterator
-                .filter(|i| condition_checker.check(*i, query))
+                .filter(|i| self.condition_checker.check(*i, query))
                 .collect_vec();
 
             Box::new(matched_points.into_iter())
@@ -361,7 +360,7 @@ impl PayloadIndex for StructPayloadIndex {
                 })
                 .flatten()
                 .filter(|id| !visited_list.check_and_update_visited(*id))
-                .filter(move |i| condition_checker.check(*i, query))
+                .filter(move |i| self.condition_checker.check(*i, query))
                 .collect();
 
             self.visited_pool.return_back(visited_list);

@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub struct PlainPayloadIndex {
-    condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+    condition_checker: Arc<dyn ConditionChecker>,
     vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     config: PayloadConfig,
     path: PathBuf,
@@ -31,7 +31,7 @@ impl PlainPayloadIndex {
     }
 
     pub fn open(
-        condition_checker: Arc<AtomicRefCell<dyn ConditionChecker>>,
+        condition_checker: Arc<dyn ConditionChecker>,
         vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
         path: &Path,
     ) -> OperationResult<Self> {
@@ -97,9 +97,8 @@ impl PayloadIndex for PlainPayloadIndex {
         query: &'a Filter,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         let mut matched_points = vec![];
-        let condition_checker = self.condition_checker.borrow();
         for i in self.vector_storage.borrow().iter_ids() {
-            if condition_checker.check(i, query) {
+            if self.condition_checker.check(i, query) {
                 matched_points.push(i);
             }
         }

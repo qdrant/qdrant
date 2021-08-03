@@ -69,13 +69,11 @@ mod tests {
             .borrow()
             .estimate_cardinality(&filter);
 
-        let checker = struct_segment.condition_checker.borrow();
-
         let exact = struct_segment
             .vector_storage
             .borrow()
             .iter_ids()
-            .filter(|x| checker.check(*x, &filter))
+            .filter(|x| struct_segment.condition_checker.check(*x, &filter))
             .collect_vec()
             .len();
 
