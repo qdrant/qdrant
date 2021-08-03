@@ -1,23 +1,21 @@
 use std::fs::{read_dir, remove_dir_all};
 use std::path::Path;
 
-use indicatif::ProgressBar;
-use tokio::runtime::Handle;
-
 use segment::segment_constructor::load_segment;
 
 use crate::collection::Collection;
 use crate::collection_builder::construct_collection;
 use crate::collection_builder::optimizers_builder::build_optimizers;
+use crate::collection_manager::collection_managers::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
-use crate::operations::types::CollectionError;
 use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
+use std::sync::Arc;
 
 pub fn load_collection(
     collection_path: &Path,
-    search_runtime: Handle, // from service
+    segment_updater: Arc<dyn CollectionUpdater>,
 ) -> Collection {
     let wal_path = collection_path.join("wal");
     let segments_path = collection_path.join("segments");
@@ -76,29 +74,11 @@ pub fn load_collection(
         segment_holder,
         collection_config,
         wal,
-        search_runtime,
         optimizers,
         collection_path,
     );
 
-    {
-        let wal = collection.wal.lock();
-        let bar = ProgressBar::new(wal.len());
-        bar.set_message("Recovering collection");
-
-        for (op_num, update) in wal.read_all() {
-            // Panic only in case of internal error. If wrong formatting - skip
-            if let Err(CollectionError::ServiceError { error }) =
-                collection.updater.update(op_num, update)
-            {
-                panic!("Can't apply WAL operation: {}", error)
-            }
-            bar.inc(1);
-        }
-
-        collection.flush_all().unwrap();
-        bar.finish();
-    }
+    collection.load_from_wal(segment_updater);
 
     collection
 }

@@ -1,13 +1,16 @@
-use crate::actix::helpers::process_response;
+use std::sync::Arc;
+
 use actix_web::rt::time::Instant;
 use actix_web::{get, post, web, Responder};
-use collection::operations::types::{Record, ScrollRequest, ScrollResult};
 use schemars::JsonSchema;
-use segment::types::PointIdType;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+
+use collection::operations::types::{Record, ScrollRequest, ScrollResult};
+use segment::types::PointIdType;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
+
+use crate::actix::helpers::process_response;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct PointRequest {
@@ -19,10 +22,8 @@ async fn do_get_point(
     name: &str,
     point_id: PointIdType,
 ) -> Result<Option<Record>, StorageError> {
-    toc.get_collection(name)?
-        .retrieve(&[point_id], true, true)
+    toc.retrieve(name, &[point_id], true, true)
         .await
-        .map_err(|err| err.into())
         .map(|points| points.into_iter().next())
 }
 
@@ -31,10 +32,7 @@ async fn do_get_points(
     name: &str,
     request: PointRequest,
 ) -> Result<Vec<Record>, StorageError> {
-    toc.get_collection(name)?
-        .retrieve(&request.ids, true, true)
-        .await
-        .map_err(|err| err.into())
+    toc.retrieve(name, &request.ids, true, true).await
 }
 
 async fn scroll_get_points(
@@ -42,10 +40,7 @@ async fn scroll_get_points(
     name: &str,
     request: ScrollRequest,
 ) -> Result<ScrollResult, StorageError> {
-    toc.get_collection(name)?
-        .scroll(Arc::new(request))
-        .await
-        .map_err(|err| err.into())
+    toc.scroll(name, request).await
 }
 
 #[get("/collections/{name}/points/{id}")]

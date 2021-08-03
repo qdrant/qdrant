@@ -116,17 +116,24 @@ impl SegmentOptimizer for IndexingOptimizer {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Deref;
+    use std::sync::Arc;
+
+    use itertools::Itertools;
+    use parking_lot::lock_api::RwLock;
+    use tempdir::TempDir;
+
+    use segment::types::StorageType;
+
+    use crate::operations::point_ops::{PointInsertOperations, PointOperations};
+    use crate::operations::FieldIndexOperations;
+
     use super::*;
     use crate::collection_manager::fixtures::random_segment;
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
-    use crate::collection_manager::simple_collection_updater::SimpleCollectionUpdater;
-    use crate::operations::point_ops::{PointInsertOperations, PointOperations};
-    use crate::operations::FieldIndexOperations;
-    use itertools::Itertools;
-    use parking_lot::lock_api::RwLock;
-    use segment::types::StorageType;
-    use std::sync::Arc;
-    use tempdir::TempDir;
+    use crate::collection_manager::segments_updater::{
+        process_field_index_operation, process_point_operation,
+    };
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -184,13 +191,12 @@ mod tests {
         assert!(suggested_to_optimize.contains(&large_segment_id));
 
         // ----- CREATE AN INDEXED FIELD ------
-        let updater = SimpleCollectionUpdater::new(locked_holder.clone());
-        updater
-            .process_field_index_operation(
-                opnum.next().unwrap(),
-                &FieldIndexOperations::CreateIndex(payload_field.clone()),
-            )
-            .unwrap();
+        process_field_index_operation(
+            locked_holder.deref(),
+            opnum.next().unwrap(),
+            &FieldIndexOperations::CreateIndex(payload_field.clone()),
+        )
+        .unwrap();
 
         // ------ Plain -> Mmap & Indexed payload
         let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
@@ -281,9 +287,12 @@ mod tests {
             .unwrap()
             .num_vectors;
 
-        updater
-            .process_point_operation(opnum.next().unwrap(), insert_point_ops)
-            .unwrap();
+        process_point_operation(
+            locked_holder.deref(),
+            opnum.next().unwrap(),
+            insert_point_ops,
+        )
+        .unwrap();
 
         let new_infos = locked_holder
             .read()
@@ -333,8 +342,11 @@ mod tests {
             payloads: None,
         });
 
-        updater
-            .process_point_operation(opnum.next().unwrap(), insert_point_ops)
-            .unwrap();
+        process_point_operation(
+            locked_holder.deref(),
+            opnum.next().unwrap(),
+            insert_point_ops,
+        )
+        .unwrap();
     }
 }

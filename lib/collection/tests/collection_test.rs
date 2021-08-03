@@ -1,24 +1,30 @@
-mod common;
+use std::collections::HashMap;
+use std::sync::Arc;
 
-use collection::operations::point_ops::{PointOperations, PointStruct};
-use collection::operations::CollectionUpdateOperations;
+use tempdir::TempDir;
+use tokio::runtime::Handle;
 
-use crate::common::simple_collection_fixture;
 use collection::collection_builder::collection_loader::load_collection;
 use collection::operations::payload_ops::PayloadOps;
 use collection::operations::point_ops::PointInsertOperations::{BatchPoints, PointsList};
+use collection::operations::point_ops::{PointOperations, PointStruct};
 use collection::operations::types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus};
+use collection::operations::CollectionUpdateOperations;
 use segment::types::{PayloadInterface, PayloadKeyType, PayloadVariant};
-use std::collections::HashMap;
-use std::sync::Arc;
-use tempdir::TempDir;
-use tokio::runtime::Handle;
+
+use crate::common::simple_collection_fixture;
+use collection::collection_manager::collection_managers::CollectionSearcher;
+use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
+use collection::collection_manager::simple_collection_updater::SimpleCollectionUpdater;
+
+mod common;
 
 #[tokio::test]
 async fn test_collection_updater() {
     let collection_dir = TempDir::new("collection").unwrap();
 
     let collection = simple_collection_fixture(collection_dir.path()).await;
+    let segment_updater = Arc::new(SimpleCollectionUpdater::new());
 
     let insert_points =
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(BatchPoints {
@@ -33,7 +39,9 @@ async fn test_collection_updater() {
             payloads: None,
         }));
 
-    let insert_result = collection.update(insert_points, true).await;
+    let insert_result = collection
+        .update_by(insert_points, true, segment_updater.clone())
+        .await;
 
     match insert_result {
         Ok(res) => {
@@ -42,14 +50,21 @@ async fn test_collection_updater() {
         Err(err) => panic!("operation failed: {:?}", err),
     }
 
-    let search_request = Arc::new(SearchRequest {
+    let search_request = SearchRequest {
         vector: vec![1.0, 1.0, 1.0, 1.0],
         filter: None,
         params: None,
         top: 3,
-    });
+    };
 
-    let search_res = collection.search(search_request).await;
+    let segment_searcher = SimpleCollectionSearcher::new();
+    let search_res = segment_searcher
+        .search(
+            collection.segments(),
+            Arc::new(search_request),
+            &Handle::current(),
+        )
+        .await;
 
     match search_res {
         Ok(res) => {
@@ -64,6 +79,7 @@ async fn test_collection_updater() {
 async fn test_collection_loading() {
     let collection_dir = TempDir::new("collection").unwrap();
 
+    let segment_updater = Arc::new(SimpleCollectionUpdater::new());
     {
         let collection = simple_collection_fixture(collection_dir.path()).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
@@ -80,7 +96,10 @@ async fn test_collection_loading() {
             }),
         );
 
-        collection.update(insert_points, true).await.unwrap();
+        collection
+            .update_by(insert_points, true, segment_updater.clone())
+            .await
+            .unwrap();
 
         let mut payload: HashMap<PayloadKeyType, PayloadInterface> = Default::default();
 
@@ -94,12 +113,16 @@ async fn test_collection_loading() {
             points: vec![2, 3],
         });
 
-        collection.update(assign_payload, true).await.unwrap();
+        collection
+            .update_by(assign_payload, true, segment_updater.clone())
+            .await
+            .unwrap();
     }
 
-    let loaded_collection = load_collection(collection_dir.path(), Handle::current());
-    let retrieved = loaded_collection
-        .retrieve(&[1, 2], true, true)
+    let loaded_collection = load_collection(collection_dir.path(), segment_updater.clone());
+    let segment_searcher = SimpleCollectionSearcher::new();
+    let retrieved = segment_searcher
+        .retrieve(loaded_collection.segments(), &[1, 2], true, true)
         .await
         .unwrap();
 
@@ -192,16 +215,24 @@ async fn test_recommendation_api() {
             payloads: None,
         }));
 
-    collection.update(insert_points, true).await.unwrap();
-
+    let segment_updater = Arc::new(SimpleCollectionUpdater::new());
+    collection
+        .update_by(insert_points, true, segment_updater)
+        .await
+        .unwrap();
+    let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection
-        .recommend(Arc::new(RecommendRequest {
-            positive: vec![0],
-            negative: vec![8],
-            filter: None,
-            params: None,
-            top: 5,
-        }))
+        .recommend_by(
+            Arc::new(RecommendRequest {
+                positive: vec![0],
+                negative: vec![8],
+                filter: None,
+                params: None,
+                top: 5,
+            }),
+            &segment_searcher,
+            &Handle::current(),
+        )
         .await
         .unwrap();
     assert!(result.len() > 0);
@@ -232,16 +263,24 @@ async fn test_read_api() {
             payloads: None,
         }));
 
-    collection.update(insert_points, true).await.unwrap();
+    let segment_updater = Arc::new(SimpleCollectionUpdater::new());
+    collection
+        .update_by(insert_points, true, segment_updater.clone())
+        .await
+        .unwrap();
 
+    let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection
-        .scroll(Arc::new(ScrollRequest {
-            offset: Some(0),
-            limit: Some(2),
-            filter: None,
-            with_payload: Some(true),
-            with_vector: None,
-        }))
+        .scroll_by(
+            ScrollRequest {
+                offset: Some(0),
+                limit: Some(2),
+                filter: None,
+                with_payload: Some(true),
+                with_vector: None,
+            },
+            &segment_searcher,
+        )
         .await
         .unwrap();
 

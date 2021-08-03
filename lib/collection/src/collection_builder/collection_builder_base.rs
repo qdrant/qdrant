@@ -5,7 +5,6 @@ use std::sync::Arc;
 use crossbeam_channel::unbounded;
 use parking_lot::{Mutex, RwLock};
 use tokio::runtime;
-use tokio::runtime::Handle;
 
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::HnswConfig;
@@ -14,8 +13,6 @@ use crate::collection::Collection;
 use crate::collection_builder::optimizers_builder::build_optimizers;
 use crate::collection_builder::optimizers_builder::OptimizersConfig;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
-use crate::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
-use crate::collection_manager::simple_collection_updater::SimpleCollectionUpdater;
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
@@ -26,7 +23,6 @@ pub fn construct_collection(
     segment_holder: SegmentHolder,
     config: CollectionConfig,
     wal: SerdeWal<CollectionUpdateOperations>,
-    search_runtime: Handle, // from service
     optimizers: Arc<Vec<Box<Optimizer>>>,
     collection_path: &Path,
 ) -> Collection {
@@ -39,32 +35,27 @@ pub fn construct_collection(
 
     let locked_wal = Arc::new(Mutex::new(wal));
 
-    let searcher = SimpleCollectionSearcher::new(segment_holder.clone(), search_runtime);
-
-    let updater = SimpleCollectionUpdater::new(segment_holder.clone());
     // ToDo: Move tx-rx into updater, so Collection should not know about it.
     let (tx, rx) = unbounded();
 
-    let update_handler = Arc::new(Mutex::new(UpdateHandler::new(
+    let update_handler = UpdateHandler::new(
         optimizers,
         rx,
         optimize_runtime.handle().clone(),
         segment_holder.clone(),
         locked_wal.clone(),
         config.optimizer_config.flush_interval_sec,
-    )));
+    );
 
-    Collection {
-        segments: segment_holder,
-        config: Arc::new(RwLock::new(config)),
-        wal: locked_wal,
-        searcher: Arc::new(searcher),
+    Collection::new(
+        segment_holder,
+        config,
+        locked_wal,
         update_handler,
-        updater: Arc::new(updater),
-        runtime_handle: Some(optimize_runtime),
-        update_sender: tx,
-        path: collection_path.to_owned(),
-    }
+        optimize_runtime,
+        tx,
+        collection_path.to_owned(),
+    )
 }
 
 /// Creates new empty collection with given configuration
@@ -72,7 +63,6 @@ pub fn build_collection(
     collection_path: &Path,
     wal_config: &WalConfig,               // from config
     collection_params: &CollectionParams, //  from user
-    search_runtime: Handle,               // from service
     optimizers_config: &OptimizersConfig,
     hnsw_config: &HnswConfig,
 ) -> CollectionResult<Collection> {
@@ -122,7 +112,6 @@ pub fn build_collection(
         segment_holder,
         collection_config,
         wal,
-        search_runtime,
         optimizers,
         collection_path,
     );

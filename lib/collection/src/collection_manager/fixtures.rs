@@ -1,5 +1,4 @@
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
-use crate::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 use parking_lot::RwLock;
 use rand::Rng;
 use segment::entry::entry_point::SegmentEntry;
@@ -7,8 +6,6 @@ use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{Distance, PayloadType, SeqNumberType};
 use std::path::Path;
-use std::sync::Arc;
-use tokio::runtime::Handle;
 
 pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()
@@ -101,7 +98,7 @@ pub fn build_segment_2(path: &Path) -> Segment {
     segment2
 }
 
-pub fn build_test_holder(path: &Path) -> SegmentHolder {
+pub fn build_test_holder(path: &Path) -> RwLock<SegmentHolder> {
     let segment1 = build_segment_1(path);
     let segment2 = build_segment_2(path);
 
@@ -110,11 +107,5 @@ pub fn build_test_holder(path: &Path) -> SegmentHolder {
     let _sid1 = holder.add(segment1);
     let _sid2 = holder.add(segment2);
 
-    holder
-}
-
-pub async fn build_searcher(path: &Path) -> SimpleCollectionSearcher {
-    let segment_holder = build_test_holder(path);
-
-    SimpleCollectionSearcher::new(Arc::new(RwLock::new(segment_holder)), Handle::current())
+    RwLock::new(holder)
 }
