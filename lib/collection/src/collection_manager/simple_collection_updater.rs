@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use segment::types::{
-    PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType,
+    PayloadInterface, PayloadKeyType, PointIdType, SeqNumberType,
 };
 
 use crate::operations::payload_ops::PayloadOps;
@@ -10,6 +10,7 @@ use crate::operations::types::{CollectionError, CollectionResult, VectorType};
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::collection_managers::CollectionUpdater;
+use crate::collection_manager::segments_updater::SegmentsUpdater;
 
 pub struct SimpleCollectionUpdater {
     segments: LockedSegmentHolder,
@@ -22,30 +23,6 @@ impl SimpleCollectionUpdater {
             segments,
             // update_lock: Mutex::new(false),
         }
-    }
-
-    fn check_unprocessed_points(
-        points: &[PointIdType],
-        processed: &HashSet<PointIdType>,
-    ) -> CollectionResult<usize> {
-        let missed_point = points.iter().cloned().find(|p| !processed.contains(p));
-        match missed_point {
-            None => Ok(processed.len()),
-            Some(missed_point) => Err(CollectionError::NotFound {
-                missed_point_id: missed_point,
-            }),
-        }
-    }
-
-    /// Tries to delete points from all segments, returns number of actually deleted points
-    fn delete_points(&self, op_num: SeqNumberType, ids: &[PointIdType]) -> CollectionResult<usize> {
-        let res = self
-            .segments
-            .read()
-            .apply_points(op_num, ids, |id, write_segment| {
-                write_segment.delete_point(op_num, id)
-            })?;
-        Ok(res)
     }
 
     /// Checks point id in each segment, update point if found.
@@ -124,108 +101,12 @@ impl SimpleCollectionUpdater {
         if let Some(payload_vector) = payloads {
             for (point_id, payload) in ids.iter().zip(payload_vector.iter()) {
                 if payload.is_some() {
-                    self.set_payload(op_num, payload.as_ref().unwrap(), &[*point_id])?;
+                    SegmentsUpdater::set_payload(
+                        &segments, op_num, payload.as_ref().unwrap(), &[*point_id])?;
                 }
             }
         }
 
-        Ok(res)
-    }
-
-    fn set_payload(
-        &self,
-        op_num: SeqNumberType,
-        payload: &HashMap<PayloadKeyType, PayloadInterface>,
-        points: &[PointIdType],
-    ) -> CollectionResult<usize> {
-        let mut updated_points: HashSet<PointIdType> = Default::default();
-
-        let res = self.segments.read().apply_points_to_appendable(
-            op_num,
-            points,
-            |id, write_segment| {
-                updated_points.insert(id);
-                let mut res = true;
-                for (key, payload) in payload {
-                    res = write_segment.set_payload(op_num, id, key, payload.into())? && res;
-                }
-                Ok(res)
-            },
-        )?;
-
-        SimpleCollectionUpdater::check_unprocessed_points(points, &updated_points)?;
-        Ok(res)
-    }
-
-    fn delete_payload(
-        &self,
-        op_num: SeqNumberType,
-        points: &[PointIdType],
-        keys: &[PayloadKeyType],
-    ) -> CollectionResult<usize> {
-        let mut updated_points: HashSet<PointIdType> = Default::default();
-
-        let res = self.segments.read().apply_points_to_appendable(
-            op_num,
-            points,
-            |id, write_segment| {
-                updated_points.insert(id);
-                let mut res = true;
-                for key in keys {
-                    res = write_segment.delete_payload(op_num, id, key)? && res;
-                }
-                Ok(res)
-            },
-        )?;
-
-        SimpleCollectionUpdater::check_unprocessed_points(points, &updated_points)?;
-        Ok(res)
-    }
-
-    fn clear_payload(
-        &self,
-        op_num: SeqNumberType,
-        points: &[PointIdType],
-    ) -> CollectionResult<usize> {
-        let mut updated_points: HashSet<PointIdType> = Default::default();
-        let res = self.segments.read().apply_points_to_appendable(
-            op_num,
-            points,
-            |id, write_segment| {
-                updated_points.insert(id);
-                write_segment.clear_payload(op_num, id)
-            },
-        )?;
-
-        SimpleCollectionUpdater::check_unprocessed_points(points, &updated_points)?;
-        Ok(res)
-    }
-
-    fn create_field_index(
-        &self,
-        op_num: SeqNumberType,
-        field_name: PayloadKeyTypeRef,
-    ) -> CollectionResult<usize> {
-        let res = self
-            .segments
-            .read()
-            .apply_segments(op_num, |write_segment| {
-                write_segment.create_field_index(op_num, field_name)
-            })?;
-        Ok(res)
-    }
-
-    fn delete_field_index(
-        &self,
-        op_num: SeqNumberType,
-        field_name: PayloadKeyTypeRef,
-    ) -> CollectionResult<usize> {
-        let res = self
-            .segments
-            .read()
-            .apply_segments(op_num, |write_segment| {
-                write_segment.delete_field_index(op_num, field_name)
-            })?;
         Ok(res)
     }
 
@@ -235,7 +116,8 @@ impl SimpleCollectionUpdater {
         point_operation: PointOperations,
     ) -> CollectionResult<usize> {
         match point_operation {
-            PointOperations::DeletePoints { ids, .. } => self.delete_points(op_num, &ids),
+            PointOperations::DeletePoints { ids, .. } =>
+                SegmentsUpdater::delete_points(&self.segments.read(), op_num, &ids),
             PointOperations::UpsertPoints(operation) => {
                 let (ids, vectors, payloads) = match operation {
                     PointInsertOperations::BatchPoints {
@@ -270,11 +152,11 @@ impl SimpleCollectionUpdater {
         match payload_operation {
             PayloadOps::SetPayload {
                 payload, points, ..
-            } => self.set_payload(op_num, payload, points),
+            } => SegmentsUpdater::set_payload(&self.segments.read(), op_num, payload, points),
             PayloadOps::DeletePayload { keys, points, .. } => {
-                self.delete_payload(op_num, points, keys)
+                SegmentsUpdater::delete_payload(&self.segments.read(), op_num, points, keys)
             }
-            PayloadOps::ClearPayload { points, .. } => self.clear_payload(op_num, points),
+            PayloadOps::ClearPayload { points, .. } => SegmentsUpdater::clear_payload(&self.segments.read(), op_num, points),
         }
     }
 
@@ -285,10 +167,10 @@ impl SimpleCollectionUpdater {
     ) -> CollectionResult<usize> {
         match field_index_operation {
             FieldIndexOperations::CreateIndex(field_name) => {
-                self.create_field_index(op_num, field_name)
+                SegmentsUpdater::create_field_index(&self.segments.read(), op_num, field_name)
             }
             FieldIndexOperations::DeleteIndex(field_name) => {
-                self.delete_field_index(op_num, field_name)
+                SegmentsUpdater::delete_field_index(&self.segments.read(), op_num, field_name)
             }
         }
     }
@@ -357,7 +239,9 @@ mod tests {
             }
         }
 
-        updater.delete_points(101, &[500]).unwrap();
+        updater.process_point_operation(
+            101, PointOperations::DeletePoints { ids: vec![500] },
+        ).unwrap();
 
         let records = searcher.retrieve(&[1, 2, 500], true, true).await.unwrap();
 
@@ -410,10 +294,11 @@ mod tests {
         };
 
         // Test payload delete
+        updater.process_payload_operation(101, &PayloadOps::DeletePayload {
+            points: vec![3],
+            keys: vec!["color".to_string(), "empty".to_string()],
+        }).unwrap();
 
-        updater
-            .delete_payload(101, &[3], &["color".to_string(), "empty".to_string()])
-            .unwrap();
         let res = searcher.retrieve(&[3], true, false).await.unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
@@ -424,7 +309,9 @@ mod tests {
         assert_eq!(res.len(), 1);
         assert!(res[0].payload.as_ref().unwrap().contains_key("color"));
 
-        updater.clear_payload(102, &[2]).unwrap();
+        updater.process_payload_operation(102, &PayloadOps::ClearPayload {
+            points: vec![2]
+        }).unwrap();
         let res = searcher.retrieve(&[2], true, false).await.unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
