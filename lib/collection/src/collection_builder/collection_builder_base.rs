@@ -13,12 +13,12 @@ use segment::types::HnswConfig;
 use crate::collection::Collection;
 use crate::collection_builder::optimizers_builder::build_optimizers;
 use crate::collection_builder::optimizers_builder::OptimizersConfig;
-use crate::config::{CollectionConfig, CollectionParams, WalConfig};
-use crate::operations::types::{CollectionError, CollectionResult};
-use crate::operations::CollectionUpdateOperations;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 use crate::collection_manager::simple_collection_updater::SimpleCollectionUpdater;
+use crate::config::{CollectionConfig, CollectionParams, WalConfig};
+use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::CollectionUpdateOperations;
 use crate::update_handler::{Optimizer, UpdateHandler};
 use crate::wal::SerdeWal;
 

@@ -1,9 +1,9 @@
-use crate::config::CollectionParams;
-use crate::operations::types::CollectionResult;
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
+use crate::config::CollectionParams;
+use crate::operations::types::CollectionResult;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::entry::entry_point::SegmentEntry;
@@ -130,7 +130,8 @@ pub trait SegmentOptimizer {
         // Exclusive lock for the segments operations
         let mut write_segments = segments.write();
 
-        let optimizing_segments: Vec<_> = ids.iter()
+        let optimizing_segments: Vec<_> = ids
+            .iter()
             .cloned()
             .map(|id| write_segments.get(id))
             .filter_map(|x| x.cloned())

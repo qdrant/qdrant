@@ -16,6 +16,8 @@ use segment::types::{
 };
 
 use crate::collection_builder::optimizers_builder::build_optimizers;
+use crate::collection_manager::collection_managers::{CollectionSearcher, CollectionUpdater};
+use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::types::{
@@ -23,8 +25,6 @@ use crate::operations::types::{
     ScrollRequest, ScrollResult, SearchRequest, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::collection_manager::holders::segment_holder::SegmentHolder;
-use crate::collection_manager::collection_managers::{CollectionSearcher, CollectionUpdater};
 use crate::update_handler::{UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 

@@ -1,8 +1,8 @@
-use crate::config::CollectionParams;
 use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
+use crate::config::CollectionParams;
 use itertools::Itertools;
 use segment::types::{HnswConfig, SegmentType};
 use std::path::{Path, PathBuf};

@@ -1,7 +1,7 @@
-use crate::operations::types::CollectionResult;
-use crate::operations::CollectionUpdateOperations;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
+use crate::operations::types::CollectionResult;
+use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
 use crossbeam_channel::Receiver;
 use log::debug;

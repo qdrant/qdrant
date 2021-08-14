@@ -1,14 +1,14 @@
-use crate::operations::types::{CollectionResult, CollectionError};
-use segment::types::{PointIdType, SeqNumberType, PayloadKeyTypeRef, PayloadKeyType, PayloadInterface};
-use std::collections::{HashSet, HashMap};
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
+use crate::operations::types::{CollectionError, CollectionResult};
+use segment::types::{
+    PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType,
+};
+use std::collections::{HashMap, HashSet};
 
 /// A collection of functions for updating points and payloads stored in segments
 pub struct SegmentsUpdater {}
 
-
 impl SegmentsUpdater {
-
     fn check_unprocessed_points(
         points: &[PointIdType],
         processed: &HashSet<PointIdType>,
@@ -29,8 +29,8 @@ impl SegmentsUpdater {
         ids: &[PointIdType],
     ) -> CollectionResult<usize> {
         let res = segments.apply_points(op_num, ids, |id, write_segment| {
-                write_segment.delete_point(op_num, id)
-            })?;
+            write_segment.delete_point(op_num, id)
+        })?;
         Ok(res)
     }
 
@@ -42,18 +42,14 @@ impl SegmentsUpdater {
     ) -> CollectionResult<usize> {
         let mut updated_points: HashSet<PointIdType> = Default::default();
 
-        let res = segments.apply_points_to_appendable(
-            op_num,
-            points,
-            |id, write_segment| {
-                updated_points.insert(id);
-                let mut res = true;
-                for (key, payload) in payload {
-                    res = write_segment.set_payload(op_num, id, key, payload.into())? && res;
-                }
-                Ok(res)
-            },
-        )?;
+        let res = segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
+            updated_points.insert(id);
+            let mut res = true;
+            for (key, payload) in payload {
+                res = write_segment.set_payload(op_num, id, key, payload.into())? && res;
+            }
+            Ok(res)
+        })?;
 
         SegmentsUpdater::check_unprocessed_points(points, &updated_points)?;
         Ok(res)
@@ -67,18 +63,14 @@ impl SegmentsUpdater {
     ) -> CollectionResult<usize> {
         let mut updated_points: HashSet<PointIdType> = Default::default();
 
-        let res = segments.apply_points_to_appendable(
-            op_num,
-            points,
-            |id, write_segment| {
-                updated_points.insert(id);
-                let mut res = true;
-                for key in keys {
-                    res = write_segment.delete_payload(op_num, id, key)? && res;
-                }
-                Ok(res)
-            },
-        )?;
+        let res = segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
+            updated_points.insert(id);
+            let mut res = true;
+            for key in keys {
+                res = write_segment.delete_payload(op_num, id, key)? && res;
+            }
+            Ok(res)
+        })?;
 
         SegmentsUpdater::check_unprocessed_points(points, &updated_points)?;
         Ok(res)
@@ -90,14 +82,10 @@ impl SegmentsUpdater {
         points: &[PointIdType],
     ) -> CollectionResult<usize> {
         let mut updated_points: HashSet<PointIdType> = Default::default();
-        let res = segments.apply_points_to_appendable(
-            op_num,
-            points,
-            |id, write_segment| {
-                updated_points.insert(id);
-                write_segment.clear_payload(op_num, id)
-            },
-        )?;
+        let res = segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
+            updated_points.insert(id);
+            write_segment.clear_payload(op_num, id)
+        })?;
 
         SegmentsUpdater::check_unprocessed_points(points, &updated_points)?;
         Ok(res)
@@ -108,10 +96,9 @@ impl SegmentsUpdater {
         op_num: SeqNumberType,
         field_name: PayloadKeyTypeRef,
     ) -> CollectionResult<usize> {
-        let res = segments
-            .apply_segments(op_num, |write_segment| {
-                write_segment.create_field_index(op_num, field_name)
-            })?;
+        let res = segments.apply_segments(op_num, |write_segment| {
+            write_segment.create_field_index(op_num, field_name)
+        })?;
         Ok(res)
     }
 
@@ -120,10 +107,9 @@ impl SegmentsUpdater {
         op_num: SeqNumberType,
         field_name: PayloadKeyTypeRef,
     ) -> CollectionResult<usize> {
-        let res = segments
-            .apply_segments(op_num, |write_segment| {
-                write_segment.delete_field_index(op_num, field_name)
-            })?;
+        let res = segments.apply_segments(op_num, |write_segment| {
+            write_segment.delete_field_index(op_num, field_name)
+        })?;
         Ok(res)
     }
 }

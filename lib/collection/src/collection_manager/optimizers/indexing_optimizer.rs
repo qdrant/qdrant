@@ -1,10 +1,10 @@
-use crate::config::CollectionParams;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
+use crate::config::CollectionParams;
 use segment::types::{HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType};
 use std::path::{Path, PathBuf};
 
@@ -117,11 +117,11 @@ impl SegmentOptimizer for IndexingOptimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::operations::point_ops::{PointInsertOperations, PointOperations};
-    use crate::operations::FieldIndexOperations;
     use crate::collection_manager::fixtures::random_segment;
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
     use crate::collection_manager::simple_collection_updater::SimpleCollectionUpdater;
+    use crate::operations::point_ops::{PointInsertOperations, PointOperations};
+    use crate::operations::FieldIndexOperations;
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
     use segment::types::StorageType;

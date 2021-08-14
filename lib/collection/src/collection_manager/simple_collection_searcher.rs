@@ -1,7 +1,7 @@
+use crate::collection_manager::collection_managers::CollectionSearcher;
+use crate::collection_manager::holders::segment_holder::{LockedSegment, LockedSegmentHolder};
 use crate::operations::types::CollectionResult;
 use crate::operations::types::{Record, SearchRequest};
-use crate::collection_manager::holders::segment_holder::{LockedSegment, LockedSegmentHolder};
-use crate::collection_manager::collection_managers::CollectionSearcher;
 use futures::future::try_join_all;
 use segment::spaces::tools::peek_top_scores_iterable;
 use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
