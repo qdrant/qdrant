@@ -2004,11 +2004,14 @@ version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fa7a782938e745763fe6907fc6ba86946d72f49fe7e21de074e08128a99fb018"
 dependencies = [
+ "backtrace",
  "cfg-if 1.0.0",
  "instant",
  "libc",
- "redox_syscall",
+ "petgraph",
+ "redox_syscall 0.2.8",
  "smallvec",
+ "thread-id 3.3.0",
  "winapi 0.3.9",
 ]
 
@@ -2247,6 +2250,7 @@ dependencies = [
  "itertools 0.9.0",
  "log 0.4.14",
  "num_cpus",
+ "parking_lot",
  "prost",
  "rand 0.7.3",
  "schemars",
@@ -2447,6 +2451,12 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
+version = "0.1.57"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41cc0f7e4d5d4544e8861606a285bb08d3e70712ccc7d2b84d7c0ccfaf4b05ce"
+
+[[package]]
+name = "redox_syscall"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "742739e41cd49414de871ea5e549afb7e2a3ac77b589bcbebe8c82fab37147fc"
@@ -2461,7 +2471,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "528532f3d801c87aec9def2add9ca802fe569e44a544afe633765267840abe64"
 dependencies = [
  "getrandom 0.2.3",
- "redox_syscall",
+ "redox_syscall 0.2.8",
 ]
 
 [[package]]
@@ -3072,7 +3082,7 @@ dependencies = [
  "cfg-if 1.0.0",
  "libc",
  "rand 0.8.3",
- "redox_syscall",
+ "redox_syscall 0.2.8",
  "remove_dir_all",
  "winapi 0.3.9",
 ]
@@ -3136,12 +3146,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "thread-id"
+version = "3.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7fbf4c9d56b320106cd64fd024dadfa0be7cb4706725fc44a7d7ce952d820c1"
+dependencies = [
+ "libc",
+ "redox_syscall 0.1.57",
+ "winapi 0.3.9",
+]
+
+[[package]]
 name = "thread_local"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8576dbbfcaef9641452d5cf0df9b0e7eeab7694956dd33bb61515fb8f18cfdd5"
 dependencies = [
- "thread-id",
+ "thread-id 2.0.0",
 ]
 
 [[package]]

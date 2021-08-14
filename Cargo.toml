@@ -11,6 +11,7 @@ doctest = false
 default = [ "web" ]
 web = ["actix-web"]
 grpc = ["tonic", "tonic-build", "prost"]
+service_debug = ["parking_lot", "parking_lot/deadlock_detection"]
 
 [dev-dependencies]
 tempdir = "0.3.7"
@@ -18,6 +19,8 @@ criterion = "0.3"
 
 
 [dependencies]
+
+parking_lot = { version = "0.11", features=["deadlock_detection"], optional = true }
 
 num_cpus = "1.0"
 thiserror = "1.0"

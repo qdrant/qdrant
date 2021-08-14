@@ -10,7 +10,7 @@ use segment::entry::entry_point::{OperationError, OperationResult, SegmentEntry}
 use segment::segment::Segment;
 use segment::types::{PointIdType, SeqNumberType};
 
-use crate::segment_manager::holders::proxy_segment::ProxySegment;
+use crate::collection_manager::holders::proxy_segment::ProxySegment;
 
 pub type SegmentId = usize;
 
@@ -291,7 +291,7 @@ mod tests {
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
     use segment::types::Distance;
 
-    use crate::segment_manager::fixtures::{build_segment_1, build_segment_2};
+    use crate::collection_manager::fixtures::{build_segment_1, build_segment_2};
 
     use super::*;
 

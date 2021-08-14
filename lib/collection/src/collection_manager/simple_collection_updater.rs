@@ -8,17 +8,17 @@ use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointInsertOperations, PointOperations};
 use crate::operations::types::{CollectionError, CollectionResult, VectorType};
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
-use crate::segment_manager::holders::segment_holder::LockedSegmentHolder;
-use crate::segment_manager::segment_managers::SegmentUpdater;
+use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
+use crate::collection_manager::collection_managers::CollectionUpdater;
 
-pub struct SimpleSegmentUpdater {
+pub struct SimpleCollectionUpdater {
     segments: LockedSegmentHolder,
     // update_lock: Mutex<bool>,
 }
 
-impl SimpleSegmentUpdater {
+impl SimpleCollectionUpdater {
     pub fn new(segments: LockedSegmentHolder) -> Self {
-        SimpleSegmentUpdater {
+        SimpleCollectionUpdater {
             segments,
             // update_lock: Mutex::new(false),
         }
@@ -90,7 +90,7 @@ impl SimpleSegmentUpdater {
         let segments = self.segments.read();
 
         // Get points, which presence in segments with higher version
-        self.segments.read().read_points(ids, |id, segment| {
+        segments.read_points(ids, |id, segment| {
             if segment.version() > op_num {
                 updated_points.insert(id);
             }
@@ -153,7 +153,7 @@ impl SimpleSegmentUpdater {
             },
         )?;
 
-        SimpleSegmentUpdater::check_unprocessed_points(points, &updated_points)?;
+        SimpleCollectionUpdater::check_unprocessed_points(points, &updated_points)?;
         Ok(res)
     }
 
@@ -178,7 +178,7 @@ impl SimpleSegmentUpdater {
             },
         )?;
 
-        SimpleSegmentUpdater::check_unprocessed_points(points, &updated_points)?;
+        SimpleCollectionUpdater::check_unprocessed_points(points, &updated_points)?;
         Ok(res)
     }
 
@@ -197,7 +197,7 @@ impl SimpleSegmentUpdater {
             },
         )?;
 
-        SimpleSegmentUpdater::check_unprocessed_points(points, &updated_points)?;
+        SimpleCollectionUpdater::check_unprocessed_points(points, &updated_points)?;
         Ok(res)
     }
 
@@ -294,7 +294,7 @@ impl SimpleSegmentUpdater {
     }
 }
 
-impl SegmentUpdater for SimpleSegmentUpdater {
+impl CollectionUpdater for SimpleCollectionUpdater {
     fn update(
         &self,
         op_num: SeqNumberType,
@@ -320,8 +320,8 @@ impl SegmentUpdater for SimpleSegmentUpdater {
 mod tests {
     use tempdir::TempDir;
 
-    use crate::segment_manager::fixtures::build_searcher;
-    use crate::segment_manager::segment_managers::SegmentSearcher;
+    use crate::collection_manager::fixtures::build_searcher;
+    use crate::collection_manager::collection_managers::CollectionSearcher;
     use segment::types::PayloadVariant;
 
     use super::*;
@@ -332,7 +332,7 @@ mod tests {
 
         let searcher = build_searcher(dir.path()).await;
 
-        let updater = SimpleSegmentUpdater {
+        let updater = SimpleCollectionUpdater {
             segments: searcher.segments.clone(),
         };
         let points = vec![1, 500];
@@ -372,7 +372,7 @@ mod tests {
         let dir = TempDir::new("segment_dir").unwrap();
         let searcher = build_searcher(dir.path()).await;
 
-        let updater = SimpleSegmentUpdater {
+        let updater = SimpleCollectionUpdater {
             segments: searcher.segments.clone(),
         };
 

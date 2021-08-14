@@ -1,4 +1,4 @@
-use crate::segment_manager::holders::segment_holder::LockedSegment;
+use crate::collection_manager::holders::segment_holder::LockedSegment;
 use parking_lot::RwLock;
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
 use segment::types::{
@@ -404,7 +404,7 @@ impl SegmentEntry for ProxySegment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::segment_manager::fixtures::{build_segment_1, empty_segment};
+    use crate::collection_manager::fixtures::{build_segment_1, empty_segment};
     use segment::types::{FieldCondition, Match};
     use tempdir::TempDir;
 

@@ -12,7 +12,7 @@ use crate::collection_builder::optimizers_builder::build_optimizers;
 use crate::config::CollectionConfig;
 use crate::operations::types::CollectionError;
 use crate::operations::CollectionUpdateOperations;
-use crate::segment_manager::holders::segment_holder::SegmentHolder;
+use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::wal::SerdeWal;
 
 pub fn load_collection(
