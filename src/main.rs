@@ -54,7 +54,6 @@ fn main() -> std::io::Result<()> {
     #[cfg(feature = "service_debug")]
     {
         use parking_lot::deadlock;
-        use std::thread;
         use std::time::Duration;
 
         thread::spawn(move || loop {
