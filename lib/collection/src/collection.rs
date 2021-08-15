@@ -16,6 +16,8 @@ use segment::types::{
 };
 
 use crate::collection_builder::optimizers_builder::build_optimizers;
+use crate::collection_manager::collection_managers::{CollectionSearcher, CollectionUpdater};
+use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::types::{
@@ -23,8 +25,6 @@ use crate::operations::types::{
     ScrollRequest, ScrollResult, SearchRequest, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::segment_manager::holders::segment_holder::SegmentHolder;
-use crate::segment_manager::segment_managers::{SegmentSearcher, SegmentUpdater};
 use crate::update_handler::{UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 
@@ -32,9 +32,9 @@ pub struct Collection {
     pub segments: Arc<RwLock<SegmentHolder>>,
     pub config: Arc<RwLock<CollectionConfig>>,
     pub wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-    pub searcher: Arc<dyn SegmentSearcher + Sync + Send>,
+    pub searcher: Arc<dyn CollectionSearcher + Sync + Send>,
     pub update_handler: Arc<Mutex<UpdateHandler>>,
-    pub updater: Arc<dyn SegmentUpdater + Sync + Send>,
+    pub updater: Arc<dyn CollectionUpdater + Sync + Send>,
     pub runtime_handle: Option<Runtime>,
     pub update_sender: Sender<UpdateSignal>,
     pub path: PathBuf,

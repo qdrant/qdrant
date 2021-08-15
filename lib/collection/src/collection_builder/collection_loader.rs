@@ -9,10 +9,10 @@ use segment::segment_constructor::load_segment;
 use crate::collection::Collection;
 use crate::collection_builder::construct_collection;
 use crate::collection_builder::optimizers_builder::build_optimizers;
+use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
 use crate::operations::types::CollectionError;
 use crate::operations::CollectionUpdateOperations;
-use crate::segment_manager::holders::segment_holder::SegmentHolder;
 use crate::wal::SerdeWal;
 
 pub fn load_collection(

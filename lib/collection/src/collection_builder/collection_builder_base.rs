@@ -13,12 +13,12 @@ use segment::types::HnswConfig;
 use crate::collection::Collection;
 use crate::collection_builder::optimizers_builder::build_optimizers;
 use crate::collection_builder::optimizers_builder::OptimizersConfig;
+use crate::collection_manager::holders::segment_holder::SegmentHolder;
+use crate::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
+use crate::collection_manager::simple_collection_updater::SimpleCollectionUpdater;
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
-use crate::segment_manager::holders::segment_holder::SegmentHolder;
-use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
-use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
 use crate::update_handler::{Optimizer, UpdateHandler};
 use crate::wal::SerdeWal;
 
@@ -39,9 +39,9 @@ pub fn construct_collection(
 
     let locked_wal = Arc::new(Mutex::new(wal));
 
-    let searcher = SimpleSegmentSearcher::new(segment_holder.clone(), search_runtime);
+    let searcher = SimpleCollectionSearcher::new(segment_holder.clone(), search_runtime);
 
-    let updater = SimpleSegmentUpdater::new(segment_holder.clone());
+    let updater = SimpleCollectionUpdater::new(segment_holder.clone());
     // ToDo: Move tx-rx into updater, so Collection should not know about it.
     let (tx, rx) = unbounded();
 

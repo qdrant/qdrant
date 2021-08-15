@@ -1,7 +1,7 @@
+use crate::collection_manager::collection_managers::CollectionSearcher;
+use crate::collection_manager::holders::segment_holder::{LockedSegment, LockedSegmentHolder};
 use crate::operations::types::CollectionResult;
 use crate::operations::types::{Record, SearchRequest};
-use crate::segment_manager::holders::segment_holder::{LockedSegment, LockedSegmentHolder};
-use crate::segment_manager::segment_managers::SegmentSearcher;
 use futures::future::try_join_all;
 use segment::spaces::tools::peek_top_scores_iterable;
 use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
@@ -14,14 +14,14 @@ use tokio::runtime::Handle;
 ///  - rebuild segment for memory optimization purposes
 ///  - Holds information regarding id mapping to segments
 ///
-pub struct SimpleSegmentSearcher {
+pub struct SimpleCollectionSearcher {
     pub segments: LockedSegmentHolder,
     pub runtime_handle: Handle,
 }
 
-impl SimpleSegmentSearcher {
+impl SimpleCollectionSearcher {
     pub fn new(segments: LockedSegmentHolder, runtime_handle: Handle) -> Self {
-        SimpleSegmentSearcher {
+        SimpleCollectionSearcher {
             segments,
             runtime_handle,
         }
@@ -43,7 +43,7 @@ impl SimpleSegmentSearcher {
 }
 
 #[async_trait::async_trait]
-impl SegmentSearcher for SimpleSegmentSearcher {
+impl CollectionSearcher for SimpleCollectionSearcher {
     async fn search(&self, request: Arc<SearchRequest>) -> CollectionResult<Vec<ScoredPoint>> {
         // Using { } block to ensure segments variable is dropped in the end of it
         // and is not transferred across the all_searches.await? boundary as it
@@ -60,7 +60,7 @@ impl SegmentSearcher for SimpleSegmentSearcher {
             segments
                 .iter()
                 .map(|(_id, segment)| {
-                    SimpleSegmentSearcher::search_in_segment(segment.clone(), request.clone())
+                    SimpleCollectionSearcher::search_in_segment(segment.clone(), request.clone())
                 })
                 .map(|f| self.runtime_handle.spawn(f))
                 .collect()
@@ -135,7 +135,7 @@ impl SegmentSearcher for SimpleSegmentSearcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::segment_manager::fixtures::build_test_holder;
+    use crate::collection_manager::fixtures::build_test_holder;
     use parking_lot::RwLock;
     use tempdir::TempDir;
 
@@ -146,7 +146,7 @@ mod tests {
         let segment_holder = build_test_holder(dir.path());
 
         let searcher =
-            SimpleSegmentSearcher::new(Arc::new(RwLock::new(segment_holder)), Handle::current());
+            SimpleCollectionSearcher::new(Arc::new(RwLock::new(segment_holder)), Handle::current());
 
         let query = vec![1.0, 1.0, 1.0, 1.0];
 
@@ -173,7 +173,7 @@ mod tests {
         let segment_holder = build_test_holder(dir.path());
 
         let searcher =
-            SimpleSegmentSearcher::new(Arc::new(RwLock::new(segment_holder)), Handle::current());
+            SimpleCollectionSearcher::new(Arc::new(RwLock::new(segment_holder)), Handle::current());
 
         let records = searcher.retrieve(&[1, 2, 3], true, true).await.unwrap();
         assert_eq!(records.len(), 3);

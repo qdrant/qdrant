@@ -1,7 +1,7 @@
+use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
+use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::operations::types::CollectionResult;
 use crate::operations::CollectionUpdateOperations;
-use crate::segment_manager::holders::segment_holder::LockedSegmentHolder;
-use crate::segment_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::wal::SerdeWal;
 use crossbeam_channel::Receiver;
 use log::debug;
@@ -112,7 +112,6 @@ impl UpdateHandler {
                             Self::process_optimization(optimizers.clone(), segments.clone());
                         }
                         UpdateSignal::Operation(operation_id) => {
-                            debug!("Performing update operation: {}", operation_id);
                             Self::process_optimization(optimizers.clone(), segments.clone());
 
                             let elapsed = last_flushed.elapsed();

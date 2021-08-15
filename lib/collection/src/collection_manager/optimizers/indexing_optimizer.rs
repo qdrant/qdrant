@@ -1,10 +1,10 @@
-use crate::config::CollectionParams;
-use crate::segment_manager::holders::segment_holder::{
+use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
-use crate::segment_manager::optimizers::segment_optimizer::{
+use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
+use crate::config::CollectionParams;
 use segment::types::{HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType};
 use std::path::{Path, PathBuf};
 
@@ -117,11 +117,11 @@ impl SegmentOptimizer for IndexingOptimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::collection_manager::fixtures::random_segment;
+    use crate::collection_manager::holders::segment_holder::SegmentHolder;
+    use crate::collection_manager::simple_collection_updater::SimpleCollectionUpdater;
     use crate::operations::point_ops::{PointInsertOperations, PointOperations};
     use crate::operations::FieldIndexOperations;
-    use crate::segment_manager::fixtures::random_segment;
-    use crate::segment_manager::holders::segment_holder::SegmentHolder;
-    use crate::segment_manager::simple_segment_updater::SimpleSegmentUpdater;
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
     use segment::types::StorageType;
@@ -184,7 +184,7 @@ mod tests {
         assert!(suggested_to_optimize.contains(&large_segment_id));
 
         // ----- CREATE AN INDEXED FIELD ------
-        let updater = SimpleSegmentUpdater::new(locked_holder.clone());
+        let updater = SimpleCollectionUpdater::new(locked_holder.clone());
         updater
             .process_field_index_operation(
                 opnum.next().unwrap(),

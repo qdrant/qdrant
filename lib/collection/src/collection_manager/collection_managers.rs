@@ -6,7 +6,7 @@ use crate::operations::types::{CollectionResult, Record, SearchRequest};
 use crate::operations::CollectionUpdateOperations;
 
 #[async_trait::async_trait]
-pub trait SegmentSearcher {
+pub trait CollectionSearcher {
     async fn search(
         &self,
         // Request is supposed to be a read only, that is why no mutex used
@@ -21,7 +21,7 @@ pub trait SegmentSearcher {
     ) -> CollectionResult<Vec<Record>>;
 }
 
-pub trait SegmentUpdater {
+pub trait CollectionUpdater {
     fn update(
         &self,
         op_num: SeqNumberType,

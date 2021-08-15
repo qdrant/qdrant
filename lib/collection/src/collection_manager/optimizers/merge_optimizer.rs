@@ -1,8 +1,8 @@
-use crate::config::CollectionParams;
-use crate::segment_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
-use crate::segment_manager::optimizers::segment_optimizer::{
+use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
+use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
+use crate::config::CollectionParams;
 use itertools::Itertools;
 use segment::types::{HnswConfig, SegmentType};
 use std::path::{Path, PathBuf};
@@ -88,8 +88,8 @@ impl SegmentOptimizer for MergeOptimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::segment_manager::fixtures::random_segment;
-    use crate::segment_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
+    use crate::collection_manager::fixtures::random_segment;
+    use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
     use parking_lot::RwLock;
     use segment::types::Distance;
     use std::sync::Arc;

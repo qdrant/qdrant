@@ -1,10 +1,10 @@
-use crate::config::CollectionParams;
-use crate::segment_manager::holders::segment_holder::{
+use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
-use crate::segment_manager::optimizers::segment_optimizer::{
+use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
+use crate::config::CollectionParams;
 use ordered_float::OrderedFloat;
 use segment::types::{HnswConfig, SegmentType};
 use std::path::{Path, PathBuf};
@@ -97,8 +97,8 @@ impl SegmentOptimizer for VacuumOptimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::segment_manager::fixtures::random_segment;
-    use crate::segment_manager::holders::segment_holder::SegmentHolder;
+    use crate::collection_manager::fixtures::random_segment;
+    use crate::collection_manager::holders::segment_holder::SegmentHolder;
     use itertools::Itertools;
     use parking_lot::RwLock;
     use rand::Rng;

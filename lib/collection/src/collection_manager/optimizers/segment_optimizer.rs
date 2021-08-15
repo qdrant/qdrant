@@ -1,9 +1,9 @@
-use crate::config::CollectionParams;
-use crate::operations::types::CollectionResult;
-use crate::segment_manager::holders::proxy_segment::ProxySegment;
-use crate::segment_manager::holders::segment_holder::{
+use crate::collection_manager::holders::proxy_segment::ProxySegment;
+use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
+use crate::config::CollectionParams;
+use crate::operations::types::CollectionResult;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::entry::entry_point::SegmentEntry;
@@ -127,16 +127,15 @@ pub trait SegmentOptimizer {
         let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let proxy_created_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
 
-        let optimizing_segments: Vec<_> = {
-            let read_segments = segments.read();
-            ids.iter()
-                .cloned()
-                .map(|id| read_segments.get(id))
-                .filter_map(|x| x.cloned())
-                .collect()
-        };
+        // Exclusive lock for the segments operations
+        let mut write_segments = segments.write();
 
-        let mut segment_builder = self.optimized_segment_builder(&optimizing_segments)?;
+        let optimizing_segments: Vec<_> = ids
+            .iter()
+            .cloned()
+            .map(|id| write_segments.get(id))
+            .filter_map(|x| x.cloned())
+            .collect();
 
         let proxies = optimizing_segments.iter().map(|sg| {
             ProxySegment::new(
@@ -148,13 +147,15 @@ pub trait SegmentOptimizer {
             )
         });
 
-        let proxy_ids: Vec<_> = {
-            let mut write_segments = segments.write();
-            proxies
-                .zip(ids.iter().cloned())
-                .map(|(proxy, idx)| write_segments.swap(proxy, &[idx], false).unwrap())
-                .collect()
-        };
+        let proxy_ids: Vec<_> = proxies
+            .zip(ids.iter().cloned())
+            .map(|(proxy, idx)| write_segments.swap(proxy, &[idx], false).unwrap())
+            .collect();
+
+        // Release segments lock
+        drop(write_segments);
+
+        let mut segment_builder = self.optimized_segment_builder(&optimizing_segments)?;
 
         // ---- SLOW PART -----
         for segment in optimizing_segments {

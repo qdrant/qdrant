@@ -1,5 +1,5 @@
-use crate::segment_manager::holders::segment_holder::SegmentHolder;
-use crate::segment_manager::simple_segment_searcher::SimpleSegmentSearcher;
+use crate::collection_manager::holders::segment_holder::SegmentHolder;
+use crate::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 use parking_lot::RwLock;
 use rand::Rng;
 use segment::entry::entry_point::SegmentEntry;
@@ -113,8 +113,8 @@ pub fn build_test_holder(path: &Path) -> SegmentHolder {
     holder
 }
 
-pub async fn build_searcher(path: &Path) -> SimpleSegmentSearcher {
+pub async fn build_searcher(path: &Path) -> SimpleCollectionSearcher {
     let segment_holder = build_test_holder(path);
 
-    SimpleSegmentSearcher::new(Arc::new(RwLock::new(segment_holder)), Handle::current())
+    SimpleCollectionSearcher::new(Arc::new(RwLock::new(segment_holder)), Handle::current())
 }
