@@ -1,5 +1,5 @@
 use std::cmp::min;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -155,16 +155,19 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
-    pub fn appendable_segments(&self) -> Vec<&LockedSegment> {
+    pub fn appendable_segments(&self) -> Vec<SegmentId> {
         self.segments
-            .values()
-            .filter(|x| x.get().read().is_appendable())
+            .iter()
+            .filter(|(_idx, seg)| seg.get().read().is_appendable())
+            .map(|(idx, _seg)| *idx)
             .collect()
     }
 
     pub fn random_appendable_segment(&self) -> Option<LockedSegment> {
-        let segments: Vec<_> = self.appendable_segments();
-        segments.choose(&mut rand::thread_rng()).cloned().cloned()
+        let segment_ids: Vec<_> = self.appendable_segments();
+        segment_ids
+            .choose(&mut rand::thread_rng())
+            .and_then(|idx| self.segments.get(idx).cloned())
     }
 
     /// Selects point ids, which is stored in this segment
@@ -201,10 +204,14 @@ impl<'s> SegmentHolder {
         mut f: F,
     ) -> OperationResult<usize>
     where
-        F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
+        F: FnMut(
+            PointIdType,
+            SegmentId,
+            &mut RwLockWriteGuard<dyn SegmentEntry>,
+        ) -> OperationResult<bool>,
     {
         let mut applied_points = 0;
-        for (_idx, segment) in self.segments.iter() {
+        for (idx, segment) in self.segments.iter() {
             // Skip this segment if it already have bigger version (WAL recovery related)
             if segment.get().read().version() > op_num {
                 continue;
@@ -215,7 +222,7 @@ impl<'s> SegmentHolder {
                 let segment_arc = segment.get();
                 let mut write_segment = segment_arc.write();
                 for point_id in segment_points {
-                    let is_applied = f(point_id, &mut write_segment)?;
+                    let is_applied = f(point_id, *idx, &mut write_segment)?;
                     applied_points += is_applied as usize;
                 }
             }
@@ -223,40 +230,50 @@ impl<'s> SegmentHolder {
         Ok(applied_points)
     }
 
-    /// Try to acquire write lock over random segment with increasing wait time
-    /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially
+    /// Try to acquire write lock over random segment with increasing wait time.
+    /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
     pub fn aloha_random_write<F>(
         &self,
-        segments: &[&LockedSegment],
+        segment_ids: &[SegmentId],
         mut apply: F,
     ) -> OperationResult<bool>
     where
-        F: FnMut(&mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
+        F: FnMut(SegmentId, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
     {
-        if segments.is_empty() {
+        if segment_ids.is_empty() {
             return Err(OperationError::ServiceError {
                 description: "No appendable segments exists, expected at least one".to_string(),
             });
         }
 
+        let mut entries: Vec<_> = Default::default();
+
         // Try to access each segment first without any timeout (fast)
-        for segment in segments {
-            match segment.get().try_write() {
-                None => {} // Just skip for now
-                Some(mut lock) => return apply(&mut lock),
-            }
+        for segment_id in segment_ids {
+            let segment_opt = self.segments.get(segment_id).map(|x| x.get());
+            match segment_opt {
+                None => {}
+                Some(segment_lock) => {
+                    match segment_lock.try_write() {
+                        None => {}
+                        Some(mut lock) => return apply(*segment_id, &mut lock),
+                    }
+                    // save segments for further lock attempts
+                    entries.push((*segment_id, segment_lock))
+                }
+            };
         }
 
         let mut rng = rand::thread_rng();
         let mut timeout = Duration::from_nanos(100);
         loop {
-            let locked_segment = segments.choose(&mut rng).unwrap().get();
-            let opt_segment_guard = locked_segment.try_write_for(timeout);
+            let (segment_id, segment_lock) = entries.choose(&mut rng).unwrap();
+            let opt_segment_guard = segment_lock.try_write_for(timeout);
 
             match opt_segment_guard {
                 None => timeout = timeout.mul(2), // Wait longer next time
                 Some(mut lock) => {
-                    return apply(&mut lock);
+                    return apply(*segment_id, &mut lock);
                 }
             }
         }
@@ -276,21 +293,33 @@ impl<'s> SegmentHolder {
         // Choose random appendable segment from this
         let appendable_segments = self.appendable_segments();
 
-        let applied_points = self.apply_points(op_num, ids, |point_id, write_segment| {
+        let mut processed_points: HashSet<(SegmentId, PointIdType)> = Default::default();
+
+        let applied_points = self.apply_points(op_num, ids, |point_id, idx, write_segment| {
+            // Skip point processing if it was moved from un-appendable segment and already processed
+            if processed_points.contains(&(idx, point_id)) {
+                return Ok(false);
+            }
+
             let is_applied = if write_segment.is_appendable() {
                 f(point_id, write_segment)?
             } else {
-                self.aloha_random_write(&appendable_segments, |appendable_write_segment| {
-                    let vector = write_segment.vector(point_id)?;
-                    let payload = write_segment.payload(point_id)?;
+                self.aloha_random_write(
+                    &appendable_segments,
+                    |appendable_idx, appendable_write_segment| {
+                        let vector = write_segment.vector(point_id)?;
+                        let payload = write_segment.payload(point_id)?;
 
-                    appendable_write_segment.upsert_point(op_num, point_id, &vector)?;
-                    appendable_write_segment.set_full_payload(op_num, point_id, payload)?;
+                        appendable_write_segment.upsert_point(op_num, point_id, &vector)?;
+                        appendable_write_segment.set_full_payload(op_num, point_id, payload)?;
 
-                    write_segment.delete_point(op_num, point_id)?;
+                        write_segment.delete_point(op_num, point_id)?;
 
-                    f(point_id, appendable_write_segment)
-                })?
+                        let res = f(point_id, appendable_write_segment);
+                        processed_points.insert((appendable_idx, point_id));
+                        res
+                    },
+                )?
             };
             Ok(is_applied)
         })?;
@@ -334,6 +363,7 @@ mod tests {
     use crate::collection_manager::fixtures::{build_segment_1, build_segment_2};
 
     use super::*;
+    use std::{thread, time};
 
     #[test]
     fn test_add_and_swap() {
@@ -351,6 +381,41 @@ mod tests {
         let segment3 = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
 
         let _sid3 = holder.swap(segment3, &vec![sid1, sid2], true).unwrap();
+    }
+
+    #[test]
+    fn test_aloha_locking() {
+        let dir = TempDir::new("segment_dir").unwrap();
+
+        let segment1 = build_segment_1(dir.path());
+        let segment2 = build_segment_2(dir.path());
+
+        let mut holder = SegmentHolder::default();
+
+        let sid1 = holder.add(segment1);
+        let sid2 = holder.add(segment2);
+
+        let locked_segment1 = holder.get(sid1).unwrap().get();
+        let locked_segment2 = holder.get(sid2).unwrap().clone();
+
+        let _read_lock_1 = locked_segment1.read();
+
+        let handler = thread::spawn(move || {
+            let lc = locked_segment2.get();
+            let _guard = lc.read();
+            thread::sleep(time::Duration::from_millis(100));
+        });
+
+        thread::sleep(time::Duration::from_millis(10));
+
+        holder
+            .aloha_random_write(&vec![sid1, sid2], |idx, _seg| {
+                assert_eq!(idx, sid2);
+                Ok(true)
+            })
+            .unwrap();
+
+        handler.join().unwrap();
     }
 
     #[test]

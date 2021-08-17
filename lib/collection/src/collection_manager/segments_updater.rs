@@ -28,7 +28,7 @@ impl SegmentsUpdater {
         op_num: SeqNumberType,
         ids: &[PointIdType],
     ) -> CollectionResult<usize> {
-        let res = segments.apply_points(op_num, ids, |id, write_segment| {
+        let res = segments.apply_points(op_num, ids, |id, _idx, write_segment| {
             write_segment.delete_point(op_num, id)
         })?;
         Ok(res)
