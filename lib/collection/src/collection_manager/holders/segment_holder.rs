@@ -87,6 +87,10 @@ impl<'s> SegmentHolder {
         self.segments.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.segments.is_empty()
+    }
+
     fn generate_new_key(&self) -> SegmentId {
         let key = thread_rng().gen::<SegmentId>();
         if self.segments.contains_key(&key) {

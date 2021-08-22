@@ -1,21 +1,21 @@
-use crate::actix::helpers::process_response;
+use std::sync::Arc;
+
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
+
 use collection::operations::types::SearchRequest;
 use segment::types::ScoredPoint;
-use std::sync::Arc;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
+
+use crate::actix::helpers::process_response;
 
 async fn do_search_points(
     toc: &TableOfContent,
     name: &str,
     request: SearchRequest,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
-    toc.get_collection(name)?
-        .search(Arc::new(request))
-        .await
-        .map_err(|err| err.into())
+    toc.search(name, request).await
 }
 
 #[post("/collections/{name}/points/search")]

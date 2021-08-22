@@ -4,19 +4,29 @@ use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 use std::sync::Arc;
 
-use collection::collection::Collection;
-use collection::collection_builder::build_collection;
-use collection::collection_builder::collection_loader::load_collection;
 use parking_lot::RwLock;
 use sled::transaction::UnabortableTransactionError;
 use sled::{Config, Db};
-use tokio::runtime::Handle;
+use tokio::runtime::Runtime;
+
+use collection::collection::Collection;
+use collection::collection_builder::build_collection;
+use collection::collection_builder::collection_loader::load_collection;
+use collection::config::CollectionParams;
+use collection::operations::config_diff::DiffConfig;
+use collection::operations::types::{
+    RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
+};
+use collection::operations::CollectionUpdateOperations;
+use segment::types::{PointIdType, ScoredPoint};
 
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::storage_ops::{AliasOperations, StorageOperations};
 use crate::types::StorageConfig;
-use collection::config::CollectionParams;
-use collection::operations::config_diff::DiffConfig;
+use collection::collection_manager::collection_managers::{CollectionSearcher, CollectionUpdater};
+use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
+use collection::collection_manager::simple_collection_updater::SimpleCollectionUpdater;
+use std::ops::Deref;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 #[allow(clippy::identity_op)]
@@ -27,18 +37,22 @@ const COLLECTIONS_DIR: &str = "collections";
 pub struct TableOfContent {
     collections: Arc<RwLock<HashMap<String, Arc<Collection>>>>,
     storage_config: StorageConfig,
-    search_runtime_handle: Handle,
+    search_runtime: Runtime,
     alias_persistence: Db,
+    segment_searcher: Box<dyn CollectionSearcher + Sync + Send>,
+    segment_updater: Arc<dyn CollectionUpdater + Sync + Send>,
 }
 
 impl TableOfContent {
-    pub fn new(storage_config: &StorageConfig, search_runtime_handle: Handle) -> Self {
+    pub fn new(storage_config: &StorageConfig, search_runtime: Runtime) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
 
         create_dir_all(&collections_path).expect("Can't create Collections directory");
 
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");
+
+        let segment_updater = Arc::new(SimpleCollectionUpdater::new());
 
         let mut collections: HashMap<String, Arc<Collection>> = Default::default();
 
@@ -53,8 +67,7 @@ impl TableOfContent {
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
 
-            let collection =
-                load_collection(collection_path.as_path(), search_runtime_handle.clone());
+            let collection = load_collection(collection_path.as_path(), segment_updater.clone());
 
             collections.insert(collection_name, Arc::new(collection));
         }
@@ -70,8 +83,10 @@ impl TableOfContent {
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: storage_config.clone(),
-            search_runtime_handle,
+            search_runtime,
             alias_persistence,
+            segment_searcher: Box::new(SimpleCollectionSearcher::new()),
+            segment_updater,
         }
     }
 
@@ -166,7 +181,6 @@ impl TableOfContent {
                     Path::new(&collection_path),
                     &wal_config,
                     &collection_params,
-                    self.search_runtime_handle.clone(),
                     &optimizers_config,
                     &hnsw_config,
                 )?;
@@ -196,8 +210,7 @@ impl TableOfContent {
                     {
                         // Wait for optimizer to finish.
                         // TODO: Enhance optimizer to shutdown faster
-                        let mut update_handler = removed.update_handler.lock();
-                        update_handler.wait_worker_stops().await?;
+                        removed.wait_update_worker_stops().await?;
                     }
                     let path = self.get_collection_path(&collection_name);
                     remove_dir_all(path).map_err(|err| StorageError::ServiceError {
@@ -269,6 +282,52 @@ impl TableOfContent {
         Ok(read_collection.get(&real_collection_name).unwrap().clone())
     }
 
+    pub async fn recommend(
+        &self,
+        collection_name: &str,
+        request: Arc<RecommendRequest>,
+    ) -> Result<Vec<ScoredPoint>, StorageError> {
+        let collection = self.get_collection(collection_name)?;
+        collection
+            .recommend_by(
+                request,
+                self.segment_searcher.deref(),
+                self.search_runtime.handle(),
+            )
+            .await
+            .map_err(|err| err.into())
+    }
+
+    pub async fn search(
+        &self,
+        collection_name: &str,
+        request: SearchRequest,
+    ) -> Result<Vec<ScoredPoint>, StorageError> {
+        let collection = self.get_collection(collection_name)?;
+        self.segment_searcher
+            .search(
+                collection.segments(),
+                Arc::new(request),
+                self.search_runtime.handle(),
+            )
+            .await
+            .map_err(|err| err.into())
+    }
+
+    pub async fn retrieve(
+        &self,
+        collection_name: &str,
+        points: &[PointIdType],
+        with_payload: bool,
+        with_vector: bool,
+    ) -> Result<Vec<Record>, StorageError> {
+        let collection = self.get_collection(collection_name)?;
+        self.segment_searcher
+            .retrieve(collection.segments(), points, with_payload, with_vector)
+            .await
+            .map_err(|err| err.into())
+    }
+
     /// List of all collections
     pub fn all_collections(&self) -> Vec<String> {
         self.collections.read().keys().cloned().collect()
@@ -286,5 +345,30 @@ impl TableOfContent {
             }
         }
         Ok(result)
+    }
+
+    pub async fn scroll(
+        &self,
+        collection_name: &str,
+        request: ScrollRequest,
+    ) -> Result<ScrollResult, StorageError> {
+        let collection = self.get_collection(collection_name)?;
+        collection
+            .scroll_by(request, self.segment_searcher.deref())
+            .await
+            .map_err(|err| err.into())
+    }
+
+    pub async fn update(
+        &self,
+        collection_name: &str,
+        operation: CollectionUpdateOperations,
+        wait: bool,
+    ) -> Result<UpdateResult, StorageError> {
+        let collection = self.get_collection(collection_name)?;
+        collection
+            .update_by(operation, wait, self.segment_updater.clone())
+            .await
+            .map_err(|err| err.into())
     }
 }

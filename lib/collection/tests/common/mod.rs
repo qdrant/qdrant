@@ -4,7 +4,6 @@ use collection::collection_builder::optimizers_builder::OptimizersConfig;
 use collection::config::{CollectionParams, WalConfig};
 use segment::types::Distance;
 use std::path::Path;
-use tokio::runtime::Handle;
 
 pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
@@ -32,7 +31,6 @@ pub async fn simple_collection_fixture(collection_path: &Path) -> Collection {
         collection_path,
         &wal_config,
         &collection_params,
-        Handle::current(),
         &TEST_OPTIMIZERS_CONFIG,
         &Default::default(),
     )

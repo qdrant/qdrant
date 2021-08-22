@@ -1,18 +1,18 @@
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread;
 
 use crossbeam_channel::Sender;
+use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
-use std::thread;
-use tokio::runtime::Runtime;
+use tokio::runtime::{Handle, Runtime};
 
-use segment::types::Condition;
-use segment::types::Filter;
 use segment::types::{
-    HasIdCondition, PayloadKeyType, PayloadSchemaInfo, PointIdType, ScoredPoint, SegmentType,
-    VectorElementType,
+    Condition, Filter, HasIdCondition, PayloadKeyType, PayloadSchemaInfo, PointIdType, ScoredPoint,
+    SegmentType, VectorElementType,
 };
 
 use crate::collection_builder::optimizers_builder::build_optimizers;
@@ -21,7 +21,7 @@ use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CollectionStatus, RecommendRequest, Record,
+    CollectionError, CollectionInfo, CollectionResult, CollectionStatus, RecommendRequest,
     ScrollRequest, ScrollResult, SearchRequest, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
@@ -29,33 +29,56 @@ use crate::update_handler::{UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 
 pub struct Collection {
-    pub segments: Arc<RwLock<SegmentHolder>>,
-    pub config: Arc<RwLock<CollectionConfig>>,
-    pub wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-    pub searcher: Arc<dyn CollectionSearcher + Sync + Send>,
-    pub update_handler: Arc<Mutex<UpdateHandler>>,
-    pub updater: Arc<dyn CollectionUpdater + Sync + Send>,
-    pub runtime_handle: Option<Runtime>,
-    pub update_sender: Sender<UpdateSignal>,
-    pub path: PathBuf,
+    segments: Arc<RwLock<SegmentHolder>>,
+    config: Arc<RwLock<CollectionConfig>>,
+    wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+    update_handler: Arc<Mutex<UpdateHandler>>,
+    runtime_handle: Option<Runtime>,
+    update_sender: Sender<UpdateSignal>,
+    path: PathBuf,
 }
 
 /// Collection holds information about segments and WAL.
 impl Collection {
+    pub fn new(
+        segments: Arc<RwLock<SegmentHolder>>,
+        config: CollectionConfig,
+        wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+        update_handler: UpdateHandler,
+        runtime_handle: Runtime,
+        update_sender: Sender<UpdateSignal>,
+        path: PathBuf,
+    ) -> Self {
+        Self {
+            segments,
+            config: Arc::new(RwLock::new(config)),
+            wal,
+            update_handler: Arc::new(Mutex::new(update_handler)),
+            runtime_handle: Some(runtime_handle),
+            update_sender,
+            path,
+        }
+    }
+
+    pub fn segments(&self) -> &RwLock<SegmentHolder> {
+        self.segments.deref()
+    }
+
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
-    pub async fn update(
+    pub async fn update_by(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        segment_updater: Arc<dyn CollectionUpdater + Send + Sync>,
     ) -> CollectionResult<UpdateResult> {
         let operation_id = self.wal.lock().write(&operation)?;
 
-        let upd = self.updater.clone();
         let sndr = self.update_sender.clone();
+        let segments = self.segments.clone();
         let update_future = async move {
-            let res = upd.update(operation_id, operation);
+            let res = segment_updater.update(segments.deref(), operation_id, operation);
             sndr.send(UpdateSignal::Operation(operation_id))?;
             res
         };
@@ -87,43 +110,11 @@ impl Collection {
         }
     }
 
-    pub fn info(&self) -> CollectionResult<CollectionInfo> {
-        let segments = self.segments.read();
-        let mut vectors_count = 0;
-        let mut segments_count = 0;
-        let mut ram_size = 0;
-        let mut disk_size = 0;
-        let mut status = CollectionStatus::Green;
-        let mut schema: HashMap<PayloadKeyType, PayloadSchemaInfo> = Default::default();
-        for (_idx, segment) in segments.iter() {
-            segments_count += 1;
-            let segment_info = segment.get().read().info();
-            if segment_info.segment_type == SegmentType::Special {
-                status = CollectionStatus::Yellow;
-            }
-            vectors_count += segment_info.num_vectors;
-            disk_size += segment_info.disk_usage_bytes;
-            ram_size += segment_info.ram_usage_bytes;
-            for (key, val) in segment_info.schema.into_iter() {
-                schema.insert(key, val);
-            }
-        }
-        Ok(CollectionInfo {
-            status,
-            vectors_count,
-            segments_count,
-            disk_data_size: disk_size,
-            ram_data_size: ram_size,
-            config: self.config.read().clone(),
-            payload_schema: schema,
-        })
-    }
-
-    pub async fn search(&self, request: Arc<SearchRequest>) -> CollectionResult<Vec<ScoredPoint>> {
-        self.searcher.search(request).await
-    }
-
-    pub async fn scroll(&self, request: Arc<ScrollRequest>) -> CollectionResult<ScrollResult> {
+    pub async fn scroll_by(
+        &self,
+        request: ScrollRequest,
+        segment_searcher: &(dyn CollectionSearcher),
+    ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequest::default();
 
         let offset = request
@@ -140,8 +131,8 @@ impl Collection {
             .unwrap_or_else(|| default_request.with_vector.unwrap());
 
         // ToDo: Make faster points selection with a set
-        let point_ids = self
-            .segments
+        let segments = self.segments();
+        let point_ids = segments
             .read()
             .iter()
             .map(|(_, segment)| {
@@ -157,7 +148,9 @@ impl Collection {
             .take(limit)
             .collect_vec();
 
-        let mut points = self.retrieve(&point_ids, with_payload, with_vector).await?;
+        let mut points = segment_searcher
+            .retrieve(segments, &point_ids, with_payload, with_vector)
+            .await?;
         points.sort_by_key(|point| point.id);
 
         let next_page_offset = if point_ids.len() < limit {
@@ -172,54 +165,13 @@ impl Collection {
         })
     }
 
-    pub async fn retrieve(
-        &self,
-        points: &[PointIdType],
-        with_payload: bool,
-        with_vector: bool,
-    ) -> CollectionResult<Vec<Record>> {
-        self.searcher
-            .retrieve(points, with_payload, with_vector)
-            .await
-    }
-
-    pub fn stop(&self) -> CollectionResult<()> {
-        self.update_sender.send(UpdateSignal::Stop)?;
-        Ok(())
-    }
-
-    pub fn flush_all(&self) -> CollectionResult<()> {
-        self.segments.read().flush_all()?;
-        Ok(())
-    }
-
-    fn avg_vectors<'a>(
-        vectors: impl Iterator<Item = &'a Vec<VectorElementType>>,
-    ) -> Vec<VectorElementType> {
-        let mut count: usize = 0;
-        let mut avg_vector: Vec<VectorElementType> = vec![];
-        for vector in vectors {
-            count += 1;
-            for i in 0..vector.len() {
-                if i >= avg_vector.len() {
-                    avg_vector.push(vector[i])
-                } else {
-                    avg_vector[i] += vector[i];
-                }
-            }
-        }
-
-        for item in &mut avg_vector {
-            *item /= count as VectorElementType;
-        }
-
-        avg_vector
-    }
-
-    pub async fn recommend(
+    pub async fn recommend_by(
         &self,
         request: Arc<RecommendRequest>,
+        segment_searcher: &(dyn CollectionSearcher),
+        search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
+        let segments = self.segments();
         if request.positive.is_empty() {
             return Err(CollectionError::BadRequest {
                 description: "At least one positive vector ID required".to_owned(),
@@ -233,7 +185,9 @@ impl Collection {
             .cloned()
             .collect_vec();
 
-        let vectors = self.retrieve(&reference_vectors_ids, false, true).await?;
+        let vectors = segment_searcher
+            .retrieve(segments, &reference_vectors_ids, false, true)
+            .await?;
         let vectors_map: HashMap<PointIdType, Vec<VectorElementType>> = vectors
             .into_iter()
             .map(|rec| (rec.id, rec.vector.unwrap()))
@@ -288,7 +242,69 @@ impl Collection {
             top: request.top,
         };
 
-        self.search(Arc::new(search_request)).await
+        segment_searcher
+            .search(segments, Arc::new(search_request), search_runtime_handle)
+            .await
+    }
+
+    pub fn info(&self) -> CollectionResult<CollectionInfo> {
+        let segments = self.segments.read();
+        let mut vectors_count = 0;
+        let mut segments_count = 0;
+        let mut ram_size = 0;
+        let mut disk_size = 0;
+        let mut status = CollectionStatus::Green;
+        let mut schema: HashMap<PayloadKeyType, PayloadSchemaInfo> = Default::default();
+        for (_idx, segment) in segments.iter() {
+            segments_count += 1;
+            let segment_info = segment.get().read().info();
+            if segment_info.segment_type == SegmentType::Special {
+                status = CollectionStatus::Yellow;
+            }
+            vectors_count += segment_info.num_vectors;
+            disk_size += segment_info.disk_usage_bytes;
+            ram_size += segment_info.ram_usage_bytes;
+            for (key, val) in segment_info.schema.into_iter() {
+                schema.insert(key, val);
+            }
+        }
+        Ok(CollectionInfo {
+            status,
+            vectors_count,
+            segments_count,
+            disk_data_size: disk_size,
+            ram_data_size: ram_size,
+            config: self.config.read().clone(),
+            payload_schema: schema,
+        })
+    }
+
+    pub fn stop(&self) -> CollectionResult<()> {
+        self.update_sender.send(UpdateSignal::Stop)?;
+        Ok(())
+    }
+
+    pub fn avg_vectors<'a>(
+        vectors: impl Iterator<Item = &'a Vec<VectorElementType>>,
+    ) -> Vec<VectorElementType> {
+        let mut count: usize = 0;
+        let mut avg_vector: Vec<VectorElementType> = vec![];
+        for vector in vectors {
+            count += 1;
+            for i in 0..vector.len() {
+                if i >= avg_vector.len() {
+                    avg_vector.push(vector[i])
+                } else {
+                    avg_vector[i] += vector[i];
+                }
+            }
+        }
+
+        for item in &mut avg_vector {
+            *item /= count as VectorElementType;
+        }
+
+        avg_vector
     }
 
     /// Updates collection optimization params:
@@ -320,6 +336,30 @@ impl Collection {
         self.update_sender.send(UpdateSignal::Nop)?;
 
         Ok(())
+    }
+
+    pub async fn wait_update_worker_stops(&self) -> CollectionResult<()> {
+        let mut update_handler = self.update_handler.lock();
+        update_handler.wait_worker_stops().await
+    }
+
+    pub fn load_from_wal(&self, segment_updater: Arc<dyn CollectionUpdater>) {
+        let wal = self.wal.lock();
+        let bar = ProgressBar::new(wal.len());
+        bar.set_message("Recovering collection");
+        let segments = self.segments();
+        for (op_num, update) in wal.read_all() {
+            // Panic only in case of internal error. If wrong formatting - skip
+            if let Err(CollectionError::ServiceError { error }) =
+                segment_updater.update(segments, op_num, update)
+            {
+                panic!("Can't apply WAL operation: {}", error)
+            }
+            bar.inc(1);
+        }
+
+        self.segments.read().flush_all().unwrap();
+        bar.finish();
     }
 }
 
