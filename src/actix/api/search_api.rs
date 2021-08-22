@@ -27,7 +27,12 @@ pub async fn search_points(
     let collection_name = path.into_inner();
     let timing = Instant::now();
 
-    let response = do_search_points(toc.into_inner().as_ref(), &collection_name, request.into_inner()).await;
+    let response = do_search_points(
+        toc.into_inner().as_ref(),
+        &collection_name,
+        request.into_inner(),
+    )
+    .await;
 
     process_response(response, timing)
 }

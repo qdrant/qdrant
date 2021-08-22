@@ -32,7 +32,8 @@ async fn do_get_points(
     collection_name: &str,
     request: PointRequest,
 ) -> Result<Vec<Record>, StorageError> {
-    toc.retrieve(collection_name, &request.ids, true, true).await
+    toc.retrieve(collection_name, &request.ids, true, true)
+        .await
 }
 
 async fn scroll_get_points(
@@ -74,7 +75,12 @@ pub async fn get_points(
     let collection_name = path.into_inner();
     let timing = Instant::now();
 
-    let response = do_get_points(toc.into_inner().as_ref(), &collection_name, request.into_inner()).await;
+    let response = do_get_points(
+        toc.into_inner().as_ref(),
+        &collection_name,
+        request.into_inner(),
+    )
+    .await;
     process_response(response, timing)
 }
 
@@ -87,6 +93,11 @@ pub async fn scroll_points(
     let collection_name = path.into_inner();
     let timing = Instant::now();
 
-    let response = scroll_get_points(toc.into_inner().as_ref(), &collection_name, request.into_inner()).await;
+    let response = scroll_get_points(
+        toc.into_inner().as_ref(),
+        &collection_name,
+        request.into_inner(),
+    )
+    .await;
     process_response(response, timing)
 }
