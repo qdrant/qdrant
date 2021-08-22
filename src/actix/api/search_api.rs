@@ -12,10 +12,10 @@ use crate::actix::helpers::process_response;
 
 async fn do_search_points(
     toc: &TableOfContent,
-    name: &str,
+    collection_name: &str,
     request: SearchRequest,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
-    toc.search(name, request).await
+    toc.search(collection_name, request).await
 }
 
 #[post("/collections/{name}/points/search")]
@@ -24,10 +24,10 @@ pub async fn search_points(
     path: web::Path<String>,
     request: web::Json<SearchRequest>,
 ) -> impl Responder {
-    let name = path.into_inner();
+    let collection_name = path.into_inner();
     let timing = Instant::now();
 
-    let response = do_search_points(toc.into_inner().as_ref(), &name, request.into_inner()).await;
+    let response = do_search_points(toc.into_inner().as_ref(), &collection_name, request.into_inner()).await;
 
     process_response(response, timing)
 }

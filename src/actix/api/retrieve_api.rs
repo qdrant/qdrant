@@ -19,28 +19,28 @@ pub struct PointRequest {
 
 async fn do_get_point(
     toc: &TableOfContent,
-    name: &str,
+    collection_name: &str,
     point_id: PointIdType,
 ) -> Result<Option<Record>, StorageError> {
-    toc.retrieve(name, &[point_id], true, true)
+    toc.retrieve(collection_name, &[point_id], true, true)
         .await
         .map(|points| points.into_iter().next())
 }
 
 async fn do_get_points(
     toc: &TableOfContent,
-    name: &str,
+    collection_name: &str,
     request: PointRequest,
 ) -> Result<Vec<Record>, StorageError> {
-    toc.retrieve(name, &request.ids, true, true).await
+    toc.retrieve(collection_name, &request.ids, true, true).await
 }
 
 async fn scroll_get_points(
     toc: &TableOfContent,
-    name: &str,
+    collection_name: &str,
     request: ScrollRequest,
 ) -> Result<ScrollResult, StorageError> {
-    toc.scroll(name, request).await
+    toc.scroll(collection_name, request).await
 }
 
 #[get("/collections/{name}/points/{id}")]
@@ -48,10 +48,10 @@ pub async fn get_point(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<(String, PointIdType)>,
 ) -> impl Responder {
-    let (name, point_id) = path.into_inner();
+    let (collection_name, point_id) = path.into_inner();
     let timing = Instant::now();
 
-    let response = do_get_point(toc.into_inner().as_ref(), &name, point_id).await;
+    let response = do_get_point(toc.into_inner().as_ref(), &collection_name, point_id).await;
 
     let response = match response {
         Ok(record) => match record {
@@ -71,10 +71,10 @@ pub async fn get_points(
     path: web::Path<String>,
     request: web::Json<PointRequest>,
 ) -> impl Responder {
-    let name = path.into_inner();
+    let collection_name = path.into_inner();
     let timing = Instant::now();
 
-    let response = do_get_points(toc.into_inner().as_ref(), &name, request.into_inner()).await;
+    let response = do_get_points(toc.into_inner().as_ref(), &collection_name, request.into_inner()).await;
     process_response(response, timing)
 }
 
@@ -84,9 +84,9 @@ pub async fn scroll_points(
     path: web::Path<String>,
     request: web::Json<ScrollRequest>,
 ) -> impl Responder {
-    let name = path.into_inner();
+    let collection_name = path.into_inner();
     let timing = Instant::now();
 
-    let response = scroll_get_points(toc.into_inner().as_ref(), &name, request.into_inner()).await;
+    let response = scroll_get_points(toc.into_inner().as_ref(), &collection_name, request.into_inner()).await;
     process_response(response, timing)
 }

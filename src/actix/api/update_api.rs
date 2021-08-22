@@ -17,11 +17,11 @@ pub struct UpdateParam {
 
 async fn do_update_points(
     toc: &TableOfContent,
-    name: &str,
+    collection_name: &str,
     operation: CollectionUpdateOperations,
     wait: bool,
 ) -> Result<UpdateResult, StorageError> {
-    toc.update(name, operation, wait).await
+    toc.update(collection_name, operation, wait).await
 }
 
 #[post("/collections/{name}")]
@@ -31,11 +31,11 @@ pub async fn update_points(
     operation: web::Json<CollectionUpdateOperations>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
-    let name = path.into_inner();
+    let collection_name = path.into_inner();
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
     let timing = Instant::now();
 
-    let response = do_update_points(toc.into_inner().as_ref(), &name, operation, wait).await;
+    let response = do_update_points(toc.into_inner().as_ref(), &collection_name, operation, wait).await;
     process_response(response, timing)
 }
