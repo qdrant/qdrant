@@ -130,6 +130,12 @@ impl Collection {
             .with_vector
             .unwrap_or_else(|| default_request.with_vector.unwrap());
 
+        if limit == 0 {
+            return Err(CollectionError::BadRequest {
+                description: "Limit cannot be 0".to_string(),
+            });
+        }
+
         // ToDo: Make faster points selection with a set
         let segments = self.segments();
         let point_ids = segments
