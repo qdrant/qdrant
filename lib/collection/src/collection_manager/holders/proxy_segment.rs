@@ -268,6 +268,13 @@ impl SegmentEntry for ProxySegment {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment.get().read().vector(point_id)
         } else {
+            {
+                let write_segment = self.write_segment.get();
+                let segment_guard = write_segment.read();
+                if segment_guard.has_point(point_id) {
+                    return segment_guard.vector(point_id);
+                }
+            }
             self.wrapped_segment.get().read().vector(point_id)
         };
     }
@@ -279,6 +286,13 @@ impl SegmentEntry for ProxySegment {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment.get().read().payload(point_id)
         } else {
+            {
+                let write_segment = self.write_segment.get();
+                let segment_guard = write_segment.read();
+                if segment_guard.has_point(point_id) {
+                    return segment_guard.payload(point_id);
+                }
+            }
             self.wrapped_segment.get().read().payload(point_id)
         };
     }
@@ -297,7 +311,7 @@ impl SegmentEntry for ProxySegment {
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType> {
         let deleted_points = self.deleted_points.read();
-        if deleted_points.is_empty() {
+        let mut read_points = if deleted_points.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
@@ -308,14 +322,23 @@ impl SegmentEntry for ProxySegment {
                 .get()
                 .read()
                 .read_filtered(offset, limit, Some(&wrapped_filter))
-        }
+        };
+        let mut write_segment_points = self
+            .write_segment
+            .get()
+            .read()
+            .read_filtered(offset, limit, filter);
+        read_points.append(&mut write_segment_points);
+        read_points.sort_unstable();
+        read_points
     }
 
     fn has_point(&self, point_id: PointIdType) -> bool {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment.get().read().has_point(point_id)
         } else {
-            self.wrapped_segment.get().read().has_point(point_id)
+            self.write_segment.get().read().has_point(point_id)
+                || self.wrapped_segment.get().read().has_point(point_id)
         };
     }
 
