@@ -1,18 +1,20 @@
+mod api;
+pub mod proto;
+
+use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
+
+use tokio::runtime;
 use tonic::{transport::Server, Request, Response, Status};
+
+use proto::collections_server::CollectionsServer;
+use proto::qdrant_server::{Qdrant, QdrantServer};
+use proto::{HealthCheckReply, HealthCheckRequest};
+use storage::content_manager::toc::TableOfContent;
 
 use crate::common::models::VersionInfo;
 use crate::settings::Settings;
-
-use proto::qdrant_server::{Qdrant, QdrantServer};
-use proto::{HealthCheckReply, HealthCheckRequest};
-use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
-use storage::content_manager::toc::TableOfContent;
-use tokio::runtime;
-
-pub mod proto {
-    tonic::include_proto!("qdrant");
-}
+use crate::tonic::api::collections_api::CollectionsService;
 
 #[derive(Default)]
 pub struct QdrantService {}
@@ -36,7 +38,7 @@ impl Qdrant for QdrantService {
     }
 }
 
-pub fn init(_toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()> {
+pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()> {
     let tonic_runtime = runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
@@ -49,11 +51,13 @@ pub fn init(_toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()
             ));
 
             let service = QdrantService::default();
+            let collections_service = CollectionsService::new(toc.clone());
 
             info!("qdrant grpc listening on {}", settings.service.grpc_port);
 
             Server::builder()
                 .add_service(QdrantServer::new(service))
+                .add_service(CollectionsServer::new(collections_service))
                 .serve(socket)
                 .await
         })

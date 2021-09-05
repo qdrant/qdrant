@@ -17,3 +17,68 @@ message HealthCheckReply {
   string title = 1;
   string version = 2;
 }
+
+
+// ==== Collections API ====
+
+service Collections {
+  rpc UpdateCollections (StorageOperations) returns (UpdateCollectionsResponse) {}
+}
+
+
+enum Distance {
+  Cosine = 0;
+  Euclid = 1;
+  Dot = 2;
+}
+
+message HnswConfigDiff {
+  optional uint64 m = 1;
+  optional uint64 ef_construct = 2;
+  optional uint64 full_scan_threshold = 3;
+}
+
+message WalConfigDiff {
+  optional uint64 wal_capacity_mb = 1;
+  optional uint64 wal_segments_ahead = 2;
+}
+
+message OptimizersConfigDiff {
+    optional double deleted_threshold = 1;
+    optional uint64 vacuum_min_vector_number = 2;
+    optional uint64 max_segment_number = 3;
+    optional uint64 memmap_threshold = 4;
+    optional uint64 indexing_threshold = 5;
+    optional uint64 payload_indexing_threshold = 6;
+    optional uint64 flush_interval_sec = 7;
+}
+
+message CreateCollection {
+  string name = 1;
+  uint64 vector_size = 2;
+  Distance distance = 3;
+  optional HnswConfigDiff hnsw_config = 4;
+  optional WalConfigDiff wal_config = 5;
+  optional OptimizersConfigDiff optimizers_config = 6;
+}
+
+message UpdateCollection {
+  string name = 1;
+  optional OptimizersConfigDiff optimizers_config = 2;
+}
+
+message DeleteCollection {
+  string name = 1;
+}
+
+message StorageOperations {
+  optional CreateCollection create_collection = 1;
+  optional UpdateCollection update_collection = 2;
+  optional DeleteCollection delete_collection = 3;
+}
+
+message UpdateCollectionsResponse {
+  optional bool result = 1;
+  optional string error = 2;
+  double time = 3;
+}

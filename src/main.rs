@@ -27,10 +27,15 @@ fn main() -> std::io::Result<()> {
     let runtime = create_search_runtime(settings.storage.performance.max_search_threads)
         .expect("Can't create runtime.");
 
+    let runtime_handle = runtime.handle().clone();
+
     let toc = TableOfContent::new(&settings.storage, runtime);
-    for collection in toc.all_collections() {
-        info!("loaded collection: {}", collection);
-    }
+    runtime_handle.block_on(async {
+        for collection in toc.all_collections().await {
+            info!("loaded collection: {}", collection);
+        }
+    });
+
     let toc_arc = Arc::new(toc);
 
     let mut handles: Vec<JoinHandle<Result<(), Error>>> = vec![];
