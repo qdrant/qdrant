@@ -33,3 +33,24 @@ Expected response:
   "version": "<vesion>"
 }
 ```
+
+## Create collection
+First - let's create a collection with dot-production metric.
+```bash
+grpcurl -plaintext -import-path ./src/tonic/proto -proto qdrant.proto -d '{
+        "create_collection": {
+            "name": "test_collection",
+            "vector_size": 4,
+            "distance": "Dot"
+        }
+    }' \
+[::]:6334 qdrant.Collections/UpdateCollections
+```
+
+Expected response:
+```json
+{
+  "result": true,
+  "time": 0.482865481
+}
+```

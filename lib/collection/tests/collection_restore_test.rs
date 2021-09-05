@@ -38,7 +38,7 @@ async fn test_collection_reloading() {
     }
 
     let collection = load_collection(collection_dir.path(), updater.clone());
-    assert_eq!(collection.info().unwrap().vectors_count, 2)
+    assert_eq!(collection.info().await.unwrap().vectors_count, 2)
 }
 
 #[tokio::test]

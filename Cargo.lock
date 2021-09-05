@@ -1877,6 +1877,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-derive"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "876a53fff98e03a936a674b29568b0e605f06b29372c2489ff4de23f1949743d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "num-format"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2249,6 +2260,7 @@ dependencies = [
  "env_logger 0.7.1",
  "itertools 0.9.0",
  "log 0.4.14",
+ "num-traits 0.2.14",
  "num_cpus",
  "parking_lot",
  "prost",
@@ -2694,6 +2706,7 @@ dependencies = [
  "lru",
  "memmap 0.7.0",
  "ndarray",
+ "num-derive",
  "num-traits 0.2.14",
  "openblas-src",
  "ordered-float",

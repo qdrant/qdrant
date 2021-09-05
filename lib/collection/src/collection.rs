@@ -30,9 +30,9 @@ use crate::wal::SerdeWal;
 
 pub struct Collection {
     segments: Arc<RwLock<SegmentHolder>>,
-    config: Arc<RwLock<CollectionConfig>>,
+    config: Arc<tokio::sync::RwLock<CollectionConfig>>,
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-    update_handler: Arc<Mutex<UpdateHandler>>,
+    update_handler: Arc<tokio::sync::Mutex<UpdateHandler>>,
     runtime_handle: Option<Runtime>,
     update_sender: Sender<UpdateSignal>,
     path: PathBuf,
@@ -51,9 +51,9 @@ impl Collection {
     ) -> Self {
         Self {
             segments,
-            config: Arc::new(RwLock::new(config)),
+            config: Arc::new(tokio::sync::RwLock::new(config)),
             wal,
-            update_handler: Arc::new(Mutex::new(update_handler)),
+            update_handler: Arc::new(tokio::sync::Mutex::new(update_handler)),
             runtime_handle: Some(runtime_handle),
             update_sender,
             path,
@@ -253,7 +253,7 @@ impl Collection {
             .await
     }
 
-    pub fn info(&self) -> CollectionResult<CollectionInfo> {
+    pub async fn info(&self) -> CollectionResult<CollectionInfo> {
         let segments = self.segments.read();
         let mut vectors_count = 0;
         let mut segments_count = 0;
@@ -280,7 +280,7 @@ impl Collection {
             segments_count,
             disk_data_size: disk_size,
             ram_data_size: ram_size,
-            config: self.config.read().clone(),
+            config: self.config.read().await.clone(),
             payload_schema: schema,
         })
     }
@@ -322,12 +322,12 @@ impl Collection {
         optimizer_config_diff: OptimizersConfigDiff,
     ) -> CollectionResult<()> {
         {
-            let mut config = self.config.write();
+            let mut config = self.config.write().await;
             config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
             config.save(self.path.as_path())?;
         }
-        let config = self.config.read();
-        let mut update_handler = self.update_handler.lock();
+        let config = self.config.read().await;
+        let mut update_handler = self.update_handler.lock().await;
         self.stop()?;
         update_handler.wait_worker_stops().await?;
         let new_optimizers = build_optimizers(
@@ -345,7 +345,7 @@ impl Collection {
     }
 
     pub async fn wait_update_worker_stops(&self) -> CollectionResult<()> {
-        let mut update_handler = self.update_handler.lock();
+        let mut update_handler = self.update_handler.lock().await;
         update_handler.wait_worker_stops().await
     }
 

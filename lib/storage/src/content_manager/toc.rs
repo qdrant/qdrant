@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 use std::sync::Arc;
 
-use parking_lot::RwLock;
 use sled::transaction::UnabortableTransactionError;
 use sled::{Config, Db};
 use tokio::runtime::Runtime;
+use tokio::sync::RwLock;
 
 use collection::collection::Collection;
 use collection::collection_builder::build_collection;
@@ -109,8 +109,11 @@ impl TableOfContent {
         Ok(path)
     }
 
-    fn validate_collection_not_exists(&self, collection_name: &str) -> Result<(), StorageError> {
-        if self.is_collection_exists(collection_name) {
+    async fn validate_collection_not_exists(
+        &self,
+        collection_name: &str,
+    ) -> Result<(), StorageError> {
+        if self.is_collection_exists(collection_name).await {
             return Err(StorageError::BadInput {
                 description: format!("Collection `{}` already exists!", collection_name),
             });
@@ -118,8 +121,8 @@ impl TableOfContent {
         Ok(())
     }
 
-    fn validate_collection_exists(&self, collection_name: &str) -> Result<(), StorageError> {
-        if !self.is_collection_exists(collection_name) {
+    async fn validate_collection_exists(&self, collection_name: &str) -> Result<(), StorageError> {
+        if !self.is_collection_exists(collection_name).await {
             return Err(StorageError::BadInput {
                 description: format!("Collection `{}` doesn't exist!", collection_name),
             });
@@ -127,19 +130,19 @@ impl TableOfContent {
         Ok(())
     }
 
-    fn resolve_name(&self, collection_name: &str) -> Result<String, StorageError> {
+    async fn resolve_name(&self, collection_name: &str) -> Result<String, StorageError> {
         let alias_collection_name = self.alias_persistence.get(collection_name.as_bytes())?;
 
         let resolved_name = match alias_collection_name {
             None => collection_name.to_string(),
             Some(resolved_alias) => from_utf8(&resolved_alias).unwrap().to_string(),
         };
-        self.validate_collection_exists(&resolved_name)?;
+        self.validate_collection_exists(&resolved_name).await?;
         Ok(resolved_name)
     }
 
-    pub fn is_collection_exists(&self, collection_name: &str) -> bool {
-        self.collections.read().contains_key(collection_name)
+    pub async fn is_collection_exists(&self, collection_name: &str) -> bool {
+        self.collections.read().await.contains_key(collection_name)
     }
 
     pub async fn perform_collection_operation(
@@ -155,7 +158,8 @@ impl TableOfContent {
                 wal_config: wal_config_diff,
                 optimizers_config: optimizers_config_diff,
             } => {
-                self.validate_collection_not_exists(&collection_name)?;
+                self.validate_collection_not_exists(&collection_name)
+                    .await?;
                 let collection_path = self.create_collection_path(&collection_name)?;
 
                 let collection_params = CollectionParams {
@@ -185,7 +189,7 @@ impl TableOfContent {
                     &hnsw_config,
                 )?;
 
-                let mut write_collections = self.collections.write();
+                let mut write_collections = self.collections.write().await;
                 write_collections.insert(collection_name, Arc::new(collection));
                 Ok(true)
             }
@@ -193,10 +197,10 @@ impl TableOfContent {
                 name,
                 optimizers_config,
             } => {
-                let collection = self.get_collection(&name)?;
                 match optimizers_config {
                     None => {}
                     Some(new_optimizers_config) => {
+                        let collection = self.get_collection(&name).await?;
                         collection
                             .update_optimizer_params(new_optimizers_config)
                             .await?
@@ -205,7 +209,7 @@ impl TableOfContent {
                 Ok(true)
             }
             StorageOperations::DeleteCollection(collection_name) => {
-                if let Some(removed) = self.collections.write().remove(&collection_name) {
+                if let Some(removed) = self.collections.write().await.remove(&collection_name) {
                     removed.stop()?;
                     {
                         // Wait for optimizer to finish.
@@ -225,15 +229,15 @@ impl TableOfContent {
                 }
             }
             StorageOperations::ChangeAliases { actions } => {
-                let _collection_lock = self.collections.write(); // Make alias change atomic
+                let _collection_lock = self.collections.write().await; // Make alias change atomic
                 for action in actions {
                     match action {
                         AliasOperations::CreateAlias {
                             collection_name,
                             alias_name,
                         } => {
-                            self.validate_collection_exists(&collection_name)?;
-                            self.validate_collection_not_exists(&alias_name)?;
+                            self.validate_collection_exists(&collection_name).await?;
+                            self.validate_collection_not_exists(&alias_name).await?;
 
                             self.alias_persistence
                                 .insert(alias_name.as_bytes(), collection_name.as_bytes())?;
@@ -275,9 +279,12 @@ impl TableOfContent {
         }
     }
 
-    pub fn get_collection(&self, collection_name: &str) -> Result<Arc<Collection>, StorageError> {
-        let read_collection = self.collections.read();
-        let real_collection_name = self.resolve_name(collection_name)?;
+    pub async fn get_collection(
+        &self,
+        collection_name: &str,
+    ) -> Result<Arc<Collection>, StorageError> {
+        let read_collection = self.collections.read().await;
+        let real_collection_name = self.resolve_name(collection_name).await?;
         // resolve_name already checked collection existence, unwrap is safe here
         Ok(read_collection.get(&real_collection_name).unwrap().clone())
     }
@@ -287,7 +294,7 @@ impl TableOfContent {
         collection_name: &str,
         request: Arc<RecommendRequest>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
-        let collection = self.get_collection(collection_name)?;
+        let collection = self.get_collection(collection_name).await?;
         collection
             .recommend_by(
                 request,
@@ -303,7 +310,7 @@ impl TableOfContent {
         collection_name: &str,
         request: SearchRequest,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
-        let collection = self.get_collection(collection_name)?;
+        let collection = self.get_collection(collection_name).await?;
         self.segment_searcher
             .search(
                 collection.segments(),
@@ -321,7 +328,7 @@ impl TableOfContent {
         with_payload: bool,
         with_vector: bool,
     ) -> Result<Vec<Record>, StorageError> {
-        let collection = self.get_collection(collection_name)?;
+        let collection = self.get_collection(collection_name).await?;
         self.segment_searcher
             .retrieve(collection.segments(), points, with_payload, with_vector)
             .await
@@ -329,8 +336,8 @@ impl TableOfContent {
     }
 
     /// List of all collections
-    pub fn all_collections(&self) -> Vec<String> {
-        self.collections.read().keys().cloned().collect()
+    pub async fn all_collections(&self) -> Vec<String> {
+        self.collections.read().await.keys().cloned().collect()
     }
 
     /// List of all aliases for a given collection
@@ -352,7 +359,7 @@ impl TableOfContent {
         collection_name: &str,
         request: ScrollRequest,
     ) -> Result<ScrollResult, StorageError> {
-        let collection = self.get_collection(collection_name)?;
+        let collection = self.get_collection(collection_name).await?;
         collection
             .scroll_by(request, self.segment_searcher.deref())
             .await
@@ -365,7 +372,7 @@ impl TableOfContent {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> Result<UpdateResult, StorageError> {
-        let collection = self.get_collection(collection_name)?;
+        let collection = self.get_collection(collection_name).await?;
         collection
             .update_by(operation, wait, self.segment_updater.clone())
             .await

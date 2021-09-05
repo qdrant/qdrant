@@ -23,7 +23,7 @@ pub type FloatPayloadType = f64;
 pub type IntPayloadType = i64;
 
 /// Type of internal tags, build from payload
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, FromPrimitive)]
 /// Distance function types used to compare vectors
 pub enum Distance {
     /// https://en.wikipedia.org/wiki/Cosine_similarity
