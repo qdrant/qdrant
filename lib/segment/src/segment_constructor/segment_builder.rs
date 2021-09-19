@@ -44,7 +44,7 @@ impl SegmentBuilder {
                 description: "Segment building error: created segment not found".to_owned(),
             }),
             Some(self_segment) => {
-                self_segment.version = cmp::max(self_segment.version, other.version());
+                self_segment.version = cmp::max(self_segment.version(), other.version());
 
                 let other_id_mapper = other.id_mapper.borrow();
                 let other_vector_storage = other.vector_storage.borrow();
@@ -90,7 +90,7 @@ impl TryInto<Segment> for SegmentBuilder {
             self.segment = None;
 
             for field in self.indexed_fields.iter() {
-                segment.create_field_index(segment.version, field)?;
+                segment.create_field_index(segment.version(), field)?;
             }
 
             segment.vector_index.borrow_mut().build_index()?;
