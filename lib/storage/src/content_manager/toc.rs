@@ -123,7 +123,7 @@ impl TableOfContent {
 
     async fn validate_collection_exists(&self, collection_name: &str) -> Result<(), StorageError> {
         if !self.is_collection_exists(collection_name).await {
-            return Err(StorageError::BadInput {
+            return Err(StorageError::NotFound {
                 description: format!("Collection `{}` doesn't exist!", collection_name),
             });
         }
