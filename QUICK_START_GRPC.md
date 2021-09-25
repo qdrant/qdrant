@@ -40,13 +40,11 @@ Expected response:
 First - let's create a collection with dot-production metric.
 ```bash
 grpcurl -plaintext -import-path ./src/tonic/proto -proto qdrant.proto -d '{
-        "create_collection": {
-            "name": "test_collection",
-            "vector_size": 4,
-            "distance": "Dot"
-        }
+        "name": "test_collection",
+        "vector_size": 4,
+        "distance": "Dot"
     }' \
-[::]:6334 qdrant.Collections/UpdateCollections
+[::]:6334 qdrant.Collections/Create
 ```
 
 Expected response:
@@ -60,7 +58,7 @@ Expected response:
 ### List all collections
 We can now view the list of collections to ensure that the collection was created:
 ```bash
-grpcurl -plaintext -import-path ./src/tonic/proto -proto qdrant.proto [::]:6334 qdrant.Collections/GetCollections
+grpcurl -plaintext -import-path ./src/tonic/proto -proto qdrant.proto [::]:6334 qdrant.Collections/Get
 ```
 
 Expected response:
@@ -79,23 +77,19 @@ Expected response:
 The collection could also be updated:
 ```bash
 grpcurl -plaintext -import-path ./src/tonic/proto -proto qdrant.proto -d '{
-        "update_collection": {
-            "name": "test_collection",
-            "optimizers_config": {
-              "max_segment_number": 100
-            }
+        "name": "test_collection",
+        "optimizers_config": {
+          "max_segment_number": 100
         }
     }' \
-[::]:6334 qdrant.Collections/UpdateCollections
+[::]:6334 qdrant.Collections/Update
 ```
 
 ### Delete collection
 The qdrant.Collections/UpdateCollections rpc could also be used to delete a collection:
 ```bash
 grpcurl -plaintext -import-path ./src/tonic/proto -proto qdrant.proto -d '{
-        "delete_collection": {
-            "name": "test_collection"
-        }
+          "name": "test_collection"
     }' \
-[::]:6334 qdrant.Collections/UpdateCollections
+[::]:6334 qdrant.Collections/Delete
 ```

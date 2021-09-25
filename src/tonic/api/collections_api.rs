@@ -4,9 +4,9 @@ use crate::common::collections::*;
 use crate::common::models::CollectionsResponse;
 use crate::tonic::proto::collections_server::Collections;
 use crate::tonic::proto::{
-    CollectionDescription, CreateCollection, DeleteCollection, GetCollectionsRequest,
-    GetCollectionsResponse, HnswConfigDiff, OptimizersConfigDiff, StorageOperations,
-    UpdateCollection, UpdateCollectionsResponse, WalConfigDiff,
+    CollectionDescription, CollectionOperationResponse, CreateCollection, DeleteCollection,
+    GetCollectionsRequest, GetCollectionsResponse, HnswConfigDiff, OptimizersConfigDiff,
+    UpdateCollection, WalConfigDiff,
 };
 use num_traits::FromPrimitive;
 use std::convert::TryFrom;
@@ -27,7 +27,7 @@ impl CollectionsService {
 
 #[tonic::async_trait]
 impl Collections for CollectionsService {
-    async fn get_collections(
+    async fn get(
         &self,
         _request: Request<GetCollectionsRequest>,
     ) -> Result<Response<GetCollectionsResponse>, Status> {
@@ -38,17 +38,43 @@ impl Collections for CollectionsService {
         Ok(Response::new(response))
     }
 
-    async fn update_collections(
+    async fn create(
         &self,
-        request: Request<StorageOperations>,
-    ) -> Result<Response<UpdateCollectionsResponse>, Status> {
+        request: Request<CreateCollection>,
+    ) -> Result<Response<CollectionOperationResponse>, Status> {
         let operations = storage::content_manager::storage_ops::StorageOperations::try_from(
             request.into_inner(),
         )?;
         let timing = Instant::now();
         let result = self.toc.perform_collection_operation(operations).await;
 
-        let response = UpdateCollectionsResponse::from((timing, result));
+        let response = CollectionOperationResponse::from((timing, result));
+        Ok(Response::new(response))
+    }
+
+    async fn update(
+        &self,
+        request: Request<UpdateCollection>,
+    ) -> Result<Response<CollectionOperationResponse>, Status> {
+        let operations =
+            storage::content_manager::storage_ops::StorageOperations::from(request.into_inner());
+        let timing = Instant::now();
+        let result = self.toc.perform_collection_operation(operations).await;
+
+        let response = CollectionOperationResponse::from((timing, result));
+        Ok(Response::new(response))
+    }
+
+    async fn delete(
+        &self,
+        request: Request<DeleteCollection>,
+    ) -> Result<Response<CollectionOperationResponse>, Status> {
+        let operations =
+            storage::content_manager::storage_ops::StorageOperations::from(request.into_inner());
+        let timing = Instant::now();
+        let result = self.toc.perform_collection_operation(operations).await;
+
+        let response = CollectionOperationResponse::from((timing, result));
         Ok(Response::new(response))
     }
 }
@@ -64,24 +90,6 @@ impl From<(Instant, CollectionsResponse)> for GetCollectionsResponse {
         Self {
             collections,
             time: timing.elapsed().as_secs_f64(),
-        }
-    }
-}
-
-impl TryFrom<StorageOperations> for storage::content_manager::storage_ops::StorageOperations {
-    type Error = Status;
-
-    fn try_from(value: StorageOperations) -> Result<Self, Self::Error> {
-        if let Some(create_collection) = value.create_collection {
-            Ok(Self::try_from(create_collection)?)
-        } else if let Some(update_collection) = value.update_collection {
-            Ok(update_collection.into())
-        } else if let Some(delete_collection) = value.delete_collection {
-            Ok(delete_collection.into())
-        } else {
-            Err(Status::failed_precondition(
-                "At least one collection operation should be specified",
-            ))
         }
     }
 }
@@ -138,11 +146,11 @@ impl From<OptimizersConfigDiff> for collection::operations::config_diff::Optimiz
     }
 }
 
-impl From<(Instant, Result<bool, StorageError>)> for UpdateCollectionsResponse {
+impl From<(Instant, Result<bool, StorageError>)> for CollectionOperationResponse {
     fn from(value: (Instant, Result<bool, StorageError>)) -> Self {
         let (timing, response) = value;
         match response {
-            Ok(res) => UpdateCollectionsResponse {
+            Ok(res) => CollectionOperationResponse {
                 result: Some(res),
                 error: None,
                 time: timing.elapsed().as_secs_f64(),
@@ -154,7 +162,7 @@ impl From<(Instant, Result<bool, StorageError>)> for UpdateCollectionsResponse {
                     StorageError::ServiceError { description } => description,
                     StorageError::BadRequest { description } => description,
                 };
-                UpdateCollectionsResponse {
+                CollectionOperationResponse {
                     result: None,
                     error: Some(error_description),
                     time: timing.elapsed().as_secs_f64(),

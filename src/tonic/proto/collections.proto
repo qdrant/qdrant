@@ -7,8 +7,10 @@ option java_outer_classname = "QdrantProto";
 package qdrant;
 
 service Collections {
-  rpc GetCollections (GetCollectionsRequest) returns (GetCollectionsResponse) {}
-  rpc UpdateCollections (StorageOperations) returns (UpdateCollectionsResponse) {}
+  rpc Get (GetCollectionsRequest) returns (GetCollectionsResponse) {}
+  rpc Create (CreateCollection) returns (CollectionOperationResponse) {}
+  rpc Update (UpdateCollection) returns (CollectionOperationResponse) {}
+  rpc Delete (DeleteCollection) returns (CollectionOperationResponse) {}
 }
 
 message GetCollectionsRequest {
@@ -68,13 +70,7 @@ message DeleteCollection {
   string name = 1;
 }
 
-message StorageOperations {
-  optional CreateCollection create_collection = 1;
-  optional UpdateCollection update_collection = 2;
-  optional DeleteCollection delete_collection = 3;
-}
-
-message UpdateCollectionsResponse {
+message CollectionOperationResponse {
   optional bool result = 1;
   optional string error = 2;
   double time = 3;
