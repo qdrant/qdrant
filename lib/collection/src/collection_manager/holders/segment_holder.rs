@@ -1,5 +1,5 @@
-use std::cmp::min;
-use std::collections::{HashMap, HashSet};
+use std::cmp::{max, min};
+use std::collections::{HashMap, HashSet, BTreeSet};
 use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -74,6 +74,9 @@ unsafe impl Send for LockedSegment {}
 #[derive(Default)]
 pub struct SegmentHolder {
     segments: HashMap<SegmentId, LockedSegment>,
+    /// Seq number of the first un-recovered operation.
+    /// If there are no failed operation - None
+    pub failed_operation: BTreeSet<SeqNumberType>,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
@@ -346,14 +349,32 @@ impl<'s> SegmentHolder {
         Ok(read_points)
     }
 
-    /// Flushes all segments and returns maximum persisted version
+    /// Flushes all segments and returns maximum version to persist
+    ///
+    /// If there are unsaved changes after flush - detects lowest unsaved change version.
+    /// If all changes are saved - returns max version.
     pub fn flush_all(&self) -> OperationResult<SeqNumberType> {
-        let mut persisted_version: SeqNumberType = SeqNumberType::MAX;
+        let mut max_persisted_version: SeqNumberType = SeqNumberType::MIN;
+        let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
+        let mut has_unsaved = false;
         for (_idx, segment) in self.segments.iter() {
-            let segment_version = segment.get().read().flush()?;
-            persisted_version = min(persisted_version, segment_version)
+            let segment_lock = segment.get();
+            let read_segment = segment_lock.read();
+            let segment_version = read_segment.version();
+            let segment_persisted_version = read_segment.flush()?;
+
+            if segment_version > segment_persisted_version {
+                has_unsaved = true;
+                min_unsaved_version = min(min_unsaved_version, segment_persisted_version);
+            }
+
+            max_persisted_version = max(max_persisted_version, segment_persisted_version)
         }
-        Ok(persisted_version)
+        if has_unsaved {
+            Ok(min_unsaved_version)
+        } else {
+            Ok(max_persisted_version)
+        }
     }
 }
 

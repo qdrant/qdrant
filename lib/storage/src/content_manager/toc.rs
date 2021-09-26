@@ -24,9 +24,8 @@ use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::storage_ops::{AliasOperations, StorageOperations};
 use crate::types::StorageConfig;
-use collection::collection_manager::collection_managers::{CollectionSearcher, CollectionUpdater};
+use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
-use collection::collection_manager::simple_collection_updater::SimpleCollectionUpdater;
 use std::ops::Deref;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
@@ -41,7 +40,6 @@ pub struct TableOfContent {
     search_runtime: Runtime,
     alias_persistence: Db,
     segment_searcher: Box<dyn CollectionSearcher + Sync + Send>,
-    segment_updater: Arc<dyn CollectionUpdater + Sync + Send>,
 }
 
 impl TableOfContent {
@@ -52,8 +50,6 @@ impl TableOfContent {
 
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");
-
-        let segment_updater = Arc::new(SimpleCollectionUpdater::new());
 
         let mut collections: HashMap<String, Arc<Collection>> = Default::default();
 
@@ -68,7 +64,7 @@ impl TableOfContent {
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
 
-            let collection = load_collection(collection_path.as_path(), segment_updater.clone());
+            let collection = load_collection(collection_path.as_path());
 
             collections.insert(collection_name, Arc::new(collection));
         }
@@ -87,7 +83,6 @@ impl TableOfContent {
             search_runtime,
             alias_persistence,
             segment_searcher: Box::new(SimpleCollectionSearcher::new()),
-            segment_updater,
         }
     }
 
@@ -366,7 +361,7 @@ impl TableOfContent {
     ) -> Result<UpdateResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .update_by(operation, wait, self.segment_updater.clone())
+            .update(operation, wait)
             .await
             .map_err(|err| err.into())
     }

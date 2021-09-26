@@ -3,11 +3,10 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use tokio::runtime::Handle;
 
-use segment::types::{PointIdType, ScoredPoint, SeqNumberType, WithPayload};
+use segment::types::{PointIdType, ScoredPoint, WithPayload};
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::types::{CollectionResult, Record, SearchRequest};
-use crate::operations::CollectionUpdateOperations;
 
 #[async_trait::async_trait]
 pub trait CollectionSearcher {
@@ -26,13 +25,4 @@ pub trait CollectionSearcher {
         with_payload: &WithPayload,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>>;
-}
-
-pub trait CollectionUpdater {
-    fn update(
-        &self,
-        segments: &RwLock<SegmentHolder>,
-        op_num: SeqNumberType,
-        operation: CollectionUpdateOperations,
-    ) -> CollectionResult<usize>;
 }

@@ -18,7 +18,7 @@ pub trait VersionedPersistable {
     fn ack_persistance(&mut self, version: SeqNumberType);
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 #[error("{0}")]
 pub enum OperationError {
     #[error("Vector inserting error: expected dim: {expected_dim}, got {received_dim}")]
@@ -73,6 +73,17 @@ impl From<serde_json::Error> for OperationError {
 }
 
 pub type OperationResult<T> = result::Result<T, OperationError>;
+
+
+pub fn is_service_error<T>(err: &OperationResult<T>) -> bool {
+    match err {
+        Ok(_) => false,
+        Err(error) => match error {
+            OperationError::ServiceError { .. } => true,
+            _ => false,
+        }
+    }
+}
 
 /// Define all operations which can be performed with Segment or Segment-like entity.
 /// Assume, that all operations are idempotent - which means that
@@ -199,4 +210,11 @@ pub trait SegmentEntry {
 
     /// Get indexed fields
     fn get_indexed_fields(&self) -> Vec<PayloadKeyType>;
+
+    /// Checks if segment errored during last operations
+    fn check_error(&self) -> Option<(SeqNumberType, OperationError)>;
+
+    /// Reset error if operation is fixed
+    /// Return true - if fixed
+    fn reset_error_state(&mut self, op_num: SeqNumberType) -> bool;
 }

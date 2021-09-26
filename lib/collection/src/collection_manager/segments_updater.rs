@@ -1,24 +1,47 @@
 use std::collections::{HashMap, HashSet};
 
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockWriteGuard};
 
-use segment::types::{
-    PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType,
-};
+use segment::types::{PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType, VectorElementType};
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointInsertOperations, PointOperations};
 use crate::operations::types::{CollectionError, CollectionResult, VectorType};
 use crate::operations::FieldIndexOperations;
+use itertools::Itertools;
+use segment::entry::entry_point::{OperationResult, SegmentEntry};
 
 /// A collection of functions for updating points and payloads stored in segments
+
+/// Returns points which are already stored with higher version
+pub(crate) fn get_pre_existing_points(segments: &SegmentHolder, points: &[PointIdType], op_num: SeqNumberType) -> CollectionResult<HashSet<PointIdType>> {
+    // Points, which are already updated to at least same version
+    let mut pre_updated_points: HashSet<PointIdType> = Default::default();
+    // Get points, which presence in segments with higher version
+    segments.read_points(points, |id, segment| {
+        if segment.version() > op_num {
+            pre_updated_points.insert(id);
+        }
+        Ok(true)
+    })?;
+
+    Ok(pre_updated_points)
+}
+
 
 pub(crate) fn check_unprocessed_points(
     points: &[PointIdType],
     processed: &HashSet<PointIdType>,
 ) -> CollectionResult<usize> {
-    let missed_point = points.iter().cloned().find(|p| !processed.contains(p));
+    let unprocessed_points = points.iter()
+        .cloned()
+        .filter(|p| !processed.contains(p))
+        .collect_vec();
+    let missed_point = unprocessed_points.iter().cloned().next();
+
+    // ToDo: check pre-existing points
+
     match missed_point {
         None => Ok(processed.len()),
         Some(missed_point) => Err(CollectionError::NotFound {
@@ -118,6 +141,22 @@ pub(crate) fn delete_field_index(
     Ok(res)
 }
 
+fn upsert_with_payload(
+    segment: &mut RwLockWriteGuard<dyn SegmentEntry>,
+    op_num: SeqNumberType,
+    point_id: PointIdType,
+    vector: &[VectorElementType],
+    payload: Option<&HashMap<PayloadKeyType, PayloadInterface>>
+) -> OperationResult<bool> {
+    let mut res = segment.upsert_point(op_num, point_id, vector)?;
+    if let Some(full_payload) = payload {
+        for (key, payload_value) in full_payload {
+            res &= segment.set_payload(op_num, point_id, key, payload_value.into())?;
+        }
+    }
+    Ok(res)
+}
+
 /// Checks point id in each segment, update point if found.
 /// All not found points are inserted into random segment.
 /// Returns: number of updated points.
@@ -153,27 +192,41 @@ pub(crate) fn upsert_points(
         }
     }
 
-    let mut updated_points: HashSet<PointIdType> = Default::default();
-    let points_map: HashMap<PointIdType, &VectorType> = ids.iter().cloned().zip(vectors).collect();
+    let vectors_map: HashMap<PointIdType, &VectorType> = ids.iter().cloned().zip(vectors).collect();
+    let payloads_map: HashMap<PointIdType, &HashMap<PayloadKeyType, PayloadInterface>> = match payloads {
+        None => Default::default(),
+        Some(payloads_vector) => ids
+            .iter()
+            .clone()
+            .zip(payloads_vector)
+            .filter_map(|(id, payload)|
+                payload.as_ref().map(|payload_values| (*id, payload_values))
+            ).collect()
+    };
 
     let segments = segments.read();
 
-    // Get points, which presence in segments with higher version
-    segments.read_points(ids, |id, segment| {
-        if segment.version() > op_num {
-            updated_points.insert(id);
-        }
-        Ok(true)
-    })?;
+    // Points, which are already updated to at least same version
+    let pre_updated_points = get_pre_existing_points(&segments, ids, op_num)?;
 
+    // Existed points, updated in this operation
+    let mut updated_points: HashSet<PointIdType> = Default::default();
     // Update points in writable segments
-    let res = segments.apply_points_to_appendable(op_num, ids, |id, write_segment| {
+    let mut res = segments.apply_points_to_appendable(op_num, ids, |id, write_segment| {
         updated_points.insert(id);
-        write_segment.upsert_point(op_num, id, points_map[&id])
+        upsert_with_payload(
+            write_segment,
+            op_num,
+            id,
+            vectors_map[&id],
+            payloads_map.get(&id).cloned()
+        )
     })?;
 
-    // Insert new points, which was not updated.
-    let new_point_ids = ids.iter().cloned().filter(|x| !updated_points.contains(x));
+    // Insert new points, which was not updated or existed
+    let new_point_ids = ids.iter()
+        .cloned()
+        .filter(|x| !(updated_points.contains(x) || pre_updated_points.contains(x)));
 
     {
         let default_write_segment =
@@ -186,17 +239,15 @@ pub(crate) fn upsert_points(
         let segment_arc = default_write_segment.get();
         let mut write_segment = segment_arc.write();
         for point_id in new_point_ids {
-            write_segment.upsert_point(op_num, point_id, points_map[&point_id])?;
+            res += upsert_with_payload(
+                &mut write_segment,
+                op_num,
+                point_id,
+                vectors_map[&point_id],
+                payloads_map.get(&point_id).cloned()
+            )? as usize;
         }
-    }
-
-    if let Some(payload_vector) = payloads {
-        for (point_id, payload) in ids.iter().zip(payload_vector.iter()) {
-            if payload.is_some() {
-                set_payload(&segments, op_num, payload.as_ref().unwrap(), &[*point_id])?;
-            }
-        }
-    }
+    };
 
     Ok(res)
 }

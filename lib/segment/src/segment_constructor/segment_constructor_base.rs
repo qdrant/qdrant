@@ -111,6 +111,7 @@ fn create_segment(
         appendable_flag,
         segment_type,
         segment_config: config.clone(),
+        error_status: None,
     })
 }
 
