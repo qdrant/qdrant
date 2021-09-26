@@ -1,4 +1,4 @@
-use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
+use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry, is_service_error};
 use crate::id_mapper::IdMapper;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::{ConditionChecker, PayloadStorage};
@@ -32,6 +32,7 @@ pub struct Segment {
     pub appendable_flag: bool,
     pub segment_type: SegmentType,
     pub segment_config: SegmentConfig,
+    pub error_status: Option<(SeqNumberType, OperationError)>
 }
 
 impl Segment {
@@ -66,13 +67,28 @@ impl Segment {
     ) -> OperationResult<bool>
     where F: FnOnce(&mut Segment) -> OperationResult<bool>
     {
+        if let Some((failed_operation, error)) = &self.error_status {
+            // Failed operations should not be skipped,
+            // fail if newer operation is attempted before proper recovery
+            if *failed_operation != op_num {
+                return Err(OperationError::ServiceError {
+                    description: format!("Not recovered from previous error {}", error)
+                })
+            } // else: Re-try operation
+        }
         if self.version > op_num {
             // Skip without execution, current version is higher => operation already applied
             return Ok(false)
         }
         let res = operation(self);
+
+        if is_service_error(&res) {
+            // ToDo: Recover previous segment state
+            self.error_status = Some((op_num, res.clone().err().unwrap()))
+        }
+
         if res.is_ok() {
-            self.version = op_num;
+            self.version = op_num
         }
         res
     }
@@ -395,7 +411,7 @@ impl SegmentEntry for Segment {
     }
 
     fn flush(&self) -> OperationResult<SeqNumberType> {
-        let persisted_version = self.persisted_version.lock().unwrap();
+        let mut persisted_version = self.persisted_version.lock().unwrap();
         if *persisted_version == self.version() {
             return Ok(*persisted_version);
         }
@@ -405,8 +421,9 @@ impl SegmentEntry for Segment {
         self.id_mapper.borrow().flush()?;
         self.payload_storage.borrow().flush()?;
         self.vector_storage.borrow().flush()?;
-
         self.save_state(&state)?;
+
+        *persisted_version = state.version;
 
         Ok(state.version)
     }
@@ -434,6 +451,22 @@ impl SegmentEntry for Segment {
 
     fn get_indexed_fields(&self) -> Vec<PayloadKeyType> {
         self.payload_index.borrow().indexed_fields()
+    }
+
+    fn check_error(&self) -> Option<(SeqNumberType, OperationError)> {
+        self.error_status.clone()
+    }
+
+    fn reset_error_state(&mut self, op_num: SeqNumberType) -> bool {
+        match &self.error_status {
+            None => false,
+            Some((failed_op, _err)) => if *failed_op == op_num {
+                self.error_status = None;
+                true
+            } else {
+                false
+            }
+        }
     }
 }
 

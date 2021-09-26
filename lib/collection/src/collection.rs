@@ -16,7 +16,7 @@ use segment::types::{
 };
 
 use crate::collection_builder::optimizers_builder::build_optimizers;
-use crate::collection_manager::collection_managers::{CollectionSearcher, CollectionUpdater};
+use crate::collection_manager::collection_managers::CollectionSearcher;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
@@ -27,6 +27,7 @@ use crate::operations::types::{
 use crate::operations::CollectionUpdateOperations;
 use crate::update_handler::{UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
+use crate::collection_manager::collection_updater::CollectionUpdater;
 
 pub struct Collection {
     segments: Arc<RwLock<SegmentHolder>>,
@@ -67,18 +68,17 @@ impl Collection {
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
-    pub async fn update_by(
+    pub async fn update(
         &self,
         operation: CollectionUpdateOperations,
-        wait: bool,
-        segment_updater: Arc<dyn CollectionUpdater + Send + Sync>,
+        wait: bool
     ) -> CollectionResult<UpdateResult> {
         let operation_id = self.wal.lock().write(&operation)?;
 
         let sndr = self.update_sender.clone();
         let segments = self.segments.clone();
         let update_future = async move {
-            let res = segment_updater.update(segments.deref(), operation_id, operation);
+            let res = CollectionUpdater::update(segments.deref(), operation_id, operation);
             sndr.send(UpdateSignal::Operation(operation_id))?;
             res
         };
@@ -274,6 +274,9 @@ impl Collection {
                 schema.insert(key, val);
             }
         }
+        if !segments.failed_operation.is_empty() {
+            status = CollectionStatus::Red;
+        }
         Ok(CollectionInfo {
             status,
             vectors_count,
@@ -349,15 +352,16 @@ impl Collection {
         update_handler.wait_worker_stops().await
     }
 
-    pub fn load_from_wal(&self, segment_updater: Arc<dyn CollectionUpdater>) {
+    pub fn load_from_wal(&self) {
         let wal = self.wal.lock();
         let bar = ProgressBar::new(wal.len());
         bar.set_message("Recovering collection");
         let segments = self.segments();
+        // ToDo: Start from minimal applied version
         for (op_num, update) in wal.read_all() {
             // Panic only in case of internal error. If wrong formatting - skip
             if let Err(CollectionError::ServiceError { error }) =
-                segment_updater.update(segments, op_num, update)
+                CollectionUpdater::update(segments, op_num, update)
             {
                 panic!("Can't apply WAL operation: {}", error)
             }

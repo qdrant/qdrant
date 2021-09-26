@@ -1,6 +1,6 @@
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use parking_lot::RwLock;
-use segment::entry::entry_point::{OperationResult, SegmentEntry};
+use segment::entry::entry_point::{OperationResult, SegmentEntry, OperationError};
 use segment::types::{
     Condition, Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType, ScoredPoint,
     SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap,
@@ -421,6 +421,14 @@ impl SegmentEntry for ProxySegment {
             .chain(self.created_indexes.read().iter().cloned())
             .filter(|x| !self.deleted_indexes.read().contains(x))
             .collect()
+    }
+
+    fn check_error(&self) -> Option<(SeqNumberType, OperationError)> {
+        self.write_segment.get().read().check_error()
+    }
+
+    fn reset_error_state(&mut self, op_num: SeqNumberType) -> bool {
+        self.write_segment.get().write().reset_error_state(op_num)
     }
 }
 

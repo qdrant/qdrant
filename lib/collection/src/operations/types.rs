@@ -28,7 +28,8 @@ pub enum CollectionStatus {
     Green,
     /// Collection is available, but some segments might be under optimization
     Yellow,
-    /// Something is not OK
+    /// Something is not OK:
+    /// - some operations failed and was not recovered
     Red,
 }
 
@@ -220,3 +221,13 @@ impl From<io::Error> for CollectionError {
 }
 
 pub type CollectionResult<T> = result::Result<T, CollectionError>;
+
+pub fn is_service_error<T>(err: &CollectionResult<T>) -> bool {
+    match err {
+        Ok(_) => false,
+        Err(error) => match error {
+            CollectionError::ServiceError { .. } => true,
+            _ => false,
+        }
+    }
+}

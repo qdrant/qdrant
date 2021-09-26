@@ -35,7 +35,7 @@ impl From<&WalConfig> for WalOptions {
 impl Default for WalConfig {
     fn default() -> Self {
         WalConfig {
-            wal_capacity_mb: 32,
+            wal_capacity_mb: 32 * 1024 * 1024,
             wal_segments_ahead: 0,
         }
     }

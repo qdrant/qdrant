@@ -15,7 +15,6 @@ use segment::types::{PayloadInterface, PayloadKeyType, PayloadVariant};
 use crate::common::simple_collection_fixture;
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
-use collection::collection_manager::simple_collection_updater::SimpleCollectionUpdater;
 
 mod common;
 
@@ -24,7 +23,6 @@ async fn test_collection_updater() {
     let collection_dir = TempDir::new("collection").unwrap();
 
     let collection = simple_collection_fixture(collection_dir.path()).await;
-    let segment_updater = Arc::new(SimpleCollectionUpdater::new());
 
     let insert_points =
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(BatchPoints {
@@ -40,7 +38,7 @@ async fn test_collection_updater() {
         }));
 
     let insert_result = collection
-        .update_by(insert_points, true, segment_updater.clone())
+        .update(insert_points, true)
         .await;
 
     match insert_result {
@@ -79,7 +77,6 @@ async fn test_collection_updater() {
 async fn test_collection_loading() {
     let collection_dir = TempDir::new("collection").unwrap();
 
-    let segment_updater = Arc::new(SimpleCollectionUpdater::new());
     {
         let collection = simple_collection_fixture(collection_dir.path()).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
@@ -97,7 +94,7 @@ async fn test_collection_loading() {
         );
 
         collection
-            .update_by(insert_points, true, segment_updater.clone())
+            .update(insert_points, true)
             .await
             .unwrap();
 
@@ -114,12 +111,12 @@ async fn test_collection_loading() {
         });
 
         collection
-            .update_by(assign_payload, true, segment_updater.clone())
+            .update(assign_payload, true)
             .await
             .unwrap();
     }
 
-    let loaded_collection = load_collection(collection_dir.path(), segment_updater.clone());
+    let loaded_collection = load_collection(collection_dir.path());
     let segment_searcher = SimpleCollectionSearcher::new();
     let retrieved = segment_searcher
         .retrieve(loaded_collection.segments(), &[1, 2], true, true)
@@ -215,9 +212,8 @@ async fn test_recommendation_api() {
             payloads: None,
         }));
 
-    let segment_updater = Arc::new(SimpleCollectionUpdater::new());
     collection
-        .update_by(insert_points, true, segment_updater)
+        .update(insert_points, true)
         .await
         .unwrap();
     let segment_searcher = SimpleCollectionSearcher::new();
@@ -263,9 +259,8 @@ async fn test_read_api() {
             payloads: None,
         }));
 
-    let segment_updater = Arc::new(SimpleCollectionUpdater::new());
     collection
-        .update_by(insert_points, true, segment_updater.clone())
+        .update(insert_points, true)
         .await
         .unwrap();
 
