@@ -191,7 +191,7 @@ impl TableOfContent {
             }
             StorageOperations::DeleteCollection(collection_name) => {
                 if let Some(removed) = self.collections.write().await.remove(&collection_name) {
-                    removed.stop()?;
+                    removed.stop().await?;
                     {
                         // Wait for optimizer to finish.
                         // TODO: Enhance optimizer to shutdown faster

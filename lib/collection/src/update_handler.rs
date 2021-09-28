@@ -3,7 +3,6 @@ use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::operations::types::{CollectionResult, is_service_error};
 use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
-use crossbeam_channel::Receiver;
 use log::debug;
 use parking_lot::Mutex;
 use segment::types::SeqNumberType;
@@ -13,6 +12,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{Duration, Instant};
 use std::cmp::min;
 use crate::collection_manager::collection_updater::CollectionUpdater;
+use async_channel::Receiver;
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
@@ -141,7 +141,7 @@ impl UpdateHandler {
         let flush_timeout = Duration::from_secs(flush_timeout_sec);
         let mut last_flushed = Instant::now();
         loop {
-            let recv_res = receiver.recv();
+            let recv_res = receiver.recv().await;
             match recv_res {
                 Ok(signal) => {
                     match signal {
