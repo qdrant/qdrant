@@ -1,4 +1,3 @@
-use crossbeam_channel::SendError;
 use futures::io;
 use schemars::JsonSchema;
 use serde;
@@ -17,6 +16,7 @@ use segment::types::{
 use crate::config::CollectionConfig;
 use crate::wal::WalError;
 use std::collections::HashMap;
+use async_channel::SendError;
 
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;

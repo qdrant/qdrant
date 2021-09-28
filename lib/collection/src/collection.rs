@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
 
-use crossbeam_channel::Sender;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
@@ -28,6 +27,8 @@ use crate::operations::CollectionUpdateOperations;
 use crate::update_handler::{UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 use crate::collection_manager::collection_updater::CollectionUpdater;
+use async_channel::Sender;
+use futures::executor::block_on;
 
 pub struct Collection {
     segments: Arc<RwLock<SegmentHolder>>,
@@ -79,7 +80,7 @@ impl Collection {
         let segments = self.segments.clone();
         let update_future = async move {
             let res = CollectionUpdater::update(segments.deref(), operation_id, operation);
-            sndr.send(UpdateSignal::Operation(operation_id))?;
+            sndr.send(UpdateSignal::Operation(operation_id)).await?;
             res
         };
 
@@ -288,8 +289,8 @@ impl Collection {
         })
     }
 
-    pub fn stop(&self) -> CollectionResult<()> {
-        self.update_sender.send(UpdateSignal::Stop)?;
+    pub async fn stop(&self) -> CollectionResult<()> {
+        self.update_sender.send(UpdateSignal::Stop).await?;
         Ok(())
     }
 
@@ -331,7 +332,7 @@ impl Collection {
         }
         let config = self.config.read();
         let mut update_handler = self.update_handler.lock();
-        self.stop()?;
+        self.stop().await?;
         update_handler.wait_worker_stops().await?;
         let new_optimizers = build_optimizers(
             self.path.as_path(),
@@ -342,7 +343,7 @@ impl Collection {
         update_handler.optimizers = new_optimizers;
         update_handler.flush_timeout_sec = config.optimizer_config.flush_interval_sec;
         update_handler.run_worker();
-        self.update_sender.send(UpdateSignal::Nop)?;
+        self.update_sender.send(UpdateSignal::Nop).await?;
 
         Ok(())
     }
@@ -375,7 +376,8 @@ impl Collection {
 
 impl Drop for Collection {
     fn drop(&mut self) {
-        self.stop().unwrap(); // Finishes update tasks right before destructor stuck to do so with runtime
+        // Finishes update tasks right before destructor stuck to do so with runtime
+        block_on(self.stop()).unwrap();
 
         // The drop could be called from the tokio context, e.g. from perform_collection_operation method.
         // Calling remove from there would lead to the following error in a new version of tokio:
