@@ -52,7 +52,7 @@ async fn test_collection_payload_reloading() {
                 ids: vec![0, 1],
                 vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
                 payloads: serde_json::from_str(
-                    &r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2" , "v": "v3"}]"#,
+                    &r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2"}]"#,
                 )
                 .unwrap(),
             }),
