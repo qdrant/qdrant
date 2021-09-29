@@ -224,7 +224,7 @@ mod tests {
         for point_id in segment_points_to_assign1.iter() {
             assert!(segment_guard.has_point(*point_id));
             let payload = segment_guard
-                .payload(*point_id)
+                .payload(*point_id, None)
                 .unwrap()
                 .get(&"color".to_string())
                 .unwrap()

@@ -4,7 +4,7 @@ mod fixtures;
 mod tests {
     use crate::fixtures::segment::build_segment_1;
     use segment::entry::entry_point::SegmentEntry;
-    use segment::types::{Condition, Filter};
+    use segment::types::{Condition, Filter, WithPayload};
     use std::collections::HashSet;
     use tempdir::TempDir;
 
@@ -18,7 +18,9 @@ mod tests {
 
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
 
-        let res = segment.search(&query_vector, None, 1, None).unwrap();
+        let res = segment
+            .search(&query_vector, &WithPayload::default(), None, 1, None)
+            .unwrap();
 
         let best_match = res.get(0).expect("Non-empty result");
         assert_eq!(best_match.id, 3);
@@ -31,7 +33,9 @@ mod tests {
             must_not: Some(vec![Condition::HasId(ids.into())]),
         };
 
-        let res = segment.search(&query_vector, Some(&frt), 1, None).unwrap();
+        let res = segment
+            .search(&query_vector, &WithPayload::default(), Some(&frt), 1, None)
+            .unwrap();
 
         let best_match = res.get(0).expect("Non-empty result");
         assert_ne!(best_match.id, 3);

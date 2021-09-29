@@ -65,7 +65,7 @@ impl SegmentBuilder {
                     id_mapper.set_link(other_external_id, new_internal_id)?;
                     payload_storage.assign_all(
                         new_internal_id,
-                        other_payload_storage.payload(old_internal_id),
+                        other_payload_storage.payload(old_internal_id, None),
                     )?;
                 }
 

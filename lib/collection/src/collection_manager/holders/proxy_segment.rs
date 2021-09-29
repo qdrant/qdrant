@@ -2,9 +2,9 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 use parking_lot::RwLock;
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
 use segment::types::{
-    Condition, Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType, ScoredPoint,
-    SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap,
-    VectorElementType,
+    Condition, Filter, FilterPayload, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap,
+    VectorElementType, WithPayload,
 };
 use std::cmp::max;
 use std::collections::HashSet;
@@ -46,7 +46,7 @@ impl ProxySegment {
         let (vector, payload) = {
             let segment_arc = self.wrapped_segment.get();
             let segment = segment_arc.read();
-            (segment.vector(point_id)?, segment.payload(point_id)?)
+            (segment.vector(point_id)?, segment.payload(point_id, None)?)
         };
 
         let mut deleted_points = self.deleted_points.write();
@@ -108,6 +108,7 @@ impl SegmentEntry for ProxySegment {
     fn search(
         &self,
         vector: &[VectorElementType],
+        with_payload: &WithPayload,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -124,22 +125,25 @@ impl SegmentEntry for ProxySegment {
             // This copy might slow process down if there will be a lot of deleted points
             let wrapped_filter = self.add_deleted_points_condition_to_filter(filter);
 
-            self.wrapped_segment
-                .get()
-                .read()
-                .search(vector, Some(&wrapped_filter), top, params)?
+            self.wrapped_segment.get().read().search(
+                vector,
+                with_payload,
+                Some(&wrapped_filter),
+                top,
+                params,
+            )?
         } else {
             self.wrapped_segment
                 .get()
                 .read()
-                .search(vector, filter, top, params)?
+                .search(vector, with_payload, filter, top, params)?
         };
 
-        let mut write_result = self
-            .write_segment
-            .get()
-            .read()
-            .search(vector, filter, top, params)?;
+        let mut write_result =
+            self.write_segment
+                .get()
+                .read()
+                .search(vector, with_payload, filter, top, params)?;
 
         wrapped_result.append(&mut write_result);
         Ok(wrapped_result)
@@ -282,18 +286,25 @@ impl SegmentEntry for ProxySegment {
     fn payload(
         &self,
         point_id: PointIdType,
+        filter_payload: Option<FilterPayload>,
     ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
         return if self.deleted_points.read().contains(&point_id) {
-            self.write_segment.get().read().payload(point_id)
+            self.write_segment
+                .get()
+                .read()
+                .payload(point_id, filter_payload)
         } else {
             {
                 let write_segment = self.write_segment.get();
                 let segment_guard = write_segment.read();
                 if segment_guard.has_point(point_id) {
-                    return segment_guard.payload(point_id);
+                    return segment_guard.payload(point_id, filter_payload);
                 }
             }
-            self.wrapped_segment.get().read().payload(point_id)
+            self.wrapped_segment
+                .get()
+                .read()
+                .payload(point_id, filter_payload)
         };
     }
 
@@ -456,7 +467,9 @@ mod tests {
         proxy_segment.delete_point(102, 1).unwrap();
 
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
-        let search_result = proxy_segment.search(&query_vector, None, 10, None).unwrap();
+        let search_result = proxy_segment
+            .search(&query_vector, &WithPayload::default(), None, 10, None)
+            .unwrap();
 
         eprintln!("search_result = {:#?}", search_result);
 

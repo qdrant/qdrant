@@ -39,12 +39,14 @@ pub enum Order {
     SmallBetter,
 }
 
-#[derive(Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug)]
 pub struct ScoredPoint {
     /// Point id
     pub id: PointIdType,
     /// Points vector distance to the query vector
     pub score: ScoreType,
+    /// Payload storage
+    pub payload: TheMap<PayloadKeyType, PayloadType>,
 }
 
 impl Eq for ScoredPoint {}
@@ -58,6 +60,12 @@ impl Ord for ScoredPoint {
 impl PartialOrd for ScoredPoint {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for ScoredPoint {
+    fn eq(&self, other: &Self) -> bool {
+        (self.id, &self.score) == (other.id, &other.score)
     }
 }
 
@@ -395,6 +403,72 @@ pub enum Condition {
     Filter(Filter),
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum WithPayloadInterface {
+    Bool(bool),
+    Keyword(Vec<String>),
+    Payload(FilterPayload),
+}
+
+impl From<&WithPayloadInterface> for WithPayload {
+    fn from(interface: &WithPayloadInterface) -> Self {
+        match interface {
+            WithPayloadInterface::Bool(x) => WithPayload {
+                enable: *x,
+                filter_payload: None,
+            },
+            WithPayloadInterface::Keyword(x) => WithPayload {
+                enable: true,
+                filter_payload: Some(FilterPayload::new_include(x.clone())),
+            },
+            WithPayloadInterface::Payload(x) => WithPayload {
+                enable: true,
+                filter_payload: Some(x.clone()),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
+pub struct FilterPayload {
+    /// Include return payload key type
+    pub include: Option<Vec<PayloadKeyType>>,
+    /// Post-exclude return payload key type
+    pub exclude: Option<Vec<PayloadKeyType>>,
+}
+
+impl FilterPayload {
+    pub fn new_include(vecs_payload_key_type: Vec<PayloadKeyType>) -> Self {
+        FilterPayload {
+            include: Some(vecs_payload_key_type),
+            exclude: None,
+        }
+    }
+
+    pub fn new_include_and_exclude(
+        include: Option<Vec<PayloadKeyType>>,
+        exclude: Option<Vec<PayloadKeyType>>,
+    ) -> Self {
+        FilterPayload {
+            include,
+            exclude,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Default)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
+pub struct WithPayload {
+    /// Enable return payloads or not
+    pub enable: bool,
+    /// Filter include and exclude payloads
+    pub filter_payload: Option<FilterPayload>,
+}
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]

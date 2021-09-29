@@ -4,9 +4,9 @@ use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::{ConditionChecker, PayloadStorage};
 use crate::spaces::tools::mertic_object;
 use crate::types::{
-    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo, PayloadType, PointIdType,
-    PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState,
-    SegmentType, SeqNumberType, TheMap, VectorElementType,
+    Filter, FilterPayload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo, PayloadType,
+    PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
+    SegmentState, SegmentType, SeqNumberType, TheMap, VectorElementType, WithPayload,
 };
 use crate::vector_storage::VectorStorage;
 use atomic_refcell::AtomicRefCell;
@@ -103,6 +103,7 @@ impl SegmentEntry for Segment {
     fn search(
         &self,
         vector: &[VectorElementType],
+        with_payload: &WithPayload,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -121,18 +122,29 @@ impl SegmentEntry for Segment {
             .search(vector, filter, top, params);
 
         let id_mapper = self.id_mapper.borrow();
+
         let res = internal_result
             .iter()
-            .map(|&scored_point_offset| ScoredPoint {
-                id: id_mapper
+            .map(|&scored_point_offset| {
+                let point_id = id_mapper
                     .external_id(scored_point_offset.idx)
                     .unwrap_or_else(|| {
                         panic!(
                             "Corrupter id_mapper, no external value for {}",
                             scored_point_offset.idx
                         )
-                    }),
-                score: scored_point_offset.score,
+                    });
+                let payload = if with_payload.enable {
+                    self.payload(point_id, with_payload.filter_payload.clone())
+                        .unwrap_or_default()
+                } else {
+                    TheMap::new()
+                };
+                ScoredPoint {
+                    id: point_id,
+                    score: scored_point_offset.score,
+                    payload,
+                }
             })
             .collect();
         Ok(res)
@@ -293,9 +305,13 @@ impl SegmentEntry for Segment {
     fn payload(
         &self,
         point_id: PointIdType,
+        filter_payload: Option<FilterPayload>,
     ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
         let internal_id = self.lookup_internal_id(point_id)?;
-        Ok(self.payload_storage.borrow().payload(internal_id))
+        Ok(self
+            .payload_storage
+            .borrow()
+            .payload(internal_id, filter_payload))
     }
 
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
@@ -483,7 +499,7 @@ mod tests {
         segment
             .set_full_payload_with_json(0, 0, &data.to_string())
             .unwrap();
-        let payload = segment.payload(0).unwrap();
+        let payload = segment.payload(0, None).unwrap();
         let keys: Vec<PayloadKeyType> = payload.keys().cloned().collect();
         assert!(keys.contains(&"geo_data".to_string()));
         assert!(keys.contains(&"name".to_string()));
@@ -700,13 +716,20 @@ mod tests {
 
         let filter_invalid: Filter = serde_json::from_str(filter_invalid_str).unwrap();
         let results_with_valid_filter = segment
-            .search(&vec![1.0 as f32, 1.0 as f32], Some(&filter_valid), 1, None)
+            .search(
+                &vec![1.0 as f32, 1.0 as f32],
+                &WithPayload::default(),
+                Some(&filter_valid),
+                1,
+                None,
+            )
             .unwrap();
         assert_eq!(results_with_valid_filter.len(), 1);
         assert_eq!(results_with_valid_filter.first().unwrap().id, 0);
         let results_with_invalid_filter = segment
             .search(
                 &vec![1.0 as f32, 1.0 as f32],
+                &WithPayload::default(),
                 Some(&filter_invalid),
                 1,
                 None,
