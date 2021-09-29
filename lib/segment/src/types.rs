@@ -453,10 +453,7 @@ impl FilterPayload {
         include: Option<Vec<PayloadKeyType>>,
         exclude: Option<Vec<PayloadKeyType>>,
     ) -> Self {
-        FilterPayload {
-            include,
-            exclude,
-        }
+        FilterPayload { include, exclude }
     }
 }
 

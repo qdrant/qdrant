@@ -95,11 +95,7 @@ async fn test_collection_payload_reloading() {
 
     eprintln!(
         "res = {:#?}",
-        res.points[0]
-            .payload
-            .as_ref()
-            .unwrap()
-            .get("k")
+        res.points[0].payload.as_ref().unwrap().get("k")
     );
 }
 

@@ -40,7 +40,7 @@ async fn do_get_points(
 ) -> Result<Vec<Record>, StorageError> {
     let with_payload = &request
         .with_payload
-        .unwrap_or( WithPayloadInterface::Bool(true));
+        .unwrap_or(WithPayloadInterface::Bool(true));
     toc.retrieve(collection_name, &request.ids, with_payload, true)
         .await
 }
