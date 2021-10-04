@@ -25,3 +25,8 @@ jobs:
         docker login https://docker.pkg.github.com -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
         docker build . --file Dockerfile --tag "docker.pkg.github.com/qdrant/qdrant/qdrant:$RELEASE_VERSION"
         docker push "docker.pkg.github.com/qdrant/qdrant/qdrant:$RELEASE_VERSION"
+        docker login --username generall --password ${{ secrets.DOCKERHUB_TOKEN }}
+        docker tag "docker.pkg.github.com/qdrant/qdrant/qdrant:$RELEASE_VERSION" "generall/qdrant:$RELEASE_VERSION"
+        docker push "generall/qdrant:$RELEASE_VERSION"
+        docker tag "generall/qdrant:$RELEASE_VERSION" "generall/qdrant:latest"
+        docker push "generall/qdrant:latest"
