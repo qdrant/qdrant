@@ -9,8 +9,8 @@ use collection::operations::CollectionUpdateOperations;
 use segment::types::ScoredPoint;
 use storage::content_manager::storage_ops::StorageOperations;
 
-use crate::actix::api::models::CollectionsResponse;
 use crate::actix::api::retrieve_api::PointRequest;
+use crate::common::models::CollectionsResponse;
 
 mod actix;
 mod common;

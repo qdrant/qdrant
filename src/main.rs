@@ -3,7 +3,7 @@ extern crate log;
 
 #[cfg(feature = "web")]
 mod actix;
-mod common;
+pub mod common;
 mod settings;
 #[cfg(feature = "grpc")]
 mod tonic;
