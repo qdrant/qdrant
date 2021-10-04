@@ -20,6 +20,7 @@ use collection::operations::types::{
 use collection::operations::CollectionUpdateOperations;
 use segment::types::{PointIdType, ScoredPoint};
 
+use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::storage_ops::{AliasOperations, StorageOperations};
 use crate::types::StorageConfig;
@@ -27,7 +28,6 @@ use collection::collection_manager::collection_managers::{CollectionSearcher, Co
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 use collection::collection_manager::simple_collection_updater::SimpleCollectionUpdater;
 use std::ops::Deref;
-use crate::content_manager::collections_ops::{Checker, Collections};
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 #[allow(clippy::identity_op)]
@@ -117,7 +117,11 @@ impl TableOfContent {
             None => collection_name.to_string(),
             Some(resolved_alias) => from_utf8(&resolved_alias).unwrap().to_string(),
         };
-        self.collections.read().await.validate_collection_exists(&resolved_name).await?;
+        self.collections
+            .read()
+            .await
+            .validate_collection_exists(&resolved_name)
+            .await?;
         Ok(resolved_name)
     }
 
@@ -134,7 +138,8 @@ impl TableOfContent {
                 wal_config: wal_config_diff,
                 optimizers_config: optimizers_config_diff,
             } => {
-                self.collections.read()
+                self.collections
+                    .read()
                     .await
                     .validate_collection_not_exists(&collection_name)
                     .await?;
@@ -168,7 +173,9 @@ impl TableOfContent {
                 )?;
 
                 let mut write_collections = self.collections.write().await;
-                write_collections.validate_collection_not_exists(&collection_name).await?;
+                write_collections
+                    .validate_collection_not_exists(&collection_name)
+                    .await?;
                 write_collections.insert(collection_name, Arc::new(collection));
                 Ok(true)
             }
@@ -217,8 +224,12 @@ impl TableOfContent {
                             collection_name,
                             alias_name,
                         } => {
-                            collection_lock.validate_collection_exists(&collection_name).await?;
-                            collection_lock.validate_collection_not_exists(&alias_name).await?;
+                            collection_lock
+                                .validate_collection_exists(&collection_name)
+                                .await?;
+                            collection_lock
+                                .validate_collection_not_exists(&alias_name)
+                                .await?;
 
                             self.alias_persistence
                                 .insert(alias_name.as_bytes(), collection_name.as_bytes())?;

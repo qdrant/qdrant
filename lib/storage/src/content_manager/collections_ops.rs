@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::sync::Arc;
+use crate::content_manager::errors::StorageError;
 use async_trait::async_trait;
 use collection::collection::Collection;
-use crate::content_manager::errors::StorageError;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 pub type Collections = HashMap<String, Arc<Collection>>;
 
@@ -30,7 +30,6 @@ pub trait Checker {
         }
         Ok(())
     }
-
 }
 
 #[async_trait]
