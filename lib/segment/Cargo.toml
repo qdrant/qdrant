@@ -57,3 +57,6 @@ harness = false
 [[bench]]
 name = "serde_formats"
 harness = false
+
+[patch.crates-io]
+openblas-src = { git = "https://github.com/qdrant/openblas-src.git" }
