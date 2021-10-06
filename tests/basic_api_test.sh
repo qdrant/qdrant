@@ -78,3 +78,27 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/scroll" 
   --fail -s \
   -H 'Content-Type: application/json' \
   --data-raw '{ "offset": 2, "limit": 2, "with_vector": true }' | jq
+
+curl -L -X POST "http://$QDRANT_HOST/collections" \
+  --fail -s \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+      "change_aliases": {
+          "actions": [
+              {
+                  "create_alias": {
+                      "alias_name": "test_alias",
+                      "collection_name": "test_collection"
+                  }
+              }
+          ]
+      }
+  }' | jq
+
+curl -L -X POST "http://$QDRANT_HOST/collections/test_alias/points/search" \
+  -H 'Content-Type: application/json' \
+  --fail -s \
+  --data-raw '{
+        "vector": [0.2,0.1,0.9,0.7],
+        "top": 3
+    }' | jq

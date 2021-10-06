@@ -329,9 +329,9 @@ dependencies = [
 
 [[package]]
 name = "async-trait"
-version = "0.1.50"
+version = "0.1.51"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b98e84bbb4cbcdd97da190ba0c58a1bb0de2c1fdf67d159e192ed766aeca722"
+checksum = "44318e776df68115a881de9a8fd1b9e53368d7a4a5ce4cc48517da3393233a5e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3007,6 +3007,7 @@ checksum = "213701ba3370744dcd1a12960caa4843b3d68b4d1c0a5d575e0d65b2ee9d16c0"
 name = "storage"
 version = "0.2.0"
 dependencies = [
+ "async-trait",
  "collection",
  "itertools 0.9.0",
  "num_cpus",
@@ -3016,6 +3017,7 @@ dependencies = [
  "segment",
  "serde 1.0.126",
  "sled",
+ "tempdir",
  "thiserror",
  "tokio",
  "wal",

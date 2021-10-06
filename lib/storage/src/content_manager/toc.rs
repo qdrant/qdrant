@@ -20,6 +20,7 @@ use collection::operations::types::{
 use collection::operations::CollectionUpdateOperations;
 use segment::types::{PointIdType, ScoredPoint};
 
+use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::storage_ops::{AliasOperations, StorageOperations};
 use crate::types::StorageConfig;
@@ -35,7 +36,7 @@ const SLED_CACHE_SIZE: u64 = 1 * 1024 * 1024; // 1 mb
 const COLLECTIONS_DIR: &str = "collections";
 
 pub struct TableOfContent {
-    collections: Arc<RwLock<HashMap<String, Arc<Collection>>>>,
+    collections: Arc<RwLock<Collections>>,
     storage_config: StorageConfig,
     search_runtime: Runtime,
     alias_persistence: Db,
@@ -109,27 +110,6 @@ impl TableOfContent {
         Ok(path)
     }
 
-    async fn validate_collection_not_exists(
-        &self,
-        collection_name: &str,
-    ) -> Result<(), StorageError> {
-        if self.is_collection_exists(collection_name).await {
-            return Err(StorageError::BadInput {
-                description: format!("Collection `{}` already exists!", collection_name),
-            });
-        }
-        Ok(())
-    }
-
-    async fn validate_collection_exists(&self, collection_name: &str) -> Result<(), StorageError> {
-        if !self.is_collection_exists(collection_name).await {
-            return Err(StorageError::NotFound {
-                description: format!("Collection `{}` doesn't exist!", collection_name),
-            });
-        }
-        Ok(())
-    }
-
     async fn resolve_name(&self, collection_name: &str) -> Result<String, StorageError> {
         let alias_collection_name = self.alias_persistence.get(collection_name.as_bytes())?;
 
@@ -137,12 +117,12 @@ impl TableOfContent {
             None => collection_name.to_string(),
             Some(resolved_alias) => from_utf8(&resolved_alias).unwrap().to_string(),
         };
-        self.validate_collection_exists(&resolved_name).await?;
+        self.collections
+            .read()
+            .await
+            .validate_collection_exists(&resolved_name)
+            .await?;
         Ok(resolved_name)
-    }
-
-    pub async fn is_collection_exists(&self, collection_name: &str) -> bool {
-        self.collections.read().await.contains_key(collection_name)
     }
 
     pub async fn perform_collection_operation(
@@ -158,7 +138,10 @@ impl TableOfContent {
                 wal_config: wal_config_diff,
                 optimizers_config: optimizers_config_diff,
             } => {
-                self.validate_collection_not_exists(&collection_name)
+                self.collections
+                    .read()
+                    .await
+                    .validate_collection_not_exists(&collection_name)
                     .await?;
                 let collection_path = self.create_collection_path(&collection_name)?;
 
@@ -190,6 +173,9 @@ impl TableOfContent {
                 )?;
 
                 let mut write_collections = self.collections.write().await;
+                write_collections
+                    .validate_collection_not_exists(&collection_name)
+                    .await?;
                 write_collections.insert(collection_name, Arc::new(collection));
                 Ok(true)
             }
@@ -229,15 +215,21 @@ impl TableOfContent {
                 }
             }
             StorageOperations::ChangeAliases { actions } => {
-                let _collection_lock = self.collections.write().await; // Make alias change atomic
+                // Lock all collections for alias changes
+                // Prevent search on partially switched collections
+                let collection_lock = self.collections.write().await;
                 for action in actions {
                     match action {
                         AliasOperations::CreateAlias {
                             collection_name,
                             alias_name,
                         } => {
-                            self.validate_collection_exists(&collection_name).await?;
-                            self.validate_collection_not_exists(&alias_name).await?;
+                            collection_lock
+                                .validate_collection_exists(&collection_name)
+                                .await?;
+                            collection_lock
+                                .validate_collection_not_exists(&alias_name)
+                                .await?;
 
                             self.alias_persistence
                                 .insert(alias_name.as_bytes(), collection_name.as_bytes())?;
