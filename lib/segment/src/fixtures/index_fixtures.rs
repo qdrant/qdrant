@@ -6,10 +6,9 @@ use crate::vector_storage::simple_vector_storage::SimpleRawScorer;
 use bit_vec::BitVec;
 use itertools::Itertools;
 use ndarray::{Array, Array1};
-use rand::prelude::ThreadRng;
 use rand::Rng;
 
-pub fn random_vector(rnd_gen: &mut ThreadRng, size: usize) -> Vec<VectorElementType> {
+pub fn random_vector<R: Rng>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
     (0..size).map(|_| rnd_gen.gen()).collect()
 }
 

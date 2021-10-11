@@ -10,7 +10,6 @@ use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::ScoredPointOffset;
 use itertools::Itertools;
 use rand::distributions::Uniform;
-use rand::prelude::ThreadRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::cmp::{max, min};
@@ -119,9 +118,12 @@ impl GraphLayers {
     }
 
     /// Generate random level for a new point, according to geometric distribution
-    pub fn get_random_layer(&self, thread_rng: &mut ThreadRng) -> usize {
+    pub fn get_random_layer<R>(&self, rng: &mut R) -> usize
+    where
+        R: Rng + ?Sized,
+    {
         let distribution = Uniform::new(0.0, 1.0);
-        let sample: f64 = thread_rng.sample(distribution);
+        let sample: f64 = rng.sample(distribution);
         let picked_level = -sample.ln() * self.level_factor;
         picked_level.round() as usize
     }
@@ -490,8 +492,9 @@ mod tests {
     use crate::types::{Distance, VectorElementType};
     use itertools::Itertools;
     use ndarray::Array;
+    use rand::rngs::StdRng;
     use rand::seq::SliceRandom;
-    use rand::thread_rng;
+    use rand::SeedableRng;
     use std::fs::File;
     use std::io::Write;
     use tempdir::TempDir;
@@ -537,8 +540,10 @@ mod tests {
 
         assert_eq!(&res, &vec![1, 3, 6]);
 
+        let mut rng = StdRng::seed_from_u64(42);
+
         let mut graph_layers = GraphLayers::new(num_points, m, m, ef_construct, 1, true);
-        insert_ids.shuffle(&mut thread_rng());
+        insert_ids.shuffle(&mut rng);
         for id in insert_ids.iter().cloned() {
             let level_m = graph_layers.get_m(0);
             GraphLayers::connect_new_point(
@@ -571,11 +576,15 @@ mod tests {
 
     const M: usize = 8;
 
-    fn create_graph_layer(
+    fn create_graph_layer<R>(
         num_vectors: usize,
         dim: usize,
         use_heuristic: bool,
-    ) -> (TestRawScorerProducer, GraphLayers) {
+        rng: &mut R,
+    ) -> (TestRawScorerProducer, GraphLayers)
+    where
+        R: Rng + ?Sized,
+    {
         let m = M;
         let ef_construct = 16;
         let entry_points_num = 10;
@@ -591,8 +600,6 @@ mod tests {
             use_heuristic,
         );
 
-        let mut rng = thread_rng();
-
         for idx in 0..(num_vectors as PointOffsetType) {
             let fake_condition_checker = FakeConditionChecker {};
             let added_vector = vector_holder.vectors[idx as usize].to_vec();
@@ -602,7 +609,7 @@ mod tests {
                 condition_checker: &fake_condition_checker,
                 filter: None,
             };
-            let level = graph_layers.get_random_layer(&mut rng);
+            let level = graph_layers.get_random_layer(rng);
             graph_layers.link_new_point(idx, level, &scorer);
         }
 
@@ -666,9 +673,10 @@ mod tests {
         let dim = 8;
         let top = 5;
 
-        let (vector_holder, graph_layers) = create_graph_layer(num_vectors, dim, false);
+        let mut rng = StdRng::seed_from_u64(42);
 
-        let mut rng = thread_rng();
+        let (vector_holder, graph_layers) = create_graph_layer(num_vectors, dim, false, &mut rng);
+
         let query = random_vector(&mut rng, dim);
 
         let res1 = search_in_graph(&query, top, &vector_holder, &graph_layers);
@@ -690,9 +698,9 @@ mod tests {
         let num_vectors = 1000;
         let dim = 8;
 
-        let (vector_holder, graph_layers) = create_graph_layer(num_vectors, dim, false);
+        let mut rng = StdRng::seed_from_u64(42);
 
-        let mut rng = thread_rng();
+        let (vector_holder, graph_layers) = create_graph_layer(num_vectors, dim, false, &mut rng);
 
         let main_entry = graph_layers
             .entry_points
@@ -742,7 +750,9 @@ mod tests {
         let dim = 2;
         let num_vectors = 500;
 
-        let (vector_holder, graph_layers) = create_graph_layer(num_vectors, dim, true);
+        let mut rng = StdRng::seed_from_u64(42);
+
+        let (vector_holder, graph_layers) = create_graph_layer(num_vectors, dim, true, &mut rng);
 
         let graph_json = serde_json::to_string_pretty(&graph_layers).unwrap();
 
