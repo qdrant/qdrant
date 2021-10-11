@@ -123,20 +123,20 @@ impl SegmentEntry for Segment {
 
         let id_mapper = self.id_mapper.borrow();
 
-        let res = internal_result
+        let res: OperationResult<Vec<ScoredPoint>> = internal_result
             .iter()
             .map(|&scored_point_offset| {
                 let point_id = id_mapper
                     .external_id(scored_point_offset.idx)
-                    .unwrap_or_else(|| {
-                        panic!(
+                    .ok_or_else(|| OperationError::ServiceError {
+                        description: format!(
                             "Corrupter id_mapper, no external value for {}",
                             scored_point_offset.idx
-                        )
-                    });
+                        ),
+                    })?;
                 let payload = if with_payload.enable {
-                    let initial_payload = self.payload(point_id).unwrap_or_default();
-                    if let Some(i) = &with_payload.custom_payload {
+                    let initial_payload = self.payload(point_id)?;
+                    if let Some(i) = &with_payload.payload_selector {
                         i.process(initial_payload)
                     } else {
                         initial_payload
@@ -144,14 +144,14 @@ impl SegmentEntry for Segment {
                 } else {
                     TheMap::new()
                 };
-                ScoredPoint {
+                Ok(ScoredPoint {
                     id: point_id,
                     score: scored_point_offset.score,
                     payload,
-                }
+                })
             })
             .collect();
-        Ok(res)
+        Ok(res?)
     }
 
     fn upsert_point(

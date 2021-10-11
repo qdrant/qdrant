@@ -8,7 +8,7 @@ use collection::collection_manager::simple_collection_updater::SimpleCollectionU
 use collection::operations::point_ops::{PointInsertOperations, PointOperations};
 use collection::operations::types::ScrollRequest;
 use collection::operations::CollectionUpdateOperations;
-use segment::types::{CustomPayload, PayloadType, WithPayloadInterface};
+use segment::types::{PayloadSelector, PayloadType, WithPayloadInterface};
 
 use crate::common::simple_collection_fixture;
 
@@ -167,7 +167,7 @@ async fn test_collection_payload_custom_payload() {
                 offset: Some(0),
                 limit: Some(10),
                 filter: None,
-                with_payload: Some(WithPayloadInterface::Payload(CustomPayload {
+                with_payload: Some(WithPayloadInterface::Selector(PayloadSelector {
                     include: vec![String::from("v"), String::from("v2")],
                     exclude: vec![String::from("v")],
                 })),
