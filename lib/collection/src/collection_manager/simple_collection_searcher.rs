@@ -85,13 +85,11 @@ impl CollectionSearcher for SimpleCollectionSearcher {
         &self,
         segments: &RwLock<SegmentHolder>,
         points: &[PointIdType],
-        with_payload: &WithPayloadInterface,
+        with_payload: &WithPayload,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>> {
         let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut point_records: HashMap<PointIdType, Record> = Default::default();
-
-        let convert_payload = WithPayload::from(with_payload);
 
         segments.read().read_points(points, |id, segment| {
             // If this point was not found yet or this segment have later version
@@ -100,8 +98,12 @@ impl CollectionSearcher for SimpleCollectionSearcher {
                     id,
                     Record {
                         id,
-                        payload: if convert_payload.enable {
-                            Some(segment.payload(id, convert_payload.filter_payload.clone())?)
+                        payload: if with_payload.enable {
+                            if let Some(i) = &with_payload.filter_payload {
+                                Some(i.process(segment.payload(id)?))
+                            } else {
+                                Some(segment.payload(id)?)
+                            }
                         } else {
                             None
                         },
@@ -187,12 +189,7 @@ mod tests {
         let searcher = SimpleCollectionSearcher::new();
 
         let records = searcher
-            .retrieve(
-                &segment_holder,
-                &[1, 2, 3],
-                &WithPayloadInterface::Bool(true),
-                true,
-            )
+            .retrieve(&segment_holder, &[1, 2, 3], &WithPayload::from(true), true)
             .await
             .unwrap();
         assert_eq!(records.len(), 3);

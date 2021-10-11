@@ -10,7 +10,9 @@ use collection::operations::point_ops::PointInsertOperations::{BatchPoints, Poin
 use collection::operations::point_ops::{PointOperations, PointStruct};
 use collection::operations::types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus};
 use collection::operations::CollectionUpdateOperations;
-use segment::types::{PayloadInterface, PayloadKeyType, PayloadVariant, WithPayloadInterface};
+use segment::types::{
+    PayloadInterface, PayloadKeyType, PayloadVariant, WithPayload, WithPayloadInterface,
+};
 
 use crate::common::simple_collection_fixture;
 use collection::collection_manager::collection_managers::CollectionSearcher;
@@ -182,7 +184,7 @@ async fn test_collection_loading() {
         .retrieve(
             loaded_collection.segments(),
             &[1, 2],
-            &WithPayloadInterface::Bool(true),
+            &WithPayload::from(true),
             true,
         )
         .await

@@ -12,7 +12,7 @@ use tokio::runtime::{Handle, Runtime};
 
 use segment::types::{
     Condition, Filter, HasIdCondition, PayloadKeyType, PayloadSchemaInfo, PointIdType, ScoredPoint,
-    SegmentType, VectorElementType, WithPayloadInterface,
+    SegmentType, VectorElementType, WithPayload,
 };
 
 use crate::collection_builder::optimizers_builder::build_optimizers;
@@ -123,7 +123,7 @@ impl Collection {
         let limit = request
             .limit
             .unwrap_or_else(|| default_request.limit.unwrap());
-        let with_payload = &request
+        let with_payload_interface = &request
             .with_payload
             .clone()
             .unwrap_or_else(|| default_request.with_payload.clone().unwrap());
@@ -155,8 +155,9 @@ impl Collection {
             .take(limit)
             .collect_vec();
 
+        let with_payload = WithPayload::from(with_payload_interface);
         let mut points = segment_searcher
-            .retrieve(segments, &point_ids, with_payload, with_vector)
+            .retrieve(segments, &point_ids, &with_payload, with_vector)
             .await?;
         points.sort_by_key(|point| point.id);
 
@@ -196,7 +197,7 @@ impl Collection {
             .retrieve(
                 segments,
                 &reference_vectors_ids,
-                &WithPayloadInterface::Bool(true),
+                &WithPayload::from(true),
                 true,
             )
             .await?;

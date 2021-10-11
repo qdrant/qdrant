@@ -1,4 +1,4 @@
-FROM rust:1.53 as builder
+FROM rust:1.51 as builder
 
 COPY . ./qdrant
 WORKDIR ./qdrant

@@ -408,8 +408,16 @@ pub enum Condition {
 #[serde(untagged)]
 pub enum WithPayloadInterface {
     Bool(bool),
-    Keyword(Vec<String>),
+    Fields(Vec<String>),
     Payload(FilterPayload),
+}
+impl From<bool> for WithPayload {
+    fn from(x: bool) -> Self {
+        WithPayload {
+            enable: x,
+            filter_payload: None,
+        }
+    }
 }
 
 impl From<&WithPayloadInterface> for WithPayload {
@@ -419,7 +427,7 @@ impl From<&WithPayloadInterface> for WithPayload {
                 enable: *x,
                 filter_payload: None,
             },
-            WithPayloadInterface::Keyword(x) => WithPayload {
+            WithPayloadInterface::Fields(x) => WithPayload {
                 enable: true,
                 filter_payload: Some(FilterPayload::new_include(x.clone())),
             },
@@ -436,24 +444,33 @@ impl From<&WithPayloadInterface> for WithPayload {
 #[serde(rename_all = "snake_case")]
 pub struct FilterPayload {
     /// Include return payload key type
-    pub include: Option<Vec<PayloadKeyType>>,
+    pub include: Vec<PayloadKeyType>,
     /// Post-exclude return payload key type
-    pub exclude: Option<Vec<PayloadKeyType>>,
+    pub exclude: Vec<PayloadKeyType>,
 }
 
 impl FilterPayload {
     pub fn new_include(vecs_payload_key_type: Vec<PayloadKeyType>) -> Self {
         FilterPayload {
-            include: Some(vecs_payload_key_type),
-            exclude: None,
+            include: vecs_payload_key_type,
+            exclude: Vec::new(),
         }
     }
 
     pub fn new_include_and_exclude(
-        include: Option<Vec<PayloadKeyType>>,
-        exclude: Option<Vec<PayloadKeyType>>,
+        include: Vec<PayloadKeyType>,
+        exclude: Vec<PayloadKeyType>,
     ) -> Self {
         FilterPayload { include, exclude }
+    }
+
+    pub fn process(
+        &self,
+        x: TheMap<PayloadKeyType, PayloadType>,
+    ) -> TheMap<PayloadKeyType, PayloadType> {
+        x.into_iter()
+            .filter(|(key, _)| self.include.contains(key) && !self.exclude.contains(key))
+            .collect()
     }
 }
 

@@ -1,7 +1,6 @@
 use crate::types::{
-    Filter, FilterPayload, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap,
-    VectorElementType, WithPayload,
+    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType, ScoredPoint, SearchParams,
+    SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap, VectorElementType, WithPayload,
 };
 use atomicwrites::Error as AtomicIoError;
 use rocksdb::Error;
@@ -144,7 +143,6 @@ pub trait SegmentEntry {
     fn payload(
         &self,
         point_id: PointIdType,
-        filter_payload: Option<FilterPayload>,
     ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>>;
 
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;

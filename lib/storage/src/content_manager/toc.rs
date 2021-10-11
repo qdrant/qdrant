@@ -18,7 +18,7 @@ use collection::operations::types::{
     RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
-use segment::types::{PointIdType, ScoredPoint, WithPayloadInterface};
+use segment::types::{PointIdType, ScoredPoint, WithPayload};
 
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::storage_ops::{AliasOperations, StorageOperations};
@@ -325,7 +325,7 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         points: &[PointIdType],
-        with_payload: &WithPayloadInterface,
+        with_payload: &WithPayload,
         with_vector: bool,
     ) -> Result<Vec<Record>, StorageError> {
         let collection = self.get_collection(collection_name).await?;

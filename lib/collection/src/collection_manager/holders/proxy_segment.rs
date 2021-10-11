@@ -2,8 +2,8 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 use parking_lot::RwLock;
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
 use segment::types::{
-    Condition, Filter, FilterPayload, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap,
+    Condition, Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType, ScoredPoint,
+    SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap,
     VectorElementType, WithPayload,
 };
 use std::cmp::max;
@@ -46,7 +46,7 @@ impl ProxySegment {
         let (vector, payload) = {
             let segment_arc = self.wrapped_segment.get();
             let segment = segment_arc.read();
-            (segment.vector(point_id)?, segment.payload(point_id, None)?)
+            (segment.vector(point_id)?, segment.payload(point_id)?)
         };
 
         let mut deleted_points = self.deleted_points.write();
@@ -286,25 +286,18 @@ impl SegmentEntry for ProxySegment {
     fn payload(
         &self,
         point_id: PointIdType,
-        filter_payload: Option<FilterPayload>,
     ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
         return if self.deleted_points.read().contains(&point_id) {
-            self.write_segment
-                .get()
-                .read()
-                .payload(point_id, filter_payload)
+            self.write_segment.get().read().payload(point_id)
         } else {
             {
                 let write_segment = self.write_segment.get();
                 let segment_guard = write_segment.read();
                 if segment_guard.has_point(point_id) {
-                    return segment_guard.payload(point_id, filter_payload);
+                    return segment_guard.payload(point_id);
                 }
             }
-            self.wrapped_segment
-                .get()
-                .read()
-                .payload(point_id, filter_payload)
+            self.wrapped_segment.get().read().payload(point_id)
         };
     }
 

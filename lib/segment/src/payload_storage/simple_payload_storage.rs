@@ -1,6 +1,5 @@
 use crate::types::{
-    FilterPayload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PayloadType,
-    PointOffsetType, TheMap,
+    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PayloadType, PointOffsetType, TheMap,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -127,26 +126,9 @@ impl PayloadStorage for SimplePayloadStorage {
         Ok(())
     }
 
-    fn payload(
-        &self,
-        point_id: PointOffsetType,
-        filter_payload: Option<FilterPayload>,
-    ) -> TheMap<PayloadKeyType, PayloadType> {
+    fn payload(&self, point_id: PointOffsetType) -> TheMap<PayloadKeyType, PayloadType> {
         match self.payload.get(&point_id) {
-            Some(payload_value) => {
-                let mut payload_clone = payload_value.clone();
-                if let Some(i) = filter_payload {
-                    if let Some(include) = i.include {
-                        payload_clone.retain(|k, _| include.contains(k));
-                    }
-                    if let Some(exclude) = i.exclude {
-                        payload_clone.retain(|k, _| !(exclude.contains(k)));
-                    }
-                    payload_clone
-                } else {
-                    payload_clone
-                }
-            }
+            Some(payload) => payload.clone(),
             None => TheMap::new(),
         }
     }
@@ -213,9 +195,9 @@ mod tests {
         storage.assign(100, &key, payload.clone()).unwrap();
         storage.wipe().unwrap();
         storage.assign(100, &key, payload.clone()).unwrap();
-        assert!(storage.payload(100, None).len() > 0);
+        assert!(storage.payload(100).len() > 0);
         storage.wipe().unwrap();
-        assert_eq!(storage.payload(100, None).len(), 0);
+        assert_eq!(storage.payload(100).len(), 0);
     }
 
     #[test]
@@ -246,7 +228,7 @@ mod tests {
         let dir = TempDir::new("storage_dir").unwrap();
         let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
         storage.assign_all_with_value(100, v).unwrap();
-        let pload = storage.payload(100, None);
+        let pload = storage.payload(100);
         let keys: Vec<_> = pload.keys().cloned().collect();
         assert!(keys.contains(&"geo_data".to_string()));
         assert!(keys.contains(&"name".to_string()));

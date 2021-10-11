@@ -1,7 +1,7 @@
 use crate::entry::entry_point::OperationResult;
 use crate::types::{
-    Filter, FilterPayload, PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    PayloadType, PointOffsetType, TheMap,
+    Filter, PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PayloadType,
+    PointOffsetType, TheMap,
 };
 use serde_json::value::Value;
 
@@ -74,11 +74,7 @@ pub trait PayloadStorage {
     ) -> OperationResult<()>;
 
     /// Get payload for point
-    fn payload(
-        &self,
-        point_id: PointOffsetType,
-        filter_payload: Option<FilterPayload>,
-    ) -> TheMap<PayloadKeyType, PayloadType>;
+    fn payload(&self, point_id: PointOffsetType) -> TheMap<PayloadKeyType, PayloadType>;
 
     /// Delete payload by key
     fn delete(

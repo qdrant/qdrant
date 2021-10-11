@@ -199,7 +199,7 @@ impl StructPayloadIndex {
         let mut builders = index_selector(field_type);
 
         for point_id in payload_ref.iter_ids() {
-            let point_payload = payload_ref.payload(point_id, None);
+            let point_payload = payload_ref.payload(point_id);
             let field_value_opt = point_payload.get(field);
             match field_value_opt {
                 None => {}

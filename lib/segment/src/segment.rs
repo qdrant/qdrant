@@ -4,9 +4,9 @@ use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::{ConditionChecker, PayloadStorage};
 use crate::spaces::tools::mertic_object;
 use crate::types::{
-    Filter, FilterPayload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo, PayloadType,
-    PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
-    SegmentState, SegmentType, SeqNumberType, TheMap, VectorElementType, WithPayload,
+    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo, PayloadType, PointIdType,
+    PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState,
+    SegmentType, SeqNumberType, TheMap, VectorElementType, WithPayload,
 };
 use crate::vector_storage::VectorStorage;
 use atomic_refcell::AtomicRefCell;
@@ -135,8 +135,12 @@ impl SegmentEntry for Segment {
                         )
                     });
                 let payload = if with_payload.enable {
-                    self.payload(point_id, with_payload.filter_payload.clone())
-                        .unwrap_or_default()
+                    let initial_payload = self.payload(point_id).unwrap_or_default();
+                    if let Some(i) = &with_payload.filter_payload {
+                        i.process(initial_payload)
+                    } else {
+                        initial_payload
+                    }
                 } else {
                     TheMap::new()
                 };
@@ -305,13 +309,9 @@ impl SegmentEntry for Segment {
     fn payload(
         &self,
         point_id: PointIdType,
-        filter_payload: Option<FilterPayload>,
     ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
         let internal_id = self.lookup_internal_id(point_id)?;
-        Ok(self
-            .payload_storage
-            .borrow()
-            .payload(internal_id, filter_payload))
+        Ok(self.payload_storage.borrow().payload(internal_id))
     }
 
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
@@ -499,7 +499,7 @@ mod tests {
         segment
             .set_full_payload_with_json(0, 0, &data.to_string())
             .unwrap();
-        let payload = segment.payload(0, None).unwrap();
+        let payload = segment.payload(0).unwrap();
         let keys: Vec<PayloadKeyType> = payload.keys().cloned().collect();
         assert!(keys.contains(&"geo_data".to_string()));
         assert!(keys.contains(&"name".to_string()));
