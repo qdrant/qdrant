@@ -409,13 +409,13 @@ pub enum Condition {
 pub enum WithPayloadInterface {
     Bool(bool),
     Fields(Vec<String>),
-    Payload(FilterPayload),
+    Payload(CustomPayload),
 }
 impl From<bool> for WithPayload {
     fn from(x: bool) -> Self {
         WithPayload {
             enable: x,
-            filter_payload: None,
+            custom_payload: None,
         }
     }
 }
@@ -425,15 +425,15 @@ impl From<&WithPayloadInterface> for WithPayload {
         match interface {
             WithPayloadInterface::Bool(x) => WithPayload {
                 enable: *x,
-                filter_payload: None,
+                custom_payload: None,
             },
             WithPayloadInterface::Fields(x) => WithPayload {
                 enable: true,
-                filter_payload: Some(FilterPayload::new_include(x.clone())),
+                custom_payload: Some(CustomPayload::new_include(x.clone())),
             },
             WithPayloadInterface::Payload(x) => WithPayload {
                 enable: true,
-                filter_payload: Some(x.clone()),
+                custom_payload: Some(x.clone()),
             },
         }
     }
@@ -442,16 +442,16 @@ impl From<&WithPayloadInterface> for WithPayload {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
-pub struct FilterPayload {
+pub struct CustomPayload {
     /// Include return payload key type
     pub include: Vec<PayloadKeyType>,
     /// Post-exclude return payload key type
     pub exclude: Vec<PayloadKeyType>,
 }
 
-impl FilterPayload {
+impl CustomPayload {
     pub fn new_include(vecs_payload_key_type: Vec<PayloadKeyType>) -> Self {
-        FilterPayload {
+        CustomPayload {
             include: vecs_payload_key_type,
             exclude: Vec::new(),
         }
@@ -461,7 +461,7 @@ impl FilterPayload {
         include: Vec<PayloadKeyType>,
         exclude: Vec<PayloadKeyType>,
     ) -> Self {
-        FilterPayload { include, exclude }
+        CustomPayload { include, exclude }
     }
 
     pub fn process(
@@ -481,7 +481,7 @@ pub struct WithPayload {
     /// Enable return payloads or not
     pub enable: bool,
     /// Filter include and exclude payloads
-    pub filter_payload: Option<FilterPayload>,
+    pub custom_payload: Option<CustomPayload>,
 }
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(deny_unknown_fields)]

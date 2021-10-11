@@ -99,7 +99,7 @@ impl CollectionSearcher for SimpleCollectionSearcher {
                     Record {
                         id,
                         payload: if with_payload.enable {
-                            if let Some(i) = &with_payload.filter_payload {
+                            if let Some(i) = &with_payload.custom_payload {
                                 Some(i.process(segment.payload(id)?))
                             } else {
                                 Some(segment.payload(id)?)

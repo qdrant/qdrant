@@ -136,7 +136,7 @@ impl SegmentEntry for Segment {
                     });
                 let payload = if with_payload.enable {
                     let initial_payload = self.payload(point_id).unwrap_or_default();
-                    if let Some(i) = &with_payload.filter_payload {
+                    if let Some(i) = &with_payload.custom_payload {
                         i.process(initial_payload)
                     } else {
                         initial_payload

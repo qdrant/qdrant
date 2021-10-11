@@ -8,7 +8,7 @@ use collection::collection_manager::simple_collection_updater::SimpleCollectionU
 use collection::operations::point_ops::{PointInsertOperations, PointOperations};
 use collection::operations::types::ScrollRequest;
 use collection::operations::CollectionUpdateOperations;
-use segment::types::{FilterPayload, PayloadType, WithPayloadInterface};
+use segment::types::{CustomPayload, PayloadType, WithPayloadInterface};
 
 use crate::common::simple_collection_fixture;
 
@@ -100,7 +100,7 @@ async fn test_collection_payload_reloading() {
 }
 
 #[tokio::test]
-async fn test_collection_payload_filter_payload() {
+async fn test_collection_payload_custom_payload() {
     let collection_dir = TempDir::new("collection").unwrap();
     let updater = Arc::new(SimpleCollectionUpdater::new());
     {
@@ -125,7 +125,7 @@ async fn test_collection_payload_filter_payload() {
 
     let searcher = SimpleCollectionSearcher::new();
     // Test res with filter payload
-    let res_with_filter_payload = collection
+    let res_with_custom_payload = collection
         .scroll_by(
             ScrollRequest {
                 offset: Some(0),
@@ -138,13 +138,13 @@ async fn test_collection_payload_filter_payload() {
         )
         .await
         .unwrap();
-    assert!(res_with_filter_payload.points[0]
+    assert!(res_with_custom_payload.points[0]
         .payload
         .as_ref()
         .expect("has payload")
         .is_empty());
 
-    match res_with_filter_payload.points[1]
+    match res_with_custom_payload.points[1]
         .payload
         .as_ref()
         .expect("has payload")
@@ -156,18 +156,18 @@ async fn test_collection_payload_filter_payload() {
     }
 
     eprintln!(
-        "res_with_filter_payload = {:#?}",
-        res_with_filter_payload.points[0].payload.as_ref().unwrap()
+        "res_with_custom_payload = {:#?}",
+        res_with_custom_payload.points[0].payload.as_ref().unwrap()
     );
 
     // Test res with filter payload dict
-    let res_with_filter_payload = collection
+    let res_with_custom_payload = collection
         .scroll_by(
             ScrollRequest {
                 offset: Some(0),
                 limit: Some(10),
                 filter: None,
-                with_payload: Some(WithPayloadInterface::Payload(FilterPayload {
+                with_payload: Some(WithPayloadInterface::Payload(CustomPayload {
                     include: vec![String::from("v"), String::from("v2")],
                     exclude: vec![String::from("v")],
                 })),
@@ -177,13 +177,13 @@ async fn test_collection_payload_filter_payload() {
         )
         .await
         .unwrap();
-    assert!(res_with_filter_payload.points[0]
+    assert!(res_with_custom_payload.points[0]
         .payload
         .as_ref()
         .expect("has payload")
         .is_empty());
 
-    match res_with_filter_payload.points[1]
+    match res_with_custom_payload.points[1]
         .payload
         .as_ref()
         .expect("has payload")
@@ -195,7 +195,7 @@ async fn test_collection_payload_filter_payload() {
     }
 
     eprintln!(
-        "res_with_filter_payload = {:#?}",
-        res_with_filter_payload.points[0].payload.as_ref().unwrap()
+        "res_with_custom_payload = {:#?}",
+        res_with_custom_payload.points[0].payload.as_ref().unwrap()
     );
 }
