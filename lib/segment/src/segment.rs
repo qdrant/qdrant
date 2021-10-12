@@ -151,7 +151,7 @@ impl SegmentEntry for Segment {
                 })
             })
             .collect();
-        Ok(res?)
+        res
     }
 
     fn upsert_point(
