@@ -3,7 +3,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use tokio::runtime::Handle;
 
-use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
+use segment::types::{PointIdType, ScoredPoint, SeqNumberType, WithPayload};
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::types::{CollectionResult, Record, SearchRequest};
@@ -23,7 +23,7 @@ pub trait CollectionSearcher {
         &self,
         segments: &RwLock<SegmentHolder>,
         points: &[PointIdType],
-        with_payload: bool,
+        with_payload: &WithPayload,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>>;
 }

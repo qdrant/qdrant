@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use tokio::runtime::Handle;
 
 use segment::spaces::tools::peek_top_scores_iterable;
-use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
+use segment::types::{PointIdType, ScoredPoint, SeqNumberType, WithPayload, WithPayloadInterface};
 
 use crate::collection_manager::collection_managers::CollectionSearcher;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
@@ -85,7 +85,7 @@ impl CollectionSearcher for SimpleCollectionSearcher {
         &self,
         segments: &RwLock<SegmentHolder>,
         points: &[PointIdType],
-        with_payload: bool,
+        with_payload: &WithPayload,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>> {
         let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
@@ -98,8 +98,12 @@ impl CollectionSearcher for SimpleCollectionSearcher {
                     id,
                     Record {
                         id,
-                        payload: if with_payload {
-                            Some(segment.payload(id)?)
+                        payload: if with_payload.enable {
+                            if let Some(selector) = &with_payload.payload_selector {
+                                Some(selector.process(segment.payload(id)?))
+                            } else {
+                                Some(segment.payload(id)?)
+                            }
                         } else {
                             None
                         },
@@ -122,8 +126,14 @@ async fn search_in_segment(
     segment: LockedSegment,
     request: Arc<SearchRequest>,
 ) -> CollectionResult<Vec<ScoredPoint>> {
+    let with_payload_interface = request
+        .with_payload
+        .as_ref()
+        .unwrap_or(&WithPayloadInterface::Bool(false));
+    let with_payload = WithPayload::from(with_payload_interface);
     let res = segment.get().read().search(
         &request.vector,
+        &with_payload,
         request.filter.as_ref(),
         request.top,
         request.params.as_ref(),
@@ -152,6 +162,7 @@ mod tests {
 
         let req = Arc::new(SearchRequest {
             vector: query,
+            with_payload: None,
             filter: None,
             params: None,
             top: 5,
@@ -178,7 +189,7 @@ mod tests {
         let searcher = SimpleCollectionSearcher::new();
 
         let records = searcher
-            .retrieve(&segment_holder, &[1, 2, 3], true, true)
+            .retrieve(&segment_holder, &[1, 2, 3], &WithPayload::from(true), true)
             .await
             .unwrap();
         assert_eq!(records.len(), 3);

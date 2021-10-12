@@ -6,7 +6,7 @@ use crate::spaces::tools::mertic_object;
 use crate::types::{
     Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo, PayloadType, PointIdType,
     PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState,
-    SegmentType, SeqNumberType, TheMap, VectorElementType,
+    SegmentType, SeqNumberType, TheMap, VectorElementType, WithPayload,
 };
 use crate::vector_storage::VectorStorage;
 use atomic_refcell::AtomicRefCell;
@@ -103,6 +103,7 @@ impl SegmentEntry for Segment {
     fn search(
         &self,
         vector: &[VectorElementType],
+        with_payload: &WithPayload,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -121,21 +122,36 @@ impl SegmentEntry for Segment {
             .search(vector, filter, top, params);
 
         let id_mapper = self.id_mapper.borrow();
-        let res = internal_result
+
+        let res: OperationResult<Vec<ScoredPoint>> = internal_result
             .iter()
-            .map(|&scored_point_offset| ScoredPoint {
-                id: id_mapper
+            .map(|&scored_point_offset| {
+                let point_id = id_mapper
                     .external_id(scored_point_offset.idx)
-                    .unwrap_or_else(|| {
-                        panic!(
+                    .ok_or_else(|| OperationError::ServiceError {
+                        description: format!(
                             "Corrupter id_mapper, no external value for {}",
                             scored_point_offset.idx
-                        )
-                    }),
-                score: scored_point_offset.score,
+                        ),
+                    })?;
+                let payload = if with_payload.enable {
+                    let initial_payload = self.payload(point_id)?;
+                    if let Some(i) = &with_payload.payload_selector {
+                        i.process(initial_payload)
+                    } else {
+                        initial_payload
+                    }
+                } else {
+                    TheMap::new()
+                };
+                Ok(ScoredPoint {
+                    id: point_id,
+                    score: scored_point_offset.score,
+                    payload,
+                })
             })
             .collect();
-        Ok(res)
+        res
     }
 
     fn upsert_point(
@@ -700,13 +716,20 @@ mod tests {
 
         let filter_invalid: Filter = serde_json::from_str(filter_invalid_str).unwrap();
         let results_with_valid_filter = segment
-            .search(&vec![1.0 as f32, 1.0 as f32], Some(&filter_valid), 1, None)
+            .search(
+                &vec![1.0 as f32, 1.0 as f32],
+                &WithPayload::default(),
+                Some(&filter_valid),
+                1,
+                None,
+            )
             .unwrap();
         assert_eq!(results_with_valid_filter.len(), 1);
         assert_eq!(results_with_valid_filter.first().unwrap().id, 0);
         let results_with_invalid_filter = segment
             .search(
                 &vec![1.0 as f32, 1.0 as f32],
+                &WithPayload::default(),
                 Some(&filter_invalid),
                 1,
                 None,

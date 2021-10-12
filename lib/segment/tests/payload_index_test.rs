@@ -8,7 +8,7 @@ mod tests {
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, Indexes, PayloadIndexType, PayloadKeyType,
-        PayloadType, Range, SegmentConfig, StorageType, TheMap,
+        PayloadType, Range, SegmentConfig, StorageType, TheMap, WithPayload,
     };
     use tempdir::TempDir;
 
@@ -144,10 +144,22 @@ mod tests {
             let query_filter = random_filter(&mut rnd);
 
             let plain_result = plain_segment
-                .search(&query_vector, Some(&query_filter), 5, None)
+                .search(
+                    &query_vector,
+                    &WithPayload::default(),
+                    Some(&query_filter),
+                    5,
+                    None,
+                )
                 .unwrap();
             let struct_result = struct_segment
-                .search(&query_vector, Some(&query_filter), 5, None)
+                .search(
+                    &query_vector,
+                    &WithPayload::default(),
+                    Some(&query_filter),
+                    5,
+                    None,
+                )
                 .unwrap();
 
             let estimation = struct_segment

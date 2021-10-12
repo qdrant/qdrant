@@ -4,7 +4,9 @@ use segment::types::SeqNumberType;
 
 use crate::collection_manager::collection_managers::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
-use crate::collection_manager::segments_updater::*;
+use crate::collection_manager::segments_updater::{
+    process_field_index_operation, process_payload_operation, process_point_operation,
+};
 use crate::operations::types::CollectionResult;
 use crate::operations::CollectionUpdateOperations;
 
@@ -44,10 +46,11 @@ impl CollectionUpdater for SimpleCollectionUpdater {
 mod tests {
     use tempdir::TempDir;
 
-    use segment::types::{PayloadInterface, PayloadKeyType, PayloadVariant};
+    use segment::types::{PayloadInterface, PayloadKeyType, PayloadVariant, WithPayload};
 
     use crate::collection_manager::collection_managers::CollectionSearcher;
     use crate::collection_manager::fixtures::build_test_holder;
+    use crate::collection_manager::segments_updater::upsert_points;
     use crate::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 
     use super::*;
@@ -70,7 +73,7 @@ mod tests {
         assert!(matches!(res, Ok(1)));
 
         let records = searcher
-            .retrieve(&segments, &[1, 2, 500], true, true)
+            .retrieve(&segments, &[1, 2, 500], &WithPayload::from(true), true)
             .await
             .unwrap();
 
@@ -95,7 +98,7 @@ mod tests {
         .unwrap();
 
         let records = searcher
-            .retrieve(&segments, &[1, 2, 500], true, true)
+            .retrieve(&segments, &[1, 2, 500], &WithPayload::from(true), true)
             .await
             .unwrap();
 
@@ -131,7 +134,7 @@ mod tests {
         .unwrap();
 
         let res = searcher
-            .retrieve(&segments, &points, true, false)
+            .retrieve(&segments, &points, &WithPayload::from(true), false)
             .await
             .unwrap();
 
@@ -159,7 +162,7 @@ mod tests {
         .unwrap();
 
         let res = searcher
-            .retrieve(&segments, &[3], true, false)
+            .retrieve(&segments, &[3], &WithPayload::from(true), false)
             .await
             .unwrap();
         assert_eq!(res.len(), 1);
@@ -168,7 +171,7 @@ mod tests {
         // Test clear payload
 
         let res = searcher
-            .retrieve(&segments, &[2], true, false)
+            .retrieve(&segments, &[2], &WithPayload::from(true), false)
             .await
             .unwrap();
         assert_eq!(res.len(), 1);
@@ -181,7 +184,7 @@ mod tests {
         )
         .unwrap();
         let res = searcher
-            .retrieve(&segments, &[2], true, false)
+            .retrieve(&segments, &[2], &WithPayload::from(true), false)
             .await
             .unwrap();
         assert_eq!(res.len(), 1);

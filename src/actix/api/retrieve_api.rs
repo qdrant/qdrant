@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use collection::operations::types::{Record, ScrollRequest, ScrollResult};
-use segment::types::PointIdType;
+use segment::types::{PointIdType, WithPayload, WithPayloadInterface};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 
@@ -15,6 +15,7 @@ use crate::actix::helpers::process_response;
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct PointRequest {
     pub ids: Vec<PointIdType>,
+    pub with_payload: Option<WithPayloadInterface>,
 }
 
 async fn do_get_point(
@@ -22,7 +23,7 @@ async fn do_get_point(
     collection_name: &str,
     point_id: PointIdType,
 ) -> Result<Option<Record>, StorageError> {
-    toc.retrieve(collection_name, &[point_id], true, true)
+    toc.retrieve(collection_name, &[point_id], &WithPayload::from(true), true)
         .await
         .map(|points| points.into_iter().next())
 }
@@ -32,7 +33,11 @@ async fn do_get_points(
     collection_name: &str,
     request: PointRequest,
 ) -> Result<Vec<Record>, StorageError> {
-    toc.retrieve(collection_name, &request.ids, true, true)
+    let with_payload_interface = &request
+        .with_payload
+        .unwrap_or(WithPayloadInterface::Bool(true));
+    let with_payload = WithPayload::from(with_payload_interface);
+    toc.retrieve(collection_name, &request.ids, &with_payload, true)
         .await
 }
 

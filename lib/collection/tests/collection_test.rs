@@ -10,7 +10,9 @@ use collection::operations::point_ops::PointInsertOperations::{BatchPoints, Poin
 use collection::operations::point_ops::{PointOperations, PointStruct};
 use collection::operations::types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus};
 use collection::operations::CollectionUpdateOperations;
-use segment::types::{PayloadInterface, PayloadKeyType, PayloadVariant};
+use segment::types::{
+    PayloadInterface, PayloadKeyType, PayloadVariant, WithPayload, WithPayloadInterface,
+};
 
 use crate::common::simple_collection_fixture;
 use collection::collection_manager::collection_managers::CollectionSearcher;
@@ -52,6 +54,7 @@ async fn test_collection_updater() {
 
     let search_request = SearchRequest {
         vector: vec![1.0, 1.0, 1.0, 1.0],
+        with_payload: None,
         filter: None,
         params: None,
         top: 3,
@@ -70,6 +73,62 @@ async fn test_collection_updater() {
         Ok(res) => {
             assert_eq!(res.len(), 3);
             assert_eq!(res[0].id, 2);
+            assert_eq!(res[0].payload.len(), 0);
+        }
+        Err(err) => panic!("search failed: {:?}", err),
+    }
+}
+
+#[tokio::test]
+async fn test_collection_search_with_payload() {
+    let collection_dir = TempDir::new("collection").unwrap();
+
+    let collection = simple_collection_fixture(collection_dir.path()).await;
+    let segment_updater = Arc::new(SimpleCollectionUpdater::new());
+
+    let insert_points =
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(BatchPoints {
+            ids: vec![0, 1],
+            vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
+            payloads: serde_json::from_str(
+                &r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2" , "v": "v3"}]"#,
+            )
+            .unwrap(),
+        }));
+
+    let insert_result = collection
+        .update_by(insert_points, true, segment_updater.clone())
+        .await;
+
+    match insert_result {
+        Ok(res) => {
+            assert_eq!(res.status, UpdateStatus::Completed)
+        }
+        Err(err) => panic!("operation failed: {:?}", err),
+    }
+
+    let search_request = SearchRequest {
+        vector: vec![1.0, 0.0, 1.0, 1.0],
+        with_payload: Some(WithPayloadInterface::Bool(true)),
+        filter: None,
+        params: None,
+        top: 3,
+    };
+
+    let segment_searcher = SimpleCollectionSearcher::new();
+    let search_res = segment_searcher
+        .search(
+            collection.segments(),
+            Arc::new(search_request),
+            &Handle::current(),
+        )
+        .await;
+
+    match search_res {
+        Ok(res) => {
+            assert_eq!(res.len(), 2);
+            assert_eq!(res[0].id, 0);
+            assert_eq!(res[0].payload.len(), 1);
         }
         Err(err) => panic!("search failed: {:?}", err),
     }
@@ -122,7 +181,12 @@ async fn test_collection_loading() {
     let loaded_collection = load_collection(collection_dir.path(), segment_updater.clone());
     let segment_searcher = SimpleCollectionSearcher::new();
     let retrieved = segment_searcher
-        .retrieve(loaded_collection.segments(), &[1, 2], true, true)
+        .retrieve(
+            loaded_collection.segments(),
+            &[1, 2],
+            &WithPayload::from(true),
+            true,
+        )
         .await
         .unwrap();
 
@@ -236,7 +300,7 @@ async fn test_recommendation_api() {
         .await
         .unwrap();
     assert!(result.len() > 0);
-    let top1 = result[0];
+    let top1 = &result[0];
 
     assert!(top1.id == 5 || top1.id == 6);
 }
@@ -276,7 +340,7 @@ async fn test_read_api() {
                 offset: Some(0),
                 limit: Some(2),
                 filter: None,
-                with_payload: Some(true),
+                with_payload: Some(WithPayloadInterface::Bool(true)),
                 with_vector: None,
             },
             &segment_searcher,

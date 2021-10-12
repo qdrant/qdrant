@@ -4,7 +4,7 @@ use segment::entry::entry_point::{OperationResult, SegmentEntry};
 use segment::types::{
     Condition, Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType, ScoredPoint,
     SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap,
-    VectorElementType,
+    VectorElementType, WithPayload,
 };
 use std::cmp::max;
 use std::collections::HashSet;
@@ -108,6 +108,7 @@ impl SegmentEntry for ProxySegment {
     fn search(
         &self,
         vector: &[VectorElementType],
+        with_payload: &WithPayload,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -124,22 +125,25 @@ impl SegmentEntry for ProxySegment {
             // This copy might slow process down if there will be a lot of deleted points
             let wrapped_filter = self.add_deleted_points_condition_to_filter(filter);
 
-            self.wrapped_segment
-                .get()
-                .read()
-                .search(vector, Some(&wrapped_filter), top, params)?
+            self.wrapped_segment.get().read().search(
+                vector,
+                with_payload,
+                Some(&wrapped_filter),
+                top,
+                params,
+            )?
         } else {
             self.wrapped_segment
                 .get()
                 .read()
-                .search(vector, filter, top, params)?
+                .search(vector, with_payload, filter, top, params)?
         };
 
-        let mut write_result = self
-            .write_segment
-            .get()
-            .read()
-            .search(vector, filter, top, params)?;
+        let mut write_result =
+            self.write_segment
+                .get()
+                .read()
+                .search(vector, with_payload, filter, top, params)?;
 
         wrapped_result.append(&mut write_result);
         Ok(wrapped_result)
@@ -456,7 +460,9 @@ mod tests {
         proxy_segment.delete_point(102, 1).unwrap();
 
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
-        let search_result = proxy_segment.search(&query_vector, None, 10, None).unwrap();
+        let search_result = proxy_segment
+            .search(&query_vector, &WithPayload::default(), None, 10, None)
+            .unwrap();
 
         eprintln!("search_result = {:#?}", search_result);
 

@@ -1,6 +1,6 @@
 use crate::types::{
     Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType, ScoredPoint, SearchParams,
-    SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap, VectorElementType,
+    SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap, VectorElementType, WithPayload,
 };
 use atomicwrites::Error as AtomicIoError;
 use rocksdb::Error;
@@ -84,6 +84,7 @@ pub trait SegmentEntry {
     fn search(
         &self,
         vector: &[VectorElementType],
+        with_payload: &WithPayload,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
