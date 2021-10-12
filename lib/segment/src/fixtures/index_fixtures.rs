@@ -8,7 +8,7 @@ use itertools::Itertools;
 use ndarray::{Array, Array1};
 use rand::Rng;
 
-pub fn random_vector<R: Rng>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
+pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
     (0..size).map(|_| rnd_gen.gen()).collect()
 }
 
@@ -27,14 +27,15 @@ pub struct TestRawScorerProducer {
 }
 
 impl TestRawScorerProducer {
-    pub fn new(dim: usize, num_vectors: usize, distance: Distance) -> Self {
-        let mut rnd = rand::thread_rng();
-
+    pub fn new<R>(dim: usize, num_vectors: usize, distance: Distance, rng: &mut R) -> Self
+    where
+        R: Rng + ?Sized,
+    {
         let metric = mertic_object(&distance);
 
         let vectors = (0..num_vectors)
             .map(|_x| {
-                let rnd_vec = random_vector(&mut rnd, dim);
+                let rnd_vec = random_vector(rng, dim);
                 metric.preprocess(&rnd_vec).unwrap_or(rnd_vec)
             })
             .collect_vec();

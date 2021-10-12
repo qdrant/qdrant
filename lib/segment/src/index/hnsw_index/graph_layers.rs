@@ -589,7 +589,7 @@ mod tests {
         let ef_construct = 16;
         let entry_points_num = 10;
 
-        let vector_holder = TestRawScorerProducer::new(dim, num_vectors, Distance::Cosine);
+        let vector_holder = TestRawScorerProducer::new(dim, num_vectors, Distance::Cosine, rng);
 
         let mut graph_layers = GraphLayers::new(
             num_vectors,
@@ -624,7 +624,9 @@ mod tests {
         let entry_points_num = 10;
         let num_vectors = 10;
 
-        let vector_holder = TestRawScorerProducer::new(dim, num_vectors, Distance::Dot);
+        let mut rng = StdRng::seed_from_u64(42);
+
+        let vector_holder = TestRawScorerProducer::new(dim, num_vectors, Distance::Dot, &mut rng);
 
         let mut graph_layers =
             GraphLayers::new(num_vectors, m, m * 2, ef_construct, entry_points_num, false);
