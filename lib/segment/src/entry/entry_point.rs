@@ -155,6 +155,12 @@ pub trait SegmentEntry {
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType>;
 
+    fn delete_filtered<'a>(
+        &'a mut self,
+        op_num: SeqNumberType,
+        filter: &'a Filter,
+    ) -> OperationResult<Vec<PointIdType>>;
+
     /// Check if there is point with `point_id` in this segment.
     fn has_point(&self, point_id: PointIdType) -> bool;
 

@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use parking_lot::RwLock;
 
 use segment::types::{
-    PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType,
+    Filter, PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType,
 };
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
@@ -11,6 +11,8 @@ use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointInsertOperations, PointOperations};
 use crate::operations::types::{CollectionError, CollectionResult, VectorType};
 use crate::operations::FieldIndexOperations;
+
+use super::holders::segment_holder::AppliedSegmentResult;
 
 /// A collection of functions for updating points and payloads stored in segments
 
@@ -37,6 +39,19 @@ pub(crate) fn delete_points(
         write_segment.delete_point(op_num, id)
     })?;
     Ok(res)
+}
+
+/// Deletes points from all segments which match the given filter
+pub(crate) fn delete_points_by_filter(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    filter: &Filter,
+) -> CollectionResult<usize> {
+    let res = segments.apply_segments(op_num, |s| {
+        let deleted = s.delete_filtered(op_num, filter)?;
+        Ok(AppliedSegmentResult::AffectedPoints(deleted.len()))
+    })?;
+    Ok(res.1)
 }
 
 pub(crate) fn set_payload(
@@ -102,9 +117,11 @@ pub(crate) fn create_field_index(
     field_name: PayloadKeyTypeRef,
 ) -> CollectionResult<usize> {
     let res = segments.apply_segments(op_num, |write_segment| {
-        write_segment.create_field_index(op_num, field_name)
+        Ok(AppliedSegmentResult::Applied(
+            write_segment.create_field_index(op_num, field_name)?,
+        ))
     })?;
-    Ok(res)
+    Ok(res.0)
 }
 
 pub(crate) fn delete_field_index(
@@ -113,9 +130,11 @@ pub(crate) fn delete_field_index(
     field_name: PayloadKeyTypeRef,
 ) -> CollectionResult<usize> {
     let res = segments.apply_segments(op_num, |write_segment| {
-        write_segment.delete_field_index(op_num, field_name)
+        Ok(AppliedSegmentResult::Applied(
+            write_segment.delete_field_index(op_num, field_name)?,
+        ))
     })?;
-    Ok(res)
+    Ok(res.0)
 }
 
 /// Checks point id in each segment, update point if found.
@@ -230,6 +249,9 @@ pub(crate) fn process_point_operation(
             };
             let res = upsert_points(segments, op_num, &ids, &vectors, &payloads)?;
             Ok(res)
+        }
+        PointOperations::DeletePointsByFilter(filter) => {
+            delete_points_by_filter(&segments.read(), op_num, &filter)
         }
     }
 }

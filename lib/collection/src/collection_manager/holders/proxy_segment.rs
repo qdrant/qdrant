@@ -426,6 +426,14 @@ impl SegmentEntry for ProxySegment {
             .filter(|x| !self.deleted_indexes.read().contains(x))
             .collect()
     }
+
+    fn delete_filtered<'a>(
+        &'a mut self,
+        _op_num: SeqNumberType,
+        _filter: &'a Filter,
+    ) -> OperationResult<Vec<PointIdType>> {
+        todo!()
+    }
 }
 
 #[cfg(test)]
