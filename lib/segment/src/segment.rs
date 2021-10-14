@@ -560,6 +560,21 @@ impl SegmentEntry for Segment {
     fn check_error(&self) -> Option<SegmentFailedState> {
         self.error_status.clone()
     }
+
+    fn delete_filtered<'a>(
+        &'a mut self,
+        op_num: SeqNumberType,
+        filter: &'a Filter,
+    ) -> OperationResult<Vec<PointIdType>> {
+        Ok(self
+            .read_filtered(0, std::usize::MAX, Some(filter))
+            .into_iter()
+            .map(|point_id| {
+                self.delete_point(op_num, point_id);
+                point_id
+            })
+            .collect())
+    }
 }
 
 #[cfg(test)]

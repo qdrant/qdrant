@@ -81,6 +81,11 @@ pub struct SegmentHolder {
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
 
+pub enum AppliedSegmentResult {
+    Applied(bool),
+    AffectedPoints(usize),
+}
+
 impl<'s> SegmentHolder {
     pub fn iter(&'s self) -> impl Iterator<Item = (&SegmentId, &LockedSegment)> + 's {
         self.segments.iter()
@@ -187,16 +192,26 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
-    pub fn apply_segments<F>(&self, mut f: F) -> OperationResult<usize>
+    pub fn apply_segments<F>(&self, mut f: F) -> OperationResult<(usize, usize)>
     where
-        F: FnMut(&mut RwLockWriteGuard<dyn SegmentEntry + 'static>) -> OperationResult<bool>,
+        F: FnMut(
+            &mut RwLockWriteGuard<dyn SegmentEntry + 'static>,
+        ) -> OperationResult<AppliedSegmentResult>,
     {
         let mut processed_segments = 0;
+        let mut affected_points = 0;
         for segment in self.segments.values() {
-            let is_applied = f(&mut segment.get().write())?;
-            processed_segments += is_applied as usize;
+            match f(&mut segment.get().write())? {
+                AppliedSegmentResult::AffectedPoints(points) => {
+                    affected_points += points;
+                    processed_segments += 1;
+                }
+                AppliedSegmentResult::Applied(is_applied) => {
+                    processed_segments += is_applied as usize;
+                }
+            };
         }
-        Ok(processed_segments)
+        Ok((processed_segments, affected_points))
     }
 
     pub fn apply_points<F>(&self, ids: &[PointIdType], mut f: F) -> OperationResult<usize>

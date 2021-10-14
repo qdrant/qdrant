@@ -417,6 +417,14 @@ impl SegmentEntry for ProxySegment {
     fn check_error(&self) -> Option<SegmentFailedState> {
         self.write_segment.get().read().check_error()
     }
+
+    fn delete_filtered<'a>(
+        &'a mut self,
+        _op_num: SeqNumberType,
+        _filter: &'a Filter,
+    ) -> OperationResult<Vec<PointIdType>> {
+        todo!()
+    }
 }
 
 #[cfg(test)]

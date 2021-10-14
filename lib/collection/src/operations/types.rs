@@ -120,6 +120,26 @@ pub struct ScrollResult {
     pub next_page_offset: Option<PointIdType>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+/// Delete request - deletes all points which matches given condition
+pub struct DeleteRequest {
+    /// Look only for points which satisfies this conditions
+    pub filter: Filter,
+}
+
+impl Default for DeleteRequest {
+    fn default() -> Self {
+        Self {
+            filter: Filter {
+                must: None,
+                must_not: None,
+                should: None,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 /// Search request
