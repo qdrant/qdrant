@@ -195,7 +195,7 @@ impl TableOfContent {
                     {
                         // Wait for optimizer to finish.
                         // TODO: Enhance optimizer to shutdown faster
-                        removed.wait_update_worker_stops().await?;
+                        removed.wait_update_workers_stop().await?;
                     }
                     let path = self.get_collection_path(&collection_name);
                     remove_dir_all(path).map_err(|err| StorageError::ServiceError {

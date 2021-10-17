@@ -16,7 +16,7 @@ use segment::types::{
 use crate::config::CollectionConfig;
 use crate::wal::WalError;
 use std::collections::HashMap;
-use async_channel::SendError;
+use async_channel::{RecvError, SendError};
 
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
@@ -178,6 +178,14 @@ impl From<OperationError> for CollectionError {
             OperationError::TypeError { .. } => Self::BadInput {
                 description: format!("{}", err),
             },
+        }
+    }
+}
+
+impl From<RecvError> for CollectionError {
+    fn from(err: RecvError) -> Self {
+        Self::ServiceError {
+            error: format!("{}", err),
         }
     }
 }

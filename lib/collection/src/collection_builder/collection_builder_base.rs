@@ -34,7 +34,6 @@ pub fn construct_collection(
 
     let locked_wal = Arc::new(Mutex::new(wal));
 
-    // ToDo: Move tx-rx into updater, so Collection should not know about it.
     let (tx, rx) = async_channel::unbounded();
 
     let update_handler = UpdateHandler::new(
