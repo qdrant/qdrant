@@ -74,9 +74,7 @@ impl Collection {
         operation: CollectionUpdateOperations,
         wait: bool
     ) -> CollectionResult<UpdateResult> {
-        let operation_id = self.wal.lock().write(&operation)?;
         let sndr = self.update_sender.clone();
-
         let (callback_sender, callback_receiver) = if wait {
             let (tx, rx) = async_channel::unbounded();
             (Some(tx), Some(rx))
@@ -84,11 +82,16 @@ impl Collection {
             (None, None)
         };
 
-        sndr.send(UpdateSignal::Operation(OperationData {
-            op_num: operation_id,
-            operation,
-            sender: callback_sender
-        })).await?;
+        let operation_id = {
+            let mut wal_lock = self.wal.lock();
+            let operation_id = wal_lock.write(&operation)?;
+            sndr.send(UpdateSignal::Operation(OperationData {
+                op_num: operation_id,
+                operation,
+                sender: callback_sender
+            })).await?;
+            operation_id
+        };
 
         if let Some(receiver) = callback_receiver {
             let _res = receiver.recv().await??;
