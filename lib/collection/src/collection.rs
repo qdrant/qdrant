@@ -24,7 +24,7 @@ use crate::operations::types::{
     ScrollRequest, ScrollResult, SearchRequest, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::update_handler::{UpdateHandler, UpdateSignal};
+use crate::update_handler::{UpdateHandler, UpdateSignal, OperationData};
 use crate::wal::SerdeWal;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use async_channel::Sender;
@@ -75,38 +75,31 @@ impl Collection {
         wait: bool
     ) -> CollectionResult<UpdateResult> {
         let operation_id = self.wal.lock().write(&operation)?;
-
         let sndr = self.update_sender.clone();
-        let segments = self.segments.clone();
-        let update_future = async move {
-            let res = CollectionUpdater::update(segments.deref(), operation_id, operation);
-            sndr.send(UpdateSignal::Operation(operation_id)).await?;
-            res
+
+        let (callback_sender, callback_receiver) = if wait {
+            let (tx, rx) = async_channel::unbounded();
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
         };
 
-        if let Some(handle) = self.runtime_handle.as_ref() {
-            let update_handler = handle.spawn(update_future);
-            if !wait {
-                return Ok(UpdateResult {
-                    operation_id,
-                    status: UpdateStatus::Acknowledged,
-                });
-            }
+        sndr.send(UpdateSignal::Operation(OperationData {
+            op_num: operation_id,
+            operation,
+            sender: callback_sender
+        })).await?;
 
-            let _res: usize = update_handler.await??;
+        if let Some(receiver) = callback_receiver {
+            let _res = receiver.recv().await??;
             Ok(UpdateResult {
                 operation_id,
                 status: UpdateStatus::Completed,
             })
         } else {
-            // The above error could only happen if update is called in parallel with
-            // drop. That means the drop method has already shut down the update runtime
-            // If you see this error, most likely you have synchronization issue
-            // with updating collection and dropping it at the same time.
-            // It is almost not possible to achieve in safe rust as the caller of update you
-            // have a reference to update handler, so the drop is not called yet.
-            Err(CollectionError::ServiceError {
-                error: "Calling update on removed collection".to_owned(),
+            Ok(UpdateResult {
+                operation_id,
+                status: UpdateStatus::Acknowledged,
             })
         }
     }
@@ -333,7 +326,7 @@ impl Collection {
         let config = self.config.read();
         let mut update_handler = self.update_handler.lock();
         self.stop().await?;
-        update_handler.wait_worker_stops().await?;
+        update_handler.wait_workers_stops().await?;
         let new_optimizers = build_optimizers(
             self.path.as_path(),
             &config.params,
@@ -342,7 +335,7 @@ impl Collection {
         );
         update_handler.optimizers = new_optimizers;
         update_handler.flush_timeout_sec = config.optimizer_config.flush_interval_sec;
-        update_handler.run_worker();
+        update_handler.run_workers();
         self.update_sender.send(UpdateSignal::Nop).await?;
 
         Ok(())
@@ -350,7 +343,7 @@ impl Collection {
 
     pub async fn wait_update_worker_stops(&self) -> CollectionResult<()> {
         let mut update_handler = self.update_handler.lock();
-        update_handler.wait_worker_stops().await
+        update_handler.wait_workers_stops().await
     }
 
     pub fn load_from_wal(&self) {
