@@ -302,7 +302,7 @@ impl SegmentEntry for ProxySegment {
     }
 
     /// Not implemented for proxy
-    fn iter_points(&self) -> Box<dyn Iterator<Item = u64> + '_> {
+    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
         // iter_points is not available for Proxy implementation
         // Due to internal locks it is almost impossible to return iterator with proper owning, lifetimes, e.t.c.
         unimplemented!()

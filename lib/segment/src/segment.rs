@@ -208,20 +208,25 @@ impl SegmentEntry for Segment {
                 id_mapped.internal_id(point_id)
             };
 
-            let (was_replaced, new_index) = match stored_internal_point {
-                Some(existing_internal_id) => (
-                    true,
-                    segment.update_vector(existing_internal_id, processed_vector)?,
-                ),
-                None => (
-                    false,
-                    segment.vector_storage
+            let was_replaced = match stored_internal_point {
+                Some(existing_internal_id) => {
+                    let new_index = segment.update_vector(existing_internal_id, processed_vector)?;
+                    if new_index != existing_internal_id {
+                        let mut id_mapper = segment.id_mapper.borrow_mut();
+                        id_mapper.drop(point_id)?;
+                        id_mapper.set_link(point_id, new_index)?;
+                    }
+                    true
+                },
+                None => {
+                    let new_index = segment.vector_storage
                         .borrow_mut()
-                        .put_vector(processed_vector)?,
-                ),
+                        .put_vector(processed_vector)?;
+                    segment.id_mapper.borrow_mut().set_link(point_id, new_index)?;
+                    false
+                },
             };
 
-            segment.id_mapper.borrow_mut().set_link(point_id, new_index)?;
             Ok(was_replaced)
         })
     }

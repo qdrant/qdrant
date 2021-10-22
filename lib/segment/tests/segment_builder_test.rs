@@ -18,12 +18,16 @@ mod tests {
         // let segment2_dir = dir.path().join("segment_2");
 
         let segment1 = build_segment_1(dir.path());
-        let segment2 = build_segment_2(dir.path());
+        let mut segment2 = build_segment_2(dir.path());
 
         let mut builder =
             SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
 
+        // Include overlapping with segment1 to check the
+        segment2.upsert_point(100, 3, &vec![0., 0., 0., 0.]).unwrap();
+
         builder.update_from(&segment1).unwrap();
+        builder.update_from(&segment2).unwrap();
         builder.update_from(&segment2).unwrap();
 
         // Check what happens if segment building fails here
