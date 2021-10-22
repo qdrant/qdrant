@@ -114,7 +114,7 @@ fn test_move_points_to_copy_on_write() {
     let copy_on_write_points = copy_on_write_segment_read.iter_points().collect_vec();
 
     let vector_storage = copy_on_write_segment_read.vector_storage.clone();
-    let id_mapper = copy_on_write_segment_read.id_mapper.clone();
+    let id_mapper = copy_on_write_segment_read.id_tracker.clone();
 
     eprintln!("copy_on_write_points = {:#?}", copy_on_write_points);
 

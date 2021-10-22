@@ -66,7 +66,7 @@ mod tests {
             segment.condition_checker.clone(),
             segment.vector_storage.clone(),
             segment.payload_storage.clone(),
-            segment.id_mapper.clone(),
+            segment.id_tracker.clone(),
             payload_index_dir.path(),
         )
         .unwrap();

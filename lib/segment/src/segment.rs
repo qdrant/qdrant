@@ -1,5 +1,5 @@
 use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry, is_service_error};
-use crate::id_mapper::IdMapper;
+use crate::id_tracker::IdTracker;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::{ConditionChecker, PayloadStorage};
 use crate::spaces::tools::mertic_object;
@@ -23,7 +23,7 @@ pub struct Segment {
     pub version: SeqNumberType,
     pub persisted_version: Arc<Mutex<SeqNumberType>>,
     pub current_path: PathBuf,
-    pub id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
+    pub id_tracker: Arc<AtomicRefCell<dyn IdTracker>>,
     pub vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     pub payload_storage: Arc<AtomicRefCell<dyn PayloadStorage>>,
     pub payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
@@ -95,7 +95,7 @@ impl Segment {
 
 
     fn lookup_internal_id(&self, point_id: PointIdType) -> OperationResult<PointOffsetType> {
-        let internal_id_opt = self.id_mapper.borrow().internal_id(point_id);
+        let internal_id_opt = self.id_tracker.borrow().internal_id(point_id);
         match internal_id_opt {
             Some(internal_id) => Ok(internal_id),
             None => Err(OperationError::PointIdError {
@@ -150,16 +150,16 @@ impl SegmentEntry for Segment {
             .borrow()
             .search(vector, filter, top, params);
 
-        let id_mapper = self.id_mapper.borrow();
+        let id_tracker = self.id_tracker.borrow();
 
         let res: OperationResult<Vec<ScoredPoint>> = internal_result
             .iter()
             .map(|&scored_point_offset| {
-                let point_id = id_mapper
+                let point_id = id_tracker
                     .external_id(scored_point_offset.idx)
                     .ok_or_else(|| OperationError::ServiceError {
                         description: format!(
-                            "Corrupter id_mapper, no external value for {}",
+                            "Corrupter id_tracker, no external value for {}",
                             scored_point_offset.idx
                         ),
                     })?;
@@ -203,18 +203,15 @@ impl SegmentEntry for Segment {
                 .preprocess(vector)
                 .unwrap_or_else(|| vector.to_owned());
 
-            let stored_internal_point = {
-                let id_mapped = segment.id_mapper.borrow();
-                id_mapped.internal_id(point_id)
-            };
+            let stored_internal_point = segment.id_tracker.borrow().internal_id(point_id);
 
             let was_replaced = match stored_internal_point {
                 Some(existing_internal_id) => {
                     let new_index = segment.update_vector(existing_internal_id, processed_vector)?;
                     if new_index != existing_internal_id {
-                        let mut id_mapper = segment.id_mapper.borrow_mut();
-                        id_mapper.drop(point_id)?;
-                        id_mapper.set_link(point_id, new_index)?;
+                        let mut id_tracker = segment.id_tracker.borrow_mut();
+                        id_tracker.drop(point_id)?;
+                        id_tracker.set_link(point_id, new_index)?;
                     }
                     true
                 },
@@ -222,7 +219,7 @@ impl SegmentEntry for Segment {
                     let new_index = segment.vector_storage
                         .borrow_mut()
                         .put_vector(processed_vector)?;
-                    segment.id_mapper.borrow_mut().set_link(point_id, new_index)?;
+                    segment.id_tracker.borrow_mut().set_link(point_id, new_index)?;
                     false
                 },
             };
@@ -237,12 +234,12 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
     ) -> OperationResult<bool> {
         self.handle_version(op_num, |segment| {
-            let mut mapper = segment.id_mapper.borrow_mut();
-            let internal_id = mapper.internal_id(point_id);
+            let mut id_tracker = segment.id_tracker.borrow_mut();
+            let internal_id = id_tracker.internal_id(point_id);
             match internal_id {
                 Some(internal_id) => {
                     segment.vector_storage.borrow_mut().delete(internal_id)?;
-                    mapper.drop(point_id)?;
+                    id_tracker.drop(point_id)?;
                     Ok(true)
                 }
                 None => Ok(false),
@@ -345,7 +342,7 @@ impl SegmentEntry for Segment {
         // If you try simply return iterator - it won't work because AtomicRef should exist
         // If you try to make callback instead - you won't be able to create <dyn SegmentEntry>
         // Attempt to create return borrowed value along with iterator failed because of insane lifetimes
-        unsafe { self.id_mapper.as_ptr().as_ref().unwrap().iter_external() }
+        unsafe { self.id_tracker.as_ptr().as_ref().unwrap().iter_external() }
     }
 
     fn read_filtered<'a>(
@@ -357,14 +354,14 @@ impl SegmentEntry for Segment {
         let storage = self.vector_storage.borrow();
         match filter {
             None => self
-                .id_mapper
+                .id_tracker
                 .borrow()
                 .iter_from(offset)
                 .map(|x| x.0)
                 .take(limit)
                 .collect(),
             Some(condition) => self
-                .id_mapper
+                .id_tracker
                 .borrow()
                 .iter_from(offset)
                 .filter(move |(_, internal_id)| !storage.is_deleted(*internal_id))
@@ -378,7 +375,7 @@ impl SegmentEntry for Segment {
     }
 
     fn has_point(&self, point_id: PointIdType) -> bool {
-        self.id_mapper.borrow().internal_id(point_id).is_some()
+        self.id_tracker.borrow().internal_id(point_id).is_some()
     }
 
     fn vectors_count(&self) -> usize {
@@ -439,7 +436,7 @@ impl SegmentEntry for Segment {
 
         let state = self.get_state();
 
-        self.id_mapper.borrow().flush()?;
+        self.id_tracker.borrow().flush()?;
         self.payload_storage.borrow().flush()?;
         self.vector_storage.borrow().flush()?;
         self.save_state(&state)?;

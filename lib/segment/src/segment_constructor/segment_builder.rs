@@ -46,7 +46,7 @@ impl SegmentBuilder {
             Some(self_segment) => {
                 self_segment.version = cmp::max(self_segment.version(), other.version());
 
-                let other_id_mapper = other.id_mapper.borrow();
+                let other_id_tracker = other.id_tracker.borrow();
                 let other_vector_storage = other.vector_storage.borrow();
                 let other_payload_storage = other.payload_storage.borrow();
 
@@ -55,14 +55,14 @@ impl SegmentBuilder {
                     .borrow_mut()
                     .update_from(&*other_vector_storage)?;
 
-                let mut id_mapper = self_segment.id_mapper.borrow_mut();
+                let mut id_tracker = self_segment.id_tracker.borrow_mut();
                 let mut payload_storage = self_segment.payload_storage.borrow_mut();
 
                 for (new_internal_id, old_internal_id) in
                     new_internal_range.zip(other_vector_storage.iter_ids())
                 {
-                    let other_external_id = other_id_mapper.external_id(old_internal_id).unwrap();
-                    id_mapper.set_link(other_external_id, new_internal_id)?;
+                    let other_external_id = other_id_tracker.external_id(old_internal_id).unwrap();
+                    id_tracker.set_link(other_external_id, new_internal_id)?;
                     payload_storage.assign_all(
                         new_internal_id,
                         other_payload_storage.payload(old_internal_id),

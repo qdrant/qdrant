@@ -1,11 +1,12 @@
 use crate::entry::entry_point::OperationResult;
 use crate::types::{PointIdType, PointOffsetType};
 
-/// Trait for point ids mapper.
+/// Trait for point ids tracker.
 ///
-/// This mapper is used to convert external (i.e. user-facing) point id into internal point id.
+/// This tracker is used to convert external (i.e. user-facing) point id into internal point id
+/// as well as for keeping track on point version
 /// Internal ids are useful for contiguous-ness
-pub trait IdMapper {
+pub trait IdTracker {
     /// Returns internal ID of the point, which is used inside this segment
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType>;
 
@@ -34,6 +35,6 @@ pub trait IdMapper {
         external_id: PointIdType,
     ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_>;
 
-    /// Force persistence of current mapper state.
+    /// Force persistence of current tracker state.
     fn flush(&self) -> OperationResult<()>;
 }
