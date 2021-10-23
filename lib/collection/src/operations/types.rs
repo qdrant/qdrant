@@ -235,9 +235,6 @@ pub type CollectionResult<T> = result::Result<T, CollectionError>;
 pub fn is_service_error<T>(err: &CollectionResult<T>) -> bool {
     match err {
         Ok(_) => false,
-        Err(error) => match error {
-            CollectionError::ServiceError { .. } => true,
-            _ => false,
-        }
+        Err(error) => matches!(error, CollectionError::ServiceError { .. })
     }
 }

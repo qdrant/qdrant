@@ -315,8 +315,7 @@ impl<'s> SegmentHolder {
 
                         write_segment.delete_point(op_num, point_id)?;
 
-                        let res = f(point_id, appendable_write_segment);
-                        res
+                        f(point_id, appendable_write_segment)
                     },
                 )?
             };

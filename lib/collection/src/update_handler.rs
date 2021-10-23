@@ -218,7 +218,7 @@ impl UpdateHandler {
                                     .send(OptimizerSignal::Operation(op_num))
                                     .await
                                     .and(Ok(update_res))
-                                    .or_else(|send_err| Err(send_err.into())),
+                                    .map_err(|send_err| send_err.into()),
                                 Err(err) => Err(err),
                             };
 
