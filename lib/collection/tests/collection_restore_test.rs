@@ -27,10 +27,7 @@ async fn test_collection_reloading() {
                 payloads: None,
             }),
         );
-        collection
-            .update(insert_points, true)
-            .await
-            .unwrap();
+        collection.update(insert_points, true).await.unwrap();
     }
 
     let collection = load_collection(collection_dir.path());
@@ -52,10 +49,7 @@ async fn test_collection_payload_reloading() {
                 .unwrap(),
             }),
         );
-        collection
-            .update(insert_points, true)
-            .await
-            .unwrap();
+        collection.update(insert_points, true).await.unwrap();
     }
 
     let collection = load_collection(collection_dir.path());
@@ -109,10 +103,7 @@ async fn test_collection_payload_custom_payload() {
                 .unwrap(),
             }),
         );
-        collection
-            .update(insert_points, true)
-            .await
-            .unwrap();
+        collection.update(insert_points, true).await.unwrap();
     }
 
     let collection = load_collection(collection_dir.path());

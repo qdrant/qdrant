@@ -2,10 +2,10 @@ mod fixtures;
 
 #[cfg(test)]
 mod tests {
-    use crate::fixtures::segment::{empty_segment};
-    use tempdir::TempDir;
+    use crate::fixtures::segment::empty_segment;
     use segment::entry::entry_point::SegmentEntry;
     use segment::types::PayloadType;
+    use tempdir::TempDir;
 
     #[test]
     fn test_insert_fail_recovery() {
@@ -17,11 +17,13 @@ mod tests {
 
         segment.upsert_point(1, 1, &vec1).unwrap();
 
-        segment.set_payload(
-            2,
-            1,
-            &"color".to_string(),
-            PayloadType::Keyword(vec!["red".to_string()]),
-        ).unwrap();
+        segment
+            .set_payload(
+                2,
+                1,
+                &"color".to_string(),
+                PayloadType::Keyword(vec!["red".to_string()]),
+            )
+            .unwrap();
     }
 }

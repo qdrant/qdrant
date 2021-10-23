@@ -34,18 +34,18 @@ impl SimpleIdTracker {
         let mut external_to_internal: BTreeMap<PointIdType, PointOffsetType> = Default::default();
         let mut external_to_version: HashMap<PointIdType, SeqNumberType> = Default::default();
 
-        for (key, val) in store.iterator_cf(
-            store.cf_handle(MAPPING_CF).unwrap(),
-            IteratorMode::Start) {
+        for (key, val) in
+            store.iterator_cf(store.cf_handle(MAPPING_CF).unwrap(), IteratorMode::Start)
+        {
             let external_id: PointIdType = bincode::deserialize(&key).unwrap();
             let internal_id: PointOffsetType = bincode::deserialize(&val).unwrap();
             internal_to_external.insert(internal_id, external_id);
             external_to_internal.insert(external_id, internal_id);
         }
 
-        for (key, val) in store.iterator_cf(
-            store.cf_handle(VERSIONS_CF).unwrap(),
-            IteratorMode::Start) {
+        for (key, val) in
+            store.iterator_cf(store.cf_handle(VERSIONS_CF).unwrap(), IteratorMode::Start)
+        {
             let external_id: PointIdType = bincode::deserialize(&key).unwrap();
             let version: SeqNumberType = bincode::deserialize(&val).unwrap();
             external_to_version.insert(external_id, version);
@@ -65,7 +65,11 @@ impl IdTracker for SimpleIdTracker {
         self.external_to_version.get(&external_id).cloned()
     }
 
-    fn set_version(&mut self, external_id: PointIdType, version: SeqNumberType) -> OperationResult<()> {
+    fn set_version(
+        &mut self,
+        external_id: PointIdType,
+        version: SeqNumberType,
+    ) -> OperationResult<()> {
         self.external_to_version.insert(external_id, version);
         self.store.put_cf(
             self.store.cf_handle(VERSIONS_CF).unwrap(),
@@ -107,12 +111,14 @@ impl IdTracker for SimpleIdTracker {
             Some(x) => self.internal_to_external.remove(&x),
             None => None,
         };
-        self.store
-            .delete_cf(self.store.cf_handle(MAPPING_CF).unwrap(),
-                       bincode::serialize(&external_id).unwrap())?;
-        self.store
-            .delete_cf(self.store.cf_handle(VERSIONS_CF).unwrap(),
-                       bincode::serialize(&external_id).unwrap())?;
+        self.store.delete_cf(
+            self.store.cf_handle(MAPPING_CF).unwrap(),
+            bincode::serialize(&external_id).unwrap(),
+        )?;
+        self.store.delete_cf(
+            self.store.cf_handle(VERSIONS_CF).unwrap(),
+            bincode::serialize(&external_id).unwrap(),
+        )?;
         Ok(())
     }
 
@@ -120,7 +126,7 @@ impl IdTracker for SimpleIdTracker {
         Box::new(self.external_to_internal.keys().cloned())
     }
 
-    fn iter_internal(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+    fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         Box::new(self.internal_to_external.keys().cloned())
     }
 
@@ -136,8 +142,10 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn flush(&self) -> OperationResult<()> {
-        self.store.flush_cf(self.store.cf_handle(MAPPING_CF).unwrap())?;
-        self.store.flush_cf(self.store.cf_handle(VERSIONS_CF).unwrap())?;
+        self.store
+            .flush_cf(self.store.cf_handle(MAPPING_CF).unwrap())?;
+        self.store
+            .flush_cf(self.store.cf_handle(VERSIONS_CF).unwrap())?;
         Ok(self.store.flush()?)
     }
 }

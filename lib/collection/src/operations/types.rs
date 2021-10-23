@@ -15,8 +15,8 @@ use segment::types::{
 
 use crate::config::CollectionConfig;
 use crate::wal::WalError;
-use std::collections::HashMap;
 use async_channel::{RecvError, SendError};
+use std::collections::HashMap;
 
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
@@ -235,6 +235,6 @@ pub type CollectionResult<T> = result::Result<T, CollectionError>;
 pub fn is_service_error<T>(err: &CollectionResult<T>) -> bool {
     match err {
         Ok(_) => false,
-        Err(error) => matches!(error, CollectionError::ServiceError { .. })
+        Err(error) => matches!(error, CollectionError::ServiceError { .. }),
     }
 }

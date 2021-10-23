@@ -8,7 +8,6 @@ use std::io::Error as IoError;
 use std::result;
 use thiserror::Error;
 
-
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
 pub enum OperationError {
@@ -32,7 +31,7 @@ pub enum OperationError {
 pub struct SegmentFailedState {
     pub version: SeqNumberType,
     pub point_id: Option<PointIdType>,
-    pub error: OperationError
+    pub error: OperationError,
 }
 
 impl<E> From<AtomicIoError<E>> for OperationError {
@@ -72,14 +71,13 @@ impl From<serde_json::Error> for OperationError {
 
 pub type OperationResult<T> = result::Result<T, OperationError>;
 
-
 pub fn get_service_error<T>(err: &OperationResult<T>) -> Option<OperationError> {
     match err {
         Ok(_) => None,
         Err(error) => match error {
             OperationError::ServiceError { .. } => Some(error.clone()),
             _ => None,
-        }
+        },
     }
 }
 

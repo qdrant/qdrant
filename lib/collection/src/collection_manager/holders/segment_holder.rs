@@ -1,5 +1,5 @@
 use std::cmp::{max, min};
-use std::collections::{HashMap, HashSet, BTreeSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -199,11 +199,7 @@ impl<'s> SegmentHolder {
         Ok(processed_segments)
     }
 
-    pub fn apply_points<F>(
-        &self,
-        ids: &[PointIdType],
-        mut f: F,
-    ) -> OperationResult<usize>
+    pub fn apply_points<F>(&self, ids: &[PointIdType], mut f: F) -> OperationResult<usize>
     where
         F: FnMut(
             PointIdType,
@@ -297,7 +293,7 @@ impl<'s> SegmentHolder {
             if let Some(point_version) = write_segment.point_version(point_id) {
                 if point_version >= op_num {
                     applied_points.insert(point_id);
-                    return Ok(false)
+                    return Ok(false);
                 }
             }
 

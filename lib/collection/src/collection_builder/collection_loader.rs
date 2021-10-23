@@ -11,9 +11,7 @@ use crate::config::CollectionConfig;
 use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
 
-pub fn load_collection(
-    collection_path: &Path,
-) -> Collection {
+pub fn load_collection(collection_path: &Path) -> Collection {
     let wal_path = collection_path.join("wal");
     let segments_path = collection_path.join("segments");
     let mut segment_holder = SegmentHolder::default();

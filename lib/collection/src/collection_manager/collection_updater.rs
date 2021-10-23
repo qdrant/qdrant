@@ -5,7 +5,7 @@ use segment::types::SeqNumberType;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 
 use crate::collection_manager::segments_updater::*;
-use crate::operations::types::{CollectionResult, CollectionError};
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 
 #[derive(Default)]
@@ -33,18 +33,16 @@ impl CollectionUpdater {
                     }
                 }
             }
-            Err(collection_error) => {
-                match collection_error {
-                    CollectionError::ServiceError { error } => {
-                        let mut write_segments = segments.write();
-                        write_segments.failed_operation.insert(op_num);
-                        log::error!("Update operation failed: {}", error)
-                    }
-                    _ => {
-                        log::warn!("Update operation declined: {}", collection_error)
-                    }
+            Err(collection_error) => match collection_error {
+                CollectionError::ServiceError { error } => {
+                    let mut write_segments = segments.write();
+                    write_segments.failed_operation.insert(op_num);
+                    log::error!("Update operation failed: {}", error)
                 }
-            }
+                _ => {
+                    log::warn!("Update operation declined: {}", collection_error)
+                }
+            },
         }
     }
 
@@ -126,7 +124,7 @@ mod tests {
             101,
             PointOperations::DeletePoints { ids: vec![500] },
         )
-            .unwrap();
+        .unwrap();
 
         let records = searcher
             .retrieve(&segments, &[1, 2, 500], &WithPayload::from(true), true)
@@ -162,7 +160,7 @@ mod tests {
                 points: points.clone(),
             },
         )
-            .unwrap();
+        .unwrap();
 
         let res = searcher
             .retrieve(&segments, &points, &WithPayload::from(true), false)
@@ -190,7 +188,7 @@ mod tests {
                 keys: vec!["color".to_string(), "empty".to_string()],
             },
         )
-            .unwrap();
+        .unwrap();
 
         let res = searcher
             .retrieve(&segments, &[3], &WithPayload::from(true), false)
@@ -213,7 +211,7 @@ mod tests {
             102,
             &PayloadOps::ClearPayload { points: vec![2] },
         )
-            .unwrap();
+        .unwrap();
         let res = searcher
             .retrieve(&segments, &[2], &WithPayload::from(true), false)
             .await

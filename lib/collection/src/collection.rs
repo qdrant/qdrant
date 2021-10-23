@@ -16,6 +16,7 @@ use segment::types::{
 
 use crate::collection_builder::optimizers_builder::build_optimizers;
 use crate::collection_manager::collection_managers::CollectionSearcher;
+use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
@@ -24,9 +25,8 @@ use crate::operations::types::{
     ScrollRequest, ScrollResult, SearchRequest, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::update_handler::{UpdateHandler, UpdateSignal, OperationData};
+use crate::update_handler::{OperationData, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
-use crate::collection_manager::collection_updater::CollectionUpdater;
 use async_channel::Sender;
 use futures::executor::block_on;
 
@@ -72,7 +72,7 @@ impl Collection {
     pub async fn update(
         &self,
         operation: CollectionUpdateOperations,
-        wait: bool
+        wait: bool,
     ) -> CollectionResult<UpdateResult> {
         let sndr = self.update_sender.clone();
         let (callback_sender, callback_receiver) = if wait {
@@ -88,8 +88,9 @@ impl Collection {
             sndr.send(UpdateSignal::Operation(OperationData {
                 op_num: operation_id,
                 operation,
-                sender: callback_sender
-            })).await?;
+                sender: callback_sender,
+            }))
+            .await?;
             operation_id
         };
 

@@ -75,7 +75,8 @@ impl SegmentBuilder {
                         Some(existing_version) => {
                             if existing_version < other_version {
                                 // Other version is the newest, remove the existing one and replace
-                                let existing_internal_id = id_tracker.internal_id(external_id).unwrap();
+                                let existing_internal_id =
+                                    id_tracker.internal_id(external_id).unwrap();
                                 vector_storage.delete(existing_internal_id)?;
                                 id_tracker.drop(external_id)?;
                                 id_tracker.set_link(external_id, new_internal_id)?;

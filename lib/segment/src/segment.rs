@@ -1,4 +1,6 @@
-use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry, get_service_error, SegmentFailedState};
+use crate::entry::entry_point::{
+    get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
+};
 use crate::id_tracker::IdTracker;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::{ConditionChecker, PayloadStorage};
@@ -32,7 +34,7 @@ pub struct Segment {
     pub appendable_flag: bool,
     pub segment_type: SegmentType,
     pub segment_config: SegmentConfig,
-    pub error_status: Option<SegmentFailedState>
+    pub error_status: Option<SegmentFailedState>,
 }
 
 impl Segment {
@@ -61,21 +63,23 @@ impl Segment {
         &mut self,
         op_num: SeqNumberType,
         op_point_id: Option<PointIdType>,
-        operation: F
+        operation: F,
     ) -> OperationResult<bool>
-        where F: FnOnce(&mut Segment) -> OperationResult<bool>
+    where
+        F: FnOnce(&mut Segment) -> OperationResult<bool>,
     {
         if let Some(SegmentFailedState {
-                        version: failed_version,
-                        point_id: _failed_point_id,
-                        error
-                    }) = &self.error_status {
+            version: failed_version,
+            point_id: _failed_point_id,
+            error,
+        }) = &self.error_status
+        {
             // Failed operations should not be skipped,
             // fail if newer operation is attempted before proper recovery
             if *failed_version < op_num {
                 return Err(OperationError::ServiceError {
-                    description: format!("Not recovered from previous error: {}", error)
-                })
+                    description: format!("Not recovered from previous error: {}", error),
+                });
             } // else: Re-try operation
         }
 
@@ -85,7 +89,7 @@ impl Segment {
             None => {
                 // Recover error state
                 match &self.error_status {
-                    None => {}, // all good
+                    None => {} // all good
                     Some(error) => {
                         if error.point_id == op_point_id {
                             // Fixed
@@ -93,13 +97,13 @@ impl Segment {
                         }
                     }
                 }
-            },
+            }
             Some(error) => {
                 // ToDo: Recover previous segment state
                 self.error_status = Some(SegmentFailedState {
                     version: op_num,
                     point_id: op_point_id,
-                    error
+                    error,
                 })
             }
         }
@@ -113,24 +117,28 @@ impl Segment {
         &mut self,
         op_num: SeqNumberType,
         op_point_id: Option<PointIdType>,
-        operation: F
+        operation: F,
     ) -> OperationResult<bool>
-    where F: FnOnce(&mut Segment) -> OperationResult<bool>
+    where
+        F: FnOnce(&mut Segment) -> OperationResult<bool>,
     {
         match op_point_id {
             None => {
                 // Not a point operation, use global version to check if already applied
                 if self.version > op_num {
-                    return Ok(false) // Skip without execution
+                    return Ok(false); // Skip without execution
                 }
             }
             Some(point_id) => {
                 // Check if point not exists or have lower version
-                if self.id_tracker.borrow()
+                if self
+                    .id_tracker
+                    .borrow()
                     .version(point_id)
                     .map(|current_version| current_version > op_num)
-                    .unwrap_or(false) {
-                    return Ok(false)
+                    .unwrap_or(false)
+                {
+                    return Ok(false);
                 }
             }
         }
@@ -145,7 +153,6 @@ impl Segment {
         }
         res
     }
-
 
     fn lookup_internal_id(&self, point_id: PointIdType) -> OperationResult<PointOffsetType> {
         let internal_id_opt = self.id_tracker.borrow().internal_id(point_id);
@@ -212,22 +219,23 @@ impl SegmentEntry for Segment {
         let res: OperationResult<Vec<ScoredPoint>> = internal_result
             .iter()
             .map(|&scored_point_offset| {
-                let point_id = id_tracker
-                    .external_id(scored_point_offset.idx)
-                    .ok_or(OperationError::ServiceError {
+                let point_id = id_tracker.external_id(scored_point_offset.idx).ok_or(
+                    OperationError::ServiceError {
                         description: format!(
                             "Corrupter id_tracker, no external value for {}",
                             scored_point_offset.idx
                         ),
-                    })?;
-                let point_version = id_tracker
-                    .version(point_id)
-                    .ok_or(OperationError::ServiceError {
-                        description: format!(
-                            "Corrupter id_tracker, no version for point {}",
-                            point_id
-                        ),
-                    })?;
+                    },
+                )?;
+                let point_version =
+                    id_tracker
+                        .version(point_id)
+                        .ok_or(OperationError::ServiceError {
+                            description: format!(
+                                "Corrupter id_tracker, no version for point {}",
+                                point_id
+                            ),
+                        })?;
                 let payload = if with_payload.enable {
                     let initial_payload = self.payload(point_id)?;
                     if let Some(i) = &with_payload.payload_selector {
@@ -273,21 +281,26 @@ impl SegmentEntry for Segment {
 
             let was_replaced = match stored_internal_point {
                 Some(existing_internal_id) => {
-                    let new_index = segment.update_vector(existing_internal_id, processed_vector)?;
+                    let new_index =
+                        segment.update_vector(existing_internal_id, processed_vector)?;
                     if new_index != existing_internal_id {
                         let mut id_tracker = segment.id_tracker.borrow_mut();
                         id_tracker.drop(point_id)?;
                         id_tracker.set_link(point_id, new_index)?;
                     }
                     true
-                },
+                }
                 None => {
-                    let new_index = segment.vector_storage
+                    let new_index = segment
+                        .vector_storage
                         .borrow_mut()
                         .put_vector(processed_vector)?;
-                    segment.id_tracker.borrow_mut().set_link(point_id, new_index)?;
+                    segment
+                        .id_tracker
+                        .borrow_mut()
+                        .set_link(point_id, new_index)?;
                     false
-                },
+                }
             };
 
             Ok(was_replaced)
@@ -321,7 +334,8 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
-            segment.payload_storage
+            segment
+                .payload_storage
                 .borrow_mut()
                 .assign_all(internal_id, full_payload)?;
             Ok(true)
@@ -338,7 +352,8 @@ impl SegmentEntry for Segment {
             let internal_id = segment.lookup_internal_id(point_id)?;
             let payload: TheMap<PayloadKeyType, serde_json::value::Value> =
                 serde_json::from_str(full_payload)?;
-            segment.payload_storage
+            segment
+                .payload_storage
                 .borrow_mut()
                 .assign_all_with_value(internal_id, payload)?;
             Ok(true)
@@ -354,7 +369,8 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
-            segment.payload_storage
+            segment
+                .payload_storage
                 .borrow_mut()
                 .assign(internal_id, key, payload)?;
             Ok(true)
@@ -369,7 +385,10 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
-            segment.payload_storage.borrow_mut().delete(internal_id, key)?;
+            segment
+                .payload_storage
+                .borrow_mut()
+                .delete(internal_id, key)?;
             Ok(true)
         })
     }
@@ -549,7 +568,6 @@ mod tests {
     use crate::segment_constructor::build_segment;
     use crate::types::{Distance, Indexes, PayloadIndexType, SegmentConfig, StorageType};
     use tempdir::TempDir;
-
 
     #[test]
     fn test_set_invalid_payload_from_json() {

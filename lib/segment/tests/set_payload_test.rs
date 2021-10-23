@@ -1,9 +1,12 @@
 #[cfg(test)]
 mod tests {
-    use tempdir::TempDir;
-    use segment::types::{SegmentConfig, Indexes, PayloadIndexType, StorageType, Distance, PayloadKeyType, PayloadType};
-    use segment::segment_constructor::build_segment;
     use segment::entry::entry_point::SegmentEntry;
+    use segment::segment_constructor::build_segment;
+    use segment::types::{
+        Distance, Indexes, PayloadIndexType, PayloadKeyType, PayloadType, SegmentConfig,
+        StorageType,
+    };
+    use tempdir::TempDir;
 
     #[test]
     fn test_set_payload_from_json() {
@@ -168,5 +171,4 @@ mod tests {
             _ => assert!(false),
         }
     }
-
 }

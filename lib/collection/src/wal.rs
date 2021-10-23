@@ -103,9 +103,9 @@ mod tests {
 
     extern crate tempdir;
 
-    use tempdir::TempDir;
     use std::fs;
     use std::os::unix::fs::MetadataExt;
+    use tempdir::TempDir;
 
     #[test]
     fn test_wal() {
@@ -121,7 +121,6 @@ mod tests {
         let record = TestRecord::Struct1(TestInternalStruct1 { data: 10 });
 
         serde_wal.write(&record).expect("Can't write");
-
 
         let metadata = fs::metadata(dir.path().join("open-1").to_str().unwrap()).unwrap();
 

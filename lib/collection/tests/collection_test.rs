@@ -39,9 +39,7 @@ async fn test_collection_updater() {
             payloads: None,
         }));
 
-    let insert_result = collection
-        .update(insert_points, true)
-        .await;
+    let insert_result = collection.update(insert_points, true).await;
 
     match insert_result {
         Ok(res) => {
@@ -93,9 +91,7 @@ async fn test_collection_search_with_payload() {
             .unwrap(),
         }));
 
-    let insert_result = collection
-        .update(insert_points, true)
-        .await;
+    let insert_result = collection.update(insert_points, true).await;
 
     match insert_result {
         Ok(res) => {
@@ -151,10 +147,7 @@ async fn test_collection_loading() {
             }),
         );
 
-        collection
-            .update(insert_points, true)
-            .await
-            .unwrap();
+        collection.update(insert_points, true).await.unwrap();
 
         let mut payload: HashMap<PayloadKeyType, PayloadInterface> = Default::default();
 
@@ -168,10 +161,7 @@ async fn test_collection_loading() {
             points: vec![2, 3],
         });
 
-        collection
-            .update(assign_payload, true)
-            .await
-            .unwrap();
+        collection.update(assign_payload, true).await.unwrap();
     }
 
     let loaded_collection = load_collection(collection_dir.path());
@@ -275,10 +265,7 @@ async fn test_recommendation_api() {
             payloads: None,
         }));
 
-    collection
-        .update(insert_points, true)
-        .await
-        .unwrap();
+    collection.update(insert_points, true).await.unwrap();
     let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection
         .recommend_by(
@@ -322,10 +309,7 @@ async fn test_read_api() {
             payloads: None,
         }));
 
-    collection
-        .update(insert_points, true)
-        .await
-        .unwrap();
+    collection.update(insert_points, true).await.unwrap();
 
     let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection

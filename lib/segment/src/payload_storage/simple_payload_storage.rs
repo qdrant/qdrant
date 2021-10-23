@@ -14,7 +14,6 @@ const DB_CACHE_SIZE: usize = 10 * 1024 * 1024;
 // 10 mb
 const DB_MAX_OPEN_FILES: i32 = 4;
 
-
 const DB_NAME: &str = "payload";
 
 pub struct SimplePayloadStorage {

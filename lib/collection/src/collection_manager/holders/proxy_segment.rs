@@ -107,7 +107,10 @@ impl SegmentEntry for ProxySegment {
 
     fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
         // Write version is always higher if presence
-        self.write_segment.get().read().point_version(point_id)
+        self.write_segment
+            .get()
+            .read()
+            .point_version(point_id)
             .or_else(|| self.wrapped_segment.get().read().point_version(point_id))
     }
 

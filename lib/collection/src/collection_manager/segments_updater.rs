@@ -2,7 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use parking_lot::{RwLock, RwLockWriteGuard};
 
-use segment::types::{PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType, VectorElementType};
+use segment::types::{
+    PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType,
+    VectorElementType,
+};
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
@@ -18,7 +21,8 @@ pub(crate) fn check_unprocessed_points(
     points: &[PointIdType],
     processed: &HashSet<PointIdType>,
 ) -> CollectionResult<usize> {
-    let unprocessed_points = points.iter()
+    let unprocessed_points = points
+        .iter()
         .cloned()
         .filter(|p| !processed.contains(p))
         .collect_vec();
@@ -52,13 +56,14 @@ pub(crate) fn set_payload(
     payload: &HashMap<PayloadKeyType, PayloadInterface>,
     points: &[PointIdType],
 ) -> CollectionResult<usize> {
-    let updated_points = segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
-        let mut res = true;
-        for (key, payload) in payload {
-            res = write_segment.set_payload(op_num, id, key, payload.into())? && res;
-        }
-        Ok(res)
-    })?;
+    let updated_points =
+        segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
+            let mut res = true;
+            for (key, payload) in payload {
+                res = write_segment.set_payload(op_num, id, key, payload.into())? && res;
+            }
+            Ok(res)
+        })?;
 
     check_unprocessed_points(points, &updated_points)?;
     Ok(updated_points.len())
@@ -70,13 +75,14 @@ pub(crate) fn delete_payload(
     points: &[PointIdType],
     keys: &[PayloadKeyType],
 ) -> CollectionResult<usize> {
-    let updated_points = segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
-        let mut res = true;
-        for key in keys {
-            res = write_segment.delete_payload(op_num, id, key)? && res;
-        }
-        Ok(res)
-    })?;
+    let updated_points =
+        segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
+            let mut res = true;
+            for key in keys {
+                res = write_segment.delete_payload(op_num, id, key)? && res;
+            }
+            Ok(res)
+        })?;
 
     check_unprocessed_points(points, &updated_points)?;
     Ok(updated_points.len())
@@ -87,9 +93,10 @@ pub(crate) fn clear_payload(
     op_num: SeqNumberType,
     points: &[PointIdType],
 ) -> CollectionResult<usize> {
-    let updated_points = segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
-        write_segment.clear_payload(op_num, id)
-    })?;
+    let updated_points =
+        segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
+            write_segment.clear_payload(op_num, id)
+        })?;
 
     check_unprocessed_points(points, &updated_points)?;
     Ok(updated_points.len())
@@ -100,9 +107,8 @@ pub(crate) fn create_field_index(
     op_num: SeqNumberType,
     field_name: PayloadKeyTypeRef,
 ) -> CollectionResult<usize> {
-    let res = segments.apply_segments(|write_segment| {
-        write_segment.create_field_index(op_num, field_name)
-    })?;
+    let res = segments
+        .apply_segments(|write_segment| write_segment.create_field_index(op_num, field_name))?;
     Ok(res)
 }
 
@@ -111,9 +117,8 @@ pub(crate) fn delete_field_index(
     op_num: SeqNumberType,
     field_name: PayloadKeyTypeRef,
 ) -> CollectionResult<usize> {
-    let res = segments.apply_segments(|write_segment| {
-        write_segment.delete_field_index(op_num, field_name)
-    })?;
+    let res = segments
+        .apply_segments(|write_segment| write_segment.delete_field_index(op_num, field_name))?;
     Ok(res)
 }
 
@@ -122,7 +127,7 @@ fn upsert_with_payload(
     op_num: SeqNumberType,
     point_id: PointIdType,
     vector: &[VectorElementType],
-    payload: Option<&HashMap<PayloadKeyType, PayloadInterface>>
+    payload: Option<&HashMap<PayloadKeyType, PayloadInterface>>,
 ) -> OperationResult<bool> {
     let mut res = segment.upsert_point(op_num, point_id, vector)?;
     if let Some(full_payload) = payload {
@@ -169,32 +174,36 @@ pub(crate) fn upsert_points(
     }
 
     let vectors_map: HashMap<PointIdType, &VectorType> = ids.iter().cloned().zip(vectors).collect();
-    let payloads_map: HashMap<PointIdType, &HashMap<PayloadKeyType, PayloadInterface>> = match payloads {
-        None => Default::default(),
-        Some(payloads_vector) => ids
-            .iter()
-            .clone()
-            .zip(payloads_vector)
-            .filter_map(|(id, payload)|
-                payload.as_ref().map(|payload_values| (*id, payload_values))
-            ).collect()
-    };
+    let payloads_map: HashMap<PointIdType, &HashMap<PayloadKeyType, PayloadInterface>> =
+        match payloads {
+            None => Default::default(),
+            Some(payloads_vector) => ids
+                .iter()
+                .clone()
+                .zip(payloads_vector)
+                .filter_map(|(id, payload)| {
+                    payload.as_ref().map(|payload_values| (*id, payload_values))
+                })
+                .collect(),
+        };
 
     let segments = segments.read();
     // Update points in writable segments
-    let updated_points = segments.apply_points_to_appendable(op_num, ids, |id, write_segment| {
-        upsert_with_payload(
-            write_segment,
-            op_num,
-            id,
-            vectors_map[&id],
-            payloads_map.get(&id).cloned()
-        )
-    })?;
+    let updated_points =
+        segments.apply_points_to_appendable(op_num, ids, |id, write_segment| {
+            upsert_with_payload(
+                write_segment,
+                op_num,
+                id,
+                vectors_map[&id],
+                payloads_map.get(&id).cloned(),
+            )
+        })?;
 
     let mut res = updated_points.len();
     // Insert new points, which was not updated or existed
-    let new_point_ids = ids.iter()
+    let new_point_ids = ids
+        .iter()
         .cloned()
         .filter(|x| !(updated_points.contains(x)));
 
@@ -214,7 +223,7 @@ pub(crate) fn upsert_points(
                 op_num,
                 point_id,
                 vectors_map[&point_id],
-                payloads_map.get(&point_id).cloned()
+                payloads_map.get(&point_id).cloned(),
             )? as usize;
         }
     };
