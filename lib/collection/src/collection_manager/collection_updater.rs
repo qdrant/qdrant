@@ -30,9 +30,6 @@ impl CollectionUpdater {
                     if write_segments.failed_operation.contains(&op_num) {
                         // Failed operation successfully fixed
                         write_segments.failed_operation.remove(&op_num);
-                        for (_idx, segment) in write_segments.iter() {
-                            segment.get().write().reset_error_state(op_num);
-                        }
                     }
                 }
             }

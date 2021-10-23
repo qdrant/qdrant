@@ -7,6 +7,7 @@ mod tests {
     use segment::segment::Segment;
     use segment::segment_constructor::segment_builder::SegmentBuilder;
     use std::convert::TryInto;
+    use itertools::Itertools;
     use tempdir::TempDir;
 
     #[test]
@@ -50,7 +51,10 @@ mod tests {
 
         assert_eq!(
             merged_segment.vectors_count(),
-            segment1.vectors_count() + segment2.vectors_count()
-        )
+            segment1.iter_points().chain(segment2.iter_points()).unique().count()
+        );
+
+        assert_eq!(merged_segment.point_version(3), Some(100));
+
     }
 }

@@ -5,18 +5,9 @@ use crate::types::{
 use atomicwrites::Error as AtomicIoError;
 use rocksdb::Error;
 use std::io::Error as IoError;
-use std::path::Path;
 use std::result;
 use thiserror::Error;
 
-/// Trait for versionable & saveable objects.
-pub trait VersionedPersistable {
-    fn persist(&self, directory: &Path) -> SeqNumberType;
-    fn load(directory: &Path) -> Self;
-
-    /// Save latest persisted version in memory, so the object will not be saved too much times
-    fn ack_persistance(&mut self, version: SeqNumberType);
-}
 
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
@@ -35,6 +26,13 @@ pub enum OperationError {
     },
     #[error("Service runtime error: {description}")]
     ServiceError { description: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct SegmentFailedState {
+    pub version: SeqNumberType,
+    pub point_id: Option<PointIdType>,
+    pub error: OperationError
 }
 
 impl<E> From<AtomicIoError<E>> for OperationError {
@@ -75,12 +73,12 @@ impl From<serde_json::Error> for OperationError {
 pub type OperationResult<T> = result::Result<T, OperationError>;
 
 
-pub fn is_service_error<T>(err: &OperationResult<T>) -> bool {
+pub fn get_service_error<T>(err: &OperationResult<T>) -> Option<OperationError> {
     match err {
-        Ok(_) => false,
+        Ok(_) => None,
         Err(error) => match error {
-            OperationError::ServiceError { .. } => true,
-            _ => false,
+            OperationError::ServiceError { .. } => Some(error.clone()),
+            _ => None,
         }
     }
 }
@@ -91,6 +89,9 @@ pub fn is_service_error<T>(err: &OperationResult<T>) -> bool {
 pub trait SegmentEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
+
+    /// Get version of specified point
+    fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType>;
 
     fn search(
         &self,
@@ -212,9 +213,5 @@ pub trait SegmentEntry {
     fn get_indexed_fields(&self) -> Vec<PayloadKeyType>;
 
     /// Checks if segment errored during last operations
-    fn check_error(&self) -> Option<(SeqNumberType, OperationError)>;
-
-    /// Reset error if operation is fixed
-    /// Return true - if fixed
-    fn reset_error_state(&mut self, op_num: SeqNumberType) -> bool;
+    fn check_error(&self) -> Option<SegmentFailedState>;
 }

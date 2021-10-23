@@ -50,23 +50,47 @@ impl SegmentBuilder {
                 let other_vector_storage = other.vector_storage.borrow();
                 let other_payload_storage = other.payload_storage.borrow();
 
-                let new_internal_range = self_segment
-                    .vector_storage
-                    .borrow_mut()
-                    .update_from(&*other_vector_storage)?;
-
                 let mut id_tracker = self_segment.id_tracker.borrow_mut();
+                let mut vector_storage = self_segment.vector_storage.borrow_mut();
                 let mut payload_storage = self_segment.payload_storage.borrow_mut();
+
+                let new_internal_range = vector_storage.update_from(&*other_vector_storage)?;
 
                 for (new_internal_id, old_internal_id) in
                     new_internal_range.zip(other_vector_storage.iter_ids())
                 {
-                    let other_external_id = other_id_tracker.external_id(old_internal_id).unwrap();
-                    id_tracker.set_link(other_external_id, new_internal_id)?;
-                    payload_storage.assign_all(
-                        new_internal_id,
-                        other_payload_storage.payload(old_internal_id),
-                    )?;
+                    let external_id = other_id_tracker.external_id(old_internal_id).unwrap();
+                    let other_version = other_id_tracker.version(external_id).unwrap();
+
+                    match id_tracker.version(external_id) {
+                        None => {
+                            // New point, just insert
+                            id_tracker.set_link(external_id, new_internal_id)?;
+                            id_tracker.set_version(external_id, other_version)?;
+                            payload_storage.assign_all(
+                                new_internal_id,
+                                other_payload_storage.payload(old_internal_id),
+                            )?;
+                        }
+                        Some(existing_version) => {
+                            if existing_version < other_version {
+                                // Other version is the newest, remove the existing one and replace
+                                let existing_internal_id = id_tracker.internal_id(external_id).unwrap();
+                                vector_storage.delete(existing_internal_id)?;
+                                id_tracker.drop(external_id)?;
+                                id_tracker.set_link(external_id, new_internal_id)?;
+                                id_tracker.set_version(external_id, other_version)?;
+                                payload_storage.assign_all(
+                                    new_internal_id,
+                                    other_payload_storage.payload(old_internal_id),
+                                )?;
+                            } else {
+                                // Old version is still good, do not move anything else
+                                // Mark newly added vector as removed
+                                vector_storage.delete(new_internal_id)?;
+                            };
+                        }
+                    }
                 }
 
                 for field in other.payload_index.borrow().indexed_fields().into_iter() {

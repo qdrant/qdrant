@@ -1,5 +1,5 @@
 use crate::entry::entry_point::OperationResult;
-use crate::types::{PointIdType, PointOffsetType};
+use crate::types::{PointIdType, PointOffsetType, SeqNumberType};
 
 /// Trait for point ids tracker.
 ///
@@ -7,6 +7,13 @@ use crate::types::{PointIdType, PointOffsetType};
 /// as well as for keeping track on point version
 /// Internal ids are useful for contiguous-ness
 pub trait IdTracker {
+
+    /// Returns version of the stored point
+    fn version(&self, external_id: PointIdType) -> Option<SeqNumberType>;
+
+    /// Update version of the point
+    fn set_version(&mut self, external_id: PointIdType, version: SeqNumberType) -> OperationResult<()>;
+
     /// Returns internal ID of the point, which is used inside this segment
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType>;
 
@@ -17,7 +24,7 @@ pub trait IdTracker {
     fn set_link(
         &mut self,
         external_id: PointIdType,
-        internal_id: PointOffsetType,
+        internal_id: PointOffsetType
     ) -> OperationResult<()>;
 
     /// Drop mapping

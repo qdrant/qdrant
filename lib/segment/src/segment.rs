@@ -1,4 +1,4 @@
-use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry, is_service_error};
+use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry, get_service_error, SegmentFailedState};
 use crate::id_tracker::IdTracker;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::{ConditionChecker, PayloadStorage};
@@ -32,7 +32,7 @@ pub struct Segment {
     pub appendable_flag: bool,
     pub segment_type: SegmentType,
     pub segment_config: SegmentConfig,
-    pub error_status: Option<(SeqNumberType, OperationError)>
+    pub error_status: Option<SegmentFailedState>
 }
 
 impl Segment {
@@ -57,38 +57,91 @@ impl Segment {
         Ok(new_internal_index)
     }
 
+    fn handle_version_and_failure<F>(
+        &mut self,
+        op_num: SeqNumberType,
+        op_point_id: Option<PointIdType>,
+        operation: F
+    ) -> OperationResult<bool>
+        where F: FnOnce(&mut Segment) -> OperationResult<bool>
+    {
+        if let Some(SegmentFailedState {
+                        version: failed_version,
+                        point_id: _failed_point_id,
+                        error
+                    }) = &self.error_status {
+            // Failed operations should not be skipped,
+            // fail if newer operation is attempted before proper recovery
+            if *failed_version < op_num {
+                return Err(OperationError::ServiceError {
+                    description: format!("Not recovered from previous error: {}", error)
+                })
+            } // else: Re-try operation
+        }
+
+        let res = self.handle_version(op_num, op_point_id, operation);
+
+        match get_service_error(&res) {
+            None => {
+                // Recover error state
+                match &self.error_status {
+                    None => {}, // all good
+                    Some(error) => {
+                        if error.point_id == op_point_id {
+                            // Fixed
+                            self.error_status = None;
+                        }
+                    }
+                }
+            },
+            Some(error) => {
+                // ToDo: Recover previous segment state
+                self.error_status = Some(SegmentFailedState {
+                    version: op_num,
+                    point_id: op_point_id,
+                    error
+                })
+            }
+        }
+        res
+    }
+
     /// Manage segment version checking
     /// If current version if higher than operation version - do not perform the operation
     /// Update current version if operation successfully executed
     fn handle_version<F>(
         &mut self,
         op_num: SeqNumberType,
+        op_point_id: Option<PointIdType>,
         operation: F
     ) -> OperationResult<bool>
     where F: FnOnce(&mut Segment) -> OperationResult<bool>
     {
-        if let Some((failed_operation, error)) = &self.error_status {
-            // Failed operations should not be skipped,
-            // fail if newer operation is attempted before proper recovery
-            if *failed_operation != op_num {
-                return Err(OperationError::ServiceError {
-                    description: format!("Not recovered from previous error {}", error)
-                })
-            } // else: Re-try operation
+        match op_point_id {
+            None => {
+                // Not a point operation, use global version to check if already applied
+                if self.version > op_num {
+                    return Ok(false) // Skip without execution
+                }
+            }
+            Some(point_id) => {
+                // Check if point not exists or have lower version
+                if self.id_tracker.borrow()
+                    .version(point_id)
+                    .map(|current_version| current_version > op_num)
+                    .unwrap_or(false) {
+                    return Ok(false)
+                }
+            }
         }
-        if self.version > op_num {
-            // Skip without execution, current version is higher => operation already applied
-            return Ok(false)
-        }
+
         let res = operation(self);
 
-        if is_service_error(&res) {
-            // ToDo: Recover previous segment state
-            self.error_status = Some((op_num, res.clone().err().unwrap()))
-        }
-
         if res.is_ok() {
-            self.version = op_num
+            self.version = op_num;
+            if let Some(point_id) = op_point_id {
+                self.id_tracker.borrow_mut().set_version(point_id, op_num)?;
+            }
         }
         res
     }
@@ -129,6 +182,10 @@ impl SegmentEntry for Segment {
         self.version
     }
 
+    fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
+        self.id_tracker.borrow().version(point_id)
+    }
+
     fn search(
         &self,
         vector: &[VectorElementType],
@@ -157,10 +214,18 @@ impl SegmentEntry for Segment {
             .map(|&scored_point_offset| {
                 let point_id = id_tracker
                     .external_id(scored_point_offset.idx)
-                    .ok_or_else(|| OperationError::ServiceError {
+                    .ok_or(OperationError::ServiceError {
                         description: format!(
                             "Corrupter id_tracker, no external value for {}",
                             scored_point_offset.idx
+                        ),
+                    })?;
+                let point_version = id_tracker
+                    .version(point_id)
+                    .ok_or(OperationError::ServiceError {
+                        description: format!(
+                            "Corrupter id_tracker, no version for point {}",
+                            point_id
                         ),
                     })?;
                 let payload = if with_payload.enable {
@@ -175,6 +240,7 @@ impl SegmentEntry for Segment {
                 };
                 Ok(ScoredPoint {
                     id: point_id,
+                    version: point_version,
                     score: scored_point_offset.score,
                     payload,
                 })
@@ -189,7 +255,7 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         vector: &[VectorElementType],
     ) -> OperationResult<bool> {
-        self.handle_version(op_num, |segment| {
+        self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let vector_dim = segment.vector_storage.borrow().vector_dim();
             if vector_dim != vector.len() {
                 return Err(OperationError::WrongVector {
@@ -233,7 +299,7 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
     ) -> OperationResult<bool> {
-        self.handle_version(op_num, |segment| {
+        self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let mut id_tracker = segment.id_tracker.borrow_mut();
             let internal_id = id_tracker.internal_id(point_id);
             match internal_id {
@@ -253,7 +319,7 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         full_payload: TheMap<PayloadKeyType, PayloadType>,
     ) -> OperationResult<bool> {
-        self.handle_version(op_num, |segment| {
+        self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
             segment.payload_storage
                 .borrow_mut()
@@ -268,7 +334,7 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         full_payload: &str,
     ) -> OperationResult<bool> {
-        self.handle_version(op_num, |segment| {
+        self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
             let payload: TheMap<PayloadKeyType, serde_json::value::Value> =
                 serde_json::from_str(full_payload)?;
@@ -286,7 +352,7 @@ impl SegmentEntry for Segment {
         key: PayloadKeyTypeRef,
         payload: PayloadType,
     ) -> OperationResult<bool> {
-        self.handle_version(op_num, |segment| {
+        self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
             segment.payload_storage
                 .borrow_mut()
@@ -301,7 +367,7 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         key: PayloadKeyTypeRef,
     ) -> OperationResult<bool> {
-        self.handle_version(op_num, |segment| {
+        self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
             segment.payload_storage.borrow_mut().delete(internal_id, key)?;
             Ok(true)
@@ -313,7 +379,7 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
     ) -> OperationResult<bool> {
-        self.handle_version(op_num, |segment| {
+        self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
             segment.payload_storage.borrow_mut().drop(internal_id)?;
             Ok(true)
@@ -454,14 +520,14 @@ impl SegmentEntry for Segment {
     }
 
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
-        self.handle_version(op_num, |segment| {
+        self.handle_version_and_failure(op_num, None, |segment| {
             segment.payload_index.borrow_mut().drop_index(key)?;
             Ok(true)
         })
     }
 
     fn create_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
-        self.handle_version(op_num, |segment| {
+        self.handle_version_and_failure(op_num, None, |segment| {
             segment.payload_index.borrow_mut().set_indexed(key)?;
             Ok(true)
         })
@@ -471,20 +537,8 @@ impl SegmentEntry for Segment {
         self.payload_index.borrow().indexed_fields()
     }
 
-    fn check_error(&self) -> Option<(SeqNumberType, OperationError)> {
+    fn check_error(&self) -> Option<SegmentFailedState> {
         self.error_status.clone()
-    }
-
-    fn reset_error_state(&mut self, op_num: SeqNumberType) -> bool {
-        match &self.error_status {
-            None => false,
-            Some((failed_op, _err)) => if *failed_op == op_num {
-                self.error_status = None;
-                true
-            } else {
-                false
-            }
-        }
     }
 }
 

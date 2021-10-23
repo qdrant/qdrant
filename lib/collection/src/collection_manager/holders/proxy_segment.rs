@@ -1,6 +1,6 @@
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use parking_lot::RwLock;
-use segment::entry::entry_point::{OperationResult, SegmentEntry, OperationError};
+use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
 use segment::types::{
     Condition, Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType, ScoredPoint,
     SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap,
@@ -105,6 +105,12 @@ impl SegmentEntry for ProxySegment {
         )
     }
 
+    fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
+        // Write version is always higher if presence
+        self.write_segment.get().read().point_version(point_id)
+            .or(self.wrapped_segment.get().read().point_version(point_id))
+    }
+
     fn search(
         &self,
         vector: &[VectorElementType],
@@ -155,9 +161,6 @@ impl SegmentEntry for ProxySegment {
         point_id: PointIdType,
         vector: &[VectorElementType],
     ) -> OperationResult<bool> {
-        if self.version() > op_num {
-            return Ok(false);
-        }
         self.move_if_exists(op_num, point_id)?;
         self.write_segment
             .get()
@@ -170,9 +173,6 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
     ) -> OperationResult<bool> {
-        if self.version() > op_num {
-            return Ok(false);
-        }
         let mut was_deleted = false;
         if self.wrapped_segment.get().read().has_point(point_id) {
             self.deleted_points.write().insert(point_id);
@@ -193,11 +193,7 @@ impl SegmentEntry for ProxySegment {
         point_id: PointIdType,
         full_payload: TheMap<PayloadKeyType, PayloadType>,
     ) -> OperationResult<bool> {
-        if self.version() > op_num {
-            return Ok(false);
-        }
         self.move_if_exists(op_num, point_id)?;
-
         self.write_segment
             .get()
             .write()
@@ -210,9 +206,6 @@ impl SegmentEntry for ProxySegment {
         point_id: u64,
         full_payload: &str,
     ) -> OperationResult<bool> {
-        if self.version() > op_num {
-            return Ok(false);
-        }
         self.move_if_exists(op_num, point_id)?;
         self.write_segment
             .get()
@@ -227,9 +220,6 @@ impl SegmentEntry for ProxySegment {
         key: PayloadKeyTypeRef,
         payload: PayloadType,
     ) -> OperationResult<bool> {
-        if self.version() > op_num {
-            return Ok(false);
-        }
         self.move_if_exists(op_num, point_id)?;
         self.write_segment
             .get()
@@ -243,9 +233,6 @@ impl SegmentEntry for ProxySegment {
         point_id: PointIdType,
         key: PayloadKeyTypeRef,
     ) -> OperationResult<bool> {
-        if self.version() > op_num {
-            return Ok(false);
-        }
         self.move_if_exists(op_num, point_id)?;
         self.write_segment
             .get()
@@ -258,9 +245,6 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
     ) -> OperationResult<bool> {
-        if self.version() > op_num {
-            return Ok(false);
-        }
         self.move_if_exists(op_num, point_id)?;
         self.write_segment
             .get()
@@ -427,12 +411,8 @@ impl SegmentEntry for ProxySegment {
             .collect()
     }
 
-    fn check_error(&self) -> Option<(SeqNumberType, OperationError)> {
+    fn check_error(&self) -> Option<SegmentFailedState> {
         self.write_segment.get().read().check_error()
-    }
-
-    fn reset_error_state(&mut self, op_num: SeqNumberType) -> bool {
-        self.write_segment.get().write().reset_error_state(op_num)
     }
 }
 

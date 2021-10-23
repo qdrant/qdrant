@@ -14,22 +14,6 @@ use segment::entry::entry_point::{OperationResult, SegmentEntry};
 
 /// A collection of functions for updating points and payloads stored in segments
 
-/// Returns points which are already stored with higher version
-pub(crate) fn get_pre_existing_points(segments: &SegmentHolder, points: &[PointIdType], op_num: SeqNumberType) -> CollectionResult<HashSet<PointIdType>> {
-    // Points, which are already updated to at least same version
-    let mut pre_updated_points: HashSet<PointIdType> = Default::default();
-    // Get points, which presence in segments with higher version
-    segments.read_points(points, |id, segment| {
-        if segment.version() > op_num {
-            pre_updated_points.insert(id);
-        }
-        Ok(true)
-    })?;
-
-    Ok(pre_updated_points)
-}
-
-
 pub(crate) fn check_unprocessed_points(
     points: &[PointIdType],
     processed: &HashSet<PointIdType>,
@@ -56,7 +40,7 @@ pub(crate) fn delete_points(
     op_num: SeqNumberType,
     ids: &[PointIdType],
 ) -> CollectionResult<usize> {
-    let res = segments.apply_points(op_num, ids, |id, _idx, write_segment| {
+    let res = segments.apply_points(ids, |id, _idx, write_segment| {
         write_segment.delete_point(op_num, id)
     })?;
     Ok(res)
@@ -68,10 +52,7 @@ pub(crate) fn set_payload(
     payload: &HashMap<PayloadKeyType, PayloadInterface>,
     points: &[PointIdType],
 ) -> CollectionResult<usize> {
-    let mut updated_points: HashSet<PointIdType> = Default::default();
-
-    let res = segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
-        updated_points.insert(id);
+    let updated_points = segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
         let mut res = true;
         for (key, payload) in payload {
             res = write_segment.set_payload(op_num, id, key, payload.into())? && res;
@@ -80,7 +61,7 @@ pub(crate) fn set_payload(
     })?;
 
     check_unprocessed_points(points, &updated_points)?;
-    Ok(res)
+    Ok(updated_points.len())
 }
 
 pub(crate) fn delete_payload(
@@ -89,10 +70,7 @@ pub(crate) fn delete_payload(
     points: &[PointIdType],
     keys: &[PayloadKeyType],
 ) -> CollectionResult<usize> {
-    let mut updated_points: HashSet<PointIdType> = Default::default();
-
-    let res = segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
-        updated_points.insert(id);
+    let updated_points = segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
         let mut res = true;
         for key in keys {
             res = write_segment.delete_payload(op_num, id, key)? && res;
@@ -101,7 +79,7 @@ pub(crate) fn delete_payload(
     })?;
 
     check_unprocessed_points(points, &updated_points)?;
-    Ok(res)
+    Ok(updated_points.len())
 }
 
 pub(crate) fn clear_payload(
@@ -109,14 +87,12 @@ pub(crate) fn clear_payload(
     op_num: SeqNumberType,
     points: &[PointIdType],
 ) -> CollectionResult<usize> {
-    let mut updated_points: HashSet<PointIdType> = Default::default();
-    let res = segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
-        updated_points.insert(id);
+    let updated_points = segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
         write_segment.clear_payload(op_num, id)
     })?;
 
     check_unprocessed_points(points, &updated_points)?;
-    Ok(res)
+    Ok(updated_points.len())
 }
 
 pub(crate) fn create_field_index(
@@ -124,7 +100,7 @@ pub(crate) fn create_field_index(
     op_num: SeqNumberType,
     field_name: PayloadKeyTypeRef,
 ) -> CollectionResult<usize> {
-    let res = segments.apply_segments(op_num, |write_segment| {
+    let res = segments.apply_segments(|write_segment| {
         write_segment.create_field_index(op_num, field_name)
     })?;
     Ok(res)
@@ -135,7 +111,7 @@ pub(crate) fn delete_field_index(
     op_num: SeqNumberType,
     field_name: PayloadKeyTypeRef,
 ) -> CollectionResult<usize> {
-    let res = segments.apply_segments(op_num, |write_segment| {
+    let res = segments.apply_segments(|write_segment| {
         write_segment.delete_field_index(op_num, field_name)
     })?;
     Ok(res)
@@ -205,15 +181,8 @@ pub(crate) fn upsert_points(
     };
 
     let segments = segments.read();
-
-    // Points, which are already updated to at least same version
-    let pre_updated_points = get_pre_existing_points(&segments, ids, op_num)?;
-
-    // Existed points, updated in this operation
-    let mut updated_points: HashSet<PointIdType> = Default::default();
     // Update points in writable segments
-    let mut res = segments.apply_points_to_appendable(op_num, ids, |id, write_segment| {
-        updated_points.insert(id);
+    let updated_points = segments.apply_points_to_appendable(op_num, ids, |id, write_segment| {
         upsert_with_payload(
             write_segment,
             op_num,
@@ -223,10 +192,11 @@ pub(crate) fn upsert_points(
         )
     })?;
 
+    let mut res = updated_points.len();
     // Insert new points, which was not updated or existed
     let new_point_ids = ids.iter()
         .cloned()
-        .filter(|x| !(updated_points.contains(x) || pre_updated_points.contains(x)));
+        .filter(|x| !(updated_points.contains(x)));
 
     {
         let default_write_segment =
