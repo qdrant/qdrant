@@ -9,8 +9,6 @@ use std::path::Path;
 /// Since sled is used for reading only during the initialization, large read cache is not required
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 
-const DB_MAX_OPEN_FILES: i32 = 4;
-
 const MAPPING_CF: &str = "mapping";
 const VERSIONS_CF: &str = "versions";
 
@@ -25,7 +23,6 @@ impl SimpleIdTracker {
     pub fn open(path: &Path) -> OperationResult<Self> {
         let mut options: Options = Options::default();
         options.set_write_buffer_size(DB_CACHE_SIZE);
-        options.set_max_open_files(DB_MAX_OPEN_FILES);
         options.create_if_missing(true);
         options.create_missing_column_families(true);
         let store = DB::open_cf(&options, path, vec![MAPPING_CF, VERSIONS_CF])?;
