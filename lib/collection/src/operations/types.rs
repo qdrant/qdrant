@@ -1,4 +1,3 @@
-use crossbeam_channel::SendError;
 use futures::io;
 use schemars::JsonSchema;
 use serde;
@@ -16,6 +15,7 @@ use segment::types::{
 
 use crate::config::CollectionConfig;
 use crate::wal::WalError;
+use async_channel::{RecvError, SendError};
 use std::collections::HashMap;
 
 /// Type of vector in API
@@ -28,7 +28,8 @@ pub enum CollectionStatus {
     Green,
     /// Collection is available, but some segments might be under optimization
     Yellow,
-    /// Something is not OK
+    /// Something is not OK:
+    /// - some operations failed and was not recovered
     Red,
 }
 
@@ -181,6 +182,14 @@ impl From<OperationError> for CollectionError {
     }
 }
 
+impl From<RecvError> for CollectionError {
+    fn from(err: RecvError) -> Self {
+        Self::ServiceError {
+            error: format!("{}", err),
+        }
+    }
+}
+
 impl From<JoinError> for CollectionError {
     fn from(err: JoinError) -> Self {
         Self::ServiceError {
@@ -198,9 +207,9 @@ impl From<WalError> for CollectionError {
 }
 
 impl<T> From<SendError<T>> for CollectionError {
-    fn from(_err: SendError<T>) -> Self {
+    fn from(err: SendError<T>) -> Self {
         Self::ServiceError {
-            error: "Can't reach one of the workers".to_owned(),
+            error: format!("Can't reach one of the workers: {}", err),
         }
     }
 }
@@ -222,3 +231,10 @@ impl From<io::Error> for CollectionError {
 }
 
 pub type CollectionResult<T> = result::Result<T, CollectionError>;
+
+pub fn is_service_error<T>(err: &CollectionResult<T>) -> bool {
+    match err {
+        Ok(_) => false,
+        Err(error) => matches!(error, CollectionError::ServiceError { .. }),
+    }
+}

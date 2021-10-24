@@ -2,7 +2,6 @@ use std::fs::create_dir_all;
 use std::path::Path;
 use std::sync::Arc;
 
-use crossbeam_channel::unbounded;
 use parking_lot::{Mutex, RwLock};
 use tokio::runtime;
 
@@ -35,8 +34,7 @@ pub fn construct_collection(
 
     let locked_wal = Arc::new(Mutex::new(wal));
 
-    // ToDo: Move tx-rx into updater, so Collection should not know about it.
-    let (tx, rx) = unbounded();
+    let (tx, rx) = async_channel::unbounded();
 
     let update_handler = UpdateHandler::new(
         optimizers,

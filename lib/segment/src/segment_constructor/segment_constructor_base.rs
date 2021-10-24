@@ -1,5 +1,5 @@
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::id_mapper::simple_id_mapper::SimpleIdMapper;
+use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::plain_payload_index::{PlainIndex, PlainPayloadIndex};
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -29,13 +29,13 @@ fn create_segment(
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<Segment> {
-    let mapper_path = segment_path.join("id_mapper");
+    let tracker_path = segment_path.join("id_tracker");
     let payload_storage_path = segment_path.join("payload_storage");
     let payload_index_path = segment_path.join("payload_index");
     let vector_storage_path = segment_path.join("vector_storage");
     let vector_index_path = segment_path.join("vector_index");
 
-    let id_mapper = sp(SimpleIdMapper::open(mapper_path.as_path())?);
+    let id_tracker = sp(SimpleIdTracker::open(tracker_path.as_path())?);
 
     let vector_storage: Arc<AtomicRefCell<dyn VectorStorage>> = match config.storage_type {
         StorageType::InMemory => sp(SimpleVectorStorage::open(
@@ -54,7 +54,7 @@ fn create_segment(
 
     let condition_checker = Arc::new(SimpleConditionChecker::new(
         payload_storage.clone(),
-        id_mapper.clone(),
+        id_tracker.clone(),
     ));
 
     let payload_index: Arc<AtomicRefCell<dyn PayloadIndex>> =
@@ -68,7 +68,7 @@ fn create_segment(
                 condition_checker.clone(),
                 vector_storage.clone(),
                 payload_storage.clone(),
-                id_mapper.clone(),
+                id_tracker.clone(),
                 &payload_index_path,
             )?),
         };
@@ -102,7 +102,7 @@ fn create_segment(
         version,
         persisted_version: Arc::new(Mutex::new(version)),
         current_path: segment_path.to_owned(),
-        id_mapper,
+        id_tracker,
         vector_storage,
         payload_storage,
         payload_index,
@@ -111,6 +111,7 @@ fn create_segment(
         appendable_flag,
         segment_type,
         segment_config: config.clone(),
+        error_status: None,
     })
 }
 

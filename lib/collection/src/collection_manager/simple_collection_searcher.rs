@@ -2,7 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use futures::future::try_join_all;
+use itertools::Itertools;
 use parking_lot::RwLock;
+use segment::entry::entry_point::OperationError;
 use tokio::runtime::Handle;
 
 use segment::spaces::tools::peek_top_scores_iterable;
@@ -68,8 +70,10 @@ impl CollectionSearcher for SimpleCollectionSearcher {
         let top_scores = peek_top_scores_iterable(
             all_search_results
                 .into_iter()
-                .map(|x| x.unwrap())
+                .map(|x| x.unwrap()) // already checked for errors
                 .flatten()
+                .sorted_by_key(|a| (a.id, 1 - a.version as i64)) // Prefer higher version first
+                .dedup_by(|a, b| a.id == b.id) // Keep only highest version
                 .filter(|scored| {
                     let res = seen_idx.contains(&scored.id);
                     seen_idx.insert(scored.id);
@@ -92,8 +96,13 @@ impl CollectionSearcher for SimpleCollectionSearcher {
         let mut point_records: HashMap<PointIdType, Record> = Default::default();
 
         segments.read().read_points(points, |id, segment| {
+            let version = segment
+                .point_version(id)
+                .ok_or(OperationError::ServiceError {
+                    description: format!("No version for point {}", id),
+                })?;
             // If this point was not found yet or this segment have later version
-            if !point_version.contains_key(&id) || point_version[&id] < segment.version() {
+            if !point_version.contains_key(&id) || point_version[&id] < version {
                 point_records.insert(
                     id,
                     Record {
@@ -114,7 +123,7 @@ impl CollectionSearcher for SimpleCollectionSearcher {
                         },
                     },
                 );
-                point_version.insert(id, segment.version());
+                point_version.insert(id, version);
             }
             Ok(true)
         })?;

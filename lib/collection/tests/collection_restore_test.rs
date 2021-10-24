@@ -1,10 +1,7 @@
-use std::sync::Arc;
-
 use tempdir::TempDir;
 
 use collection::collection_builder::collection_loader::load_collection;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
-use collection::collection_manager::simple_collection_updater::SimpleCollectionUpdater;
 use collection::operations::point_ops::{PointInsertOperations, PointOperations};
 use collection::operations::types::ScrollRequest;
 use collection::operations::CollectionUpdateOperations;
@@ -21,9 +18,8 @@ async fn test_collection_reloading() {
     {
         let _collection = simple_collection_fixture(collection_dir.path()).await;
     }
-    let updater = Arc::new(SimpleCollectionUpdater::new());
     for _i in 0..5 {
-        let collection = load_collection(collection_dir.path(), updater.clone());
+        let collection = load_collection(collection_dir.path());
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::BatchPoints {
                 ids: vec![0, 1],
@@ -31,20 +27,16 @@ async fn test_collection_reloading() {
                 payloads: None,
             }),
         );
-        collection
-            .update_by(insert_points, true, updater.clone())
-            .await
-            .unwrap();
+        collection.update(insert_points, true).await.unwrap();
     }
 
-    let collection = load_collection(collection_dir.path(), updater.clone());
+    let collection = load_collection(collection_dir.path());
     assert_eq!(collection.info().await.unwrap().vectors_count, 2)
 }
 
 #[tokio::test]
 async fn test_collection_payload_reloading() {
     let collection_dir = TempDir::new("collection").unwrap();
-    let updater = Arc::new(SimpleCollectionUpdater::new());
     {
         let collection = simple_collection_fixture(collection_dir.path()).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
@@ -57,13 +49,10 @@ async fn test_collection_payload_reloading() {
                 .unwrap(),
             }),
         );
-        collection
-            .update_by(insert_points, true, updater.clone())
-            .await
-            .unwrap();
+        collection.update(insert_points, true).await.unwrap();
     }
 
-    let collection = load_collection(collection_dir.path(), updater.clone());
+    let collection = load_collection(collection_dir.path());
 
     let searcher = SimpleCollectionSearcher::new();
     let res = collection
@@ -102,7 +91,6 @@ async fn test_collection_payload_reloading() {
 #[tokio::test]
 async fn test_collection_payload_custom_payload() {
     let collection_dir = TempDir::new("collection").unwrap();
-    let updater = Arc::new(SimpleCollectionUpdater::new());
     {
         let collection = simple_collection_fixture(collection_dir.path()).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
@@ -115,13 +103,10 @@ async fn test_collection_payload_custom_payload() {
                 .unwrap(),
             }),
         );
-        collection
-            .update_by(insert_points, true, updater.clone())
-            .await
-            .unwrap();
+        collection.update(insert_points, true).await.unwrap();
     }
 
-    let collection = load_collection(collection_dir.path(), updater.clone());
+    let collection = load_collection(collection_dir.path());
 
     let searcher = SimpleCollectionSearcher::new();
     // Test res with filter payload

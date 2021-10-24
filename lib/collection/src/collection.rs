@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
 
-use crossbeam_channel::Sender;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
@@ -16,7 +15,8 @@ use segment::types::{
 };
 
 use crate::collection_builder::optimizers_builder::build_optimizers;
-use crate::collection_manager::collection_managers::{CollectionSearcher, CollectionUpdater};
+use crate::collection_manager::collection_managers::CollectionSearcher;
+use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
@@ -25,8 +25,10 @@ use crate::operations::types::{
     ScrollRequest, ScrollResult, SearchRequest, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::update_handler::{UpdateHandler, UpdateSignal};
+use crate::update_handler::{OperationData, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
+use async_channel::Sender;
+use futures::executor::block_on;
 
 pub struct Collection {
     segments: Arc<RwLock<SegmentHolder>>,
@@ -67,45 +69,41 @@ impl Collection {
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
-    pub async fn update_by(
+    pub async fn update(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
-        segment_updater: Arc<dyn CollectionUpdater + Send + Sync>,
     ) -> CollectionResult<UpdateResult> {
-        let operation_id = self.wal.lock().write(&operation)?;
-
         let sndr = self.update_sender.clone();
-        let segments = self.segments.clone();
-        let update_future = async move {
-            let res = segment_updater.update(segments.deref(), operation_id, operation);
-            sndr.send(UpdateSignal::Operation(operation_id))?;
-            res
+        let (callback_sender, callback_receiver) = if wait {
+            let (tx, rx) = async_channel::unbounded();
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
         };
 
-        if let Some(handle) = self.runtime_handle.as_ref() {
-            let update_handler = handle.spawn(update_future);
-            if !wait {
-                return Ok(UpdateResult {
-                    operation_id,
-                    status: UpdateStatus::Acknowledged,
-                });
-            }
+        let operation_id = {
+            let mut wal_lock = self.wal.lock();
+            let operation_id = wal_lock.write(&operation)?;
+            sndr.send(UpdateSignal::Operation(OperationData {
+                op_num: operation_id,
+                operation,
+                sender: callback_sender,
+            }))
+            .await?;
+            operation_id
+        };
 
-            let _res: usize = update_handler.await??;
+        if let Some(receiver) = callback_receiver {
+            let _res = receiver.recv().await??;
             Ok(UpdateResult {
                 operation_id,
                 status: UpdateStatus::Completed,
             })
         } else {
-            // The above error could only happen if update is called in parallel with
-            // drop. That means the drop method has already shut down the update runtime
-            // If you see this error, most likely you have synchronization issue
-            // with updating collection and dropping it at the same time.
-            // It is almost not possible to achieve in safe rust as the caller of update you
-            // have a reference to update handler, so the drop is not called yet.
-            Err(CollectionError::ServiceError {
-                error: "Calling update on removed collection".to_owned(),
+            Ok(UpdateResult {
+                operation_id,
+                status: UpdateStatus::Acknowledged,
             })
         }
     }
@@ -282,6 +280,9 @@ impl Collection {
                 schema.insert(key, val);
             }
         }
+        if !segments.failed_operation.is_empty() {
+            status = CollectionStatus::Red;
+        }
         Ok(CollectionInfo {
             status,
             vectors_count,
@@ -293,8 +294,8 @@ impl Collection {
         })
     }
 
-    pub fn stop(&self) -> CollectionResult<()> {
-        self.update_sender.send(UpdateSignal::Stop)?;
+    pub async fn stop(&self) -> CollectionResult<()> {
+        self.update_sender.send(UpdateSignal::Stop).await?;
         Ok(())
     }
 
@@ -336,8 +337,8 @@ impl Collection {
         }
         let config = self.config.read().await;
         let mut update_handler = self.update_handler.lock().await;
-        self.stop()?;
-        update_handler.wait_worker_stops().await?;
+        self.stop().await?;
+        update_handler.wait_workers_stops().await?;
         let new_optimizers = build_optimizers(
             self.path.as_path(),
             &config.params,
@@ -346,26 +347,27 @@ impl Collection {
         );
         update_handler.optimizers = new_optimizers;
         update_handler.flush_timeout_sec = config.optimizer_config.flush_interval_sec;
-        update_handler.run_worker();
-        self.update_sender.send(UpdateSignal::Nop)?;
+        update_handler.run_workers();
+        self.update_sender.send(UpdateSignal::Nop).await?;
 
         Ok(())
     }
 
-    pub async fn wait_update_worker_stops(&self) -> CollectionResult<()> {
+    pub async fn wait_update_workers_stop(&self) -> CollectionResult<()> {
         let mut update_handler = self.update_handler.lock().await;
-        update_handler.wait_worker_stops().await
+        update_handler.wait_workers_stops().await
     }
 
-    pub fn load_from_wal(&self, segment_updater: Arc<dyn CollectionUpdater>) {
+    pub fn load_from_wal(&self) {
         let wal = self.wal.lock();
         let bar = ProgressBar::new(wal.len());
         bar.set_message("Recovering collection");
         let segments = self.segments();
+        // ToDo: Start from minimal applied version
         for (op_num, update) in wal.read_all() {
             // Panic only in case of internal error. If wrong formatting - skip
             if let Err(CollectionError::ServiceError { error }) =
-                segment_updater.update(segments, op_num, update)
+                CollectionUpdater::update(segments, op_num, update)
             {
                 panic!("Can't apply WAL operation: {}", error)
             }
@@ -379,7 +381,10 @@ impl Collection {
 
 impl Drop for Collection {
     fn drop(&mut self) {
-        self.stop().unwrap(); // Finishes update tasks right before destructor stuck to do so with runtime
+        // Finishes update tasks right before destructor stuck to do so with runtime
+        block_on(self.stop()).unwrap();
+
+        block_on(self.wait_update_workers_stop()).unwrap();
 
         // The drop could be called from the tokio context, e.g. from perform_collection_operation method.
         // Calling remove from there would lead to the following error in a new version of tokio:

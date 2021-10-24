@@ -10,8 +10,7 @@ use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::payload_storage::PayloadStorage;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
-const DB_CACHE_SIZE: usize = 10 * 1024 * 1024;
-// 10 mb
+const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 const DB_NAME: &str = "payload";
 
 pub struct SimplePayloadStorage {

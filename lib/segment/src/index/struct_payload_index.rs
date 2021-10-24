@@ -8,7 +8,7 @@ use itertools::Itertools;
 use log::debug;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::id_mapper::IdMapper;
+use crate::id_tracker::IdTracker;
 use crate::index::field_index::index_selector::index_selector;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
@@ -30,7 +30,7 @@ pub struct StructPayloadIndex {
     condition_checker: Arc<dyn ConditionChecker>,
     vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
-    id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
+    id_tracker: Arc<AtomicRefCell<dyn IdTracker>>,
     field_indexes: IndexesMap,
     config: PayloadConfig,
     path: PathBuf,
@@ -151,7 +151,7 @@ impl StructPayloadIndex {
         condition_checker: Arc<dyn ConditionChecker>,
         vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
         payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
-        id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
+        id_tracker: Arc<AtomicRefCell<dyn IdTracker>>,
         path: &Path,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
@@ -166,7 +166,7 @@ impl StructPayloadIndex {
             condition_checker,
             vector_storage,
             payload,
-            id_mapper,
+            id_tracker,
             field_indexes: Default::default(),
             config,
             path: path.to_owned(),
@@ -278,11 +278,11 @@ impl PayloadIndex for StructPayloadIndex {
         let estimator = |condition: &Condition| match condition {
             Condition::Filter(_) => panic!("Unexpected branching"),
             Condition::HasId(has_id) => {
-                let id_mapper_ref = self.id_mapper.borrow();
+                let id_tracker_ref = self.id_tracker.borrow();
                 let mapped_ids: HashSet<PointOffsetType> = has_id
                     .has_id
                     .iter()
-                    .filter_map(|external_id| id_mapper_ref.internal_id(*external_id))
+                    .filter_map(|external_id| id_tracker_ref.internal_id(*external_id))
                     .collect();
                 let num_ids = mapped_ids.len();
                 CardinalityEstimation {

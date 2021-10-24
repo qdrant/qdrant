@@ -8,7 +8,7 @@ use std::path::Path;
 pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
     vacuum_min_vector_number: 1000,
-    max_segment_number: 10,
+    max_segment_number: 5,
     memmap_threshold: 100_000,
     indexing_threshold: 50_000,
     payload_indexing_threshold: 20_000,

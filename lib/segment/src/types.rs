@@ -43,6 +43,8 @@ pub enum Order {
 pub struct ScoredPoint {
     /// Point id
     pub id: PointIdType,
+    /// Point version
+    pub version: SeqNumberType,
     /// Points vector distance to the query vector
     pub score: ScoreType,
     /// Payload storage

@@ -1,4 +1,4 @@
-use crate::id_mapper::IdMapper;
+use crate::id_tracker::IdTracker;
 use crate::payload_storage::condition_checker::{
     match_geo, match_geo_radius, match_payload, match_range,
 };
@@ -62,17 +62,17 @@ where
 
 pub struct SimpleConditionChecker {
     payload_storage: Arc<AtomicRefCell<SimplePayloadStorage>>,
-    id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
+    id_tracker: Arc<AtomicRefCell<dyn IdTracker>>,
 }
 
 impl SimpleConditionChecker {
     pub fn new(
         payload_storage: Arc<AtomicRefCell<SimplePayloadStorage>>,
-        id_mapper: Arc<AtomicRefCell<dyn IdMapper>>,
+        id_tracker: Arc<AtomicRefCell<dyn IdTracker>>,
     ) -> Self {
         SimpleConditionChecker {
             payload_storage,
-            id_mapper,
+            id_tracker,
         }
     }
 }
@@ -129,7 +129,7 @@ impl ConditionChecker for SimpleConditionChecker {
                         .unwrap_or(false)
                 }
                 Condition::HasId(has_id) => {
-                    let external_id = match self.id_mapper.borrow().external_id(point_id) {
+                    let external_id = match self.id_tracker.borrow().external_id(point_id) {
                         None => return false,
                         Some(id) => id,
                     };
@@ -146,7 +146,7 @@ impl ConditionChecker for SimpleConditionChecker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::id_mapper::simple_id_mapper::SimpleIdMapper;
+    use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::payload_storage::PayloadStorage;
     use crate::types::GeoPoint;
     use crate::types::{FieldCondition, GeoBoundingBox, Match, PayloadType, Range};
@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn test_condition_checker() {
         let dir = TempDir::new("payload_dir").unwrap();
-        let dir_id_mapper = TempDir::new("id_mapper_dir").unwrap();
+        let dir_id_tracker = TempDir::new("id_tracker_dir").unwrap();
 
         let payload: TheMap<PayloadKeyType, PayloadType> = [
             (
@@ -180,17 +180,17 @@ mod tests {
         .collect();
 
         let mut payload_storage = SimplePayloadStorage::open(dir.path()).unwrap();
-        let mut id_mapper = SimpleIdMapper::open(dir_id_mapper.path()).unwrap();
+        let mut id_tracker = SimpleIdTracker::open(dir_id_tracker.path()).unwrap();
 
-        id_mapper.set_link(0, 0).unwrap();
-        id_mapper.set_link(1, 1).unwrap();
-        id_mapper.set_link(2, 2).unwrap();
-        id_mapper.set_link(10, 10).unwrap();
+        id_tracker.set_link(0, 0).unwrap();
+        id_tracker.set_link(1, 1).unwrap();
+        id_tracker.set_link(2, 2).unwrap();
+        id_tracker.set_link(10, 10).unwrap();
         payload_storage.assign_all(0, payload).unwrap();
 
         let payload_checker = SimpleConditionChecker::new(
             Arc::new(AtomicRefCell::new(payload_storage)),
-            Arc::new(AtomicRefCell::new(id_mapper)),
+            Arc::new(AtomicRefCell::new(id_tracker)),
         );
 
         let match_red = Condition::Field(FieldCondition {

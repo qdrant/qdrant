@@ -17,7 +17,6 @@ use segment::types::{
 use crate::common::simple_collection_fixture;
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
-use collection::collection_manager::simple_collection_updater::SimpleCollectionUpdater;
 
 mod common;
 
@@ -26,7 +25,6 @@ async fn test_collection_updater() {
     let collection_dir = TempDir::new("collection").unwrap();
 
     let collection = simple_collection_fixture(collection_dir.path()).await;
-    let segment_updater = Arc::new(SimpleCollectionUpdater::new());
 
     let insert_points =
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(BatchPoints {
@@ -41,9 +39,7 @@ async fn test_collection_updater() {
             payloads: None,
         }));
 
-    let insert_result = collection
-        .update_by(insert_points, true, segment_updater.clone())
-        .await;
+    let insert_result = collection.update(insert_points, true).await;
 
     match insert_result {
         Ok(res) => {
@@ -84,7 +80,6 @@ async fn test_collection_search_with_payload() {
     let collection_dir = TempDir::new("collection").unwrap();
 
     let collection = simple_collection_fixture(collection_dir.path()).await;
-    let segment_updater = Arc::new(SimpleCollectionUpdater::new());
 
     let insert_points =
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(BatchPoints {
@@ -96,9 +91,7 @@ async fn test_collection_search_with_payload() {
             .unwrap(),
         }));
 
-    let insert_result = collection
-        .update_by(insert_points, true, segment_updater.clone())
-        .await;
+    let insert_result = collection.update(insert_points, true).await;
 
     match insert_result {
         Ok(res) => {
@@ -138,7 +131,6 @@ async fn test_collection_search_with_payload() {
 async fn test_collection_loading() {
     let collection_dir = TempDir::new("collection").unwrap();
 
-    let segment_updater = Arc::new(SimpleCollectionUpdater::new());
     {
         let collection = simple_collection_fixture(collection_dir.path()).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
@@ -155,10 +147,7 @@ async fn test_collection_loading() {
             }),
         );
 
-        collection
-            .update_by(insert_points, true, segment_updater.clone())
-            .await
-            .unwrap();
+        collection.update(insert_points, true).await.unwrap();
 
         let mut payload: HashMap<PayloadKeyType, PayloadInterface> = Default::default();
 
@@ -172,13 +161,10 @@ async fn test_collection_loading() {
             points: vec![2, 3],
         });
 
-        collection
-            .update_by(assign_payload, true, segment_updater.clone())
-            .await
-            .unwrap();
+        collection.update(assign_payload, true).await.unwrap();
     }
 
-    let loaded_collection = load_collection(collection_dir.path(), segment_updater.clone());
+    let loaded_collection = load_collection(collection_dir.path());
     let segment_searcher = SimpleCollectionSearcher::new();
     let retrieved = segment_searcher
         .retrieve(
@@ -209,20 +195,13 @@ fn test_deserialization() {
             vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
             payloads: None,
         }));
-
     let json_str = serde_json::to_string_pretty(&insert_points).unwrap();
 
-    eprintln!("&json_str = {}", &json_str);
-
-    let read_obj: CollectionUpdateOperations = serde_json::from_str(json_str.as_str()).unwrap();
-
-    eprintln!("read_obj = {:#?}", read_obj);
+    let _read_obj: CollectionUpdateOperations = serde_json::from_str(json_str.as_str()).unwrap();
 
     let crob_bytes = rmp_serde::to_vec(&insert_points).unwrap();
 
-    let read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&crob_bytes).unwrap();
-
-    eprintln!("read_obj2 = {:#?}", read_obj2);
+    let _read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&crob_bytes).unwrap();
 }
 
 #[test]
@@ -244,17 +223,11 @@ fn test_deserialization2() {
 
     let json_str = serde_json::to_string_pretty(&insert_points).unwrap();
 
-    eprintln!("&json_str = {}", &json_str);
-
-    let read_obj: CollectionUpdateOperations = serde_json::from_str(json_str.as_str()).unwrap();
-
-    eprintln!("read_obj = {:#?}", read_obj);
+    let _read_obj: CollectionUpdateOperations = serde_json::from_str(json_str.as_str()).unwrap();
 
     let raw_bytes = rmp_serde::to_vec(&insert_points).unwrap();
 
-    let read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&raw_bytes).unwrap();
-
-    eprintln!("read_obj2 = {:#?}", read_obj2);
+    let _read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&raw_bytes).unwrap();
 }
 
 #[tokio::test]
@@ -279,11 +252,7 @@ async fn test_recommendation_api() {
             payloads: None,
         }));
 
-    let segment_updater = Arc::new(SimpleCollectionUpdater::new());
-    collection
-        .update_by(insert_points, true, segment_updater)
-        .await
-        .unwrap();
+    collection.update(insert_points, true).await.unwrap();
     let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection
         .recommend_by(
@@ -327,11 +296,7 @@ async fn test_read_api() {
             payloads: None,
         }));
 
-    let segment_updater = Arc::new(SimpleCollectionUpdater::new());
-    collection
-        .update_by(insert_points, true, segment_updater.clone())
-        .await
-        .unwrap();
+    collection.update(insert_points, true).await.unwrap();
 
     let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection
