@@ -1221,6 +1221,23 @@ components:
         required:
         - type
         type: object
+    PayloadSelector:
+      additionalProperties: false
+      properties:
+        exclude:
+          description: Post-exclude return payload key type
+          items:
+            type: string
+          type: array
+        include:
+          description: Include return payload key type
+          items:
+            type: string
+          type: array
+      required:
+      - exclude
+      - include
+      type: object
     PayloadType:
       anyOf:
       - properties:
@@ -1279,32 +1296,32 @@ components:
         type: object
     PayloadVariant_for_GeoPoint:
       anyOf:
-      - $ref: '#/components/schemas/GeoPoint'
       - items:
           $ref: '#/components/schemas/GeoPoint'
         type: array
+      - $ref: '#/components/schemas/GeoPoint'
     PayloadVariant_for_String:
       anyOf:
-      - type: string
       - items:
           type: string
         type: array
+      - type: string
     PayloadVariant_for_double:
       anyOf:
-      - format: double
-        type: number
       - items:
           format: double
           type: number
         type: array
+      - format: double
+        type: number
     PayloadVariant_for_int64:
       anyOf:
-      - format: int64
-        type: integer
       - items:
           format: int64
           type: integer
         type: array
+      - format: int64
+        type: integer
     PointInsertOperations:
       anyOf:
       - additionalProperties: false
@@ -1385,6 +1402,10 @@ components:
             minimum: 0
             type: integer
           type: array
+        with_payload:
+          anyOf:
+          - $ref: '#/components/schemas/WithPayloadInterface'
+          - nullable: true
       required:
       - ids
       type: object
@@ -1502,13 +1523,25 @@ components:
           format: uint64
           minimum: 0
           type: integer
+        payload:
+          additionalProperties:
+            $ref: '#/components/schemas/PayloadType'
+          description: Payload storage
+          type: object
         score:
           description: Points vector distance to the query vector
           format: float
           type: number
+        version:
+          description: Point version
+          format: uint64
+          minimum: 0
+          type: integer
       required:
       - id
+      - payload
       - score
+      - version
       type: object
     ScrollRequest:
       description: Scroll request - paginate over all points which matches given condition
@@ -1532,9 +1565,10 @@ components:
           nullable: true
           type: integer
         with_payload:
-          description: 'Return point payload with the result. Default: true'
-          nullable: true
-          type: boolean
+          anyOf:
+          - $ref: '#/components/schemas/WithPayloadInterface'
+          - nullable: true
+          description: 'Return point payload with the result. Default: True'
         with_vector:
           description: 'Return point vector with the result. Default: false'
           nullable: true
@@ -1592,6 +1626,11 @@ components:
             format: float
             type: number
           type: array
+        with_payload:
+          anyOf:
+          - $ref: '#/components/schemas/WithPayloadInterface'
+          - nullable: true
+          description: Payload interface
       required:
       - top
       - vector
@@ -1730,3 +1769,10 @@ components:
           nullable: true
           type: integer
       type: object
+    WithPayloadInterface:
+      anyOf:
+      - type: boolean
+      - items:
+          type: string
+        type: array
+      - $ref: '#/components/schemas/PayloadSelector'

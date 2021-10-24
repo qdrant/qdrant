@@ -862,6 +862,30 @@
                     }
                 ]
             },
+            "PayloadSelector": {
+                "type": "object",
+                "required": [
+                    "exclude",
+                    "include"
+                ],
+                "properties": {
+                    "exclude": {
+                        "description": "Post-exclude return payload key type",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "include": {
+                        "description": "Include return payload key type",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "additionalProperties": false
+            },
             "PayloadType": {
                 "anyOf": [
                     {
@@ -955,56 +979,56 @@
             "PayloadVariant_for_GeoPoint": {
                 "anyOf": [
                     {
-                        "$ref": "#/components/schemas/GeoPoint"
-                    },
-                    {
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/GeoPoint"
                         }
+                    },
+                    {
+                        "$ref": "#/components/schemas/GeoPoint"
                     }
                 ]
             },
             "PayloadVariant_for_String": {
                 "anyOf": [
                     {
-                        "type": "string"
-                    },
-                    {
                         "type": "array",
                         "items": {
                             "type": "string"
                         }
+                    },
+                    {
+                        "type": "string"
                     }
                 ]
             },
             "PayloadVariant_for_double": {
                 "anyOf": [
                     {
-                        "type": "number",
-                        "format": "double"
-                    },
-                    {
                         "type": "array",
                         "items": {
                             "type": "number",
                             "format": "double"
                         }
+                    },
+                    {
+                        "type": "number",
+                        "format": "double"
                     }
                 ]
             },
             "PayloadVariant_for_int64": {
                 "anyOf": [
                     {
-                        "type": "integer",
-                        "format": "int64"
-                    },
-                    {
                         "type": "array",
                         "items": {
                             "type": "integer",
                             "format": "int64"
                         }
+                    },
+                    {
+                        "type": "integer",
+                        "format": "int64"
                     }
                 ]
             },
@@ -1132,6 +1156,16 @@
                             "format": "uint64",
                             "minimum": 0
                         }
+                    },
+                    "with_payload": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/WithPayloadInterface"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
                     }
                 }
             },
@@ -1288,7 +1322,9 @@
                 "type": "object",
                 "required": [
                     "id",
-                    "score"
+                    "payload",
+                    "score",
+                    "version"
                 ],
                 "properties": {
                     "id": {
@@ -1297,10 +1333,23 @@
                         "format": "uint64",
                         "minimum": 0
                     },
+                    "payload": {
+                        "description": "Payload storage",
+                        "type": "object",
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/PayloadType"
+                        }
+                    },
                     "score": {
                         "description": "Points vector distance to the query vector",
                         "type": "number",
                         "format": "float"
+                    },
+                    "version": {
+                        "description": "Point version",
+                        "type": "integer",
+                        "format": "uint64",
+                        "minimum": 0
                     }
                 }
             },
@@ -1334,9 +1383,15 @@
                         "nullable": true
                     },
                     "with_payload": {
-                        "description": "Return point payload with the result. Default: true",
-                        "type": "boolean",
-                        "nullable": true
+                        "description": "Return point payload with the result. Default: True",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/WithPayloadInterface"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
                     },
                     "with_vector": {
                         "description": "Return point vector with the result. Default: false",
@@ -1424,6 +1479,17 @@
                             "type": "number",
                             "format": "float"
                         }
+                    },
+                    "with_payload": {
+                        "description": "Payload interface",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/WithPayloadInterface"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
                     }
                 }
             },
@@ -1628,6 +1694,22 @@
                         "nullable": true
                     }
                 }
+            },
+            "WithPayloadInterface": {
+                "anyOf": [
+                    {
+                        "type": "boolean"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/schemas/PayloadSelector"
+                    }
+                ]
             }
         }
     }
