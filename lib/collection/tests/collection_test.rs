@@ -195,20 +195,13 @@ fn test_deserialization() {
             vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
             payloads: None,
         }));
-
     let json_str = serde_json::to_string_pretty(&insert_points).unwrap();
 
-    eprintln!("&json_str = {}", &json_str);
-
-    let read_obj: CollectionUpdateOperations = serde_json::from_str(json_str.as_str()).unwrap();
-
-    eprintln!("read_obj = {:#?}", read_obj);
+    let _read_obj: CollectionUpdateOperations = serde_json::from_str(json_str.as_str()).unwrap();
 
     let crob_bytes = rmp_serde::to_vec(&insert_points).unwrap();
 
-    let read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&crob_bytes).unwrap();
-
-    eprintln!("read_obj2 = {:#?}", read_obj2);
+    let _read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&crob_bytes).unwrap();
 }
 
 #[test]
@@ -230,17 +223,11 @@ fn test_deserialization2() {
 
     let json_str = serde_json::to_string_pretty(&insert_points).unwrap();
 
-    eprintln!("&json_str = {}", &json_str);
-
-    let read_obj: CollectionUpdateOperations = serde_json::from_str(json_str.as_str()).unwrap();
-
-    eprintln!("read_obj = {:#?}", read_obj);
+    let _read_obj: CollectionUpdateOperations = serde_json::from_str(json_str.as_str()).unwrap();
 
     let raw_bytes = rmp_serde::to_vec(&insert_points).unwrap();
 
-    let read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&raw_bytes).unwrap();
-
-    eprintln!("read_obj2 = {:#?}", read_obj2);
+    let _read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&raw_bytes).unwrap();
 }
 
 #[tokio::test]

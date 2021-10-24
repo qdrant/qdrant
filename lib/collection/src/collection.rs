@@ -384,6 +384,8 @@ impl Drop for Collection {
         // Finishes update tasks right before destructor stuck to do so with runtime
         block_on(self.stop()).unwrap();
 
+        block_on(self.wait_update_workers_stop()).unwrap();
+
         // The drop could be called from the tokio context, e.g. from perform_collection_operation method.
         // Calling remove from there would lead to the following error in a new version of tokio:
         // "Cannot drop a runtime in a context where blocking is not allowed. This happens when a runtime is dropped from within an asynchronous context."
