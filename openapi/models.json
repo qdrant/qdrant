@@ -1322,7 +1322,6 @@
                 "type": "object",
                 "required": [
                     "id",
-                    "payload",
                     "score",
                     "version"
                 ],
@@ -1338,7 +1337,8 @@
                         "type": "object",
                         "additionalProperties": {
                             "$ref": "#/components/schemas/PayloadType"
-                        }
+                        },
+                        "nullable": true
                     },
                     "score": {
                         "description": "Points vector distance to the query vector",

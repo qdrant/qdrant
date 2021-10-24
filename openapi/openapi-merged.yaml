@@ -1527,6 +1527,7 @@ components:
           additionalProperties:
             $ref: '#/components/schemas/PayloadType'
           description: Payload storage
+          nullable: true
           type: object
         score:
           description: Points vector distance to the query vector
@@ -1539,7 +1540,6 @@ components:
           type: integer
       required:
       - id
-      - payload
       - score
       - version
       type: object

@@ -238,13 +238,14 @@ impl SegmentEntry for Segment {
                         })?;
                 let payload = if with_payload.enable {
                     let initial_payload = self.payload(point_id)?;
-                    if let Some(i) = &with_payload.payload_selector {
+                    let processed_payload = if let Some(i) = &with_payload.payload_selector {
                         i.process(initial_payload)
                     } else {
                         initial_payload
-                    }
+                    };
+                    Some(processed_payload)
                 } else {
-                    TheMap::new()
+                    None
                 };
                 Ok(ScoredPoint {
                     id: point_id,

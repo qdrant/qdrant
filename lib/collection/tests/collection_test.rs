@@ -69,7 +69,7 @@ async fn test_collection_updater() {
         Ok(res) => {
             assert_eq!(res.len(), 3);
             assert_eq!(res[0].id, 2);
-            assert_eq!(res[0].payload.len(), 0);
+            assert!(res[0].payload.is_none());
         }
         Err(err) => panic!("search failed: {:?}", err),
     }
@@ -121,7 +121,11 @@ async fn test_collection_search_with_payload() {
         Ok(res) => {
             assert_eq!(res.len(), 2);
             assert_eq!(res[0].id, 0);
-            assert_eq!(res[0].payload.len(), 1);
+            if let Some(payload) = &res[0].payload {
+                assert_eq!(payload.len(), 1)
+            } else {
+                panic!("Payload was expected")
+            }
         }
         Err(err) => panic!("search failed: {:?}", err),
     }

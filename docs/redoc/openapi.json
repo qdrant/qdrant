@@ -1354,6 +1354,7 @@
               "$ref": "#/components/schemas/PayloadType"
             },
             "description": "Payload storage",
+            "nullable": true,
             "type": "object"
           },
           "score": {
@@ -1370,7 +1371,6 @@
         },
         "required": [
           "id",
-          "payload",
           "score",
           "version"
         ],
