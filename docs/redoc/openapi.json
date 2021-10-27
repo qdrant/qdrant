@@ -1750,7 +1750,7 @@
       "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
     },
     "title": "Qdrant API",
-    "version": "0.4.1"
+    "version": "0.4.2"
   },
   "openapi": "3.0.1",
   "paths": {

@@ -1,6 +1,6 @@
 [package]
 name = "qdrant"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["Andrey Vasnetsov <andrey@vasnetsov.com>"]
 edition = "2018"
 doctest = false
@@ -49,6 +49,11 @@ storage = { path = "lib/storage" }
 
 [build-dependencies]
 tonic-build = { version = "0.5.0", features = ["prost"], optional = true }
+
+[patch.crates-io]
+# Env flag OPENBLAS_DYNAMIC_ARCH is implemented in this custom fork
+# Which allows to build openblas with dynamic CPU architecture selection
+openblas-src = { git = "https://github.com/qdrant/openblas-src.git" }
 
 [[bin]]
 name = "schema_generator"

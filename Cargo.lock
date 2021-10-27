@@ -1976,8 +1976,7 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 [[package]]
 name = "openblas-build"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59ecb601fc56534b17316cec4a4d8c848840f2c6744538a4e0fd3833d24f2e8f"
+source = "git+https://github.com/qdrant/openblas-src.git#0f6a72e11ed41bb2c617197a759e82c97693371d"
 dependencies = [
  "thiserror",
  "walkdir",
@@ -1986,8 +1985,7 @@ dependencies = [
 [[package]]
 name = "openblas-src"
 version = "0.10.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35a0967b308cab5942eb908b4737385719bef9e1b4953614a0e9d26ad5d41c69"
+source = "git+https://github.com/qdrant/openblas-src.git#0f6a72e11ed41bb2c617197a759e82c97693371d"
 dependencies = [
  "dirs",
  "openblas-build",
@@ -2256,7 +2254,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "actix-web",
  "collection",
