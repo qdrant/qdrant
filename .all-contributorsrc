@@ -85,6 +85,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "tranzystorek-io",
+      "name": "Marcin Puc",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5671049?v=4",
+      "profile": "https://tranzystorek-io.github.io/",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
