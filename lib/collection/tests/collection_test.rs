@@ -86,7 +86,7 @@ async fn test_collection_search_with_payload() {
             ids: vec![0, 1],
             vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
             payloads: serde_json::from_str(
-                &r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2" , "v": "v3"}]"#,
+                r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2" , "v": "v3"}]"#,
             )
             .unwrap(),
         }));
@@ -201,7 +201,7 @@ fn test_deserialization() {
         }));
     let json_str = serde_json::to_string_pretty(&insert_points).unwrap();
 
-    let _read_obj: CollectionUpdateOperations = serde_json::from_str(json_str.as_str()).unwrap();
+    let _read_obj: CollectionUpdateOperations = serde_json::from_str(&json_str).unwrap();
 
     let crob_bytes = rmp_serde::to_vec(&insert_points).unwrap();
 
@@ -227,7 +227,7 @@ fn test_deserialization2() {
 
     let json_str = serde_json::to_string_pretty(&insert_points).unwrap();
 
-    let _read_obj: CollectionUpdateOperations = serde_json::from_str(json_str.as_str()).unwrap();
+    let _read_obj: CollectionUpdateOperations = serde_json::from_str(&json_str).unwrap();
 
     let raw_bytes = rmp_serde::to_vec(&insert_points).unwrap();
 
@@ -272,7 +272,7 @@ async fn test_recommendation_api() {
         )
         .await
         .unwrap();
-    assert!(result.len() > 0);
+    assert!(!result.is_empty());
     let top1 = &result[0];
 
     assert!(top1.id == 5 || top1.id == 6);

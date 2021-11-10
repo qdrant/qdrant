@@ -43,9 +43,7 @@ mod tests {
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
-        segment
-            .upsert_point(0, 0, &vec![1.0 as f32, 1.0 as f32])
-            .unwrap();
+        segment.upsert_point(0, 0, &[1.0, 1.0]).unwrap();
         segment
             .set_full_payload_with_json(0, 0, &data.to_string())
             .unwrap();

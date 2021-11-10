@@ -129,8 +129,8 @@ mod tests {
             .filter(|_| rnd.gen_bool(0.5))
             .collect_vec();
 
-        for point_id in segment_points_to_delete.iter() {
-            segment.get().write().delete_point(101, *point_id).unwrap();
+        for &point_id in &segment_points_to_delete {
+            segment.get().write().delete_point(101, point_id).unwrap();
         }
 
         let segment_points_to_assign1 = segment
@@ -147,26 +147,26 @@ mod tests {
             .filter(|_| rnd.gen_bool(0.05))
             .collect_vec();
 
-        for point_id in segment_points_to_assign1.iter() {
+        for &point_id in &segment_points_to_assign1 {
             segment
                 .get()
                 .write()
                 .set_payload(
                     102,
-                    *point_id,
+                    point_id,
                     &"color".to_string(),
                     PayloadType::Keyword(vec!["red".to_string()]),
                 )
                 .unwrap();
         }
 
-        for point_id in segment_points_to_assign2.iter() {
+        for &point_id in &segment_points_to_assign2 {
             segment
                 .get()
                 .write()
                 .set_payload(
                     102,
-                    *point_id,
+                    point_id,
                     &"size".to_string(),
                     PayloadType::Float(vec![0.42]),
                 )
@@ -221,12 +221,12 @@ mod tests {
         );
 
         // Check payload is preserved in optimized segment
-        for point_id in segment_points_to_assign1.iter() {
-            assert!(segment_guard.has_point(*point_id));
+        for &point_id in &segment_points_to_assign1 {
+            assert!(segment_guard.has_point(point_id));
             let payload = segment_guard
-                .payload(*point_id)
+                .payload(point_id)
                 .unwrap()
-                .get(&"color".to_string())
+                .get("color")
                 .unwrap()
                 .clone();
 

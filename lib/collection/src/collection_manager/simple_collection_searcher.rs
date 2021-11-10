@@ -70,8 +70,7 @@ impl CollectionSearcher for SimpleCollectionSearcher {
         let top_scores = peek_top_scores_iterable(
             all_search_results
                 .into_iter()
-                .map(|x| x.unwrap()) // already checked for errors
-                .flatten()
+                .flat_map(Result::unwrap) // already checked for errors
                 .sorted_by_key(|a| (a.id, 1 - a.version as i64)) // Prefer higher version first
                 .dedup_by(|a, b| a.id == b.id) // Keep only highest version
                 .filter(|scored| {

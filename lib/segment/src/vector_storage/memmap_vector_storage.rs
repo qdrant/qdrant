@@ -68,7 +68,7 @@ impl MemmapVectorStorage {
         let vectors_path = path.join("matrix.dat");
         let deleted_path = path.join("deleted.dat");
 
-        let mmap_store = MmapVectors::open(vectors_path.as_path(), deleted_path.as_path(), dim)?;
+        let mmap_store = MmapVectors::open(&vectors_path, &deleted_path, dim)?;
 
         let metric = mertic_object(&distance);
 
@@ -134,7 +134,7 @@ impl VectorStorage for MemmapVectorStorage {
                 .write(false)
                 .append(true)
                 .create(false)
-                .open(self.vectors_path.as_path())?;
+                .open(&self.vectors_path)?;
 
             for id in other.iter_ids() {
                 let vector = &other.get_vector(id).unwrap();
@@ -151,7 +151,7 @@ impl VectorStorage for MemmapVectorStorage {
                 .write(false)
                 .append(true)
                 .create(false)
-                .open(self.deleted_path.as_path())?;
+                .open(&self.deleted_path)?;
 
             let flags: Vec<u8> = vec![0; (end_index - start_index) as usize];
             let flag_bytes = vf_to_u8(&flags);
@@ -160,8 +160,8 @@ impl VectorStorage for MemmapVectorStorage {
         }
 
         self.mmap_store = Some(MmapVectors::open(
-            self.vectors_path.as_path(),
-            self.deleted_path.as_path(),
+            &self.vectors_path,
+            &self.deleted_path,
             dim,
         )?);
 
@@ -188,7 +188,7 @@ impl VectorStorage for MemmapVectorStorage {
     }
 
     fn flush(&self) -> OperationResult<()> {
-        match self.mmap_store.as_ref() {
+        match &self.mmap_store {
             None => Ok(()),
             Some(x) => x.flush(),
         }
@@ -320,7 +320,7 @@ mod tests {
 
         let stored_ids: Vec<PointOffsetType> = storage.iter_ids().collect();
 
-        assert_eq!(stored_ids, vec![0, 1, 3, 4]);
+        assert_eq!(stored_ids, [0, 1, 3, 4]);
 
         let res = storage.score_all(&vec3, 2);
 

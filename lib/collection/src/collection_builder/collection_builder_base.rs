@@ -80,7 +80,7 @@ pub fn build_collection(
 
     for _sid in 0..optimizers_config.max_segment_number {
         let segment = build_simple_segment(
-            segments_path.as_path(),
+            &segments_path,
             collection_params.vector_size,
             collection_params.distance,
         )?;

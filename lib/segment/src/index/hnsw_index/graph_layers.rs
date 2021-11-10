@@ -181,7 +181,7 @@ impl GraphLayers {
 
         self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
 
-        for existing_link in existing_links.iter().cloned() {
+        for &existing_link in existing_links {
             if !visited_list.check(existing_link) {
                 search_context.process_candidate(ScoredPointOffset {
                     idx: existing_link,
@@ -269,7 +269,7 @@ impl GraphLayers {
                 break;
             }
             let mut is_good = true;
-            for selected_point in result_list.iter().cloned() {
+            for &selected_point in &result_list {
                 let dist_to_already_selected = score_internal(current_closest.idx, selected_point);
                 if dist_to_already_selected > current_closest.score {
                     is_good = false;
@@ -293,7 +293,7 @@ impl GraphLayers {
     where
         F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     {
-        let closest_iter = candidates.into_iterator();
+        let closest_iter = candidates.into_iter();
         Self::select_candidate_with_heuristic_from_sorted(closest_iter, m, score_internal)
     }
 
@@ -359,7 +359,7 @@ impl GraphLayers {
                         self.links_layers[point_id as usize][curr_level]
                             .clone_from(&selected_nearest);
 
-                        for other_point in selected_nearest.iter().cloned() {
+                        for &other_point in &selected_nearest {
                             let other_point_links =
                                 &mut self.links_layers[other_point as usize][curr_level];
                             if other_point_links.len() < level_m {
@@ -393,7 +393,7 @@ impl GraphLayers {
                             }
                         }
                     } else {
-                        for nearest_point in nearest_points.iter() {
+                        for nearest_point in &nearest_points {
                             Self::connect_new_point(
                                 &mut self.links_layers[point_id as usize][curr_level],
                                 nearest_point.idx,
@@ -467,7 +467,7 @@ impl GraphLayers {
             self.search_entry(entry_point.point_id, entry_point.level, 0, points_scorer);
 
         let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), points_scorer, &[]);
-        nearest.into_iterator().take(top).collect_vec()
+        nearest.into_iter().take(top).collect_vec()
     }
 
     pub fn get_path(path: &Path) -> PathBuf {
@@ -529,7 +529,7 @@ mod tests {
         let mut insert_ids = (1..points.len() as PointOffsetType).collect_vec();
 
         let mut candidates = FixedLengthPriorityQueue::new(insert_ids.len());
-        for id in insert_ids.iter().cloned() {
+        for &id in &insert_ids {
             candidates.push(ScoredPointOffset {
                 idx: id,
                 score: scorer(0, id),
@@ -544,7 +544,7 @@ mod tests {
 
         let mut graph_layers = GraphLayers::new(num_points, m, m, ef_construct, 1, true);
         insert_ids.shuffle(&mut rng);
-        for id in insert_ids.iter().cloned() {
+        for &id in &insert_ids {
             let level_m = graph_layers.get_m(0);
             GraphLayers::connect_new_point(
                 &mut graph_layers.links_layers[0][0],
@@ -652,7 +652,7 @@ mod tests {
             0,
             32,
             &scorer,
-            &vec![],
+            &[],
         );
 
         assert_eq!(
@@ -660,7 +660,7 @@ mod tests {
             graph_layers.links_layers[0][0].len() + 1
         );
 
-        for nearest in nearest_on_level.iter() {
+        for nearest in &nearest_on_level {
             // eprintln!("nearest = {:#?}", nearest);
             assert_eq!(
                 nearest.score,

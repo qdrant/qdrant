@@ -140,14 +140,12 @@ impl Collection {
         let point_ids = segments
             .read()
             .iter()
-            .map(|(_, segment)| {
+            .flat_map(|(_, segment)| {
                 segment
                     .get()
                     .read()
                     .read_filtered(offset, limit, request.filter.as_ref())
-                    .into_iter()
             })
-            .flatten()
             .sorted()
             .dedup()
             .take(limit)
@@ -187,7 +185,7 @@ impl Collection {
         let reference_vectors_ids = request
             .positive
             .iter()
-            .chain(request.negative.iter())
+            .chain(&request.negative)
             .cloned()
             .collect_vec();
 
@@ -204,7 +202,7 @@ impl Collection {
             .map(|rec| (rec.id, rec.vector.unwrap()))
             .collect();
 
-        for point_id in reference_vectors_ids.iter().cloned() {
+        for &point_id in &reference_vectors_ids {
             if !vectors_map.contains_key(&point_id) {
                 return Err(CollectionError::NotFound {
                     missed_point_id: point_id,
@@ -276,7 +274,7 @@ impl Collection {
             vectors_count += segment_info.num_vectors;
             disk_size += segment_info.disk_usage_bytes;
             ram_size += segment_info.ram_usage_bytes;
-            for (key, val) in segment_info.schema.into_iter() {
+            for (key, val) in segment_info.schema {
                 schema.insert(key, val);
             }
         }
@@ -333,14 +331,14 @@ impl Collection {
         {
             let mut config = self.config.write().await;
             config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
-            config.save(self.path.as_path())?;
+            config.save(&self.path)?;
         }
         let config = self.config.read().await;
         let mut update_handler = self.update_handler.lock().await;
         self.stop().await?;
         update_handler.wait_workers_stops().await?;
         let new_optimizers = build_optimizers(
-            self.path.as_path(),
+            &self.path,
             &config.params,
             &config.optimizer_config,
             &config.hnsw_config,

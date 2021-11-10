@@ -260,7 +260,7 @@ mod tests {
             "Testing that new segments are persisted and old data is removed"
         );
 
-        for info in infos.iter() {
+        for info in &infos {
             assert!(
                 info.schema.contains_key(&payload_field),
                 "Testing that payload is not lost"

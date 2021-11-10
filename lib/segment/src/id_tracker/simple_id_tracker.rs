@@ -25,7 +25,7 @@ impl SimpleIdTracker {
         options.set_write_buffer_size(DB_CACHE_SIZE);
         options.create_if_missing(true);
         options.create_missing_column_families(true);
-        let store = DB::open_cf(&options, path, vec![MAPPING_CF, VERSIONS_CF])?;
+        let store = DB::open_cf(&options, path, [MAPPING_CF, VERSIONS_CF])?;
 
         let mut internal_to_external: HashMap<PointOffsetType, PointIdType> = Default::default();
         let mut external_to_internal: BTreeMap<PointIdType, PointOffsetType> = Default::default();

@@ -36,7 +36,6 @@ pub async fn update_points(
     let wait = params.wait.unwrap_or(false);
     let timing = Instant::now();
 
-    let response =
-        do_update_points(toc.into_inner().as_ref(), &collection_name, operation, wait).await;
+    let response = do_update_points(&toc.into_inner(), &collection_name, operation, wait).await;
     process_response(response, timing)
 }

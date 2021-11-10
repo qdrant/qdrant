@@ -57,7 +57,7 @@ impl HNSWIndex {
 
         let graph_path = GraphLayers::get_path(path);
         let graph = if graph_path.exists() {
-            GraphLayers::load(graph_path.as_path())?
+            GraphLayers::load(&graph_path)?
         } else {
             let total_points = vector_storage.borrow().total_vector_count();
             GraphLayers::new(
@@ -82,12 +82,12 @@ impl HNSWIndex {
     }
 
     fn save_config(&self) -> OperationResult<()> {
-        let config_path = HnswGraphConfig::get_config_path(self.path.as_path());
+        let config_path = HnswGraphConfig::get_config_path(&self.path);
         self.config.save(&config_path)
     }
 
     fn save_graph(&self) -> OperationResult<()> {
-        let graph_path = GraphLayers::get_path(self.path.as_path());
+        let graph_path = GraphLayers::get_path(&self.path);
         self.graph.save(&graph_path)
     }
 

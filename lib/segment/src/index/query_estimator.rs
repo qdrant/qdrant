@@ -98,7 +98,7 @@ where
 
     let should_estimations = conditions.iter().map(estimate).collect_vec();
     let mut clauses: Vec<PrimaryCondition> = vec![];
-    for estimation in should_estimations.iter() {
+    for estimation in &should_estimations {
         if estimation.primary_clauses.is_empty() {
             // If some branch is un-indexed - we can't make
             // any assumptions about the whole `should` clause
@@ -200,7 +200,7 @@ mod tests {
                     has_id
                         .has_id
                         .iter()
-                        .map(|x| *x as PointOffsetType)
+                        .map(|&x| x as PointOffsetType)
                         .collect(),
                 )],
                 min: has_id.has_id.len(),
@@ -302,7 +302,7 @@ mod tests {
             ]),
             must: None,
             must_not: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: vec![1, 2, 3, 4, 5].iter().cloned().collect(),
+                has_id: [1, 2, 3, 4, 5].into(),
             })]),
         };
 
@@ -336,7 +336,7 @@ mod tests {
                 }),
             ]),
             must_not: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: vec![1, 2, 3, 4, 5].iter().cloned().collect(),
+                has_id: [1, 2, 3, 4, 5].into(),
             })]),
         };
 

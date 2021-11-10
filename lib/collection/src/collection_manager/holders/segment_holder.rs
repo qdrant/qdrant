@@ -192,7 +192,7 @@ impl<'s> SegmentHolder {
         F: FnMut(&mut RwLockWriteGuard<dyn SegmentEntry + 'static>) -> OperationResult<bool>,
     {
         let mut processed_segments = 0;
-        for (_idx, segment) in self.segments.iter() {
+        for segment in self.segments.values() {
             let is_applied = f(&mut segment.get().write())?;
             processed_segments += is_applied as usize;
         }
@@ -208,7 +208,7 @@ impl<'s> SegmentHolder {
         ) -> OperationResult<bool>,
     {
         let mut applied_points = 0;
-        for (idx, segment) in self.segments.iter() {
+        for (idx, segment) in &self.segments {
             // Collect affected points first, we want to lock segment for writing as rare as possible
             let segment_points = self.segment_points(ids, segment);
             if !segment_points.is_empty() {
@@ -326,7 +326,7 @@ impl<'s> SegmentHolder {
         F: FnMut(PointIdType, &RwLockReadGuard<dyn SegmentEntry>) -> OperationResult<bool>,
     {
         let mut read_points = 0;
-        for (_idx, segment) in self.segments.iter() {
+        for segment in self.segments.values() {
             let segment_arc = segment.get();
             let read_segment = segment_arc.read();
             for point in ids.iter().cloned().filter(|id| read_segment.has_point(*id)) {
@@ -345,7 +345,7 @@ impl<'s> SegmentHolder {
         let mut max_persisted_version: SeqNumberType = SeqNumberType::MIN;
         let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
         let mut has_unsaved = false;
-        for (_idx, segment) in self.segments.iter() {
+        for segment in self.segments.values() {
             let segment_lock = segment.get();
             let read_segment = segment_lock.read();
             let segment_version = read_segment.version();
@@ -393,7 +393,7 @@ mod tests {
 
         let segment3 = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
 
-        let _sid3 = holder.swap(segment3, &vec![sid1, sid2], true).unwrap();
+        let _sid3 = holder.swap(segment3, &[sid1, sid2], true).unwrap();
     }
 
     #[test]
@@ -422,7 +422,7 @@ mod tests {
         thread::sleep(time::Duration::from_millis(10));
 
         holder
-            .aloha_random_write(&vec![sid1, sid2], |idx, _seg| {
+            .aloha_random_write(&[sid1, sid2], |idx, _seg| {
                 assert_eq!(idx, sid2);
                 Ok(true)
             })
@@ -447,7 +447,7 @@ mod tests {
 
         let mut processed_points: Vec<PointIdType> = vec![];
         holder
-            .apply_points_to_appendable(100, &vec![1, 2, 11, 12], |point_id, segment| {
+            .apply_points_to_appendable(100, &[1, 2, 11, 12], |point_id, segment| {
                 processed_points.push(point_id);
                 assert!(segment.has_point(point_id));
                 Ok(true)

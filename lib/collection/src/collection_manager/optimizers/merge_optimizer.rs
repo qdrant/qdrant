@@ -137,8 +137,8 @@ mod tests {
 
         assert_eq!(suggested_for_merge.len(), 3);
 
-        for segment_in in suggested_for_merge.iter() {
-            assert!(segments_to_merge.contains(&segment_in));
+        for segment_in in &suggested_for_merge {
+            assert!(segments_to_merge.contains(segment_in));
         }
 
         let old_path = segments_to_merge
@@ -160,8 +160,8 @@ mod tests {
         assert_eq!(after_optimization_segments.len(), 5);
 
         // Check other segments are untouched
-        for segment_id in other_segment_ids.iter() {
-            assert!(after_optimization_segments.contains(&segment_id))
+        for segment_id in &other_segment_ids {
+            assert!(after_optimization_segments.contains(segment_id))
         }
 
         // Check new optimized segment have all vectors in it

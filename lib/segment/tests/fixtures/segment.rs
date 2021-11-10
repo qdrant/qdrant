@@ -5,8 +5,7 @@ use segment::types::{Distance, PayloadType};
 use std::path::Path;
 
 pub fn empty_segment(path: &Path) -> Segment {
-    let segment = build_simple_segment(path, 4, Distance::Dot).unwrap();
-    return segment;
+    build_simple_segment(path, 4, Distance::Dot).unwrap()
 }
 
 pub fn build_segment_1(path: &Path) -> Segment {
@@ -46,7 +45,7 @@ pub fn build_segment_1(path: &Path) -> Segment {
         .set_payload(6, 5, &payload_key, payload_option2.clone())
         .unwrap();
 
-    return segment1;
+    segment1
 }
 
 #[allow(dead_code)]
@@ -87,5 +86,5 @@ pub fn build_segment_2(path: &Path) -> Segment {
         .set_payload(16, 15, &payload_key, payload_option2.clone())
         .unwrap();
 
-    return segment2;
+    segment2
 }

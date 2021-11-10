@@ -27,8 +27,7 @@ pub async fn recommend_points(
     let name = path.into_inner();
     let timing = Instant::now();
 
-    let response =
-        do_recommend_points(toc.into_inner().as_ref(), &name, request.into_inner()).await;
+    let response = do_recommend_points(&toc.into_inner(), &name, request.into_inner()).await;
 
     process_response(response, timing)
 }

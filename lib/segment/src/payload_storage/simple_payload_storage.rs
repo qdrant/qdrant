@@ -25,7 +25,7 @@ impl SimplePayloadStorage {
         options.set_write_buffer_size(DB_CACHE_SIZE);
         options.create_if_missing(true);
         options.create_missing_column_families(true);
-        let store = DB::open_cf(&options, path, vec![DB_NAME])?;
+        let store = DB::open_cf(&options, path, [DB_NAME])?;
 
         let mut payload_map: HashMap<PointOffsetType, TheMap<PayloadKeyType, PayloadType>> =
             Default::default();
@@ -193,8 +193,8 @@ mod tests {
         storage.wipe().unwrap();
         storage.assign(100, &key, payload.clone()).unwrap();
         storage.wipe().unwrap();
-        storage.assign(100, &key, payload.clone()).unwrap();
-        assert!(storage.payload(100).len() > 0);
+        storage.assign(100, &key, payload).unwrap();
+        assert!(!storage.payload(100).is_empty());
         storage.wipe().unwrap();
         assert_eq!(storage.payload(100).len(), 0);
     }
