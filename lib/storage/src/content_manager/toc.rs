@@ -64,7 +64,7 @@ impl TableOfContent {
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
 
-            let collection = load_collection(collection_path.as_path());
+            let collection = load_collection(&collection_path);
 
             collections.insert(collection_name, Arc::new(collection));
         }
@@ -73,7 +73,7 @@ impl TableOfContent {
 
         let alias_persistence = Config::new()
             .cache_capacity(SLED_CACHE_SIZE)
-            .path(alias_path.as_path())
+            .path(alias_path)
             .open()
             .expect("Can't open database by the provided config");
 

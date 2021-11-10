@@ -16,7 +16,7 @@ impl SearchContext {
         nearest.push(entry_point);
         SearchContext {
             nearest,
-            candidates: BinaryHeap::from(vec![entry_point]),
+            candidates: [entry_point].into(),
         }
     }
 

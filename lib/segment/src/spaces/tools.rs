@@ -3,7 +3,10 @@ use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::types::Distance;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
+use std::collections::binary_heap::Iter as BinaryHeapIter;
 use std::collections::BinaryHeap;
+use std::iter::Rev;
+use std::vec::IntoIter as VecIntoIter;
 
 /// This is a MinHeap by default - it will keep the largest elements, pop smallest
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -42,12 +45,10 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
             .collect()
     }
 
-    pub fn into_iterator(self) -> impl Iterator<Item = T> {
-        self.heap.into_sorted_vec().into_iter().map(|x| x.0)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
-        self.heap.iter().rev().map(|x| &x.0)
+    pub fn iter(&self) -> Iter<'_, T> {
+        Iter {
+            it: self.heap.iter().rev(),
+        }
     }
 
     pub fn top(&self) -> Option<&T> {
@@ -62,6 +63,52 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     /// Checks if the queue is empty
     pub fn is_empty(&self) -> bool {
         self.heap.is_empty()
+    }
+}
+
+pub struct Iter<'a, T> {
+    it: Rev<BinaryHeapIter<'a, Reverse<T>>>,
+}
+
+pub struct IntoIter<T> {
+    it: VecIntoIter<Reverse<T>>,
+}
+
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.it.next().map(|Reverse(x)| x)
+    }
+}
+
+impl<T> Iterator for IntoIter<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.it.next().map(|Reverse(x)| x)
+    }
+}
+
+impl<'a, T: Ord> IntoIterator for &'a FixedLengthPriorityQueue<T> {
+    type Item = &'a T;
+
+    type IntoIter = Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<T: Ord> IntoIterator for FixedLengthPriorityQueue<T> {
+    type Item = T;
+
+    type IntoIter = IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter {
+            it: self.heap.into_sorted_vec().into_iter(),
+        }
     }
 }
 

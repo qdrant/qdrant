@@ -29,7 +29,7 @@ pub fn load_collection(collection_path: &Path) -> Collection {
     )
     .expect("Can't read WAL");
 
-    let segment_dirs = read_dir(segments_path.as_path()).unwrap_or_else(|_| {
+    let segment_dirs = read_dir(&segments_path).unwrap_or_else(|_| {
         panic!(
             "Can't read segments directory {}",
             segments_path.to_str().unwrap()
@@ -39,7 +39,7 @@ pub fn load_collection(collection_path: &Path) -> Collection {
     for entry in segment_dirs {
         let segments_path = entry.unwrap().path();
         if segments_path.ends_with("deleted") {
-            remove_dir_all(segments_path.as_path()).unwrap_or_else(|_| {
+            remove_dir_all(&segments_path).unwrap_or_else(|_| {
                 panic!(
                     "Can't remove marked-for-remove segment {}",
                     segments_path.to_str().unwrap()
@@ -47,7 +47,7 @@ pub fn load_collection(collection_path: &Path) -> Collection {
             });
             continue;
         }
-        let segment = match load_segment(segments_path.as_path()) {
+        let segment = match load_segment(&segments_path) {
             Ok(x) => x,
             Err(err) => panic!(
                 "Can't load segments from {}, error: {}",

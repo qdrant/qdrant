@@ -535,7 +535,7 @@ impl SegmentEntry for Segment {
     fn drop_data(&mut self) -> OperationResult<()> {
         let mut deleted_path = self.current_path.clone();
         deleted_path.set_extension("deleted");
-        rename(self.current_path.as_path(), deleted_path.as_path())?;
+        rename(&self.current_path, &deleted_path)?;
         Ok(remove_dir_all(&deleted_path)?)
     }
 
@@ -592,9 +592,7 @@ mod tests {
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
-        segment
-            .upsert_point(0, 0, &vec![1.0 as f32, 1.0 as f32])
-            .unwrap();
+        segment.upsert_point(0, 0, &[1.0, 1.0]).unwrap();
         let result1 = segment.set_full_payload_with_json(0, 0, &data1.to_string());
         match result1 {
             Ok(_) => assert!(false),
@@ -630,9 +628,7 @@ mod tests {
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
-        segment
-            .upsert_point(0, 0, &vec![1.0 as f32, 1.0 as f32])
-            .unwrap();
+        segment.upsert_point(0, 0, &[1.0, 1.0]).unwrap();
         segment
             .set_full_payload_with_json(0, 0, &data.to_string())
             .unwrap();
@@ -665,7 +661,7 @@ mod tests {
         let filter_invalid: Filter = serde_json::from_str(filter_invalid_str).unwrap();
         let results_with_valid_filter = segment
             .search(
-                &vec![1.0 as f32, 1.0 as f32],
+                &[1.0, 1.0],
                 &WithPayload::default(),
                 Some(&filter_valid),
                 1,
@@ -676,7 +672,7 @@ mod tests {
         assert_eq!(results_with_valid_filter.first().unwrap().id, 0);
         let results_with_invalid_filter = segment
             .search(
-                &vec![1.0 as f32, 1.0 as f32],
+                &[1.0, 1.0],
                 &WithPayload::default(),
                 Some(&filter_invalid),
                 1,

@@ -35,22 +35,22 @@ fn create_segment(
     let vector_storage_path = segment_path.join("vector_storage");
     let vector_index_path = segment_path.join("vector_index");
 
-    let id_tracker = sp(SimpleIdTracker::open(tracker_path.as_path())?);
+    let id_tracker = sp(SimpleIdTracker::open(&tracker_path)?);
 
     let vector_storage: Arc<AtomicRefCell<dyn VectorStorage>> = match config.storage_type {
         StorageType::InMemory => sp(SimpleVectorStorage::open(
-            vector_storage_path.as_path(),
+            &vector_storage_path,
             config.vector_size,
             config.distance,
         )?),
         StorageType::Mmap => sp(MemmapVectorStorage::open(
-            vector_storage_path.as_path(),
+            &vector_storage_path,
             config.vector_size,
             config.distance,
         )?),
     };
 
-    let payload_storage = sp(SimplePayloadStorage::open(payload_storage_path.as_path())?);
+    let payload_storage = sp(SimplePayloadStorage::open(&payload_storage_path)?);
 
     let condition_checker = Arc::new(SimpleConditionChecker::new(
         payload_storage.clone(),
@@ -148,7 +148,7 @@ pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Seg
 
     create_dir_all(&segment_path)?;
 
-    let segment = create_segment(0, segment_path.as_path(), config)?;
+    let segment = create_segment(0, &segment_path, config)?;
     segment.save_current_state()?;
 
     Ok(segment)

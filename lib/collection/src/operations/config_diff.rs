@@ -77,10 +77,10 @@ pub fn update_config<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Seri
     mut update: Y,
 ) -> CollectionResult<T> {
     let serialized = serde_json::to_vec(config)?;
-    let config_as_diff: Y = serde_json::from_slice(serialized.as_slice())?;
+    let config_as_diff: Y = serde_json::from_slice(&serialized)?;
     update.merge(config_as_diff);
     let serialized = serde_json::to_vec(&update)?;
-    let res = serde_json::from_slice(serialized.as_slice())?;
+    let res = serde_json::from_slice(&serialized)?;
     Ok(res)
 }
 
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn test_hnsw_update() {
         let base_config = HnswConfig::default();
-        let update: HnswConfigDiff = serde_json::from_str(&r#"{ "m": 32 }"#).unwrap();
+        let update: HnswConfigDiff = serde_json::from_str(r#"{ "m": 32 }"#).unwrap();
         let new_config = update.update(&base_config).unwrap();
         assert_eq!(new_config.m, 32)
     }
@@ -110,7 +110,7 @@ mod tests {
             flush_interval_sec: 30,
         };
         let update: OptimizersConfigDiff =
-            serde_json::from_str(&r#"{ "indexing_threshold": 10000 }"#).unwrap();
+            serde_json::from_str(r#"{ "indexing_threshold": 10000 }"#).unwrap();
         let new_config = update.update(&base_config).unwrap();
         assert_eq!(new_config.indexing_threshold, 10000)
     }
@@ -118,8 +118,7 @@ mod tests {
     #[test]
     fn test_wal_config() {
         let base_config = WalConfig::default();
-        let update: WalConfigDiff =
-            serde_json::from_str(&r#"{ "wal_segments_ahead": 2 }"#).unwrap();
+        let update: WalConfigDiff = serde_json::from_str(r#"{ "wal_segments_ahead": 2 }"#).unwrap();
         let new_config = update.update(&base_config).unwrap();
         assert_eq!(new_config.wal_segments_ahead, 2)
     }

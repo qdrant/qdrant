@@ -1,9 +1,11 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use itertools::Itertools;
-use ndarray::{Array, Array1, Array2, ArrayBase, Axis, ShapeBuilder};
+
+use ndarray::Array;
+use rand::distributions::Standard;
+use rand::Rng;
 use tempdir::TempDir;
 
-use segment::spaces::tools::{peek_top_scores, peek_top_scores_iterable};
+use segment::spaces::tools::peek_top_scores_iterable;
 use segment::types::{Distance, PointOffsetType, VectorElementType};
 use segment::vector_storage::simple_vector_storage::SimpleVectorStorage;
 use segment::vector_storage::{ScoredPointOffset, VectorStorage};
@@ -12,11 +14,9 @@ const NUM_VECTORS: usize = 50000;
 const DIM: usize = 1000; // Larger dimensionality - greater the BLAS advantage
 
 fn random_vector(size: usize) -> Vec<VectorElementType> {
-    let mut vec: Vec<VectorElementType> = Vec::with_capacity(size);
-    for _ in 0..vec.capacity() {
-        vec.push(rand::random());
-    }
-    return vec;
+    let rng = rand::thread_rng();
+
+    rng.sample_iter(Standard).take(size).collect()
 }
 
 fn init_vector_storage(

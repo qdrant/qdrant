@@ -32,9 +32,7 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
         proxy_created_indexes.clone(),
     );
 
-    let proxy_id = write_segments.swap(proxy, &[sid], false).unwrap();
-
-    proxy_id
+    write_segments.swap(proxy, &[sid], false).unwrap()
 }
 
 #[test]
@@ -63,8 +61,7 @@ fn test_update_proxy_segments() {
     let all_ids = segments
         .read()
         .iter()
-        .map(|(_id, segment)| segment.get().read().read_filtered(0, 100, None))
-        .flatten()
+        .flat_map(|(_id, segment)| segment.get().read().read_filtered(0, 100, None))
         .sorted()
         .collect_vec();
 
@@ -91,10 +88,10 @@ fn test_move_points_to_copy_on_write() {
     let proxy_id = wrap_proxy(segments.clone(), sid1, dir.path());
 
     let vectors = vec![vec![0.0, 0.0, 0.0, 0.0], vec![0.0, 0.0, 0.0, 0.0]];
-    upsert_points(&segments, 1001, &vec![1, 2], &vectors, &None).unwrap();
+    upsert_points(&segments, 1001, &[1, 2], &vectors, &None).unwrap();
 
     let vectors = vec![vec![0.0, 0.0, 0.0, 0.0], vec![0.0, 0.0, 0.0, 0.0]];
-    upsert_points(&segments, 1002, &vec![2, 3], &vectors, &None).unwrap();
+    upsert_points(&segments, 1002, &[2, 3], &vectors, &None).unwrap();
 
     let segments_write = segments.write();
 

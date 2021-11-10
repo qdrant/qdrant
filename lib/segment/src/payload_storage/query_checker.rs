@@ -310,7 +310,7 @@ mod tests {
 
         let query = Filter {
             should: Some(vec![match_red.clone(), match_blue.clone()]),
-            must: Some(vec![with_delivery.clone(), in_moscow.clone()]),
+            must: Some(vec![with_delivery, in_moscow.clone()]),
             must_not: None,
         };
         assert!(!payload_checker.check(0, &query));
@@ -337,12 +337,12 @@ mod tests {
             should: Some(vec![
                 Condition::Filter(Filter {
                     should: None,
-                    must: Some(vec![match_blue.clone(), in_moscow.clone()]),
+                    must: Some(vec![match_blue, in_moscow]),
                     must_not: None,
                 }),
                 Condition::Filter(Filter {
                     should: None,
-                    must: Some(vec![match_red.clone(), in_berlin.clone()]),
+                    must: Some(vec![match_red, in_berlin]),
                     must_not: None,
                 }),
             ]),
@@ -354,7 +354,7 @@ mod tests {
         let query = Filter {
             should: None,
             must: None,
-            must_not: Some(vec![with_bad_rating.clone()]),
+            must_not: Some(vec![with_bad_rating]),
         };
         assert!(!payload_checker.check(0, &query));
 

@@ -44,7 +44,7 @@ async fn test_collection_payload_reloading() {
                 ids: vec![0, 1],
                 vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
                 payloads: serde_json::from_str(
-                    &r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2"}]"#,
+                    r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2"}]"#,
                 )
                 .unwrap(),
             }),
@@ -98,7 +98,7 @@ async fn test_collection_payload_custom_payload() {
                 ids: vec![0, 1],
                 vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
                 payloads: serde_json::from_str(
-                    &r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2" , "v": "v3", "v2": "v4"}]"#,
+                    r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2" , "v": "v3", "v2": "v4"}]"#,
                 )
                 .unwrap(),
             }),
