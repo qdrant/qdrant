@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 
-use ndarray::Array;
+use ndarray::{Array, Array2};
 use rand::distributions::Standard;
 use rand::Rng;
 use tempdir::TempDir;
