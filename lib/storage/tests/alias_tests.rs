@@ -81,6 +81,6 @@ mod tests {
             )
             .unwrap();
 
-        handle.block_on(toc.get_collection(&"test_alias3")).unwrap();
+        handle.block_on(toc.get_collection("test_alias3")).unwrap();
     }
 }
