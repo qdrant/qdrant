@@ -29,19 +29,21 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
             self.heap.push(Reverse(value));
             return None;
         }
-        return if self.heap.peek().unwrap().0 < value {
-            self.heap.push(Reverse(value));
-            self.heap.pop().map(|x| x.0)
-        } else {
-            Some(value)
-        };
+
+        match self.heap.peek() {
+            Some(Reverse(x)) if x < &value => {
+                self.heap.push(Reverse(value));
+                self.heap.pop().map(|Reverse(x)| x)
+            }
+            _ => Some(value),
+        }
     }
 
     pub fn into_vec(self) -> Vec<T> {
         self.heap
             .into_sorted_vec()
             .into_iter()
-            .map(|x| x.0)
+            .map(|Reverse(x)| x)
             .collect()
     }
 
@@ -114,10 +116,10 @@ impl<T: Ord> IntoIterator for FixedLengthPriorityQueue<T> {
 
 pub fn peek_top_scores_iterable<I, E: Ord>(scores: I, top: usize) -> Vec<E>
 where
-    I: Iterator<Item = E>,
+    I: IntoIterator<Item = E>,
 {
     if top == 0 {
-        return scores.collect();
+        return scores.into_iter().collect();
     }
 
     // If big values is better - PQ should pop-out small values first.
@@ -130,7 +132,7 @@ where
 }
 
 pub fn peek_top_scores<E: Ord + Clone>(scores: &[E], top: usize) -> Vec<E> {
-    return peek_top_scores_iterable(scores.iter().cloned(), top);
+    peek_top_scores_iterable(scores.iter().cloned(), top)
 }
 
 pub fn mertic_object(distance: &Distance) -> Box<dyn Metric> {

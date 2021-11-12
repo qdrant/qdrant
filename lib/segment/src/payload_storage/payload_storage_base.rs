@@ -17,7 +17,7 @@ pub trait PayloadStorage {
             prefix_key: Option<PayloadKeyType>,
         ) -> Vec<(PayloadKeyType, PayloadType)>
         where
-            I: Iterator<Item = (&'a PayloadKeyType, &'a serde_json::value::Value)>,
+            I: IntoIterator<Item = (&'a PayloadKeyType, &'a serde_json::value::Value)>,
         {
             fn _fn(
                 prefix: &Option<PayloadKeyType>,
@@ -34,18 +34,19 @@ pub trait PayloadStorage {
                 match opt_payload_interface {
                     Ok(payload_interface) => vec![(key, PayloadType::from(&payload_interface))],
                     _ => match v {
-                        Value::Object(ref x) => _extract_payloads(x.iter(), Some(key)),
+                        Value::Object(x) => _extract_payloads(x, Some(key)),
                         _ => vec![],
                     },
                 }
             }
             _payload
+                .into_iter()
                 .flat_map(|(k, value)| _fn(&prefix_key, k, value))
                 .collect()
         }
         self.drop(point_id)?;
-        let inner_payloads = _extract_payloads(payload.iter(), None);
-        for (key, value) in inner_payloads.iter() {
+        let inner_payloads = _extract_payloads(&payload, None);
+        for (key, value) in &inner_payloads {
             self.assign(point_id, key, value.to_owned())?;
         }
         Ok(())

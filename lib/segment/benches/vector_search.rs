@@ -1,5 +1,4 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-
 use ndarray::{Array, Array2};
 use rand::distributions::Standard;
 use rand::Rng;
@@ -50,7 +49,7 @@ fn benchmark_naive(c: &mut Criterion) {
 }
 
 fn benchmark_ndarray(c: &mut Criterion) {
-    let mut matrix: Array2<f32> = Array::<f32, _>::zeros((NUM_VECTORS, DIM));
+    let mut matrix = Array2::<f32>::zeros((NUM_VECTORS, DIM));
 
     for i in 0..NUM_VECTORS {
         let vector = Array::from(random_vector(DIM));
@@ -62,9 +61,9 @@ fn benchmark_ndarray(c: &mut Criterion) {
     c.bench_function("ndarray BLAS dot production", |b| {
         b.iter(|| {
             let vector = Array::from(random_vector(DIM));
-            let mut production_result = matrix.dot(&vector);
+            let production_result = matrix.dot(&vector);
 
-            let top = peek_top_scores_iterable(
+            peek_top_scores_iterable(
                 production_result
                     .iter()
                     .cloned()
