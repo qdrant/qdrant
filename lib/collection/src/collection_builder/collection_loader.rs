@@ -6,17 +6,12 @@ use segment::segment_constructor::load_segment;
 use crate::collection::Collection;
 use crate::collection_builder::construct_collection;
 use crate::collection_builder::optimizers_builder::build_optimizers;
-use crate::collection_manager::collection_managers::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
 use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
-use std::sync::Arc;
 
-pub fn load_collection(
-    collection_path: &Path,
-    segment_updater: Arc<dyn CollectionUpdater>,
-) -> Collection {
+pub fn load_collection(collection_path: &Path) -> Collection {
     let wal_path = collection_path.join("wal");
     let segments_path = collection_path.join("segments");
     let mut segment_holder = SegmentHolder::default();
@@ -34,7 +29,7 @@ pub fn load_collection(
     )
     .expect("Can't read WAL");
 
-    let segment_dirs = read_dir(segments_path.as_path()).unwrap_or_else(|_| {
+    let segment_dirs = read_dir(&segments_path).unwrap_or_else(|_| {
         panic!(
             "Can't read segments directory {}",
             segments_path.to_str().unwrap()
@@ -44,7 +39,7 @@ pub fn load_collection(
     for entry in segment_dirs {
         let segments_path = entry.unwrap().path();
         if segments_path.ends_with("deleted") {
-            remove_dir_all(segments_path.as_path()).unwrap_or_else(|_| {
+            remove_dir_all(&segments_path).unwrap_or_else(|_| {
                 panic!(
                     "Can't remove marked-for-remove segment {}",
                     segments_path.to_str().unwrap()
@@ -52,7 +47,7 @@ pub fn load_collection(
             });
             continue;
         }
-        let segment = match load_segment(segments_path.as_path()) {
+        let segment = match load_segment(&segments_path) {
             Ok(x) => x,
             Err(err) => panic!(
                 "Can't load segments from {}, error: {}",
@@ -78,7 +73,7 @@ pub fn load_collection(
         collection_path,
     );
 
-    collection.load_from_wal(segment_updater);
+    collection.load_from_wal();
 
     collection
 }

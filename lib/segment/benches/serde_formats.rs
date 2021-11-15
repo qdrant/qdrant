@@ -27,7 +27,7 @@ fn serde_formats_bench(c: &mut Criterion) {
 
     group.bench_function("serde-serialize-cbor", |b| {
         b.iter(|| {
-            for payload in payloads.iter() {
+            for payload in &payloads {
                 let vec = serde_cbor::to_vec(payload);
                 vec.unwrap();
             }
@@ -36,7 +36,7 @@ fn serde_formats_bench(c: &mut Criterion) {
 
     group.bench_function("serde-deserialize-cbor", |b| {
         b.iter(|| {
-            for bytes in cbor_bytes.iter() {
+            for bytes in &cbor_bytes {
                 let _payload: PayloadInterface = serde_cbor::from_slice(bytes).unwrap();
             }
         });
@@ -44,7 +44,7 @@ fn serde_formats_bench(c: &mut Criterion) {
 
     group.bench_function("serde-serialize-rmp", |b| {
         b.iter(|| {
-            for payload in payloads.iter() {
+            for payload in &payloads {
                 let vec = rmp_serde::to_vec(payload);
                 vec.unwrap();
             }
@@ -53,7 +53,7 @@ fn serde_formats_bench(c: &mut Criterion) {
 
     group.bench_function("serde-deserialize-rmp", |b| {
         b.iter(|| {
-            for bytes in rmp_bytes.iter() {
+            for bytes in &rmp_bytes {
                 let _payload: PayloadInterface = rmp_serde::from_read_ref(bytes).unwrap();
             }
         });

@@ -9,7 +9,7 @@ use storage::content_manager::toc::TableOfContent;
 #[get("/collections")]
 pub async fn get_collections(toc: web::Data<Arc<TableOfContent>>) -> impl Responder {
     let timing = Instant::now();
-    let response = Ok(do_get_collections(toc.into_inner().as_ref()).await);
+    let response = Ok(do_get_collections(&toc.into_inner()).await);
     process_response(response, timing)
 }
 
@@ -20,7 +20,7 @@ pub async fn get_collection(
 ) -> impl Responder {
     let name = path.into_inner();
     let timing = Instant::now();
-    let response = do_get_collection(toc.into_inner().as_ref(), name.as_str()).await;
+    let response = do_get_collection(&toc.into_inner(), &name).await;
     process_response(response, timing)
 }
 

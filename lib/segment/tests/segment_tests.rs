@@ -25,7 +25,7 @@ mod tests {
         let best_match = res.get(0).expect("Non-empty result");
         assert_eq!(best_match.id, 3);
 
-        let ids: HashSet<_> = vec![3].into_iter().collect();
+        let ids: HashSet<_> = [3].into();
 
         let frt = Filter {
             should: None,

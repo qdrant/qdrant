@@ -103,13 +103,15 @@ mod tests {
 
     extern crate tempdir;
 
+    use std::fs;
+    use std::os::unix::fs::MetadataExt;
     use tempdir::TempDir;
 
     #[test]
     fn test_wal() {
         let dir = TempDir::new("wal_test").unwrap();
         let wal_options = WalOptions {
-            segment_capacity: 1000,
+            segment_capacity: 32 * 1024 * 1024,
             segment_queue_len: 0,
         };
 
@@ -119,6 +121,11 @@ mod tests {
         let record = TestRecord::Struct1(TestInternalStruct1 { data: 10 });
 
         serde_wal.write(&record).expect("Can't write");
+
+        let metadata = fs::metadata(dir.path().join("open-1").to_str().unwrap()).unwrap();
+
+        println!("file size: {}", metadata.size());
+        assert_eq!(metadata.size() as usize, wal_options.segment_capacity);
 
         for (_idx, rec) in serde_wal.read(0) {
             println!("{:?}", rec);

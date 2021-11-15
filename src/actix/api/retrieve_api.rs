@@ -57,7 +57,7 @@ pub async fn get_point(
     let (collection_name, point_id) = path.into_inner();
     let timing = Instant::now();
 
-    let response = do_get_point(toc.into_inner().as_ref(), &collection_name, point_id).await;
+    let response = do_get_point(&toc.into_inner(), &collection_name, point_id).await;
 
     let response = match response {
         Ok(record) => match record {
@@ -80,12 +80,7 @@ pub async fn get_points(
     let collection_name = path.into_inner();
     let timing = Instant::now();
 
-    let response = do_get_points(
-        toc.into_inner().as_ref(),
-        &collection_name,
-        request.into_inner(),
-    )
-    .await;
+    let response = do_get_points(&toc.into_inner(), &collection_name, request.into_inner()).await;
     process_response(response, timing)
 }
 
@@ -98,11 +93,7 @@ pub async fn scroll_points(
     let collection_name = path.into_inner();
     let timing = Instant::now();
 
-    let response = scroll_get_points(
-        toc.into_inner().as_ref(),
-        &collection_name,
-        request.into_inner(),
-    )
-    .await;
+    let response =
+        scroll_get_points(&toc.into_inner(), &collection_name, request.into_inner()).await;
     process_response(response, timing)
 }

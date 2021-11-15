@@ -183,21 +183,21 @@ pub trait SegmentOptimizer {
         let deleted_points_snapshot: HashSet<PointIdType> =
             proxy_deleted_points.read().iter().cloned().collect();
 
-        for point_id in deleted_points_snapshot.iter().cloned() {
+        for &point_id in &deleted_points_snapshot {
             optimized_segment
-                .delete_point(optimized_segment.version, point_id)
+                .delete_point(optimized_segment.version(), point_id)
                 .unwrap();
         }
 
         let deleted_indexes = proxy_deleted_indexes.read().iter().cloned().collect_vec();
         let create_indexes = proxy_created_indexes.read().iter().cloned().collect_vec();
 
-        for delete_field_name in deleted_indexes.iter() {
-            optimized_segment.delete_field_index(optimized_segment.version, delete_field_name)?;
+        for delete_field_name in &deleted_indexes {
+            optimized_segment.delete_field_index(optimized_segment.version(), delete_field_name)?;
         }
 
-        for create_field_name in create_indexes.iter() {
-            optimized_segment.create_field_index(optimized_segment.version, create_field_name)?;
+        for create_field_name in &create_indexes {
+            optimized_segment.create_field_index(optimized_segment.version(), create_field_name)?;
         }
         // ---- SLOW PART ENDS HERE -----
 
@@ -206,20 +206,20 @@ pub trait SegmentOptimizer {
             let mut write_segments = segments.write();
             let deleted_points = proxy_deleted_points.read();
             let points_diff = deleted_points_snapshot.difference(&deleted_points);
-            for point_id in points_diff.into_iter() {
+            for &point_id in points_diff {
                 optimized_segment
-                    .delete_point(optimized_segment.version, *point_id)
+                    .delete_point(optimized_segment.version(), point_id)
                     .unwrap();
             }
 
             for deleted_field_name in proxy_deleted_indexes.read().iter() {
                 optimized_segment
-                    .delete_field_index(optimized_segment.version, deleted_field_name)?;
+                    .delete_field_index(optimized_segment.version(), deleted_field_name)?;
             }
 
             for created_field_name in proxy_created_indexes.read().iter() {
                 optimized_segment
-                    .create_field_index(optimized_segment.version, created_field_name)?;
+                    .create_field_index(optimized_segment.version(), created_field_name)?;
             }
 
             write_segments.swap(optimized_segment, &proxy_ids, true)?;

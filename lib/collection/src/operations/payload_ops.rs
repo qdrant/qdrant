@@ -55,7 +55,7 @@ mod tests {
                 let payload1 = payload_interface.into();
 
                 match payload1 {
-                    PayloadType::Keyword(x) => assert_eq!(x, vec!["hello".to_owned()]),
+                    PayloadType::Keyword(x) => assert_eq!(x, ["hello".to_owned()]),
                     _ => assert!(false, "Wrong payload type"),
                 }
             }

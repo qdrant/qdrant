@@ -32,7 +32,7 @@ impl Collections for CollectionsService {
         _request: Request<GetCollectionsRequest>,
     ) -> Result<Response<GetCollectionsResponse>, Status> {
         let timing = Instant::now();
-        let result = do_get_collections(self.toc.as_ref()).await;
+        let result = do_get_collections(&self.toc).await;
 
         let response = GetCollectionsResponse::from((timing, result));
         Ok(Response::new(response))

@@ -1,5 +1,5 @@
-use std::cmp::min;
-use std::collections::{HashMap, HashSet};
+use std::cmp::{max, min};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -74,6 +74,9 @@ unsafe impl Send for LockedSegment {}
 #[derive(Default)]
 pub struct SegmentHolder {
     segments: HashMap<SegmentId, LockedSegment>,
+    /// Seq number of the first un-recovered operation.
+    /// If there are no failed operation - None
+    pub failed_operation: BTreeSet<SeqNumberType>,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
@@ -189,11 +192,7 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
-    pub fn apply_segments<F>(
-        &self,
-        op_num: SeqNumberType,
-        mut f: F,
-    ) -> OperationResult<(usize, usize)>
+    pub fn apply_segments<F>(&self, mut f: F) -> OperationResult<(usize, usize)>
     where
         F: FnMut(
             &mut RwLockWriteGuard<dyn SegmentEntry + 'static>,
@@ -201,31 +200,21 @@ impl<'s> SegmentHolder {
     {
         let mut processed_segments = 0;
         let mut affected_points = 0;
-        for (_idx, segment) in self.segments.iter() {
-            // Skip this segment if it already have bigger version (WAL recovery related)
-            if segment.get().read().version() > op_num {
-                continue;
-            }
-
+        for segment in self.segments.values() {
             match f(&mut segment.get().write())? {
-                AppliedSegmentResult::AffectedPoints(aff) => {
-                    affected_points += aff;
+                AppliedSegmentResult::AffectedPoints(points) => {
+                    affected_points += points;
                     processed_segments += 1;
                 }
                 AppliedSegmentResult::Applied(is_applied) => {
                     processed_segments += is_applied as usize;
                 }
-            }
+            };
         }
         Ok((processed_segments, affected_points))
     }
 
-    pub fn apply_points<F>(
-        &self,
-        op_num: SeqNumberType,
-        ids: &[PointIdType],
-        mut f: F,
-    ) -> OperationResult<usize>
+    pub fn apply_points<F>(&self, ids: &[PointIdType], mut f: F) -> OperationResult<usize>
     where
         F: FnMut(
             PointIdType,
@@ -234,11 +223,7 @@ impl<'s> SegmentHolder {
         ) -> OperationResult<bool>,
     {
         let mut applied_points = 0;
-        for (idx, segment) in self.segments.iter() {
-            // Skip this segment if it already have bigger version (WAL recovery related)
-            if segment.get().read().version() > op_num {
-                continue;
-            }
+        for (idx, segment) in &self.segments {
             // Collect affected points first, we want to lock segment for writing as rare as possible
             let segment_points = self.segment_points(ids, segment);
             if !segment_points.is_empty() {
@@ -304,24 +289,27 @@ impl<'s> SegmentHolder {
 
     /// Update function wrapper, which ensures that updates are not applied written to un-appendable segment.
     /// In case of such attempt, this function will move data into a mutable segment and remove data from un-appendable.
+    /// Returns: Set of point ids which were successfully(already) applied to segments
     pub fn apply_points_to_appendable<F>(
         &self,
         op_num: SeqNumberType,
         ids: &[PointIdType],
         mut f: F,
-    ) -> OperationResult<usize>
+    ) -> OperationResult<HashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
     {
         // Choose random appendable segment from this
         let appendable_segments = self.appendable_segments();
 
-        let mut processed_points: HashSet<(SegmentId, PointIdType)> = Default::default();
+        let mut applied_points: HashSet<PointIdType> = Default::default();
 
-        let applied_points = self.apply_points(op_num, ids, |point_id, idx, write_segment| {
-            // Skip point processing if it was moved from un-appendable segment and already processed
-            if processed_points.contains(&(idx, point_id)) {
-                return Ok(false);
+        let _applied_points_count = self.apply_points(ids, |point_id, _idx, write_segment| {
+            if let Some(point_version) = write_segment.point_version(point_id) {
+                if point_version >= op_num {
+                    applied_points.insert(point_id);
+                    return Ok(false);
+                }
             }
 
             let is_applied = if write_segment.is_appendable() {
@@ -329,7 +317,7 @@ impl<'s> SegmentHolder {
             } else {
                 self.aloha_random_write(
                     &appendable_segments,
-                    |appendable_idx, appendable_write_segment| {
+                    |_appendable_idx, appendable_write_segment| {
                         let vector = write_segment.vector(point_id)?;
                         let payload = write_segment.payload(point_id)?;
 
@@ -338,12 +326,11 @@ impl<'s> SegmentHolder {
 
                         write_segment.delete_point(op_num, point_id)?;
 
-                        let res = f(point_id, appendable_write_segment);
-                        processed_points.insert((appendable_idx, point_id));
-                        res
+                        f(point_id, appendable_write_segment)
                     },
                 )?
             };
+            applied_points.insert(point_id);
             Ok(is_applied)
         })?;
         Ok(applied_points)
@@ -354,7 +341,7 @@ impl<'s> SegmentHolder {
         F: FnMut(PointIdType, &RwLockReadGuard<dyn SegmentEntry>) -> OperationResult<bool>,
     {
         let mut read_points = 0;
-        for (_idx, segment) in self.segments.iter() {
+        for segment in self.segments.values() {
             let segment_arc = segment.get();
             let read_segment = segment_arc.read();
             for point in ids.iter().cloned().filter(|id| read_segment.has_point(*id)) {
@@ -365,14 +352,32 @@ impl<'s> SegmentHolder {
         Ok(read_points)
     }
 
-    /// Flushes all segments and returns maximum persisted version
+    /// Flushes all segments and returns maximum version to persist
+    ///
+    /// If there are unsaved changes after flush - detects lowest unsaved change version.
+    /// If all changes are saved - returns max version.
     pub fn flush_all(&self) -> OperationResult<SeqNumberType> {
-        let mut persisted_version: SeqNumberType = SeqNumberType::MAX;
-        for (_idx, segment) in self.segments.iter() {
-            let segment_version = segment.get().read().flush()?;
-            persisted_version = min(persisted_version, segment_version)
+        let mut max_persisted_version: SeqNumberType = SeqNumberType::MIN;
+        let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
+        let mut has_unsaved = false;
+        for segment in self.segments.values() {
+            let segment_lock = segment.get();
+            let read_segment = segment_lock.read();
+            let segment_version = read_segment.version();
+            let segment_persisted_version = read_segment.flush()?;
+
+            if segment_version > segment_persisted_version {
+                has_unsaved = true;
+                min_unsaved_version = min(min_unsaved_version, segment_persisted_version);
+            }
+
+            max_persisted_version = max(max_persisted_version, segment_persisted_version)
         }
-        Ok(persisted_version)
+        if has_unsaved {
+            Ok(min_unsaved_version)
+        } else {
+            Ok(max_persisted_version)
+        }
     }
 }
 
@@ -403,7 +408,7 @@ mod tests {
 
         let segment3 = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
 
-        let _sid3 = holder.swap(segment3, &vec![sid1, sid2], true).unwrap();
+        let _sid3 = holder.swap(segment3, &[sid1, sid2], true).unwrap();
     }
 
     #[test]
@@ -432,7 +437,7 @@ mod tests {
         thread::sleep(time::Duration::from_millis(10));
 
         holder
-            .aloha_random_write(&vec![sid1, sid2], |idx, _seg| {
+            .aloha_random_write(&[sid1, sid2], |idx, _seg| {
                 assert_eq!(idx, sid2);
                 Ok(true)
             })
@@ -457,7 +462,7 @@ mod tests {
 
         let mut processed_points: Vec<PointIdType> = vec![];
         holder
-            .apply_points_to_appendable(100, &vec![1, 2, 11, 12], |point_id, segment| {
+            .apply_points_to_appendable(100, &[1, 2, 11, 12], |point_id, segment| {
                 processed_points.push(point_id);
                 assert!(segment.has_point(point_id));
                 Ok(true)

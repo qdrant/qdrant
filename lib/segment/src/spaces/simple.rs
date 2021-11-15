@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn test_cosine_preprocessing() {
         let metric = CosineMetric {};
-        let res = metric.preprocess(&vec![0.0, 0.0, 0.0, 0.0]);
+        let res = metric.preprocess(&[0.0, 0.0, 0.0, 0.0]);
         eprintln!("res = {:#?}", res);
     }
 }

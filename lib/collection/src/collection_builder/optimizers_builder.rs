@@ -46,15 +46,15 @@ pub fn build_optimizers(
     };
 
     Arc::new(vec![
-        Box::new(IndexingOptimizer::new(
+        Box::new(MergeOptimizer::new(
+            optimizers_config.max_segment_number,
             threshold_config.clone(),
             segments_path.clone(),
             temp_segments_path.clone(),
             collection_params.clone(),
             *hnsw_config,
         )),
-        Box::new(MergeOptimizer::new(
-            optimizers_config.max_segment_number,
+        Box::new(IndexingOptimizer::new(
             threshold_config.clone(),
             segments_path.clone(),
             temp_segments_path.clone(),

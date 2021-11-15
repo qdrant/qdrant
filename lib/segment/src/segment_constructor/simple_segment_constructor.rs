@@ -40,7 +40,7 @@ mod tests {
     fn test_create_simple_segment() {
         let dir = TempDir::new("segment_dir").unwrap();
         let segment = build_simple_segment(dir.path(), 100, Distance::Dot).unwrap();
-        eprintln!(" = {:?}", segment.version);
+        eprintln!(" = {:?}", segment.version());
     }
 
     #[test]

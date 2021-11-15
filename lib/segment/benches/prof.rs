@@ -65,7 +65,7 @@ impl<'a> Profiler for FlamegraphProfiler<'a> {
         let mut options = pprof::flamegraph::Options::default();
         options.image_width = Some(2500);
         options.text_truncate_direction = TextTruncateDirection::Left;
-        options.font_size = options.font_size / 3;
+        options.font_size /= 3;
         if let Some(profiler) = self.active_profiler.take() {
             profiler
                 .report()

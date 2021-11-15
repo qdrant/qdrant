@@ -43,10 +43,12 @@ pub enum Order {
 pub struct ScoredPoint {
     /// Point id
     pub id: PointIdType,
+    /// Point version
+    pub version: SeqNumberType,
     /// Points vector distance to the query vector
     pub score: ScoreType,
     /// Payload storage
-    pub payload: TheMap<PayloadKeyType, PayloadType>,
+    pub payload: Option<TheMap<PayloadKeyType, PayloadType>>,
 }
 
 impl Eq for ScoredPoint {}
