@@ -420,10 +420,13 @@ impl SegmentEntry for ProxySegment {
 
     fn delete_filtered<'a>(
         &'a mut self,
-        _op_num: SeqNumberType,
-        _filter: &'a Filter,
-    ) -> OperationResult<Vec<PointIdType>> {
-        todo!()
+        op_num: SeqNumberType,
+        filter: &'a Filter,
+    ) -> OperationResult<usize> {
+        self.write_segment
+            .get()
+            .write()
+            .delete_filtered(op_num, filter)
     }
 }
 

@@ -15,8 +15,6 @@ use crate::operations::FieldIndexOperations;
 use itertools::Itertools;
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
 
-use super::holders::segment_holder::AppliedSegmentResult;
-
 /// A collection of functions for updating points and payloads stored in segments
 
 pub(crate) fn check_unprocessed_points(
@@ -58,11 +56,12 @@ pub(crate) fn delete_points_by_filter(
     op_num: SeqNumberType,
     filter: &Filter,
 ) -> CollectionResult<usize> {
-    let res = segments.apply_segments(|s| {
-        let deleted = s.delete_filtered(op_num, filter)?;
-        Ok(AppliedSegmentResult::AffectedPoints(deleted.len()))
+    let mut deleted = 0;
+    segments.apply_segments(|s| {
+        deleted += s.delete_filtered(op_num, filter)?;
+        Ok(true)
     })?;
-    Ok(res.1)
+    Ok(deleted)
 }
 
 pub(crate) fn set_payload(
@@ -122,12 +121,9 @@ pub(crate) fn create_field_index(
     op_num: SeqNumberType,
     field_name: PayloadKeyTypeRef,
 ) -> CollectionResult<usize> {
-    let res = segments.apply_segments(|write_segment| {
-        Ok(AppliedSegmentResult::Applied(
-            write_segment.create_field_index(op_num, field_name)?,
-        ))
-    })?;
-    Ok(res.0)
+    let res = segments
+        .apply_segments(|write_segment| write_segment.create_field_index(op_num, field_name))?;
+    Ok(res)
 }
 
 pub(crate) fn delete_field_index(
@@ -135,12 +131,9 @@ pub(crate) fn delete_field_index(
     op_num: SeqNumberType,
     field_name: PayloadKeyTypeRef,
 ) -> CollectionResult<usize> {
-    let res = segments.apply_segments(|write_segment| {
-        Ok(AppliedSegmentResult::Applied(
-            write_segment.delete_field_index(op_num, field_name)?,
-        ))
-    })?;
-    Ok(res.0)
+    let res = segments
+        .apply_segments(|write_segment| write_segment.delete_field_index(op_num, field_name))?;
+    Ok(res)
 }
 
 fn upsert_with_payload(

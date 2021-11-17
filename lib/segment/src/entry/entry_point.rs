@@ -169,7 +169,7 @@ pub trait SegmentEntry {
         &'a mut self,
         op_num: SeqNumberType,
         filter: &'a Filter,
-    ) -> OperationResult<Vec<PointIdType>>;
+    ) -> OperationResult<usize>;
 
     /// Check if there is point with `point_id` in this segment.
     fn has_point(&self, point_id: PointIdType) -> bool;

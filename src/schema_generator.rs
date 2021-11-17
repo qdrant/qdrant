@@ -2,8 +2,8 @@ use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 
 use collection::operations::types::{
-    CollectionInfo, RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
-    UpdateResult,
+    CollectionInfo, DeleteRequest, RecommendRequest, Record, ScrollRequest, ScrollResult,
+    SearchRequest, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
 use segment::types::ScoredPoint;
@@ -30,6 +30,7 @@ struct AllDefinitions {
     aa: RecommendRequest,
     ab: ScrollRequest,
     ac: ScrollResult,
+    ad: DeleteRequest,
 }
 
 fn save_schema<T: JsonSchema>() {

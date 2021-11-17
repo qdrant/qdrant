@@ -565,15 +565,13 @@ impl SegmentEntry for Segment {
         &'a mut self,
         op_num: SeqNumberType,
         filter: &'a Filter,
-    ) -> OperationResult<Vec<PointIdType>> {
-        Ok(self
-            .read_filtered(0, std::usize::MAX, Some(filter))
-            .into_iter()
-            .map(|point_id| {
-                self.delete_point(op_num, point_id);
-                point_id
-            })
-            .collect())
+    ) -> OperationResult<usize> {
+        let mut deleted_points = 0;
+        for point_id in self.read_filtered(0, std::usize::MAX, Some(filter)).iter() {
+            deleted_points += self.delete_point(op_num, *point_id)? as usize;
+        }
+
+        Ok(deleted_points)
     }
 }
 
