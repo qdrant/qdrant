@@ -109,7 +109,7 @@ impl TableOfContent {
     }
 
     /// Finds the original name of the collection
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `collection_name` - Name of the collection or alias to resolve
@@ -289,11 +289,11 @@ impl TableOfContent {
         // resolve_name already checked collection existence, unwrap is safe here
         Ok(read_collection.get(&real_collection_name).unwrap().clone())
     }
-    
+
     /// Recommend points using positive and negative example from the request
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `collection_name` - for what collection do we recommend
     /// * `request` - [`RecommendRequest`]
     ///

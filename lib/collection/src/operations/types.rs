@@ -21,7 +21,6 @@ use std::collections::HashMap;
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
 
-
 /// Current state of the collection
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
