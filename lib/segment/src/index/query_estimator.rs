@@ -156,6 +156,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+    use std::iter::FromIterator;
     use super::*;
     use crate::types::{FieldCondition, HasIdCondition, PointOffsetType};
     use std::collections::HashSet;
