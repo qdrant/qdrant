@@ -25,6 +25,14 @@ pub struct OptimizerThresholds {
     pub payload_indexing_threshold: usize,
 }
 
+/// SegmentOptimizer - trait implementing common functionality of the optimizers
+///
+/// It provides functions which allow to re-build specified segments into a new, better one.
+/// Process allows read and write (with some tricks) access to the optimized segments.
+///
+/// Process of the optimization is same for all optimizers.
+/// The selection of the candidates for optimization and the configuration
+/// of resulting segment are up to concrete implementations.
 pub trait SegmentOptimizer {
     /// Get path of the whole collection
     fn collection_path(&self) -> &Path;

@@ -1,3 +1,5 @@
+//! Crate, which implements all functions required for operations with a single collection
+
 pub mod collection;
 pub mod collection_builder;
 pub mod collection_manager;

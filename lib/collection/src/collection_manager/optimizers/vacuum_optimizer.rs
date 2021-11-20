@@ -9,6 +9,8 @@ use ordered_float::OrderedFloat;
 use segment::types::{HnswConfig, SegmentType};
 use std::path::{Path, PathBuf};
 
+/// Optimizer which looks for segments with hig amount of soft-deleted points.
+/// Used to free up space.
 pub struct VacuumOptimizer {
     deleted_threshold: f64,
     min_vectors_number: usize,

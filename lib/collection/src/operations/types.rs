@@ -47,8 +47,8 @@ pub struct Record {
     pub vector: Option<Vec<VectorElementType>>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 /// Current statistics and configuration of the collection
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CollectionInfo {
     /// Status of the collection
     pub status: CollectionStatus,

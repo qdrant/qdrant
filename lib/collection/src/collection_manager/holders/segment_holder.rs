@@ -16,6 +16,8 @@ use std::time::Duration;
 
 pub type SegmentId = usize;
 
+/// Object, which unifies the access to different types of segments, but still allows to
+/// access the original type of the segment if it is required for more efficient operations.
 pub enum LockedSegment {
     Original(Arc<RwLock<Segment>>),
     Proxy(Arc<RwLock<ProxySegment>>),

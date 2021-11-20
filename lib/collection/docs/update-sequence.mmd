@@ -1,0 +1,20 @@
+sequenceDiagram
+	User->>Collection: Request
+	activate Collection
+	loop
+		Collection->>Collection: Write request to WAL
+	end
+	Collection->>Updater: Update Request
+	deactivate Collection
+	activate Updater
+	Updater-->>Optimizer: Notify changed
+	Updater-->>Collection: Notify done
+	deactivate Updater
+	activate Collection
+	Collection->>User: Response
+	deactivate Collection
+	activate Optimizer
+	opt
+		Optimizer->>Optimizer: optimize
+	end
+	deactivate Optimizer
