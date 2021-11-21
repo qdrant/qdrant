@@ -158,6 +158,8 @@ where
 mod tests {
     use super::*;
     use crate::types::{FieldCondition, HasIdCondition, PointOffsetType};
+    use std::collections::HashSet;
+    use std::iter::FromIterator;
 
     const TOTAL: usize = 1000;
 
@@ -302,7 +304,7 @@ mod tests {
             ]),
             must: None,
             must_not: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: [1, 2, 3, 4, 5].into(),
+                has_id: HashSet::from_iter([1, 2, 3, 4, 5]),
             })]),
         };
 
@@ -336,7 +338,7 @@ mod tests {
                 }),
             ]),
             must_not: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: [1, 2, 3, 4, 5].into(),
+                has_id: HashSet::from_iter([1, 2, 3, 4, 5]),
             })]),
         };
 
