@@ -6,6 +6,7 @@ mod tests {
     use segment::entry::entry_point::SegmentEntry;
     use segment::types::{Condition, Filter, WithPayload};
     use std::collections::HashSet;
+    use std::iter::FromIterator;
     use tempdir::TempDir;
 
     #[test]
@@ -25,7 +26,7 @@ mod tests {
         let best_match = res.get(0).expect("Non-empty result");
         assert_eq!(best_match.id, 3);
 
-        let ids: HashSet<_> = [3].into();
+        let ids: HashSet<_> = HashSet::from_iter([3]);
 
         let frt = Filter {
             should: None,

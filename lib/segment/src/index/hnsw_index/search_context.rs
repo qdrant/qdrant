@@ -3,6 +3,7 @@ use crate::types::ScoreType;
 use crate::vector_storage::ScoredPointOffset;
 use num_traits::float::FloatCore;
 use std::collections::BinaryHeap;
+use std::iter::FromIterator;
 
 /// Structure that holds context of the search
 pub struct SearchContext {
@@ -16,7 +17,7 @@ impl SearchContext {
         nearest.push(entry_point);
         SearchContext {
             nearest,
-            candidates: [entry_point].into(),
+            candidates: BinaryHeap::from_iter([entry_point]),
         }
     }
 
