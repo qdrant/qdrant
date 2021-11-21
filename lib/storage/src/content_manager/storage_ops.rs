@@ -22,33 +22,51 @@ pub enum AliasOperations {
     },
 }
 
-/// Group of all the possible operations related to collection operations
+/// Operation for creating new collection and (optionally) specify index params
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct CreateCollectionOperation {
+    pub name: String,
+    pub vector_size: usize,
+    pub distance: Distance,
+    /// Custom params for HNSW index. If none - values from service configuration file are used.
+    pub hnsw_config: Option<HnswConfigDiff>,
+    /// Custom params for WAL. If none - values from service configuration file are used.
+    pub wal_config: Option<WalConfigDiff>,
+    /// Custom params for Optimizers.  If none - values from service configuration file are used.
+    pub optimizers_config: Option<OptimizersConfigDiff>,
+}
+
+/// Operation for updating parameters of the existing collection
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct UpdateCollectionOperation {
+    pub name: String,
+    /// Custom params for Optimizers.  If none - values from service configuration file are used.
+    /// This operation is blocking, it will only proceed ones all current optimizations are complete
+    pub optimizers_config: Option<OptimizersConfigDiff>, // ToDo: Allow updates for other configuration params as well
+}
+
+/// Operation for performing changes of collection aliases.
+/// Alias changes are atomic, meaning that no collection modifications can happen between
+/// alias operations.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct ChangeAliasesOperation {
+    pub actions: Vec<AliasOperations>
+}
+
+/// Operation for deleting collection with given name
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct DeleteCollectionOperation(pub String);
+
+/// Enumeration of all possible collection update operations
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum StorageOperations {
-    /// Create new collection and (optionally) specify index params
-    CreateCollection {
-        name: String,
-        vector_size: usize,
-        distance: Distance,
-        /// Custom params for HNSW index. If none - values from service configuration file are used.
-        hnsw_config: Option<HnswConfigDiff>,
-        /// Custom params for WAL. If none - values from service configuration file are used.
-        wal_config: Option<WalConfigDiff>,
-        /// Custom params for Optimizers.  If none - values from service configuration file are used.
-        optimizers_config: Option<OptimizersConfigDiff>,
-    },
-    /// Update parameters of the existing collection
-    UpdateCollection {
-        name: String,
-        /// Custom params for Optimizers.  If none - values from service configuration file are used.
-        /// This operation is blocking, it will only proceed ones all current optimizations are complete
-        optimizers_config: Option<OptimizersConfigDiff>, // ToDo: Allow updates for other configuration params as well
-    },
-    /// Delete collection with given name
-    DeleteCollection(String),
-    /// Perform changes of collection aliases.
-    /// Alias changes are atomic, meaning that no collection modifications can happen between
-    /// alias operations.
-    ChangeAliases { actions: Vec<AliasOperations> },
+    CreateCollection(CreateCollectionOperation),
+    UpdateCollection(UpdateCollectionOperation),
+    DeleteCollection(DeleteCollectionOperation),
+    ChangeAliases(ChangeAliasesOperation),
 }

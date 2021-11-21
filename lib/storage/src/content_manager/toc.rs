@@ -22,7 +22,7 @@ use segment::types::{PointIdType, ScoredPoint, WithPayload};
 
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::errors::StorageError;
-use crate::content_manager::storage_ops::{AliasOperations, StorageOperations};
+use crate::content_manager::storage_ops::{AliasOperations, ChangeAliasesOperation, CreateCollectionOperation, DeleteCollectionOperation, StorageOperations, UpdateCollectionOperation};
 use crate::types::StorageConfig;
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
@@ -139,14 +139,14 @@ impl TableOfContent {
         operation: StorageOperations,
     ) -> Result<bool, StorageError> {
         match operation {
-            StorageOperations::CreateCollection {
+            StorageOperations::CreateCollection(CreateCollectionOperation {
                 name: collection_name,
                 vector_size,
                 distance,
                 hnsw_config: hnsw_config_diff,
                 wal_config: wal_config_diff,
                 optimizers_config: optimizers_config_diff,
-            } => {
+            }) => {
                 self.collections
                     .read()
                     .await
@@ -188,10 +188,10 @@ impl TableOfContent {
                 write_collections.insert(collection_name, Arc::new(collection));
                 Ok(true)
             }
-            StorageOperations::UpdateCollection {
+            StorageOperations::UpdateCollection(UpdateCollectionOperation {
                 name,
                 optimizers_config,
-            } => {
+            }) => {
                 match optimizers_config {
                     None => {}
                     Some(new_optimizers_config) => {
@@ -203,7 +203,7 @@ impl TableOfContent {
                 }
                 Ok(true)
             }
-            StorageOperations::DeleteCollection(collection_name) => {
+            StorageOperations::DeleteCollection(DeleteCollectionOperation(collection_name)) => {
                 if let Some(removed) = self.collections.write().await.remove(&collection_name) {
                     removed.stop().await?;
                     {
@@ -223,7 +223,7 @@ impl TableOfContent {
                     Ok(false)
                 }
             }
-            StorageOperations::ChangeAliases { actions } => {
+            StorageOperations::ChangeAliases(ChangeAliasesOperation { actions }) => {
                 // Lock all collections for alias changes
                 // Prevent search on partially switched collections
                 let collection_lock = self.collections.write().await;

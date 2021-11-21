@@ -8,7 +8,7 @@ use tokio::runtime::Runtime;
 mod tests {
     use super::*;
     use segment::types::Distance;
-    use storage::content_manager::storage_ops::{AliasOperations, StorageOperations};
+    use storage::content_manager::storage_ops::{AliasOperations, ChangeAliasesOperation, CreateCollectionOperation, StorageOperations};
 
     #[test]
     fn test_alias_operation() {
@@ -39,31 +39,31 @@ mod tests {
 
         handle
             .block_on(
-                toc.perform_collection_operation(StorageOperations::CreateCollection {
+                toc.perform_collection_operation(StorageOperations::CreateCollection(CreateCollectionOperation {
                     name: "test".to_string(),
                     vector_size: 10,
                     distance: Distance::Cosine,
                     hnsw_config: None,
                     wal_config: None,
                     optimizers_config: None,
-                }),
+                })),
             )
             .unwrap();
 
         handle
             .block_on(
-                toc.perform_collection_operation(StorageOperations::ChangeAliases {
+                toc.perform_collection_operation(StorageOperations::ChangeAliases(ChangeAliasesOperation {
                     actions: vec![AliasOperations::CreateAlias {
                         collection_name: "test".to_string(),
                         alias_name: "test_alias".to_string(),
                     }],
-                }),
+                })),
             )
             .unwrap();
 
         handle
             .block_on(
-                toc.perform_collection_operation(StorageOperations::ChangeAliases {
+                toc.perform_collection_operation(StorageOperations::ChangeAliases(ChangeAliasesOperation {
                     actions: vec![
                         AliasOperations::CreateAlias {
                             collection_name: "test".to_string(),
@@ -77,7 +77,7 @@ mod tests {
                             new_alias_name: "test_alias3".to_string(),
                         },
                     ],
-                }),
+                })),
             )
             .unwrap();
 
