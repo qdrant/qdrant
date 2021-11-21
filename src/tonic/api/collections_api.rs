@@ -13,7 +13,9 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::Instant;
 use storage::content_manager::errors::StorageError;
-use storage::content_manager::storage_ops::{CreateCollectionOperation, DeleteCollectionOperation, UpdateCollectionOperation};
+use storage::content_manager::storage_ops::{
+    CreateCollectionOperation, DeleteCollectionOperation, UpdateCollectionOperation,
+};
 use storage::content_manager::toc::TableOfContent;
 
 pub struct CollectionsService {

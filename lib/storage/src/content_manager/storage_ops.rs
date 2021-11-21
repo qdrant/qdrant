@@ -53,7 +53,7 @@ pub struct UpdateCollectionOperation {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct ChangeAliasesOperation {
-    pub actions: Vec<AliasOperations>
+    pub actions: Vec<AliasOperations>,
 }
 
 /// Operation for deleting collection with given name

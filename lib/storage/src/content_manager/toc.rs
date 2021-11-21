@@ -22,7 +22,10 @@ use segment::types::{PointIdType, ScoredPoint, WithPayload};
 
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::errors::StorageError;
-use crate::content_manager::storage_ops::{AliasOperations, ChangeAliasesOperation, CreateCollectionOperation, DeleteCollectionOperation, StorageOperations, UpdateCollectionOperation};
+use crate::content_manager::storage_ops::{
+    AliasOperations, ChangeAliasesOperation, CreateCollectionOperation, DeleteCollectionOperation,
+    StorageOperations, UpdateCollectionOperation,
+};
 use crate::types::StorageConfig;
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;

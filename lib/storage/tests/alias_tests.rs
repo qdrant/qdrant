@@ -8,7 +8,9 @@ use tokio::runtime::Runtime;
 mod tests {
     use super::*;
     use segment::types::Distance;
-    use storage::content_manager::storage_ops::{AliasOperations, ChangeAliasesOperation, CreateCollectionOperation, StorageOperations};
+    use storage::content_manager::storage_ops::{
+        AliasOperations, ChangeAliasesOperation, CreateCollectionOperation, StorageOperations,
+    };
 
     #[test]
     fn test_alias_operation() {
@@ -39,45 +41,51 @@ mod tests {
 
         handle
             .block_on(
-                toc.perform_collection_operation(StorageOperations::CreateCollection(CreateCollectionOperation {
-                    name: "test".to_string(),
-                    vector_size: 10,
-                    distance: Distance::Cosine,
-                    hnsw_config: None,
-                    wal_config: None,
-                    optimizers_config: None,
-                })),
+                toc.perform_collection_operation(StorageOperations::CreateCollection(
+                    CreateCollectionOperation {
+                        name: "test".to_string(),
+                        vector_size: 10,
+                        distance: Distance::Cosine,
+                        hnsw_config: None,
+                        wal_config: None,
+                        optimizers_config: None,
+                    },
+                )),
             )
             .unwrap();
 
         handle
             .block_on(
-                toc.perform_collection_operation(StorageOperations::ChangeAliases(ChangeAliasesOperation {
-                    actions: vec![AliasOperations::CreateAlias {
-                        collection_name: "test".to_string(),
-                        alias_name: "test_alias".to_string(),
-                    }],
-                })),
-            )
-            .unwrap();
-
-        handle
-            .block_on(
-                toc.perform_collection_operation(StorageOperations::ChangeAliases(ChangeAliasesOperation {
-                    actions: vec![
-                        AliasOperations::CreateAlias {
+                toc.perform_collection_operation(StorageOperations::ChangeAliases(
+                    ChangeAliasesOperation {
+                        actions: vec![AliasOperations::CreateAlias {
                             collection_name: "test".to_string(),
-                            alias_name: "test_alias2".to_string(),
-                        },
-                        AliasOperations::DeleteAlias {
                             alias_name: "test_alias".to_string(),
-                        },
-                        AliasOperations::RenameAlias {
-                            old_alias_name: "test_alias2".to_string(),
-                            new_alias_name: "test_alias3".to_string(),
-                        },
-                    ],
-                })),
+                        }],
+                    },
+                )),
+            )
+            .unwrap();
+
+        handle
+            .block_on(
+                toc.perform_collection_operation(StorageOperations::ChangeAliases(
+                    ChangeAliasesOperation {
+                        actions: vec![
+                            AliasOperations::CreateAlias {
+                                collection_name: "test".to_string(),
+                                alias_name: "test_alias2".to_string(),
+                            },
+                            AliasOperations::DeleteAlias {
+                                alias_name: "test_alias".to_string(),
+                            },
+                            AliasOperations::RenameAlias {
+                                old_alias_name: "test_alias2".to_string(),
+                                new_alias_name: "test_alias3".to_string(),
+                            },
+                        ],
+                    },
+                )),
             )
             .unwrap();
 
