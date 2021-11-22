@@ -8,7 +8,10 @@ use tokio::runtime::Runtime;
 mod tests {
     use super::*;
     use segment::types::Distance;
-    use storage::content_manager::storage_ops::{AliasOperations, ChangeAliasesOperation, CreateAlias, CreateCollectionOperation, DeleteAlias, RenameAlias, StorageOperations};
+    use storage::content_manager::storage_ops::{
+        AliasOperations, ChangeAliasesOperation, CreateAlias, CreateCollectionOperation,
+        DeleteAlias, RenameAlias, StorageOperations,
+    };
 
     #[test]
     fn test_alias_operation() {
