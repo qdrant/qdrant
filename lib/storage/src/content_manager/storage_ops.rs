@@ -3,30 +3,43 @@ use schemars::JsonSchema;
 use segment::types::Distance;
 use serde::{Deserialize, Serialize};
 
+/// Create alternative name for a collection.
+/// Collection will be available under both names for search, retrieve,
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct CreateAlias {
+    pub collection_name: String,
+    pub alias_name: String,
+}
+
+/// Delete alias if exists
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct DeleteAlias {
+    pub alias_name: String
+}
+
+/// Change alias to a new one
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct RenameAlias {
+    pub old_alias_name: String,
+    pub new_alias_name: String,
+}
+
 /// Group of all the possible operations related to collection aliases
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AliasOperations {
-    /// Create alternative name for a collection.
-    /// Collection will be available under both names for search, retrieve,
-    CreateAlias {
-        collection_name: String,
-        alias_name: String,
-    },
-    /// Delete alias if exists
-    DeleteAlias { alias_name: String },
-    /// Change alias to a new one
-    RenameAlias {
-        old_alias_name: String,
-        new_alias_name: String,
-    },
+    CreateAlias(CreateAlias),
+    DeleteAlias(DeleteAlias),
+    RenameAlias(RenameAlias),
 }
 
 /// Operation for creating new collection and (optionally) specify index params
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub struct CreateCollectionOperation {
-    pub name: String,
+pub struct CreateCollection {
     pub vector_size: usize,
     pub distance: Distance,
     /// Custom params for HNSW index. If none - values from service configuration file are used.
@@ -37,14 +50,31 @@ pub struct CreateCollectionOperation {
     pub optimizers_config: Option<OptimizersConfigDiff>,
 }
 
+/// Operation for creating new collection and (optionally) specify index params
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct CreateCollectionOperation {
+    pub name: String,
+    #[serde(flatten)]
+    pub create_collection: CreateCollection,
+}
+
+/// Operation for updating parameters of the existing collection
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct UpdateCollection {
+    /// Custom params for Optimizers.  If none - values from service configuration file are used.
+    /// This operation is blocking, it will only proceed ones all current optimizations are complete
+    pub optimizers_config: Option<OptimizersConfigDiff>, // ToDo: Allow updates for other configuration params as well
+}
+
 /// Operation for updating parameters of the existing collection
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateCollectionOperation {
     pub name: String,
-    /// Custom params for Optimizers.  If none - values from service configuration file are used.
-    /// This operation is blocking, it will only proceed ones all current optimizations are complete
-    pub optimizers_config: Option<OptimizersConfigDiff>, // ToDo: Allow updates for other configuration params as well
+    #[serde(flatten)]
+    pub update_collection: UpdateCollection,
 }
 
 /// Operation for performing changes of collection aliases.

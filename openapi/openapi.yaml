@@ -259,6 +259,7 @@ paths:
       summary: Update collection
       description: Perform update, create, remove or alias change operations on collections
       operationId: update_collections
+      deprecated: true
       requestBody:
         description: Operation to perform on collections
         content:
@@ -377,6 +378,167 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+    put:
+      tags:
+        - collections
+      summary: Create collection
+      description: Create new collection with given parameters
+      operationId: create_collection
+      requestBody:
+        description: Parameters of a new collection
+        content:
+          application/json:
+            schema:
+              $ref: "./models.json#/components/schemas/CreateCollection"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the new collection
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: ["ok"]
+                  result:
+                    type: boolean
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    patch:
+      tags:
+        - collections
+      summary: Update collection paranmeters
+      description: Update parameters of the existing collection
+      operationId: update_collection
+      requestBody:
+        description: New parameters
+        content:
+          application/json:
+            schema:
+              $ref: "./models.json#/components/schemas/UpdateCollection"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to update
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: ["ok"]
+                  result:
+                    type: boolean
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    delete:
+      tags:
+        - collections
+      summary: Delete collection
+      description: Drop collection and all associated data
+      operationId: delete_collection
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to delete
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: [ "ok" ]
+                  result:
+                    type: boolean
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /collections/aliases:
+    post:
+      tags:
+        - collections
+      summary: Update aliases of the collections
+      operationId: update_aliases
+      requestBody:
+        description: Alias update operations
+        content:
+          application/json:
+            schema:
+              $ref: "./models.json#/components/schemas/ChangeAliasesOperation"
+
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: [ "ok" ]
+                  result:
+                    $ref: "./models.json#/components/schemas/UpdateResult"
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /collections/{name}/points/{id}:
     get:

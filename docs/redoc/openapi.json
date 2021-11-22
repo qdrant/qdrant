@@ -5,22 +5,9 @@
         "anyOf": [
           {
             "additionalProperties": false,
-            "description": "Create alternative name for a collection. Collection will be available under both names for search, retrieve,",
             "properties": {
               "create_alias": {
-                "properties": {
-                  "alias_name": {
-                    "type": "string"
-                  },
-                  "collection_name": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "alias_name",
-                  "collection_name"
-                ],
-                "type": "object"
+                "$ref": "#/components/schemas/CreateAlias"
               }
             },
             "required": [
@@ -30,18 +17,9 @@
           },
           {
             "additionalProperties": false,
-            "description": "Delete alias if exists",
             "properties": {
               "delete_alias": {
-                "properties": {
-                  "alias_name": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "alias_name"
-                ],
-                "type": "object"
+                "$ref": "#/components/schemas/DeleteAlias"
               }
             },
             "required": [
@@ -51,22 +29,9 @@
           },
           {
             "additionalProperties": false,
-            "description": "Change alias to a new one",
             "properties": {
               "rename_alias": {
-                "properties": {
-                  "new_alias_name": {
-                    "type": "string"
-                  },
-                  "old_alias_name": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "new_alias_name",
-                  "old_alias_name"
-                ],
-                "type": "object"
+                "$ref": "#/components/schemas/RenameAlias"
               }
             },
             "required": [
@@ -75,6 +40,21 @@
             "type": "object"
           }
         ]
+      },
+      "ChangeAliasesOperation": {
+        "description": "Operation for performing changes of collection aliases. Alias changes are atomic, meaning that no collection modifications can happen between alias operations.",
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/AliasOperations"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "actions"
+        ],
+        "type": "object"
       },
       "CollectionConfig": {
         "properties": {
@@ -227,6 +207,144 @@
             "$ref": "#/components/schemas/Filter"
           }
         ]
+      },
+      "CreateAlias": {
+        "description": "Create alternative name for a collection. Collection will be available under both names for search, retrieve,",
+        "properties": {
+          "alias_name": {
+            "type": "string"
+          },
+          "collection_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "alias_name",
+          "collection_name"
+        ],
+        "type": "object"
+      },
+      "CreateCollection": {
+        "description": "Operation for creating new collection and (optionally) specify index params",
+        "properties": {
+          "distance": {
+            "$ref": "#/components/schemas/Distance"
+          },
+          "hnsw_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HnswConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Custom params for HNSW index. If none - values from service configuration file are used."
+          },
+          "optimizers_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OptimizersConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Custom params for Optimizers.  If none - values from service configuration file are used."
+          },
+          "vector_size": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "wal_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WalConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Custom params for WAL. If none - values from service configuration file are used."
+          }
+        },
+        "required": [
+          "distance",
+          "vector_size"
+        ],
+        "type": "object"
+      },
+      "CreateCollectionOperation": {
+        "description": "Operation for creating new collection and (optionally) specify index params",
+        "properties": {
+          "distance": {
+            "$ref": "#/components/schemas/Distance"
+          },
+          "hnsw_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HnswConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Custom params for HNSW index. If none - values from service configuration file are used."
+          },
+          "name": {
+            "type": "string"
+          },
+          "optimizers_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OptimizersConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Custom params for Optimizers.  If none - values from service configuration file are used."
+          },
+          "vector_size": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "wal_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WalConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Custom params for WAL. If none - values from service configuration file are used."
+          }
+        },
+        "required": [
+          "distance",
+          "name",
+          "vector_size"
+        ],
+        "type": "object"
+      },
+      "DeleteAlias": {
+        "description": "Delete alias if exists",
+        "properties": {
+          "alias_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "alias_name"
+        ],
+        "type": "object"
+      },
+      "DeleteCollectionOperation": {
+        "description": "Operation for deleting collection with given name",
+        "type": "string"
       },
       "Distance": {
         "description": "Type of internal tags, build from payload Distance function types used to compare vectors",
@@ -1341,6 +1459,22 @@
         ],
         "type": "object"
       },
+      "RenameAlias": {
+        "description": "Change alias to a new one",
+        "properties": {
+          "new_alias_name": {
+            "type": "string"
+          },
+          "old_alias_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_alias_name",
+          "old_alias_name"
+        ],
+        "type": "object"
+      },
       "ScoredPoint": {
         "properties": {
           "id": {
@@ -1520,61 +1654,9 @@
         "anyOf": [
           {
             "additionalProperties": false,
-            "description": "Create new collection and (optionally) specify index params",
             "properties": {
               "create_collection": {
-                "properties": {
-                  "distance": {
-                    "$ref": "#/components/schemas/Distance"
-                  },
-                  "hnsw_config": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/components/schemas/HnswConfigDiff"
-                      },
-                      {
-                        "nullable": true
-                      }
-                    ],
-                    "description": "Custom params for HNSW index. If none - values from service configuration file are used."
-                  },
-                  "name": {
-                    "type": "string"
-                  },
-                  "optimizers_config": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/components/schemas/OptimizersConfigDiff"
-                      },
-                      {
-                        "nullable": true
-                      }
-                    ],
-                    "description": "Custom params for Optimizers.  If none - values from service configuration file are used."
-                  },
-                  "vector_size": {
-                    "format": "uint",
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "wal_config": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/components/schemas/WalConfigDiff"
-                      },
-                      {
-                        "nullable": true
-                      }
-                    ],
-                    "description": "Custom params for WAL. If none - values from service configuration file are used."
-                  }
-                },
-                "required": [
-                  "distance",
-                  "name",
-                  "vector_size"
-                ],
-                "type": "object"
+                "$ref": "#/components/schemas/CreateCollectionOperation"
               }
             },
             "required": [
@@ -1584,29 +1666,9 @@
           },
           {
             "additionalProperties": false,
-            "description": "Update parameters of the existing collection",
             "properties": {
               "update_collection": {
-                "properties": {
-                  "name": {
-                    "type": "string"
-                  },
-                  "optimizers_config": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/components/schemas/OptimizersConfigDiff"
-                      },
-                      {
-                        "nullable": true
-                      }
-                    ],
-                    "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete"
-                  }
-                },
-                "required": [
-                  "name"
-                ],
-                "type": "object"
+                "$ref": "#/components/schemas/UpdateCollectionOperation"
               }
             },
             "required": [
@@ -1616,10 +1678,9 @@
           },
           {
             "additionalProperties": false,
-            "description": "Delete collection with given name",
             "properties": {
               "delete_collection": {
-                "type": "string"
+                "$ref": "#/components/schemas/DeleteCollectionOperation"
               }
             },
             "required": [
@@ -1629,21 +1690,9 @@
           },
           {
             "additionalProperties": false,
-            "description": "Perform changes of collection aliases. Alias changes are atomic, meaning that no collection modifications can happen between alias operations.",
             "properties": {
               "change_aliases": {
-                "properties": {
-                  "actions": {
-                    "items": {
-                      "$ref": "#/components/schemas/AliasOperations"
-                    },
-                    "type": "array"
-                  }
-                },
-                "required": [
-                  "actions"
-                ],
-                "type": "object"
+                "$ref": "#/components/schemas/ChangeAliasesOperation"
               }
             },
             "required": [
@@ -1651,7 +1700,48 @@
             ],
             "type": "object"
           }
-        ]
+        ],
+        "description": "Enumeration of all possible collection update operations"
+      },
+      "UpdateCollection": {
+        "description": "Operation for updating parameters of the existing collection",
+        "properties": {
+          "optimizers_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OptimizersConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateCollectionOperation": {
+        "description": "Operation for updating parameters of the existing collection",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "optimizers_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OptimizersConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
       },
       "UpdateResult": {
         "properties": {
@@ -1802,6 +1892,7 @@
         ]
       },
       "post": {
+        "deprecated": true,
         "description": "Perform update, create, remove or alias change operations on collections",
         "operationId": "update_collections",
         "requestBody": {
@@ -1858,7 +1949,121 @@
         ]
       }
     },
+    "/collections/aliases": {
+      "post": {
+        "operationId": "update_aliases",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeAliasesOperation"
+              }
+            }
+          },
+          "description": "Alias update operations"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Update aliases of the collections",
+        "tags": [
+          "collections"
+        ]
+      }
+    },
     "/collections/{name}": {
+      "delete": {
+        "description": "Drop collection and all associated data",
+        "operationId": "delete_collection",
+        "parameters": [
+          {
+            "description": "Name of the collection to delete",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Delete collection",
+        "tags": [
+          "collections"
+        ]
+      },
       "get": {
         "description": "Get detailed information about specified existing collection",
         "operationId": "get_collection",
@@ -1912,6 +2117,73 @@
           }
         },
         "summary": "Collection info",
+        "tags": [
+          "collections"
+        ]
+      },
+      "patch": {
+        "description": "Update parameters of the existing collection",
+        "operationId": "update_collection",
+        "parameters": [
+          {
+            "description": "Name of the collection to update",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCollection"
+              }
+            }
+          },
+          "description": "New parameters"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Update collection paranmeters",
         "tags": [
           "collections"
         ]
@@ -1990,6 +2262,73 @@
         "summary": "Update points",
         "tags": [
           "points"
+        ]
+      },
+      "put": {
+        "description": "Create new collection with given parameters",
+        "operationId": "create_collection",
+        "parameters": [
+          {
+            "description": "Name of the new collection",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCollection"
+              }
+            }
+          },
+          "description": "Parameters of a new collection"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Create collection",
+        "tags": [
+          "collections"
         ]
       }
     },

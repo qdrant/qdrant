@@ -7,7 +7,9 @@ use collection::operations::types::{
 };
 use collection::operations::CollectionUpdateOperations;
 use segment::types::ScoredPoint;
-use storage::content_manager::storage_ops::StorageOperations;
+use storage::content_manager::storage_ops::{
+    ChangeAliasesOperation, CreateCollection, StorageOperations, UpdateCollection,
+};
 
 use crate::actix::api::retrieve_api::PointRequest;
 use crate::common::models::CollectionsResponse;
@@ -30,6 +32,9 @@ struct AllDefinitions {
     aa: RecommendRequest,
     ab: ScrollRequest,
     ac: ScrollResult,
+    ad: CreateCollection,
+    ae: UpdateCollection,
+    af: ChangeAliasesOperation,
 }
 
 fn save_schema<T: JsonSchema>() {

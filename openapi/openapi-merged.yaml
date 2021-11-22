@@ -259,6 +259,7 @@ paths:
       summary: Update collection
       description: Perform update, create, remove or alias change operations on collections
       operationId: update_collections
+      deprecated: true
       requestBody:
         description: Operation to perform on collections
         content:
@@ -377,6 +378,167 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+    put:
+      tags:
+        - collections
+      summary: Create collection
+      description: Create new collection with given parameters
+      operationId: create_collection
+      requestBody:
+        description: Parameters of a new collection
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCollection"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the new collection
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: ["ok"]
+                  result:
+                    type: boolean
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    patch:
+      tags:
+        - collections
+      summary: Update collection paranmeters
+      description: Update parameters of the existing collection
+      operationId: update_collection
+      requestBody:
+        description: New parameters
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCollection"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to update
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: ["ok"]
+                  result:
+                    type: boolean
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    delete:
+      tags:
+        - collections
+      summary: Delete collection
+      description: Drop collection and all associated data
+      operationId: delete_collection
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to delete
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: [ "ok" ]
+                  result:
+                    type: boolean
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /collections/aliases:
+    post:
+      tags:
+        - collections
+      summary: Update aliases of the collections
+      operationId: update_aliases
+      requestBody:
+        description: Alias update operations
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeAliasesOperation"
+
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum: [ "ok" ]
+                  result:
+                    $ref: "#/components/schemas/UpdateResult"
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /collections/{name}/points/{id}:
     get:
@@ -631,51 +793,38 @@ components:
     AliasOperations:
       anyOf:
       - additionalProperties: false
-        description: Create alternative name for a collection. Collection will be
-          available under both names for search, retrieve,
         properties:
           create_alias:
-            properties:
-              alias_name:
-                type: string
-              collection_name:
-                type: string
-            required:
-            - alias_name
-            - collection_name
-            type: object
+            $ref: '#/components/schemas/CreateAlias'
         required:
         - create_alias
         type: object
       - additionalProperties: false
-        description: Delete alias if exists
         properties:
           delete_alias:
-            properties:
-              alias_name:
-                type: string
-            required:
-            - alias_name
-            type: object
+            $ref: '#/components/schemas/DeleteAlias'
         required:
         - delete_alias
         type: object
       - additionalProperties: false
-        description: Change alias to a new one
         properties:
           rename_alias:
-            properties:
-              new_alias_name:
-                type: string
-              old_alias_name:
-                type: string
-            required:
-            - new_alias_name
-            - old_alias_name
-            type: object
+            $ref: '#/components/schemas/RenameAlias'
         required:
         - rename_alias
         type: object
+    ChangeAliasesOperation:
+      description: Operation for performing changes of collection aliases. Alias changes
+        are atomic, meaning that no collection modifications can happen between alias
+        operations.
+      properties:
+        actions:
+          items:
+            $ref: '#/components/schemas/AliasOperations'
+          type: array
+      required:
+      - actions
+      type: object
     CollectionConfig:
       properties:
         hnsw_config:
@@ -778,6 +927,96 @@ components:
       - $ref: '#/components/schemas/FieldCondition'
       - $ref: '#/components/schemas/HasIdCondition'
       - $ref: '#/components/schemas/Filter'
+    CreateAlias:
+      description: Create alternative name for a collection. Collection will be available
+        under both names for search, retrieve,
+      properties:
+        alias_name:
+          type: string
+        collection_name:
+          type: string
+      required:
+      - alias_name
+      - collection_name
+      type: object
+    CreateCollection:
+      description: Operation for creating new collection and (optionally) specify
+        index params
+      properties:
+        distance:
+          $ref: '#/components/schemas/Distance'
+        hnsw_config:
+          anyOf:
+          - $ref: '#/components/schemas/HnswConfigDiff'
+          - nullable: true
+          description: Custom params for HNSW index. If none - values from service
+            configuration file are used.
+        optimizers_config:
+          anyOf:
+          - $ref: '#/components/schemas/OptimizersConfigDiff'
+          - nullable: true
+          description: Custom params for Optimizers.  If none - values from service
+            configuration file are used.
+        vector_size:
+          format: uint
+          minimum: 0
+          type: integer
+        wal_config:
+          anyOf:
+          - $ref: '#/components/schemas/WalConfigDiff'
+          - nullable: true
+          description: Custom params for WAL. If none - values from service configuration
+            file are used.
+      required:
+      - distance
+      - vector_size
+      type: object
+    CreateCollectionOperation:
+      description: Operation for creating new collection and (optionally) specify
+        index params
+      properties:
+        distance:
+          $ref: '#/components/schemas/Distance'
+        hnsw_config:
+          anyOf:
+          - $ref: '#/components/schemas/HnswConfigDiff'
+          - nullable: true
+          description: Custom params for HNSW index. If none - values from service
+            configuration file are used.
+        name:
+          type: string
+        optimizers_config:
+          anyOf:
+          - $ref: '#/components/schemas/OptimizersConfigDiff'
+          - nullable: true
+          description: Custom params for Optimizers.  If none - values from service
+            configuration file are used.
+        vector_size:
+          format: uint
+          minimum: 0
+          type: integer
+        wal_config:
+          anyOf:
+          - $ref: '#/components/schemas/WalConfigDiff'
+          - nullable: true
+          description: Custom params for WAL. If none - values from service configuration
+            file are used.
+      required:
+      - distance
+      - name
+      - vector_size
+      type: object
+    DeleteAlias:
+      description: Delete alias if exists
+      properties:
+        alias_name:
+          type: string
+      required:
+      - alias_name
+      type: object
+    DeleteCollectionOperation:
+      description: Operation for deleting collection with given name
+      type: string
     Distance:
       description: Type of internal tags, build from payload Distance function types
         used to compare vectors
@@ -1524,6 +1763,17 @@ components:
       required:
       - id
       type: object
+    RenameAlias:
+      description: Change alias to a new one
+      properties:
+        new_alias_name:
+          type: string
+        old_alias_name:
+          type: string
+      required:
+      - new_alias_name
+      - old_alias_name
+      type: object
     ScoredPoint:
       properties:
         id:
@@ -1646,88 +1896,60 @@ components:
     StorageOperations:
       anyOf:
       - additionalProperties: false
-        description: Create new collection and (optionally) specify index params
         properties:
           create_collection:
-            properties:
-              distance:
-                $ref: '#/components/schemas/Distance'
-              hnsw_config:
-                anyOf:
-                - $ref: '#/components/schemas/HnswConfigDiff'
-                - nullable: true
-                description: Custom params for HNSW index. If none - values from service
-                  configuration file are used.
-              name:
-                type: string
-              optimizers_config:
-                anyOf:
-                - $ref: '#/components/schemas/OptimizersConfigDiff'
-                - nullable: true
-                description: Custom params for Optimizers.  If none - values from
-                  service configuration file are used.
-              vector_size:
-                format: uint
-                minimum: 0
-                type: integer
-              wal_config:
-                anyOf:
-                - $ref: '#/components/schemas/WalConfigDiff'
-                - nullable: true
-                description: Custom params for WAL. If none - values from service
-                  configuration file are used.
-            required:
-            - distance
-            - name
-            - vector_size
-            type: object
+            $ref: '#/components/schemas/CreateCollectionOperation'
         required:
         - create_collection
         type: object
       - additionalProperties: false
-        description: Update parameters of the existing collection
         properties:
           update_collection:
-            properties:
-              name:
-                type: string
-              optimizers_config:
-                anyOf:
-                - $ref: '#/components/schemas/OptimizersConfigDiff'
-                - nullable: true
-                description: Custom params for Optimizers.  If none - values from
-                  service configuration file are used. This operation is blocking,
-                  it will only proceed ones all current optimizations are complete
-            required:
-            - name
-            type: object
+            $ref: '#/components/schemas/UpdateCollectionOperation'
         required:
         - update_collection
         type: object
       - additionalProperties: false
-        description: Delete collection with given name
         properties:
           delete_collection:
-            type: string
+            $ref: '#/components/schemas/DeleteCollectionOperation'
         required:
         - delete_collection
         type: object
       - additionalProperties: false
-        description: Perform changes of collection aliases. Alias changes are atomic,
-          meaning that no collection modifications can happen between alias operations.
         properties:
           change_aliases:
-            properties:
-              actions:
-                items:
-                  $ref: '#/components/schemas/AliasOperations'
-                type: array
-            required:
-            - actions
-            type: object
+            $ref: '#/components/schemas/ChangeAliasesOperation'
         required:
         - change_aliases
         type: object
+      description: Enumeration of all possible collection update operations
+    UpdateCollection:
+      description: Operation for updating parameters of the existing collection
+      properties:
+        optimizers_config:
+          anyOf:
+          - $ref: '#/components/schemas/OptimizersConfigDiff'
+          - nullable: true
+          description: Custom params for Optimizers.  If none - values from service
+            configuration file are used. This operation is blocking, it will only
+            proceed ones all current optimizations are complete
+      type: object
+    UpdateCollectionOperation:
+      description: Operation for updating parameters of the existing collection
+      properties:
+        name:
+          type: string
+        optimizers_config:
+          anyOf:
+          - $ref: '#/components/schemas/OptimizersConfigDiff'
+          - nullable: true
+          description: Custom params for Optimizers.  If none - values from service
+            configuration file are used. This operation is blocking, it will only
+            proceed ones all current optimizations are complete
+      required:
+      - name
+      type: object
     UpdateResult:
       properties:
         operation_id:
