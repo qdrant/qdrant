@@ -2,7 +2,7 @@
 name = "qdrant"
 version = "0.4.2"
 authors = ["Andrey Vasnetsov <andrey@vasnetsov.com>"]
-edition = "2018"
+edition = "2021"
 doctest = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
