@@ -9,8 +9,8 @@ mod tests {
     use super::*;
     use segment::types::Distance;
     use storage::content_manager::storage_ops::{
-        AliasOperations, ChangeAliasesOperation, CreateAlias, CreateCollectionOperation,
-        DeleteAlias, RenameAlias, StorageOperations,
+        AliasOperations, ChangeAliasesOperation, CreateAlias, CreateCollection,
+        CreateCollectionOperation, DeleteAlias, RenameAlias, StorageOperations,
     };
 
     #[test]
@@ -45,11 +45,13 @@ mod tests {
                 toc.perform_collection_operation(StorageOperations::CreateCollection(
                     CreateCollectionOperation {
                         name: "test".to_string(),
-                        vector_size: 10,
-                        distance: Distance::Cosine,
-                        hnsw_config: None,
-                        wal_config: None,
-                        optimizers_config: None,
+                        create_collection: CreateCollection {
+                            vector_size: 10,
+                            distance: Distance::Cosine,
+                            hnsw_config: None,
+                            wal_config: None,
+                            optimizers_config: None,
+                        },
                     },
                 )),
             )
@@ -59,10 +61,10 @@ mod tests {
             .block_on(
                 toc.perform_collection_operation(StorageOperations::ChangeAliases(
                     ChangeAliasesOperation {
-                        actions: vec![AliasOperations::CreateAlias {
+                        actions: vec![AliasOperations::CreateAlias(CreateAlias {
                             collection_name: "test".to_string(),
                             alias_name: "test_alias".to_string(),
-                        }],
+                        })],
                     },
                 )),
             )

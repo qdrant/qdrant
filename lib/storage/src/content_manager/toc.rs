@@ -218,7 +218,7 @@ impl TableOfContent {
                 // TODO: Enhance optimizer to shutdown faster
                 removed.wait_update_workers_stop().await?;
             }
-            let path = self.get_collection_path(&collection_name);
+            let path = self.get_collection_path(collection_name);
             remove_dir_all(path).map_err(|err| StorageError::ServiceError {
                 description: format!(
                     "Can't delete collection {}, error: {}",
