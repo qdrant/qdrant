@@ -174,13 +174,21 @@ impl UpdateHandler {
                             if Self::try_recover(segments.clone(), wal.clone()).is_err() {
                                 continue;
                             }
-                            Self::process_optimization(optimizers.clone(), segments.clone());
+                            let copy_seg = segments.clone();
+                            let copy_opts = optimizers.clone();
+                            tokio::task::spawn_blocking(||{
+                                Self::process_optimization(copy_opts, copy_seg);
+                            });
                         }
                         OptimizerSignal::Operation(operation_id) => {
                             if Self::try_recover(segments.clone(), wal.clone()).is_err() {
                                 continue;
                             }
-                            Self::process_optimization(optimizers.clone(), segments.clone());
+                            let copy_seg = segments.clone();
+                            let copy_opts = optimizers.clone();
+                            tokio::task::spawn_blocking(||{
+                                Self::process_optimization(copy_opts, copy_seg);
+                            });
 
                             let elapsed = last_flushed.elapsed();
                             if elapsed > flush_timeout {
