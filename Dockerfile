@@ -9,7 +9,7 @@ RUN apt-get update ; apt-get install -y clang libopenblas-dev libgfortran-10-dev
 # Build actual target here
 RUN cargo build --release --bin qdrant
 
-FROM debian:buster-slim
+FROM debian:bullseye-slim
 ARG APP=/qdrant
 
 RUN apt-get update \
