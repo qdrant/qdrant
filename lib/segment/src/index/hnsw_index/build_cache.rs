@@ -1,5 +1,5 @@
 use crate::types::{PointOffsetType, ScoreType};
-use fasthash::SeaHasher;
+use seahash::SeaHasher;
 use std::cmp::{max, min};
 use std::hash::{Hash, Hasher};
 

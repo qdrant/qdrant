@@ -40,7 +40,7 @@ num-derive = "0.3.3"
 rand = "0.8"
 lru = "0.6.5"
 bit-vec = "0.6"
-fasthash = "0.4"
+seahash = "4.1.0"
 
 [[bench]]
 name = "vector_search"
