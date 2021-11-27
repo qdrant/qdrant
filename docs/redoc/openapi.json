@@ -4,40 +4,13 @@
       "AliasOperations": {
         "anyOf": [
           {
-            "additionalProperties": false,
-            "properties": {
-              "create_alias": {
-                "$ref": "#/components/schemas/CreateAlias"
-              }
-            },
-            "required": [
-              "create_alias"
-            ],
-            "type": "object"
+            "$ref": "#/components/schemas/CreateAliasOperation"
           },
           {
-            "additionalProperties": false,
-            "properties": {
-              "delete_alias": {
-                "$ref": "#/components/schemas/DeleteAlias"
-              }
-            },
-            "required": [
-              "delete_alias"
-            ],
-            "type": "object"
+            "$ref": "#/components/schemas/DeleteAliasOperation"
           },
           {
-            "additionalProperties": false,
-            "properties": {
-              "rename_alias": {
-                "$ref": "#/components/schemas/RenameAlias"
-              }
-            },
-            "required": [
-              "rename_alias"
-            ],
-            "type": "object"
+            "$ref": "#/components/schemas/RenameAliasOperation"
           }
         ]
       },
@@ -224,6 +197,17 @@
         ],
         "type": "object"
       },
+      "CreateAliasOperation": {
+        "properties": {
+          "create_alias": {
+            "$ref": "#/components/schemas/CreateAlias"
+          }
+        },
+        "required": [
+          "create_alias"
+        ],
+        "type": "object"
+      },
       "CreateCollection": {
         "description": "Operation for creating new collection and (optionally) specify index params",
         "properties": {
@@ -339,6 +323,18 @@
         },
         "required": [
           "alias_name"
+        ],
+        "type": "object"
+      },
+      "DeleteAliasOperation": {
+        "description": "Delete alias if exists",
+        "properties": {
+          "delete_alias": {
+            "$ref": "#/components/schemas/DeleteAlias"
+          }
+        },
+        "required": [
+          "delete_alias"
         ],
         "type": "object"
       },
@@ -1472,6 +1468,18 @@
         "required": [
           "new_alias_name",
           "old_alias_name"
+        ],
+        "type": "object"
+      },
+      "RenameAliasOperation": {
+        "description": "Change alias to a new one",
+        "properties": {
+          "rename_alias": {
+            "$ref": "#/components/schemas/RenameAlias"
+          }
+        },
+        "required": [
+          "rename_alias"
         ],
         "type": "object"
       },

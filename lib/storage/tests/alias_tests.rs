@@ -9,8 +9,8 @@ mod tests {
     use super::*;
     use segment::types::Distance;
     use storage::content_manager::storage_ops::{
-        AliasOperations, ChangeAliasesOperation, CreateAlias, CreateCollection,
-        CreateCollectionOperation, DeleteAlias, RenameAlias, StorageOperations,
+        ChangeAliasesOperation, CreateAlias, CreateCollection, CreateCollectionOperation,
+        DeleteAlias, RenameAlias, StorageOperations,
     };
 
     #[test]
@@ -61,10 +61,11 @@ mod tests {
             .block_on(
                 toc.perform_collection_operation(StorageOperations::ChangeAliases(
                     ChangeAliasesOperation {
-                        actions: vec![AliasOperations::CreateAlias(CreateAlias {
+                        actions: vec![CreateAlias {
                             collection_name: "test".to_string(),
                             alias_name: "test_alias".to_string(),
-                        })],
+                        }
+                        .into()],
                     },
                 )),
             )
@@ -75,17 +76,20 @@ mod tests {
                 toc.perform_collection_operation(StorageOperations::ChangeAliases(
                     ChangeAliasesOperation {
                         actions: vec![
-                            AliasOperations::CreateAlias(CreateAlias {
+                            CreateAlias {
                                 collection_name: "test".to_string(),
                                 alias_name: "test_alias2".to_string(),
-                            }),
-                            AliasOperations::DeleteAlias(DeleteAlias {
+                            }
+                            .into(),
+                            DeleteAlias {
                                 alias_name: "test_alias".to_string(),
-                            }),
-                            AliasOperations::RenameAlias(RenameAlias {
+                            }
+                            .into(),
+                            RenameAlias {
                                 old_alias_name: "test_alias2".to_string(),
                                 new_alias_name: "test_alias3".to_string(),
-                            }),
+                            }
+                            .into(),
                         ],
                     },
                 )),

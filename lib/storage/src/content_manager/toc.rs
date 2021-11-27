@@ -23,8 +23,9 @@ use segment::types::{PointIdType, ScoredPoint, WithPayload};
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::storage_ops::{
-    AliasOperations, ChangeAliasesOperation, CreateAlias, CreateCollection, DeleteAlias,
-    RenameAlias, StorageOperations, UpdateCollection,
+    AliasOperations, ChangeAliasesOperation, CreateAlias, CreateAliasOperation, CreateCollection,
+    DeleteAlias, DeleteAliasOperation, RenameAlias, RenameAliasOperation, StorageOperations,
+    UpdateCollection,
 };
 use crate::types::StorageConfig;
 use collection::collection_manager::collection_managers::CollectionSearcher;
@@ -240,9 +241,12 @@ impl TableOfContent {
         let collection_lock = self.collections.write().await;
         for action in operation.actions {
             match action {
-                AliasOperations::CreateAlias(CreateAlias {
-                    collection_name,
-                    alias_name,
+                AliasOperations::CreateAlias(CreateAliasOperation {
+                    create_alias:
+                        CreateAlias {
+                            collection_name,
+                            alias_name,
+                        },
                 }) => {
                     collection_lock
                         .validate_collection_exists(&collection_name)
@@ -254,12 +258,17 @@ impl TableOfContent {
                     self.alias_persistence
                         .insert(alias_name.as_bytes(), collection_name.as_bytes())?;
                 }
-                AliasOperations::DeleteAlias(DeleteAlias { alias_name }) => {
+                AliasOperations::DeleteAlias(DeleteAliasOperation {
+                    delete_alias: DeleteAlias { alias_name },
+                }) => {
                     self.alias_persistence.remove(alias_name.as_bytes())?;
                 }
-                AliasOperations::RenameAlias(RenameAlias {
-                    old_alias_name,
-                    new_alias_name,
+                AliasOperations::RenameAlias(RenameAliasOperation {
+                    rename_alias:
+                        RenameAlias {
+                            old_alias_name,
+                            new_alias_name,
+                        },
                 }) => {
                     if !self
                         .alias_persistence

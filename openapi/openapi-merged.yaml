@@ -792,27 +792,9 @@ components:
 
     AliasOperations:
       anyOf:
-      - additionalProperties: false
-        properties:
-          create_alias:
-            $ref: '#/components/schemas/CreateAlias'
-        required:
-        - create_alias
-        type: object
-      - additionalProperties: false
-        properties:
-          delete_alias:
-            $ref: '#/components/schemas/DeleteAlias'
-        required:
-        - delete_alias
-        type: object
-      - additionalProperties: false
-        properties:
-          rename_alias:
-            $ref: '#/components/schemas/RenameAlias'
-        required:
-        - rename_alias
-        type: object
+      - $ref: '#/components/schemas/CreateAliasOperation'
+      - $ref: '#/components/schemas/DeleteAliasOperation'
+      - $ref: '#/components/schemas/RenameAliasOperation'
     ChangeAliasesOperation:
       description: Operation for performing changes of collection aliases. Alias changes
         are atomic, meaning that no collection modifications can happen between alias
@@ -939,6 +921,13 @@ components:
       - alias_name
       - collection_name
       type: object
+    CreateAliasOperation:
+      properties:
+        create_alias:
+          $ref: '#/components/schemas/CreateAlias'
+      required:
+      - create_alias
+      type: object
     CreateCollection:
       description: Operation for creating new collection and (optionally) specify
         index params
@@ -1013,6 +1002,14 @@ components:
           type: string
       required:
       - alias_name
+      type: object
+    DeleteAliasOperation:
+      description: Delete alias if exists
+      properties:
+        delete_alias:
+          $ref: '#/components/schemas/DeleteAlias'
+      required:
+      - delete_alias
       type: object
     DeleteCollectionOperation:
       description: Operation for deleting collection with given name
@@ -1773,6 +1770,14 @@ components:
       required:
       - new_alias_name
       - old_alias_name
+      type: object
+    RenameAliasOperation:
+      description: Change alias to a new one
+      properties:
+        rename_alias:
+          $ref: '#/components/schemas/RenameAlias'
+      required:
+      - rename_alias
       type: object
     ScoredPoint:
       properties:

@@ -3,6 +3,8 @@ use schemars::JsonSchema;
 use segment::types::Distance;
 use serde::{Deserialize, Serialize};
 
+// *Operation wrapper structure is only required for better OpenAPI generation
+
 /// Create alternative name for a collection.
 /// Collection will be available under both names for search, retrieve,
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -12,11 +14,24 @@ pub struct CreateAlias {
     pub alias_name: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct CreateAliasOperation {
+    pub create_alias: CreateAlias,
+}
+
 /// Delete alias if exists
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct DeleteAlias {
     pub alias_name: String,
+}
+
+/// Delete alias if exists
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct DeleteAliasOperation {
+    pub delete_alias: DeleteAlias,
 }
 
 /// Change alias to a new one
@@ -27,13 +42,39 @@ pub struct RenameAlias {
     pub new_alias_name: String,
 }
 
+/// Change alias to a new one
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct RenameAliasOperation {
+    pub rename_alias: RenameAlias,
+}
+
 /// Group of all the possible operations related to collection aliases
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[serde(untagged)]
 pub enum AliasOperations {
-    CreateAlias(CreateAlias),
-    DeleteAlias(DeleteAlias),
-    RenameAlias(RenameAlias),
+    CreateAlias(CreateAliasOperation),
+    DeleteAlias(DeleteAliasOperation),
+    RenameAlias(RenameAliasOperation),
+}
+
+impl From<CreateAlias> for AliasOperations {
+    fn from(create_alias: CreateAlias) -> Self {
+        AliasOperations::CreateAlias(CreateAliasOperation { create_alias })
+    }
+}
+
+impl From<DeleteAlias> for AliasOperations {
+    fn from(delete_alias: DeleteAlias) -> Self {
+        AliasOperations::DeleteAlias(DeleteAliasOperation { delete_alias })
+    }
+}
+
+impl From<RenameAlias> for AliasOperations {
+    fn from(rename_alias: RenameAlias) -> Self {
+        AliasOperations::RenameAlias(RenameAliasOperation { rename_alias })
+    }
 }
 
 /// Operation for creating new collection and (optionally) specify index params

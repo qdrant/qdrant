@@ -4,40 +4,13 @@
             "AliasOperations": {
                 "anyOf": [
                     {
-                        "type": "object",
-                        "required": [
-                            "create_alias"
-                        ],
-                        "properties": {
-                            "create_alias": {
-                                "$ref": "#/components/schemas/CreateAlias"
-                            }
-                        },
-                        "additionalProperties": false
+                        "$ref": "#/components/schemas/CreateAliasOperation"
                     },
                     {
-                        "type": "object",
-                        "required": [
-                            "delete_alias"
-                        ],
-                        "properties": {
-                            "delete_alias": {
-                                "$ref": "#/components/schemas/DeleteAlias"
-                            }
-                        },
-                        "additionalProperties": false
+                        "$ref": "#/components/schemas/DeleteAliasOperation"
                     },
                     {
-                        "type": "object",
-                        "required": [
-                            "rename_alias"
-                        ],
-                        "properties": {
-                            "rename_alias": {
-                                "$ref": "#/components/schemas/RenameAlias"
-                            }
-                        },
-                        "additionalProperties": false
+                        "$ref": "#/components/schemas/RenameAliasOperation"
                     }
                 ]
             },
@@ -224,6 +197,17 @@
                     }
                 }
             },
+            "CreateAliasOperation": {
+                "type": "object",
+                "required": [
+                    "create_alias"
+                ],
+                "properties": {
+                    "create_alias": {
+                        "$ref": "#/components/schemas/CreateAlias"
+                    }
+                }
+            },
             "CreateCollection": {
                 "description": "Operation for creating new collection and (optionally) specify index params",
                 "type": "object",
@@ -339,6 +323,18 @@
                 "properties": {
                     "alias_name": {
                         "type": "string"
+                    }
+                }
+            },
+            "DeleteAliasOperation": {
+                "description": "Delete alias if exists",
+                "type": "object",
+                "required": [
+                    "delete_alias"
+                ],
+                "properties": {
+                    "delete_alias": {
+                        "$ref": "#/components/schemas/DeleteAlias"
                     }
                 }
             },
@@ -1449,6 +1445,18 @@
                     },
                     "old_alias_name": {
                         "type": "string"
+                    }
+                }
+            },
+            "RenameAliasOperation": {
+                "description": "Change alias to a new one",
+                "type": "object",
+                "required": [
+                    "rename_alias"
+                ],
+                "properties": {
+                    "rename_alias": {
+                        "$ref": "#/components/schemas/RenameAlias"
                     }
                 }
             },
