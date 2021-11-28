@@ -6,14 +6,11 @@ For additional information please refer to the [API documentation](https://qdran
 ## Create collection
 First - let's create a collection with dot-production metric.
 ```bash
-curl -X POST 'http://localhost:6333/collections' \
+curl -X PUT 'http://localhost:6333/collections/test_collection' \
     -H 'Content-Type: application/json' \
     --data-raw '{
-        "create_collection": {
-            "name": "test_collection",
-            "vector_size": 4,
-            "distance": "Dot"
-        }
+        "vector_size": 4,
+        "distance": "Dot"
     }'
 ```
 
@@ -120,14 +117,14 @@ curl -L -X POST 'http://localhost:6333/collections/test_collection/points/search
 Expected response:
 
 ```json
-{
-    "result": [
-        { "id": 4, "score": 1.362 },
-        { "id": 1, "score": 1.273 },
-        { "id": 3, "score": 1.208 }
-    ],
-    "status": "ok",
-    "time": 0.000055785
+    {
+  "result": [
+    { "id": 4, "score": 1.362, "payload": null, "version": 0 },
+    { "id": 1, "score": 1.273, "payload": null, "version": 0 },
+    { "id": 3, "score": 1.208, "payload": null, "version": 0 }
+  ],
+  "status": "ok",
+  "time": 0.000055785
 }
 ```
 

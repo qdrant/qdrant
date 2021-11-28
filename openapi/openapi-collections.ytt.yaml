@@ -1,0 +1,116 @@
+#@ load("openapi.lib.yml", "response", "reference", "type", "array")
+
+paths:
+  /collections:
+    get:
+      tags:
+        - collections
+      summary: List collections
+      description: Get list name of all existing collections
+      operationId: get_collections
+      responses: #@ response(reference("CollectionsResponse"))
+
+    post:
+      tags:
+        - collections
+      summary: Update collection
+      description: Perform update, create, remove or alias change operations on collections
+      operationId: update_collections
+      deprecated: true
+      requestBody:
+        description: Operation to perform on collections
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StorageOperations"
+      responses: #@ response(type("boolean"))
+
+  /collections/{name}:
+    get:
+      tags:
+        - collections
+      summary: Collection info
+      description: Get detailed information about specified existing collection
+      operationId: get_collection
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to retrieve
+          required: true
+          schema:
+            type: string
+      responses: #@ response(reference("CollectionInfo"))
+
+    put:
+      tags:
+        - collections
+      summary: Create collection
+      description: Create new collection with given parameters
+      operationId: create_collection
+      requestBody:
+        description: Parameters of a new collection
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCollection"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the new collection
+          required: true
+          schema:
+            type: string
+      responses: #@ response(type("boolean"))
+
+    patch:
+      tags:
+        - collections
+      summary: Update collection paranmeters
+      description: Update parameters of the existing collection
+      operationId: update_collection
+      requestBody:
+        description: New parameters
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCollection"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to update
+          required: true
+          schema:
+            type: string
+      responses: #@ response(type("boolean"))
+
+    delete:
+      tags:
+        - collections
+      summary: Delete collection
+      description: Drop collection and all associated data
+      operationId: delete_collection
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to delete
+          required: true
+          schema:
+            type: string
+      responses: #@ response(type("boolean"))
+
+  /collections/aliases:
+    post:
+      tags:
+        - collections
+      summary: Update aliases of the collections
+      operationId: update_aliases
+      requestBody:
+        description: Alias update operations
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeAliasesOperation"
+
+      responses: #@ response(type("boolean"))

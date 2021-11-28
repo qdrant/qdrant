@@ -1,0 +1,36 @@
+#@ def response(model):
+default:
+  description: error
+  content:
+    application/json:
+      schema:
+        $ref: "#/components/schemas/ErrorResponse"
+200:
+  description: successful operation
+  content:
+    application/json:
+      schema:
+        type: object
+        properties:
+          time:
+            type: number
+            format: float
+            description: Time spent to process this request
+          status:
+            type: string
+            enum: [ "ok" ]
+          result: #@ model
+#@ end
+
+#@ def reference(model_name):
+$ref: #@ "#/components/schemas/" + model_name
+#@ end
+
+#@ def type(type_name):
+type: #@ type_name
+#@ end
+
+#@ def array(type_data):
+type: array
+items: #@ type_data
+#@ end
