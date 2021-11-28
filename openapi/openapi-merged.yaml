@@ -156,9 +156,9 @@ info:
 
     {
         "result": [
-            { "id": 4, "score": 1.362 },
-            { "id": 1, "score": 1.273 },
-            { "id": 3, "score": 1.208 }
+            { "id": 4, "score": 1.362, "payload": null, "version": 0 },
+            { "id": 1, "score": 1.273, "payload": null, "version": 0 },
+            { "id": 3, "score": 1.208, "payload": null, "version": 0 }
         ],
         "status": "ok",
         "time": 0.000055785
@@ -195,8 +195,8 @@ info:
 
     {
         "result": [
-            { "id": 4, "score": 1.362 },
-            { "id": 2, "score": 0.871 }
+            { "id": 4, "score": 1.362, "payload": null, "version": 0 },
+            { "id": 2, "score": 0.871, "payload": null, "version": 0 }
         ],
         "status": "ok",
         "time": 0.000093972
@@ -226,7 +226,8 @@ paths:
     get:
       tags:
         - collections
-      summary: Get list of existing collections
+      summary: List collections
+      description: Get list name of all existing collections
       operationId: get_collections
       responses:
         200:
@@ -255,7 +256,8 @@ paths:
     post:
       tags:
         - collections
-      summary: Perform update operation on collections
+      summary: Update collection
+      description: Perform update, create, remove or alias change operations on collections
       operationId: update_collections
       requestBody:
         description: Operation to perform on collections
@@ -291,7 +293,8 @@ paths:
     get:
       tags:
         - collections
-      summary: Get information about existing collection
+      summary: Collection info
+      description: Get detailed information about specified existing collection
       operationId: get_collection
       parameters:
         - name: name
@@ -327,7 +330,8 @@ paths:
     post:
       tags:
         - points
-      summary: Update points (vectors, payloads, indexes) in collection
+      summary: Update points
+      description: Perform point update operation (vectors, payloads, indexes) in collection
       operationId: update_points
       requestBody:
         description: Collection update operations
@@ -378,7 +382,8 @@ paths:
     get:
       tags:
         - points
-      summary: Retrieve point by id
+      summary: Get point
+      description: Retrieve full information of single point by id
       operationId: get_point
       parameters:
         - name: name
@@ -421,7 +426,8 @@ paths:
     post:
       tags:
         - points
-      summary: Retrieve points by ids
+      summary: Get points
+      description: Retrieve multiple points by specified IDs
       operationId: get_points
       requestBody:
         description: List of points to retrieve
@@ -468,7 +474,7 @@ paths:
       tags:
         - points
       summary: Scroll points
-      description: Scroll request - paginate over all points which matches given condition
+      description: Scroll request - paginate over all points which matches given filtering condition
       operationId: scroll_points
       requestBody:
         description: Pagination and filter parameters
@@ -513,6 +519,7 @@ paths:
       tags:
         - points
       summary: Search points
+      description: Retrieve closest points based on vector similarity and given filtering conditions
       operationId: search_points
       requestBody:
         description: Search request with optional filtering
@@ -559,6 +566,7 @@ paths:
       tags:
         - points
       summary: Recommend points
+      description: Look for the points which are closer to stored positive examples and at the same time further to negative examples.
       operationId: recommend_points
       requestBody:
         description: Request points based on positive and negative examples.
