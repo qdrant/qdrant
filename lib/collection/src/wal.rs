@@ -46,6 +46,12 @@ enum TestRecord {
 
 type Result<T> = result::Result<T, WalError>;
 
+/// Write-Ahead-Log wrapper with built-in type parsing.
+/// Stores sequences of records of type `R` in binary files.
+///
+/// Each stored record is enumerated with sequential number.
+/// Sequential number can be used to read stored records starting from some IDs,
+/// for removing old, no longer required, records.
 pub struct SerdeWal<R> {
     record: PhantomData<R>,
     wal: Wal,
@@ -90,6 +96,13 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         })
     }
 
+    /// Inform WAL, that records older than `until_index` are no longer required.
+    /// If it is possible, WAL will remove unused files.
+    ///
+    /// # Arguments
+    ///
+    /// * `until_index` - the newest no longer required record sequence number
+    ///
     pub fn ack(&mut self, until_index: u64) -> Result<()> {
         self.wal
             .prefix_truncate(until_index)

@@ -8,6 +8,7 @@ use segment::types::{PointIdType, ScoredPoint, WithPayload};
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::types::{CollectionResult, Record, SearchRequest};
 
+/// Interface for implementing search and retrieve functions
 #[async_trait::async_trait]
 pub trait CollectionSearcher {
     async fn search(

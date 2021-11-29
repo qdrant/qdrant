@@ -16,6 +16,7 @@ use tokio::time::{Duration, Instant};
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
+/// Information, required to perform operation and notify regarding the result
 pub struct OperationData {
     /// Sequential number of the operation
     pub op_num: SeqNumberType,
@@ -25,6 +26,7 @@ pub struct OperationData {
     pub sender: Option<Sender<CollectionResult<usize>>>,
 }
 
+/// Signal, used to inform Updater process
 pub enum UpdateSignal {
     /// Requested operation to perform
     Operation(OperationData),
@@ -34,6 +36,7 @@ pub enum UpdateSignal {
     Nop,
 }
 
+/// Signal, used to inform Optimization process
 pub enum OptimizerSignal {
     /// Sequential number of the operation
     Operation(SeqNumberType),
@@ -43,14 +46,21 @@ pub enum OptimizerSignal {
     Nop,
 }
 
+/// Structure, which holds object, required for processing updates of the collection
 pub struct UpdateHandler {
+    /// List of used optimizers
     pub optimizers: Arc<Vec<Box<Optimizer>>>,
+    /// How frequent can we flush data
     pub flush_timeout_sec: u64,
     segments: LockedSegmentHolder,
+    /// Channel receiver, which is listened by the updater process
     update_receiver: Receiver<UpdateSignal>,
+    /// Process, that listens updates signals and perform updates
     update_worker: Option<JoinHandle<()>>,
+    /// Process, that listens for post-update signals and performs optimization
     optimizer_worker: Option<JoinHandle<()>>,
     runtime_handle: Handle,
+    /// WAL, required for operations
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
 }
 

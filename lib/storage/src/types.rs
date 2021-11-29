@@ -9,6 +9,7 @@ pub struct PerformanceConfig {
     pub max_search_threads: usize,
 }
 
+/// Global configuration of the storage, loaded on the service launch, default stored in ./config
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct StorageConfig {
     pub storage_path: String,

@@ -34,6 +34,9 @@ const SLED_CACHE_SIZE: u64 = 1 * 1024 * 1024; // 1 mb
 
 const COLLECTIONS_DIR: &str = "collections";
 
+/// The main object of the service. It holds all objects, required for proper functioning.
+/// In most cases only one `TableOfContent` is enough for service. It is created only once during
+/// the launch of the service.
 pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
     storage_config: StorageConfig,
@@ -105,6 +108,17 @@ impl TableOfContent {
         Ok(path)
     }
 
+    /// Finds the original name of the collection
+    ///
+    /// # Arguments
+    ///
+    /// * `collection_name` - Name of the collection or alias to resolve
+    ///
+    /// # Result
+    ///
+    /// If the collection exists - return its name
+    /// If alias exists - returns the original collection name
+    /// If neither exists - returns [`StorageError`]
     async fn resolve_name(&self, collection_name: &str) -> Result<String, StorageError> {
         let alias_collection_name = self.alias_persistence.get(collection_name.as_bytes())?;
 
@@ -276,6 +290,16 @@ impl TableOfContent {
         Ok(read_collection.get(&real_collection_name).unwrap().clone())
     }
 
+    /// Recommend points using positive and negative example from the request
+    ///
+    /// # Arguments
+    ///
+    /// * `collection_name` - for what collection do we recommend
+    /// * `request` - [`RecommendRequest`]
+    ///
+    /// # Result
+    ///
+    /// Points with recommendation score
     pub async fn recommend(
         &self,
         collection_name: &str,
@@ -292,6 +316,17 @@ impl TableOfContent {
             .map_err(|err| err.into())
     }
 
+    /// Search for the closest points using vector similarity with given restrictions defined
+    /// in the request
+    ///
+    /// # Arguments
+    ///
+    /// * `collection_name` - in what collection do we search
+    /// * `request` - [`SearchRequest`]
+    ///
+    /// # Result
+    ///
+    /// Points with search score
     pub async fn search(
         &self,
         collection_name: &str,
@@ -308,6 +343,18 @@ impl TableOfContent {
             .map_err(|err| err.into())
     }
 
+    /// Return specific points by IDs
+    ///
+    /// # Arguments
+    ///
+    /// * `collection_name` - select from this collection
+    /// * `points` - point IDs to select
+    /// * `with_payload` - include payload into response (if so, which keys)?
+    /// * `with_vector` - include vector into response?
+    ///
+    /// # Result
+    ///
+    /// List of points with specified information included
     pub async fn retrieve(
         &self,
         collection_name: &str,
@@ -341,6 +388,16 @@ impl TableOfContent {
         Ok(result)
     }
 
+    /// Paginate over all stored points with given filtering conditions
+    ///
+    /// # Arguments
+    ///
+    /// * `collection_name` - which collection to use
+    /// * `request` - [`ScrollRequest`]
+    ///
+    /// # Result
+    ///
+    /// List of points with specified information included
     pub async fn scroll(
         &self,
         collection_name: &str,

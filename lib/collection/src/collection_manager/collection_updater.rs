@@ -8,6 +8,7 @@ use crate::collection_manager::segments_updater::*;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 
+/// Implementation of the update operation
 #[derive(Default)]
 pub struct CollectionUpdater {}
 
@@ -15,9 +16,7 @@ impl CollectionUpdater {
     pub fn new() -> Self {
         Self {}
     }
-}
 
-impl CollectionUpdater {
     fn handle_update_result(
         segments: &RwLock<SegmentHolder>,
         op_num: SeqNumberType,

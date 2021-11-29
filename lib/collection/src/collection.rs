@@ -30,6 +30,9 @@ use crate::wal::SerdeWal;
 use async_channel::Sender;
 use futures::executor::block_on;
 
+/// Collection
+///
+/// Holds all object, required for collection functioning
 pub struct Collection {
     segments: Arc<RwLock<SegmentHolder>>,
     config: Arc<tokio::sync::RwLock<CollectionConfig>>,
@@ -257,6 +260,7 @@ impl Collection {
             .await
     }
 
+    /// Collect overview information about the collection
     pub async fn info(&self) -> CollectionResult<CollectionInfo> {
         let segments = self.segments.read();
         let mut vectors_count = 0;
@@ -356,6 +360,7 @@ impl Collection {
         update_handler.wait_workers_stops().await
     }
 
+    /// Loads latest collection operations from WAL
     pub fn load_from_wal(&self) {
         let wal = self.wal.lock();
         let bar = ProgressBar::new(wal.len());

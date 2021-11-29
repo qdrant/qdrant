@@ -3,6 +3,7 @@ use schemars::JsonSchema;
 use segment::types::Distance;
 use serde::{Deserialize, Serialize};
 
+/// Group of all the possible operations related to collection aliases
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AliasOperations {
@@ -21,6 +22,7 @@ pub enum AliasOperations {
     },
 }
 
+/// Group of all the possible operations related to collection operations
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum StorageOperations {

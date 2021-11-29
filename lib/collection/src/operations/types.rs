@@ -21,6 +21,7 @@ use std::collections::HashMap;
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
 
+/// Current state of the collection
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionStatus {
@@ -33,9 +34,9 @@ pub enum CollectionStatus {
     Red,
 }
 
+/// Point data
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-/// Point data
 pub struct Record {
     /// Id of the point
     pub id: PointIdType,
@@ -45,8 +46,8 @@ pub struct Record {
     pub vector: Option<Vec<VectorElementType>>,
 }
 
+/// Current statistics and configuration of the collection
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-/// Current statistics and configuration of the collection.
 pub struct CollectionInfo {
     /// Status of the collection
     pub status: CollectionStatus,
@@ -82,9 +83,9 @@ pub struct UpdateResult {
     pub status: UpdateStatus,
 }
 
+/// Scroll request - paginate over all points which matches given condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
-/// Scroll request - paginate over all points which matches given condition
 pub struct ScrollRequest {
     /// Start ID to read points from. Default: 0
     pub offset: Option<PointIdType>,
@@ -110,9 +111,9 @@ impl Default for ScrollRequest {
     }
 }
 
+/// Result of the points read request
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-/// Result of the points read request. Contains
 pub struct ScrollResult {
     /// List of retrieved points
     pub points: Vec<Record>,
@@ -120,9 +121,11 @@ pub struct ScrollResult {
     pub next_page_offset: Option<PointIdType>,
 }
 
+/// Search request
+/// Holds all conditions and parameters for the search of most similar points by vector similarity
+/// given the filtering restrictions.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-/// Search request
 pub struct SearchRequest {
     /// Look for vectors closest to this
     pub vector: Vec<VectorElementType>,
@@ -136,9 +139,15 @@ pub struct SearchRequest {
     pub with_payload: Option<WithPayloadInterface>,
 }
 
+/// Recommendation request
+/// Provides positive and negative examples of the vectors, which
+/// are already stored in the collection.
+///
+/// Service should look for the points which are closer to positive examples and at the same time
+/// further to negative examples. The concrete way of how to compare negative and positive distances
+/// is up to implementation in `segment` crate.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-/// Search request
 pub struct RecommendRequest {
     /// Look for vectors closest to those
     pub positive: Vec<PointIdType>,
