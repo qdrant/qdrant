@@ -148,9 +148,15 @@ impl UpdateHandler {
                 );
                 // If optimization fails, it could not be reported to anywhere except for console.
                 // So the only recovery here is to stop optimization and await for restart
-                optimizer
-                    .optimize(segments.clone(), nonoptimal_segment_ids)
-                    .unwrap();
+                
+                let segs = segments.clone();
+                let opts = optimizer.clone();
+                let nsi = nonoptimal_segment_ids.clone();
+                tokio::task::spawn_blocking(||{
+                    opts 
+                        .optimize(segs, nsi)
+                        .unwrap();
+                });
                 nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
             }
         }
@@ -167,6 +173,7 @@ impl UpdateHandler {
         let mut last_flushed = Instant::now();
         loop {
             let recv_res = receiver.recv().await;
+            debug!("Optimization signal received");
             match recv_res {
                 Ok(signal) => {
                     match signal {
@@ -176,9 +183,11 @@ impl UpdateHandler {
                             }
                             let copy_seg = segments.clone();
                             let copy_opts = optimizers.clone();
-                            tokio::task::spawn_blocking(||{
+                            //tokio::task::spawn_blocking(||{
+                                //debug!("OptimizerSignal::Nop - start");
                                 Self::process_optimization(copy_opts, copy_seg);
-                            });
+                                //debug!("OptimizerSignal::Nop - finish");
+                            //});
                         }
                         OptimizerSignal::Operation(operation_id) => {
                             if Self::try_recover(segments.clone(), wal.clone()).is_err() {
@@ -186,9 +195,11 @@ impl UpdateHandler {
                             }
                             let copy_seg = segments.clone();
                             let copy_opts = optimizers.clone();
-                            tokio::task::spawn_blocking(||{
+                            //tokio::task::spawn_blocking(||{
+                                debug!("OptimizerSignal::Operation - start");
                                 Self::process_optimization(copy_opts, copy_seg);
-                            });
+                                debug!("OptimizerSignal::Operation - finish ");
+                            //});
 
                             let elapsed = last_flushed.elapsed();
                             if elapsed > flush_timeout {
