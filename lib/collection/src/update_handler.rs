@@ -166,6 +166,24 @@ impl UpdateHandler {
         }
         handles
     }
+            //while !nonoptimal_segment_ids.is_empty() {
+            //    debug!(
+            //        "Start optimization on segments: {:?}",
+            //        nonoptimal_segment_ids
+            //    );
+            //    // If optimization fails, it could not be reported to anywhere except for console.
+            //    // So the only recovery here is to stop optimization and await for restart
+            //    
+            //    let segs = segments.clone();
+            //    let opts = optimizer.clone();
+            //    //let nsi = nonoptimal_segment_ids.clone();
+            //    //tokio::task::spawn_blocking(||{
+            //    //    opts 
+            //    //        .optimize(segs, nsi)
+            //    //        .unwrap();
+            //    //});
+            //    nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
+            //}
 
     async fn optimization_worker_fn(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
