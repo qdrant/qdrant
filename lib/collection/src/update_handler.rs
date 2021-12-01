@@ -144,11 +144,15 @@ impl UpdateHandler {
         Ok(0)
     }
 
+<<<<<<< HEAD
     fn process_optimization(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
     ) -> Vec<JoinHandle<()>> {
         let mut handles = vec![];
+=======
+    fn process_optimization(optimizers: Arc<Vec<Arc<Optimizer>>>, segments: LockedSegmentHolder) {
+>>>>>>> 823f46f ([WIP] change Box to Arc in optimizers vector)
         for optimizer in optimizers.iter() {
             loop {
                 let nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
@@ -166,24 +170,6 @@ impl UpdateHandler {
         }
         handles
     }
-            //while !nonoptimal_segment_ids.is_empty() {
-            //    debug!(
-            //        "Start optimization on segments: {:?}",
-            //        nonoptimal_segment_ids
-            //    );
-            //    // If optimization fails, it could not be reported to anywhere except for console.
-            //    // So the only recovery here is to stop optimization and await for restart
-            //    
-            //    let segs = segments.clone();
-            //    let opts = optimizer.clone();
-            //    //let nsi = nonoptimal_segment_ids.clone();
-            //    //tokio::task::spawn_blocking(||{
-            //    //    opts 
-            //    //        .optimize(segs, nsi)
-            //    //        .unwrap();
-            //    //});
-            //    nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
-            //}
 
     async fn optimization_worker_fn(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
