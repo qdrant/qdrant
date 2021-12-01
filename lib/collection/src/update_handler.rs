@@ -97,7 +97,7 @@ impl UpdateHandler {
             self.segments.clone(),
             self.wal.clone(),
             self.flush_timeout_sec,
-            self.blocking_handles.clone()
+            self.blocking_handles.clone(),
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
             self.update_receiver.clone(),
@@ -110,7 +110,7 @@ impl UpdateHandler {
     /// If some optimization is in progress - it will be finished before shutdown.
     /// Blocking function.
     pub async fn wait_workers_stops(&mut self) -> CollectionResult<()> {
-        for handle in self.blocking_handles.lock().iter(){
+        for handle in self.blocking_handles.lock().iter() {
             handle.abort();
         }
         let maybe_handle = self.update_worker.take();
@@ -144,21 +144,22 @@ impl UpdateHandler {
         Ok(0)
     }
 
-    fn process_optimization(optimizers: Arc<Vec<Arc<Optimizer>>>, segments: LockedSegmentHolder) -> Vec<JoinHandle<()>> {
+    fn process_optimization(
+        optimizers: Arc<Vec<Arc<Optimizer>>>,
+        segments: LockedSegmentHolder,
+    ) -> Vec<JoinHandle<()>> {
         let mut handles = vec![];
         for optimizer in optimizers.iter() {
-            loop{
+            loop {
                 let nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
                 if nonoptimal_segment_ids.is_empty() {
-                    break
+                    break;
                 } else {
                     let optim = optimizer.clone();
                     let segs = segments.clone();
                     let nsi = nonoptimal_segment_ids.clone();
-                    handles.push(tokio::task::spawn_blocking( move ||{
-                        optim.as_ref()
-                            .optimize(segs, nsi)
-                            .unwrap();
+                    handles.push(tokio::task::spawn_blocking(move || {
+                        optim.as_ref().optimize(segs, nsi).unwrap();
                     }));
                 }
             }
@@ -172,7 +173,7 @@ impl UpdateHandler {
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
         flush_timeout_sec: u64,
-        blocking_handles: Arc<Mutex<Vec<JoinHandle<()>>>>
+        blocking_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     ) {
         let flush_timeout = Duration::from_secs(flush_timeout_sec);
         let mut last_flushed = Instant::now();
@@ -186,15 +187,21 @@ impl UpdateHandler {
                                 continue;
                             }
                             let mut handles = blocking_handles.lock();
-                            handles.append(&mut Self::process_optimization(optimizers.clone(), segments.clone()));
+                            handles.append(&mut Self::process_optimization(
+                                optimizers.clone(),
+                                segments.clone(),
+                            ));
                         }
                         OptimizerSignal::Operation(operation_id) => {
                             if Self::try_recover(segments.clone(), wal.clone()).is_err() {
                                 continue;
                             }
                             let mut handles = blocking_handles.lock();
-                            handles.append(&mut Self::process_optimization(optimizers.clone(), segments.clone()));
-                            
+                            handles.append(&mut Self::process_optimization(
+                                optimizers.clone(),
+                                segments.clone(),
+                            ));
+
                             let elapsed = last_flushed.elapsed();
                             if elapsed > flush_timeout {
                                 debug!("Performing flushing: {}", operation_id);
