@@ -49,7 +49,7 @@ pub enum OptimizerSignal {
 /// Structure, which holds object, required for processing updates of the collection
 pub struct UpdateHandler {
     /// List of used optimizers
-    pub optimizers: Arc<Vec<Box<Optimizer>>>,
+    pub optimizers: Arc<Vec<Arc<Optimizer>>>,
     /// How frequent can we flush data
     pub flush_timeout_sec: u64,
     segments: LockedSegmentHolder,
@@ -66,7 +66,7 @@ pub struct UpdateHandler {
 
 impl UpdateHandler {
     pub fn new(
-        optimizers: Arc<Vec<Box<Optimizer>>>,
+        optimizers: Arc<Vec<Arc<Optimizer>>>,
         update_receiver: Receiver<UpdateSignal>,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
@@ -138,14 +138,14 @@ impl UpdateHandler {
         Ok(0)
     }
 
-    fn process_optimization(optimizers: Arc<Vec<Box<Optimizer>>>, segments: LockedSegmentHolder) {
+    fn process_optimization(optimizers: Arc<Vec<Arc<Optimizer>>>, segments: LockedSegmentHolder) {
         for optimizer in optimizers.iter() {
             let nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
             loop{
                 if nonoptimal_segment_ids.is_empty() {
                     break
                 } else {
-                    let optim = Arc::new(Box::into_raw(optimizer.as_ref()));
+                    let optim = optimizer.clone();
                     let segs = segments.clone();
                     let nsi = nonoptimal_segment_ids.clone();
                     tokio::task::spawn_blocking( move ||{
@@ -177,7 +177,7 @@ impl UpdateHandler {
             //}
 
     async fn optimization_worker_fn(
-        optimizers: Arc<Vec<Box<Optimizer>>>,
+        optimizers: Arc<Vec<Arc<Optimizer>>>,
         receiver: Receiver<OptimizerSignal>,
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,

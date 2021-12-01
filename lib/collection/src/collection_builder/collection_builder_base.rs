@@ -22,7 +22,7 @@ pub fn construct_collection(
     segment_holder: SegmentHolder,
     config: CollectionConfig,
     wal: SerdeWal<CollectionUpdateOperations>,
-    optimizers: Arc<Vec<Box<Optimizer>>>,
+    optimizers: Arc<Vec<Arc<Optimizer>>>,
     collection_path: &Path,
 ) -> Collection {
     let segment_holder = Arc::new(RwLock::new(segment_holder));

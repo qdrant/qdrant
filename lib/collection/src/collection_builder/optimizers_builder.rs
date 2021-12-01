@@ -35,7 +35,7 @@ pub fn build_optimizers(
     collection_params: &CollectionParams,
     optimizers_config: &OptimizersConfig,
     hnsw_config: &HnswConfig,
-) -> Arc<Vec<Box<Optimizer>>> {
+) -> Arc<Vec<Arc<Optimizer>>> {
     let segments_path = collection_path.join("segments");
     let temp_segments_path = collection_path.join("temp_segments");
 
@@ -46,7 +46,7 @@ pub fn build_optimizers(
     };
 
     Arc::new(vec![
-        Box::new(MergeOptimizer::new(
+        Arc::new(MergeOptimizer::new(
             optimizers_config.max_segment_number,
             threshold_config.clone(),
             segments_path.clone(),
@@ -54,14 +54,14 @@ pub fn build_optimizers(
             collection_params.clone(),
             *hnsw_config,
         )),
-        Box::new(IndexingOptimizer::new(
+        Arc::new(IndexingOptimizer::new(
             threshold_config.clone(),
             segments_path.clone(),
             temp_segments_path.clone(),
             collection_params.clone(),
             *hnsw_config,
         )),
-        Box::new(VacuumOptimizer::new(
+        Arc::new(VacuumOptimizer::new(
             optimizers_config.deleted_threshold,
             optimizers_config.vacuum_min_vector_number,
             threshold_config,
