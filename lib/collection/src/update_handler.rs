@@ -62,6 +62,7 @@ pub struct UpdateHandler {
     runtime_handle: Handle,
     /// WAL, required for operations
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+    blocking_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
 impl UpdateHandler {
@@ -82,6 +83,7 @@ impl UpdateHandler {
             runtime_handle,
             wal,
             flush_timeout_sec,
+            blocking_handles: Arc::new(Mutex::new(vec![])),
         };
         handler.run_workers();
         handler
@@ -95,6 +97,7 @@ impl UpdateHandler {
             self.segments.clone(),
             self.wal.clone(),
             self.flush_timeout_sec,
+            self.blocking_handles.clone()
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
             self.update_receiver.clone(),
@@ -107,6 +110,9 @@ impl UpdateHandler {
     /// If some optimization is in progress - it will be finished before shutdown.
     /// Blocking function.
     pub async fn wait_workers_stops(&mut self) -> CollectionResult<()> {
+        for handle in self.blocking_handles.lock().iter(){
+            handle.abort();
+        }
         let maybe_handle = self.update_worker.take();
         if let Some(handle) = maybe_handle {
             handle.await?;
@@ -138,43 +144,27 @@ impl UpdateHandler {
         Ok(0)
     }
 
-    fn process_optimization(optimizers: Arc<Vec<Arc<Optimizer>>>, segments: LockedSegmentHolder) {
+    fn process_optimization(optimizers: Arc<Vec<Arc<Optimizer>>>, segments: LockedSegmentHolder) -> Vec<JoinHandle<()>> {
+        let mut handles = vec![];
         for optimizer in optimizers.iter() {
-            let nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
             loop{
+                let nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
                 if nonoptimal_segment_ids.is_empty() {
                     break
                 } else {
                     let optim = optimizer.clone();
                     let segs = segments.clone();
                     let nsi = nonoptimal_segment_ids.clone();
-                    tokio::task::spawn_blocking( move ||{
+                    handles.push(tokio::task::spawn_blocking( move ||{
                         optim.as_ref()
                             .optimize(segs, nsi)
                             .unwrap();
-                    });
+                    }));
                 }
             }
         }
+        handles
     }
-            //while !nonoptimal_segment_ids.is_empty() {
-            //    debug!(
-            //        "Start optimization on segments: {:?}",
-            //        nonoptimal_segment_ids
-            //    );
-            //    // If optimization fails, it could not be reported to anywhere except for console.
-            //    // So the only recovery here is to stop optimization and await for restart
-            //    
-            //    let segs = segments.clone();
-            //    let opts = optimizer.clone();
-            //    //let nsi = nonoptimal_segment_ids.clone();
-            //    //tokio::task::spawn_blocking(||{
-            //    //    opts 
-            //    //        .optimize(segs, nsi)
-            //    //        .unwrap();
-            //    //});
-            //    nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
-            //}
 
     async fn optimization_worker_fn(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
@@ -182,12 +172,12 @@ impl UpdateHandler {
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
         flush_timeout_sec: u64,
+        blocking_handles: Arc<Mutex<Vec<JoinHandle<()>>>>
     ) {
         let flush_timeout = Duration::from_secs(flush_timeout_sec);
         let mut last_flushed = Instant::now();
         loop {
             let recv_res = receiver.recv().await;
-            debug!("Optimization signal received");
             match recv_res {
                 Ok(signal) => {
                     match signal {
@@ -195,26 +185,16 @@ impl UpdateHandler {
                             if Self::try_recover(segments.clone(), wal.clone()).is_err() {
                                 continue;
                             }
-                            let copy_seg = segments.clone();
-                            let copy_opts = optimizers.clone();
-                            //tokio::task::spawn_blocking(||{
-                                //debug!("OptimizerSignal::Nop - start");
-                                Self::process_optimization(copy_opts, copy_seg);
-                                //debug!("OptimizerSignal::Nop - finish");
-                            //});
+                            let mut handles = blocking_handles.lock();
+                            handles.append(&mut Self::process_optimization(optimizers.clone(), segments.clone()));
                         }
                         OptimizerSignal::Operation(operation_id) => {
                             if Self::try_recover(segments.clone(), wal.clone()).is_err() {
                                 continue;
                             }
-                            let copy_seg = segments.clone();
-                            let copy_opts = optimizers.clone();
-                            //tokio::task::spawn_blocking(||{
-                                debug!("OptimizerSignal::Operation - start");
-                                Self::process_optimization(copy_opts, copy_seg);
-                                debug!("OptimizerSignal::Operation - finish ");
-                            //});
-
+                            let mut handles = blocking_handles.lock();
+                            handles.append(&mut Self::process_optimization(optimizers.clone(), segments.clone()));
+                            
                             let elapsed = last_flushed.elapsed();
                             if elapsed > flush_timeout {
                                 debug!("Performing flushing: {}", operation_id);
