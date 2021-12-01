@@ -140,27 +140,41 @@ impl UpdateHandler {
 
     fn process_optimization(optimizers: Arc<Vec<Box<Optimizer>>>, segments: LockedSegmentHolder) {
         for optimizer in optimizers.iter() {
-            let mut nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
-            while !nonoptimal_segment_ids.is_empty() {
-                debug!(
-                    "Start optimization on segments: {:?}",
-                    nonoptimal_segment_ids
-                );
-                // If optimization fails, it could not be reported to anywhere except for console.
-                // So the only recovery here is to stop optimization and await for restart
-                
-                let segs = segments.clone();
-                let opts = optimizer.clone();
-                let nsi = nonoptimal_segment_ids.clone();
-                tokio::task::spawn_blocking(||{
-                    opts 
-                        .optimize(segs, nsi)
-                        .unwrap();
-                });
-                nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
+            let nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
+            loop{
+                if nonoptimal_segment_ids.is_empty() {
+                    break
+                } else {
+                    let optim = Arc::new(Box::into_raw(optimizer.as_ref()));
+                    let segs = segments.clone();
+                    let nsi = nonoptimal_segment_ids.clone();
+                    tokio::task::spawn_blocking( move ||{
+                        optim.as_ref()
+                            .optimize(segs, nsi)
+                            .unwrap();
+                    });
+                }
             }
         }
     }
+            //while !nonoptimal_segment_ids.is_empty() {
+            //    debug!(
+            //        "Start optimization on segments: {:?}",
+            //        nonoptimal_segment_ids
+            //    );
+            //    // If optimization fails, it could not be reported to anywhere except for console.
+            //    // So the only recovery here is to stop optimization and await for restart
+            //    
+            //    let segs = segments.clone();
+            //    let opts = optimizer.clone();
+            //    //let nsi = nonoptimal_segment_ids.clone();
+            //    //tokio::task::spawn_blocking(||{
+            //    //    opts 
+            //    //        .optimize(segs, nsi)
+            //    //        .unwrap();
+            //    //});
+            //    nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
+            //}
 
     async fn optimization_worker_fn(
         optimizers: Arc<Vec<Box<Optimizer>>>,
