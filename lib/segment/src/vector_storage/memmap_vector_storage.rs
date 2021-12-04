@@ -14,6 +14,8 @@ fn vf_to_u8<T>(v: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * size_of::<T>()) }
 }
 
+/// An scored iterator over search result.
+/// Keeps iteration context, which allows to use this iterator in external functions safely
 pub struct MemmapRawScorer<'a> {
     query: Vec<VectorElementType>,
     metric: &'a dyn Metric,
@@ -54,6 +56,12 @@ impl RawScorer for MemmapRawScorer<'_> {
     }
 }
 
+/// Stores all vectors in mem-mapped file
+///
+/// It is not possible to insert new vectors into mem-mapped storage,
+/// but possible to mark some vectors as removed
+///
+/// Mem-mapped storage can only be constructed from another storage
 pub struct MemmapVectorStorage {
     vectors_path: PathBuf,
     deleted_path: PathBuf,

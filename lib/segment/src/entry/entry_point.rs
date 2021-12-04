@@ -27,6 +27,7 @@ pub enum OperationError {
     ServiceError { description: String },
 }
 
+/// Contains information regarding last operation error, which should be fixed before next operation could be processed
 #[derive(Debug, Clone)]
 pub struct SegmentFailedState {
     pub version: SeqNumberType,

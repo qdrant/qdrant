@@ -10,6 +10,7 @@ use crate::types::{
     FieldCondition, IntPayloadType, Match, PayloadKeyType, PayloadType, PointOffsetType,
 };
 
+/// HashMap-based type of index
 #[derive(Serialize, Deserialize, Default)]
 pub struct PersistedMapIndex<N: Hash + Eq + Clone> {
     map: HashMap<N, Vec<PointOffsetType>>,

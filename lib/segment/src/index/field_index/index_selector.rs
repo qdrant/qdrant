@@ -3,6 +3,7 @@ use crate::index::field_index::numeric_index::PersistedNumericIndex;
 use crate::index::field_index::PayloadFieldIndexBuilder;
 use crate::types::{FloatPayloadType, IntPayloadType, PayloadSchemaType};
 
+/// Selects index types based on field type
 pub fn index_selector(payload_type: &PayloadSchemaType) -> Vec<Box<dyn PayloadFieldIndexBuilder>> {
     match payload_type {
         PayloadSchemaType::Keyword => vec![Box::new(PersistedMapIndex::<String>::default())],

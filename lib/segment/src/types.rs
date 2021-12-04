@@ -39,6 +39,7 @@ pub enum Order {
     SmallBetter,
 }
 
+/// Search result
 #[derive(Deserialize, Serialize, JsonSchema, Clone, Debug)]
 pub struct ScoredPoint {
     /// Point id
@@ -71,10 +72,11 @@ impl PartialEq for ScoredPoint {
     }
 }
 
+/// Type of segment
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum SegmentType {
-    /// There are no index built for the segment
+    /// There are no index built for the segment, all operations are available
     Plain,
     /// Segment with some sort of index built. Optimized for search, appending new points will require reindexing
     Indexed,
@@ -82,6 +84,7 @@ pub enum SegmentType {
     Special,
 }
 
+/// Payload field type & index information
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct PayloadSchemaInfo {
@@ -89,6 +92,7 @@ pub struct PayloadSchemaInfo {
     pub indexed: bool,
 }
 
+/// Aggregated information about segment
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentInfo {
@@ -101,9 +105,9 @@ pub struct SegmentInfo {
     pub schema: HashMap<PayloadKeyType, PayloadSchemaInfo>,
 }
 
+/// Additional parameters of the search
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
-/// Additional parameters of the search
 pub struct SearchParams {
     /// Params relevant to HNSW index
     /// /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
@@ -119,6 +123,7 @@ pub fn distance_order(distance: &Distance) -> Order {
     }
 }
 
+/// Vector index configuration of the segment
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
@@ -131,6 +136,7 @@ pub enum Indexes {
     Hnsw(HnswConfig),
 }
 
+/// Config of HNSW index
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfig {
@@ -166,10 +172,10 @@ impl Default for Indexes {
     }
 }
 
+/// Type of payload index
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
-/// Type of payload index
 pub enum PayloadIndexType {
     /// Do not index anything, just keep of what should be indexed later
     Plain,
@@ -183,10 +189,10 @@ impl Default for PayloadIndexType {
     }
 }
 
+/// Type of vector storage
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
-/// Type of vector storage
 pub enum StorageType {
     /// Store vectors in memory and use persistence storage only if vectors are changed
     InMemory,
@@ -218,6 +224,7 @@ pub struct SegmentConfig {
 /// Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
 pub const DEFAULT_FULL_SCAN_THRESHOLD: usize = 20_000;
 
+/// Persistable state of segment configuration
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentState {
@@ -225,6 +232,7 @@ pub struct SegmentState {
     pub config: SegmentConfig,
 }
 
+/// Geo point payload schema
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoPoint {
@@ -232,6 +240,7 @@ pub struct GeoPoint {
     pub lat: f64,
 }
 
+/// All possible payload types
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "value")]
@@ -242,6 +251,7 @@ pub enum PayloadType {
     Geo(Vec<GeoPoint>),
 }
 
+/// All possible names of payload types
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "value")]
@@ -263,6 +273,16 @@ impl From<&PayloadType> for PayloadSchemaType {
     }
 }
 
+/// Payload interface structure which ensures that user is allowed to pass payload in
+/// both - array and single element forms.
+///
+/// Example:
+///
+/// Both versions should work:
+/// ```json
+/// {..., "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}},
+/// {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}},
+/// ```
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
@@ -280,6 +300,19 @@ impl<T: Clone> PayloadVariant<T> {
     }
 }
 
+/// Structure for converting user-provided payload into internal structure representation
+///
+/// Used to allow user provide payload in more human-friendly format,
+/// and do not force explicit brackets, included constructions, e.t.c.
+///
+/// Example:
+///
+/// ```json
+/// {..., "payload": {"city": "Berlin"}, ... }
+/// ```
+///
+/// Should be captured by `KeywordShortcut`
+///
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
@@ -290,6 +323,15 @@ pub enum PayloadInterface {
     Payload(PayloadInterfaceStrict),
 }
 
+/// Fallback for PayloadInterface which is used if user explicitly specifies type of payload
+///
+/// Example:
+///
+/// ```json
+/// {..., "payload": {"city": { "type": "keyword", "value": "Berlin" }}, ... }
+/// ```
+///
+/// Should be captured by `Keyword(PayloadVariant<String>)`
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "value")]
@@ -329,6 +371,7 @@ impl From<&PayloadInterface> for PayloadType {
     }
 }
 
+/// Match filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Match {
@@ -338,6 +381,7 @@ pub struct Match {
     pub integer: Option<IntPayloadType>,
 }
 
+/// Range filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct Range {
@@ -351,6 +395,9 @@ pub struct Range {
     pub lte: Option<FloatPayloadType>,
 }
 
+/// Geo filter request
+///
+/// Matches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoBoundingBox {
@@ -360,6 +407,9 @@ pub struct GeoBoundingBox {
     pub bottom_right: GeoPoint,
 }
 
+/// Geo filter request
+///
+/// Matches coordinates inside the circle of `radius` and center with coordinates `center`
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoRadius {
@@ -369,6 +419,7 @@ pub struct GeoRadius {
     pub radius: f64,
 }
 
+/// All possible payload filtering conditions
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct FieldCondition {
@@ -383,6 +434,7 @@ pub struct FieldCondition {
     pub geo_radius: Option<GeoRadius>,
 }
 
+/// ID-based filtering condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct HasIdCondition {
     pub has_id: HashSet<PointIdType>,
@@ -405,6 +457,7 @@ pub enum Condition {
     Filter(Filter),
 }
 
+/// Options for specifying which payload to include or not
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
@@ -441,6 +494,7 @@ impl From<&WithPayloadInterface> for WithPayload {
     }
 }
 
+/// Specifies how to treat payload selector
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]

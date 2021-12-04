@@ -19,6 +19,7 @@ use std::mem::size_of;
 /// Since sled is used for reading only during the initialization, large read cache is not required
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 
+/// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleVectorStorage {
     dim: usize,
     metric: Box<dyn Metric>,

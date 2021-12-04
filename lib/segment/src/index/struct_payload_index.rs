@@ -26,13 +26,17 @@ pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 
 type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
 
+/// `PayloadIndex` implementation, which actually uses index structures for providing faster search
 pub struct StructPayloadIndex {
     condition_checker: Arc<dyn ConditionChecker>,
     vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
+    /// Payload storage
     payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
     id_tracker: Arc<AtomicRefCell<dyn IdTracker>>,
+    /// Indexes, associated with fields
     field_indexes: IndexesMap,
     config: PayloadConfig,
+    /// Root of index persistence dir
     path: PathBuf,
     visited_pool: VisitedPool,
 }
@@ -300,22 +304,6 @@ impl PayloadIndex for StructPayloadIndex {
         estimate_filter(&estimator, query, total_points)
     }
 
-    fn payload_blocks(
-        &self,
-        field: PayloadKeyTypeRef,
-        threshold: usize,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
-        match self.field_indexes.get(field) {
-            None => Box::new(vec![].into_iter()),
-            Some(indexes) => {
-                let field_clone = field.to_owned();
-                Box::new(indexes.iter().flat_map(move |field_index| {
-                    field_index.payload_blocks(threshold, field_clone.clone())
-                }))
-            }
-        }
-    }
-
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
@@ -362,5 +350,21 @@ impl PayloadIndex for StructPayloadIndex {
             let matched_points_iter = preselected.into_iter();
             Box::new(matched_points_iter)
         };
+    }
+
+    fn payload_blocks(
+        &self,
+        field: PayloadKeyTypeRef,
+        threshold: usize,
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+        match self.field_indexes.get(field) {
+            None => Box::new(vec![].into_iter()),
+            Some(indexes) => {
+                let field_clone = field.to_owned();
+                Box::new(indexes.iter().flat_map(move |field_index| {
+                    field_index.payload_blocks(threshold, field_clone.clone())
+                }))
+            }
+        }
     }
 }
