@@ -9,7 +9,6 @@ use parking_lot::RwLock;
 /// Implemented in order to limit memory leak
 const POOL_KEEP_LIMIT: usize = 16;
 
-
 /// Visited list reuses same memory to keep track of visited points ids among multiple consequent queries
 ///
 /// It stores the sequence number of last processed operation next to the point ID, which allows to avoid memory allocation
