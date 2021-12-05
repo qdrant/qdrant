@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "config.json";
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Default, Deserialize, Serialize, Clone)]
 pub struct PayloadConfig {
     pub indexed_fields: Vec<PayloadKeyType>,
 }
@@ -22,13 +22,5 @@ impl PayloadConfig {
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {
         atomic_save_json(path, self)
-    }
-}
-
-impl Default for PayloadConfig {
-    fn default() -> Self {
-        PayloadConfig {
-            indexed_fields: vec![],
-        }
     }
 }
