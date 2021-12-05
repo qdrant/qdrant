@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 
 pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "config.json";
 
-
 /// Keeps information of which field should be index
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
 pub struct PayloadConfig {
