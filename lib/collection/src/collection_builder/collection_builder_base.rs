@@ -30,7 +30,7 @@ pub fn construct_collection(
 
     let optimize_runtime = runtime::Builder::new_multi_thread()
         .worker_threads(2)
-        .max_blocking_threads(2)
+        .max_blocking_threads(config.max_blocking_threads)
         .build()
         .unwrap();
 
