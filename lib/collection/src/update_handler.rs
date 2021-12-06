@@ -158,10 +158,8 @@ impl UpdateHandler {
                     let optim = optimizer.clone();
                     let segs = segments.clone();
                     let nsi = nonoptimal_segment_ids.clone();
-                    handles.push(tokio::task::spawn_blocking( move ||{
-                        optim.as_ref()
-                            .optimize(segs, nsi)
-                            .unwrap();
+                    handles.push(tokio::task::spawn_blocking(move || {
+                        optim.as_ref().optimize(segs, nsi).unwrap();
                     }));
                 }
             }
@@ -199,11 +197,11 @@ impl UpdateHandler {
                                 continue;
                             }
                             {
-                              let mut handles = blocking_handles.lock();
-                              handles.append(&mut Self::process_optimization(
-                                  optimizers.clone(),
-                                  segments.clone(),
-                              ));
+                                let mut handles = blocking_handles.lock();
+                                handles.append(&mut Self::process_optimization(
+                                    optimizers.clone(),
+                                    segments.clone(),
+                                ));
                             }
 
                             let elapsed = last_flushed.elapsed();

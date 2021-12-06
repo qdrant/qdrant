@@ -2,8 +2,8 @@ use std::fs::create_dir_all;
 use std::path::Path;
 use std::sync::Arc;
 
-use parking_lot::{Mutex, RwLock};
 use num_cpus;
+use parking_lot::{Mutex, RwLock};
 use tokio::runtime;
 
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -93,7 +93,7 @@ pub fn build_collection(
         SerdeWal::new(wal_path.to_str().unwrap(), &wal_config.into())?;
 
     let cpus_for_blocking = num_cpus::get() - 1;
-    
+
     let collection_config = CollectionConfig {
         params: collection_params.clone(),
         hnsw_config: *hnsw_config,
