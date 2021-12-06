@@ -62,7 +62,7 @@ pub struct UpdateHandler {
     runtime_handle: Handle,
     /// WAL, required for operations
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-    blocking_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    optimization_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
 impl UpdateHandler {
@@ -83,7 +83,7 @@ impl UpdateHandler {
             runtime_handle,
             wal,
             flush_timeout_sec,
-            blocking_handles: Arc::new(Mutex::new(vec![])),
+            optimization_handles: Arc::new(Mutex::new(vec![])),
         };
         handler.run_workers();
         handler
@@ -97,11 +97,7 @@ impl UpdateHandler {
             self.segments.clone(),
             self.wal.clone(),
             self.flush_timeout_sec,
-<<<<<<< HEAD
-            self.blocking_handles.clone(),
-=======
-            self.blocking_handles.clone()
->>>>>>> ae00745 (add blocking handles management)
+            self.optimization_handles.clone(),
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
             self.update_receiver.clone(),
@@ -114,11 +110,7 @@ impl UpdateHandler {
     /// If some optimization is in progress - it will be finished before shutdown.
     /// Blocking function.
     pub async fn wait_workers_stops(&mut self) -> CollectionResult<()> {
-<<<<<<< HEAD
-        for handle in self.blocking_handles.lock().iter() {
-=======
-        for handle in self.blocking_handles.lock().iter(){
->>>>>>> ae00745 (add blocking handles management)
+        for handle in self.optimization_handles.lock().iter() {
             handle.abort();
         }
         let maybe_handle = self.update_worker.take();

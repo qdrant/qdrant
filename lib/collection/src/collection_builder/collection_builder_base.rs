@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
+use num_cpus;
 use tokio::runtime;
 
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -91,11 +92,14 @@ pub fn build_collection(
     let wal: SerdeWal<CollectionUpdateOperations> =
         SerdeWal::new(wal_path.to_str().unwrap(), &wal_config.into())?;
 
+    let cpus_for_blocking = num_cpus::get() - 1;
+    
     let collection_config = CollectionConfig {
         params: collection_params.clone(),
         hnsw_config: *hnsw_config,
         optimizer_config: optimizers_config.clone(),
         wal_config: wal_config.clone(),
+        max_blocking_threads: cpus_for_blocking,
     };
 
     collection_config.save(collection_path)?;

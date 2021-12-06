@@ -56,6 +56,7 @@ pub struct CollectionConfig {
     pub hnsw_config: HnswConfig,
     pub optimizer_config: OptimizersConfig,
     pub wal_config: WalConfig,
+    pub max_blocking_threads: usize,
 }
 
 impl CollectionConfig {
