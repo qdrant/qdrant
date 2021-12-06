@@ -196,11 +196,13 @@ impl UpdateHandler {
                             if Self::try_recover(segments.clone(), wal.clone()).is_err() {
                                 continue;
                             }
-                            let mut handles = blocking_handles.lock();
-                            handles.append(&mut Self::process_optimization(
-                                optimizers.clone(),
-                                segments.clone(),
-                            ));
+                            {
+                              let mut handles = blocking_handles.lock();
+                              handles.append(&mut Self::process_optimization(
+                                  optimizers.clone(),
+                                  segments.clone(),
+                              ));
+                            }
 
                             let elapsed = last_flushed.elapsed();
                             if elapsed > flush_timeout {
