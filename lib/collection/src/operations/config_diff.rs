@@ -110,7 +110,7 @@ mod tests {
             indexing_threshold: 50_000,
             payload_indexing_threshold: 20_000,
             flush_interval_sec: 30,
-            max_optimization_threads: 1
+            max_optimization_threads: 1,
         };
         let update: OptimizersConfigDiff =
             serde_json::from_str(r#"{ "indexing_threshold": 10000 }"#).unwrap();

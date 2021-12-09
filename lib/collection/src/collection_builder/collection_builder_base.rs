@@ -98,7 +98,6 @@ pub fn build_collection(
     let wal: SerdeWal<CollectionUpdateOperations> =
         SerdeWal::new(wal_path.to_str().unwrap(), &wal_config.into())?;
 
-
     let collection_config = CollectionConfig {
         params: collection_params.clone(),
         hnsw_config: *hnsw_config,
