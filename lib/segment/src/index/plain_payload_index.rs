@@ -13,6 +13,10 @@ use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// Implementation of `PayloadIndex` which does not really indexes anything.
+///
+/// Used for small segments, which are easier to keep simple for faster updates,
+/// rather than spend time for index re-building
 pub struct PlainPayloadIndex {
     condition_checker: Arc<dyn ConditionChecker>,
     vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,

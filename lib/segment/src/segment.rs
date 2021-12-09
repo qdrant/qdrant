@@ -20,20 +20,33 @@ use std::sync::{Arc, Mutex};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
-/// Simple segment implementation
+/// Segment - an object which manages an independent group of points.
+///
+/// - Provides storage, indexing and managing operations for points (vectors + payload)
+/// - Keeps track of point versions
+/// - Persists data
+/// - Keeps track of occurred errors
 pub struct Segment {
+    /// Latest update operation number, applied to this segment
     pub version: SeqNumberType,
+    /// Latest persisted version
     pub persisted_version: Arc<Mutex<SeqNumberType>>,
+    /// Path of the storage root
     pub current_path: PathBuf,
+    /// Component for mapping external ids to internal and also keeping track of point versions
     pub id_tracker: Arc<AtomicRefCell<dyn IdTracker>>,
     pub vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
     pub payload_storage: Arc<AtomicRefCell<dyn PayloadStorage>>,
     pub payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
     pub condition_checker: Arc<dyn ConditionChecker>,
     pub vector_index: Arc<AtomicRefCell<dyn VectorIndex>>,
+    /// Shows if it is possible to insert more points into this segment
     pub appendable_flag: bool,
+    /// Shows what kind of indexes and storages are used in this segment
     pub segment_type: SegmentType,
     pub segment_config: SegmentConfig,
+    /// Last unhandled error
+    /// If not None, all update operations will be aborted until original operation is performed properly
     pub error_status: Option<SegmentFailedState>,
 }
 
@@ -184,6 +197,8 @@ impl Segment {
     }
 }
 
+/// This is a basic implementation of `SegmentEntry`,
+/// meaning that it implements the _actual_ operations with data and not any kind of proxy or wrapping
 impl SegmentEntry for Segment {
     fn version(&self) -> SeqNumberType {
         self.version

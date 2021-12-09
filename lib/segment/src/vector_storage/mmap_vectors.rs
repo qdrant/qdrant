@@ -11,6 +11,7 @@ const HEADER_SIZE: usize = 4;
 const DELETED_HEADER: &[u8; 4] = b"drop";
 const VECTORS_HEADER: &[u8; 4] = b"data";
 
+/// Mem-mapped file with vectors and soft-delete flags
 pub struct MmapVectors {
     pub dim: usize,
     pub num_vectors: usize,

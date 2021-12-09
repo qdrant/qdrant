@@ -13,6 +13,8 @@ use crate::payload_storage::PayloadStorage;
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 const DB_NAME: &str = "payload";
 
+/// In-memory implementation of `PayloadStorage`.
+/// Persists all changes to disk using `store`, but only uses this storage during the initial load
 pub struct SimplePayloadStorage {
     payload: HashMap<PointOffsetType, TheMap<PayloadKeyType, PayloadType>>,
     schema: TheMap<PayloadKeyType, PayloadSchemaType>,

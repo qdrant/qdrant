@@ -1,3 +1,5 @@
+//! Contains functions for interpreting filter queries and defining if given points pass the conditions
+
 use crate::types::{GeoBoundingBox, GeoRadius, Match, PayloadType, Range};
 use geo::algorithm::haversine_distance::HaversineDistance;
 use geo::Point;

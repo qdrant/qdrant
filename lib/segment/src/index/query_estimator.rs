@@ -1,3 +1,8 @@
+//! Contains functions for estimating of how many points should be processed for a given filter query
+//!
+//! Filter query is used e.g. for determining how would be faster to process the query:
+//! - use vector index or payload index first
+
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
 use crate::types::{Condition, Filter};
 use itertools::Itertools;

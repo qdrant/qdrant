@@ -1,6 +1,7 @@
 use crate::types::{Distance, ScoreType, VectorElementType};
 use ndarray::Array1;
 
+/// Defines how to compare vectors
 pub trait Metric {
     fn distance(&self) -> Distance;
 

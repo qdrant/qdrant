@@ -20,6 +20,7 @@ pub struct Element<N> {
     pub value: N,
 }
 
+/// Sorting-based type of index
 #[derive(Serialize, Deserialize, Default)]
 pub struct PersistedNumericIndex<N: ToPrimitive + Clone> {
     /// Number of unique element ids.
