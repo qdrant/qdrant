@@ -28,9 +28,14 @@ pub fn construct_collection(
 ) -> Collection {
     let segment_holder = Arc::new(RwLock::new(segment_holder));
 
+    let blocking_threads = if config.max_blocking_threads == 0 {
+        num_cpus::get()
+    } else {
+        1
+    };
     let optimize_runtime = runtime::Builder::new_multi_thread()
         .worker_threads(2)
-        .max_blocking_threads(config.max_blocking_threads)
+        .max_blocking_threads(blocking_threads)
         .build()
         .unwrap();
 

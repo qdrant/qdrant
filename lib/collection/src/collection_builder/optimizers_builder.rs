@@ -28,6 +28,8 @@ pub struct OptimizersConfig {
     pub payload_indexing_threshold: usize,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: u64,
+    /// Maximum available threads for optimization workers
+    pub max_optimization_threads: usize,
 }
 
 pub fn build_optimizers(

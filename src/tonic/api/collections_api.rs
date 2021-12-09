@@ -1,4 +1,4 @@
-use tonic::{Request, Response, Status};
+use tonic:{Request, Response, Status};
 
 use crate::common::collections::*;
 use crate::common::models::CollectionsResponse;
@@ -142,6 +142,7 @@ impl From<OptimizersConfigDiff> for collection::operations::config_diff::Optimiz
             indexing_threshold: value.indexing_threshold.map(|v| v as usize),
             payload_indexing_threshold: value.payload_indexing_threshold.map(|v| v as usize),
             flush_interval_sec: value.flush_interval_sec,
+            max_optimization_threads: value.max_optimization_threads
         }
     }
 }

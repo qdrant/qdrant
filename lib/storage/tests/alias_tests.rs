@@ -24,6 +24,7 @@ mod tests {
                 indexing_threshold: 100,
                 payload_indexing_threshold: 100,
                 flush_interval_sec: 2,
+                max_optimization_threads: 2,
             },
             wal: Default::default(),
             performance: PerformanceConfig {
