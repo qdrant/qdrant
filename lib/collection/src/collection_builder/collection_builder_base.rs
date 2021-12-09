@@ -1,7 +1,9 @@
+use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::Path;
 use std::sync::Arc;
 
+use num_cpus;
 use parking_lot::{Mutex, RwLock};
 use tokio::runtime;
 
@@ -22,13 +24,19 @@ pub fn construct_collection(
     segment_holder: SegmentHolder,
     config: CollectionConfig,
     wal: SerdeWal<CollectionUpdateOperations>,
-    optimizers: Arc<Vec<Box<Optimizer>>>,
+    optimizers: Arc<Vec<Arc<Optimizer>>>,
     collection_path: &Path,
 ) -> Collection {
     let segment_holder = Arc::new(RwLock::new(segment_holder));
 
+    let blocking_threads = if config.optimizer_config.max_optimization_threads == 0 {
+        max(num_cpus::get() - 1, 1)
+    } else {
+        config.optimizer_config.max_optimization_threads
+    };
     let optimize_runtime = runtime::Builder::new_multi_thread()
         .worker_threads(2)
+        .max_blocking_threads(blocking_threads)
         .build()
         .unwrap();
 

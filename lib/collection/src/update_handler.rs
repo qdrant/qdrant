@@ -49,7 +49,7 @@ pub enum OptimizerSignal {
 /// Structure, which holds object, required for processing updates of the collection
 pub struct UpdateHandler {
     /// List of used optimizers
-    pub optimizers: Arc<Vec<Box<Optimizer>>>,
+    pub optimizers: Arc<Vec<Arc<Optimizer>>>,
     /// How frequent can we flush data
     pub flush_timeout_sec: u64,
     segments: LockedSegmentHolder,
@@ -62,11 +62,12 @@ pub struct UpdateHandler {
     runtime_handle: Handle,
     /// WAL, required for operations
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+    optimization_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
 impl UpdateHandler {
     pub fn new(
-        optimizers: Arc<Vec<Box<Optimizer>>>,
+        optimizers: Arc<Vec<Arc<Optimizer>>>,
         update_receiver: Receiver<UpdateSignal>,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
@@ -82,6 +83,7 @@ impl UpdateHandler {
             runtime_handle,
             wal,
             flush_timeout_sec,
+            optimization_handles: Arc::new(Mutex::new(vec![])),
         };
         handler.run_workers();
         handler
@@ -95,6 +97,7 @@ impl UpdateHandler {
             self.segments.clone(),
             self.wal.clone(),
             self.flush_timeout_sec,
+            self.optimization_handles.clone(),
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
             self.update_receiver.clone(),
@@ -107,6 +110,9 @@ impl UpdateHandler {
     /// If some optimization is in progress - it will be finished before shutdown.
     /// Blocking function.
     pub async fn wait_workers_stops(&mut self) -> CollectionResult<()> {
+        for handle in self.optimization_handles.lock().iter() {
+            handle.abort();
+        }
         let maybe_handle = self.update_worker.take();
         if let Some(handle) = maybe_handle {
             handle.await?;
@@ -138,30 +144,36 @@ impl UpdateHandler {
         Ok(0)
     }
 
-    fn process_optimization(optimizers: Arc<Vec<Box<Optimizer>>>, segments: LockedSegmentHolder) {
+    fn process_optimization(
+        optimizers: Arc<Vec<Arc<Optimizer>>>,
+        segments: LockedSegmentHolder,
+    ) -> Vec<JoinHandle<()>> {
+        let mut handles = vec![];
         for optimizer in optimizers.iter() {
-            let mut nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
-            while !nonoptimal_segment_ids.is_empty() {
-                debug!(
-                    "Start optimization on segments: {:?}",
-                    nonoptimal_segment_ids
-                );
-                // If optimization fails, it could not be reported to anywhere except for console.
-                // So the only recovery here is to stop optimization and await for restart
-                optimizer
-                    .optimize(segments.clone(), nonoptimal_segment_ids)
-                    .unwrap();
-                nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
+            loop {
+                let nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
+                if nonoptimal_segment_ids.is_empty() {
+                    break;
+                } else {
+                    let optim = optimizer.clone();
+                    let segs = segments.clone();
+                    let nsi = nonoptimal_segment_ids.clone();
+                    handles.push(tokio::task::spawn_blocking(move || {
+                        optim.as_ref().optimize(segs, nsi).unwrap();
+                    }));
+                }
             }
         }
+        handles
     }
 
     async fn optimization_worker_fn(
-        optimizers: Arc<Vec<Box<Optimizer>>>,
+        optimizers: Arc<Vec<Arc<Optimizer>>>,
         receiver: Receiver<OptimizerSignal>,
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
         flush_timeout_sec: u64,
+        blocking_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     ) {
         let flush_timeout = Duration::from_secs(flush_timeout_sec);
         let mut last_flushed = Instant::now();
@@ -174,13 +186,23 @@ impl UpdateHandler {
                             if Self::try_recover(segments.clone(), wal.clone()).is_err() {
                                 continue;
                             }
-                            Self::process_optimization(optimizers.clone(), segments.clone());
+                            let mut handles = blocking_handles.lock();
+                            handles.append(&mut Self::process_optimization(
+                                optimizers.clone(),
+                                segments.clone(),
+                            ));
                         }
                         OptimizerSignal::Operation(operation_id) => {
                             if Self::try_recover(segments.clone(), wal.clone()).is_err() {
                                 continue;
                             }
-                            Self::process_optimization(optimizers.clone(), segments.clone());
+                            {
+                                let mut handles = blocking_handles.lock();
+                                handles.append(&mut Self::process_optimization(
+                                    optimizers.clone(),
+                                    segments.clone(),
+                                ));
+                            }
 
                             let elapsed = last_flushed.elapsed();
                             if elapsed > flush_timeout {

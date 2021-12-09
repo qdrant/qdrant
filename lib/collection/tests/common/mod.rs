@@ -13,6 +13,7 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     indexing_threshold: 50_000,
     payload_indexing_threshold: 20_000,
     flush_interval_sec: 30,
+    max_optimization_threads: 2,
 };
 
 #[allow(dead_code)]

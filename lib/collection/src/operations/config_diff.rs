@@ -61,6 +61,8 @@ pub struct OptimizersConfigDiff {
     pub payload_indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: Option<u64>,
+    /// Maximum available threads for optimization workers
+    pub max_optimization_threads: Option<usize>,
 }
 
 impl DiffConfig<HnswConfig> for HnswConfigDiff {}
@@ -108,6 +110,7 @@ mod tests {
             indexing_threshold: 50_000,
             payload_indexing_threshold: 20_000,
             flush_interval_sec: 30,
+            max_optimization_threads: 1,
         };
         let update: OptimizersConfigDiff =
             serde_json::from_str(r#"{ "indexing_threshold": 10000 }"#).unwrap();

@@ -50,6 +50,7 @@ message OptimizersConfigDiff {
   optional uint64 indexing_threshold = 5;
   optional uint64 payload_indexing_threshold = 6;
   optional uint64 flush_interval_sec = 7;
+  optional uint64 max_optimization_threads = 8;
 }
 
 message CreateCollection {
