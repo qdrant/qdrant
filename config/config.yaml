@@ -39,7 +39,7 @@ storage:
     # Minimum interval between forced flushes.
     flush_interval_sec: 10
     
-    # Maximum blocking threads
+    # Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used
     max_optimization_threads: 0
 
   # Default parameters of HNSW Index. Could be override for each collection individually
