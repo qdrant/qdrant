@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::Path;
 use std::sync::Arc;
@@ -28,10 +29,10 @@ pub fn construct_collection(
 ) -> Collection {
     let segment_holder = Arc::new(RwLock::new(segment_holder));
 
-    let blocking_threads = if config.max_blocking_threads == 0 {
-        num_cpus::get()
+    let blocking_threads = if config.optimizer_config.max_optimization_threads == 0 {
+        max(num_cpus::get() - 1, 1)
     } else {
-        1
+        config.optimizer_config.max_optimization_threads
     };
     let optimize_runtime = runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -97,14 +98,12 @@ pub fn build_collection(
     let wal: SerdeWal<CollectionUpdateOperations> =
         SerdeWal::new(wal_path.to_str().unwrap(), &wal_config.into())?;
 
-    let cpus_for_blocking = num_cpus::get() - 1;
 
     let collection_config = CollectionConfig {
         params: collection_params.clone(),
         hnsw_config: *hnsw_config,
         optimizer_config: optimizers_config.clone(),
         wal_config: wal_config.clone(),
-        max_blocking_threads: cpus_for_blocking,
     };
 
     collection_config.save(collection_path)?;
