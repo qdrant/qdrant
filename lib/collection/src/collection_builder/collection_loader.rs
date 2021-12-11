@@ -1,6 +1,6 @@
+use futures::executor::block_on;
 use std::fs::{read_dir, remove_dir_all};
 use std::path::Path;
-use futures::executor::block_on;
 
 use segment::segment_constructor::load_segment;
 

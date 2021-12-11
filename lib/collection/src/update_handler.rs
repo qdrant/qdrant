@@ -6,11 +6,11 @@ use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
 use async_channel::{Receiver, Sender};
 use log::{debug, info};
-use tokio::sync::Mutex;
 use segment::types::SeqNumberType;
 use std::cmp::min;
 use std::sync::Arc;
 use tokio::runtime::Handle;
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, Instant};
 
@@ -183,7 +183,10 @@ impl UpdateHandler {
                 Ok(signal) => {
                     match signal {
                         OptimizerSignal::Nop => {
-                            if Self::try_recover(segments.clone(), wal.clone()).await.is_err() {
+                            if Self::try_recover(segments.clone(), wal.clone())
+                                .await
+                                .is_err()
+                            {
                                 continue;
                             }
                             let mut handles = blocking_handles.lock().await;
@@ -193,7 +196,10 @@ impl UpdateHandler {
                             ));
                         }
                         OptimizerSignal::Operation(operation_id) => {
-                            if Self::try_recover(segments.clone(), wal.clone()).await.is_err() {
+                            if Self::try_recover(segments.clone(), wal.clone())
+                                .await
+                                .is_err()
+                            {
                                 continue;
                             }
                             {

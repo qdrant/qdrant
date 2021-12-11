@@ -6,9 +6,9 @@ use std::thread;
 
 use indicatif::ProgressBar;
 use itertools::Itertools;
-use tokio::sync::Mutex;
 use parking_lot::RwLock;
 use tokio::runtime::{Handle, Runtime};
+use tokio::sync::Mutex;
 
 use segment::types::{
     Condition, Filter, HasIdCondition, PayloadKeyType, PayloadSchemaInfo, PointIdType, ScoredPoint,

@@ -4,9 +4,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use num_cpus;
-use tokio::sync::{Mutex};
 use parking_lot::RwLock;
 use tokio::runtime;
+use tokio::sync::Mutex;
 
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::HnswConfig;
