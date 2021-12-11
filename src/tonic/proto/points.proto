@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "tech.qdrant.grpc";
+option java_outer_classname = "QdrantProto";
+
+package qdrant;
+
+service Points {
+  rpc Upsert (UpsertPoints) returns (PointsOperationResponse) {}
+}
+
+message UpsertPoints {
+  string collection = 1;
+  optional bool wait = 2;
+  repeated PointStruct points = 3;
+}
+
+message PointStruct {
+  uint64 id = 1;
+  repeated float vector = 2;
+  map<string, Payload> payload = 3;
+}
+
+message Payload {
+  optional KeywordPayload keyword = 1;
+  optional IntegerPayload integer = 2;
+  optional FloatPayload float = 3;
+  optional GeoPayload geo = 4;
+}
+
+message KeywordPayload {
+  repeated string value = 1;
+}
+message IntegerPayload {
+  repeated int64 value = 1;
+}
+
+message FloatPayload {
+  repeated double value = 1;
+}
+
+message GeoPayload {
+  repeated GeoPoint value = 1;
+}
+
+message GeoPoint {
+  double lon = 1;
+  double lat = 2;
+}
+
+message PointsOperationResponse {
+  optional UpdateResult result = 1;
+  optional string error = 2;
+  double time = 3;
+}
+
+message UpdateResult {
+  uint64 operation_id = 1;
+  UpdateStatus status = 2;
+}
+
+enum UpdateStatus {
+  Acknowledged = 0;
+  Completed = 1;
+}
