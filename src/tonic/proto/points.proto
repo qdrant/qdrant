@@ -19,7 +19,7 @@ message UpsertPoints {
 message PointStruct {
   uint64 id = 1;
   repeated float vector = 2;
-  repeated Payload payload = 3;
+  map<string, Payload> payload = 3;
 }
 
 message Payload {
@@ -30,22 +30,18 @@ message Payload {
 }
 
 message KeywordPayload {
-  string key = 1;
-  repeated string value = 2;
+  repeated string value = 1;
 }
 message IntegerPayload {
-  string key = 1;
-  repeated int64 value = 2;
+  repeated int64 value = 1;
 }
 
 message FloatPayload {
-  string key = 1;
-  repeated double value = 2;
+  repeated double value = 1;
 }
 
 message GeoPayload {
-  string key = 1;
-  repeated GeoPoint value = 2;
+  repeated GeoPoint value = 1;
 }
 
 message GeoPoint {

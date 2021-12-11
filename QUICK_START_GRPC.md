@@ -16,7 +16,7 @@ cargo run --features=grpc --bin qdrant
 It will run qdrant exposing both json and grpc API. If you do not want to use JSON API, add ``--no-default-features ``
 flag as well:
 ```bash
-cargo run --features=grpc --no-default-features  --bin qdrant
+cargo run --features=grpc --no-default-features --bin qdrant
 ```
 Note that actix is not compiled in this case.
 
@@ -99,26 +99,26 @@ Let's now add vectors with some payload:
 
 ```bash
 grpcurl -plaintext -import-path ./src/tonic/proto -proto qdrant.proto -d '{
-        "collection": "test_collection",
-        "wait": true,
-        "points": [
-          {
-            "id": 1, 
-            "vector": [0.05, 0.61, 0.76, 0.74], 
-            "payload": [
-              {"keyword": {"key": "city", "value": "Berlin"} },
-              {"keyword": {"key": "country", "value": "Germany"} },
-              {"integer": {"key": "population", "value": 1000000 } },
-              {"float": {"key": "square", "value": 12.5 }},
-              {"geo": {"key": "coords", "value": { "lat": 1.0, "lon": 2.0}}}
-            ]
-          },
-          {"id": 2, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"float": {"key": "square", "value": [10, 11]}}},
-          {"id": 3, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"integer": {"key": "count", "value": [0]}}},
-          {"id": 4, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"geo": {"key": "coords", "value": [{ "lat": 1.0, "lon": 2.0}, { "lat": 3.0, "lon": 4.0}]}}},
-          {"id": 5, "vector": [0.35, 0.08, 0.11, 0.44]}
-        ]
-      }' \
+  "collection": "test_collection",
+  "wait": true,
+  "points": [
+    {
+      "id": 1,
+      "vector": [0.05, 0.61, 0.76, 0.74],
+      "payload": {
+        "city": { "keyword": { "value": ["Berlin"] }},
+        "country": { "keyword": { "value": ["Germany"] }},
+        "population": { "integer": { "value": [1000000] }},
+        "square": { "float": { "value": [12.5] }},
+        "coords": { "geo": { "value": [{ "lat": 1.0, "lon": 2.0 }]}}
+      }
+    },
+    {"id": 2, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"square": {"float": { "value": [10, 11]}}}},
+    {"id": 3, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"count": {"integer": {"value": [0]}}}},
+    {"id": 4, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"coords": {"geo": {"value": [{ "lat": 1.0, "lon": 2.0}, { "lat": 3.0, "lon": 4.0}]}}}},
+    {"id": 5, "vector": [0.35, 0.08, 0.11, 0.44]}
+  ]
+}' \
 [::]:6334 qdrant.Points/Upsert
 ```
 

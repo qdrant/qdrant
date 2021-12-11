@@ -71,76 +71,59 @@ impl TryFrom<PointStruct> for collection::operations::point_ops::PointStruct {
             payload,
         } = value;
 
-        let payload = if payload.is_empty() {
-            None
-        } else {
-            let mut map = HashMap::new();
-            for payload in payload.into_iter() {
-                let (key, value) = if let Some(keyword) = payload.keyword {
-                    keyword.into()
-                } else if let Some(integer) = payload.integer {
-                    integer.into()
-                } else if let Some(float) = payload.float {
-                    float.into()
-                } else if let Some(geo) = payload.geo {
-                    geo.into()
-                } else {
-                    return Err(Status::failed_precondition("Unknown payload type"));
-                };
-                map.insert(key, value);
-            }
-            Some(map)
-        };
+        let mut converted_payload = HashMap::new();
+        for (key, payload_value) in payload.into_iter() {
+            let value = if let Some(keyword) = payload_value.keyword {
+                keyword.into()
+            } else if let Some(integer) = payload_value.integer {
+                integer.into()
+            } else if let Some(float) = payload_value.float {
+                float.into()
+            } else if let Some(geo) = payload_value.geo {
+                geo.into()
+            } else {
+                return Err(Status::failed_precondition("Unknown payload type"));
+            };
+            converted_payload.insert(key, value);
+        }
 
         Ok(Self {
             id,
             vector,
-            payload,
+            payload: Some(converted_payload),
         })
     }
 }
 
-impl From<KeywordPayload> for (String, PayloadInterface) {
+impl From<KeywordPayload> for PayloadInterface {
     fn from(value: KeywordPayload) -> Self {
-        (
-            value.key,
-            PayloadInterface::Payload(PayloadInterfaceStrict::Keyword(PayloadVariant::List(
-                value.value,
-            ))),
-        )
+        PayloadInterface::Payload(PayloadInterfaceStrict::Keyword(PayloadVariant::List(
+            value.value,
+        )))
     }
 }
 
-impl From<IntegerPayload> for (String, PayloadInterface) {
+impl From<IntegerPayload> for PayloadInterface {
     fn from(value: IntegerPayload) -> Self {
-        (
-            value.key,
-            PayloadInterface::Payload(PayloadInterfaceStrict::Integer(PayloadVariant::List(
-                value.value,
-            ))),
-        )
+        PayloadInterface::Payload(PayloadInterfaceStrict::Integer(PayloadVariant::List(
+            value.value,
+        )))
     }
 }
 
-impl From<FloatPayload> for (String, PayloadInterface) {
+impl From<FloatPayload> for PayloadInterface {
     fn from(value: FloatPayload) -> Self {
-        (
-            value.key,
-            PayloadInterface::Payload(PayloadInterfaceStrict::Float(PayloadVariant::List(
-                value.value,
-            ))),
-        )
+        PayloadInterface::Payload(PayloadInterfaceStrict::Float(PayloadVariant::List(
+            value.value,
+        )))
     }
 }
 
-impl From<GeoPayload> for (String, PayloadInterface) {
+impl From<GeoPayload> for PayloadInterface {
     fn from(value: GeoPayload) -> Self {
         let variant =
             PayloadVariant::List(value.value.into_iter().map(|point| point.into()).collect());
-        (
-            value.key,
-            PayloadInterface::Payload(PayloadInterfaceStrict::Geo(variant)),
-        )
+        PayloadInterface::Payload(PayloadInterfaceStrict::Geo(variant))
     }
 }
 
