@@ -1,8 +1,8 @@
 use tonic::{Request, Response, Status};
 
 use crate::common::points::do_update_points;
-use crate::tonic::proto::points_server::Points;
-use crate::tonic::proto::{
+use crate::tonic::qdrant::points_server::Points;
+use crate::tonic::qdrant::{
     FloatPayload, GeoPayload, GeoPoint, IntegerPayload, KeywordPayload, PointStruct,
     PointsOperationResponse, UpdateResult, UpsertPoints,
 };

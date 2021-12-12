@@ -1,14 +1,14 @@
 mod api;
-pub mod proto;
+pub mod qdrant;
 
 use crate::common::models::VersionInfo;
 use crate::settings::Settings;
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::points_api::PointsService;
-use proto::collections_server::CollectionsServer;
-use proto::points_server::PointsServer;
-use proto::qdrant_server::{Qdrant, QdrantServer};
-use proto::{HealthCheckReply, HealthCheckRequest};
+use qdrant::collections_server::CollectionsServer;
+use qdrant::points_server::PointsServer;
+use qdrant::qdrant_server::{Qdrant, QdrantServer};
+use qdrant::{HealthCheckReply, HealthCheckRequest};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use storage::content_manager::toc::TableOfContent;
