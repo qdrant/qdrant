@@ -7,7 +7,6 @@ use actix_web::middleware::Logger;
 use actix_web::web::Data;
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use std::sync::Arc;
-use tokio::signal;
 use storage::content_manager::toc::TableOfContent;
 
 use crate::actix::api::recommend_api::recommend_points;
@@ -40,7 +39,7 @@ pub async fn index() -> impl Responder {
 pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()> {
     actix_web::rt::System::new().block_on(async {
         let toc_data = web::Data::new(toc);
-        let server = HttpServer::new(move || {
+        HttpServer::new(move || {
             App::new()
                 .wrap(Logger::default())
                 .app_data(toc_data.clone())
@@ -58,22 +57,12 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
                 .service(search_points)
                 .service(recommend_points)
         })
-        .disable_signals()
         // .workers(4)
         .bind(format!(
             "{}:{}",
             settings.service.host, settings.service.port
         ))?
-        .run();
-
-        let svr = server.clone();
-
-        let stop_future = async {
-            signal::ctrl_c().await.unwrap();
-            svr.stop(true).await
-        };
-
-        let (server_result, _) = tokio::join!(server, stop_future);
-        server_result
+        .run()
+        .await
     })
 }

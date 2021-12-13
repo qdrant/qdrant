@@ -61,7 +61,7 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
                 .add_service(PointsServer::new(points_service))
                 .serve_with_shutdown(socket, async {
                     signal::ctrl_c().await.unwrap();
-                    info!("Stopping gPRC");
+                    info!("Stopping gRPC");
                 })
                 .await
         })
