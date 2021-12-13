@@ -4,7 +4,7 @@ pub mod helpers;
 
 use crate::actix::api::collections_api::config_collections_api;
 use actix_web::middleware::Logger;
-use actix_web::web::Data;
+use actix_web::web::{block, Data};
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use std::sync::Arc;
 use storage::content_manager::toc::TableOfContent;
@@ -39,7 +39,7 @@ pub async fn index() -> impl Responder {
 pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()> {
     actix_web::rt::System::new().block_on(async {
         let toc_data = web::Data::new(toc);
-        HttpServer::new(move || {
+        let server = HttpServer::new(move || {
             App::new()
                 .wrap(Logger::default())
                 .app_data(toc_data.clone())
@@ -57,12 +57,18 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
                 .service(search_points)
                 .service(recommend_points)
         })
+        .disable_signals()
         // .workers(4)
         .bind(format!(
             "{}:{}",
             settings.service.host, settings.service.port
         ))?
-        .run()
-        .await
+        .run();
+
+        ctrlc::set_handler(|| {
+            block_on(server.stop(true));
+        }).unwrap();
+
+        server.await
     })
 }
