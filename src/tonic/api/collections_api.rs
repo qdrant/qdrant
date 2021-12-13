@@ -2,8 +2,8 @@ use tonic::{Request, Response, Status};
 
 use crate::common::collections::*;
 use crate::common::models::CollectionsResponse;
-use crate::tonic::proto::collections_server::Collections;
-use crate::tonic::proto::{
+use crate::tonic::qdrant::collections_server::Collections;
+use crate::tonic::qdrant::{
     CollectionDescription, CollectionOperationResponse, CreateCollection, DeleteCollection,
     GetCollectionsRequest, GetCollectionsResponse, HnswConfigDiff, OptimizersConfigDiff,
     UpdateCollection, WalConfigDiff,
