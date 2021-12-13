@@ -2987,7 +2987,6 @@ dependencies = [
  "collection",
  "itertools 0.9.0",
  "num_cpus",
- "parking_lot",
  "rand 0.7.3",
  "schemars",
  "segment",

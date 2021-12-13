@@ -1,3 +1,4 @@
+use futures::executor::block_on;
 use std::fs::{read_dir, remove_dir_all};
 use std::path::Path;
 
@@ -73,7 +74,7 @@ pub fn load_collection(collection_path: &Path) -> Collection {
         collection_path,
     );
 
-    collection.load_from_wal();
+    block_on(collection.load_from_wal());
 
     collection
 }

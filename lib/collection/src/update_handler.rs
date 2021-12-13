@@ -6,11 +6,11 @@ use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
 use async_channel::{Receiver, Sender};
 use log::{debug, info};
-use parking_lot::Mutex;
 use segment::types::SeqNumberType;
 use std::cmp::min;
 use std::sync::Arc;
 use tokio::runtime::Handle;
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, Instant};
 
@@ -110,7 +110,7 @@ impl UpdateHandler {
     /// If some optimization is in progress - it will be finished before shutdown.
     /// Blocking function.
     pub async fn wait_workers_stops(&mut self) -> CollectionResult<()> {
-        for handle in self.optimization_handles.lock().iter() {
+        for handle in self.optimization_handles.lock().await.iter() {
             handle.abort();
         }
         let maybe_handle = self.update_worker.take();
@@ -126,7 +126,7 @@ impl UpdateHandler {
 
     /// Checks if there are any failed operations.
     /// If so - attempts to re-apply all failed operations.
-    fn try_recover(
+    async fn try_recover(
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
     ) -> CollectionResult<usize> {
@@ -135,7 +135,7 @@ impl UpdateHandler {
         match first_failed_operation_option {
             None => {}
             Some(first_failed_op) => {
-                let wal_lock = wal.lock();
+                let wal_lock = wal.lock().await;
                 for (op_num, operation) in wal_lock.read(first_failed_op) {
                     CollectionUpdater::update(&segments, op_num, operation)?;
                 }
@@ -183,21 +183,27 @@ impl UpdateHandler {
                 Ok(signal) => {
                     match signal {
                         OptimizerSignal::Nop => {
-                            if Self::try_recover(segments.clone(), wal.clone()).is_err() {
+                            if Self::try_recover(segments.clone(), wal.clone())
+                                .await
+                                .is_err()
+                            {
                                 continue;
                             }
-                            let mut handles = blocking_handles.lock();
+                            let mut handles = blocking_handles.lock().await;
                             handles.append(&mut Self::process_optimization(
                                 optimizers.clone(),
                                 segments.clone(),
                             ));
                         }
                         OptimizerSignal::Operation(operation_id) => {
-                            if Self::try_recover(segments.clone(), wal.clone()).is_err() {
+                            if Self::try_recover(segments.clone(), wal.clone())
+                                .await
+                                .is_err()
+                            {
                                 continue;
                             }
                             {
-                                let mut handles = blocking_handles.lock();
+                                let mut handles = blocking_handles.lock().await;
                                 handles.append(&mut Self::process_optimization(
                                     optimizers.clone(),
                                     segments.clone(),
@@ -218,7 +224,7 @@ impl UpdateHandler {
                                         }
                                     }
                                 };
-                                wal.lock().ack(confirmed_version).unwrap();
+                                wal.lock().await.ack(confirmed_version).unwrap();
                             }
                         }
                         OptimizerSignal::Stop => break, // Stop gracefully

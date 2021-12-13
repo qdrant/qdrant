@@ -6,8 +6,9 @@ use std::thread;
 
 use indicatif::ProgressBar;
 use itertools::Itertools;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use tokio::runtime::{Handle, Runtime};
+use tokio::sync::Mutex;
 
 use segment::types::{
     Condition, Filter, HasIdCondition, PayloadKeyType, PayloadSchemaInfo, PointIdType, ScoredPoint,
@@ -37,7 +38,7 @@ pub struct Collection {
     segments: Arc<RwLock<SegmentHolder>>,
     config: Arc<tokio::sync::RwLock<CollectionConfig>>,
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-    update_handler: Arc<tokio::sync::Mutex<UpdateHandler>>,
+    update_handler: Arc<Mutex<UpdateHandler>>,
     runtime_handle: Option<Runtime>,
     update_sender: Sender<UpdateSignal>,
     path: PathBuf,
@@ -86,7 +87,7 @@ impl Collection {
         };
 
         let operation_id = {
-            let mut wal_lock = self.wal.lock();
+            let mut wal_lock = self.wal.lock().await;
             let operation_id = wal_lock.write(&operation)?;
             sndr.send(UpdateSignal::Operation(OperationData {
                 op_num: operation_id,
@@ -361,8 +362,8 @@ impl Collection {
     }
 
     /// Loads latest collection operations from WAL
-    pub fn load_from_wal(&self) {
-        let wal = self.wal.lock();
+    pub async fn load_from_wal(&self) {
+        let wal = self.wal.lock().await;
         let bar = ProgressBar::new(wal.len());
         bar.set_message("Recovering collection");
         let segments = self.segments();
