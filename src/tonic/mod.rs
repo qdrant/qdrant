@@ -12,7 +12,7 @@ use qdrant::{HealthCheckReply, HealthCheckRequest};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use storage::content_manager::toc::TableOfContent;
-use tokio::runtime;
+use tokio::{runtime, signal};
 use tonic::{transport::Server, Request, Response, Status};
 
 #[derive(Default)]
@@ -59,7 +59,10 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
                 .add_service(QdrantServer::new(service))
                 .add_service(CollectionsServer::new(collections_service))
                 .add_service(PointsServer::new(points_service))
-                .serve(socket)
+                .serve_with_shutdown(socket, async {
+                    signal::ctrl_c().await.unwrap();
+                    info!("Stopping gPRC");
+                })
                 .await
         })
         .unwrap();

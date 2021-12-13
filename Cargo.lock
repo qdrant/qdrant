@@ -2258,6 +2258,7 @@ dependencies = [
  "criterion",
  "ctrlc",
  "env_logger 0.7.1",
+ "futures",
  "itertools 0.9.0",
  "log 0.4.14",
  "num-traits 0.2.14",

@@ -22,6 +22,7 @@ criterion = "0.3"
 [dependencies]
 
 ctrlc = "3.2.1"
+futures = "0.3.5"
 parking_lot = { version = "0.11", features=["deadlock_detection"], optional = true }
 
 num_cpus = "1.0"

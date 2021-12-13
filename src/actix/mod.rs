@@ -4,9 +4,10 @@ pub mod helpers;
 
 use crate::actix::api::collections_api::config_collections_api;
 use actix_web::middleware::Logger;
-use actix_web::web::{block, Data};
+use actix_web::web::Data;
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use std::sync::Arc;
+use tokio::signal;
 use storage::content_manager::toc::TableOfContent;
 
 use crate::actix::api::recommend_api::recommend_points;
@@ -65,10 +66,14 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
         ))?
         .run();
 
-        ctrlc::set_handler(|| {
-            block_on(server.stop(true));
-        }).unwrap();
+        let svr = server.clone();
 
-        server.await
+        let stop_future = async {
+            signal::ctrl_c().await.unwrap();
+            svr.stop(true).await
+        };
+
+        let (server_result, _) = tokio::join!(server, stop_future);
+        server_result
     })
 }
