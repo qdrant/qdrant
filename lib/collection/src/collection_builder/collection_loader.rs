@@ -17,9 +17,10 @@ pub fn load_collection(collection_path: &Path) -> Collection {
     let segments_path = collection_path.join("segments");
     let mut segment_holder = SegmentHolder::default();
 
-    let collection_config = CollectionConfig::load(collection_path).unwrap_or_else(|_| {
+    let collection_config = CollectionConfig::load(collection_path).unwrap_or_else(|err| {
         panic!(
-            "Can't read collection config at {}",
+            "Can't read collection config due to {}\nat {}",
+            err,
             collection_path.to_str().unwrap()
         )
     });
@@ -30,9 +31,10 @@ pub fn load_collection(collection_path: &Path) -> Collection {
     )
     .expect("Can't read WAL");
 
-    let segment_dirs = read_dir(&segments_path).unwrap_or_else(|_| {
+    let segment_dirs = read_dir(&segments_path).unwrap_or_else(|err| {
         panic!(
-            "Can't read segments directory {}",
+            "Can't read segments directory due to {}\nat {}",
+            err,
             segments_path.to_str().unwrap()
         )
     });
