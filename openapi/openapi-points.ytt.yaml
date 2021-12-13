@@ -1,0 +1,76 @@
+#@ load("openapi.lib.yml", "response", "reference", "type", "array")
+
+paths:
+  /collections/{name}:
+    post:
+      tags:
+        - points
+      summary: Update points
+      description: Perform point update operation (vectors, payloads, indexes) in collection
+      operationId: update_points
+      requestBody:
+        description: Collection update operations
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CollectionUpdateOperations"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to search in
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "Wait for changes to actually happen? Default: false"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(reference("UpdateResult"))
+
+  /collections/{name}/points/{id}:
+    get:
+      tags:
+        - points
+      summary: Get point
+      description: Retrieve full information of single point by id
+      operationId: get_point
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to retrieve from
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: Id of the point
+          required: true
+          schema:
+            type: integer
+      responses: #@ response(reference("Record"))
+
+  /collections/{name}/points:
+    post:
+      tags:
+        - points
+      summary: Get points
+      description: Retrieve multiple points by specified IDs
+      operationId: get_points
+      requestBody:
+        description: List of points to retrieve
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PointRequest"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to retrieve from
+          required: true
+          schema:
+            type: string
+      responses: #@ response(array(reference("Record")))

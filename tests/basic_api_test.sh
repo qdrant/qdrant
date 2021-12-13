@@ -5,22 +5,16 @@ set -ex
 
 QDRANT_HOST='localhost:6333'
 
-curl -X POST "http://$QDRANT_HOST/collections" \
+curl -X DELETE "http://$QDRANT_HOST/collections/test_collection" \
   -H 'Content-Type: application/json' \
-  --fail -s \
-  --data-raw '{
-        "delete_collection": "test_collection"
-    }' | jq
+  --fail -s | jq
 
-curl -X POST "http://$QDRANT_HOST/collections" \
+curl -X PUT "http://$QDRANT_HOST/collections/test_collection" \
   -H 'Content-Type: application/json' \
   --fail -s \
   --data-raw '{
-        "create_collection": {
-            "name": "test_collection",
-            "vector_size": 4,
-            "distance": "Dot"
-        }
+      "vector_size": 4,
+      "distance": "Dot"
     }' | jq
 
 curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq

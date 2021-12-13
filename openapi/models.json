@@ -4,77 +4,30 @@
             "AliasOperations": {
                 "anyOf": [
                     {
-                        "description": "Create alternative name for a collection. Collection will be available under both names for search, retrieve,",
-                        "type": "object",
-                        "required": [
-                            "create_alias"
-                        ],
-                        "properties": {
-                            "create_alias": {
-                                "type": "object",
-                                "required": [
-                                    "alias_name",
-                                    "collection_name"
-                                ],
-                                "properties": {
-                                    "alias_name": {
-                                        "type": "string"
-                                    },
-                                    "collection_name": {
-                                        "type": "string"
-                                    }
-                                }
-                            }
-                        },
-                        "additionalProperties": false
+                        "$ref": "#/components/schemas/CreateAliasOperation"
                     },
                     {
-                        "description": "Delete alias if exists",
-                        "type": "object",
-                        "required": [
-                            "delete_alias"
-                        ],
-                        "properties": {
-                            "delete_alias": {
-                                "type": "object",
-                                "required": [
-                                    "alias_name"
-                                ],
-                                "properties": {
-                                    "alias_name": {
-                                        "type": "string"
-                                    }
-                                }
-                            }
-                        },
-                        "additionalProperties": false
+                        "$ref": "#/components/schemas/DeleteAliasOperation"
                     },
                     {
-                        "description": "Change alias to a new one",
-                        "type": "object",
-                        "required": [
-                            "rename_alias"
-                        ],
-                        "properties": {
-                            "rename_alias": {
-                                "type": "object",
-                                "required": [
-                                    "new_alias_name",
-                                    "old_alias_name"
-                                ],
-                                "properties": {
-                                    "new_alias_name": {
-                                        "type": "string"
-                                    },
-                                    "old_alias_name": {
-                                        "type": "string"
-                                    }
-                                }
-                            }
-                        },
-                        "additionalProperties": false
+                        "$ref": "#/components/schemas/RenameAliasOperation"
                     }
                 ]
+            },
+            "ChangeAliasesOperation": {
+                "description": "Operation for performing changes of collection aliases. Alias changes are atomic, meaning that no collection modifications can happen between alias operations.",
+                "type": "object",
+                "required": [
+                    "actions"
+                ],
+                "properties": {
+                    "actions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AliasOperations"
+                        }
+                    }
+                }
             },
             "CollectionConfig": {
                 "type": "object",
@@ -227,6 +180,167 @@
                         "$ref": "#/components/schemas/Filter"
                     }
                 ]
+            },
+            "CreateAlias": {
+                "description": "Create alternative name for a collection. Collection will be available under both names for search, retrieve,",
+                "type": "object",
+                "required": [
+                    "alias_name",
+                    "collection_name"
+                ],
+                "properties": {
+                    "alias_name": {
+                        "type": "string"
+                    },
+                    "collection_name": {
+                        "type": "string"
+                    }
+                }
+            },
+            "CreateAliasOperation": {
+                "type": "object",
+                "required": [
+                    "create_alias"
+                ],
+                "properties": {
+                    "create_alias": {
+                        "$ref": "#/components/schemas/CreateAlias"
+                    }
+                }
+            },
+            "CreateCollection": {
+                "description": "Operation for creating new collection and (optionally) specify index params",
+                "type": "object",
+                "required": [
+                    "distance",
+                    "vector_size"
+                ],
+                "properties": {
+                    "distance": {
+                        "$ref": "#/components/schemas/Distance"
+                    },
+                    "hnsw_config": {
+                        "description": "Custom params for HNSW index. If none - values from service configuration file are used.",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/HnswConfigDiff"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    },
+                    "optimizers_config": {
+                        "description": "Custom params for Optimizers.  If none - values from service configuration file are used.",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/OptimizersConfigDiff"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    },
+                    "vector_size": {
+                        "type": "integer",
+                        "format": "uint",
+                        "minimum": 0
+                    },
+                    "wal_config": {
+                        "description": "Custom params for WAL. If none - values from service configuration file are used.",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/WalConfigDiff"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    }
+                }
+            },
+            "CreateCollectionOperation": {
+                "description": "Operation for creating new collection and (optionally) specify index params",
+                "type": "object",
+                "required": [
+                    "distance",
+                    "name",
+                    "vector_size"
+                ],
+                "properties": {
+                    "distance": {
+                        "$ref": "#/components/schemas/Distance"
+                    },
+                    "hnsw_config": {
+                        "description": "Custom params for HNSW index. If none - values from service configuration file are used.",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/HnswConfigDiff"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "optimizers_config": {
+                        "description": "Custom params for Optimizers.  If none - values from service configuration file are used.",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/OptimizersConfigDiff"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    },
+                    "vector_size": {
+                        "type": "integer",
+                        "format": "uint",
+                        "minimum": 0
+                    },
+                    "wal_config": {
+                        "description": "Custom params for WAL. If none - values from service configuration file are used.",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/WalConfigDiff"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    }
+                }
+            },
+            "DeleteAlias": {
+                "description": "Delete alias if exists",
+                "type": "object",
+                "required": [
+                    "alias_name"
+                ],
+                "properties": {
+                    "alias_name": {
+                        "type": "string"
+                    }
+                }
+            },
+            "DeleteAliasOperation": {
+                "description": "Delete alias if exists",
+                "type": "object",
+                "required": [
+                    "delete_alias"
+                ],
+                "properties": {
+                    "delete_alias": {
+                        "$ref": "#/components/schemas/DeleteAlias"
+                    }
+                }
+            },
+            "DeleteCollectionOperation": {
+                "description": "Operation for deleting collection with given name",
+                "type": "string"
             },
             "Distance": {
                 "description": "Type of internal tags, build from payload Distance function types used to compare vectors",
@@ -1318,6 +1432,34 @@
                     }
                 }
             },
+            "RenameAlias": {
+                "description": "Change alias to a new one",
+                "type": "object",
+                "required": [
+                    "new_alias_name",
+                    "old_alias_name"
+                ],
+                "properties": {
+                    "new_alias_name": {
+                        "type": "string"
+                    },
+                    "old_alias_name": {
+                        "type": "string"
+                    }
+                }
+            },
+            "RenameAliasOperation": {
+                "description": "Change alias to a new one",
+                "type": "object",
+                "required": [
+                    "rename_alias"
+                ],
+                "properties": {
+                    "rename_alias": {
+                        "$ref": "#/components/schemas/RenameAlias"
+                    }
+                }
+            },
             "ScoredPoint": {
                 "type": "object",
                 "required": [
@@ -1494,141 +1636,97 @@
                 }
             },
             "StorageOperations": {
+                "description": "Enumeration of all possible collection update operations",
                 "anyOf": [
                     {
-                        "description": "Create new collection and (optionally) specify index params",
                         "type": "object",
                         "required": [
                             "create_collection"
                         ],
                         "properties": {
                             "create_collection": {
-                                "type": "object",
-                                "required": [
-                                    "distance",
-                                    "name",
-                                    "vector_size"
-                                ],
-                                "properties": {
-                                    "distance": {
-                                        "$ref": "#/components/schemas/Distance"
-                                    },
-                                    "hnsw_config": {
-                                        "description": "Custom params for HNSW index. If none - values from service configuration file are used.",
-                                        "anyOf": [
-                                            {
-                                                "$ref": "#/components/schemas/HnswConfigDiff"
-                                            },
-                                            {
-                                                "nullable": true
-                                            }
-                                        ]
-                                    },
-                                    "name": {
-                                        "type": "string"
-                                    },
-                                    "optimizers_config": {
-                                        "description": "Custom params for Optimizers.  If none - values from service configuration file are used.",
-                                        "anyOf": [
-                                            {
-                                                "$ref": "#/components/schemas/OptimizersConfigDiff"
-                                            },
-                                            {
-                                                "nullable": true
-                                            }
-                                        ]
-                                    },
-                                    "vector_size": {
-                                        "type": "integer",
-                                        "format": "uint",
-                                        "minimum": 0
-                                    },
-                                    "wal_config": {
-                                        "description": "Custom params for WAL. If none - values from service configuration file are used.",
-                                        "anyOf": [
-                                            {
-                                                "$ref": "#/components/schemas/WalConfigDiff"
-                                            },
-                                            {
-                                                "nullable": true
-                                            }
-                                        ]
-                                    }
-                                }
+                                "$ref": "#/components/schemas/CreateCollectionOperation"
                             }
                         },
                         "additionalProperties": false
                     },
                     {
-                        "description": "Update parameters of the existing collection",
                         "type": "object",
                         "required": [
                             "update_collection"
                         ],
                         "properties": {
                             "update_collection": {
-                                "type": "object",
-                                "required": [
-                                    "name"
-                                ],
-                                "properties": {
-                                    "name": {
-                                        "type": "string"
-                                    },
-                                    "optimizers_config": {
-                                        "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete",
-                                        "anyOf": [
-                                            {
-                                                "$ref": "#/components/schemas/OptimizersConfigDiff"
-                                            },
-                                            {
-                                                "nullable": true
-                                            }
-                                        ]
-                                    }
-                                }
+                                "$ref": "#/components/schemas/UpdateCollectionOperation"
                             }
                         },
                         "additionalProperties": false
                     },
                     {
-                        "description": "Delete collection with given name",
                         "type": "object",
                         "required": [
                             "delete_collection"
                         ],
                         "properties": {
                             "delete_collection": {
-                                "type": "string"
+                                "$ref": "#/components/schemas/DeleteCollectionOperation"
                             }
                         },
                         "additionalProperties": false
                     },
                     {
-                        "description": "Perform changes of collection aliases. Alias changes are atomic, meaning that no collection modifications can happen between alias operations.",
                         "type": "object",
                         "required": [
                             "change_aliases"
                         ],
                         "properties": {
                             "change_aliases": {
-                                "type": "object",
-                                "required": [
-                                    "actions"
-                                ],
-                                "properties": {
-                                    "actions": {
-                                        "type": "array",
-                                        "items": {
-                                            "$ref": "#/components/schemas/AliasOperations"
-                                        }
-                                    }
-                                }
+                                "$ref": "#/components/schemas/ChangeAliasesOperation"
                             }
                         },
                         "additionalProperties": false
                     }
                 ]
+            },
+            "UpdateCollection": {
+                "description": "Operation for updating parameters of the existing collection",
+                "type": "object",
+                "properties": {
+                    "optimizers_config": {
+                        "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/OptimizersConfigDiff"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    }
+                }
+            },
+            "UpdateCollectionOperation": {
+                "description": "Operation for updating parameters of the existing collection",
+                "type": "object",
+                "required": [
+                    "name"
+                ],
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "optimizers_config": {
+                        "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/OptimizersConfigDiff"
+                            },
+                            {
+                                "nullable": true
+                            }
+                        ]
+                    }
+                }
             },
             "UpdateResult": {
                 "type": "object",

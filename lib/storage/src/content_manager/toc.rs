@@ -22,7 +22,11 @@ use segment::types::{PointIdType, ScoredPoint, WithPayload};
 
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::errors::StorageError;
-use crate::content_manager::storage_ops::{AliasOperations, StorageOperations};
+use crate::content_manager::storage_ops::{
+    AliasOperations, ChangeAliasesOperation, CreateAlias, CreateAliasOperation, CreateCollection,
+    DeleteAlias, DeleteAliasOperation, RenameAlias, RenameAliasOperation, StorageOperations,
+    UpdateCollection,
+};
 use crate::types::StorageConfig;
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
@@ -134,149 +138,180 @@ impl TableOfContent {
         Ok(resolved_name)
     }
 
+    pub async fn create_collection(
+        &self,
+        collection_name: &str,
+        operation: CreateCollection,
+    ) -> Result<bool, StorageError> {
+        let CreateCollection {
+            vector_size,
+            distance,
+            hnsw_config: hnsw_config_diff,
+            wal_config: wal_config_diff,
+            optimizers_config: optimizers_config_diff,
+        } = operation;
+
+        self.collections
+            .read()
+            .await
+            .validate_collection_not_exists(collection_name)
+            .await?;
+
+        let collection_path = self.create_collection_path(collection_name)?;
+
+        let collection_params = CollectionParams {
+            vector_size,
+            distance,
+        };
+        let wal_config = match wal_config_diff {
+            None => self.storage_config.wal.clone(),
+            Some(diff) => diff.update(&self.storage_config.wal)?,
+        };
+
+        let optimizers_config = match optimizers_config_diff {
+            None => self.storage_config.optimizers.clone(),
+            Some(diff) => diff.update(&self.storage_config.optimizers)?,
+        };
+
+        let hnsw_config = match hnsw_config_diff {
+            None => self.storage_config.hnsw_index,
+            Some(diff) => diff.update(&self.storage_config.hnsw_index)?,
+        };
+
+        let collection = build_collection(
+            Path::new(&collection_path),
+            &wal_config,
+            &collection_params,
+            &optimizers_config,
+            &hnsw_config,
+        )?;
+
+        let mut write_collections = self.collections.write().await;
+        write_collections
+            .validate_collection_not_exists(collection_name)
+            .await?;
+        write_collections.insert(collection_name.to_string(), Arc::new(collection));
+        Ok(true)
+    }
+
+    pub async fn update_collection(
+        &self,
+        collection_name: &str,
+        operation: UpdateCollection,
+    ) -> Result<bool, StorageError> {
+        match operation.optimizers_config {
+            None => {}
+            Some(new_optimizers_config) => {
+                let collection = self.get_collection(collection_name).await?;
+                collection
+                    .update_optimizer_params(new_optimizers_config)
+                    .await?
+            }
+        }
+        Ok(true)
+    }
+
+    pub async fn delete_collection(&self, collection_name: &str) -> Result<bool, StorageError> {
+        if let Some(removed) = self.collections.write().await.remove(collection_name) {
+            removed.stop().await?;
+            {
+                // Wait for optimizer to finish.
+                // TODO: Enhance optimizer to shutdown faster
+                removed.wait_update_workers_stop().await?;
+            }
+            let path = self.get_collection_path(collection_name);
+            remove_dir_all(path).map_err(|err| StorageError::ServiceError {
+                description: format!(
+                    "Can't delete collection {}, error: {}",
+                    collection_name, err
+                ),
+            })?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    pub async fn update_aliases(
+        &self,
+        operation: ChangeAliasesOperation,
+    ) -> Result<bool, StorageError> {
+        // Lock all collections for alias changes
+        // Prevent search on partially switched collections
+        let collection_lock = self.collections.write().await;
+        for action in operation.actions {
+            match action {
+                AliasOperations::CreateAlias(CreateAliasOperation {
+                    create_alias:
+                        CreateAlias {
+                            collection_name,
+                            alias_name,
+                        },
+                }) => {
+                    collection_lock
+                        .validate_collection_exists(&collection_name)
+                        .await?;
+                    collection_lock
+                        .validate_collection_not_exists(&alias_name)
+                        .await?;
+
+                    self.alias_persistence
+                        .insert(alias_name.as_bytes(), collection_name.as_bytes())?;
+                }
+                AliasOperations::DeleteAlias(DeleteAliasOperation {
+                    delete_alias: DeleteAlias { alias_name },
+                }) => {
+                    self.alias_persistence.remove(alias_name.as_bytes())?;
+                }
+                AliasOperations::RenameAlias(RenameAliasOperation {
+                    rename_alias:
+                        RenameAlias {
+                            old_alias_name,
+                            new_alias_name,
+                        },
+                }) => {
+                    if !self
+                        .alias_persistence
+                        .contains_key(old_alias_name.as_bytes())?
+                    {
+                        return Err(StorageError::NotFound {
+                            description: format!("Alias {} does not exists!", old_alias_name),
+                        });
+                    }
+
+                    let transaction_res = self.alias_persistence.transaction(|tx_db| {
+                        let collection = tx_db
+                            .remove(old_alias_name.as_bytes())?
+                            .ok_or(UnabortableTransactionError::Conflict)?;
+
+                        tx_db.insert(new_alias_name.as_bytes(), collection)?;
+                        Ok(())
+                    });
+                    transaction_res?;
+                }
+            };
+        }
+        self.alias_persistence.flush()?;
+        Ok(true)
+    }
+
     pub async fn perform_collection_operation(
         &self,
         operation: StorageOperations,
     ) -> Result<bool, StorageError> {
         match operation {
-            StorageOperations::CreateCollection {
-                name: collection_name,
-                vector_size,
-                distance,
-                hnsw_config: hnsw_config_diff,
-                wal_config: wal_config_diff,
-                optimizers_config: optimizers_config_diff,
-            } => {
-                self.collections
-                    .read()
+            StorageOperations::CreateCollection(operation) => {
+                self.create_collection(&operation.name, operation.create_collection)
                     .await
-                    .validate_collection_not_exists(&collection_name)
-                    .await?;
-                let collection_path = self.create_collection_path(&collection_name)?;
-
-                let collection_params = CollectionParams {
-                    vector_size,
-                    distance,
-                };
-                let wal_config = match wal_config_diff {
-                    None => self.storage_config.wal.clone(),
-                    Some(diff) => diff.update(&self.storage_config.wal)?,
-                };
-
-                let optimizers_config = match optimizers_config_diff {
-                    None => self.storage_config.optimizers.clone(),
-                    Some(diff) => diff.update(&self.storage_config.optimizers)?,
-                };
-
-                let hnsw_config = match hnsw_config_diff {
-                    None => self.storage_config.hnsw_index,
-                    Some(diff) => diff.update(&self.storage_config.hnsw_index)?,
-                };
-
-                let collection = build_collection(
-                    Path::new(&collection_path),
-                    &wal_config,
-                    &collection_params,
-                    &optimizers_config,
-                    &hnsw_config,
-                )?;
-
-                let mut write_collections = self.collections.write().await;
-                write_collections
-                    .validate_collection_not_exists(&collection_name)
-                    .await?;
-                write_collections.insert(collection_name, Arc::new(collection));
-                Ok(true)
             }
-            StorageOperations::UpdateCollection {
-                name,
-                optimizers_config,
-            } => {
-                match optimizers_config {
-                    None => {}
-                    Some(new_optimizers_config) => {
-                        let collection = self.get_collection(&name).await?;
-                        collection
-                            .update_optimizer_params(new_optimizers_config)
-                            .await?
-                    }
-                }
-                Ok(true)
+            StorageOperations::UpdateCollection(operation) => {
+                self.update_collection(&operation.name, operation.update_collection)
+                    .await
             }
-            StorageOperations::DeleteCollection(collection_name) => {
-                if let Some(removed) = self.collections.write().await.remove(&collection_name) {
-                    removed.stop().await?;
-                    {
-                        // Wait for optimizer to finish.
-                        // TODO: Enhance optimizer to shutdown faster
-                        removed.wait_update_workers_stop().await?;
-                    }
-                    let path = self.get_collection_path(&collection_name);
-                    remove_dir_all(path).map_err(|err| StorageError::ServiceError {
-                        description: format!(
-                            "Can't delete collection {}, error: {}",
-                            collection_name, err
-                        ),
-                    })?;
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
+            StorageOperations::DeleteCollection(operation) => {
+                self.delete_collection(&operation.0).await
             }
-            StorageOperations::ChangeAliases { actions } => {
-                // Lock all collections for alias changes
-                // Prevent search on partially switched collections
-                let collection_lock = self.collections.write().await;
-                for action in actions {
-                    match action {
-                        AliasOperations::CreateAlias {
-                            collection_name,
-                            alias_name,
-                        } => {
-                            collection_lock
-                                .validate_collection_exists(&collection_name)
-                                .await?;
-                            collection_lock
-                                .validate_collection_not_exists(&alias_name)
-                                .await?;
-
-                            self.alias_persistence
-                                .insert(alias_name.as_bytes(), collection_name.as_bytes())?;
-                        }
-                        AliasOperations::DeleteAlias { alias_name } => {
-                            self.alias_persistence.remove(alias_name.as_bytes())?;
-                        }
-                        AliasOperations::RenameAlias {
-                            old_alias_name,
-                            new_alias_name,
-                        } => {
-                            if !self
-                                .alias_persistence
-                                .contains_key(old_alias_name.as_bytes())?
-                            {
-                                return Err(StorageError::NotFound {
-                                    description: format!(
-                                        "Alias {} does not exists!",
-                                        old_alias_name
-                                    ),
-                                });
-                            }
-
-                            let transaction_res = self.alias_persistence.transaction(|tx_db| {
-                                let collection = tx_db
-                                    .remove(old_alias_name.as_bytes())?
-                                    .ok_or(UnabortableTransactionError::Conflict)?;
-
-                                tx_db.insert(new_alias_name.as_bytes(), collection)?;
-                                Ok(())
-                            });
-                            transaction_res?;
-                        }
-                    };
-                }
-                self.alias_persistence.flush()?;
-                Ok(true)
-            }
+            StorageOperations::ChangeAliases(operation) => self.update_aliases(operation).await,
         }
     }
 

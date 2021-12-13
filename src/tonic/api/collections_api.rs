@@ -13,6 +13,11 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::Instant;
 use storage::content_manager::errors::StorageError;
+use storage::content_manager::storage_ops::{
+    CreateCollection as StorageCreateCollection, CreateCollectionOperation,
+    DeleteCollectionOperation, UpdateCollection as StorageUpdateCollection,
+    UpdateCollectionOperation,
+};
 use storage::content_manager::toc::TableOfContent;
 
 pub struct CollectionsService {
@@ -99,14 +104,16 @@ impl TryFrom<CreateCollection> for storage::content_manager::storage_ops::Storag
 
     fn try_from(value: CreateCollection) -> Result<Self, Self::Error> {
         if let Some(distance) = FromPrimitive::from_i32(value.distance) {
-            Ok(Self::CreateCollection {
+            Ok(Self::CreateCollection(CreateCollectionOperation {
                 name: value.name,
-                vector_size: value.vector_size as usize,
-                distance,
-                hnsw_config: value.hnsw_config.map(|v| v.into()),
-                wal_config: value.wal_config.map(|v| v.into()),
-                optimizers_config: value.optimizers_config.map(|v| v.into()),
-            })
+                create_collection: StorageCreateCollection {
+                    vector_size: value.vector_size as usize,
+                    distance,
+                    hnsw_config: value.hnsw_config.map(|v| v.into()),
+                    wal_config: value.wal_config.map(|v| v.into()),
+                    optimizers_config: value.optimizers_config.map(|v| v.into()),
+                },
+            }))
         } else {
             Err(Status::failed_precondition("Bad value of distance field!"))
         }
@@ -175,15 +182,17 @@ impl From<(Instant, Result<bool, StorageError>)> for CollectionOperationResponse
 
 impl From<UpdateCollection> for storage::content_manager::storage_ops::StorageOperations {
     fn from(value: UpdateCollection) -> Self {
-        Self::UpdateCollection {
+        Self::UpdateCollection(UpdateCollectionOperation {
             name: value.name,
-            optimizers_config: value.optimizers_config.map(|v| v.into()),
-        }
+            update_collection: StorageUpdateCollection {
+                optimizers_config: value.optimizers_config.map(|v| v.into()),
+            },
+        })
     }
 }
 
 impl From<DeleteCollection> for storage::content_manager::storage_ops::StorageOperations {
     fn from(value: DeleteCollection) -> Self {
-        Self::DeleteCollection(value.name)
+        Self::DeleteCollection(DeleteCollectionOperation(value.name))
     }
 }

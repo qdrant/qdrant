@@ -100,7 +100,7 @@ So you can [play with it online!](https://categories.qdrant.tech/)
 Online OpenAPI 3.0 documentation is available [here](https://qdrant.github.io/qdrant/redoc/index.html).
 OpenAPI makes it easy to generate a client for virtually any framework or programing language.
 
-You can also download raw OpenAPI [definitions](openapi/openapi.yaml).
+You can also download raw OpenAPI [definitions](openapi/openapi-merged.yaml).
 
 ## Features
 

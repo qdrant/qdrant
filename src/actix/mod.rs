@@ -2,13 +2,13 @@ pub mod api;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
 
+use crate::actix::api::collections_api::config_collections_api;
 use actix_web::middleware::Logger;
 use actix_web::web::Data;
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use std::sync::Arc;
 use storage::content_manager::toc::TableOfContent;
 
-use crate::actix::api::collections_api::{get_collection, get_collections, update_collections};
 use crate::actix::api::recommend_api::recommend_points;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::search_points;
@@ -49,9 +49,7 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
                         .error_handler(json_error_handler),
                 )) // 32 Mb
                 .service(index)
-                .service(get_collections)
-                .service(update_collections)
-                .service(get_collection)
+                .configure(config_collections_api)
                 .service(update_points)
                 .service(get_point)
                 .service(get_points)
