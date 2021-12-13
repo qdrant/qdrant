@@ -103,6 +103,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "agourlay",
+      "name": "Arnaud Gourlay",
+      "avatar_url": "https://avatars.githubusercontent.com/u/606963?v=4",
+      "profile": "http://agourlay.github.io",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
