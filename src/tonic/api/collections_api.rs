@@ -2,11 +2,13 @@ use tonic::{Request, Response, Status};
 
 use crate::common::collections::*;
 use crate::common::models::CollectionsResponse;
+use crate::tonic::api::common::error_to_status;
 use crate::tonic::qdrant::collections_server::Collections;
 use crate::tonic::qdrant::{
-    CollectionDescription, CollectionOperationResponse, CreateCollection, DeleteCollection,
-    GetCollectionsRequest, GetCollectionsResponse, HnswConfigDiff, OptimizersConfigDiff,
-    UpdateCollection, WalConfigDiff,
+    CollectionConfig, CollectionDescription, CollectionInfo, CollectionOperationResponse,
+    CollectionParams, CollectionStatus, CreateCollection, DeleteCollection, Distance,
+    GetCollectionInfoRequest, GetCollectionInfoResponse, HnswConfigDiff, ListCollectionsRequest,
+    ListCollectionsResponse, OptimizersConfigDiff, UpdateCollection, WalConfigDiff,
 };
 use num_traits::FromPrimitive;
 use std::convert::TryFrom;
@@ -34,12 +36,26 @@ impl CollectionsService {
 impl Collections for CollectionsService {
     async fn get(
         &self,
-        _request: Request<GetCollectionsRequest>,
-    ) -> Result<Response<GetCollectionsResponse>, Status> {
+        request: Request<GetCollectionInfoRequest>,
+    ) -> Result<Response<GetCollectionInfoResponse>, Status> {
+        let timing = Instant::now();
+        let collection_name = request.into_inner().name;
+        let result = do_get_collection(&self.toc, &collection_name)
+            .await
+            .map_err(error_to_status)?;
+        let response = GetCollectionInfoResponse::from((timing, result));
+
+        Ok(Response::new(response))
+    }
+
+    async fn list(
+        &self,
+        _request: Request<ListCollectionsRequest>,
+    ) -> Result<Response<ListCollectionsResponse>, Status> {
         let timing = Instant::now();
         let result = do_get_collections(&self.toc).await;
 
-        let response = GetCollectionsResponse::from((timing, result));
+        let response = ListCollectionsResponse::from((timing, result));
         Ok(Response::new(response))
     }
 
@@ -84,7 +100,7 @@ impl Collections for CollectionsService {
     }
 }
 
-impl From<(Instant, CollectionsResponse)> for GetCollectionsResponse {
+impl From<(Instant, CollectionsResponse)> for ListCollectionsResponse {
     fn from(value: (Instant, CollectionsResponse)) -> Self {
         let (timing, response) = value;
         let collections = response
@@ -150,6 +166,81 @@ impl From<OptimizersConfigDiff> for collection::operations::config_diff::Optimiz
             payload_indexing_threshold: value.payload_indexing_threshold.map(|v| v as usize),
             flush_interval_sec: value.flush_interval_sec,
             max_optimization_threads: value.max_optimization_threads.map(|v| v as usize),
+        }
+    }
+}
+
+impl From<(Instant, collection::operations::types::CollectionInfo)> for GetCollectionInfoResponse {
+    fn from(value: (Instant, collection::operations::types::CollectionInfo)) -> Self {
+        let (timing, response) = value;
+
+        GetCollectionInfoResponse {
+            result: Some(CollectionInfo {
+                status: match response.status {
+                    collection::operations::types::CollectionStatus::Green => {
+                        CollectionStatus::Green
+                    }
+                    collection::operations::types::CollectionStatus::Yellow => {
+                        CollectionStatus::Yellow
+                    }
+                    collection::operations::types::CollectionStatus::Red => CollectionStatus::Red,
+                }
+                .into(),
+                vectors_count: response.vectors_count as u64,
+                segments_count: response.segments_count as u64,
+                disk_data_size: response.disk_data_size as u64,
+                ram_data_size: response.ram_data_size as u64,
+                config: Some(CollectionConfig {
+                    params: Some(CollectionParams {
+                        vector_size: response.config.params.vector_size as u64,
+                        distance: match response.config.params.distance {
+                            segment::types::Distance::Cosine => Distance::Cosine,
+                            segment::types::Distance::Euclid => Distance::Euclid,
+                            segment::types::Distance::Dot => Distance::Dot,
+                        }
+                        .into(),
+                    }),
+                    hnsw_config: Some(HnswConfigDiff {
+                        m: Some(response.config.hnsw_config.m as u64),
+                        ef_construct: Some(response.config.hnsw_config.ef_construct as u64),
+                        full_scan_threshold: Some(
+                            response.config.hnsw_config.full_scan_threshold as u64,
+                        ),
+                    }),
+                    optimizer_config: Some(OptimizersConfigDiff {
+                        deleted_threshold: Some(response.config.optimizer_config.deleted_threshold),
+                        vacuum_min_vector_number: Some(
+                            response.config.optimizer_config.vacuum_min_vector_number as u64,
+                        ),
+                        max_segment_number: Some(
+                            response.config.optimizer_config.max_segment_number as u64,
+                        ),
+                        memmap_threshold: Some(
+                            response.config.optimizer_config.memmap_threshold as u64,
+                        ),
+                        indexing_threshold: Some(
+                            response.config.optimizer_config.indexing_threshold as u64,
+                        ),
+                        payload_indexing_threshold: Some(
+                            response.config.optimizer_config.payload_indexing_threshold as u64,
+                        ),
+                        flush_interval_sec: Some(
+                            response.config.optimizer_config.flush_interval_sec as u64,
+                        ),
+                        max_optimization_threads: Some(
+                            response.config.optimizer_config.max_optimization_threads as u64,
+                        ),
+                    }),
+                    wal_config: Some(WalConfigDiff {
+                        wal_capacity_mb: Some(response.config.wal_config.wal_capacity_mb as u64),
+                        wal_segments_ahead: Some(
+                            response.config.wal_config.wal_segments_ahead as u64,
+                        ),
+                    }),
+                }),
+                payload_schema: Default::default(),
+            }),
+            time: timing.elapsed().as_secs_f64(),
         }
     }
 }
