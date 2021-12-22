@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use parking_lot::RwLock;
 use tokio::runtime::Handle;
+use tokio::sync::RwLock;
 
 use segment::types::{PointIdType, ScoredPoint, WithPayload};
 

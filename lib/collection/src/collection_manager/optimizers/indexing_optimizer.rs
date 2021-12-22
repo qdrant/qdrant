@@ -37,9 +37,12 @@ impl IndexingOptimizer {
         }
     }
 
-    fn worst_segment(&self, segments: LockedSegmentHolder) -> Option<(SegmentId, LockedSegment)> {
-        segments
-            .read()
+    async fn worst_segment(
+        &self,
+        segments: LockedSegmentHolder,
+    ) -> Option<(SegmentId, LockedSegment)> {
+        let segments_read = segments.read().await;
+        segments_read
             .iter()
             .filter_map(|(idx, segment)| {
                 let segment_entry = segment.get();
@@ -85,10 +88,11 @@ impl IndexingOptimizer {
                 }
             })
             .max_by_key(|(_, num_vectors)| *num_vectors)
-            .map(|(idx, _)| (idx, segments.read().get(idx).unwrap().clone()))
+            .map(|(idx, _)| (idx, segments_read.get(idx).unwrap().clone()))
     }
 }
 
+#[async_trait::async_trait]
 impl SegmentOptimizer for IndexingOptimizer {
     fn collection_path(&self) -> &Path {
         self.segments_path.as_path()
@@ -110,8 +114,8 @@ impl SegmentOptimizer for IndexingOptimizer {
         &self.thresholds_config
     }
 
-    fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId> {
-        match self.worst_segment(segments) {
+    async fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId> {
+        match self.worst_segment(segments).await {
             None => vec![],
             Some((segment_id, _segment)) => vec![segment_id],
         }
@@ -124,8 +128,8 @@ mod tests {
     use std::sync::Arc;
 
     use itertools::Itertools;
-    use parking_lot::lock_api::RwLock;
     use tempdir::TempDir;
+    use tokio::sync::RwLock;
 
     use segment::types::StorageType;
 
@@ -135,6 +139,7 @@ mod tests {
     use super::*;
     use crate::collection_manager::fixtures::random_segment;
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
+    use crate::collection_manager::optimizers::optimize::optimize;
     use crate::collection_manager::segments_updater::{
         process_field_index_operation, process_point_operation,
     };
@@ -143,8 +148,8 @@ mod tests {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    #[test]
-    fn test_indexing_optimizer() {
+    #[tokio::test]
+    async fn test_indexing_optimizer() {
         init();
 
         let mut holder = SegmentHolder::default();
@@ -167,7 +172,7 @@ mod tests {
         let middle_segment_id = holder.add(middle_segment);
         let large_segment_id = holder.add(large_segment);
 
-        let mut index_optimizer = IndexingOptimizer::new(
+        let mut index_optimizer = Arc::new(IndexingOptimizer::new(
             OptimizerThresholds {
                 memmap_threshold: 1000,
                 indexing_threshold: 1000,
@@ -180,18 +185,24 @@ mod tests {
                 distance: segment_config.distance,
             },
             Default::default(),
-        );
+        ));
 
         let locked_holder = Arc::new(RwLock::new(holder));
 
         // ---- check condition for MMap optimization
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone()).await;
         assert!(suggested_to_optimize.is_empty());
 
-        index_optimizer.thresholds_config.memmap_threshold = 150;
-        index_optimizer.thresholds_config.indexing_threshold = 50;
+        Arc::get_mut(&mut index_optimizer)
+            .unwrap()
+            .thresholds_config
+            .memmap_threshold = 150;
+        Arc::get_mut(&mut index_optimizer)
+            .unwrap()
+            .thresholds_config
+            .indexing_threshold = 50;
 
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone()).await;
         assert!(suggested_to_optimize.contains(&large_segment_id));
 
         // ----- CREATE AN INDEXED FIELD ------
@@ -200,41 +211,52 @@ mod tests {
             opnum.next().unwrap(),
             &FieldIndexOperations::CreateIndex(payload_field.clone()),
         )
+        .await
         .unwrap();
 
         // ------ Plain -> Mmap & Indexed payload
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone()).await;
         assert!(suggested_to_optimize.contains(&large_segment_id));
         eprintln!("suggested_to_optimize = {:#?}", suggested_to_optimize);
-        index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize)
-            .unwrap();
+        optimize(
+            index_optimizer.clone(),
+            locked_holder.clone(),
+            suggested_to_optimize,
+        )
+        .await
+        .unwrap();
         eprintln!("Done");
 
         // ------ Plain -> Indexed payload
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone()).await;
         assert!(suggested_to_optimize.contains(&middle_segment_id));
-        index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize)
-            .unwrap();
+        optimize(
+            index_optimizer.clone(),
+            locked_holder.clone(),
+            suggested_to_optimize,
+        )
+        .await
+        .unwrap();
 
         // ------- Keep smallest segment without changes
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone()).await;
         assert!(suggested_to_optimize.is_empty());
 
         assert_eq!(
-            locked_holder.read().len(),
+            locked_holder.read().await.len(),
             3,
             "Testing no new segments were created"
         );
 
         let infos = locked_holder
             .read()
+            .await
             .iter()
             .map(|(_sid, segment)| segment.get().read().info())
             .collect_vec();
         let configs = locked_holder
             .read()
+            .await
             .iter()
             .map(|(_sid, segment)| segment.get().read().config())
             .collect_vec();
@@ -260,7 +282,7 @@ mod tests {
         let segment_dirs = segments_dir.path().read_dir().unwrap().collect_vec();
         assert_eq!(
             segment_dirs.len(),
-            locked_holder.read().len(),
+            locked_holder.read().await.len(),
             "Testing that new segments are persisted and old data is removed"
         );
 
@@ -296,10 +318,12 @@ mod tests {
             opnum.next().unwrap(),
             insert_point_ops,
         )
+        .await
         .unwrap();
 
         let new_infos = locked_holder
             .read()
+            .await
             .iter()
             .map(|(_sid, segment)| segment.get().read().info())
             .collect_vec();
@@ -318,15 +342,23 @@ mod tests {
         // ---- New appendable segment should be created if none left
 
         // Index even the smallest segment
-        index_optimizer.thresholds_config.payload_indexing_threshold = 20;
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        Arc::get_mut(&mut index_optimizer)
+            .unwrap()
+            .thresholds_config
+            .payload_indexing_threshold = 20;
+        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone()).await;
         assert!(suggested_to_optimize.contains(&small_segment_id));
-        index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize)
-            .unwrap();
+        optimize(
+            index_optimizer.clone(),
+            locked_holder.clone(),
+            suggested_to_optimize,
+        )
+        .await
+        .unwrap();
 
         let new_infos2 = locked_holder
             .read()
+            .await
             .iter()
             .map(|(_sid, segment)| segment.get().read().info())
             .collect_vec();
@@ -351,6 +383,7 @@ mod tests {
             opnum.next().unwrap(),
             insert_point_ops,
         )
+        .await
         .unwrap();
     }
 }

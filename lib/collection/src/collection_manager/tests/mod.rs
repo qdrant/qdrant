@@ -13,8 +13,8 @@ use std::path::Path;
 use std::sync::Arc;
 use tempdir::TempDir;
 
-fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> SegmentId {
-    let mut write_segments = segments.write();
+async fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> SegmentId {
+    let mut write_segments = segments.write().await;
 
     let temp_segment: LockedSegment = empty_segment(path).into();
 
@@ -35,8 +35,8 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
     write_segments.swap(proxy, &[sid], false).unwrap()
 }
 
-#[test]
-fn test_update_proxy_segments() {
+#[tokio::test]
+async fn test_update_proxy_segments() {
     let dir = TempDir::new("segment_dir").unwrap();
 
     let segment1 = build_segment_1(dir.path());
@@ -47,7 +47,7 @@ fn test_update_proxy_segments() {
     let sid1 = holder.add(segment1);
     let _sid2 = holder.add(segment2);
 
-    let segments = Arc::new(RwLock::new(holder));
+    let segments = Arc::new(tokio::sync::RwLock::new(holder));
 
     let _proxy_id = wrap_proxy(segments.clone(), sid1, dir.path());
 
@@ -55,11 +55,14 @@ fn test_update_proxy_segments() {
 
     for i in 1..10 {
         let ids = vec![100 * i + 1, 100 * i + 2];
-        upsert_points(&segments, 1000 + i, &ids, &vectors, &None).unwrap();
+        upsert_points(&segments, 1000 + i, &ids, &vectors, &None)
+            .await
+            .unwrap();
     }
 
     let all_ids = segments
         .read()
+        .await
         .iter()
         .flat_map(|(_id, segment)| segment.get().read().read_filtered(0, 100, None))
         .sorted()
@@ -71,8 +74,8 @@ fn test_update_proxy_segments() {
     }
 }
 
-#[test]
-fn test_move_points_to_copy_on_write() {
+#[tokio::test]
+async fn test_move_points_to_copy_on_write() {
     let dir = TempDir::new("segment_dir").unwrap();
 
     let segment1 = build_segment_1(dir.path());
@@ -83,17 +86,21 @@ fn test_move_points_to_copy_on_write() {
     let sid1 = holder.add(segment1);
     let _sid2 = holder.add(segment2);
 
-    let segments = Arc::new(RwLock::new(holder));
+    let segments = Arc::new(tokio::sync::RwLock::new(holder));
 
-    let proxy_id = wrap_proxy(segments.clone(), sid1, dir.path());
-
-    let vectors = vec![vec![0.0, 0.0, 0.0, 0.0], vec![0.0, 0.0, 0.0, 0.0]];
-    upsert_points(&segments, 1001, &[1, 2], &vectors, &None).unwrap();
+    let proxy_id = wrap_proxy(segments.clone(), sid1, dir.path()).await;
 
     let vectors = vec![vec![0.0, 0.0, 0.0, 0.0], vec![0.0, 0.0, 0.0, 0.0]];
-    upsert_points(&segments, 1002, &[2, 3], &vectors, &None).unwrap();
+    upsert_points(&segments, 1001, &[1, 2], &vectors, &None)
+        .await
+        .unwrap();
 
-    let segments_write = segments.write();
+    let vectors = vec![vec![0.0, 0.0, 0.0, 0.0], vec![0.0, 0.0, 0.0, 0.0]];
+    upsert_points(&segments, 1002, &[2, 3], &vectors, &None)
+        .await
+        .unwrap();
+
+    let segments_write = segments.write().await;
 
     let locked_proxy = match segments_write.get(proxy_id).unwrap() {
         LockedSegment::Original(_) => panic!("wrong type"),

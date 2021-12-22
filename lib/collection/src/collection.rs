@@ -6,9 +6,8 @@ use std::thread;
 
 use indicatif::ProgressBar;
 use itertools::Itertools;
-use parking_lot::RwLock;
 use tokio::runtime::{Handle, Runtime};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 use segment::types::{
     Condition, Filter, HasIdCondition, PayloadKeyType, PayloadSchemaInfo, PointIdType, ScoredPoint,
@@ -36,7 +35,7 @@ use futures::executor::block_on;
 /// Holds all object, required for collection functioning
 pub struct Collection {
     segments: Arc<RwLock<SegmentHolder>>,
-    config: Arc<tokio::sync::RwLock<CollectionConfig>>,
+    config: Arc<RwLock<CollectionConfig>>,
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
     update_handler: Arc<Mutex<UpdateHandler>>,
     runtime_handle: Option<Runtime>,
@@ -143,6 +142,7 @@ impl Collection {
         let segments = self.segments();
         let point_ids = segments
             .read()
+            .await
             .iter()
             .flat_map(|(_, segment)| {
                 segment
@@ -263,7 +263,7 @@ impl Collection {
 
     /// Collect overview information about the collection
     pub async fn info(&self) -> CollectionResult<CollectionInfo> {
-        let segments = self.segments.read();
+        let segments = self.segments.read().await;
         let mut vectors_count = 0;
         let mut segments_count = 0;
         let mut ram_size = 0;
@@ -371,14 +371,14 @@ impl Collection {
         for (op_num, update) in wal.read_all() {
             // Panic only in case of internal error. If wrong formatting - skip
             if let Err(CollectionError::ServiceError { error }) =
-                CollectionUpdater::update(segments, op_num, update)
+                CollectionUpdater::update(segments, op_num, update).await
             {
                 panic!("Can't apply WAL operation: {}", error)
             }
             bar.inc(1);
         }
 
-        self.segments.read().flush_all().unwrap();
+        self.segments.read().await.flush_all().unwrap();
         bar.finish();
     }
 }

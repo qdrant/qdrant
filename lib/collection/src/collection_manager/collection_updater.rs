@@ -1,6 +1,5 @@
-use parking_lot::RwLock;
-
 use segment::types::SeqNumberType;
+use tokio::sync::RwLock;
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 
@@ -17,15 +16,15 @@ impl CollectionUpdater {
         Self {}
     }
 
-    fn handle_update_result(
+    async fn handle_update_result(
         segments: &RwLock<SegmentHolder>,
         op_num: SeqNumberType,
         operation_result: &CollectionResult<usize>,
     ) {
         match operation_result {
             Ok(_) => {
-                if !segments.read().failed_operation.is_empty() {
-                    let mut write_segments = segments.write();
+                if !segments.read().await.failed_operation.is_empty() {
+                    let mut write_segments = segments.write().await;
                     if write_segments.failed_operation.contains(&op_num) {
                         // Failed operation successfully fixed
                         write_segments.failed_operation.remove(&op_num);
@@ -34,7 +33,7 @@ impl CollectionUpdater {
             }
             Err(collection_error) => match collection_error {
                 CollectionError::ServiceError { error } => {
-                    let mut write_segments = segments.write();
+                    let mut write_segments = segments.write().await;
                     write_segments.failed_operation.insert(op_num);
                     log::error!("Update operation failed: {}", error)
                 }
@@ -45,7 +44,7 @@ impl CollectionUpdater {
         }
     }
 
-    pub fn update(
+    pub async fn update(
         segments: &RwLock<SegmentHolder>,
         op_num: SeqNumberType,
         operation: CollectionUpdateOperations,
@@ -54,17 +53,17 @@ impl CollectionUpdater {
         // let _lock = self.update_lock.lock().unwrap();
         let operation_result = match operation {
             CollectionUpdateOperations::PointOperation(point_operation) => {
-                process_point_operation(segments, op_num, point_operation)
+                process_point_operation(segments, op_num, point_operation).await
             }
             CollectionUpdateOperations::PayloadOperation(payload_operation) => {
-                process_payload_operation(segments, op_num, &payload_operation)
+                process_payload_operation(segments, op_num, &payload_operation).await
             }
             CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
-                process_field_index_operation(segments, op_num, &index_operation)
+                process_field_index_operation(segments, op_num, &index_operation).await
             }
         };
 
-        CollectionUpdater::handle_update_result(segments, op_num, &operation_result);
+        CollectionUpdater::handle_update_result(segments, op_num, &operation_result).await;
 
         operation_result
     }
@@ -97,7 +96,7 @@ mod tests {
 
         let vectors = vec![vec![2., 2., 2., 2.], vec![2., 0., 2., 0.]];
 
-        let res = upsert_points(&segments, 100, &points, &vectors, &None);
+        let res = upsert_points(&segments, 100, &points, &vectors, &None).await;
         assert!(matches!(res, Ok(1)));
 
         let records = searcher
@@ -123,6 +122,7 @@ mod tests {
             101,
             PointOperations::DeletePoints { ids: vec![500] },
         )
+        .await
         .unwrap();
 
         let records = searcher
@@ -159,6 +159,7 @@ mod tests {
                 points: points.clone(),
             },
         )
+        .await
         .unwrap();
 
         let res = searcher
@@ -187,6 +188,7 @@ mod tests {
                 keys: vec!["color".to_string(), "empty".to_string()],
             },
         )
+        .await
         .unwrap();
 
         let res = searcher
@@ -210,6 +212,7 @@ mod tests {
             102,
             &PayloadOps::ClearPayload { points: vec![2] },
         )
+        .await
         .unwrap();
         let res = searcher
             .retrieve(&segments, &[2], &WithPayload::from(true), false)

@@ -81,7 +81,7 @@ pub struct SegmentHolder {
     pub failed_operation: BTreeSet<SeqNumberType>,
 }
 
-pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
+pub type LockedSegmentHolder = Arc<tokio::sync::RwLock<SegmentHolder>>;
 
 impl<'s> SegmentHolder {
     pub fn iter(&'s self) -> impl Iterator<Item = (&SegmentId, &LockedSegment)> + 's {

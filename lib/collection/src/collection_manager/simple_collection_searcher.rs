@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use futures::future::try_join_all;
 use itertools::Itertools;
-use parking_lot::RwLock;
 use segment::entry::entry_point::OperationError;
 use tokio::runtime::Handle;
+use tokio::sync::RwLock;
 
 use segment::spaces::tools::peek_top_scores_iterable;
 use segment::types::{PointIdType, ScoredPoint, SeqNumberType, WithPayload, WithPayloadInterface};
@@ -38,7 +38,7 @@ impl CollectionSearcher for SimpleCollectionSearcher {
         // and is not transferred across the all_searches.await? boundary as it
         // does not impl Send trait
         let searches: Vec<_> = {
-            let segments = segments.read();
+            let segments = segments.read().await;
 
             let some_segment = segments.iter().next();
 
@@ -94,7 +94,7 @@ impl CollectionSearcher for SimpleCollectionSearcher {
         let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut point_records: HashMap<PointIdType, Record> = Default::default();
 
-        segments.read().read_points(points, |id, segment| {
+        segments.read().await.read_points(points, |id, segment| {
             let version = segment
                 .point_version(id)
                 .ok_or(OperationError::ServiceError {

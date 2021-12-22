@@ -42,9 +42,12 @@ impl VacuumOptimizer {
         }
     }
 
-    fn worst_segment(&self, segments: LockedSegmentHolder) -> Option<(SegmentId, LockedSegment)> {
-        segments
-            .read()
+    async fn worst_segment(
+        &self,
+        segments: LockedSegmentHolder,
+    ) -> Option<(SegmentId, LockedSegment)> {
+        let segments_read = segments.read().await;
+        segments_read
             .iter()
             // .map(|(idx, segment)| (*idx, segment.get().read().info()))
             .filter_map(|(idx, segment)| {
@@ -63,10 +66,11 @@ impl VacuumOptimizer {
                 }
             })
             .max_by_key(|(_, ratio)| OrderedFloat(*ratio))
-            .map(|(idx, _)| (idx, segments.read().get(idx).unwrap().clone()))
+            .map(|(idx, _)| (idx, segments_read.get(idx).unwrap().clone()))
     }
 }
 
+#[async_trait::async_trait]
 impl SegmentOptimizer for VacuumOptimizer {
     fn collection_path(&self) -> &Path {
         self.segments_path.as_path()
@@ -88,8 +92,8 @@ impl SegmentOptimizer for VacuumOptimizer {
         &self.thresholds_config
     }
 
-    fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId> {
-        match self.worst_segment(segments) {
+    async fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId> {
+        match self.worst_segment(segments).await {
             None => vec![],
             Some((segment_id, _segment)) => vec![segment_id],
         }
@@ -101,15 +105,15 @@ mod tests {
     use super::*;
     use crate::collection_manager::fixtures::random_segment;
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
+    use crate::collection_manager::optimizers::optimize::optimize;
     use itertools::Itertools;
-    use parking_lot::RwLock;
     use rand::Rng;
     use segment::types::{Distance, PayloadType};
     use std::sync::Arc;
     use tempdir::TempDir;
 
-    #[test]
-    fn test_vacuum_conditions() {
+    #[tokio::test]
+    async fn test_vacuum_conditions() {
         let temp_dir = TempDir::new("segment_temp_dir").unwrap();
         let dir = TempDir::new("segment_dir").unwrap();
         let mut holder = SegmentHolder::default();
@@ -175,9 +179,9 @@ mod tests {
                 .unwrap();
         }
 
-        let locked_holder = Arc::new(RwLock::new(holder));
+        let locked_holder = Arc::new(tokio::sync::RwLock::new(holder));
 
-        let vacuum_optimizer = VacuumOptimizer::new(
+        let vacuum_optimizer = Arc::new(VacuumOptimizer::new(
             0.2,
             50,
             OptimizerThresholds {
@@ -192,26 +196,36 @@ mod tests {
                 distance: Distance::Dot,
             },
             Default::default(),
-        );
+        ));
 
-        let suggested_to_optimize = vacuum_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize = vacuum_optimizer
+            .check_condition(locked_holder.clone())
+            .await;
 
         // Check that only one segment is selected for optimization
         assert_eq!(suggested_to_optimize.len(), 1);
 
-        vacuum_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize)
-            .unwrap();
+        optimize(
+            vacuum_optimizer.clone(),
+            locked_holder.clone(),
+            suggested_to_optimize,
+        )
+        .await
+        .unwrap();
 
-        let after_optimization_segments =
-            locked_holder.read().iter().map(|(x, _)| *x).collect_vec();
+        let after_optimization_segments = locked_holder
+            .read()
+            .await
+            .iter()
+            .map(|(x, _)| *x)
+            .collect_vec();
 
         // Check only one new segment
         assert_eq!(after_optimization_segments.len(), 1);
 
         let optimized_segment_id = *after_optimization_segments.get(0).unwrap();
 
-        let holder_guard = locked_holder.read();
+        let holder_guard = locked_holder.read().await;
         let optimized_segment = holder_guard.get(optimized_segment_id).unwrap();
         let segment_arc = optimized_segment.get();
         let segment_guard = segment_arc.read();

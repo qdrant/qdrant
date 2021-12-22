@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
+use std::ops::Deref;
 
-use parking_lot::{RwLock, RwLockWriteGuard};
+use tokio::sync::RwLock;
 
 use segment::types::{
     PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType,
@@ -13,6 +14,7 @@ use crate::operations::point_ops::{PointInsertOperations, PointOperations};
 use crate::operations::types::{CollectionError, CollectionResult, VectorType};
 use crate::operations::FieldIndexOperations;
 use itertools::Itertools;
+use parking_lot::RwLockWriteGuard;
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
 
 /// A collection of functions for updating points and payloads stored in segments
@@ -141,7 +143,7 @@ fn upsert_with_payload(
 /// Checks point id in each segment, update point if found.
 /// All not found points are inserted into random segment.
 /// Returns: number of updated points.
-pub(crate) fn upsert_points(
+pub(crate) async fn upsert_points(
     segments: &RwLock<SegmentHolder>,
     op_num: SeqNumberType,
     ids: &[PointIdType],
@@ -187,7 +189,7 @@ pub(crate) fn upsert_points(
                 .collect(),
         };
 
-    let segments = segments.read();
+    let segments = segments.read().await;
     // Update points in writable segments
     let updated_points =
         segments.apply_points_to_appendable(op_num, ids, |id, write_segment| {
@@ -231,13 +233,15 @@ pub(crate) fn upsert_points(
     Ok(res)
 }
 
-pub(crate) fn process_point_operation(
+pub(crate) async fn process_point_operation(
     segments: &RwLock<SegmentHolder>,
     op_num: SeqNumberType,
     point_operation: PointOperations,
 ) -> CollectionResult<usize> {
     match point_operation {
-        PointOperations::DeletePoints { ids, .. } => delete_points(&segments.read(), op_num, &ids),
+        PointOperations::DeletePoints { ids, .. } => {
+            delete_points(segments.read().await.deref(), op_num, &ids)
+        }
         PointOperations::UpsertPoints(operation) => {
             let (ids, vectors, payloads) = match operation {
                 PointInsertOperations::BatchPoints {
@@ -258,13 +262,13 @@ pub(crate) fn process_point_operation(
                     (ids, vectors, Some(payloads))
                 }
             };
-            let res = upsert_points(segments, op_num, &ids, &vectors, &payloads)?;
+            let res = upsert_points(segments, op_num, &ids, &vectors, &payloads).await?;
             Ok(res)
         }
     }
 }
 
-pub(crate) fn process_payload_operation(
+pub(crate) async fn process_payload_operation(
     segments: &RwLock<SegmentHolder>,
     op_num: SeqNumberType,
     payload_operation: &PayloadOps,
@@ -272,25 +276,27 @@ pub(crate) fn process_payload_operation(
     match payload_operation {
         PayloadOps::SetPayload {
             payload, points, ..
-        } => set_payload(&segments.read(), op_num, payload, points),
+        } => set_payload(segments.read().await.deref(), op_num, payload, points),
         PayloadOps::DeletePayload { keys, points, .. } => {
-            delete_payload(&segments.read(), op_num, points, keys)
+            delete_payload(segments.read().await.deref(), op_num, points, keys)
         }
-        PayloadOps::ClearPayload { points, .. } => clear_payload(&segments.read(), op_num, points),
+        PayloadOps::ClearPayload { points, .. } => {
+            clear_payload(segments.read().await.deref(), op_num, points)
+        }
     }
 }
 
-pub(crate) fn process_field_index_operation(
+pub(crate) async fn process_field_index_operation(
     segments: &RwLock<SegmentHolder>,
     op_num: SeqNumberType,
     field_index_operation: &FieldIndexOperations,
 ) -> CollectionResult<usize> {
     match field_index_operation {
         FieldIndexOperations::CreateIndex(field_name) => {
-            create_field_index(&segments.read(), op_num, field_name)
+            create_field_index(segments.read().await.deref(), op_num, field_name)
         }
         FieldIndexOperations::DeleteIndex(field_name) => {
-            delete_field_index(&segments.read(), op_num, field_name)
+            delete_field_index(segments.read().await.deref(), op_num, field_name)
         }
     }
 }
