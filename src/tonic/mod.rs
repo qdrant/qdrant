@@ -53,7 +53,7 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
             let collections_service = CollectionsService::new(toc.clone());
             let points_service = PointsService::new(toc.clone());
 
-            info!("qdrant grpc listening on {}", settings.service.grpc_port);
+            log::info!("Qdrant gRPC listening on {}", settings.service.grpc_port);
 
             Server::builder()
                 .add_service(QdrantServer::new(service))
@@ -61,7 +61,7 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
                 .add_service(PointsServer::new(points_service))
                 .serve_with_shutdown(socket, async {
                     signal::ctrl_c().await.unwrap();
-                    info!("Stopping gRPC");
+                    log::info!("Stopping gRPC");
                 })
                 .await
         })

@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate log;
-
 #[cfg(feature = "web")]
 mod actix;
 pub mod common;
@@ -32,7 +29,7 @@ fn main() -> std::io::Result<()> {
     let toc = TableOfContent::new(&settings.storage, runtime);
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {
-            info!("loaded collection: {}", collection);
+            log::info!("Loaded collection: {}", collection);
         }
     });
 
@@ -60,21 +57,27 @@ fn main() -> std::io::Result<()> {
         use parking_lot::deadlock;
         use std::time::Duration;
 
+        const DEADLOCK_CHECK_PERIOD: Duration = Duration::from_secs(10);
+
         thread::spawn(move || loop {
-            thread::sleep(Duration::from_secs(10));
+            thread::sleep(DEADLOCK_CHECK_PERIOD);
             let deadlocks = deadlock::check_deadlock();
             if deadlocks.is_empty() {
                 continue;
             }
 
-            println!("{} deadlocks detected", deadlocks.len());
+            let mut error = format!("{} deadlocks detected\n", deadlocks.len());
             for (i, threads) in deadlocks.iter().enumerate() {
-                println!("Deadlock #{}", i);
+                error.push_str(&format!("Deadlock #{}\n", i));
                 for t in threads {
-                    println!("Thread Id {:#?}", t.thread_id());
-                    println!("{:#?}", t.backtrace());
+                    error.push_str(&format!(
+                        "Thread Id {:#?}\n{:#?}\n",
+                        t.thread_id(),
+                        t.backtrace()
+                    ));
                 }
             }
+            log::error!("{}", error);
         });
     }
 
