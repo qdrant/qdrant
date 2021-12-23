@@ -6,6 +6,7 @@ use crate::update_handler::{Optimizer, UpdateHandler};
 use futures::future::join_all;
 use parking_lot::RwLock;
 use std::sync::Arc;
+use itertools::Itertools;
 use tempdir::TempDir;
 
 #[tokio::test]
@@ -40,7 +41,10 @@ async fn test_optimization_process() {
 
     assert_eq!(handles.len(), 2);
 
-    let join_res = join_all(handles).await;
+    let join_res = join_all(handles.into_iter().map(|x| x).collect_vec()).await;
+
+    let handles_2 = UpdateHandler::process_optimization(optimizers.clone(), segments.clone());
+    assert_eq!(handles_2.len(), 0);
 
     for res in join_res {
         assert!(res.is_ok());
