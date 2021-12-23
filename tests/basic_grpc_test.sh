@@ -18,9 +18,9 @@ $docker_grpcurl -d '{
    "distance": "Dot"
 }' $QDRANT_HOST qdrant.Collections/Create
 
-$docker_grpcurl -d '{}' $QDRANT_HOST qdrant.Collections/Get
+$docker_grpcurl -d '{}' $QDRANT_HOST qdrant.Collections/List
 
-# ToDo: Add get collection info request
+$docker_grpcurl -d '{ "name": "test_collection" }' $QDRANT_HOST qdrant.Collections/Get
 
 $docker_grpcurl -d '{
   "collection": "test_collection",
