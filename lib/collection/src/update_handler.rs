@@ -144,7 +144,7 @@ impl UpdateHandler {
         Ok(0)
     }
 
-    fn process_optimization(
+    pub(crate) fn process_optimization(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
     ) -> Vec<JoinHandle<()>> {

@@ -91,10 +91,9 @@ impl SegmentOptimizer for MergeOptimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::collection_manager::fixtures::random_segment;
+    use crate::collection_manager::fixtures::{get_merge_optimizer, random_segment};
     use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
     use parking_lot::RwLock;
-    use segment::types::Distance;
     use std::sync::Arc;
     use tempdir::TempDir;
 
@@ -118,21 +117,7 @@ mod tests {
         other_segment_ids.push(holder.add(random_segment(dir.path(), 100, 20, 4)));
         other_segment_ids.push(holder.add(random_segment(dir.path(), 100, 20, 4)));
 
-        let merge_optimizer = MergeOptimizer::new(
-            5,
-            OptimizerThresholds {
-                memmap_threshold: 1000000,
-                indexing_threshold: 1000000,
-                payload_indexing_threshold: 1000000,
-            },
-            dir.path().to_owned(),
-            temp_dir.path().to_owned(),
-            CollectionParams {
-                vector_size: 4,
-                distance: Distance::Dot,
-            },
-            Default::default(),
-        );
+        let merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path());
 
         let locked_holder = Arc::new(RwLock::new(holder));
 
