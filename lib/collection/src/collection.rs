@@ -264,6 +264,7 @@ impl Collection {
 
     /// Collect overview information about the collection
     pub async fn info(&self) -> CollectionResult<CollectionInfo> {
+        let collection_config = self.config.read().await.clone();
         let segments = self.segments.read();
         let mut vectors_count = 0;
         let mut segments_count = 0;
@@ -293,7 +294,7 @@ impl Collection {
             segments_count,
             disk_data_size: disk_size,
             ram_data_size: ram_size,
-            config: self.config.read().await.clone(),
+            config: collection_config,
             payload_schema: schema,
         })
     }
