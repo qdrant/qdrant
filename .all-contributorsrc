@@ -112,6 +112,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "eadventurous",
+      "name": "Egor Ivkov",
+      "avatar_url": "https://avatars.githubusercontent.com/u/17401538?v=4",
+      "profile": "https://t.me/type_driven_thoughts",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
