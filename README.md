@@ -202,6 +202,7 @@ Thanks to the people who contributed to Qdrant:
     <td align="center"><a href="https://tranzystorek-io.github.io/"><img src="https://avatars.githubusercontent.com/u/5671049?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Marcin Puc</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=tranzystorek-io" title="Code">💻</a></td>
     <td align="center"><a href="https://github.com/anveq"><img src="https://avatars.githubusercontent.com/u/94402218?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Anton V.</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=anveq" title="Code">💻</a></td>
     <td align="center"><a href="http://agourlay.github.io"><img src="https://avatars.githubusercontent.com/u/606963?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Arnaud Gourlay</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=agourlay" title="Code">💻</a></td>
+    <td align="center"><a href="https://t.me/type_driven_thoughts"><img src="https://avatars.githubusercontent.com/u/17401538?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Egor Ivkov</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=eadventurous" title="Code">💻</a></td>
   </tr>
 </table>
 
