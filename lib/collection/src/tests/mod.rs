@@ -4,9 +4,9 @@ use crate::collection_manager::fixtures::{
 use crate::collection_manager::holders::segment_holder::{SegmentHolder, SegmentId};
 use crate::update_handler::{Optimizer, UpdateHandler};
 use futures::future::join_all;
+use itertools::Itertools;
 use parking_lot::RwLock;
 use std::sync::Arc;
-use itertools::Itertools;
 use tempdir::TempDir;
 
 #[tokio::test]
