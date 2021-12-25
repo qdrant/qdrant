@@ -153,8 +153,8 @@ impl UpdateHandler {
         let mut handles = vec![];
         for optimizer in optimizers.iter() {
             loop {
-                let nonoptimal_segment_ids = optimizer
-                    .check_condition(segments.clone(), &scheduled_segment_ids);
+                let nonoptimal_segment_ids =
+                    optimizer.check_condition(segments.clone(), &scheduled_segment_ids);
                 if nonoptimal_segment_ids.is_empty() {
                     break;
                 } else {

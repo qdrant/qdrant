@@ -50,7 +50,11 @@ pub trait SegmentOptimizer {
     fn threshold_config(&self) -> &OptimizerThresholds;
 
     /// Checks if segment optimization is required
-    fn check_condition(&self, segments: LockedSegmentHolder, excluded_ids: &HashSet<SegmentId>) -> Vec<SegmentId>;
+    fn check_condition(
+        &self,
+        segments: LockedSegmentHolder,
+        excluded_ids: &HashSet<SegmentId>,
+    ) -> Vec<SegmentId>;
 
     /// Build temp segment
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {

@@ -136,7 +136,8 @@ mod tests {
 
         let locked_holder = Arc::new(RwLock::new(holder));
 
-        let suggested_for_merge = merge_optimizer.check_condition(locked_holder.clone(), &Default::default());
+        let suggested_for_merge =
+            merge_optimizer.check_condition(locked_holder.clone(), &Default::default());
 
         assert_eq!(suggested_for_merge.len(), 3);
 
