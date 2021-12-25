@@ -1,10 +1,13 @@
-use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
+use crate::collection_manager::holders::segment_holder::{
+    LockedSegment, LockedSegmentHolder, SegmentId,
+};
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
 use itertools::Itertools;
 use segment::types::{HnswConfig, SegmentType};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Optimizer that tries to reduce number of segments until it fits configured value.
@@ -61,18 +64,30 @@ impl SegmentOptimizer for MergeOptimizer {
         &self.thresholds_config
     }
 
-    fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId> {
+    fn check_condition(
+        &self,
+        segments: LockedSegmentHolder,
+        excluded_ids: &HashSet<SegmentId>,
+    ) -> Vec<SegmentId> {
         let read_segments = segments.read();
 
-        if read_segments.len() <= self.max_segments {
+        let raw_segments = read_segments
+            .iter()
+            .filter(|(sid, segment)| {
+                matches!(segment, LockedSegment::Original(_)) && !excluded_ids.contains(sid)
+            })
+            .collect_vec();
+
+        if raw_segments.len() <= self.max_segments {
             return vec![];
         }
 
         // Find top-3 smallest segments to join.
         // We need 3 segments because in this case we can guarantee that total segments number will be less
 
-        read_segments
+        raw_segments
             .iter()
+            .cloned()
             .filter_map(|(idx, segment)| {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
@@ -121,7 +136,7 @@ mod tests {
 
         let locked_holder = Arc::new(RwLock::new(holder));
 
-        let suggested_for_merge = merge_optimizer.check_condition(locked_holder.clone());
+        let suggested_for_merge = merge_optimizer.check_condition(locked_holder.clone(), &Default::default());
 
         assert_eq!(suggested_for_merge.len(), 3);
 

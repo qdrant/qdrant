@@ -7,6 +7,7 @@ use crate::collection_manager::optimizers::segment_optimizer::{
 use crate::config::CollectionParams;
 use ordered_float::OrderedFloat;
 use segment::types::{HnswConfig, SegmentType};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Optimizer which looks for segments with hig amount of soft-deleted points.
@@ -42,12 +43,21 @@ impl VacuumOptimizer {
         }
     }
 
-    fn worst_segment(&self, segments: LockedSegmentHolder) -> Option<(SegmentId, LockedSegment)> {
+    fn worst_segment(
+        &self,
+        segments: LockedSegmentHolder,
+        excluded_ids: &HashSet<SegmentId>,
+    ) -> Option<(SegmentId, LockedSegment)> {
         segments
             .read()
             .iter()
             // .map(|(idx, segment)| (*idx, segment.get().read().info()))
             .filter_map(|(idx, segment)| {
+                if excluded_ids.contains(idx) {
+                    // This segment is excluded externally. It might already be scheduled for optimization
+                    return None;
+                }
+
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let littered_ratio =
@@ -88,8 +98,12 @@ impl SegmentOptimizer for VacuumOptimizer {
         &self.thresholds_config
     }
 
-    fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId> {
-        match self.worst_segment(segments) {
+    fn check_condition(
+        &self,
+        segments: LockedSegmentHolder,
+        excluded_ids: &HashSet<SegmentId>,
+    ) -> Vec<SegmentId> {
+        match self.worst_segment(segments, excluded_ids) {
             None => vec![],
             Some((segment_id, _segment)) => vec![segment_id],
         }
@@ -194,7 +208,8 @@ mod tests {
             Default::default(),
         );
 
-        let suggested_to_optimize = vacuum_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize =
+            vacuum_optimizer.check_condition(locked_holder.clone(), &Default::default());
 
         // Check that only one segment is selected for optimization
         assert_eq!(suggested_to_optimize.len(), 1);
