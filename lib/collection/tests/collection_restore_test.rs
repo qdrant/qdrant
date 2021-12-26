@@ -90,9 +90,12 @@ async fn test_collection_payload_reloading() {
 
 #[tokio::test]
 async fn test_collection_payload_custom_payload() {
+    println!("Start test_collection_payload_custom_payload");
+
     let collection_dir = TempDir::new("collection").unwrap();
     {
         let collection = simple_collection_fixture(collection_dir.path()).await;
+        println!("Collection created");
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::BatchPoints {
                 ids: vec![0, 1],
@@ -104,9 +107,12 @@ async fn test_collection_payload_custom_payload() {
             }),
         );
         collection.update(insert_points, true).await.unwrap();
+        println!("Query sent");
     }
 
+    println!("Start loading");
     let collection = load_collection(collection_dir.path());
+    println!("Finish loading");
 
     let searcher = SimpleCollectionSearcher::new();
     // Test res with filter payload
@@ -123,6 +129,9 @@ async fn test_collection_payload_custom_payload() {
         )
         .await
         .unwrap();
+
+    println!("Finish scroll_by - 1");
+
     assert!(res_with_custom_payload.points[0]
         .payload
         .as_ref()
@@ -162,6 +171,9 @@ async fn test_collection_payload_custom_payload() {
         )
         .await
         .unwrap();
+
+    println!("Finish scroll_by - 2");
+
     assert!(res_with_custom_payload.points[0]
         .payload
         .as_ref()

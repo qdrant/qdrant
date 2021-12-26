@@ -24,7 +24,7 @@ jobs:
     - name: Install dependencies
       run: sudo apt-get install clang libopenblas-dev libgfortran-10-dev gfortran
     - name: Run tests
-      run: OPENBLAS_TARGET=CORE2 cargo test --all
+      run: OPENBLAS_TARGET=CORE2 cargo test --all -- --nocapture
 
 #   build:
 #     runs-on: ubuntu-latest
