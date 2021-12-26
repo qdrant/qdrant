@@ -37,13 +37,14 @@ async fn test_optimization_process() {
     let optimizers = Arc::new(vec![merge_optimizer, indexing_optimizer]);
 
     let segments = Arc::new(RwLock::new(holder));
-    let handles = UpdateHandler::process_optimization(optimizers.clone(), segments.clone());
+    let handles = UpdateHandler::launch_optimization(optimizers.clone(), segments.clone());
 
     assert_eq!(handles.len(), 2);
 
-    let join_res = join_all(handles.into_iter().map(|x| x).collect_vec()).await;
+    let join_res = join_all(handles.into_iter().map(|x| x.join_handle).collect_vec()).await;
 
-    let handles_2 = UpdateHandler::process_optimization(optimizers.clone(), segments.clone());
+    let handles_2 = UpdateHandler::launch_optimization(optimizers.clone(), segments.clone());
+
     assert_eq!(handles_2.len(), 0);
 
     for res in join_res {
