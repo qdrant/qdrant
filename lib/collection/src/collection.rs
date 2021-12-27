@@ -385,10 +385,16 @@ impl Collection {
 
 impl Drop for Collection {
     fn drop(&mut self) {
+        println!("COLLECTION DROP");
+
         // Finishes update tasks right before destructor stuck to do so with runtime
         block_on(self.stop()).unwrap();
 
+        println!("DROP - STOP FINISHED");
+
         block_on(self.wait_update_workers_stop()).unwrap();
+
+        println!("DROP - wait_update_workers_stop");
 
         match self.runtime_handle.take() {
             None => {}
@@ -405,5 +411,6 @@ impl Drop for Collection {
                 thread_handler.join().unwrap();
             }
         }
+        println!("DROP - finished");
     }
 }
