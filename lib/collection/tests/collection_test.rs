@@ -135,8 +135,12 @@ async fn test_collection_search_with_payload() {
 async fn test_collection_loading() {
     let collection_dir = TempDir::new("collection").unwrap();
 
+    println!("Start creating collection - test_collection_loading");
+
     {
         let collection = simple_collection_fixture(collection_dir.path()).await;
+        println!("Collection created");
+
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(BatchPoints {
                 ids: vec![0, 1, 2, 3, 4],
@@ -153,6 +157,8 @@ async fn test_collection_loading() {
 
         collection.update(insert_points, true).await.unwrap();
 
+        println!("collection.update - 1");
+
         let mut payload: HashMap<PayloadKeyType, PayloadInterface> = Default::default();
 
         payload.insert(
@@ -166,9 +172,15 @@ async fn test_collection_loading() {
         });
 
         collection.update(assign_payload, true).await.unwrap();
+
+        println!("collection.update - 2");
     }
 
+    println!("Dropped collection");
+
     let loaded_collection = load_collection(collection_dir.path());
+
+    println!("loaded collection again");
     let segment_searcher = SimpleCollectionSearcher::new();
     let retrieved = segment_searcher
         .retrieve(
