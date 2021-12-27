@@ -189,10 +189,7 @@ impl UpdateHandler {
         segments: LockedSegmentHolder,
         optimization_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
     ) {
-        let mut new_handles = Self::launch_optimization(
-            optimizers.clone(),
-            segments.clone(),
-        );
+        let mut new_handles = Self::launch_optimization(optimizers.clone(), segments.clone());
         let mut handles = optimization_handles.lock().await;
         handles.append(&mut new_handles);
         handles.retain(|h| !h.is_finished())
