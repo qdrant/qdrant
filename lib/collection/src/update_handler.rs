@@ -6,7 +6,6 @@ use crate::operations::types::CollectionResult;
 use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
 use async_channel::{Receiver, Sender};
-use futures::future::join_all;
 use itertools::Itertools;
 use log::{debug, info};
 use segment::types::SeqNumberType;
@@ -113,14 +112,6 @@ impl UpdateHandler {
     /// Gracefully wait before all optimizations stop
     /// If some optimization is in progress - it will be finished before shutdown.
     pub async fn wait_workers_stops(&mut self) -> CollectionResult<()> {
-        let mut opt_handles_guard = self.optimization_handles.lock().await;
-        let opt_handles = std::mem::take(&mut *opt_handles_guard);
-        let stopping_handles = opt_handles.into_iter().map(|h| h.stop()).collect_vec();
-
-        for res in join_all(stopping_handles).await {
-            res?;
-        }
-
         let maybe_handle = self.update_worker.take();
         if let Some(handle) = maybe_handle {
             handle.await?;
@@ -129,6 +120,15 @@ impl UpdateHandler {
         if let Some(handle) = maybe_handle {
             handle.await?;
         }
+
+        let mut opt_handles_guard = self.optimization_handles.lock().await;
+        let opt_handles = std::mem::take(&mut *opt_handles_guard);
+        let stopping_handles = opt_handles.into_iter().map(|h| h.stop()).collect_vec();
+
+        for res in stopping_handles {
+            res.await?;
+        }
+
         Ok(())
     }
 
@@ -187,13 +187,14 @@ impl UpdateHandler {
     pub(crate) async fn process_optimization(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
-        optimizers_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
+        optimization_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
     ) {
-        let mut handles = optimizers_handles.lock().await;
-        handles.append(&mut Self::launch_optimization(
+        let mut new_handles = Self::launch_optimization(
             optimizers.clone(),
             segments.clone(),
-        ));
+        );
+        let mut handles = optimization_handles.lock().await;
+        handles.append(&mut new_handles);
         handles.retain(|h| !h.is_finished())
     }
 
@@ -203,7 +204,7 @@ impl UpdateHandler {
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
         flush_timeout_sec: u64,
-        blocking_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
+        optimization_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
     ) {
         let flush_timeout = Duration::from_secs(flush_timeout_sec);
         let mut last_flushed = Instant::now();
@@ -222,7 +223,7 @@ impl UpdateHandler {
                             Self::process_optimization(
                                 optimizers.clone(),
                                 segments.clone(),
-                                blocking_handles.clone(),
+                                optimization_handles.clone(),
                             )
                             .await;
                         }
@@ -236,7 +237,7 @@ impl UpdateHandler {
                             Self::process_optimization(
                                 optimizers.clone(),
                                 segments.clone(),
-                                blocking_handles.clone(),
+                                optimization_handles.clone(),
                             )
                             .await;
 
