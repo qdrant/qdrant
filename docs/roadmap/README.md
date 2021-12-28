@@ -32,25 +32,25 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 ## Milestones
 
 * :earth_americas: Distributed Deployment
-  * Remote replications - automatic segment replication between nodes in cluster
-  * Sharding - group segments into shards
-  * Integration of [raft](https://raft.github.io/) for distributed consistency
-  * Distributed querying
+  * [ ] Distributed querying
+  * [ ] Remote replications - automatic segment replication between nodes in cluster
+  * [ ] Sharding - group segments into shards
+  * [ ] Integration of [raft](https://raft.github.io/) for distributed consistency
 
 ---
 
 * :electric_plug: Integration & Interfaces
-  * gPRC version of each REST API endpoint
-  * Split REST Endpoints for better documentation and client generation
+  * [ ] gPRC version of each REST API endpoint
+  * [ ] Split REST Endpoints for better documentation and client generation
 
 ---
 
 * :truck: Payload Processing
-  * Support storing any JSON as a Payload
-  * Support more payload types, e.g.
+  * [ ] Support storing any JSON as a Payload
+  * [ ] Support more payload types, e.g.
     * Data-time
-  * Support for `Null` values
-  * Enable more types of filtering queries, e.g.
+  * [ ] Support for `Null` values
+  * [ ] Enable more types of filtering queries, e.g.
     * Filter by Score
     * Filter by number of stored elements
     * `isNull` or `isEmpty` query conditions
@@ -58,8 +58,8 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 ---
 
 * :racing_car: Performance improvements
-  * Indexing of geo-payload
-  * On-flight payload index
-  * Multiprocessing segment optimization
-  * Fine-tuned HNSW index configuration
+  * [ ] Indexing of geo-payload
+  * [ ] On the fly payload index
+  * [ ] Multiprocessing segment optimization
+  * [ ] Fine-tuned HNSW index configuration
   
