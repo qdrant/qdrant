@@ -6,7 +6,7 @@ This document is our plan for Qdrant development till its first enterprise-ready
 Goals of the release:
 
 * **Make API and Storage stable** - ensure backward compatibility for at least one major version back.
-  * Staring for the release, breaking changes in API should only be done with a proper deprecation notice
+  * Starting from the release, breaking changes in API should only be done with a proper deprecation notice
   * Storage should be compatible between any two consequent major versions
 * **Achieve horizontal scalability** - distributed deployment able to serve billions of points
 * **Easy integration** - make the user experience as smooth as possible
