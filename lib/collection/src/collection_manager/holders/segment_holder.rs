@@ -133,6 +133,17 @@ impl<'s> SegmentHolder {
     }
 
     /// Replace old segments with a new one
+    ///
+    /// # Arguments
+    ///
+    /// * `segment` - segment to insert
+    /// * `remove_ids` - ids of segments to replace
+    /// * `drop_data` - if `true` - also drop data of removed segments
+    ///
+    /// # Result
+    ///
+    /// id of newly inserted segment
+    ///
     pub fn swap<T>(
         &mut self,
         segment: T,

@@ -3,7 +3,7 @@ use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
 use crate::config::CollectionParams;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 use itertools::Itertools;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::entry::entry_point::SegmentEntry;
@@ -16,6 +16,7 @@ use segment::types::{
 use std::collections::HashSet;
 use std::convert::TryInto;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -125,13 +126,102 @@ pub trait SegmentOptimizer {
         )?)
     }
 
+    /// Restores original segments from proxies
+    ///
+    /// # Arguments
+    ///
+    /// * `segments` - segment holder
+    /// * `proxy_ids` - ids of poxy-wrapped segment to restore
+    ///
+    /// # Result
+    ///
+    /// Original segments are pushed into `segments`, proxies removed.
+    /// Returns IDs on restored segments
+    ///
+    fn unwrap_proxy(
+        &self,
+        segments: &LockedSegmentHolder,
+        proxy_ids: &[SegmentId],
+    ) -> CollectionResult<Vec<SegmentId>> {
+        let mut segments_lock = segments.write();
+        let mut restored_segment_ids = vec![];
+        for &proxy_id in proxy_ids {
+            if let Some(proxy_segment_ref) = segments_lock.get(proxy_id) {
+                let locked_proxy_segment = proxy_segment_ref.clone();
+                match locked_proxy_segment {
+                    LockedSegment::Original(_) => {
+                        /* Already unwrapped. It should not actually be here */
+                        log::warn!("Attempt to unwrap raw segment! Should not happen.")
+                    }
+                    LockedSegment::Proxy(proxy_segment) => {
+                        let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
+                        restored_segment_ids.push(segments_lock.swap(
+                            wrapped_segment,
+                            &[proxy_id],
+                            false,
+                        )?);
+                    }
+                }
+            }
+        }
+        Ok(restored_segment_ids)
+    }
+
+    /// Checks if optimization cancellation is requested.
+    /// If so, unwraps proxy, adds temp segment into collection and returns a `Cancelled` error.
+    ///
+    /// # Arguments
+    ///
+    /// * `stopped` - flag to check
+    /// * `segments` - all registered segments of the collection
+    /// * `proxy_ids` - currently used proxies
+    /// * `temp_segment` - currently used temporary segment
+    ///
+    /// # Result
+    ///
+    /// Rolls back back optimization state.
+    /// All processed changes will still be there, but the collection should be returned
+    /// into state before optimization.
+    ///
+    fn handle_cancel(
+        &self,
+        stopped: &AtomicBool,
+        segments: &LockedSegmentHolder,
+        proxy_ids: &[SegmentId],
+        temp_segment: &LockedSegment,
+    ) -> CollectionResult<bool> {
+        if stopped.load(Ordering::Relaxed) {
+            self.unwrap_proxy(segments, proxy_ids)?;
+            if temp_segment.get().read().vectors_count() > 0 {
+                let mut write_segments = segments.write();
+                write_segments.add_locked(temp_segment.clone());
+            }
+            return Err(CollectionError::Cancelled { description: "optimization cancelled by service".to_string() })
+        }
+        Ok(false)
+    }
+
     /// Performs optimization of collections's segments, including:
     ///     - Segment rebuilding
     ///     - Segment joining
+    ///
+    /// # Arguments
+    ///
+    /// * `segments` - segments holder
+    /// * `ids` - list of segment ids to perform optimization on. All segments will be merged into single one
+    /// * `stopped` - flag for early stopping of the optimization.
+    ///               If appears to be `true` - optimization process should be cancelled, all segments unwrapped
+    ///
+    /// # Result
+    ///
+    /// New optimized segment should be added into `segments`.
+    /// If there were any record changes during the optimization - an additional plain segment will be created.
+    ///
     fn optimize(
         &self,
         segments: LockedSegmentHolder,
         ids: Vec<SegmentId>,
+        stopped: &AtomicBool,
     ) -> CollectionResult<bool> {
         // On the one hand - we want to check consistently if all provided segments are
         // available for optimization (not already under one) and we want to do it before creating a temp segment
@@ -193,6 +283,7 @@ pub trait SegmentOptimizer {
                 LockedSegment::Original(segment_arc) => {
                     let segment_guard = segment_arc.read();
                     segment_builder.update_from(&segment_guard)?;
+                    self.handle_cancel(stopped, &segments, &proxy_ids, &tmp_segment)?;
                 }
                 LockedSegment::Proxy(_) => panic!("Attempt to optimize segment which is already currently under optimization. Should never happen"),
             }
@@ -207,6 +298,8 @@ pub trait SegmentOptimizer {
 
         let mut optimized_segment: Segment = segment_builder.try_into()?;
 
+        self.handle_cancel(stopped, &segments, &proxy_ids, &tmp_segment)?;
+
         // Delete points in 2 steps
         // First step - delete all points with read lock
         // Second step - delete all the rest points with full write lock
@@ -219,15 +312,18 @@ pub trait SegmentOptimizer {
                 .unwrap();
         }
 
+
         let deleted_indexes = proxy_deleted_indexes.read().iter().cloned().collect_vec();
         let create_indexes = proxy_created_indexes.read().iter().cloned().collect_vec();
 
         for delete_field_name in &deleted_indexes {
             optimized_segment.delete_field_index(optimized_segment.version(), delete_field_name)?;
+            self.handle_cancel(stopped, &segments, &proxy_ids, &tmp_segment)?;
         }
 
         for create_field_name in &create_indexes {
             optimized_segment.create_field_index(optimized_segment.version(), create_field_name)?;
+            self.handle_cancel(stopped, &segments, &proxy_ids, &tmp_segment)?;
         }
         // ---- SLOW PART ENDS HERE -----
 

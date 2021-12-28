@@ -110,6 +110,7 @@ mod tests {
     use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
     use parking_lot::RwLock;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
     use tempdir::TempDir;
 
     #[test]
@@ -154,7 +155,7 @@ mod tests {
             .collect_vec();
 
         merge_optimizer
-            .optimize(locked_holder.clone(), suggested_for_merge)
+            .optimize(locked_holder.clone(), suggested_for_merge, &AtomicBool::new(false))
             .unwrap();
 
         let after_optimization_segments =

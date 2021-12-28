@@ -38,7 +38,16 @@ impl SegmentBuilder {
 
     /// Update current segment builder with all (not deleted) vectors and payload form `other` segment
     /// Perform index building at the end of update
-    pub fn update_from(&mut self, other: &Segment) -> OperationResult<()> {
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - segment to add into construction
+    ///
+    /// # Result
+    ///
+    /// * `bool` - if `true` - data successfully added, if `false` - process was interrupted
+    ///
+    pub fn update_from(&mut self, other: &Segment) -> OperationResult<bool> {
         match &mut self.segment {
             None => Err(OperationError::ServiceError {
                 description: "Segment building error: created segment not found".to_owned(),
@@ -98,7 +107,7 @@ impl SegmentBuilder {
                     self.indexed_fields.insert(field);
                 }
 
-                Ok(())
+                Ok(true)
             }
         }
     }

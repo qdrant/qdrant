@@ -28,6 +28,9 @@ impl From<CollectionError> for StorageError {
                 StorageError::ServiceError { description: error }
             }
             CollectionError::BadRequest { description } => StorageError::BadRequest { description },
+            CollectionError::Cancelled { description } => StorageError::ServiceError {
+                description: format!("Operation cancelled: {}", description),
+            },
         }
     }
 }
