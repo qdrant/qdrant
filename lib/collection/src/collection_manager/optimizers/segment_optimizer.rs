@@ -278,6 +278,8 @@ pub trait SegmentOptimizer {
         let mut segment_builder = self.optimized_segment_builder(&optimizing_segments)?;
 
         // ---- SLOW PART -----
+        self.handle_cancel(stopped, &segments, &proxy_ids, &tmp_segment)?;
+
         for segment in optimizing_segments {
             match segment {
                 LockedSegment::Original(segment_arc) => {

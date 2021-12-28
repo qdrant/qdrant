@@ -7,7 +7,9 @@ use futures::future::join_all;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use std::sync::Arc;
+use std::time::Duration;
 use tempdir::TempDir;
+use tokio::time::{Instant, sleep};
 
 #[tokio::test]
 async fn test_optimization_process() {
@@ -59,4 +61,39 @@ async fn test_optimization_process() {
     for sid in segments_to_merge {
         assert!(segments.read().get(sid).is_none());
     }
+}
+
+#[tokio::test]
+async fn test_cancel_optimization() {
+    let dir = TempDir::new("segment_dir").unwrap();
+    let temp_dir = TempDir::new("segment_temp_dir").unwrap();
+
+    let mut holder = SegmentHolder::default();
+
+    for _ in 0..5 {
+        holder.add(random_segment(dir.path(), 100, 10000, 4));
+    }
+
+    let indexing_optimizer: Arc<Optimizer> =
+        Arc::new(get_indexing_optimizer(dir.path(), temp_dir.path()));
+
+    let optimizers = Arc::new(vec![indexing_optimizer]);
+
+    let now = Instant::now();
+
+    let segments = Arc::new(RwLock::new(holder));
+    let handles = UpdateHandler::launch_optimization(optimizers.clone(), segments.clone());
+
+    sleep(Duration::from_millis(100)).await;
+
+    let join_handles = handles.into_iter().map(|h| h.stop()).collect_vec();
+
+    let optimization_res = join_all(join_handles).await;
+
+    eprintln!("optimization_res = {:#?}", optimization_res);
+
+    let actual_optimization_duration = now.elapsed().as_millis();
+
+    eprintln!("now.elapsed().as_millis() = {:#?}", actual_optimization_duration);
+    assert!(actual_optimization_duration < 200);
 }
