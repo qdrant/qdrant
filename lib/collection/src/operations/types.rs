@@ -191,6 +191,7 @@ impl From<OperationError> for CollectionError {
             OperationError::TypeError { .. } => Self::BadInput {
                 description: format!("{}", err),
             },
+            OperationError::Cancelled { description } => Self::Cancelled { description },
         }
     }
 }

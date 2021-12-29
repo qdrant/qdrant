@@ -11,6 +11,7 @@ use crate::index::payload_config::PayloadConfig;
 use atomic_refcell::AtomicRefCell;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
@@ -156,7 +157,7 @@ impl VectorIndex for PlainIndex {
         }
     }
 
-    fn build_index(&mut self) -> OperationResult<()> {
+    fn build_index(&mut self, _stopped: &AtomicBool) -> OperationResult<()> {
         Ok(())
     }
 }

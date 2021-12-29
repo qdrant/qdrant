@@ -1,7 +1,7 @@
 use crate::collection_manager::fixtures::{
     get_indexing_optimizer, get_merge_optimizer, random_segment,
 };
-use crate::collection_manager::holders::segment_holder::{SegmentHolder, SegmentId};
+use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
 use crate::update_handler::{Optimizer, UpdateHandler};
 use futures::future::join_all;
 use itertools::Itertools;
@@ -9,7 +9,7 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 use std::time::Duration;
 use tempdir::TempDir;
-use tokio::time::{Instant, sleep};
+use tokio::time::{sleep, Instant};
 
 #[tokio::test]
 async fn test_optimization_process() {
@@ -71,7 +71,7 @@ async fn test_cancel_optimization() {
     let mut holder = SegmentHolder::default();
 
     for _ in 0..5 {
-        holder.add(random_segment(dir.path(), 100, 10000, 4));
+        holder.add(random_segment(dir.path(), 100, 1000, 4));
     }
 
     let indexing_optimizer: Arc<Optimizer> =
@@ -90,10 +90,21 @@ async fn test_cancel_optimization() {
 
     let optimization_res = join_all(join_handles).await;
 
-    eprintln!("optimization_res = {:#?}", optimization_res);
-
     let actual_optimization_duration = now.elapsed().as_millis();
+    eprintln!(
+        "actual_optimization_duration = {:#?} ms",
+        actual_optimization_duration
+    );
 
-    eprintln!("now.elapsed().as_millis() = {:#?}", actual_optimization_duration);
-    assert!(actual_optimization_duration < 200);
+    for res in optimization_res {
+        let was_finished = res.expect("Should be no errors during optimization");
+        assert!(!was_finished);
+    }
+
+    for (_idx, segment) in segments.read().iter() {
+        match segment {
+            LockedSegment::Original(_) => {}
+            LockedSegment::Proxy(_) => panic!("segment is not restored"),
+        }
+    }
 }

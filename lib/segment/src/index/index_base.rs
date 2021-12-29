@@ -4,6 +4,7 @@ use crate::types::{
     Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType, SearchParams, VectorElementType,
 };
 use crate::vector_storage::ScoredPointOffset;
+use std::sync::atomic::AtomicBool;
 
 /// Trait for vector searching
 pub trait VectorIndex {
@@ -17,7 +18,7 @@ pub trait VectorIndex {
     ) -> Vec<ScoredPointOffset>;
 
     /// Force internal index rebuild.
-    fn build_index(&mut self) -> OperationResult<()>;
+    fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()>;
 }
 
 pub trait PayloadIndex {

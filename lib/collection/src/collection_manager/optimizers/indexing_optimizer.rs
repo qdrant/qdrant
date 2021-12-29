@@ -135,8 +135,8 @@ impl SegmentOptimizer for IndexingOptimizer {
 #[cfg(test)]
 mod tests {
     use std::ops::Deref;
-    use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
 
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;

@@ -179,10 +179,10 @@ impl UpdateHandler {
                         match optim.as_ref().optimize(segs, nsi, stopped) {
                             Ok(result) => result,
                             Err(error) => match error {
-                                CollectionError::Cancelled { .. } => {
-                                    log::info!("Optimization cancelled");
+                                CollectionError::Cancelled { description } => {
+                                    log::info!("Optimization cancelled - {}", description);
                                     false
-                                },
+                                }
                                 _ => {
                                     // Error of the optimization can not be handled by API user
                                     // It is only possible to fix after full restart,

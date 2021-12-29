@@ -1,4 +1,4 @@
-use crate::entry::entry_point::OperationResult;
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
@@ -16,6 +16,7 @@ use rand::thread_rng;
 use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 const HNSW_USE_HEURISTIC: bool = true;
@@ -204,7 +205,7 @@ impl VectorIndex for HNSWIndex {
         }
     }
 
-    fn build_index(&mut self) -> OperationResult<()> {
+    fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
         // Build main index graph
         let vector_storage = self.vector_storage.borrow();
         let mut rng = thread_rng();
@@ -222,6 +223,11 @@ impl VectorIndex for HNSWIndex {
         );
 
         for vector_id in vector_storage.iter_ids() {
+            if stopped.load(Ordering::Relaxed) {
+                return Err(OperationError::Cancelled {
+                    description: "Cancelled by external thread".to_string(),
+                });
+            }
             let vector = vector_storage.get_vector(vector_id).unwrap();
             let raw_scorer = vector_storage.raw_scorer(vector);
             let points_scorer = FilteredScorer {
@@ -248,6 +254,11 @@ impl VectorIndex for HNSWIndex {
             for payload_block in
                 payload_index.payload_blocks(&field, self.config.indexing_threshold)
             {
+                if stopped.load(Ordering::Relaxed) {
+                    return Err(OperationError::Cancelled {
+                        description: "Cancelled by external thread".to_string(),
+                    });
+                }
                 // ToDo: re-use graph layer for same payload
                 let mut additional_graph = GraphLayers::new_with_params(
                     self.vector_storage.borrow().total_vector_count(),
