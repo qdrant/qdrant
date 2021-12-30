@@ -14,7 +14,6 @@ use num_traits::FromPrimitive;
 use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::Instant;
-use storage::content_manager::errors::StorageError;
 use storage::content_manager::storage_ops::{
     CreateCollection as StorageCreateCollection, CreateCollectionOperation,
     DeleteCollectionOperation, UpdateCollection as StorageUpdateCollection,
@@ -67,7 +66,11 @@ impl Collections for CollectionsService {
             request.into_inner(),
         )?;
         let timing = Instant::now();
-        let result = self.toc.perform_collection_operation(operations).await;
+        let result = self
+            .toc
+            .perform_collection_operation(operations)
+            .await
+            .map_err(error_to_status)?;
 
         let response = CollectionOperationResponse::from((timing, result));
         Ok(Response::new(response))
@@ -80,7 +83,11 @@ impl Collections for CollectionsService {
         let operations =
             storage::content_manager::storage_ops::StorageOperations::from(request.into_inner());
         let timing = Instant::now();
-        let result = self.toc.perform_collection_operation(operations).await;
+        let result = self
+            .toc
+            .perform_collection_operation(operations)
+            .await
+            .map_err(error_to_status)?;
 
         let response = CollectionOperationResponse::from((timing, result));
         Ok(Response::new(response))
@@ -93,7 +100,11 @@ impl Collections for CollectionsService {
         let operations =
             storage::content_manager::storage_ops::StorageOperations::from(request.into_inner());
         let timing = Instant::now();
-        let result = self.toc.perform_collection_operation(operations).await;
+        let result = self
+            .toc
+            .perform_collection_operation(operations)
+            .await
+            .map_err(error_to_status)?;
 
         let response = CollectionOperationResponse::from((timing, result));
         Ok(Response::new(response))
@@ -245,28 +256,12 @@ impl From<(Instant, collection::operations::types::CollectionInfo)> for GetColle
     }
 }
 
-impl From<(Instant, Result<bool, StorageError>)> for CollectionOperationResponse {
-    fn from(value: (Instant, Result<bool, StorageError>)) -> Self {
-        let (timing, response) = value;
-        match response {
-            Ok(res) => CollectionOperationResponse {
-                result: Some(res),
-                error: None,
-                time: timing.elapsed().as_secs_f64(),
-            },
-            Err(err) => {
-                let error_description = match err {
-                    StorageError::BadInput { description } => description,
-                    StorageError::NotFound { description } => description,
-                    StorageError::ServiceError { description } => description,
-                    StorageError::BadRequest { description } => description,
-                };
-                CollectionOperationResponse {
-                    result: None,
-                    error: Some(error_description),
-                    time: timing.elapsed().as_secs_f64(),
-                }
-            }
+impl From<(Instant, bool)> for CollectionOperationResponse {
+    fn from(value: (Instant, bool)) -> Self {
+        let (timing, result) = value;
+        CollectionOperationResponse {
+            result,
+            time: timing.elapsed().as_secs_f64(),
         }
     }
 }

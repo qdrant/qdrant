@@ -50,9 +50,8 @@ message GeoPoint {
 }
 
 message PointsOperationResponse {
-  optional UpdateResult result = 1;
-  optional string error = 2;
-  double time = 3;
+  UpdateResult result = 1;
+  double time = 2;
 }
 
 message UpdateResult {
