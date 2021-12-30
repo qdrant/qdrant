@@ -10,8 +10,8 @@ use crate::segment::{Segment, SEGMENT_STATE_FILE};
 use crate::types::{
     Indexes, PayloadIndexType, SegmentConfig, SegmentState, SegmentType, SeqNumberType, StorageType,
 };
-use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
-use crate::vector_storage::simple_vector_storage::SimpleVectorStorage;
+use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
+use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::VectorStorage;
 use atomic_refcell::AtomicRefCell;
 use std::fs::{create_dir_all, File};
@@ -38,16 +38,12 @@ fn create_segment(
     let id_tracker = sp(SimpleIdTracker::open(&tracker_path)?);
 
     let vector_storage: Arc<AtomicRefCell<dyn VectorStorage>> = match config.storage_type {
-        StorageType::InMemory => sp(SimpleVectorStorage::open(
-            &vector_storage_path,
-            config.vector_size,
-            config.distance,
-        )?),
-        StorageType::Mmap => sp(MemmapVectorStorage::open(
-            &vector_storage_path,
-            config.vector_size,
-            config.distance,
-        )?),
+        StorageType::InMemory => {
+            open_simple_vector_storage(&vector_storage_path, config.vector_size, config.distance)?
+        }
+        StorageType::Mmap => {
+            open_memmap_vector_storage(&vector_storage_path, config.vector_size, config.distance)?
+        }
     };
 
     let payload_storage = sp(SimplePayloadStorage::open(&payload_storage_path)?);
