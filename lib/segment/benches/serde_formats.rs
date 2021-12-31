@@ -2,6 +2,7 @@ mod prof;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
+use segment::cbor_serde;
 use segment::types::{PayloadInterface, PayloadInterfaceStrict, PayloadVariant};
 
 fn serde_formats_bench(c: &mut Criterion) {
@@ -17,7 +18,7 @@ fn serde_formats_bench(c: &mut Criterion) {
 
     let cbor_bytes = payloads
         .iter()
-        .map(|p| serde_cbor::to_vec(p).unwrap())
+        .map(|p| cbor_serde::into_vec(p).unwrap())
         .collect_vec();
 
     let rmp_bytes = payloads
@@ -28,7 +29,7 @@ fn serde_formats_bench(c: &mut Criterion) {
     group.bench_function("serde-serialize-cbor", |b| {
         b.iter(|| {
             for payload in &payloads {
-                let vec = serde_cbor::to_vec(payload);
+                let vec = cbor_serde::into_vec(payload);
                 vec.unwrap();
             }
         });
@@ -37,7 +38,7 @@ fn serde_formats_bench(c: &mut Criterion) {
     group.bench_function("serde-deserialize-cbor", |b| {
         b.iter(|| {
             for bytes in &cbor_bytes {
-                let _payload: PayloadInterface = serde_cbor::from_slice(bytes).unwrap();
+                let _payload: PayloadInterface = cbor_serde::from_reader(bytes.as_slice()).unwrap();
             }
         });
     });

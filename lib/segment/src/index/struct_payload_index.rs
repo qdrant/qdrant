@@ -7,6 +7,7 @@ use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
 use log::debug;
 
+use crate::cbor_serde;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::IdTracker;
 use crate::index::field_index::index_selector::index_selector;
@@ -101,7 +102,7 @@ impl StructPayloadIndex {
             None => {}
             Some(indexes) => {
                 let file = File::create(&field_index_path)?;
-                serde_cbor::to_writer(file, indexes).map_err(|err| {
+                cbor_serde::into_writer(indexes, file).map_err(|err| {
                     OperationError::ServiceError {
                         description: format!("Unable to save index: {:?}", err),
                     }
@@ -124,7 +125,7 @@ impl StructPayloadIndex {
             );
             let file = File::open(field_index_path)?;
             let field_indexes: Vec<FieldIndex> =
-                serde_cbor::from_reader(file).map_err(|err| OperationError::ServiceError {
+                cbor_serde::from_reader(file).map_err(|err| OperationError::ServiceError {
                     description: format!("Unable to load index: {:?}", err),
                 })?;
 

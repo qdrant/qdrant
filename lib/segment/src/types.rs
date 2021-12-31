@@ -581,6 +581,7 @@ impl Filter {
 mod tests {
     use super::*;
 
+    use crate::cbor_serde;
     use serde::de::DeserializeOwned;
     use serde_json;
 
@@ -718,8 +719,9 @@ mod tests {
     fn check_cbor_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(
         record: T,
     ) {
-        let binary_entity = serde_cbor::to_vec(&record).expect("serialization ok");
-        let de_record: T = serde_cbor::from_slice(&binary_entity).expect("deserialization ok");
+        let binary_entity = cbor_serde::into_vec(&record).expect("serialization ok");
+        let de_record: T =
+            cbor_serde::from_reader(binary_entity.as_slice()).expect("deserialization ok");
 
         assert_eq!(record, de_record);
     }
@@ -745,7 +747,7 @@ mod tests {
     fn test_rmp_vs_cbor_deserialize() {
         let payload = PayloadInterface::KeywordShortcut(PayloadVariant::Value("val".to_string()));
         let raw = rmp_serde::to_vec(&payload).unwrap();
-        let de_record: PayloadInterface = serde_cbor::from_slice(&raw).unwrap();
+        let de_record: PayloadInterface = cbor_serde::from_reader(raw.as_slice()).unwrap();
         eprintln!("payload = {:#?}", payload);
         eprintln!("de_record = {:#?}", de_record);
     }

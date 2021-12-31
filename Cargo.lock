@@ -600,6 +600,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "ciborium"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0c137568cc60b904a7724001b35ce2630fd00d5d84805fbb608ab89509d788f"
+dependencies = [
+ "ciborium-io",
+ "ciborium-ll",
+ "serde 1.0.126",
+]
+
+[[package]]
+name = "ciborium-io"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "346de753af073cc87b52b2083a506b38ac176a44cfb05497b622e27be899b369"
+
+[[package]]
+name = "ciborium-ll"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "213030a2b5a4e0c0892b6652260cf6ccac84827b83a85a534e178e3906c4cf1b"
+dependencies = [
+ "ciborium-io",
+ "half",
+]
+
+[[package]]
 name = "clang-sys"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -628,6 +655,7 @@ dependencies = [
  "async-channel",
  "async-trait",
  "atomicwrites",
+ "ciborium",
  "criterion",
  "env_logger 0.7.1",
  "futures",
@@ -643,7 +671,6 @@ dependencies = [
  "schemars",
  "segment",
  "serde 1.0.126",
- "serde_cbor",
  "serde_json",
  "tempdir",
  "thiserror",
@@ -2690,6 +2717,7 @@ dependencies = [
  "bincode",
  "bit-vec",
  "blas-src",
+ "ciborium",
  "criterion",
  "env_logger 0.7.1",
  "geo",
@@ -2710,7 +2738,6 @@ dependencies = [
  "schemars",
  "seahash",
  "serde 1.0.126",
- "serde_cbor",
  "serde_json",
  "tempdir",
  "thiserror",

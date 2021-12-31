@@ -6,6 +6,7 @@ use std::path::Path;
 
 use rocksdb::{IteratorMode, Options, DB};
 
+use crate::cbor_serde;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::payload_storage::PayloadStorage;
 
@@ -35,9 +36,9 @@ impl SimplePayloadStorage {
 
         let cf_handle = store.cf_handle(DB_NAME).unwrap();
         for (key, val) in store.iterator_cf(cf_handle, IteratorMode::Start) {
-            let point_id: PointOffsetType = serde_cbor::from_slice(&key).unwrap();
+            let point_id: PointOffsetType = cbor_serde::from_reader(key.as_ref()).unwrap();
             let payload: TheMap<PayloadKeyType, PayloadType> =
-                serde_cbor::from_slice(&val).unwrap();
+                cbor_serde::from_reader(val.as_ref()).unwrap();
             SimplePayloadStorage::update_schema(&mut schema, &payload).unwrap();
             payload_map.insert(point_id, payload);
         }
@@ -87,11 +88,11 @@ impl SimplePayloadStorage {
         match self.payload.get(point_id) {
             None => self
                 .store
-                .delete_cf(cf_handle, serde_cbor::to_vec(&point_id).unwrap())?,
+                .delete_cf(cf_handle, cbor_serde::into_vec(&point_id).unwrap())?,
             Some(payload) => self.store.put_cf(
                 cf_handle,
-                serde_cbor::to_vec(&point_id).unwrap(),
-                serde_cbor::to_vec(payload).unwrap(),
+                cbor_serde::into_vec(&point_id).unwrap(),
+                cbor_serde::into_vec(payload).unwrap(),
             )?,
         };
         Ok(())

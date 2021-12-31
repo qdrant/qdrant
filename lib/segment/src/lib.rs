@@ -1,3 +1,4 @@
+pub mod cbor_serde;
 mod common;
 pub mod entry;
 pub mod fixtures;
