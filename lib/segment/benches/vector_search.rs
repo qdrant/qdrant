@@ -1,14 +1,14 @@
-use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use criterion::{criterion_group, criterion_main, Criterion};
 use ndarray::{Array, Array2};
 use rand::distributions::Standard;
 use rand::Rng;
+use std::sync::Arc;
 use tempdir::TempDir;
 
 use segment::spaces::tools::peek_top_scores_iterable;
 use segment::types::{Distance, PointOffsetType, VectorElementType};
-use segment::vector_storage::simple_vector_storage::{open_simple_vector_storage};
+use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use segment::vector_storage::{ScoredPointOffset, VectorStorage};
 
 const NUM_VECTORS: usize = 50000;
