@@ -43,10 +43,13 @@ fn benchmark_naive(c: &mut Criterion) {
 
     let dist = Distance::Dot;
     let storage = init_vector_storage(&dir, DIM, NUM_VECTORS, dist);
+    let borrowed_storage = storage.borrow();
 
-    c.bench_function("storage vector search", |b| {
+    let mut group = c.benchmark_group("storage-score-all");
+    group.sample_size(1000);
+
+    group.bench_function("storage vector search", |b| {
         b.iter(|| {
-            let borrowed_storage = storage.borrow();
             let vector = random_vector(DIM);
             borrowed_storage.score_all(&vector, 10)
         })
