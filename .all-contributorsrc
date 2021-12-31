@@ -121,6 +121,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "IvanPleshkov",
+      "name": "Ivan Pleshkov",
+      "avatar_url": "https://avatars.githubusercontent.com/u/20946825?v=4",
+      "profile": "https://github.com/IvanPleshkov",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
