@@ -489,7 +489,9 @@ mod tests {
     use crate::fixtures::index_fixtures::{
         random_vector, FakeConditionChecker, TestRawScorerProducer,
     };
-    use crate::types::{Distance, VectorElementType};
+    use crate::spaces::metric::Metric;
+    use crate::spaces::simple::{CosineMetric, DotProductMetric};
+    use crate::types::VectorElementType;
     use itertools::Itertools;
     use ndarray::Array;
     use rand::rngs::StdRng;
@@ -560,7 +562,7 @@ mod tests {
     fn search_in_graph(
         query: &[VectorElementType],
         top: usize,
-        vector_storage: &TestRawScorerProducer,
+        vector_storage: &TestRawScorerProducer<CosineMetric>,
         graph: &GraphLayers,
     ) -> Vec<ScoredPointOffset> {
         let fake_condition_checker = FakeConditionChecker {};
@@ -581,7 +583,7 @@ mod tests {
         dim: usize,
         use_heuristic: bool,
         rng: &mut R,
-    ) -> (TestRawScorerProducer, GraphLayers)
+    ) -> (TestRawScorerProducer<CosineMetric>, GraphLayers)
     where
         R: Rng + ?Sized,
     {
@@ -589,7 +591,7 @@ mod tests {
         let ef_construct = 16;
         let entry_points_num = 10;
 
-        let vector_holder = TestRawScorerProducer::new(dim, num_vectors, Distance::Cosine, rng);
+        let vector_holder = TestRawScorerProducer::new(dim, num_vectors, CosineMetric {}, rng);
 
         let mut graph_layers = GraphLayers::new(
             num_vectors,
@@ -626,7 +628,8 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let vector_holder = TestRawScorerProducer::new(dim, num_vectors, Distance::Dot, &mut rng);
+        let vector_holder =
+            TestRawScorerProducer::new(dim, num_vectors, DotProductMetric {}, &mut rng);
 
         let mut graph_layers =
             GraphLayers::new(num_vectors, m, m * 2, ef_construct, entry_points_num, false);

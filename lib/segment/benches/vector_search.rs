@@ -1,12 +1,14 @@
+use atomic_refcell::AtomicRefCell;
 use criterion::{criterion_group, criterion_main, Criterion};
 use ndarray::{Array, Array2};
 use rand::distributions::Standard;
 use rand::Rng;
+use std::sync::Arc;
 use tempdir::TempDir;
 
 use segment::spaces::tools::peek_top_scores_iterable;
 use segment::types::{Distance, PointOffsetType, VectorElementType};
-use segment::vector_storage::simple_vector_storage::SimpleVectorStorage;
+use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use segment::vector_storage::{ScoredPointOffset, VectorStorage};
 
 const NUM_VECTORS: usize = 50000;
@@ -23,12 +25,14 @@ fn init_vector_storage(
     dim: usize,
     num: usize,
     dist: Distance,
-) -> SimpleVectorStorage {
-    let mut storage = SimpleVectorStorage::open(dir.path(), dim, dist).unwrap();
-
-    for _i in 0..num {
-        let vector: Vec<VectorElementType> = random_vector(dim);
-        storage.put_vector(vector).unwrap();
+) -> Arc<AtomicRefCell<dyn VectorStorage>> {
+    let storage = open_simple_vector_storage(dir.path(), dim, dist).unwrap();
+    {
+        let mut borrowed_storage = storage.borrow_mut();
+        for _i in 0..num {
+            let vector: Vec<VectorElementType> = random_vector(dim);
+            borrowed_storage.put_vector(vector).unwrap();
+        }
     }
 
     storage
@@ -39,11 +43,15 @@ fn benchmark_naive(c: &mut Criterion) {
 
     let dist = Distance::Dot;
     let storage = init_vector_storage(&dir, DIM, NUM_VECTORS, dist);
+    let borrowed_storage = storage.borrow();
 
-    c.bench_function("storage vector search", |b| {
+    let mut group = c.benchmark_group("storage-score-all");
+    group.sample_size(1000);
+
+    group.bench_function("storage vector search", |b| {
         b.iter(|| {
             let vector = random_vector(DIM);
-            storage.score_all(&vector, 10)
+            borrowed_storage.score_all(&vector, 10)
         })
     });
 }

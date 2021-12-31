@@ -6,23 +6,26 @@ use rocksdb::{IteratorMode, Options, DB};
 use serde::{Deserialize, Serialize};
 
 use crate::entry::entry_point::OperationResult;
-use crate::spaces::tools::{mertic_object, peek_top_scores_iterable};
+use crate::spaces::tools::peek_top_scores_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset};
 
 use super::vector_storage_base::VectorStorage;
 use crate::spaces::metric::Metric;
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
+use atomic_refcell::AtomicRefCell;
 use bit_vec::BitVec;
 use ndarray::{Array, Array1};
 use std::mem::size_of;
+use std::sync::Arc;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 
 /// In-memory vector storage with on-update persistence using `store`
-pub struct SimpleVectorStorage {
+pub struct SimpleVectorStorage<TMetric: Metric> {
     dim: usize,
-    metric: Box<dyn Metric>,
+    metric: TMetric,
     vectors: Vec<Array1<VectorElementType>>,
     deleted: BitVec,
     deleted_count: usize,
@@ -35,14 +38,17 @@ struct StoredRecord {
     pub vector: Vec<VectorElementType>,
 }
 
-pub struct SimpleRawScorer<'a> {
+pub struct SimpleRawScorer<'a, TMetric: Metric> {
     pub query: Array1<VectorElementType>,
-    pub metric: &'a dyn Metric,
+    pub metric: &'a TMetric,
     pub vectors: &'a Vec<Array1<VectorElementType>>,
     pub deleted: &'a BitVec,
 }
 
-impl RawScorer for SimpleRawScorer<'_> {
+impl<TMetric> RawScorer for SimpleRawScorer<'_, TMetric>
+where
+    TMetric: Metric,
+{
     fn score_points<'a>(
         &'a self,
         points: &'a mut dyn Iterator<Item = PointOffsetType>,
@@ -75,54 +81,77 @@ impl RawScorer for SimpleRawScorer<'_> {
     }
 }
 
-impl SimpleVectorStorage {
-    pub fn open(path: &Path, dim: usize, distance: Distance) -> OperationResult<Self> {
-        let mut vectors: Vec<Array1<VectorElementType>> = vec![];
-        let mut deleted = BitVec::new();
-        let mut deleted_count = 0;
+pub fn open_simple_vector_storage(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+) -> OperationResult<Arc<AtomicRefCell<dyn VectorStorage>>> {
+    let mut vectors: Vec<Array1<VectorElementType>> = vec![];
+    let mut deleted = BitVec::new();
+    let mut deleted_count = 0;
 
-        let mut options: Options = Options::default();
-        options.set_write_buffer_size(DB_CACHE_SIZE);
-        options.create_if_missing(true);
+    let mut options: Options = Options::default();
+    options.set_write_buffer_size(DB_CACHE_SIZE);
+    options.create_if_missing(true);
 
-        let store = DB::open(&options, path)?;
+    let store = DB::open(&options, path)?;
 
-        for (key, val) in store.iterator(IteratorMode::Start) {
-            let point_id: PointOffsetType = bincode::deserialize(&key).unwrap();
-            let stored_record: StoredRecord = bincode::deserialize(&val).unwrap();
-            if stored_record.deleted {
-                deleted_count += 1;
-            }
-
-            if vectors.len() <= (point_id as usize) {
-                vectors.resize((point_id + 1) as usize, Array::zeros(dim));
-            }
-            while deleted.len() <= (point_id as usize) {
-                deleted.push(false)
-            }
-
-            deleted.set(point_id as usize, stored_record.deleted);
-            vectors[point_id as usize].assign(&Array::from(stored_record.vector));
+    for (key, val) in store.iterator(IteratorMode::Start) {
+        let point_id: PointOffsetType = bincode::deserialize(&key).unwrap();
+        let stored_record: StoredRecord = bincode::deserialize(&val).unwrap();
+        if stored_record.deleted {
+            deleted_count += 1;
         }
 
-        let metric = mertic_object(&distance);
+        if vectors.len() <= (point_id as usize) {
+            vectors.resize((point_id + 1) as usize, Array::zeros(dim));
+        }
+        while deleted.len() <= (point_id as usize) {
+            deleted.push(false)
+        }
 
-        debug!("Segment vectors: {}", vectors.len());
-        debug!(
-            "Estimated segment size {} MB",
-            vectors.len() * dim * size_of::<VectorElementType>() / 1024 / 1024
-        );
+        deleted.set(point_id as usize, stored_record.deleted);
+        vectors[point_id as usize].assign(&Array::from(stored_record.vector));
+    }
 
-        Ok(SimpleVectorStorage {
+    debug!("Segment vectors: {}", vectors.len());
+    debug!(
+        "Estimated segment size {} MB",
+        vectors.len() * dim * size_of::<VectorElementType>() / 1024 / 1024
+    );
+
+    match distance {
+        Distance::Cosine => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage {
             dim,
-            metric,
+            metric: CosineMetric {},
             vectors,
             deleted,
             deleted_count,
             store,
-        })
+        }))),
+        Distance::Euclid => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage {
+            dim,
+            metric: EuclidMetric {},
+            vectors,
+            deleted,
+            deleted_count,
+            store,
+        }))),
+        Distance::Dot => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage {
+            dim,
+            metric: DotProductMetric {},
+            vectors,
+            deleted,
+            deleted_count,
+            store,
+        }))),
     }
+}
 
+impl<TMetric> SimpleVectorStorage<TMetric>
+where
+    TMetric: Metric,
+{
     fn update_stored(&self, point_id: PointOffsetType) -> OperationResult<()> {
         let v = self.vectors.get(point_id as usize).unwrap();
 
@@ -139,7 +168,10 @@ impl SimpleVectorStorage {
     }
 }
 
-impl VectorStorage for SimpleVectorStorage {
+impl<TMetric> VectorStorage for SimpleVectorStorage<TMetric>
+where
+    TMetric: Metric,
+{
     fn vector_dim(&self) -> usize {
         self.dim
     }
@@ -229,7 +261,7 @@ impl VectorStorage for SimpleVectorStorage {
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
         Box::new(SimpleRawScorer {
             query: Array::from(self.metric.preprocess(&vector).unwrap_or(vector)),
-            metric: self.metric.as_ref(),
+            metric: &self.metric,
             vectors: &self.vectors,
             deleted: &self.deleted,
         })
@@ -238,7 +270,7 @@ impl VectorStorage for SimpleVectorStorage {
     fn raw_scorer_internal(&self, point_id: PointOffsetType) -> Box<dyn RawScorer + '_> {
         Box::new(SimpleRawScorer {
             query: self.vectors[point_id as usize].clone(),
-            metric: self.metric.as_ref(),
+            metric: &self.metric,
             vectors: &self.vectors,
             deleted: &self.deleted,
         })
@@ -312,25 +344,28 @@ mod tests {
         let dir = TempDir::new("storage_dir").unwrap();
         let distance = Distance::Dot;
         let dim = 4;
-        let mut storage = SimpleVectorStorage::open(dir.path(), dim, distance).unwrap();
+        let storage = open_simple_vector_storage(dir.path(), dim, distance).unwrap();
+        let mut borrowed_storage = storage.borrow_mut();
+
         let vec0 = vec![1.0, 0.0, 1.0, 1.0];
         let vec1 = vec![1.0, 0.0, 1.0, 0.0];
         let vec2 = vec![1.0, 1.0, 1.0, 1.0];
         let vec3 = vec![1.0, 1.0, 0.0, 1.0];
         let vec4 = vec![1.0, 0.0, 0.0, 0.0];
 
-        let _id1 = storage.put_vector(vec0.clone()).unwrap();
-        let id2 = storage.put_vector(vec1.clone()).unwrap();
-        let _id3 = storage.put_vector(vec2.clone()).unwrap();
-        let _id4 = storage.put_vector(vec3.clone()).unwrap();
-        let id5 = storage.put_vector(vec4.clone()).unwrap();
+        let _id1 = borrowed_storage.put_vector(vec0.clone()).unwrap();
+        let id2 = borrowed_storage.put_vector(vec1.clone()).unwrap();
+        let _id3 = borrowed_storage.put_vector(vec2.clone()).unwrap();
+        let _id4 = borrowed_storage.put_vector(vec3.clone()).unwrap();
+        let id5 = borrowed_storage.put_vector(vec4.clone()).unwrap();
 
         assert_eq!(id2, 1);
         assert_eq!(id5, 4);
 
         let query = vec![0.0, 1.0, 1.1, 1.0];
 
-        let closest = storage.score_points(&query, &mut [0, 1, 2, 3, 4].iter().cloned(), 2);
+        let closest =
+            borrowed_storage.score_points(&query, &mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
         let top_idx = match closest.get(0) {
             Some(scored_point) => {
@@ -342,11 +377,12 @@ mod tests {
             }
         };
 
-        storage.delete(top_idx).unwrap();
+        borrowed_storage.delete(top_idx).unwrap();
 
-        let closest = storage.score_points(&query, &mut [0, 1, 2, 3, 4].iter().cloned(), 2);
+        let closest =
+            borrowed_storage.score_points(&query, &mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
-        let raw_scorer = storage.raw_scorer(query.clone());
+        let raw_scorer = borrowed_storage.raw_scorer(query.clone());
 
         let query_points = vec![0, 1, 2, 3, 4];
         let mut query_points1 = query_points.iter().cloned();
@@ -367,8 +403,8 @@ mod tests {
             }
         };
 
-        let all_ids1: Vec<_> = storage.iter_ids().collect();
-        let all_ids2: Vec<_> = storage.iter_ids().collect();
+        let all_ids1: Vec<_> = borrowed_storage.iter_ids().collect();
+        let all_ids2: Vec<_> = borrowed_storage.iter_ids().collect();
 
         assert_eq!(all_ids1, all_ids2);
 
