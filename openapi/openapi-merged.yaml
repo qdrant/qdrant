@@ -1670,7 +1670,7 @@ components:
       type: object
     RecommendRequest:
       description: |-
-        Recommendation request Provides positive and negative examples of the vectors, which are already stored in the collection.
+        Recommendation request. Provides positive and negative examples of the vectors, which are already stored in the collection.
 
         Service should look for the points which are closer to positive examples and at the same time further to negative examples. The concrete way of how to compare negative and positive distances is up to implementation in `segment` crate.
       properties:
@@ -1837,7 +1837,7 @@ components:
           type: integer
       type: object
     SearchRequest:
-      description: Search request Holds all conditions and parameters for the search of most similar points by vector similarity given the filtering restrictions.
+      description: Search request. Holds all conditions and parameters for the search of most similar points by vector similarity given the filtering restrictions.
       properties:
         filter:
           anyOf:
