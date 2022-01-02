@@ -4,31 +4,77 @@
       "AliasOperations": {
         "anyOf": [
           {
-            "$ref": "#/components/schemas/CreateAliasOperation"
-          },
-          {
-            "$ref": "#/components/schemas/DeleteAliasOperation"
-          },
-          {
-            "$ref": "#/components/schemas/RenameAliasOperation"
-          }
-        ],
-        "description": "Group of all the possible operations related to collection aliases"
-      },
-      "ChangeAliasesOperation": {
-        "description": "Operation for performing changes of collection aliases. Alias changes are atomic, meaning that no collection modifications can happen between alias operations.",
-        "properties": {
-          "actions": {
-            "items": {
-              "$ref": "#/components/schemas/AliasOperations"
+            "additionalProperties": false,
+            "description": "Create alternative name for a collection. Collection will be available under both names for search, retrieve,",
+            "properties": {
+              "create_alias": {
+                "properties": {
+                  "alias_name": {
+                    "type": "string"
+                  },
+                  "collection_name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "alias_name",
+                  "collection_name"
+                ],
+                "type": "object"
+              }
             },
-            "type": "array"
+            "required": [
+              "create_alias"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Delete alias if exists",
+            "properties": {
+              "delete_alias": {
+                "properties": {
+                  "alias_name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "alias_name"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "delete_alias"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Change alias to a new one",
+            "properties": {
+              "rename_alias": {
+                "properties": {
+                  "new_alias_name": {
+                    "type": "string"
+                  },
+                  "old_alias_name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "new_alias_name",
+                  "old_alias_name"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "rename_alias"
+            ],
+            "type": "object"
           }
-        },
-        "required": [
-          "actions"
-        ],
-        "type": "object"
+        ]
       },
       "CollectionConfig": {
         "properties": {
@@ -65,7 +111,7 @@
         "type": "object"
       },
       "CollectionInfo": {
-        "description": "Current statistics and configuration of the collection",
+        "description": "Current statistics and configuration of the collection.",
         "properties": {
           "config": {
             "$ref": "#/components/schemas/CollectionConfig"
@@ -135,7 +181,6 @@
         "type": "object"
       },
       "CollectionStatus": {
-        "description": "Current state of the collection",
         "enum": [
           "green",
           "yellow",
@@ -183,167 +228,6 @@
           }
         ]
       },
-      "CreateAlias": {
-        "description": "Create alternative name for a collection. Collection will be available under both names for search, retrieve,",
-        "properties": {
-          "alias_name": {
-            "type": "string"
-          },
-          "collection_name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "alias_name",
-          "collection_name"
-        ],
-        "type": "object"
-      },
-      "CreateAliasOperation": {
-        "properties": {
-          "create_alias": {
-            "$ref": "#/components/schemas/CreateAlias"
-          }
-        },
-        "required": [
-          "create_alias"
-        ],
-        "type": "object"
-      },
-      "CreateCollection": {
-        "description": "Operation for creating new collection and (optionally) specify index params",
-        "properties": {
-          "distance": {
-            "$ref": "#/components/schemas/Distance"
-          },
-          "hnsw_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/HnswConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ],
-            "description": "Custom params for HNSW index. If none - values from service configuration file are used."
-          },
-          "optimizers_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OptimizersConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ],
-            "description": "Custom params for Optimizers.  If none - values from service configuration file are used."
-          },
-          "vector_size": {
-            "format": "uint",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "wal_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WalConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ],
-            "description": "Custom params for WAL. If none - values from service configuration file are used."
-          }
-        },
-        "required": [
-          "distance",
-          "vector_size"
-        ],
-        "type": "object"
-      },
-      "CreateCollectionOperation": {
-        "description": "Operation for creating new collection and (optionally) specify index params",
-        "properties": {
-          "distance": {
-            "$ref": "#/components/schemas/Distance"
-          },
-          "hnsw_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/HnswConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ],
-            "description": "Custom params for HNSW index. If none - values from service configuration file are used."
-          },
-          "name": {
-            "type": "string"
-          },
-          "optimizers_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OptimizersConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ],
-            "description": "Custom params for Optimizers.  If none - values from service configuration file are used."
-          },
-          "vector_size": {
-            "format": "uint",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "wal_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WalConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ],
-            "description": "Custom params for WAL. If none - values from service configuration file are used."
-          }
-        },
-        "required": [
-          "distance",
-          "name",
-          "vector_size"
-        ],
-        "type": "object"
-      },
-      "DeleteAlias": {
-        "description": "Delete alias if exists",
-        "properties": {
-          "alias_name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "alias_name"
-        ],
-        "type": "object"
-      },
-      "DeleteAliasOperation": {
-        "description": "Delete alias if exists",
-        "properties": {
-          "delete_alias": {
-            "$ref": "#/components/schemas/DeleteAlias"
-          }
-        },
-        "required": [
-          "delete_alias"
-        ],
-        "type": "object"
-      },
-      "DeleteCollectionOperation": {
-        "description": "Operation for deleting collection with given name",
-        "type": "string"
-      },
       "Distance": {
         "description": "Type of internal tags, build from payload Distance function types used to compare vectors",
         "enum": [
@@ -377,7 +261,6 @@
         "type": "object"
       },
       "FieldCondition": {
-        "description": "All possible payload filtering conditions",
         "properties": {
           "geo_bounding_box": {
             "anyOf": [
@@ -493,7 +376,6 @@
         "type": "object"
       },
       "GeoBoundingBox": {
-        "description": "Geo filter request\n\nMatches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges",
         "properties": {
           "bottom_right": {
             "$ref": "#/components/schemas/GeoPoint"
@@ -509,7 +391,6 @@
         "type": "object"
       },
       "GeoPoint": {
-        "description": "Geo point payload schema",
         "properties": {
           "lat": {
             "format": "double",
@@ -527,7 +408,6 @@
         "type": "object"
       },
       "GeoRadius": {
-        "description": "Geo filter request\n\nMatches coordinates inside the circle of `radius` and center with coordinates `center`",
         "properties": {
           "center": {
             "$ref": "#/components/schemas/GeoPoint"
@@ -545,7 +425,6 @@
         "type": "object"
       },
       "HasIdCondition": {
-        "description": "ID-based filtering condition",
         "properties": {
           "has_id": {
             "items": {
@@ -563,7 +442,6 @@
         "type": "object"
       },
       "HnswConfig": {
-        "description": "Config of HNSW index",
         "properties": {
           "ef_construct": {
             "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.",
@@ -618,7 +496,6 @@
         "type": "object"
       },
       "Match": {
-        "description": "Match filter request",
         "properties": {
           "integer": {
             "description": "Integer value to match",
@@ -653,12 +530,6 @@
             "minimum": 0,
             "type": "integer"
           },
-          "max_optimization_threads": {
-            "description": "Maximum available threads for optimization workers",
-            "format": "uint",
-            "minimum": 0,
-            "type": "integer"
-          },
           "max_segment_number": {
             "description": "If the number of segments exceeds this value, the optimizer will merge the smallest segments.",
             "format": "uint",
@@ -688,7 +559,6 @@
           "deleted_threshold",
           "flush_interval_sec",
           "indexing_threshold",
-          "max_optimization_threads",
           "max_segment_number",
           "memmap_threshold",
           "payload_indexing_threshold",
@@ -713,13 +583,6 @@
           },
           "indexing_threshold": {
             "description": "Maximum number of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true,
-            "type": "integer"
-          },
-          "max_optimization_threads": {
-            "description": "Maximum available threads for optimization workers",
             "format": "uint",
             "minimum": 0,
             "nullable": true,
@@ -770,8 +633,7 @@
           {
             "$ref": "#/components/schemas/PayloadInterfaceStrict"
           }
-        ],
-        "description": "Structure for converting user-provided payload into internal structure representation\n\nUsed to allow user provide payload in more human-friendly format, and do not force explicit brackets, included constructions, e.t.c.\n\nExample:\n\n```json {..., \"payload\": {\"city\": \"Berlin\"}, ... } ```\n\nShould be captured by `KeywordShortcut`"
+        ]
       },
       "PayloadInterfaceStrict": {
         "anyOf": [
@@ -847,8 +709,7 @@
             ],
             "type": "object"
           }
-        ],
-        "description": "Fallback for PayloadInterface which is used if user explicitly specifies type of payload\n\nExample:\n\n```json {..., \"payload\": {\"city\": { \"type\": \"keyword\", \"value\": \"Berlin\" }}, ... } ```\n\nShould be captured by `Keyword(PayloadVariant<String>)`"
+        ]
       },
       "PayloadOps": {
         "anyOf": [
@@ -950,7 +811,6 @@
         "description": "Define operations description for point payloads manipulation"
       },
       "PayloadSchemaInfo": {
-        "description": "Payload field type & index information",
         "properties": {
           "data_type": {
             "$ref": "#/components/schemas/PayloadSchemaType"
@@ -1023,12 +883,10 @@
             ],
             "type": "object"
           }
-        ],
-        "description": "All possible names of payload types"
+        ]
       },
       "PayloadSelector": {
         "additionalProperties": false,
-        "description": "Specifies how to treat payload selector",
         "properties": {
           "exclude": {
             "description": "Post-exclude return payload key type",
@@ -1139,8 +997,7 @@
             ],
             "type": "object"
           }
-        ],
-        "description": "All possible payload types"
+        ]
       },
       "PayloadVariant_for_GeoPoint": {
         "anyOf": [
@@ -1153,8 +1010,7 @@
           {
             "$ref": "#/components/schemas/GeoPoint"
           }
-        ],
-        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
+        ]
       },
       "PayloadVariant_for_String": {
         "anyOf": [
@@ -1167,8 +1023,7 @@
           {
             "type": "string"
           }
-        ],
-        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
+        ]
       },
       "PayloadVariant_for_double": {
         "anyOf": [
@@ -1183,8 +1038,7 @@
             "format": "double",
             "type": "number"
           }
-        ],
-        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
+        ]
       },
       "PayloadVariant_for_int64": {
         "anyOf": [
@@ -1199,8 +1053,7 @@
             "format": "int64",
             "type": "integer"
           }
-        ],
-        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
+        ]
       },
       "PointInsertOperations": {
         "anyOf": [
@@ -1371,7 +1224,6 @@
         "type": "object"
       },
       "Range": {
-        "description": "Range filter request",
         "properties": {
           "gt": {
             "description": "point.key > range.gt",
@@ -1401,7 +1253,7 @@
         "type": "object"
       },
       "RecommendRequest": {
-        "description": "Recommendation request Provides positive and negative examples of the vectors, which are already stored in the collection.\n\nService should look for the points which are closer to positive examples and at the same time further to negative examples. The concrete way of how to compare negative and positive distances is up to implementation in `segment` crate.",
+        "description": "Search request",
         "properties": {
           "filter": {
             "anyOf": [
@@ -1489,36 +1341,7 @@
         ],
         "type": "object"
       },
-      "RenameAlias": {
-        "description": "Change alias to a new one",
-        "properties": {
-          "new_alias_name": {
-            "type": "string"
-          },
-          "old_alias_name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "new_alias_name",
-          "old_alias_name"
-        ],
-        "type": "object"
-      },
-      "RenameAliasOperation": {
-        "description": "Change alias to a new one",
-        "properties": {
-          "rename_alias": {
-            "$ref": "#/components/schemas/RenameAlias"
-          }
-        },
-        "required": [
-          "rename_alias"
-        ],
-        "type": "object"
-      },
       "ScoredPoint": {
-        "description": "Search result",
         "properties": {
           "id": {
             "description": "Point id",
@@ -1601,7 +1424,7 @@
         "type": "object"
       },
       "ScrollResult": {
-        "description": "Result of the points read request",
+        "description": "Result of the points read request. Contains",
         "properties": {
           "next_page_offset": {
             "description": "Offset which should be used to retrieve a next page result",
@@ -1637,7 +1460,7 @@
         "type": "object"
       },
       "SearchRequest": {
-        "description": "Search request Holds all conditions and parameters for the search of most similar points by vector similarity given the filtering restrictions.",
+        "description": "Search request",
         "properties": {
           "filter": {
             "anyOf": [
@@ -1697,9 +1520,61 @@
         "anyOf": [
           {
             "additionalProperties": false,
+            "description": "Create new collection and (optionally) specify index params",
             "properties": {
               "create_collection": {
-                "$ref": "#/components/schemas/CreateCollectionOperation"
+                "properties": {
+                  "distance": {
+                    "$ref": "#/components/schemas/Distance"
+                  },
+                  "hnsw_config": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/HnswConfigDiff"
+                      },
+                      {
+                        "nullable": true
+                      }
+                    ],
+                    "description": "Custom params for HNSW index. If none - values from service configuration file are used."
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "optimizers_config": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/OptimizersConfigDiff"
+                      },
+                      {
+                        "nullable": true
+                      }
+                    ],
+                    "description": "Custom params for Optimizers.  If none - values from service configuration file are used."
+                  },
+                  "vector_size": {
+                    "format": "uint",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "wal_config": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/WalConfigDiff"
+                      },
+                      {
+                        "nullable": true
+                      }
+                    ],
+                    "description": "Custom params for WAL. If none - values from service configuration file are used."
+                  }
+                },
+                "required": [
+                  "distance",
+                  "name",
+                  "vector_size"
+                ],
+                "type": "object"
               }
             },
             "required": [
@@ -1709,9 +1584,29 @@
           },
           {
             "additionalProperties": false,
+            "description": "Update parameters of the existing collection",
             "properties": {
               "update_collection": {
-                "$ref": "#/components/schemas/UpdateCollectionOperation"
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "optimizers_config": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/OptimizersConfigDiff"
+                      },
+                      {
+                        "nullable": true
+                      }
+                    ],
+                    "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
               }
             },
             "required": [
@@ -1721,9 +1616,10 @@
           },
           {
             "additionalProperties": false,
+            "description": "Delete collection with given name",
             "properties": {
               "delete_collection": {
-                "$ref": "#/components/schemas/DeleteCollectionOperation"
+                "type": "string"
               }
             },
             "required": [
@@ -1733,9 +1629,21 @@
           },
           {
             "additionalProperties": false,
+            "description": "Perform changes of collection aliases. Alias changes are atomic, meaning that no collection modifications can happen between alias operations.",
             "properties": {
               "change_aliases": {
-                "$ref": "#/components/schemas/ChangeAliasesOperation"
+                "properties": {
+                  "actions": {
+                    "items": {
+                      "$ref": "#/components/schemas/AliasOperations"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "actions"
+                ],
+                "type": "object"
               }
             },
             "required": [
@@ -1743,48 +1651,7 @@
             ],
             "type": "object"
           }
-        ],
-        "description": "Enumeration of all possible collection update operations"
-      },
-      "UpdateCollection": {
-        "description": "Operation for updating parameters of the existing collection",
-        "properties": {
-          "optimizers_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OptimizersConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ],
-            "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete"
-          }
-        },
-        "type": "object"
-      },
-      "UpdateCollectionOperation": {
-        "description": "Operation for updating parameters of the existing collection",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "optimizers_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OptimizersConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ],
-            "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "type": "object"
+        ]
       },
       "UpdateResult": {
         "properties": {
@@ -1865,32 +1732,30 @@
           {
             "$ref": "#/components/schemas/PayloadSelector"
           }
-        ],
-        "description": "Options for specifying which payload to include or not"
+        ]
       }
     }
   },
   "externalDocs": {
     "description": "Find out more about Qdrant aplications and demo",
-    "url": "https://qdrant.tech/documentation/"
+    "url": "demo.qdrant.tech"
   },
   "info": {
     "contact": {
       "email": "andrey@vasnetsov.com"
     },
-    "description": "API description for Qdrant vector search engine.\n\nThis document describes CRUD and search operations on collections of points (vectors with payload).\n\nQdrant supports any combinations of `should`, `must` and `must_not` conditions, which makes it possible to use in applications when object could not be described solely by vector. It could be location features, availability flags, and other custom properties businesses should take into account.\n## Examples\nThis examples cover the most basic use-cases - collection creation and basic vector search.\n### Create collection\nFirst - let's create a collection with dot-production metric.\n```\ncurl -X PUT 'http://localhost:6333/collections/test_collection' \\\n  -H 'Content-Type: application/json' \\\n  --data-raw '{\n    \"vector_size\": 4,\n    \"distance\": \"Dot\"\n  }'\n\n```\nExpected response:\n```\n{\n    \"result\": true,\n    \"status\": \"ok\",\n    \"time\": 0.031095451\n}\n```\nWe can ensure that collection was created:\n```\ncurl 'http://localhost:6333/collections/test_collection'\n```\nExpected response:\n```\n{\n  \"result\": {\n    \"status\": \"green\",\n    \"vectors_count\": 0,\n    \"segments_count\": 5,\n    \"disk_data_size\": 0,\n    \"ram_data_size\": 0,\n    \"config\": {\n      \"params\": {\n        \"vector_size\": 4,\n        \"distance\": \"Dot\"\n      },\n      \"hnsw_config\": {\n        \"m\": 16,\n        \"ef_construct\": 100,\n        \"full_scan_threshold\": 10000\n      },\n      \"optimizer_config\": {\n        \"deleted_threshold\": 0.2,\n        \"vacuum_min_vector_number\": 1000,\n        \"max_segment_number\": 5,\n        \"memmap_threshold\": 50000,\n        \"indexing_threshold\": 20000,\n        \"payload_indexing_threshold\": 10000,\n        \"flush_interval_sec\": 1\n      },\n      \"wal_config\": {\n        \"wal_capacity_mb\": 32,\n        \"wal_segments_ahead\": 0\n      }\n    }\n  },\n  \"status\": \"ok\",\n  \"time\": 2.1199e-05\n}\n```\n\n### Add points\nLet's now add vectors with some payload:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection?wait=true' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n  \"upsert_points\": {\n    \"points\": [\n      {\"id\": 1, \"vector\": [0.05, 0.61, 0.76, 0.74], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Berlin\"}}},\n      {\"id\": 2, \"vector\": [0.19, 0.81, 0.75, 0.11], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}},\n      {\"id\": 3, \"vector\": [0.36, 0.55, 0.47, 0.94], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"Moscow\"] }}},\n      {\"id\": 4, \"vector\": [0.18, 0.01, 0.85, 0.80], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"London\", \"Moscow\"]}}},\n      {\"id\": 5, \"vector\": [0.24, 0.18, 0.22, 0.44], \"payload\": {\"count\": {\"type\": \"integer\", \"value\": [0]}}},\n      {\"id\": 6, \"vector\": [0.35, 0.08, 0.11, 0.44]}\n    ]\n  }\n}'\n```\nExpected response:\n```\n{\n    \"result\": {\n        \"operation_id\": 0,\n        \"status\": \"completed\"\n    },\n    \"status\": \"ok\",\n    \"time\": 0.000206061\n}\n```\n### Search with filtering\nLet's start with a basic request:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"vector\": [0.2,0.1,0.9,0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362, \"payload\": null, \"version\": 0 },\n        { \"id\": 1, \"score\": 1.273, \"payload\": null, \"version\": 0 },\n        { \"id\": 3, \"score\": 1.208, \"payload\": null, \"version\": 0 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000055785\n}\n```\nBut result is different if we add a filter:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"filter\": {\n        \"should\": [\n            {\n                \"key\": \"city\",\n                \"match\": {\n                    \"keyword\": \"London\"\n                }\n            }\n        ]\n    },\n    \"vector\": [0.2, 0.1, 0.9, 0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362, \"payload\": null, \"version\": 0 },\n        { \"id\": 2, \"score\": 0.871, \"payload\": null, \"version\": 0 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000093972\n}\n```\n",
+    "description": "\nAPI description for Qdrant vector search engine.\n\nThis document describes CRUD and search operations on collections of points (vectors with payload).\n\nQdrant supports any combinations of `should`, `must` and `must_not` conditions, which makes it possible to use in applications when object could not be described solely by vector. It could be location features, availability flags, and other custom properties businesses should take into account.\n## Examples\nThis examples cover the most basic use-cases - collection creation and basic vector search.\n### Create collection\nFirst - let's create a collection with dot-production metric.\n```\ncurl -X POST 'http://localhost:6333/collections' \\\n  -H 'Content-Type: application/json' \\\n  --data-raw '{\n      \"create_collection\": {\n          \"name\": \"test_collection\",\n          \"vector_size\": 4,\n          \"distance\": \"Dot\"\n      }\n  }'\n```\nExpected response:\n```\n{\n    \"result\": true,\n    \"status\": \"ok\",\n    \"time\": 0.031095451\n}\n```\nWe can ensure that collection was created:\n```\ncurl 'http://localhost:6333/collections/test_collection'\n```\nExpected response:\n```\n{\n  \"result\": {\n    \"status\": \"green\",\n    \"vectors_count\": 0,\n    \"segments_count\": 5,\n    \"disk_data_size\": 0,\n    \"ram_data_size\": 0,\n    \"config\": {\n      \"params\": {\n        \"vector_size\": 4,\n        \"distance\": \"Dot\"\n      },\n      \"hnsw_config\": {\n        \"m\": 16,\n        \"ef_construct\": 100,\n        \"full_scan_threshold\": 10000\n      },\n      \"optimizer_config\": {\n        \"deleted_threshold\": 0.2,\n        \"vacuum_min_vector_number\": 1000,\n        \"max_segment_number\": 5,\n        \"memmap_threshold\": 50000,\n        \"indexing_threshold\": 20000,\n        \"payload_indexing_threshold\": 10000,\n        \"flush_interval_sec\": 1\n      },\n      \"wal_config\": {\n        \"wal_capacity_mb\": 32,\n        \"wal_segments_ahead\": 0\n      }\n    }\n  },\n  \"status\": \"ok\",\n  \"time\": 2.1199e-05\n}\n```\n\n### Add points\nLet's now add vectors with some payload:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection?wait=true' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n  \"upsert_points\": {\n    \"points\": [\n      {\"id\": 1, \"vector\": [0.05, 0.61, 0.76, 0.74], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Berlin\"}}},\n      {\"id\": 2, \"vector\": [0.19, 0.81, 0.75, 0.11], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}},\n      {\"id\": 3, \"vector\": [0.36, 0.55, 0.47, 0.94], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"Moscow\"] }}},\n      {\"id\": 4, \"vector\": [0.18, 0.01, 0.85, 0.80], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"London\", \"Moscow\"]}}},\n      {\"id\": 5, \"vector\": [0.24, 0.18, 0.22, 0.44], \"payload\": {\"count\": {\"type\": \"integer\", \"value\": [0]}}},\n      {\"id\": 6, \"vector\": [0.35, 0.08, 0.11, 0.44]}\n    ]\n  }\n}'\n```\nExpected response:\n```\n{\n    \"result\": {\n        \"operation_id\": 0,\n        \"status\": \"completed\"\n    },\n    \"status\": \"ok\",\n    \"time\": 0.000206061\n}\n```\n### Search with filtering\nLet's start with a basic request:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"vector\": [0.2,0.1,0.9,0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362 },\n        { \"id\": 1, \"score\": 1.273 },\n        { \"id\": 3, \"score\": 1.208 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000055785\n}\n```\nBut result is different if we add a filter:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"filter\": {\n        \"should\": [\n            {\n                \"key\": \"city\",\n                \"match\": {\n                    \"keyword\": \"London\"\n                }\n            }\n        ]\n    },\n    \"vector\": [0.2, 0.1, 0.9, 0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362 },\n        { \"id\": 2, \"score\": 0.871 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000093972\n}\n```\n",
     "license": {
       "name": "Apache 2.0",
       "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
     },
     "title": "Qdrant API",
-    "version": "master"
+    "version": "0.4.2"
   },
   "openapi": "3.0.1",
   "paths": {
     "/collections": {
       "get": {
-        "description": "Get list name of all existing collections",
         "operationId": "get_collections",
         "responses": {
           "200": {
@@ -1930,14 +1795,12 @@
             "description": "error"
           }
         },
-        "summary": "List collections",
+        "summary": "Get list of existing collections",
         "tags": [
           "collections"
         ]
       },
       "post": {
-        "deprecated": true,
-        "description": "Perform update, create, remove or alias change operations on collections",
         "operationId": "update_collections",
         "requestBody": {
           "content": {
@@ -1987,129 +1850,14 @@
             "description": "error"
           }
         },
-        "summary": "Update collection",
-        "tags": [
-          "collections"
-        ]
-      }
-    },
-    "/collections/aliases": {
-      "post": {
-        "operationId": "update_aliases",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChangeAliasesOperation"
-              }
-            }
-          },
-          "description": "Alias update operations"
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "type": "boolean"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Update aliases of the collections",
+        "summary": "Perform update operation on collections",
         "tags": [
           "collections"
         ]
       }
     },
     "/collections/{name}": {
-      "delete": {
-        "description": "Drop collection and all associated data",
-        "operationId": "delete_collection",
-        "parameters": [
-          {
-            "description": "Name of the collection to delete",
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "type": "boolean"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Delete collection",
-        "tags": [
-          "collections"
-        ]
-      },
       "get": {
-        "description": "Get detailed information about specified existing collection",
         "operationId": "get_collection",
         "parameters": [
           {
@@ -2160,80 +1908,12 @@
             "description": "error"
           }
         },
-        "summary": "Collection info",
-        "tags": [
-          "collections"
-        ]
-      },
-      "patch": {
-        "description": "Update parameters of the existing collection",
-        "operationId": "update_collection",
-        "parameters": [
-          {
-            "description": "Name of the collection to update",
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateCollection"
-              }
-            }
-          },
-          "description": "New parameters"
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "type": "boolean"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Update collection paranmeters",
+        "summary": "Get information about existing collection",
         "tags": [
           "collections"
         ]
       },
       "post": {
-        "description": "Perform point update operation (vectors, payloads, indexes) in collection",
         "operationId": "update_points",
         "parameters": [
           {
@@ -2303,82 +1983,14 @@
             "description": "error"
           }
         },
-        "summary": "Update points",
+        "summary": "Update points (vectors, payloads, indexes) in collection",
         "tags": [
           "points"
-        ]
-      },
-      "put": {
-        "description": "Create new collection with given parameters",
-        "operationId": "create_collection",
-        "parameters": [
-          {
-            "description": "Name of the new collection",
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateCollection"
-              }
-            }
-          },
-          "description": "Parameters of a new collection"
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "type": "boolean"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Create collection",
-        "tags": [
-          "collections"
         ]
       }
     },
     "/collections/{name}/points": {
       "post": {
-        "description": "Retrieve multiple points by specified IDs",
         "operationId": "get_points",
         "parameters": [
           {
@@ -2442,7 +2054,7 @@
             "description": "error"
           }
         },
-        "summary": "Get points",
+        "summary": "Retrieve points by ids",
         "tags": [
           "points"
         ]
@@ -2450,7 +2062,6 @@
     },
     "/collections/{name}/points/recommend": {
       "post": {
-        "description": "Look for the points which are closer to stored positive examples and at the same time further to negative examples.",
         "operationId": "recommend_points",
         "parameters": [
           {
@@ -2522,7 +2133,7 @@
     },
     "/collections/{name}/points/scroll": {
       "post": {
-        "description": "Scroll request - paginate over all points which matches given filtering condition",
+        "description": "Scroll request - paginate over all points which matches given condition",
         "operationId": "scroll_points",
         "parameters": [
           {
@@ -2591,7 +2202,6 @@
     },
     "/collections/{name}/points/search": {
       "post": {
-        "description": "Retrieve closest points based on vector similarity and given filtering conditions",
         "operationId": "search_points",
         "parameters": [
           {
@@ -2663,7 +2273,6 @@
     },
     "/collections/{name}/points/{id}": {
       "get": {
-        "description": "Retrieve full information of single point by id",
         "operationId": "get_point",
         "parameters": [
           {
@@ -2723,7 +2332,7 @@
             "description": "error"
           }
         },
-        "summary": "Get point",
+        "summary": "Retrieve point by id",
         "tags": [
           "points"
         ]
