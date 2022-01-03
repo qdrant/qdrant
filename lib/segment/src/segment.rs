@@ -304,28 +304,24 @@ impl SegmentEntry for Segment {
 
             let stored_internal_point = segment.id_tracker.borrow().internal_id(point_id);
 
-            let was_replaced = match stored_internal_point {
-                Some(existing_internal_id) => {
-                    let new_index =
-                        segment.update_vector(existing_internal_id, processed_vector)?;
-                    if new_index != existing_internal_id {
-                        let mut id_tracker = segment.id_tracker.borrow_mut();
-                        id_tracker.drop(point_id)?;
-                        id_tracker.set_link(point_id, new_index)?;
-                    }
-                    true
+            let was_replaced = if let Some(existing_internal_id) = stored_internal_point {
+                let new_index = segment.update_vector(existing_internal_id, processed_vector)?;
+                if new_index != existing_internal_id {
+                    let mut id_tracker = segment.id_tracker.borrow_mut();
+                    id_tracker.drop(point_id)?;
+                    id_tracker.set_link(point_id, new_index)?;
                 }
-                None => {
-                    let new_index = segment
-                        .vector_storage
-                        .borrow_mut()
-                        .put_vector(processed_vector)?;
-                    segment
-                        .id_tracker
-                        .borrow_mut()
-                        .set_link(point_id, new_index)?;
-                    false
-                }
+                true
+            } else {
+                let new_index = segment
+                    .vector_storage
+                    .borrow_mut()
+                    .put_vector(processed_vector)?;
+                segment
+                    .id_tracker
+                    .borrow_mut()
+                    .set_link(point_id, new_index)?;
+                false
             };
 
             Ok(was_replaced)

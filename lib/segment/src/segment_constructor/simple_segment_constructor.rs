@@ -10,7 +10,7 @@ use std::path::Path;
 ///
 /// # Arguments
 ///
-/// * `path` - path to collection`s segment directory
+/// * `path` - path to collection\`s segment directory
 ///
 pub fn build_simple_segment(
     path: &Path,

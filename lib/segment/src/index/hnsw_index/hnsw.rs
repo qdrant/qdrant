@@ -17,7 +17,6 @@ use rand::prelude::ThreadRng;
 use rand::thread_rng;
 use std::cmp::max;
 use std::fs::create_dir_all;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -156,7 +155,7 @@ impl HNSWIndex {
 
         let points_scorer = FilteredScorer {
             raw_scorer: raw_scorer.as_ref(),
-            condition_checker: self.condition_checker.deref(),
+            condition_checker: &*self.condition_checker,
             filter,
         };
 
@@ -238,7 +237,7 @@ impl VectorIndex for HNSWIndex {
             let raw_scorer = vector_storage.raw_scorer(vector);
             let points_scorer = FilteredScorer {
                 raw_scorer: raw_scorer.as_ref(),
-                condition_checker: self.condition_checker.deref(),
+                condition_checker: &*self.condition_checker,
                 filter: None,
             };
 
