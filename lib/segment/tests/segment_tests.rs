@@ -35,7 +35,14 @@ mod tests {
         };
 
         let res = segment
-            .search(&query_vector, &WithPayload::default(), false, Some(&frt), 1, None)
+            .search(
+                &query_vector,
+                &WithPayload::default(),
+                false,
+                Some(&frt),
+                1,
+                None,
+            )
             .unwrap();
 
         let best_match = res.get(0).expect("Non-empty result");

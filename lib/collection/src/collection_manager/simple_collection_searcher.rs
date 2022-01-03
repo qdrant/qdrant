@@ -140,9 +140,7 @@ async fn search_in_segment(
         .unwrap_or(&WithPayloadInterface::Bool(false));
     let with_payload = WithPayload::from(with_payload_interface);
 
-    let with_vector = request
-        .with_vector
-        .unwrap_or(false);
+    let with_vector = request.with_vector.unwrap_or(false);
 
     let res = segment.get().read().search(
         &request.vector,
