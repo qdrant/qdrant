@@ -95,38 +95,31 @@ impl ConditionChecker for SimpleConditionChecker {
         let checker = |condition: &Condition| {
             match condition {
                 Condition::Field(field_condition) => {
-                    payload
-                        .get(&field_condition.key)
-                        .map(|p| {
-                            let mut res = false;
-                            // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
-                            res = res
-                                || field_condition
-                                    .r#match
-                                    .as_ref()
-                                    .map(|condition| match_payload(p, condition))
-                                    .unwrap_or(false);
-                            res = res
-                                || field_condition
-                                    .range
-                                    .as_ref()
-                                    .map(|condition| match_range(p, condition))
-                                    .unwrap_or(false);
-                            res = res
-                                || field_condition
-                                    .geo_radius
-                                    .as_ref()
-                                    .map(|condition| match_geo_radius(p, condition))
-                                    .unwrap_or(false);
-                            res = res
-                                || field_condition
-                                    .geo_bounding_box
-                                    .as_ref()
-                                    .map(|condition| match_geo(p, condition))
-                                    .unwrap_or(false);
-                            res
-                        })
-                        .unwrap_or(false)
+                    payload.get(&field_condition.key).map_or(false, |p| {
+                        let mut res = false;
+                        // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
+                        res = res
+                            || field_condition
+                                .r#match
+                                .as_ref()
+                                .map_or(false, |condition| match_payload(p, condition));
+                        res = res
+                            || field_condition
+                                .range
+                                .as_ref()
+                                .map_or(false, |condition| match_range(p, condition));
+                        res = res
+                            || field_condition
+                                .geo_radius
+                                .as_ref()
+                                .map_or(false, |condition| match_geo_radius(p, condition));
+                        res = res
+                            || field_condition
+                                .geo_bounding_box
+                                .as_ref()
+                                .map_or(false, |condition| match_geo(p, condition));
+                        res
+                    })
                 }
                 Condition::HasId(has_id) => {
                     let external_id = match self.id_tracker.borrow().external_id(point_id) {
