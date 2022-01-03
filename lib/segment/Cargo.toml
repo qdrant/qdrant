@@ -14,8 +14,6 @@ rmp-serde = "~0.14"
 
 [dependencies]
 
-ndarray = { version = "0.15" }
-
 parking_lot = "0.11"
 itertools = "0.10"
 rocksdb = { version = "0.17.0", default-features = false, features = [ "snappy" ] }
