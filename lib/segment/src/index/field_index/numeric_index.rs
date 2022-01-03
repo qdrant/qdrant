@@ -131,9 +131,9 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
 
     fn add_many(&mut self, id: PointOffsetType, values: &[N]) {
         for value in values.iter().cloned() {
-            self.elements.push(Element { id, value })
+            self.elements.push(Element { id, value });
         }
-        self.points_count += 1
+        self.points_count += 1;
     }
 
     fn condition_iter(&self, range: &Range) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {

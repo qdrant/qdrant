@@ -55,7 +55,7 @@ impl PlainPayloadIndex {
         };
 
         if !index.config_path().exists() {
-            index.save_config()?
+            index.save_config()?;
         }
 
         Ok(index)

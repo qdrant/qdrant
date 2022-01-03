@@ -136,7 +136,7 @@ impl GraphLayers {
         while point_layers.len() <= level {
             let mut links = vec![];
             links.reserve(self.m);
-            point_layers.push(links)
+            point_layers.push(links);
         }
         self.max_level = max(level, self.max_level);
     }
@@ -186,7 +186,7 @@ impl GraphLayers {
                 search_context.process_candidate(ScoredPointOffset {
                     idx: existing_link,
                     score: points_scorer.score_point(existing_link),
-                })
+                });
             }
         }
 
@@ -410,7 +410,7 @@ impl GraphLayers {
                                 scorer,
                             );
                             if nearest_point.score > level_entry.score {
-                                level_entry = *nearest_point
+                                level_entry = *nearest_point;
                             }
                         }
                     }
@@ -422,13 +422,13 @@ impl GraphLayers {
     pub fn merge_from_other(&mut self, other: GraphLayers) {
         let mut visited_list = self.visited_pool.get(self.num_points());
         if other.links_layers.len() > self.links_layers.len() {
-            self.links_layers.resize(other.links_layers.len(), vec![])
+            self.links_layers.resize(other.links_layers.len(), vec![]);
         }
         for (point_id, layers) in other.links_layers.into_iter().enumerate() {
             let current_layers = &mut self.links_layers[point_id];
             for (level, other_links) in layers.into_iter().enumerate() {
                 if current_layers.len() <= level {
-                    current_layers.push(other_links)
+                    current_layers.push(other_links);
                 } else {
                     visited_list.next_iteration();
                     let current_links = &mut current_layers[level];
@@ -439,7 +439,7 @@ impl GraphLayers {
                         .into_iter()
                         .filter(|x| !visited_list.check_and_update_visited(*x))
                     {
-                        current_links.push(other_link)
+                        current_links.push(other_link);
                     }
                 }
             }

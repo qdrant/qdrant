@@ -80,7 +80,7 @@ impl VisitedPool {
     pub fn return_back(&self, visited_list: VisitedList) {
         let mut pool = self.pool.write();
         if pool.len() < POOL_KEEP_LIMIT {
-            pool.push(visited_list)
+            pool.push(visited_list);
         }
     }
 }

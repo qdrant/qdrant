@@ -179,7 +179,7 @@ impl StructPayloadIndex {
 
         if !index.config_path().exists() {
             // Save default config
-            index.save_config()?
+            index.save_config()?;
         }
 
         index.load_all_fields()?;
@@ -209,7 +209,7 @@ impl StructPayloadIndex {
                 None => {}
                 Some(field_value) => {
                     for builder in &mut builders {
-                        builder.add(point_id, field_value)
+                        builder.add(point_id, field_value);
                     }
                 }
             }

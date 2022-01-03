@@ -65,7 +65,7 @@ impl Segment {
             let mut payload_storage = self.payload_storage.borrow_mut();
             let payload = payload_storage.drop(old_internal_id)?;
             if let Some(payload) = payload {
-                payload_storage.assign_all(new_internal_index, payload)?
+                payload_storage.assign_all(new_internal_index, payload)?;
             }
         }
 
@@ -117,7 +117,7 @@ impl Segment {
                     version: op_num,
                     point_id: op_point_id,
                     error,
-                })
+                });
             }
         }
         res

@@ -67,7 +67,7 @@ where
         None => {}
         Some(conditions) => {
             if !conditions.is_empty() {
-                filter_estimations.push(estimate_must(estimator, conditions, total))
+                filter_estimations.push(estimate_must(estimator, conditions, total));
             }
         }
     }
@@ -75,7 +75,7 @@ where
         None => {}
         Some(conditions) => {
             if !conditions.is_empty() {
-                filter_estimations.push(estimate_should(estimator, conditions, total))
+                filter_estimations.push(estimate_should(estimator, conditions, total));
             }
         }
     }

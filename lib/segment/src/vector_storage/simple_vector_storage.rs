@@ -107,7 +107,7 @@ pub fn open_simple_vector_storage(
             vectors.resize((point_id + 1) as usize, Array::zeros(dim));
         }
         while deleted.len() <= (point_id as usize) {
-            deleted.push(false)
+            deleted.push(false);
         }
 
         deleted.set(point_id as usize, stored_record.deleted);
@@ -237,7 +237,7 @@ where
             return Ok(());
         }
         if !self.deleted[key as usize] {
-            self.deleted_count += 1
+            self.deleted_count += 1;
         }
         self.deleted.set(key as usize, true);
         self.update_stored(key)?;
