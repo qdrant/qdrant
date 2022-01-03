@@ -172,7 +172,7 @@ impl PayloadStorage for SimplePayloadStorage {
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(self.payload.keys().cloned())
+        Box::new(self.payload.keys().copied())
     }
 }
 

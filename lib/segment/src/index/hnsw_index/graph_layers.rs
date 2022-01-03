@@ -156,7 +156,7 @@ impl GraphLayers {
             let mut links_iter = self
                 .links(candidate.idx, level)
                 .iter()
-                .cloned()
+                .copied()
                 .filter(|point_id| !visited_list.check_and_update_visited(*point_id));
 
             points_scorer.score_iterable_points(
@@ -211,7 +211,7 @@ impl GraphLayers {
             let mut changed = true;
             while changed {
                 changed = false;
-                let mut links = self.links(current_point.idx, level).iter().cloned();
+                let mut links = self.links(current_point.idx, level).iter().copied();
                 points_scorer.score_iterable_points(&mut links, self.get_m(level), |score_point| {
                     if score_point.score > current_point.score {
                         changed = true;
@@ -246,10 +246,10 @@ impl GraphLayers {
         }
 
         if links.len() < level_m {
-            links.insert(id_to_insert, new_point_id)
+            links.insert(id_to_insert, new_point_id);
         } else if id_to_insert != links.len() {
             links.pop();
-            links.insert(id_to_insert, new_point_id)
+            links.insert(id_to_insert, new_point_id);
         }
     }
 
@@ -372,7 +372,7 @@ impl GraphLayers {
                                     score: scorer(point_id, other_point),
                                 });
                                 for other_point_link in
-                                    other_point_links.iter().take(level_m).cloned()
+                                    other_point_links.iter().take(level_m).copied()
                                 {
                                     candidates.push(ScoredPointOffset {
                                         idx: other_point_link,
@@ -386,7 +386,7 @@ impl GraphLayers {
                                         scorer,
                                     );
                                 for (idx, selected) in
-                                    selected_candidates.iter().cloned().enumerate()
+                                    selected_candidates.iter().copied().enumerate()
                                 {
                                     other_point_links[idx] = selected;
                                 }
@@ -432,7 +432,7 @@ impl GraphLayers {
                 } else {
                     visited_list.next_iteration();
                     let current_links = &mut current_layers[level];
-                    current_links.iter().cloned().for_each(|x| {
+                    current_links.iter().copied().for_each(|x| {
                         visited_list.check_and_update_visited(x);
                     });
                     for other_link in other_links
