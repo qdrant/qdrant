@@ -45,7 +45,7 @@ pub trait RawScorer {
 
 /// Trait for vector storage
 /// El - type of vector element, expected numerical type
-/// Storage operates with internal IDs (PointOffsetType), which always starts with zero and have no skips
+/// Storage operates with internal IDs (`PointOffsetType`), which always starts with zero and have no skips
 pub trait VectorStorage {
     fn vector_dim(&self) -> usize;
     fn vector_count(&self) -> usize;
@@ -69,7 +69,7 @@ pub trait VectorStorage {
     /// Iterator over not-deleted ids
     fn flush(&self) -> OperationResult<()>;
 
-    /// Generate a RawScorer object which contains all required context for searching similar vector
+    /// Generate a `RawScorer` object which contains all required context for searching similar vector
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_>;
     /// Same as `raw_scorer` but uses internal vector for search, avoids double pre-processing
     fn raw_scorer_internal(&self, point_id: PointOffsetType) -> Box<dyn RawScorer + '_>;

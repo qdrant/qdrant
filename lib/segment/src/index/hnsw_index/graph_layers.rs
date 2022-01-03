@@ -253,7 +253,7 @@ impl GraphLayers {
         }
     }
 
-    /// https://github.com/nmslib/hnswlib/issues/99
+    /// <https://github.com/nmslib/hnswlib/issues/99>
     fn select_candidate_with_heuristic_from_sorted<F>(
         candidates: impl Iterator<Item = ScoredPointOffset>,
         m: usize,
@@ -277,14 +277,14 @@ impl GraphLayers {
                 }
             }
             if is_good {
-                result_list.push(current_closest.idx)
+                result_list.push(current_closest.idx);
             }
         }
 
         result_list
     }
 
-    /// https://github.com/nmslib/hnswlib/issues/99
+    /// <https://github.com/nmslib/hnswlib/issues/99>
     fn select_candidates_with_heuristic<F>(
         candidates: FixedLengthPriorityQueue<ScoredPointOffset>,
         m: usize,

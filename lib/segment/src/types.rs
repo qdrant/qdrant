@@ -117,9 +117,8 @@ pub struct SearchParams {
 /// This function only stores mapping between distance and preferred result order
 pub fn distance_order(distance: &Distance) -> Order {
     match distance {
-        Distance::Cosine => Order::LargeBetter,
+        Distance::Cosine | Distance::Dot => Order::LargeBetter,
         Distance::Euclid => Order::SmallBetter,
-        Distance::Dot => Order::LargeBetter,
     }
 }
 
@@ -221,7 +220,7 @@ pub struct SegmentConfig {
     pub storage_type: StorageType,
 }
 
-/// Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
+/// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
 pub const DEFAULT_FULL_SCAN_THRESHOLD: usize = 20_000;
 
 /// Persistable state of segment configuration
@@ -323,7 +322,7 @@ pub enum PayloadInterface {
     Payload(PayloadInterfaceStrict),
 }
 
-/// Fallback for PayloadInterface which is used if user explicitly specifies type of payload
+/// Fallback for `PayloadInterface` which is used if user explicitly specifies type of payload
 ///
 /// Example:
 ///

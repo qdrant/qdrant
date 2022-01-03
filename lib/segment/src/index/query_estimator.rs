@@ -109,9 +109,8 @@ where
             // any assumptions about the whole `should` clause
             clauses = vec![];
             break;
-        } else {
-            clauses.append(&mut estimation.primary_clauses.clone());
         }
+        clauses.append(&mut estimation.primary_clauses.clone());
     }
     let element_not_hit_prob: f64 = should_estimations
         .iter()

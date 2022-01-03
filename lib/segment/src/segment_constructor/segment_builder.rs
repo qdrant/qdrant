@@ -94,7 +94,7 @@ impl SegmentBuilder {
                     }
                 }
 
-                for field in other.payload_index.borrow().indexed_fields().into_iter() {
+                for field in other.payload_index.borrow().indexed_fields() {
                     self.indexed_fields.insert(field);
                 }
 
@@ -114,7 +114,7 @@ impl TryInto<Segment> for SegmentBuilder {
             })?;
             self.segment = None;
 
-            for field in self.indexed_fields.iter() {
+            for field in &self.indexed_fields {
                 segment.create_field_index(segment.version(), field)?;
             }
 
