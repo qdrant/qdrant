@@ -338,7 +338,7 @@ impl PayloadIndex for StructPayloadIndex {
                                 || vector_storage_ref.iter_ids(), /* index is not built */
                             )
                         }
-                        PrimaryCondition::Ids(ids) => Box::new(ids.iter().cloned()),
+                        PrimaryCondition::Ids(ids) => Box::new(ids.iter().copied()),
                     }
                 })
                 .filter(|&id| !visited_list.check_and_update_visited(id))

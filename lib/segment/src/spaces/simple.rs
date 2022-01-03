@@ -20,8 +20,8 @@ impl Metric for EuclidMetric {
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         let s: ScoreType = v1
             .iter()
-            .cloned()
-            .zip(v2.iter().cloned())
+            .copied()
+            .zip(v2.iter().copied())
             .map(|(a, b)| (a - b).powi(2))
             .sum();
         -s.sqrt()
@@ -34,8 +34,8 @@ impl Metric for EuclidMetric {
     ) -> ScoreType {
         let s: ScoreType = v1
             .iter()
-            .cloned()
-            .zip(v2.iter().cloned())
+            .copied()
+            .zip(v2.iter().copied())
             .map(|(a, b)| (a - b).powi(2))
             .sum();
         -s.sqrt()

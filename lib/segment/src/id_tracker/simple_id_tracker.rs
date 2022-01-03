@@ -59,7 +59,7 @@ impl SimpleIdTracker {
 
 impl IdTracker for SimpleIdTracker {
     fn version(&self, external_id: PointIdType) -> Option<SeqNumberType> {
-        self.external_to_version.get(&external_id).cloned()
+        self.external_to_version.get(&external_id).copied()
     }
 
     fn set_version(
@@ -77,11 +77,11 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
-        self.external_to_internal.get(&external_id).cloned()
+        self.external_to_internal.get(&external_id).copied()
     }
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
-        self.internal_to_external.get(&internal_id).cloned()
+        self.internal_to_external.get(&internal_id).copied()
     }
 
     fn set_link(
@@ -120,11 +120,11 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
-        Box::new(self.external_to_internal.keys().cloned())
+        Box::new(self.external_to_internal.keys().copied())
     }
 
     fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(self.internal_to_external.keys().cloned())
+        Box::new(self.internal_to_external.keys().copied())
     }
 
     fn iter_from(

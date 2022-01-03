@@ -48,7 +48,7 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
     fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         self.map
             .get(value)
-            .map(|ids| Box::new(ids.iter().cloned()) as Box<dyn Iterator<Item = PointOffsetType>>)
+            .map(|ids| Box::new(ids.iter().copied()) as Box<dyn Iterator<Item = PointOffsetType>>)
             .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>()))
     }
 }
