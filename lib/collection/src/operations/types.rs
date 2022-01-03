@@ -137,6 +137,8 @@ pub struct SearchRequest {
     pub top: usize,
     /// Payload interface
     pub with_payload: Option<WithPayloadInterface>,
+    /// Return point vector with the result. Default: false
+    pub with_vector: Option<bool>,
 }
 
 /// Recommendation request.

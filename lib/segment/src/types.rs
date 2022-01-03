@@ -48,8 +48,10 @@ pub struct ScoredPoint {
     pub version: SeqNumberType,
     /// Points vector distance to the query vector
     pub score: ScoreType,
-    /// Payload storage
+    /// Payload - values assigned to the point
     pub payload: Option<TheMap<PayloadKeyType, PayloadType>>,
+    /// Vector of the point
+    pub vector: Option<Vec<VectorElementType>>,
 }
 
 impl Eq for ScoredPoint {}

@@ -252,6 +252,7 @@ impl Collection {
                 })]),
             }),
             with_payload: None,
+            with_vector: None,
             params: request.params,
             top: request.top,
         };
