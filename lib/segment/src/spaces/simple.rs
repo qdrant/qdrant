@@ -1,7 +1,3 @@
-extern crate blas_src;
-
-use ndarray::Array1;
-
 use crate::types::{Distance, ScoreType, VectorElementType};
 
 use super::metric::Metric;
@@ -27,20 +23,6 @@ impl Metric for EuclidMetric {
         -s.sqrt()
     }
 
-    fn blas_similarity(
-        &self,
-        v1: &Array1<VectorElementType>,
-        v2: &Array1<VectorElementType>,
-    ) -> ScoreType {
-        let s: ScoreType = v1
-            .iter()
-            .cloned()
-            .zip(v2.iter().cloned())
-            .map(|(a, b)| (a - b).powi(2))
-            .sum();
-        -s.sqrt()
-    }
-
     fn preprocess(&self, _vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
         None
     }
@@ -55,14 +37,6 @@ impl Metric for DotProductMetric {
         v1.iter().zip(v2).map(|(a, b)| a * b).sum()
     }
 
-    fn blas_similarity(
-        &self,
-        v1: &Array1<VectorElementType>,
-        v2: &Array1<VectorElementType>,
-    ) -> ScoreType {
-        v1.dot(v2)
-    }
-
     fn preprocess(&self, _vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
         None
     }
@@ -75,14 +49,6 @@ impl Metric for CosineMetric {
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         v1.iter().zip(v2).map(|(a, b)| a * b).sum()
-    }
-
-    fn blas_similarity(
-        &self,
-        v1: &Array1<VectorElementType>,
-        v2: &Array1<VectorElementType>,
-    ) -> ScoreType {
-        v1.dot(v2)
     }
 
     fn preprocess(&self, vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {

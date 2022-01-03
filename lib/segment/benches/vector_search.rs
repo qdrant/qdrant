@@ -12,7 +12,7 @@ use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use segment::vector_storage::{ScoredPointOffset, VectorStorage};
 
 const NUM_VECTORS: usize = 50000;
-const DIM: usize = 1000; // Larger dimensionality - greater the BLAS advantage
+const DIM: usize = 1000; // Larger dimensionality - greater the SIMD advantage
 
 fn random_vector(size: usize) -> Vec<VectorElementType> {
     let rng = rand::thread_rng();
@@ -66,7 +66,7 @@ fn benchmark_ndarray(c: &mut Criterion) {
 
     eprintln!("matrix.shape() = {:#?}", matrix.shape());
 
-    c.bench_function("ndarray BLAS dot production", |b| {
+    c.bench_function("ndarray SIMD dot production", |b| {
         b.iter(|| {
             let vector = Array::from(random_vector(DIM));
             let production_result = matrix.dot(&vector);
