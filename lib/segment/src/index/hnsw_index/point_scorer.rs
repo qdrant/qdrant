@@ -38,7 +38,7 @@ impl FilteredScorer<'_> {
                 self.raw_scorer
                     .score_points(&mut points_filtered_iterator)
                     .take(limit)
-                    .for_each(action)
+                    .for_each(action);
             }
         };
     }

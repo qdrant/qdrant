@@ -67,7 +67,7 @@ impl DistanceCache {
         let mut s = DistanceCache::hasher();
         points.hash(&mut s);
         let idx = s.finish() as usize % self.cache.len();
-        self.cache[idx] = Some(CacheObj { points, value })
+        self.cache[idx] = Some(CacheObj { points, value });
     }
 }
 
