@@ -98,7 +98,7 @@ pub fn random_filter(rnd_gen: &mut ThreadRng) -> Filter {
         .map(|_| random_field_condition(rnd_gen))
         .collect_vec();
 
-    let should_conditions_opt = if should_conditions.is_empty() {
+    let should_conditions_opt = if !should_conditions.is_empty() {
         Some(should_conditions)
     } else {
         None
@@ -109,7 +109,7 @@ pub fn random_filter(rnd_gen: &mut ThreadRng) -> Filter {
         .map(|_| random_field_condition(rnd_gen))
         .collect_vec();
 
-    let must_conditions_opt = if must_conditions.is_empty() {
+    let must_conditions_opt = if !must_conditions.is_empty() {
         Some(must_conditions)
     } else {
         None
