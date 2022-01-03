@@ -4,7 +4,7 @@ use crate::types::{PointOffsetType, VectorElementType};
 use memmap::{Mmap, MmapMut, MmapOptions};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::mem::size_of;
+use std::mem::{size_of, transmute};
 use std::path::Path;
 
 const HEADER_SIZE: usize = 4;
@@ -89,7 +89,7 @@ impl MmapVectors {
 
     pub fn raw_vector_offset(&self, offset: usize) -> &[VectorElementType] {
         let byte_slice = &self.mmap[offset..(offset + self.raw_size())];
-        let arr: &[VectorElementType] = unsafe { &*(byte_slice as *const [u8] as *const [f32]) };
+        let arr: &[VectorElementType] = unsafe { transmute(byte_slice) };
         &arr[0..self.dim]
     }
 
