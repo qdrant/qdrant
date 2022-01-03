@@ -148,8 +148,7 @@ impl Segment {
                     .id_tracker
                     .borrow()
                     .version(point_id)
-                    .map(|current_version| current_version > op_num)
-                    .unwrap_or(false)
+                    .map_or(false, |current_version| current_version > op_num)
                 {
                     return Ok(false);
                 }

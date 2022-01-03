@@ -31,8 +31,7 @@ impl VisitedList {
     pub fn check(&self, point_id: PointOffsetType) -> bool {
         self.visit_counters
             .get(point_id as usize)
-            .map(|x| *x >= self.current_iter)
-            .unwrap_or(false)
+            .map_or(false, |x| *x >= self.current_iter)
     }
 
     /// Updates visited list
