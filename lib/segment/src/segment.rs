@@ -212,6 +212,7 @@ impl SegmentEntry for Segment {
         &self,
         vector: &[VectorElementType],
         with_payload: &WithPayload,
+        with_vector: bool,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -262,11 +263,19 @@ impl SegmentEntry for Segment {
                 } else {
                     None
                 };
+
+                let vector = if with_vector {
+                    Some(self.vector(point_id)?)
+                } else {
+                    None
+                };
+
                 Ok(ScoredPoint {
                     id: point_id,
                     version: point_version,
                     score: scored_point_offset.score,
                     payload,
+                    vector,
                 })
             })
             .collect();
@@ -678,6 +687,7 @@ mod tests {
             .search(
                 &[1.0, 1.0],
                 &WithPayload::default(),
+                false,
                 Some(&filter_valid),
                 1,
                 None,
@@ -689,6 +699,7 @@ mod tests {
             .search(
                 &[1.0, 1.0],
                 &WithPayload::default(),
+                false,
                 Some(&filter_invalid),
                 1,
                 None,

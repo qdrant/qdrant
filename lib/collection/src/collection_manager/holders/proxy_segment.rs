@@ -118,6 +118,7 @@ impl SegmentEntry for ProxySegment {
         &self,
         vector: &[VectorElementType],
         with_payload: &WithPayload,
+        with_vector: bool,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -137,22 +138,30 @@ impl SegmentEntry for ProxySegment {
             self.wrapped_segment.get().read().search(
                 vector,
                 with_payload,
+                with_vector,
                 Some(&wrapped_filter),
                 top,
                 params,
             )?
         } else {
-            self.wrapped_segment
-                .get()
-                .read()
-                .search(vector, with_payload, filter, top, params)?
+            self.wrapped_segment.get().read().search(
+                vector,
+                with_payload,
+                with_vector,
+                filter,
+                top,
+                params,
+            )?
         };
 
-        let mut write_result =
-            self.write_segment
-                .get()
-                .read()
-                .search(vector, with_payload, filter, top, params)?;
+        let mut write_result = self.write_segment.get().read().search(
+            vector,
+            with_payload,
+            with_vector,
+            filter,
+            top,
+            params,
+        )?;
 
         wrapped_result.append(&mut write_result);
         Ok(wrapped_result)
@@ -452,7 +461,14 @@ mod tests {
 
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
         let search_result = proxy_segment
-            .search(&query_vector, &WithPayload::default(), None, 10, None)
+            .search(
+                &query_vector,
+                &WithPayload::default(),
+                false,
+                None,
+                10,
+                None,
+            )
             .unwrap();
 
         eprintln!("search_result = {:#?}", search_result);

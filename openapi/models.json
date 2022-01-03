@@ -1510,7 +1510,7 @@
                         "minimum": 0
                     },
                     "payload": {
-                        "description": "Payload storage",
+                        "description": "Payload - values assigned to the point",
                         "type": "object",
                         "additionalProperties": {
                             "$ref": "#/components/schemas/PayloadType"
@@ -1521,6 +1521,15 @@
                         "description": "Points vector distance to the query vector",
                         "type": "number",
                         "format": "float"
+                    },
+                    "vector": {
+                        "description": "Vector of the point",
+                        "type": "array",
+                        "items": {
+                            "type": "number",
+                            "format": "float"
+                        },
+                        "nullable": true
                     },
                     "version": {
                         "description": "Point version",
@@ -1667,6 +1676,11 @@
                                 "nullable": true
                             }
                         ]
+                    },
+                    "with_vector": {
+                        "description": "Return point vector with the result. Default: false",
+                        "type": "boolean",
+                        "nullable": true
                     }
                 }
             },

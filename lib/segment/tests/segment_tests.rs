@@ -20,7 +20,7 @@ mod tests {
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
 
         let res = segment
-            .search(&query_vector, &WithPayload::default(), None, 1, None)
+            .search(&query_vector, &WithPayload::default(), false, None, 1, None)
             .unwrap();
 
         let best_match = res.get(0).expect("Non-empty result");
@@ -35,7 +35,14 @@ mod tests {
         };
 
         let res = segment
-            .search(&query_vector, &WithPayload::default(), Some(&frt), 1, None)
+            .search(
+                &query_vector,
+                &WithPayload::default(),
+                false,
+                Some(&frt),
+                1,
+                None,
+            )
             .unwrap();
 
         let best_match = res.get(0).expect("Non-empty result");

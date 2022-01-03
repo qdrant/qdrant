@@ -139,9 +139,13 @@ async fn search_in_segment(
         .as_ref()
         .unwrap_or(&WithPayloadInterface::Bool(false));
     let with_payload = WithPayload::from(with_payload_interface);
+
+    let with_vector = request.with_vector.unwrap_or(false);
+
     let res = segment.get().read().search(
         &request.vector,
         &with_payload,
+        with_vector,
         request.filter.as_ref(),
         request.top,
         request.params.as_ref(),
@@ -171,6 +175,7 @@ mod tests {
         let req = Arc::new(SearchRequest {
             vector: query,
             with_payload: None,
+            with_vector: None,
             filter: None,
             params: None,
             top: 5,
