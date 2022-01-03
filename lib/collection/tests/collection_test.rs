@@ -51,6 +51,7 @@ async fn test_collection_updater() {
     let search_request = SearchRequest {
         vector: vec![1.0, 1.0, 1.0, 1.0],
         with_payload: None,
+        with_vector: None,
         filter: None,
         params: None,
         top: 3,
@@ -76,7 +77,7 @@ async fn test_collection_updater() {
 }
 
 #[tokio::test]
-async fn test_collection_search_with_payload() {
+async fn test_collection_search_with_payload_and_vector() {
     let collection_dir = TempDir::new("collection").unwrap();
 
     let collection = simple_collection_fixture(collection_dir.path()).await;
@@ -103,6 +104,7 @@ async fn test_collection_search_with_payload() {
     let search_request = SearchRequest {
         vector: vec![1.0, 0.0, 1.0, 1.0],
         with_payload: Some(WithPayloadInterface::Bool(true)),
+        with_vector: Some(true),
         filter: None,
         params: None,
         top: 3,
@@ -121,11 +123,8 @@ async fn test_collection_search_with_payload() {
         Ok(res) => {
             assert_eq!(res.len(), 2);
             assert_eq!(res[0].id, 0);
-            if let Some(payload) = &res[0].payload {
-                assert_eq!(payload.len(), 1)
-            } else {
-                panic!("Payload was expected")
-            }
+            assert_eq!(res[0].payload.as_ref().unwrap().len(), 1);
+            assert_eq!(&res[0].vector, &Some(vec![1.0, 0.0, 1.0, 1.0]));
         }
         Err(err) => panic!("search failed: {:?}", err),
     }

@@ -687,6 +687,7 @@ mod tests {
             .search(
                 &[1.0, 1.0],
                 &WithPayload::default(),
+                false,
                 Some(&filter_valid),
                 1,
                 None,
@@ -698,6 +699,7 @@ mod tests {
             .search(
                 &[1.0, 1.0],
                 &WithPayload::default(),
+                false,
                 Some(&filter_invalid),
                 1,
                 None,

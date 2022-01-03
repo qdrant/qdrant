@@ -177,6 +177,7 @@ mod tests {
         let req = Arc::new(SearchRequest {
             vector: query,
             with_payload: None,
+            with_vector: None,
             filter: None,
             params: None,
             top: 5,

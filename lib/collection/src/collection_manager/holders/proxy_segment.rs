@@ -454,7 +454,7 @@ mod tests {
 
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
         let search_result = proxy_segment
-            .search(&query_vector, &WithPayload::default(), None, 10, None)
+            .search(&query_vector, &WithPayload::default(), false, None, 10, None)
             .unwrap();
 
         eprintln!("search_result = {:#?}", search_result);
