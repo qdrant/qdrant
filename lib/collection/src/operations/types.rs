@@ -121,7 +121,7 @@ pub struct ScrollResult {
     pub next_page_offset: Option<PointIdType>,
 }
 
-/// Search request
+/// Search request.
 /// Holds all conditions and parameters for the search of most similar points by vector similarity
 /// given the filtering restrictions.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -139,7 +139,7 @@ pub struct SearchRequest {
     pub with_payload: Option<WithPayloadInterface>,
 }
 
-/// Recommendation request
+/// Recommendation request.
 /// Provides positive and negative examples of the vectors, which
 /// are already stored in the collection.
 ///

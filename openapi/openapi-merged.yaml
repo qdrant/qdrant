@@ -692,7 +692,7 @@ info:
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
-  version: 0.4.2
+  version: master
 externalDocs:
   description: Find out more about Qdrant aplications and demo
   url: https://qdrant.tech/documentation/
@@ -726,6 +726,7 @@ components:
         - $ref: '#/components/schemas/CreateAliasOperation'
         - $ref: '#/components/schemas/DeleteAliasOperation'
         - $ref: '#/components/schemas/RenameAliasOperation'
+      description: Group of all the possible operations related to collection aliases
     ChangeAliasesOperation:
       description: Operation for performing changes of collection aliases. Alias changes are atomic, meaning that no collection modifications can happen between alias operations.
       properties:
@@ -760,7 +761,7 @@ components:
         - name
       type: object
     CollectionInfo:
-      description: Current statistics and configuration of the collection.
+      description: Current statistics and configuration of the collection
       properties:
         config:
           $ref: '#/components/schemas/CollectionConfig'
@@ -814,6 +815,7 @@ components:
         - vector_size
       type: object
     CollectionStatus:
+      description: Current state of the collection
       enum:
         - green
         - yellow
@@ -942,6 +944,7 @@ components:
         - Dot
       type: string
     FieldCondition:
+      description: All possible payload filtering conditions
       properties:
         geo_bounding_box:
           anyOf:
@@ -1009,6 +1012,10 @@ components:
           type: array
       type: object
     GeoBoundingBox:
+      description: |-
+        Geo filter request
+
+        Matches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges
       properties:
         bottom_right:
           $ref: '#/components/schemas/GeoPoint'
@@ -1019,6 +1026,7 @@ components:
         - top_left
       type: object
     GeoPoint:
+      description: Geo point payload schema
       properties:
         lat:
           format: double
@@ -1031,6 +1039,10 @@ components:
         - lon
       type: object
     GeoRadius:
+      description: |-
+        Geo filter request
+
+        Matches coordinates inside the circle of `radius` and center with coordinates `center`
       properties:
         center:
           $ref: '#/components/schemas/GeoPoint'
@@ -1043,6 +1055,7 @@ components:
         - radius
       type: object
     HasIdCondition:
+      description: ID-based filtering condition
       properties:
         has_id:
           items:
@@ -1055,6 +1068,7 @@ components:
         - has_id
       type: object
     HnswConfig:
+      description: Config of HNSW index
       properties:
         ef_construct:
           description: Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
@@ -1098,6 +1112,7 @@ components:
           type: integer
       type: object
     Match:
+      description: Match filter request
       properties:
         integer:
           description: Integer value to match
@@ -1125,6 +1140,11 @@ components:
           format: uint
           minimum: 0
           type: integer
+        max_optimization_threads:
+          description: Maximum available threads for optimization workers
+          format: uint
+          minimum: 0
+          type: integer
         max_segment_number:
           description: If the number of segments exceeds this value, the optimizer will merge the smallest segments.
           format: uint
@@ -1149,6 +1169,7 @@ components:
         - deleted_threshold
         - flush_interval_sec
         - indexing_threshold
+        - max_optimization_threads
         - max_segment_number
         - memmap_threshold
         - payload_indexing_threshold
@@ -1169,6 +1190,12 @@ components:
           type: integer
         indexing_threshold:
           description: Maximum number of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
+          format: uint
+          minimum: 0
+          nullable: true
+          type: integer
+        max_optimization_threads:
+          description: Maximum available threads for optimization workers
           format: uint
           minimum: 0
           nullable: true
@@ -1204,6 +1231,16 @@ components:
         - $ref: '#/components/schemas/PayloadVariant_for_int64'
         - $ref: '#/components/schemas/PayloadVariant_for_double'
         - $ref: '#/components/schemas/PayloadInterfaceStrict'
+      description: |-
+        Structure for converting user-provided payload into internal structure representation
+
+        Used to allow user provide payload in more human-friendly format, and do not force explicit brackets, included constructions, e.t.c.
+
+        Example:
+
+        ```json {..., "payload": {"city": "Berlin"}, ... } ```
+
+        Should be captured by `KeywordShortcut`
     PayloadInterfaceStrict:
       anyOf:
         - properties:
@@ -1250,6 +1287,14 @@ components:
             - type
             - value
           type: object
+      description: |-
+        Fallback for PayloadInterface which is used if user explicitly specifies type of payload
+
+        Example:
+
+        ```json {..., "payload": {"city": { "type": "keyword", "value": "Berlin" }}, ... } ```
+
+        Should be captured by `Keyword(PayloadVariant<String>)`
     PayloadOps:
       anyOf:
         - additionalProperties: false
@@ -1317,6 +1362,7 @@ components:
           type: object
       description: Define operations description for point payloads manipulation
     PayloadSchemaInfo:
+      description: Payload field type & index information
       properties:
         data_type:
           $ref: '#/components/schemas/PayloadSchemaType'
@@ -1360,8 +1406,10 @@ components:
           required:
             - type
           type: object
+      description: All possible names of payload types
     PayloadSelector:
       additionalProperties: false
+      description: Specifies how to treat payload selector
       properties:
         exclude:
           description: Post-exclude return payload key type
@@ -1433,18 +1481,31 @@ components:
             - type
             - value
           type: object
+      description: All possible payload types
     PayloadVariant_for_GeoPoint:
       anyOf:
         - items:
             $ref: '#/components/schemas/GeoPoint'
           type: array
         - $ref: '#/components/schemas/GeoPoint'
+      description: |-
+        Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.
+
+        Example:
+
+        Both versions should work: ```json {..., "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}}, {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}}, ```
     PayloadVariant_for_String:
       anyOf:
         - items:
             type: string
           type: array
         - type: string
+      description: |-
+        Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.
+
+        Example:
+
+        Both versions should work: ```json {..., "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}}, {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}}, ```
     PayloadVariant_for_double:
       anyOf:
         - items:
@@ -1453,6 +1514,12 @@ components:
           type: array
         - format: double
           type: number
+      description: |-
+        Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.
+
+        Example:
+
+        Both versions should work: ```json {..., "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}}, {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}}, ```
     PayloadVariant_for_int64:
       anyOf:
         - items:
@@ -1461,6 +1528,12 @@ components:
           type: array
         - format: int64
           type: integer
+      description: |-
+        Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.
+
+        Example:
+
+        Both versions should work: ```json {..., "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}}, {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}}, ```
     PointInsertOperations:
       anyOf:
         - additionalProperties: false
@@ -1572,6 +1645,7 @@ components:
         - vector
       type: object
     Range:
+      description: Range filter request
       properties:
         gt:
           description: point.key > range.gt
@@ -1595,7 +1669,10 @@ components:
           type: number
       type: object
     RecommendRequest:
-      description: Search request
+      description: |-
+        Recommendation request. Provides positive and negative examples of the vectors, which are already stored in the collection.
+
+        Service should look for the points which are closer to positive examples and at the same time further to negative examples. The concrete way of how to compare negative and positive distances is up to implementation in `segment` crate.
       properties:
         filter:
           anyOf:
@@ -1675,6 +1752,7 @@ components:
         - rename_alias
       type: object
     ScoredPoint:
+      description: Search result
       properties:
         id:
           description: Point id
@@ -1732,7 +1810,7 @@ components:
           type: boolean
       type: object
     ScrollResult:
-      description: Result of the points read request. Contains
+      description: Result of the points read request
       properties:
         next_page_offset:
           description: Offset which should be used to retrieve a next page result
@@ -1759,7 +1837,7 @@ components:
           type: integer
       type: object
     SearchRequest:
-      description: Search request
+      description: Search request. Holds all conditions and parameters for the search of most similar points by vector similarity given the filtering restrictions.
       properties:
         filter:
           anyOf:
@@ -1900,3 +1978,4 @@ components:
             type: string
           type: array
         - $ref: '#/components/schemas/PayloadSelector'
+      description: Options for specifying which payload to include or not
