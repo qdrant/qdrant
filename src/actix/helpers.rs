@@ -19,18 +19,10 @@ where
             let error_description = format!("{}", err);
 
             let mut resp = match err {
-                StorageError::BadInput { .. } => {
-                    HttpResponse::BadRequest()
-                }
-                StorageError::NotFound { .. } => {
-                    HttpResponse::NotFound()
-                }
-                StorageError::ServiceError { .. } => {
-                    HttpResponse::InternalServerError()
-                }
-                StorageError::BadRequest { .. } => {
-                    HttpResponse::BadRequest()
-                }
+                StorageError::BadInput { .. } => HttpResponse::BadRequest(),
+                StorageError::NotFound { .. } => HttpResponse::NotFound(),
+                StorageError::ServiceError { .. } => HttpResponse::InternalServerError(),
+                StorageError::BadRequest { .. } => HttpResponse::BadRequest(),
             };
 
             resp.json(ApiResponse::<()> {
