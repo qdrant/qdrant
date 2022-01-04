@@ -104,11 +104,11 @@ fn dot_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreTy
 #[target_feature(enable = "avx2")]
 unsafe fn hsum256_ps_avx(x: __m256) -> f32 {
     /* ( x3+x7, x2+x6, x1+x5, x0+x4 ) */
-    let x128 : __m128 = _mm_add_ps(_mm256_extractf128_ps(x, 1), _mm256_castps256_ps128(x));
+    let x128: __m128 = _mm_add_ps(_mm256_extractf128_ps(x, 1), _mm256_castps256_ps128(x));
     /* ( -, -, x1+x3+x5+x7, x0+x2+x4+x6 ) */
-    let x64 : __m128 = _mm_add_ps(x128, _mm_movehl_ps(x128, x128));
+    let x64: __m128 = _mm_add_ps(x128, _mm_movehl_ps(x128, x128));
     /* ( -, -, -, x0+x1+x2+x3+x4+x5+x6+x7 ) */
-    let x32 : __m128 = _mm_add_ss(x64, _mm_shuffle_ps(x64, x64, 0x55));
+    let x32: __m128 = _mm_add_ss(x64, _mm_shuffle_ps(x64, x64, 0x55));
     /* Conversion to float is a no-op on x86-64 */
     return _mm_cvtss_f32(x32);
 }
@@ -139,7 +139,9 @@ unsafe fn cosine_preprocess_avx2(vector: &[VectorElementType]) -> Vec<VectorElem
     for i in (0..m).step_by(8) {
         sum256 = _mm256_fmadd_ps(
             _mm256_loadu_ps(&vector[i]),
-            _mm256_loadu_ps(&vector[i]), sum256);
+            _mm256_loadu_ps(&vector[i]),
+            sum256,
+        );
     }
     let mut length = hsum256_ps_avx(sum256);
     for i in m..n {
@@ -180,8 +182,14 @@ mod tests {
     #[test]
     fn test_avx2() {
         if is_x86_feature_detected!("avx2") {
-            let v1 : Vec<f32> = vec![10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25., 26., 27., 28., 29., 30.];
-            let v2 : Vec<f32> = vec![40., 41., 42., 43., 44., 45., 46., 47., 48., 49., 50., 51., 52., 53., 54., 55., 56., 57., 58., 59., 60.];
+            let v1: Vec<f32> = vec![
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                26., 27., 28., 29., 30.,
+            ];
+            let v2: Vec<f32> = vec![
+                40., 41., 42., 43., 44., 45., 46., 47., 48., 49., 50., 51., 52., 53., 54., 55.,
+                56., 57., 58., 59., 60.,
+            ];
 
             let euclid_avx2 = unsafe { euclid_similarity_avx2(&v1, &v2) };
             let euclid = euclid_similarity(&v1, &v2);

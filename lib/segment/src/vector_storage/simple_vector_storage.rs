@@ -281,7 +281,8 @@ where
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector = self.metric
+        let preprocessed_vector = self
+            .metric
             .preprocess(vector)
             .unwrap_or_else(|| vector.to_owned());
         let scores = points
@@ -290,16 +291,15 @@ where
                 let other_vector = self.vectors.get(point as usize).unwrap();
                 ScoredPointOffset {
                     idx: point,
-                    score: self
-                        .metric
-                        .similarity(&preprocessed_vector, other_vector),
+                    score: self.metric.similarity(&preprocessed_vector, other_vector),
                 }
             });
         peek_top_scores_iterable(scores, top)
     }
 
     fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector = self.metric
+        let preprocessed_vector = self
+            .metric
             .preprocess(vector)
             .unwrap_or_else(|| vector.to_owned());
         let scores = self
@@ -309,9 +309,7 @@ where
             .filter(|(point, _)| !self.deleted[*point])
             .map(|(point, other_vector)| ScoredPointOffset {
                 idx: point as PointOffsetType,
-                score: self
-                    .metric
-                    .similarity(&preprocessed_vector, other_vector),
+                score: self.metric.similarity(&preprocessed_vector, other_vector),
             });
         peek_top_scores_iterable(scores, top)
     }
