@@ -22,9 +22,9 @@ jobs:
         toolchain: stable
     - uses: actions/checkout@v2
     - name: Install dependencies
-      run: sudo apt-get install clang libopenblas-dev libgfortran-10-dev gfortran
+      run: sudo apt-get install clang
     - name: Run tests
-      run: OPENBLAS_TARGET=CORE2 cargo test --all
+      run: cargo test --all
 
 #   build:
 #     runs-on: ubuntu-latest

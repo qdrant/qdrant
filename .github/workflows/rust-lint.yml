@@ -22,7 +22,7 @@ jobs:
         toolchain: stable
     - uses: actions/checkout@v2
     - name: Install dependencies
-      run: sudo apt-get install clang libopenblas-dev libgfortran-10-dev gfortran
+      run: sudo apt-get install clang
     - name: Check code formatting
       run: cargo fmt --all -- --check
     - name: Check cargo clippy warnings
