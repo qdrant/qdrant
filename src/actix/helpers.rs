@@ -16,22 +16,19 @@ where
             time: timing.elapsed().as_secs_f64(),
         }),
         Err(err) => {
-            let error_description;
+            let error_description = format!("{}", err);
+
             let mut resp = match err {
-                StorageError::BadInput { description } => {
-                    error_description = description;
+                StorageError::BadInput { .. } => {
                     HttpResponse::BadRequest()
                 }
-                StorageError::NotFound { description } => {
-                    error_description = description;
+                StorageError::NotFound { .. } => {
                     HttpResponse::NotFound()
                 }
-                StorageError::ServiceError { description } => {
-                    error_description = description;
+                StorageError::ServiceError { .. } => {
                     HttpResponse::InternalServerError()
                 }
-                StorageError::BadRequest { description } => {
-                    error_description = description;
+                StorageError::BadRequest { .. } => {
                     HttpResponse::BadRequest()
                 }
             };

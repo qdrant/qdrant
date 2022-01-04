@@ -9,7 +9,7 @@ pub async fn do_get_collection(
     name: &str,
 ) -> Result<CollectionInfo, StorageError> {
     let collection = toc.get_collection(name).await?;
-    collection.info().await.map_err(|err| err.into())
+    Ok(collection.info().await?)
 }
 
 pub async fn do_get_collections(toc: &TableOfContent) -> CollectionsResponse {
