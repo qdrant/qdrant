@@ -65,13 +65,14 @@ pub fn sample_check_cardinality(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::Rng;
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
 
     #[test]
     fn test_confidence_interval() {
+        let mut rng = StdRng::seed_from_u64(42);
         let total = 100_000;
         let true_p = 0.25;
-        let mut rng = rand::thread_rng();
 
         let mut delta = 100_000;
         let mut positive = 0;
