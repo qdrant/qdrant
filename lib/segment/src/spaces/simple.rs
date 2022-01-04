@@ -110,7 +110,7 @@ unsafe fn hsum256_ps_avx(x: __m256) -> f32 {
     /* ( -, -, -, x0+x1+x2+x3+x4+x5+x6+x7 ) */
     let x32: __m128 = _mm_add_ss(x64, _mm_shuffle_ps(x64, x64, 0x55));
     /* Conversion to float is a no-op on x86-64 */
-    return _mm_cvtss_f32(x32);
+    _mm_cvtss_f32(x32)
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -144,8 +144,8 @@ unsafe fn cosine_preprocess_avx2(vector: &[VectorElementType]) -> Vec<VectorElem
         );
     }
     let mut length = hsum256_ps_avx(sum256);
-    for i in m..n {
-        length += vector[i].powi(2);
+    for v in vector.iter().take(n).skip(m) {
+        length += v.powi(2);
     }
     length = length.sqrt();
     vector.iter().map(|x| x / length).collect()
