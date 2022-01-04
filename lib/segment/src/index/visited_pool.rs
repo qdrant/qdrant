@@ -31,8 +31,7 @@ impl VisitedList {
     pub fn check(&self, point_id: PointOffsetType) -> bool {
         self.visit_counters
             .get(point_id as usize)
-            .map(|x| *x >= self.current_iter)
-            .unwrap_or(false)
+            .map_or(false, |x| *x >= self.current_iter)
     }
 
     /// Updates visited list
@@ -80,7 +79,7 @@ impl VisitedPool {
     pub fn return_back(&self, visited_list: VisitedList) {
         let mut pool = self.pool.write();
         if pool.len() < POOL_KEEP_LIMIT {
-            pool.push(visited_list)
+            pool.push(visited_list);
         }
     }
 }

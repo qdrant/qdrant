@@ -38,7 +38,7 @@ impl FilteredScorer<'_> {
                 self.raw_scorer
                     .score_points(&mut points_filtered_iterator)
                     .take(limit)
-                    .for_each(action)
+                    .for_each(action);
             }
         };
     }
@@ -47,7 +47,7 @@ impl FilteredScorer<'_> {
     where
         F: FnMut(ScoredPointOffset),
     {
-        let mut points_iterator = ids.iter().cloned();
+        let mut points_iterator = ids.iter().copied();
 
         self.score_iterable_points(&mut points_iterator, limit, action);
     }

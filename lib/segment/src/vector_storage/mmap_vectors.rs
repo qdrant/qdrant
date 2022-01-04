@@ -107,11 +107,10 @@ impl MmapVectors {
     /// Creates returns owned vector (copy of internal vector)
     pub fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
         match self.deleted(key) {
-            None => None,
+            None | Some(true) => None,
             Some(false) => self
                 .data_offset(key)
                 .map(|offset| self.raw_vector_offset(offset).to_vec()),
-            Some(true) => None,
         }
     }
 

@@ -60,13 +60,13 @@ impl SimplePayloadStorage {
                 Ok(())
             }
             Some(schema_type) => {
-                if schema_type != &value.into() {
+                if schema_type == &value.into() {
+                    Ok(())
+                } else {
                     Err(OperationError::TypeError {
                         field_name: key.to_owned(),
                         expected_type: format!("{:?}", schema_type),
                     })
-                } else {
-                    Ok(())
                 }
             }
         };
@@ -113,15 +113,12 @@ impl PayloadStorage for SimplePayloadStorage {
         payload: PayloadType,
     ) -> OperationResult<()> {
         SimplePayloadStorage::update_schema_value(&mut self.schema, key, &payload)?;
-        match self.payload.get_mut(&point_id) {
-            Some(point_payload) => {
-                point_payload.insert(key.to_owned(), payload);
-            }
-            None => {
-                let mut new_payload = TheMap::default();
-                new_payload.insert(key.to_owned(), payload);
-                self.payload.insert(point_id, new_payload);
-            }
+        if let Some(point_payload) = self.payload.get_mut(&point_id) {
+            point_payload.insert(key.to_owned(), payload);
+        } else {
+            let mut new_payload = TheMap::default();
+            new_payload.insert(key.to_owned(), payload);
+            self.payload.insert(point_id, new_payload);
         }
         self.update_storage(&point_id)?;
         Ok(())
@@ -175,7 +172,7 @@ impl PayloadStorage for SimplePayloadStorage {
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(self.payload.keys().cloned())
+        Box::new(self.payload.keys().copied())
     }
 }
 

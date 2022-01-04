@@ -147,6 +147,7 @@ mod tests {
                 .search(
                     &query_vector,
                     &WithPayload::default(),
+                    false,
                     Some(&query_filter),
                     5,
                     None,
@@ -156,6 +157,7 @@ mod tests {
                 .search(
                     &query_vector,
                     &WithPayload::default(),
+                    false,
                     Some(&query_filter),
                     5,
                     None,

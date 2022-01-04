@@ -10,15 +10,12 @@ pub fn match_payload(payload: &PayloadType, condition_match: &Match) -> bool {
             condition_match
                 .keyword
                 .as_ref()
-                .map(|x| x == payload_kw)
-                .unwrap_or(false)
+                .map_or(false, |x| x == payload_kw)
         }),
-        PayloadType::Integer(payload_ints) => payload_ints.iter().cloned().any(|payload_int| {
-            condition_match
-                .integer
-                .map(|x| x == payload_int)
-                .unwrap_or(false)
-        }),
+        PayloadType::Integer(payload_ints) => payload_ints
+            .iter()
+            .copied()
+            .any(|payload_int| condition_match.integer.map_or(false, |x| x == payload_int)),
         _ => false,
     }
 }
@@ -32,8 +29,8 @@ pub fn match_range(payload: &PayloadType, num_range: &Range) -> bool {
     };
 
     match payload {
-        PayloadType::Float(num) => num.iter().cloned().any(condition),
-        PayloadType::Integer(num) => num.iter().cloned().any(|x| condition(x as f64)),
+        PayloadType::Float(num) => num.iter().copied().any(condition),
+        PayloadType::Integer(num) => num.iter().copied().any(|x| condition(x as f64)),
         _ => false,
     }
 }

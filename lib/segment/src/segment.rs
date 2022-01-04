@@ -65,7 +65,7 @@ impl Segment {
             let mut payload_storage = self.payload_storage.borrow_mut();
             let payload = payload_storage.drop(old_internal_id)?;
             if let Some(payload) = payload {
-                payload_storage.assign_all(new_internal_index, payload)?
+                payload_storage.assign_all(new_internal_index, payload)?;
             }
         }
 
@@ -117,7 +117,7 @@ impl Segment {
                     version: op_num,
                     point_id: op_point_id,
                     error,
-                })
+                });
             }
         }
         res
@@ -148,8 +148,7 @@ impl Segment {
                     .id_tracker
                     .borrow()
                     .version(point_id)
-                    .map(|current_version| current_version > op_num)
-                    .unwrap_or(false)
+                    .map_or(false, |current_version| current_version > op_num)
                 {
                     return Ok(false);
                 }
@@ -212,6 +211,7 @@ impl SegmentEntry for Segment {
         &self,
         vector: &[VectorElementType],
         with_payload: &WithPayload,
+        with_vector: bool,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
@@ -262,11 +262,19 @@ impl SegmentEntry for Segment {
                 } else {
                     None
                 };
+
+                let vector = if with_vector {
+                    Some(self.vector(point_id)?)
+                } else {
+                    None
+                };
+
                 Ok(ScoredPoint {
                     id: point_id,
                     version: point_version,
                     score: scored_point_offset.score,
                     payload,
+                    vector,
                 })
             })
             .collect();
@@ -295,28 +303,24 @@ impl SegmentEntry for Segment {
 
             let stored_internal_point = segment.id_tracker.borrow().internal_id(point_id);
 
-            let was_replaced = match stored_internal_point {
-                Some(existing_internal_id) => {
-                    let new_index =
-                        segment.update_vector(existing_internal_id, processed_vector)?;
-                    if new_index != existing_internal_id {
-                        let mut id_tracker = segment.id_tracker.borrow_mut();
-                        id_tracker.drop(point_id)?;
-                        id_tracker.set_link(point_id, new_index)?;
-                    }
-                    true
+            let was_replaced = if let Some(existing_internal_id) = stored_internal_point {
+                let new_index = segment.update_vector(existing_internal_id, processed_vector)?;
+                if new_index != existing_internal_id {
+                    let mut id_tracker = segment.id_tracker.borrow_mut();
+                    id_tracker.drop(point_id)?;
+                    id_tracker.set_link(point_id, new_index)?;
                 }
-                None => {
-                    let new_index = segment
-                        .vector_storage
-                        .borrow_mut()
-                        .put_vector(processed_vector)?;
-                    segment
-                        .id_tracker
-                        .borrow_mut()
-                        .set_link(point_id, new_index)?;
-                    false
-                }
+                true
+            } else {
+                let new_index = segment
+                    .vector_storage
+                    .borrow_mut()
+                    .put_vector(processed_vector)?;
+                segment
+                    .id_tracker
+                    .borrow_mut()
+                    .set_link(point_id, new_index)?;
+                false
             };
 
             Ok(was_replaced)
@@ -678,6 +682,7 @@ mod tests {
             .search(
                 &[1.0, 1.0],
                 &WithPayload::default(),
+                false,
                 Some(&filter_valid),
                 1,
                 None,
@@ -689,6 +694,7 @@ mod tests {
             .search(
                 &[1.0, 1.0],
                 &WithPayload::default(),
+                false,
                 Some(&filter_invalid),
                 1,
                 None,

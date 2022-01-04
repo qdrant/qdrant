@@ -96,6 +96,7 @@ pub trait SegmentEntry {
         &self,
         vector: &[VectorElementType],
         with_payload: &WithPayload,
+        with_vector: bool,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,

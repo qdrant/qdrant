@@ -33,7 +33,7 @@ pub trait PayloadFieldIndexBuilder {
 
 /// Common interface for all possible types of field indexes
 /// Enables polymorphism on field indexes
-/// ToDo: Rename with major release
+/// TODO: Rename with major release
 #[allow(clippy::enum_variant_names)]
 #[derive(Serialize, Deserialize)]
 pub enum FieldIndex {

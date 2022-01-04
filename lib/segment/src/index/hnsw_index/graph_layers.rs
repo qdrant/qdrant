@@ -136,7 +136,7 @@ impl GraphLayers {
         while point_layers.len() <= level {
             let mut links = vec![];
             links.reserve(self.m);
-            point_layers.push(links)
+            point_layers.push(links);
         }
         self.max_level = max(level, self.max_level);
     }
@@ -156,7 +156,7 @@ impl GraphLayers {
             let mut links_iter = self
                 .links(candidate.idx, level)
                 .iter()
-                .cloned()
+                .copied()
                 .filter(|point_id| !visited_list.check_and_update_visited(*point_id));
 
             points_scorer.score_iterable_points(
@@ -186,7 +186,7 @@ impl GraphLayers {
                 search_context.process_candidate(ScoredPointOffset {
                     idx: existing_link,
                     score: points_scorer.score_point(existing_link),
-                })
+                });
             }
         }
 
@@ -211,7 +211,7 @@ impl GraphLayers {
             let mut changed = true;
             while changed {
                 changed = false;
-                let mut links = self.links(current_point.idx, level).iter().cloned();
+                let mut links = self.links(current_point.idx, level).iter().copied();
                 points_scorer.score_iterable_points(&mut links, self.get_m(level), |score_point| {
                     if score_point.score > current_point.score {
                         changed = true;
@@ -246,14 +246,14 @@ impl GraphLayers {
         }
 
         if links.len() < level_m {
-            links.insert(id_to_insert, new_point_id)
+            links.insert(id_to_insert, new_point_id);
         } else if id_to_insert != links.len() {
             links.pop();
-            links.insert(id_to_insert, new_point_id)
+            links.insert(id_to_insert, new_point_id);
         }
     }
 
-    /// https://github.com/nmslib/hnswlib/issues/99
+    /// <https://github.com/nmslib/hnswlib/issues/99>
     fn select_candidate_with_heuristic_from_sorted<F>(
         candidates: impl Iterator<Item = ScoredPointOffset>,
         m: usize,
@@ -277,14 +277,14 @@ impl GraphLayers {
                 }
             }
             if is_good {
-                result_list.push(current_closest.idx)
+                result_list.push(current_closest.idx);
             }
         }
 
         result_list
     }
 
-    /// https://github.com/nmslib/hnswlib/issues/99
+    /// <https://github.com/nmslib/hnswlib/issues/99>
     fn select_candidates_with_heuristic<F>(
         candidates: FixedLengthPriorityQueue<ScoredPointOffset>,
         m: usize,
@@ -372,7 +372,7 @@ impl GraphLayers {
                                     score: scorer(point_id, other_point),
                                 });
                                 for other_point_link in
-                                    other_point_links.iter().take(level_m).cloned()
+                                    other_point_links.iter().take(level_m).copied()
                                 {
                                     candidates.push(ScoredPointOffset {
                                         idx: other_point_link,
@@ -386,7 +386,7 @@ impl GraphLayers {
                                         scorer,
                                     );
                                 for (idx, selected) in
-                                    selected_candidates.iter().cloned().enumerate()
+                                    selected_candidates.iter().copied().enumerate()
                                 {
                                     other_point_links[idx] = selected;
                                 }
@@ -410,7 +410,7 @@ impl GraphLayers {
                                 scorer,
                             );
                             if nearest_point.score > level_entry.score {
-                                level_entry = *nearest_point
+                                level_entry = *nearest_point;
                             }
                         }
                     }
@@ -422,24 +422,24 @@ impl GraphLayers {
     pub fn merge_from_other(&mut self, other: GraphLayers) {
         let mut visited_list = self.visited_pool.get(self.num_points());
         if other.links_layers.len() > self.links_layers.len() {
-            self.links_layers.resize(other.links_layers.len(), vec![])
+            self.links_layers.resize(other.links_layers.len(), vec![]);
         }
         for (point_id, layers) in other.links_layers.into_iter().enumerate() {
             let current_layers = &mut self.links_layers[point_id];
             for (level, other_links) in layers.into_iter().enumerate() {
                 if current_layers.len() <= level {
-                    current_layers.push(other_links)
+                    current_layers.push(other_links);
                 } else {
                     visited_list.next_iteration();
                     let current_links = &mut current_layers[level];
-                    current_links.iter().cloned().for_each(|x| {
+                    current_links.iter().copied().for_each(|x| {
                         visited_list.check_and_update_visited(x);
                     });
                     for other_link in other_links
                         .into_iter()
                         .filter(|x| !visited_list.check_and_update_visited(*x))
                     {
-                        current_links.push(other_link)
+                        current_links.push(other_link);
                     }
                 }
             }

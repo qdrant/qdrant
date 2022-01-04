@@ -256,8 +256,7 @@ where
         let preprocessed_vector_opt = self.metric.preprocess(vector);
         let preprocessed_vector = preprocessed_vector_opt
             .as_ref()
-            .map(|x| x as &[_])
-            .unwrap_or(vector);
+            .map_or(vector, |x| x as &[_]);
         let scores = points
             .filter(|point| {
                 !self
@@ -281,8 +280,7 @@ where
         let preprocessed_vector_opt = self.metric.preprocess(vector);
         let preprocessed_vector = preprocessed_vector_opt
             .as_ref()
-            .map(|x| x as &[_])
-            .unwrap_or(vector);
+            .map_or(vector, |x| x as &[_]);
         let scores = self.iter_ids().map(|point| {
             let other_vector = self.mmap_store.as_ref().unwrap().raw_vector(point).unwrap();
             ScoredPointOffset {

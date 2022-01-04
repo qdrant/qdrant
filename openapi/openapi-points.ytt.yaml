@@ -24,7 +24,7 @@ paths:
             type: string
         - name: wait
           in: query
-          description: "Wait for changes to actually happen? Default: false"
+          description: "If true, wait for changes to actually happen"
           required: false
           schema:
             type: boolean

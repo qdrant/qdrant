@@ -12,8 +12,7 @@
           {
             "$ref": "#/components/schemas/RenameAliasOperation"
           }
-        ],
-        "description": "Group of all the possible operations related to collection aliases"
+        ]
       },
       "ChangeAliasesOperation": {
         "description": "Operation for performing changes of collection aliases. Alias changes are atomic, meaning that no collection modifications can happen between alias operations.",
@@ -65,7 +64,7 @@
         "type": "object"
       },
       "CollectionInfo": {
-        "description": "Current statistics and configuration of the collection",
+        "description": "Current statistics and configuration of the collection.",
         "properties": {
           "config": {
             "$ref": "#/components/schemas/CollectionConfig"
@@ -135,7 +134,6 @@
         "type": "object"
       },
       "CollectionStatus": {
-        "description": "Current state of the collection",
         "enum": [
           "green",
           "yellow",
@@ -377,7 +375,6 @@
         "type": "object"
       },
       "FieldCondition": {
-        "description": "All possible payload filtering conditions",
         "properties": {
           "geo_bounding_box": {
             "anyOf": [
@@ -493,7 +490,6 @@
         "type": "object"
       },
       "GeoBoundingBox": {
-        "description": "Geo filter request\n\nMatches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges",
         "properties": {
           "bottom_right": {
             "$ref": "#/components/schemas/GeoPoint"
@@ -509,7 +505,6 @@
         "type": "object"
       },
       "GeoPoint": {
-        "description": "Geo point payload schema",
         "properties": {
           "lat": {
             "format": "double",
@@ -527,7 +522,6 @@
         "type": "object"
       },
       "GeoRadius": {
-        "description": "Geo filter request\n\nMatches coordinates inside the circle of `radius` and center with coordinates `center`",
         "properties": {
           "center": {
             "$ref": "#/components/schemas/GeoPoint"
@@ -545,7 +539,6 @@
         "type": "object"
       },
       "HasIdCondition": {
-        "description": "ID-based filtering condition",
         "properties": {
           "has_id": {
             "items": {
@@ -563,7 +556,6 @@
         "type": "object"
       },
       "HnswConfig": {
-        "description": "Config of HNSW index",
         "properties": {
           "ef_construct": {
             "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.",
@@ -618,7 +610,6 @@
         "type": "object"
       },
       "Match": {
-        "description": "Match filter request",
         "properties": {
           "integer": {
             "description": "Integer value to match",
@@ -653,12 +644,6 @@
             "minimum": 0,
             "type": "integer"
           },
-          "max_optimization_threads": {
-            "description": "Maximum available threads for optimization workers",
-            "format": "uint",
-            "minimum": 0,
-            "type": "integer"
-          },
           "max_segment_number": {
             "description": "If the number of segments exceeds this value, the optimizer will merge the smallest segments.",
             "format": "uint",
@@ -688,7 +673,6 @@
           "deleted_threshold",
           "flush_interval_sec",
           "indexing_threshold",
-          "max_optimization_threads",
           "max_segment_number",
           "memmap_threshold",
           "payload_indexing_threshold",
@@ -713,13 +697,6 @@
           },
           "indexing_threshold": {
             "description": "Maximum number of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true,
-            "type": "integer"
-          },
-          "max_optimization_threads": {
-            "description": "Maximum available threads for optimization workers",
             "format": "uint",
             "minimum": 0,
             "nullable": true,
@@ -770,8 +747,7 @@
           {
             "$ref": "#/components/schemas/PayloadInterfaceStrict"
           }
-        ],
-        "description": "Structure for converting user-provided payload into internal structure representation\n\nUsed to allow user provide payload in more human-friendly format, and do not force explicit brackets, included constructions, e.t.c.\n\nExample:\n\n```json {..., \"payload\": {\"city\": \"Berlin\"}, ... } ```\n\nShould be captured by `KeywordShortcut`"
+        ]
       },
       "PayloadInterfaceStrict": {
         "anyOf": [
@@ -847,8 +823,7 @@
             ],
             "type": "object"
           }
-        ],
-        "description": "Fallback for PayloadInterface which is used if user explicitly specifies type of payload\n\nExample:\n\n```json {..., \"payload\": {\"city\": { \"type\": \"keyword\", \"value\": \"Berlin\" }}, ... } ```\n\nShould be captured by `Keyword(PayloadVariant<String>)`"
+        ]
       },
       "PayloadOps": {
         "anyOf": [
@@ -950,7 +925,6 @@
         "description": "Define operations description for point payloads manipulation"
       },
       "PayloadSchemaInfo": {
-        "description": "Payload field type & index information",
         "properties": {
           "data_type": {
             "$ref": "#/components/schemas/PayloadSchemaType"
@@ -1023,12 +997,10 @@
             ],
             "type": "object"
           }
-        ],
-        "description": "All possible names of payload types"
+        ]
       },
       "PayloadSelector": {
         "additionalProperties": false,
-        "description": "Specifies how to treat payload selector",
         "properties": {
           "exclude": {
             "description": "Post-exclude return payload key type",
@@ -1139,8 +1111,7 @@
             ],
             "type": "object"
           }
-        ],
-        "description": "All possible payload types"
+        ]
       },
       "PayloadVariant_for_GeoPoint": {
         "anyOf": [
@@ -1153,8 +1124,7 @@
           {
             "$ref": "#/components/schemas/GeoPoint"
           }
-        ],
-        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
+        ]
       },
       "PayloadVariant_for_String": {
         "anyOf": [
@@ -1167,8 +1137,7 @@
           {
             "type": "string"
           }
-        ],
-        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
+        ]
       },
       "PayloadVariant_for_double": {
         "anyOf": [
@@ -1183,8 +1152,7 @@
             "format": "double",
             "type": "number"
           }
-        ],
-        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
+        ]
       },
       "PayloadVariant_for_int64": {
         "anyOf": [
@@ -1199,8 +1167,7 @@
             "format": "int64",
             "type": "integer"
           }
-        ],
-        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
+        ]
       },
       "PointInsertOperations": {
         "anyOf": [
@@ -1371,7 +1338,6 @@
         "type": "object"
       },
       "Range": {
-        "description": "Range filter request",
         "properties": {
           "gt": {
             "description": "point.key > range.gt",
@@ -1401,7 +1367,7 @@
         "type": "object"
       },
       "RecommendRequest": {
-        "description": "Recommendation request. Provides positive and negative examples of the vectors, which are already stored in the collection.\n\nService should look for the points which are closer to positive examples and at the same time further to negative examples. The concrete way of how to compare negative and positive distances is up to implementation in `segment` crate.",
+        "description": "Search request",
         "properties": {
           "filter": {
             "anyOf": [
@@ -1518,7 +1484,6 @@
         "type": "object"
       },
       "ScoredPoint": {
-        "description": "Search result",
         "properties": {
           "id": {
             "description": "Point id",
@@ -1530,7 +1495,7 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/PayloadType"
             },
-            "description": "Payload - values assigned to the point",
+            "description": "Payload storage",
             "nullable": true,
             "type": "object"
           },
@@ -1538,15 +1503,6 @@
             "description": "Points vector distance to the query vector",
             "format": "float",
             "type": "number"
-          },
-          "vector": {
-            "description": "Vector of the point",
-            "items": {
-              "format": "float",
-              "type": "number"
-            },
-            "nullable": true,
-            "type": "array"
           },
           "version": {
             "description": "Point version",
@@ -1610,7 +1566,7 @@
         "type": "object"
       },
       "ScrollResult": {
-        "description": "Result of the points read request",
+        "description": "Result of the points read request. Contains",
         "properties": {
           "next_page_offset": {
             "description": "Offset which should be used to retrieve a next page result",
@@ -1646,7 +1602,7 @@
         "type": "object"
       },
       "SearchRequest": {
-        "description": "Search request. Holds all conditions and parameters for the search of most similar points by vector similarity given the filtering restrictions.",
+        "description": "Search request",
         "properties": {
           "filter": {
             "anyOf": [
@@ -1694,11 +1650,6 @@
               }
             ],
             "description": "Payload interface"
-          },
-          "with_vector": {
-            "description": "Return point vector with the result. Default: false",
-            "nullable": true,
-            "type": "boolean"
           }
         },
         "required": [
@@ -1879,8 +1830,7 @@
           {
             "$ref": "#/components/schemas/PayloadSelector"
           }
-        ],
-        "description": "Options for specifying which payload to include or not"
+        ]
       }
     }
   },

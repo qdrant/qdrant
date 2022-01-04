@@ -36,7 +36,7 @@ impl SearchContext {
             Some(removed) => removed.idx != score_point.idx,
         };
         if was_added {
-            self.candidates.push(score_point)
+            self.candidates.push(score_point);
         }
     }
 }

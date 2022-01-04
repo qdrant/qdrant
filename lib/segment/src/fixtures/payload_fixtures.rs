@@ -63,8 +63,8 @@ pub fn random_vector(rnd_gen: &mut ThreadRng, size: usize) -> Vec<VectorElementT
 
 pub fn random_field_condition(rnd_gen: &mut ThreadRng) -> Condition {
     let kv_or_int: bool = rnd_gen.gen();
-    match kv_or_int {
-        true => Condition::Field(FieldCondition {
+    if kv_or_int {
+        Condition::Field(FieldCondition {
             key: "kvd".to_string(),
             r#match: Some(Match {
                 keyword: Some(random_keyword(rnd_gen)),
@@ -73,8 +73,9 @@ pub fn random_field_condition(rnd_gen: &mut ThreadRng) -> Condition {
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
-        }),
-        false => Condition::Field(FieldCondition {
+        })
+    } else {
+        Condition::Field(FieldCondition {
             key: "int".to_string(),
             r#match: None,
             range: Some(RangeCondition {
@@ -85,7 +86,7 @@ pub fn random_field_condition(rnd_gen: &mut ThreadRng) -> Condition {
             }),
             geo_bounding_box: None,
             geo_radius: None,
-        }),
+        })
     }
 }
 
@@ -97,9 +98,10 @@ pub fn random_filter(rnd_gen: &mut ThreadRng) -> Filter {
         .map(|_| random_field_condition(rnd_gen))
         .collect_vec();
 
-    let should_conditions_opt = match should_conditions.is_empty() {
-        false => Some(should_conditions),
-        true => None,
+    let should_conditions_opt = if !should_conditions.is_empty() {
+        Some(should_conditions)
+    } else {
+        None
     };
 
     let must_conditions = (0..=2)
@@ -107,9 +109,10 @@ pub fn random_filter(rnd_gen: &mut ThreadRng) -> Filter {
         .map(|_| random_field_condition(rnd_gen))
         .collect_vec();
 
-    let must_conditions_opt = match must_conditions.is_empty() {
-        false => Some(must_conditions),
-        true => None,
+    let must_conditions_opt = if !must_conditions.is_empty() {
+        Some(must_conditions)
+    } else {
+        None
     };
 
     Filter {

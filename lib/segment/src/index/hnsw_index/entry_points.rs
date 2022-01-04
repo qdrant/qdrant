@@ -91,7 +91,7 @@ impl EntryPoints {
         None
     }
 
-    /// Find the highest EntryPoint which satisfies filtering condition of `checker`
+    /// Find the highest `EntryPoint` which satisfies filtering condition of `checker`
     pub fn get_entry_point<F>(&self, checker: F) -> Option<EntryPoint>
     where
         F: Fn(PointOffsetType) -> bool,

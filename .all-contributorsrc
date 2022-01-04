@@ -130,6 +130,24 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "daniilsunyaev",
+      "name": "Daniil",
+      "avatar_url": "https://avatars.githubusercontent.com/u/3955599?v=4",
+      "profile": "https://github.com/daniilsunyaev",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "melekes",
+      "name": "Anton Kaliaev",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1282182?v=4",
+      "profile": "http://homeonrails.com",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,

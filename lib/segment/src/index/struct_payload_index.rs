@@ -179,7 +179,7 @@ impl StructPayloadIndex {
 
         if !index.config_path().exists() {
             // Save default config
-            index.save_config()?
+            index.save_config()?;
         }
 
         index.load_all_fields()?;
@@ -209,7 +209,7 @@ impl StructPayloadIndex {
                 None => {}
                 Some(field_value) => {
                     for builder in &mut builders {
-                        builder.add(point_id, field_value)
+                        builder.add(point_id, field_value);
                     }
                 }
             }
@@ -338,7 +338,7 @@ impl PayloadIndex for StructPayloadIndex {
                                 || vector_storage_ref.iter_ids(), /* index is not built */
                             )
                         }
-                        PrimaryCondition::Ids(ids) => Box::new(ids.iter().cloned()),
+                        PrimaryCondition::Ids(ids) => Box::new(ids.iter().copied()),
                     }
                 })
                 .filter(|&id| !visited_list.check_and_update_visited(id))

@@ -67,7 +67,7 @@ where
         None => {}
         Some(conditions) => {
             if !conditions.is_empty() {
-                filter_estimations.push(estimate_must(estimator, conditions, total))
+                filter_estimations.push(estimate_must(estimator, conditions, total));
             }
         }
     }
@@ -75,7 +75,7 @@ where
         None => {}
         Some(conditions) => {
             if !conditions.is_empty() {
-                filter_estimations.push(estimate_should(estimator, conditions, total))
+                filter_estimations.push(estimate_should(estimator, conditions, total));
             }
         }
     }
@@ -109,9 +109,8 @@ where
             // any assumptions about the whole `should` clause
             clauses = vec![];
             break;
-        } else {
-            clauses.append(&mut estimation.primary_clauses.clone());
         }
+        clauses.append(&mut estimation.primary_clauses.clone());
     }
     let element_not_hit_prob: f64 = should_estimations
         .iter()

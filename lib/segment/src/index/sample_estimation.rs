@@ -4,7 +4,7 @@ use std::cmp::{max, min};
 const MAX_ESTIMATED_POINTS: usize = 1000;
 
 /// How many points do we need to check in order to estimate expected query cardinality.
-/// Based on https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval
+/// Based on <https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval>
 #[allow(dead_code)]
 fn estimate_required_sample_size(total: usize, confidence_interval: usize) -> usize {
     let confidence_interval = min(confidence_interval, total);
@@ -16,12 +16,12 @@ fn estimate_required_sample_size(total: usize, confidence_interval: usize) -> us
 }
 
 /// Returns (expected cardinality ± confidence interval at 0.99)
-/// Based on https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval#Agresti%E2%80%93Coull_interval
+/// Based on <https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval#Agresti%E2%80%93Coull_interval>
 fn confidence_agresti_coull_interval(trials: usize, positive: usize, total: usize) -> (i64, i64) {
     let z = 2.; // heuristics
-    let nhat = trials as f64 + z * z;
-    let phat = (positive as f64 + z * z / 2.) / nhat;
-    let interval = z * ((phat / nhat) * (1. - phat)).sqrt();
+    let n_hat = trials as f64 + z * z;
+    let phat = (positive as f64 + z * z / 2.) / n_hat;
+    let interval = z * ((phat / n_hat) * (1. - phat)).sqrt();
 
     let expected = (phat * total as f64) as i64;
     let delta = (interval * total as f64) as i64;
@@ -65,13 +65,14 @@ pub fn sample_check_cardinality(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::Rng;
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
 
     #[test]
     fn test_confidence_interval() {
+        let mut rng = StdRng::seed_from_u64(42);
         let total = 100_000;
         let true_p = 0.25;
-        let mut rng = rand::thread_rng();
 
         let mut delta = 100_000;
         let mut positive = 0;
