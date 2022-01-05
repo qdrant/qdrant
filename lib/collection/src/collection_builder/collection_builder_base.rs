@@ -87,7 +87,7 @@ pub fn build_collection(
 
     let mut segment_holder = SegmentHolder::default();
 
-    for _sid in 0..optimizers_config.max_segment_number {
+    for _sid in 0..optimizers_config.default_segment_number {
         let segment = build_simple_segment(
             &segments_path,
             collection_params.vector_size,

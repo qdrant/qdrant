@@ -171,7 +171,8 @@ impl From<OptimizersConfigDiff> for collection::operations::config_diff::Optimiz
         Self {
             deleted_threshold: value.deleted_threshold,
             vacuum_min_vector_number: value.vacuum_min_vector_number.map(|v| v as usize),
-            max_segment_number: value.max_segment_number.map(|v| v as usize),
+            default_segment_number: value.default_segment_number.map(|v| v as usize),
+            max_segment_size: value.max_segment_size.map(|v| v as usize),
             memmap_threshold: value.memmap_threshold.map(|v| v as usize),
             indexing_threshold: value.indexing_threshold.map(|v| v as usize),
             payload_indexing_threshold: value.payload_indexing_threshold.map(|v| v as usize),

@@ -22,7 +22,8 @@ mod tests {
             optimizers: OptimizersConfig {
                 deleted_threshold: 0.5,
                 vacuum_min_vector_number: 100,
-                max_segment_number: 2,
+                default_segment_number: 2,
+                max_segment_size: 100_000,
                 memmap_threshold: 100,
                 indexing_threshold: 100,
                 payload_indexing_threshold: 100,

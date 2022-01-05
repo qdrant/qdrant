@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 /// will be less than before.
 pub struct MergeOptimizer {
     max_segments: usize,
+    max_segment_size: usize,
     thresholds_config: OptimizerThresholds,
     segments_path: PathBuf,
     collection_temp_dir: PathBuf,
@@ -26,6 +27,7 @@ pub struct MergeOptimizer {
 impl MergeOptimizer {
     pub fn new(
         max_segments: usize,
+        max_segment_size: usize,
         thresholds_config: OptimizerThresholds,
         segments_path: PathBuf,
         collection_temp_dir: PathBuf,
@@ -34,6 +36,7 @@ impl MergeOptimizer {
     ) -> Self {
         MergeOptimizer {
             max_segments,
+            max_segment_size,
             thresholds_config,
             segments_path,
             collection_temp_dir,

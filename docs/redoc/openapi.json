@@ -636,6 +636,12 @@
       },
       "OptimizersConfig": {
         "properties": {
+          "default_segment_number": {
+            "description": "Target amount of segments optimizer will try to keep. Real amount of segments may vary depending on multiple parameters: - Amount of stored points - Current write RPS\n\nIt is recommended to select default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
           "deleted_threshold": {
             "description": "The minimal fraction of deleted vectors in a segment, required to perform segment optimization",
             "format": "double",
@@ -659,8 +665,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "max_segment_number": {
-            "description": "If the number of segments exceeds this value, the optimizer will merge the smallest segments.",
+          "max_segment_size": {
+            "description": "Do not create segments larger this number of points. Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher.",
             "format": "uint",
             "minimum": 0,
             "type": "integer"
@@ -685,11 +691,12 @@
           }
         },
         "required": [
+          "default_segment_number",
           "deleted_threshold",
           "flush_interval_sec",
           "indexing_threshold",
           "max_optimization_threads",
-          "max_segment_number",
+          "max_segment_size",
           "memmap_threshold",
           "payload_indexing_threshold",
           "vacuum_min_vector_number"
@@ -698,6 +705,13 @@
       },
       "OptimizersConfigDiff": {
         "properties": {
+          "default_segment_number": {
+            "description": "Target amount of segments optimizer will try to keep. Real amount of segments may vary depending on multiple parameters: - Amount of stored points - Current write RPS\n\nIt is recommended to select default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
           "deleted_threshold": {
             "description": "The minimal fraction of deleted vectors in a segment, required to perform segment optimization",
             "format": "double",
@@ -725,8 +739,8 @@
             "nullable": true,
             "type": "integer"
           },
-          "max_segment_number": {
-            "description": "If the number of segments exceeds this value, the optimizer will merge the smallest segments.",
+          "max_segment_size": {
+            "description": "Do not create segments larger this number of points. Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher.",
             "format": "uint",
             "minimum": 0,
             "nullable": true,
@@ -848,7 +862,7 @@
             "type": "object"
           }
         ],
-        "description": "Fallback for PayloadInterface which is used if user explicitly specifies type of payload\n\nExample:\n\n```json {..., \"payload\": {\"city\": { \"type\": \"keyword\", \"value\": \"Berlin\" }}, ... } ```\n\nShould be captured by `Keyword(PayloadVariant<String>)`"
+        "description": "Fallback for `PayloadInterface` which is used if user explicitly specifies type of payload\n\nExample:\n\n```json {..., \"payload\": {\"city\": { \"type\": \"keyword\", \"value\": \"Berlin\" }}, ... } ```\n\nShould be captured by `Keyword(PayloadVariant<String>)`"
       },
       "PayloadOps": {
         "anyOf": [
@@ -2260,7 +2274,7 @@
             }
           },
           {
-            "description": "Wait for changes to actually happen? Default: false",
+            "description": "If true, wait for changes to actually happen",
             "in": "query",
             "name": "wait",
             "required": false,

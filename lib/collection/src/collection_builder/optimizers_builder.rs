@@ -16,8 +16,21 @@ pub struct OptimizersConfig {
     pub deleted_threshold: f64,
     /// The minimal number of vectors in a segment, required to perform segment optimization
     pub vacuum_min_vector_number: usize,
-    /// If the number of segments exceeds this value, the optimizer will merge the smallest segments.
-    pub max_segment_number: usize,
+    /// Target amount of segments optimizer will try to keep.
+    /// Real amount of segments may vary depending on multiple parameters:
+    ///  - Amount of stored points
+    ///  - Current write RPS
+    ///
+    /// It is recommended to select default number of segments as a factor of the number of search threads,
+    /// so that each segment would be handled evenly by one of the threads
+    pub default_segment_number: usize,
+    /// Do not create segments larger this number of points.
+    /// Large segments might require disproportionately long indexation times,
+    /// therefore it makes sense to limit the size of segments.
+    ///
+    /// If indexation speed have more priority for your - make this parameter lower.
+    /// If search speed is more important - make this parameter higher.
+    pub max_segment_size: usize,
     /// Maximum number of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmaped file.
     pub memmap_threshold: usize,
@@ -49,7 +62,8 @@ pub fn build_optimizers(
 
     Arc::new(vec![
         Arc::new(MergeOptimizer::new(
-            optimizers_config.max_segment_number,
+            optimizers_config.default_segment_number,
+            optimizers_config.max_segment_size,
             threshold_config.clone(),
             segments_path.clone(),
             temp_segments_path.clone(),
