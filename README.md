@@ -11,7 +11,7 @@
     <a href="https://github.com/qdrant/qdrant/actions/workflows/rust.yml"><img src="https://github.com/qdrant/qdrant/workflows/Tests/badge.svg"></a>
     <a href="https://qdrant.github.io/qdrant/redoc/index.html"><img src="https://img.shields.io/badge/Docs-OpenAPI%203.0-success"></a>
     <a href="https://github.com/qdrant/qdrant/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-success"></a>
-    <a href="https://t.me/joinchat/sIuUArGQRp9kMTUy"><img src="https://img.shields.io/badge/Telegram-Qdrant-blue.svg?logo=telegram" alt="Telegram"></a>
+    <a href="https://discord.gg/tdtYvXjC4h"><img src="https://img.shields.io/badge/Discord-Qdrant-5865F2.svg?logo=discord" alt="Discord"></a>
 </p>
 
 Qdrant (read: _quadrant_ ) is a vector similarity search engine.
@@ -173,7 +173,7 @@ Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/)
 
 ## Contacts
 
-* Join our [Telegram group](https://t.me/joinchat/sIuUArGQRp9kMTUy)
+* Join our [Discord channel](https://discord.gg/tdtYvXjC4h)
 * Follow us on [Twitter](https://twitter.com/qdrant_engine)
 * Subscribe to our [Newsletters](https://tech.us1.list-manage.com/subscribe/post?u=69617d79374ac6280dd2230b2&amp;id=acb2b876fc)
 * Write us an email [info@qdrant.tech](mailto:info@qdrant.tech)
