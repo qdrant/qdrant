@@ -567,11 +567,11 @@ mod tests {
     ) -> Vec<ScoredPointOffset> {
         let fake_condition_checker = FakeConditionChecker {};
         let raw_scorer = vector_storage.get_raw_scorer(query.to_owned());
-        let scorer = FilteredScorer {
-            raw_scorer: &raw_scorer,
-            condition_checker: &fake_condition_checker,
-            filter: None,
-        };
+        let scorer = FilteredScorer::new(
+            &raw_scorer,
+            &fake_condition_checker,
+            None,
+        );
         let ef = 16;
         graph.search(top, ef, &scorer)
     }
@@ -606,11 +606,11 @@ mod tests {
             let fake_condition_checker = FakeConditionChecker {};
             let added_vector = vector_holder.vectors[idx as usize].to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
-            let scorer = FilteredScorer {
-                raw_scorer: &raw_scorer,
-                condition_checker: &fake_condition_checker,
-                filter: None,
-            };
+            let scorer = FilteredScorer::new(
+                &raw_scorer,
+                &fake_condition_checker,
+                None,
+            );
             let level = graph_layers.get_random_layer(rng);
             graph_layers.link_new_point(idx, level, &scorer);
         }
@@ -641,11 +641,11 @@ mod tests {
         let fake_condition_checker = FakeConditionChecker {};
         let added_vector = vector_holder.vectors[linking_idx as usize].to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector);
-        let scorer = FilteredScorer {
-            raw_scorer: &raw_scorer,
-            condition_checker: &fake_condition_checker,
-            filter: None,
-        };
+        let scorer = FilteredScorer::new(
+            &raw_scorer,
+            &fake_condition_checker,
+            None,
+        );
 
         let nearest_on_level = graph_layers.search_on_level(
             ScoredPointOffset {
