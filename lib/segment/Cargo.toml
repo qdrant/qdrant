@@ -55,6 +55,10 @@ name = "hnsw_search_graph"
 harness = false
 
 [[bench]]
+name = "hnsw_build_asymptotic"
+harness = false
+
+[[bench]]
 name = "serde_formats"
 harness = false
 

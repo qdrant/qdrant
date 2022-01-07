@@ -63,6 +63,7 @@ impl<'a> Profiler for FlamegraphProfiler<'a> {
         let flamegraph_file = File::create(&flamegraph_path)
             .expect("File system error while creating flamegraph.svg");
         let mut options = pprof::flamegraph::Options::default();
+        options.hash = true;
         options.image_width = Some(2500);
         options.text_truncate_direction = TextTruncateDirection::Left;
         options.font_size /= 3;
