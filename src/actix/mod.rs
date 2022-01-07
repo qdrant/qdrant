@@ -14,7 +14,7 @@ use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::search_points;
 use crate::actix::api::update_api::update_points;
 use crate::common::models::VersionInfo;
-use crate::settings::Settings;
+use crate::settings::{max_web_workers, Settings};
 
 fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error::Error {
     use actix_web::error::JsonPayloadError;
@@ -57,7 +57,7 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
                 .service(search_points)
                 .service(recommend_points)
         })
-        // .workers(4)
+        .workers(max_web_workers(&settings))
         .bind(format!(
             "{}:{}",
             settings.service.host, settings.service.port

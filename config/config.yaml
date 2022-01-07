@@ -58,6 +58,10 @@ service:
   # Maximum size of POST data in a single request in megabytes
   max_request_size_mb: 32
 
+  # Number of parallel workers used for serving the api. If 0 - equal to the number of available cores.
+  # If missing - Same as storage.max_search_threads
+  max_workers: 0
+
   # Host to bind the service on
   host: 0.0.0.0
 
