@@ -14,7 +14,7 @@ fn main() {
 
     let runtime = create_search_runtime(settings.storage.performance.max_search_threads).unwrap();
     let runtime_handle = runtime.handle().clone();
-    let toc = TableOfContent::new(&settings.storage, runtime);
+    let toc = TableOfContent::new(&settings.storage, runtime).unwrap();
 
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {

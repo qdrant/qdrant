@@ -50,25 +50,44 @@ pub struct TableOfContent {
 }
 
 impl TableOfContent {
-    pub fn new(storage_config: &StorageConfig, search_runtime: Runtime) -> Self {
+    pub fn new(
+        storage_config: &StorageConfig,
+        search_runtime: Runtime,
+    ) -> Result<Self, StorageError> {
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
 
-        create_dir_all(&collections_path).expect("Can't create Collections directory");
+        create_dir_all(&collections_path).map_err(|io_err| {
+            StorageError::from_std_io_error_with_msg("Can't create Collections directory", io_err)
+        })?;
 
-        let collection_paths =
-            read_dir(&collections_path).expect("Can't read Collections directory");
+        let collection_paths = read_dir(&collections_path).map_err(|io_err| {
+            StorageError::from_std_io_error_with_msg("Can't read Collections directory", io_err)
+        })?;
 
         let mut collections: HashMap<String, Arc<Collection>> = Default::default();
 
         for entry in collection_paths {
             let collection_path = entry
-                .expect("Can't access of one of the collection files")
+                .map_err(|io_err| {
+                    StorageError::from_std_io_error_with_msg(
+                        "Can't access of one of the collection files",
+                        io_err,
+                    )
+                })?
                 .path();
             let collection_name = collection_path
                 .file_name()
-                .expect("Can't resolve a filename of one of the collection files")
+                .ok_or_else(|| {
+                    StorageError::from_io_msg(
+                        "Can't resolve a filename of one of the collection files",
+                    )
+                })?
                 .to_str()
-                .expect("A filename of one of the collection files is not a valid UTF-8")
+                .ok_or_else(|| {
+                    StorageError::from_io_msg(
+                        "A filename of one of the collection files is not a valid UTF-8",
+                    )
+                })?
                 .to_string();
 
             let collection = load_collection(&collection_path);
@@ -82,15 +101,20 @@ impl TableOfContent {
             .cache_capacity(SLED_CACHE_SIZE)
             .path(alias_path)
             .open()
-            .expect("Can't open database by the provided config");
+            .map_err(|io_err| {
+                StorageError::from_any_io_error_with_msg(
+                    "Can't open database by the provided config",
+                    anyhow::Error::new(io_err),
+                )
+            })?;
 
-        TableOfContent {
+        Ok(TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: storage_config.clone(),
             search_runtime,
             alias_persistence,
             segment_searcher: Box::new(SimpleCollectionSearcher::new()),
-        }
+        })
     }
 
     fn get_collection_path(&self, collection_name: &str) -> PathBuf {
@@ -128,7 +152,11 @@ impl TableOfContent {
 
         let resolved_name = match alias_collection_name {
             None => collection_name.to_string(),
-            Some(resolved_alias) => from_utf8(&resolved_alias).unwrap().to_string(),
+            Some(resolved_alias) => from_utf8(&resolved_alias)
+                .map_err(|parse_err| {
+                    StorageError::from_utf8_error_with_msg("Couldn't resolve alias name", parse_err)
+                })?
+                .to_string(),
         };
         self.collections
             .read()
@@ -414,8 +442,17 @@ impl TableOfContent {
         let mut result = vec![];
         for pair in self.alias_persistence.iter() {
             let (alias_bt, target_collection_bt) = pair?;
-            let alias = from_utf8(&alias_bt).unwrap().to_string();
-            let target_collection = from_utf8(&target_collection_bt).unwrap();
+            let alias = from_utf8(&alias_bt)
+                .map_err(|parse_err| {
+                    StorageError::from_utf8_error_with_msg("Couldn't resolve alias name", parse_err)
+                })?
+                .to_string();
+            let target_collection = from_utf8(&target_collection_bt).map_err(|parse_err| {
+                StorageError::from_utf8_error_with_msg(
+                    "Couldn't resolve collection name",
+                    parse_err,
+                )
+            })?;
             if collection_name == target_collection {
                 result.push(alias);
             }

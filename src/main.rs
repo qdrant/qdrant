@@ -26,7 +26,7 @@ fn main() -> std::io::Result<()> {
 
     let runtime_handle = runtime.handle().clone();
 
-    let toc = TableOfContent::new(&settings.storage, runtime);
+    let toc = TableOfContent::new(&settings.storage, runtime).unwrap();
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {
             log::info!("Loaded collection: {}", collection);

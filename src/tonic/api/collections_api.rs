@@ -164,12 +164,7 @@ impl From<(Instant, Result<bool, StorageError>)> for CollectionOperationResponse
                 time: timing.elapsed().as_secs_f64(),
             },
             Err(err) => {
-                let error_description = match err {
-                    StorageError::BadInput { description } => description,
-                    StorageError::NotFound { description } => description,
-                    StorageError::ServiceError { description } => description,
-                    StorageError::BadRequest { description } => description,
-                };
+                let error_description = err.description();
                 CollectionOperationResponse {
                     result: None,
                     error: Some(error_description),

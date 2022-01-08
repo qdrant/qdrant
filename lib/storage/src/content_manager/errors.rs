@@ -2,6 +2,8 @@ use collection::operations::types::CollectionError;
 use sled::transaction::TransactionError;
 use sled::Error;
 use std::io::Error as IoError;
+use std::rc::Rc;
+use std::str::Utf8Error;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone)]
@@ -15,8 +17,60 @@ pub enum StorageError {
     ServiceError { description: String },
     #[error("Bad request: {description}")]
     BadRequest { description: String },
+    #[error("IO error: {description}")]
+    IO {
+        description: String,
+        source: Option<Rc<anyhow::Error>>,
+    },
+    #[error("parsing error: {description}")]
+    Parse {
+        description: String,
+        source: Option<Rc<anyhow::Error>>,
+    },
 }
-
+impl StorageError {
+    pub(crate) fn from_std_io_error_with_msg(
+        msg: impl Into<String>,
+        source: std::io::Error,
+    ) -> Self {
+        StorageError::IO {
+            description: msg.into(),
+            source: Some(Rc::new(source.into())),
+        }
+    }
+    pub(crate) fn from_any_io_error_with_msg(
+        msg: impl Into<String>,
+        source: anyhow::Error,
+    ) -> Self {
+        StorageError::IO {
+            description: msg.into(),
+            source: Some(Rc::new(source)),
+        }
+    }
+    pub(crate) fn from_utf8_error_with_msg(msg: impl Into<String>, source: Utf8Error) -> Self {
+        StorageError::Parse {
+            description: msg.into(),
+            source: Some(Rc::new(source.into())),
+        }
+    }
+    pub(crate) fn from_io_msg(msg: impl Into<String>) -> Self {
+        StorageError::IO {
+            description: msg.into(),
+            source: None,
+        }
+    }
+    pub fn description(&self) -> String {
+        match self {
+            StorageError::BadInput { description } => description,
+            StorageError::NotFound { description } => description,
+            StorageError::ServiceError { description } => description,
+            StorageError::BadRequest { description } => description,
+            StorageError::IO { description, .. } => description,
+            StorageError::Parse { description, .. } => description,
+        }
+        .to_owned()
+    }
+}
 impl From<CollectionError> for StorageError {
     fn from(err: CollectionError) -> Self {
         match err {

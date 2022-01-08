@@ -146,12 +146,7 @@ impl From<(Instant, Result<CollectionUpdateResult, StorageError>)> for PointsOpe
                 time: timing.elapsed().as_secs_f64(),
             },
             Err(err) => {
-                let error_description = match err {
-                    StorageError::BadInput { description } => description,
-                    StorageError::NotFound { description } => description,
-                    StorageError::ServiceError { description } => description,
-                    StorageError::BadRequest { description } => description,
-                };
+                let error_description = err.description();
                 Self {
                     result: None,
                     error: Some(error_description),

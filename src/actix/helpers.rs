@@ -23,6 +23,7 @@ where
                 StorageError::NotFound { .. } => HttpResponse::NotFound(),
                 StorageError::ServiceError { .. } => HttpResponse::InternalServerError(),
                 StorageError::BadRequest { .. } => HttpResponse::BadRequest(),
+                _ => HttpResponse::InternalServerError(),
             };
 
             resp.json(ApiResponse::<()> {

@@ -43,7 +43,7 @@ mod tests {
 
         handle
             .block_on(
-                toc.perform_collection_operation(StorageOperations::CreateCollection(
+                toc.as_ref().unwrap().perform_collection_operation(StorageOperations::CreateCollection(
                     CreateCollectionOperation {
                         name: "test".to_string(),
                         create_collection: CreateCollection {
@@ -60,7 +60,7 @@ mod tests {
 
         handle
             .block_on(
-                toc.perform_collection_operation(StorageOperations::ChangeAliases(
+                toc.as_ref().unwrap().perform_collection_operation(StorageOperations::ChangeAliases(
                     ChangeAliasesOperation {
                         actions: vec![CreateAlias {
                             collection_name: "test".to_string(),
@@ -74,7 +74,7 @@ mod tests {
 
         handle
             .block_on(
-                toc.perform_collection_operation(StorageOperations::ChangeAliases(
+                toc.as_ref().unwrap().perform_collection_operation(StorageOperations::ChangeAliases(
                     ChangeAliasesOperation {
                         actions: vec![
                             CreateAlias {
@@ -97,6 +97,6 @@ mod tests {
             )
             .unwrap();
 
-        handle.block_on(toc.get_collection("test_alias3")).unwrap();
+        handle.block_on(toc.unwrap().get_collection("test_alias3")).unwrap();
     }
 }
