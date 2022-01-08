@@ -59,17 +59,6 @@ impl StorageError {
             source: None,
         }
     }
-    pub fn description(&self) -> String {
-        match self {
-            StorageError::BadInput { description } => description,
-            StorageError::NotFound { description } => description,
-            StorageError::ServiceError { description } => description,
-            StorageError::BadRequest { description } => description,
-            StorageError::IO { description, .. } => description,
-            StorageError::Parse { description, .. } => description,
-        }
-        .to_owned()
-    }
 }
 impl From<CollectionError> for StorageError {
     fn from(err: CollectionError) -> Self {
