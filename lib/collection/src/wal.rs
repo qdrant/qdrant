@@ -1,5 +1,7 @@
 extern crate serde_cbor;
 extern crate wal;
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
 
 use std::marker::PhantomData;
 use std::result;
@@ -58,6 +60,7 @@ pub struct SerdeWal<R> {
 }
 
 impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
+    #[trace]
     pub fn new(dir: &str, wal_options: &WalOptions) -> Result<SerdeWal<R>> {
         let wal = Wal::with_options(dir, wal_options)
             .map_err(|err| WalError::InitWalError(format!("{:?}", err)))?;
@@ -67,6 +70,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         })
     }
 
+    #[trace]
     pub fn write(&mut self, entity: &R) -> Result<u64> {
         // ToDo: Replace back to faster rmp, once this https://github.com/serde-rs/serde/issues/2055 solved
         let binary_entity = serde_cbor::to_vec(&entity).unwrap();
@@ -75,6 +79,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
             .map_err(|err| WalError::WriteWalError(format!("{:?}", err)))
     }
 
+    #[trace]
     pub fn read_all(&'s self) -> impl Iterator<Item = (u64, R)> + 's {
         self.read(self.wal.first_index())
     }
@@ -83,6 +88,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         self.wal.num_entries()
     }
 
+    #[trace]
     pub fn read(&'s self, start_from: u64) -> impl Iterator<Item = (u64, R)> + 's {
         let first_index = self.wal.first_index();
         let num_entries = self.wal.num_entries();
@@ -103,6 +109,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     ///
     /// * `until_index` - the newest no longer required record sequence number
     ///
+    #[trace]
     pub fn ack(&mut self, until_index: u64) -> Result<()> {
         self.wal
             .prefix_truncate(until_index)

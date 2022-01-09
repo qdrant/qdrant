@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
@@ -61,6 +64,7 @@ impl SegmentOptimizer for MergeOptimizer {
         &self.thresholds_config
     }
 
+    #[trace]
     fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId> {
         let read_segments = segments.read();
 

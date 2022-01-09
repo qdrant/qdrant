@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::entry::entry_point::OperationResult;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
@@ -33,6 +36,7 @@ pub struct HNSWIndex {
 }
 
 impl HNSWIndex {
+    #[trace]
     pub fn open(
         path: &Path,
         condition_checker: Arc<dyn ConditionChecker>,
@@ -80,28 +84,33 @@ impl HNSWIndex {
         })
     }
 
+    #[trace]
     fn save_config(&self) -> OperationResult<()> {
         let config_path = HnswGraphConfig::get_config_path(&self.path);
         self.config.save(&config_path)
     }
 
+    #[trace]
     fn save_graph(&self) -> OperationResult<()> {
         let graph_path = GraphLayers::get_path(&self.path);
         self.graph.save(&graph_path)
     }
 
+    #[trace]
     pub fn save(&self) -> OperationResult<()> {
         self.save_config()?;
         self.save_graph()?;
         Ok(())
     }
 
+    #[trace]
     pub fn link_point(&mut self, point_id: PointOffsetType, points_scorer: &FilteredScorer) {
         let point_level = self.graph.get_random_layer(&mut self.thread_rng);
         self.graph
             .link_new_point(point_id, point_level, points_scorer);
     }
 
+    #[trace]
     pub fn build_filtered_graph(
         &self,
         graph: &mut GraphLayers,
@@ -136,6 +145,7 @@ impl HNSWIndex {
         }
     }
 
+    #[trace]
     pub fn search_with_graph(
         &self,
         vector: &[VectorElementType],
@@ -164,6 +174,7 @@ impl HNSWIndex {
 }
 
 impl VectorIndex for HNSWIndex {
+    #[trace]
     fn search(
         &self,
         vector: &[VectorElementType],
@@ -215,6 +226,7 @@ impl VectorIndex for HNSWIndex {
         }
     }
 
+    #[trace]
     fn build_index(&mut self) -> OperationResult<()> {
         // Build main index graph
         let vector_storage = self.vector_storage.borrow();

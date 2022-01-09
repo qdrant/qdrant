@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use std::cmp::{max, min};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
@@ -45,6 +48,7 @@ impl LockedSegment {
 }
 
 impl Clone for LockedSegment {
+    #[trace]
     fn clone(&self) -> Self {
         match self {
             LockedSegment::Original(x) => LockedSegment::Original(x.clone()),
@@ -96,6 +100,7 @@ impl<'s> SegmentHolder {
         self.segments.is_empty()
     }
 
+    #[trace]
     fn generate_new_key(&self) -> SegmentId {
         let key = thread_rng().gen::<SegmentId>();
         if self.segments.contains_key(&key) {
@@ -106,6 +111,7 @@ impl<'s> SegmentHolder {
     }
 
     /// Add new segment to storage
+    #[trace]
     pub fn add<T>(&mut self, segment: T) -> SegmentId
     where
         T: Into<LockedSegment>,
@@ -116,12 +122,14 @@ impl<'s> SegmentHolder {
     }
 
     /// Add new segment to storage which is already LockedSegment
+    #[trace]
     pub fn add_locked(&mut self, segment: LockedSegment) -> SegmentId {
         let key = self.generate_new_key();
         self.segments.insert(key, segment);
         key
     }
 
+    #[trace]
     pub fn remove(&mut self, remove_ids: &[SegmentId], drop_data: bool) -> OperationResult<()> {
         for remove_id in remove_ids {
             let removed_segment = self.segments.remove(remove_id);
@@ -137,6 +145,7 @@ impl<'s> SegmentHolder {
     }
 
     /// Replace old segments with a new one
+    #[trace]
     pub fn swap<T>(
         &mut self,
         segment: T,
@@ -155,6 +164,7 @@ impl<'s> SegmentHolder {
         self.segments.get(&id)
     }
 
+    #[trace]
     pub fn appendable_ids(&self) -> Vec<SegmentId> {
         self.segments
             .iter()
@@ -164,6 +174,7 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
+    #[trace]
     pub fn appendable_segments(&self) -> Vec<SegmentId> {
         self.segments
             .iter()
@@ -172,6 +183,7 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
+    #[trace]
     pub fn random_appendable_segment(&self) -> Option<LockedSegment> {
         let segment_ids: Vec<_> = self.appendable_segments();
         segment_ids
@@ -180,6 +192,7 @@ impl<'s> SegmentHolder {
     }
 
     /// Selects point ids, which is stored in this segment
+    #[trace]
     fn segment_points(&self, ids: &[PointIdType], segment: &LockedSegment) -> Vec<PointIdType> {
         let segment_arc = segment.get();
         let entry = segment_arc.read();
@@ -189,6 +202,7 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
+    #[trace]
     pub fn apply_segments<F>(&self, mut f: F) -> OperationResult<usize>
     where
         F: FnMut(&mut RwLockWriteGuard<dyn SegmentEntry + 'static>) -> OperationResult<bool>,
@@ -201,6 +215,7 @@ impl<'s> SegmentHolder {
         Ok(processed_segments)
     }
 
+    #[trace]
     pub fn apply_points<F>(&self, ids: &[PointIdType], mut f: F) -> OperationResult<usize>
     where
         F: FnMut(
@@ -227,6 +242,7 @@ impl<'s> SegmentHolder {
 
     /// Try to acquire write lock over random segment with increasing wait time.
     /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
+    #[trace]
     pub fn aloha_random_write<F>(
         &self,
         segment_ids: &[SegmentId],
@@ -277,6 +293,7 @@ impl<'s> SegmentHolder {
     /// Update function wrapper, which ensures that updates are not applied written to un-appendable segment.
     /// In case of such attempt, this function will move data into a mutable segment and remove data from un-appendable.
     /// Returns: Set of point ids which were successfully(already) applied to segments
+    #[trace]
     pub fn apply_points_to_appendable<F>(
         &self,
         op_num: SeqNumberType,
@@ -323,6 +340,7 @@ impl<'s> SegmentHolder {
         Ok(applied_points)
     }
 
+    #[trace]
     pub fn read_points<F>(&self, ids: &[PointIdType], mut f: F) -> OperationResult<usize>
     where
         F: FnMut(PointIdType, &RwLockReadGuard<dyn SegmentEntry>) -> OperationResult<bool>,
@@ -343,6 +361,7 @@ impl<'s> SegmentHolder {
     ///
     /// If there are unsaved changes after flush - detects lowest unsaved change version.
     /// If all changes are saved - returns max version.
+    #[trace]
     pub fn flush_all(&self) -> OperationResult<SeqNumberType> {
         let mut max_persisted_version: SeqNumberType = SeqNumberType::MIN;
         let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;

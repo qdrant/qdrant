@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use parking_lot::RwLock;
 use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
@@ -42,6 +45,7 @@ impl ProxySegment {
         }
     }
 
+    #[trace]
     fn move_point(&self, op_num: SeqNumberType, point_id: PointIdType) -> OperationResult<bool> {
         let (vector, payload) = {
             let segment_arc = self.wrapped_segment.get();
@@ -61,6 +65,7 @@ impl ProxySegment {
         Ok(true)
     }
 
+    #[trace]
     fn move_if_exists(
         &self,
         op_num: SeqNumberType,
@@ -74,6 +79,7 @@ impl ProxySegment {
         Ok(false)
     }
 
+    #[trace]
     fn add_deleted_points_condition_to_filter(&self, filter: Option<&Filter>) -> Filter {
         let deleted_points = self.deleted_points.read();
         let wrapper_condition = Condition::HasId(deleted_points.clone().into());
@@ -105,6 +111,7 @@ impl SegmentEntry for ProxySegment {
         )
     }
 
+    #[trace]
     fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
         // Write version is always higher if presence
         self.write_segment
@@ -114,6 +121,7 @@ impl SegmentEntry for ProxySegment {
             .or_else(|| self.wrapped_segment.get().read().point_version(point_id))
     }
 
+    #[trace]
     fn search(
         &self,
         vector: &[VectorElementType],
@@ -167,6 +175,7 @@ impl SegmentEntry for ProxySegment {
         Ok(wrapped_result)
     }
 
+    #[trace]
     fn upsert_point(
         &mut self,
         op_num: SeqNumberType,
@@ -180,6 +189,7 @@ impl SegmentEntry for ProxySegment {
             .upsert_point(op_num, point_id, vector)
     }
 
+    #[trace]
     fn delete_point(
         &mut self,
         op_num: SeqNumberType,
@@ -199,6 +209,7 @@ impl SegmentEntry for ProxySegment {
         Ok(was_deleted || was_deleted_in_writable)
     }
 
+    #[trace]
     fn set_full_payload(
         &mut self,
         op_num: SeqNumberType,
@@ -212,6 +223,7 @@ impl SegmentEntry for ProxySegment {
             .set_full_payload(op_num, point_id, full_payload)
     }
 
+    #[trace]
     fn set_full_payload_with_json(
         &mut self,
         op_num: u64,
@@ -225,6 +237,7 @@ impl SegmentEntry for ProxySegment {
             .set_full_payload_with_json(op_num, point_id, full_payload)
     }
 
+    #[trace]
     fn set_payload(
         &mut self,
         op_num: SeqNumberType,
@@ -239,6 +252,7 @@ impl SegmentEntry for ProxySegment {
             .set_payload(op_num, point_id, key, payload)
     }
 
+    #[trace]
     fn delete_payload(
         &mut self,
         op_num: SeqNumberType,
@@ -252,6 +266,7 @@ impl SegmentEntry for ProxySegment {
             .delete_payload(op_num, point_id, key)
     }
 
+    #[trace]
     fn clear_payload(
         &mut self,
         op_num: SeqNumberType,
@@ -264,6 +279,7 @@ impl SegmentEntry for ProxySegment {
             .clear_payload(op_num, point_id)
     }
 
+    #[trace]
     fn vector(&self, point_id: PointIdType) -> OperationResult<Vec<VectorElementType>> {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment.get().read().vector(point_id)
@@ -279,6 +295,7 @@ impl SegmentEntry for ProxySegment {
         };
     }
 
+    #[trace]
     fn payload(
         &self,
         point_id: PointIdType,
@@ -304,6 +321,7 @@ impl SegmentEntry for ProxySegment {
         unimplemented!()
     }
 
+    #[trace]
     fn read_filtered<'a>(
         &'a self,
         offset: PointIdType,
@@ -333,6 +351,7 @@ impl SegmentEntry for ProxySegment {
         read_points
     }
 
+    #[trace]
     fn has_point(&self, point_id: PointIdType) -> bool {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment.get().read().has_point(point_id)
@@ -342,6 +361,7 @@ impl SegmentEntry for ProxySegment {
         };
     }
 
+    #[trace]
     fn vectors_count(&self) -> usize {
         let mut count = 0;
         count += self.wrapped_segment.get().read().vectors_count();
@@ -350,6 +370,7 @@ impl SegmentEntry for ProxySegment {
         count
     }
 
+    #[trace]
     fn deleted_count(&self) -> usize {
         self.write_segment.get().read().deleted_count()
     }
@@ -358,6 +379,7 @@ impl SegmentEntry for ProxySegment {
         SegmentType::Special
     }
 
+    #[trace]
     fn info(&self) -> SegmentInfo {
         let wrapped_info = self.wrapped_segment.get().read().info();
         let write_info = self.write_segment.get().read().info();
@@ -390,6 +412,7 @@ impl SegmentEntry for ProxySegment {
         Ok(())
     }
 
+    #[trace]
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);
@@ -402,6 +425,7 @@ impl SegmentEntry for ProxySegment {
             .delete_field_index(op_num, key)
     }
 
+    #[trace]
     fn create_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);
@@ -414,6 +438,7 @@ impl SegmentEntry for ProxySegment {
             .create_field_index(op_num, key)
     }
 
+    #[trace]
     fn get_indexed_fields(&self) -> Vec<PayloadKeyType> {
         let indexed_fields = self.wrapped_segment.get().read().get_indexed_fields();
         indexed_fields

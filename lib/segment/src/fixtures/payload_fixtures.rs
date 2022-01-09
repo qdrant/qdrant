@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::types::{
     Condition, FieldCondition, Filter, Match, PayloadType, Range as RangeCondition,
     VectorElementType,
@@ -39,16 +42,19 @@ const NOUN: &[&str] = &[
 
 const INT_RANGE: Range<i64> = 0..500;
 
+#[trace]
 pub fn random_keyword(rnd_gen: &mut ThreadRng) -> String {
     let random_adj = ADJECTIVE.choose(rnd_gen).unwrap();
     let random_noun = NOUN.choose(rnd_gen).unwrap();
     format!("{} {}", random_adj, random_noun)
 }
 
+#[trace]
 pub fn random_keyword_payload(rnd_gen: &mut ThreadRng) -> PayloadType {
     PayloadType::Keyword(vec![random_keyword(rnd_gen)])
 }
 
+#[trace]
 pub fn random_int_payload(rnd_gen: &mut ThreadRng, num_values: usize) -> PayloadType {
     PayloadType::Integer(
         (0..num_values)
@@ -57,10 +63,12 @@ pub fn random_int_payload(rnd_gen: &mut ThreadRng, num_values: usize) -> Payload
     )
 }
 
+#[trace]
 pub fn random_vector(rnd_gen: &mut ThreadRng, size: usize) -> Vec<VectorElementType> {
     (0..size).map(|_| rnd_gen.gen()).collect()
 }
 
+#[trace]
 pub fn random_field_condition(rnd_gen: &mut ThreadRng) -> Condition {
     let kv_or_int: bool = rnd_gen.gen();
     if kv_or_int {
@@ -90,6 +98,7 @@ pub fn random_field_condition(rnd_gen: &mut ThreadRng) -> Condition {
     }
 }
 
+#[trace]
 pub fn random_filter(rnd_gen: &mut ThreadRng) -> Filter {
     let mut rnd1 = rand::thread_rng();
 

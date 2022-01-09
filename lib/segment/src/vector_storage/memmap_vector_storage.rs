@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
@@ -29,6 +32,7 @@ impl<TMetric> RawScorer for MemmapRawScorer<'_, TMetric>
 where
     TMetric: Metric,
 {
+    #[trace]
     fn score_points<'a>(
         &'a self,
         points: &'a mut dyn Iterator<Item = PointOffsetType>,
@@ -45,16 +49,19 @@ where
         Box::new(res_iter)
     }
 
+    #[trace]
     fn check_point(&self, point: PointOffsetType) -> bool {
         (point < self.mmap_store.num_vectors as PointOffsetType)
             && !self.mmap_store.deleted(point).unwrap_or(true)
     }
 
+    #[trace]
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
         let other_vector = self.mmap_store.raw_vector(point).unwrap();
         self.metric.similarity(&self.query, other_vector)
     }
 
+    #[trace]
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let vector_a = self.mmap_store.raw_vector(point_a).unwrap();
         let vector_b = self.mmap_store.raw_vector(point_b).unwrap();
@@ -75,6 +82,7 @@ pub struct MemmapVectorStorage<TMetric: Metric> {
     metric: TMetric,
 }
 
+#[trace]
 pub fn open_memmap_vector_storage(
     path: &Path,
     dim: usize,
@@ -119,10 +127,12 @@ impl<TMetric> VectorStorage for MemmapVectorStorage<TMetric>
 where
     TMetric: Metric,
 {
+    #[trace]
     fn vector_dim(&self) -> usize {
         self.mmap_store.as_ref().unwrap().dim
     }
 
+    #[trace]
     fn vector_count(&self) -> usize {
         self.mmap_store
             .as_ref()
@@ -130,14 +140,17 @@ where
             .unwrap()
     }
 
+    #[trace]
     fn deleted_count(&self) -> usize {
         self.mmap_store.as_ref().unwrap().deleted_count
     }
 
+    #[trace]
     fn total_vector_count(&self) -> usize {
         self.mmap_store.as_ref().unwrap().num_vectors
     }
 
+    #[trace]
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
         self.mmap_store.as_ref().and_then(|x| x.get_vector(key))
     }
@@ -154,6 +167,7 @@ where
         panic!("Can't directly update vector in mmap storage")
     }
 
+    #[trace]
     fn update_from(
         &mut self,
         other: &dyn VectorStorage,
@@ -205,10 +219,12 @@ where
         Ok(start_index..end_index)
     }
 
+    #[trace]
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
         self.mmap_store.as_mut().unwrap().delete(key)
     }
 
+    #[trace]
     fn is_deleted(&self, key: PointOffsetType) -> bool {
         self.mmap_store
             .as_ref()
@@ -217,6 +233,7 @@ where
             .unwrap_or(false)
     }
 
+    #[trace]
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let num_vectors = self.mmap_store.as_ref().unwrap().num_vectors;
         let iter = (0..(num_vectors as PointOffsetType))
@@ -224,6 +241,7 @@ where
         Box::new(iter)
     }
 
+    #[trace]
     fn flush(&self) -> OperationResult<()> {
         match &self.mmap_store {
             None => Ok(()),
@@ -231,6 +249,7 @@ where
         }
     }
 
+    #[trace]
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
         Box::new(MemmapRawScorer {
             query: self.metric.preprocess(&vector).unwrap_or(vector),
@@ -239,6 +258,7 @@ where
         })
     }
 
+    #[trace]
     fn raw_scorer_internal(&self, point_id: PointOffsetType) -> Box<dyn RawScorer + '_> {
         Box::new(MemmapRawScorer {
             query: self.get_vector(point_id).unwrap(),
@@ -247,6 +267,7 @@ where
         })
     }
 
+    #[trace]
     fn score_points(
         &self,
         vector: &[VectorElementType],
@@ -276,6 +297,7 @@ where
         peek_top_scores_iterable(scores, top)
     }
 
+    #[trace]
     fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
         let preprocessed_vector_opt = self.metric.preprocess(vector);
         let preprocessed_vector = preprocessed_vector_opt
@@ -292,6 +314,7 @@ where
         peek_top_scores_iterable(scores, top)
     }
 
+    #[trace]
     fn score_internal(
         &self,
         point: PointOffsetType,

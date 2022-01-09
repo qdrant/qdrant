@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::actix::helpers::process_response;
 use crate::common::points::do_update_points;
 use actix_web::rt::time::Instant;
@@ -15,6 +18,7 @@ pub struct UpdateParam {
 }
 
 #[post("/collections/{name}")]
+#[trace]
 pub async fn update_points(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,

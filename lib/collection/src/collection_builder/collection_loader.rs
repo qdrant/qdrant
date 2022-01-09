@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use futures::executor::block_on;
 use std::fs::{read_dir, remove_dir_all};
 use std::path::Path;
@@ -12,6 +15,7 @@ use crate::config::CollectionConfig;
 use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
 
+#[trace]
 pub fn load_collection(collection_path: &Path) -> Collection {
     let wal_path = collection_path.join("wal");
     let segments_path = collection_path.join("segments");

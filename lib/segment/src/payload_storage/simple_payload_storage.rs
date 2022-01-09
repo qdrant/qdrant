@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::types::{
     PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PayloadType, PointOffsetType, TheMap,
 };
@@ -22,6 +25,7 @@ pub struct SimplePayloadStorage {
 }
 
 impl SimplePayloadStorage {
+    #[trace]
     pub fn open(path: &Path) -> OperationResult<Self> {
         let mut options: Options = Options::default();
         options.set_write_buffer_size(DB_CACHE_SIZE);
@@ -49,6 +53,7 @@ impl SimplePayloadStorage {
         })
     }
 
+    #[trace]
     fn update_schema_value(
         schema: &mut TheMap<PayloadKeyType, PayloadSchemaType>,
         key: PayloadKeyTypeRef,
@@ -72,6 +77,7 @@ impl SimplePayloadStorage {
         };
     }
 
+    #[trace]
     fn update_schema(
         schema: &mut TheMap<PayloadKeyType, PayloadSchemaType>,
         payload: &TheMap<PayloadKeyType, PayloadType>,
@@ -82,6 +88,7 @@ impl SimplePayloadStorage {
         Ok(())
     }
 
+    #[trace]
     fn update_storage(&self, point_id: &PointOffsetType) -> OperationResult<()> {
         let cf_handle = self.store.cf_handle(DB_NAME).unwrap();
         match self.payload.get(point_id) {
@@ -106,6 +113,7 @@ impl SimplePayloadStorage {
 }
 
 impl PayloadStorage for SimplePayloadStorage {
+    #[trace]
     fn assign(
         &mut self,
         point_id: PointOffsetType,
@@ -124,6 +132,7 @@ impl PayloadStorage for SimplePayloadStorage {
         Ok(())
     }
 
+    #[trace]
     fn payload(&self, point_id: PointOffsetType) -> TheMap<PayloadKeyType, PayloadType> {
         match self.payload.get(&point_id) {
             Some(payload) => payload.clone(),
@@ -131,6 +140,7 @@ impl PayloadStorage for SimplePayloadStorage {
         }
     }
 
+    #[trace]
     fn delete(
         &mut self,
         point_id: PointOffsetType,
@@ -142,6 +152,7 @@ impl PayloadStorage for SimplePayloadStorage {
         Ok(res)
     }
 
+    #[trace]
     fn drop(
         &mut self,
         point_id: PointOffsetType,
@@ -151,6 +162,7 @@ impl PayloadStorage for SimplePayloadStorage {
         Ok(res)
     }
 
+    #[trace]
     fn wipe(&mut self) -> OperationResult<()> {
         self.payload = HashMap::new();
         self.store.drop_cf(DB_NAME)?;
@@ -162,15 +174,18 @@ impl PayloadStorage for SimplePayloadStorage {
         Ok(())
     }
 
+    #[trace]
     fn flush(&self) -> OperationResult<()> {
         let cf_handle = self.store.cf_handle(DB_NAME).unwrap();
         Ok(self.store.flush_cf(cf_handle)?)
     }
 
+    #[trace]
     fn schema(&self) -> TheMap<PayloadKeyType, PayloadSchemaType> {
         self.schema.clone()
     }
 
+    #[trace]
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         Box::new(self.payload.keys().copied())
     }

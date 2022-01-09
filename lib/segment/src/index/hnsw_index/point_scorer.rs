@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::payload_storage::ConditionChecker;
 use crate::types::{Filter, PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset};
@@ -9,6 +12,7 @@ pub struct FilteredScorer<'a> {
 }
 
 impl FilteredScorer<'_> {
+    #[trace]
     pub fn check_point(&self, point_id: PointOffsetType) -> bool {
         match self.filter {
             None => self.raw_scorer.check_point(point_id),
@@ -18,6 +22,7 @@ impl FilteredScorer<'_> {
         }
     }
 
+    #[trace]
     pub fn score_iterable_points<F>(
         &self,
         points_iterator: &mut dyn Iterator<Item = PointOffsetType>,
@@ -43,6 +48,7 @@ impl FilteredScorer<'_> {
         };
     }
 
+    #[trace]
     pub fn score_points<F>(&self, ids: &[PointOffsetType], limit: usize, action: F)
     where
         F: FnMut(ScoredPointOffset),

@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use std::sync::Arc;
 
 use actix_web::rt::time::Instant;
@@ -10,6 +13,7 @@ use storage::content_manager::toc::TableOfContent;
 
 use crate::actix::helpers::process_response;
 
+#[trace]
 async fn do_search_points(
     toc: &TableOfContent,
     collection_name: &str,
@@ -19,6 +23,7 @@ async fn do_search_points(
 }
 
 #[post("/collections/{name}/points/search")]
+#[trace]
 pub async fn search_points(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,

@@ -1,6 +1,3 @@
-extern crate profiler_proc_macro;
-use profiler_proc_macro::trace;
-
 use crate::content_manager::errors::StorageError;
 use async_trait::async_trait;
 use collection::collection::Collection;
@@ -14,7 +11,6 @@ pub type Collections = HashMap<String, Arc<Collection>>;
 pub trait Checker {
     async fn is_collection_exists(&self, collection_name: &str) -> bool;
 
-    #[trace]
     async fn validate_collection_not_exists(
         &self,
         collection_name: &str,
@@ -27,7 +23,6 @@ pub trait Checker {
         Ok(())
     }
 
-    #[trace]
     async fn validate_collection_exists(&self, collection_name: &str) -> Result<(), StorageError> {
         if !self.is_collection_exists(collection_name).await {
             return Err(StorageError::NotFound {
@@ -41,7 +36,6 @@ pub trait Checker {
 #[async_trait]
 impl Checker for Collections {
 
-    #[trace]
     async fn is_collection_exists(&self, collection_name: &str) -> bool {
         self.contains_key(collection_name)
     }

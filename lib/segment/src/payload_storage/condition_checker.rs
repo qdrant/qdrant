@@ -1,9 +1,12 @@
 //! Contains functions for interpreting filter queries and defining if given points pass the conditions
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
 
 use crate::types::{GeoBoundingBox, GeoRadius, Match, PayloadType, Range};
 use geo::algorithm::haversine_distance::HaversineDistance;
 use geo::Point;
 
+#[trace]
 pub fn match_payload(payload: &PayloadType, condition_match: &Match) -> bool {
     match payload {
         PayloadType::Keyword(payload_kws) => payload_kws.iter().any(|payload_kw| {
@@ -20,6 +23,7 @@ pub fn match_payload(payload: &PayloadType, condition_match: &Match) -> bool {
     }
 }
 
+#[trace]
 pub fn match_range(payload: &PayloadType, num_range: &Range) -> bool {
     let condition = |number| {
         num_range.lt.map_or(true, |x| number < x)
@@ -35,6 +39,7 @@ pub fn match_range(payload: &PayloadType, num_range: &Range) -> bool {
     }
 }
 
+#[trace]
 pub fn match_geo(payload: &PayloadType, geo_bounding_box: &GeoBoundingBox) -> bool {
     return match payload {
         PayloadType::Geo(geo_points) => geo_points.iter().any(|geo_point| {
@@ -47,6 +52,7 @@ pub fn match_geo(payload: &PayloadType, geo_bounding_box: &GeoBoundingBox) -> bo
     };
 }
 
+#[trace]
 pub fn match_geo_radius(payload: &PayloadType, geo_radius_query: &GeoRadius) -> bool {
     return match payload {
         PayloadType::Geo(geo_points) => {

@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTracker;
 use crate::types::{PointIdType, PointOffsetType, SeqNumberType};
@@ -20,6 +23,7 @@ pub struct SimpleIdTracker {
 }
 
 impl SimpleIdTracker {
+    #[trace]
     pub fn open(path: &Path) -> OperationResult<Self> {
         let mut options: Options = Options::default();
         options.set_write_buffer_size(DB_CACHE_SIZE);
@@ -62,6 +66,7 @@ impl IdTracker for SimpleIdTracker {
         self.external_to_version.get(&external_id).copied()
     }
 
+    #[trace]
     fn set_version(
         &mut self,
         external_id: PointIdType,
@@ -84,6 +89,7 @@ impl IdTracker for SimpleIdTracker {
         self.internal_to_external.get(&internal_id).copied()
     }
 
+    #[trace]
     fn set_link(
         &mut self,
         external_id: PointIdType,
@@ -100,6 +106,7 @@ impl IdTracker for SimpleIdTracker {
         Ok(())
     }
 
+    #[trace]
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
         self.external_to_version.remove(&external_id);
 
@@ -127,6 +134,7 @@ impl IdTracker for SimpleIdTracker {
         Box::new(self.internal_to_external.keys().copied())
     }
 
+    #[trace]
     fn iter_from(
         &self,
         external_id: PointIdType,
@@ -138,6 +146,7 @@ impl IdTracker for SimpleIdTracker {
         )
     }
 
+    #[trace]
     fn flush(&self) -> OperationResult<()> {
         self.store
             .flush_cf(self.store.cf_handle(MAPPING_CF).unwrap())?;

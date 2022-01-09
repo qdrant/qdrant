@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use std::sync::Arc;
 
 use actix_web::rt::time::Instant;
@@ -18,6 +21,7 @@ pub struct PointRequest {
     pub with_payload: Option<WithPayloadInterface>,
 }
 
+#[trace]
 async fn do_get_point(
     toc: &TableOfContent,
     collection_name: &str,
@@ -28,6 +32,7 @@ async fn do_get_point(
         .map(|points| points.into_iter().next())
 }
 
+#[trace]
 async fn do_get_points(
     toc: &TableOfContent,
     collection_name: &str,
@@ -41,6 +46,7 @@ async fn do_get_points(
         .await
 }
 
+#[trace]
 async fn scroll_get_points(
     toc: &TableOfContent,
     collection_name: &str,
@@ -50,6 +56,7 @@ async fn scroll_get_points(
 }
 
 #[get("/collections/{name}/points/{id}")]
+#[trace]
 pub async fn get_point(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<(String, PointIdType)>,
@@ -72,6 +79,7 @@ pub async fn get_point(
 }
 
 #[post("/collections/{name}/points")]
+#[trace]
 pub async fn get_points(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,
@@ -85,6 +93,7 @@ pub async fn get_points(
 }
 
 #[post("/collections/{name}/points/scroll")]
+#[trace]
 pub async fn scroll_points(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,

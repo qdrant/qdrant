@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::entry::entry_point::{OperationError, OperationResult};
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
@@ -7,6 +10,7 @@ use std::fs::File;
 use std::io::{BufWriter, Read, Write};
 use std::path::Path;
 
+#[trace]
 pub fn atomic_save_bin<N: DeserializeOwned + Serialize>(
     path: &Path,
     object: &N,
@@ -19,6 +23,7 @@ pub fn atomic_save_bin<N: DeserializeOwned + Serialize>(
     Ok(())
 }
 
+#[trace]
 pub fn atomic_save_json<N: DeserializeOwned + Serialize>(
     path: &Path,
     object: &N,
@@ -29,6 +34,7 @@ pub fn atomic_save_json<N: DeserializeOwned + Serialize>(
     Ok(())
 }
 
+#[trace]
 pub fn read_json<N: DeserializeOwned + Serialize>(path: &Path) -> OperationResult<N> {
     let mut contents = String::new();
 
@@ -47,6 +53,7 @@ pub fn read_json<N: DeserializeOwned + Serialize>(path: &Path) -> OperationResul
     Ok(result)
 }
 
+#[trace]
 pub fn read_bin<N: DeserializeOwned + Serialize>(path: &Path) -> OperationResult<N> {
     let mut file = File::open(path)?;
 

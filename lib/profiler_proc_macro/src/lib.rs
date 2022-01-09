@@ -5,7 +5,7 @@ use proc_macro::*;
 #[proc_macro_attribute]
 // #[cfg(feature = "profiling_enabled")]
 pub fn trace(_: TokenStream, input: TokenStream) -> TokenStream {
-    let string_to_insert = "let _span = tracy_client::span!(\"some span\"); println!(\"traced\");";
+    let string_to_insert = "let _span = tracy_client::span!(\"some span\");";
     // let string_to_insert = "println!(\"traced\");";
     let mut input = input.to_string();
     if let Some(idx) = input.find("{") {

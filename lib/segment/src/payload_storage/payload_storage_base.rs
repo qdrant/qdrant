@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::entry::entry_point::OperationResult;
 use crate::types::{
     Filter, PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PayloadType,
@@ -7,6 +10,7 @@ use serde_json::value::Value;
 
 /// Trait for payload data storage. Should allow filter checks
 pub trait PayloadStorage {
+    #[trace]
     fn assign_all_with_value(
         &mut self,
         point_id: PointOffsetType,
@@ -53,6 +57,7 @@ pub trait PayloadStorage {
     }
 
     /// Assign same payload to each given point
+    #[trace]
     fn assign_all(
         &mut self,
         point_id: PointOffsetType,

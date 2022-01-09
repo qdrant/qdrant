@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use std::collections::{HashMap, HashSet};
 
 use parking_lot::{RwLock, RwLockWriteGuard};
@@ -16,7 +19,7 @@ use itertools::Itertools;
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
 
 /// A collection of functions for updating points and payloads stored in segments
-
+#[trace]
 pub(crate) fn check_unprocessed_points(
     points: &[PointIdType],
     processed: &HashSet<PointIdType>,
@@ -39,6 +42,7 @@ pub(crate) fn check_unprocessed_points(
 }
 
 /// Tries to delete points from all segments, returns number of actually deleted points
+#[trace]
 pub(crate) fn delete_points(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -50,6 +54,7 @@ pub(crate) fn delete_points(
     Ok(res)
 }
 
+#[trace]
 pub(crate) fn set_payload(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -69,6 +74,7 @@ pub(crate) fn set_payload(
     Ok(updated_points.len())
 }
 
+#[trace]
 pub(crate) fn delete_payload(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -88,6 +94,7 @@ pub(crate) fn delete_payload(
     Ok(updated_points.len())
 }
 
+#[trace]
 pub(crate) fn clear_payload(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -102,6 +109,7 @@ pub(crate) fn clear_payload(
     Ok(updated_points.len())
 }
 
+#[trace]
 pub(crate) fn create_field_index(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -112,6 +120,7 @@ pub(crate) fn create_field_index(
     Ok(res)
 }
 
+#[trace]
 pub(crate) fn delete_field_index(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -122,6 +131,7 @@ pub(crate) fn delete_field_index(
     Ok(res)
 }
 
+#[trace]
 fn upsert_with_payload(
     segment: &mut RwLockWriteGuard<dyn SegmentEntry>,
     op_num: SeqNumberType,
@@ -141,6 +151,7 @@ fn upsert_with_payload(
 /// Checks point id in each segment, update point if found.
 /// All not found points are inserted into random segment.
 /// Returns: number of updated points.
+#[trace]
 pub(crate) fn upsert_points(
     segments: &RwLock<SegmentHolder>,
     op_num: SeqNumberType,
@@ -231,6 +242,7 @@ pub(crate) fn upsert_points(
     Ok(res)
 }
 
+#[trace]
 pub(crate) fn process_point_operation(
     segments: &RwLock<SegmentHolder>,
     op_num: SeqNumberType,
@@ -264,6 +276,7 @@ pub(crate) fn process_point_operation(
     }
 }
 
+#[trace]
 pub(crate) fn process_payload_operation(
     segments: &RwLock<SegmentHolder>,
     op_num: SeqNumberType,
@@ -280,6 +293,7 @@ pub(crate) fn process_payload_operation(
     }
 }
 
+#[trace]
 pub(crate) fn process_field_index_operation(
     segments: &RwLock<SegmentHolder>,
     op_num: SeqNumberType,

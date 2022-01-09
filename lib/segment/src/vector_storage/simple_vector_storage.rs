@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use std::ops::Range;
 use std::path::Path;
 
@@ -49,6 +52,7 @@ impl<TMetric> RawScorer for SimpleRawScorer<'_, TMetric>
 where
     TMetric: Metric,
 {
+    #[trace]
     fn score_points<'a>(
         &'a self,
         points: &'a mut dyn Iterator<Item = PointOffsetType>,
@@ -65,15 +69,18 @@ where
         Box::new(res_iter)
     }
 
+    #[trace]
     fn check_point(&self, point: PointOffsetType) -> bool {
         (point < self.vectors.len() as PointOffsetType) && !self.deleted[point as usize]
     }
 
+    #[trace]
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
         let other_vector = &self.vectors[point as usize];
         self.metric.blas_similarity(&self.query, other_vector)
     }
 
+    #[trace]
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let vector_a = &self.vectors[point_a as usize];
         let vector_b = &self.vectors[point_b as usize];
@@ -81,6 +88,7 @@ where
     }
 }
 
+#[trace]
 pub fn open_simple_vector_storage(
     path: &Path,
     dim: usize,
@@ -152,6 +160,7 @@ impl<TMetric> SimpleVectorStorage<TMetric>
 where
     TMetric: Metric,
 {
+    #[trace]
     fn update_stored(&self, point_id: PointOffsetType) -> OperationResult<()> {
         let v = self.vectors.get(point_id as usize).unwrap();
 
@@ -188,6 +197,7 @@ where
         self.vectors.len()
     }
 
+    #[trace]
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
         if self.deleted.get(key as usize).unwrap_or(true) {
             return None;
@@ -196,6 +206,7 @@ where
         Some(vec.to_vec())
     }
 
+    #[trace]
     fn put_vector(&mut self, vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
         assert_eq!(self.dim, vector.len());
         self.vectors.push(Array::from(vector));
@@ -205,6 +216,7 @@ where
         Ok(new_id)
     }
 
+    #[trace]
     fn update_vector(
         &mut self,
         key: PointOffsetType,
@@ -215,6 +227,7 @@ where
         Ok(key)
     }
 
+    #[trace]
     fn update_from(
         &mut self,
         other: &dyn VectorStorage,
@@ -232,6 +245,7 @@ where
         Ok(start_index..end_index)
     }
 
+    #[trace]
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
         if (key as usize) >= self.deleted.len() {
             return Ok(());
@@ -244,20 +258,24 @@ where
         Ok(())
     }
 
+    #[trace]
     fn is_deleted(&self, key: PointOffsetType) -> bool {
         self.deleted[key as usize]
     }
 
+    #[trace]
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let iter = (0..self.vectors.len() as PointOffsetType)
             .filter(move |id| !self.deleted[*id as usize]);
         Box::new(iter)
     }
 
+    #[trace]
     fn flush(&self) -> OperationResult<()> {
         Ok(self.store.flush()?)
     }
 
+    #[trace]
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
         Box::new(SimpleRawScorer {
             query: Array::from(self.metric.preprocess(&vector).unwrap_or(vector)),
@@ -267,6 +285,7 @@ where
         })
     }
 
+    #[trace]
     fn raw_scorer_internal(&self, point_id: PointOffsetType) -> Box<dyn RawScorer + '_> {
         Box::new(SimpleRawScorer {
             query: self.vectors[point_id as usize].clone(),
@@ -276,6 +295,7 @@ where
         })
     }
 
+    #[trace]
     fn score_points(
         &self,
         vector: &[VectorElementType],
@@ -301,6 +321,7 @@ where
         peek_top_scores_iterable(scores, top)
     }
 
+    #[trace]
     fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
         let preprocessed_vector = Array::from(
             self.metric
@@ -321,6 +342,7 @@ where
         peek_top_scores_iterable(scores, top)
     }
 
+    #[trace]
     fn score_internal(
         &self,
         point: PointOffsetType,

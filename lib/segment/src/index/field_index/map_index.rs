@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::{iter, mem};
@@ -17,6 +20,7 @@ pub struct PersistedMapIndex<N: Hash + Eq + Clone> {
 }
 
 impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
+    #[trace]
     pub fn match_cardinality(&self, value: &N) -> CardinalityEstimation {
         let values_count = match self.map.get(value) {
             None => 0,
@@ -31,6 +35,7 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
         }
     }
 
+    #[trace]
     fn add_many(&mut self, idx: PointOffsetType, values: &[N]) {
         for value in values {
             let vec = match self.map.get_mut(value) {
@@ -45,6 +50,7 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
         }
     }
 
+    #[trace]
     fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         self.map
             .get(value)
@@ -54,6 +60,7 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
 }
 
 impl PayloadFieldIndex for PersistedMapIndex<String> {
+    #[trace]
     fn filter(
         &self,
         condition: &FieldCondition,
@@ -66,6 +73,7 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
         })
     }
 
+    #[trace]
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         condition.r#match.as_ref().and_then(|match_condition| {
             match_condition.keyword.as_ref().map(|keyword| {
@@ -78,6 +86,7 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
         })
     }
 
+    #[trace]
     fn payload_blocks(
         &self,
         threshold: usize,
@@ -105,6 +114,7 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
 }
 
 impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
+    #[trace]
     fn filter(
         &self,
         condition: &FieldCondition,
@@ -117,6 +127,7 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
         })
     }
 
+    #[trace]
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         condition.r#match.as_ref().and_then(|match_condition| {
             match_condition.integer.as_ref().map(|number| {
@@ -129,6 +140,7 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
         })
     }
 
+    #[trace]
     fn payload_blocks(
         &self,
         threshold: usize,
@@ -156,6 +168,7 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
 }
 
 impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
+    #[trace]
     fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
         match value {
             PayloadType::Keyword(keywords) => self.add_many(id, keywords),
@@ -163,6 +176,7 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
         }
     }
 
+    #[trace]
     fn build(&mut self) -> FieldIndex {
         let data = mem::take(&mut self.map);
 
@@ -171,6 +185,7 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
 }
 
 impl PayloadFieldIndexBuilder for PersistedMapIndex<IntPayloadType> {
+    #[trace]
     fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
         match value {
             PayloadType::Integer(numbers) => self.add_many(id, numbers),
@@ -178,6 +193,7 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<IntPayloadType> {
         }
     }
 
+    #[trace]
     fn build(&mut self) -> FieldIndex {
         let data = mem::take(&mut self.map);
 

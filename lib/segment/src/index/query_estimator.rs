@@ -3,11 +3,15 @@
 //! Filter query is used e.g. for determining how would be faster to process the query:
 //! - use vector index or payload index first
 
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
 use crate::types::{Condition, Filter};
 use itertools::Itertools;
 use std::cmp::{max, min};
 
+#[trace]
 fn combine_must_estimations(
     estimations: &[CardinalityEstimation],
     total: usize,
@@ -43,6 +47,7 @@ fn combine_must_estimations(
     }
 }
 
+#[trace]
 fn estimate_condition<F>(
     estimator: &F,
     condition: &Condition,
@@ -57,6 +62,7 @@ where
     }
 }
 
+#[trace]
 pub fn estimate_filter<F>(estimator: &F, filter: &Filter, total: usize) -> CardinalityEstimation
 where
     F: Fn(&Condition) -> CardinalityEstimation,
@@ -91,6 +97,7 @@ where
     combine_must_estimations(&filter_estimations, total)
 }
 
+#[trace]
 fn estimate_should<F>(
     estimator: &F,
     conditions: &[Condition],
@@ -126,6 +133,7 @@ where
     }
 }
 
+#[trace]
 fn estimate_must<F>(estimator: &F, conditions: &[Condition], total: usize) -> CardinalityEstimation
 where
     F: Fn(&Condition) -> CardinalityEstimation,
@@ -136,6 +144,7 @@ where
     combine_must_estimations(&must_estimations, total)
 }
 
+#[trace]
 fn invert_estimation(estimation: &CardinalityEstimation, total: usize) -> CardinalityEstimation {
     CardinalityEstimation {
         primary_clauses: vec![],
@@ -145,6 +154,7 @@ fn invert_estimation(estimation: &CardinalityEstimation, total: usize) -> Cardin
     }
 }
 
+#[trace]
 fn estimate_must_not<F>(
     estimator: &F,
     conditions: &[Condition],

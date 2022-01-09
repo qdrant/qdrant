@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
@@ -53,6 +56,7 @@ pub trait SegmentOptimizer {
     fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId>;
 
     /// Build temp segment
+    #[trace]
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {
         let collection_params = self.collection_params();
         let config = SegmentConfig {
@@ -70,6 +74,7 @@ pub trait SegmentOptimizer {
     }
 
     /// Build optimized segment
+    #[trace]
     fn optimized_segment_builder(
         &self,
         optimizing_segments: &[LockedSegment],
@@ -124,6 +129,7 @@ pub trait SegmentOptimizer {
     /// Performs optimization of collections's segments, including:
     ///     - Segment rebuilding
     ///     - Segment joining
+    #[trace]
     fn optimize(
         &self,
         segments: LockedSegmentHolder,

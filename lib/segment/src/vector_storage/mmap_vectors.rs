@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::common::error_logging::LogError;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{PointOffsetType, VectorElementType};
@@ -20,6 +23,7 @@ pub struct MmapVectors {
     pub deleted_count: usize,
 }
 
+#[trace]
 fn open_read(path: &Path) -> OperationResult<Mmap> {
     let file = OpenOptions::new()
         .read(true)
@@ -31,6 +35,7 @@ fn open_read(path: &Path) -> OperationResult<Mmap> {
     Ok(unsafe { MmapOptions::new().map(&file)? })
 }
 
+#[trace]
 fn open_write(path: &Path) -> OperationResult<MmapMut> {
     let file = OpenOptions::new()
         .read(true)
@@ -41,6 +46,7 @@ fn open_write(path: &Path) -> OperationResult<MmapMut> {
     Ok(unsafe { MmapMut::map_mut(&file)? })
 }
 
+#[trace]
 fn ensure_mmap_file_exists(path: &Path, header: &[u8]) -> OperationResult<()> {
     if path.exists() {
         return Ok(());
@@ -51,6 +57,7 @@ fn ensure_mmap_file_exists(path: &Path, header: &[u8]) -> OperationResult<()> {
 }
 
 impl MmapVectors {
+    #[trace]
     pub fn open(vectors_path: &Path, deleted_path: &Path, dim: usize) -> OperationResult<Self> {
         ensure_mmap_file_exists(vectors_path, VECTORS_HEADER).describe("Create mmap data file")?;
         ensure_mmap_file_exists(deleted_path, DELETED_HEADER)
@@ -74,6 +81,7 @@ impl MmapVectors {
         })
     }
 
+    #[trace]
     pub fn data_offset(&self, key: PointOffsetType) -> Option<usize> {
         let vector_data_length = self.dim * size_of::<VectorElementType>();
         let offset = (key as usize) * vector_data_length + HEADER_SIZE;
@@ -83,21 +91,25 @@ impl MmapVectors {
         Some(offset)
     }
 
+    #[trace]
     pub fn raw_size(&self) -> usize {
         self.dim * size_of::<VectorElementType>()
     }
 
+    #[trace]
     pub fn raw_vector_offset(&self, offset: usize) -> &[VectorElementType] {
         let byte_slice = &self.mmap[offset..(offset + self.raw_size())];
         let arr: &[VectorElementType] = unsafe { transmute(byte_slice) };
         &arr[0..self.dim]
     }
 
+    #[trace]
     pub fn raw_vector(&self, key: PointOffsetType) -> Option<&[VectorElementType]> {
         self.data_offset(key)
             .map(|offset| self.raw_vector_offset(offset))
     }
 
+    #[trace]
     pub fn deleted(&self, key: PointOffsetType) -> Option<bool> {
         self.deleted_mmap
             .get(HEADER_SIZE + (key as usize))
@@ -105,6 +117,7 @@ impl MmapVectors {
     }
 
     /// Creates returns owned vector (copy of internal vector)
+    #[trace]
     pub fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
         match self.deleted(key) {
             None | Some(true) => None,
@@ -114,6 +127,7 @@ impl MmapVectors {
         }
     }
 
+    #[trace]
     pub fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
         if key < (self.num_vectors as PointOffsetType) {
             let flag = self
@@ -129,6 +143,7 @@ impl MmapVectors {
         Ok(())
     }
 
+    #[trace]
     pub fn flush(&self) -> OperationResult<()> {
         self.deleted_mmap.flush()?;
         Ok(())

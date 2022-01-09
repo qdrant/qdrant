@@ -46,6 +46,7 @@ prost = { version = "0.8", optional = true }
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
+profiler_proc_macro = {path = "lib/profiler_proc_macro"}
 
 [build-dependencies]
 tonic-build = { version = "0.5.0", features = ["prost"], optional = true }

@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::PointOffsetType;
 use serde::{Deserialize, Serialize};
@@ -42,6 +45,7 @@ impl EntryPoints {
         // Do not merge `extra_entry_points` to prevent duplications
     }
 
+    #[trace]
     pub fn new_point<F>(
         &mut self,
         new_point: PointOffsetType,
@@ -92,6 +96,7 @@ impl EntryPoints {
     }
 
     /// Find the highest `EntryPoint` which satisfies filtering condition of `checker`
+    #[trace]
     pub fn get_entry_point<F>(&self, checker: F) -> Option<EntryPoint>
     where
         F: Fn(PointOffsetType) -> bool,

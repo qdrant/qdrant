@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::common::error_logging::LogError;
 use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
 use crate::segment::Segment;
@@ -18,6 +21,7 @@ pub struct SegmentBuilder {
 }
 
 impl SegmentBuilder {
+    #[trace]
     pub fn new(
         segment_path: &Path,
         temp_dir: &Path,
@@ -38,6 +42,7 @@ impl SegmentBuilder {
 
     /// Update current segment builder with all (not deleted) vectors and payload form `other` segment
     /// Perform index building at the end of update
+    #[trace]
     pub fn update_from(&mut self, other: &Segment) -> OperationResult<()> {
         match &mut self.segment {
             None => Err(OperationError::ServiceError {
@@ -107,6 +112,7 @@ impl SegmentBuilder {
 impl TryInto<Segment> for SegmentBuilder {
     type Error = OperationError;
 
+    #[trace]
     fn try_into(mut self) -> Result<Segment, Self::Error> {
         {
             let mut segment = self.segment.ok_or(OperationError::ServiceError {

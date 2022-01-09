@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::Path;
@@ -21,6 +24,7 @@ use crate::operations::CollectionUpdateOperations;
 use crate::update_handler::{Optimizer, UpdateHandler};
 use crate::wal::SerdeWal;
 
+#[trace]
 pub fn construct_collection(
     segment_holder: SegmentHolder,
     config: CollectionConfig,
@@ -66,6 +70,7 @@ pub fn construct_collection(
 }
 
 /// Creates new empty collection with given configuration
+#[trace]
 pub fn build_collection(
     collection_path: &Path,
     wal_config: &WalConfig,               // from config

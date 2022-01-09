@@ -1,3 +1,7 @@
+
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::index::hnsw_index::hnsw::HNSWIndex;
@@ -24,6 +28,7 @@ fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> {
     Arc::new(AtomicRefCell::new(t))
 }
 
+#[trace]
 fn create_segment(
     version: SeqNumberType,
     segment_path: &Path,
@@ -111,6 +116,7 @@ fn create_segment(
     })
 }
 
+#[trace]
 pub fn load_segment(path: &Path) -> OperationResult<Segment> {
     let segment_config_path = path.join(SEGMENT_STATE_FILE);
     let mut contents = String::new();
@@ -139,6 +145,7 @@ pub fn load_segment(path: &Path) -> OperationResult<Segment> {
 /// * `config` - Segment configuration
 ///
 ///
+#[trace]
 pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Segment> {
     let segment_path = path.join(Uuid::new_v4().to_string());
 

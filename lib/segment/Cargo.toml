@@ -42,6 +42,8 @@ lru = "0.6.5"
 bit-vec = "0.6"
 seahash = "4.1.0"
 
+profiler_proc_macro = {path = "../profiler_proc_macro"}
+
 [[bench]]
 name = "vector_search"
 harness = false
@@ -62,5 +64,3 @@ harness = false
 # Env flag OPENBLAS_DYNAMIC_ARCH is implemented in this custom fork
 # Which allows to build openblas with dynamic CPU architecture selection
 openblas-src = { git = "https://github.com/qdrant/openblas-src.git" }
-
-profiler_proc_macro = {path = "../profiler_proc_macro"}

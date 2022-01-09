@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -59,6 +62,7 @@ pub struct CollectionConfig {
 }
 
 impl CollectionConfig {
+    #[trace]
     pub fn save(&self, path: &Path) -> CollectionResult<()> {
         let config_path = path.join(COLLECTION_CONFIG_FILE);
         let af = AtomicFile::new(&config_path, AllowOverwrite);
@@ -70,6 +74,7 @@ impl CollectionConfig {
         Ok(())
     }
 
+    #[trace]
     pub fn load(path: &Path) -> CollectionResult<Self> {
         let config_path = path.join(COLLECTION_CONFIG_FILE);
         let mut contents = String::new();
