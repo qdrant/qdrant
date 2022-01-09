@@ -648,6 +648,7 @@ dependencies = [
  "tempdir",
  "thiserror",
  "tokio",
+ "tracy-client",
  "wal",
 ]
 
@@ -2269,6 +2270,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tonic-build",
+ "tracy-client",
 ]
 
 [[package]]
@@ -2714,6 +2716,7 @@ dependencies = [
  "serde_json",
  "tempdir",
  "thiserror",
+ "tracy-client",
  "uuid",
 ]
 
@@ -3012,6 +3015,7 @@ dependencies = [
  "tempdir",
  "thiserror",
  "tokio",
+ "tracy-client",
  "wal",
 ]
 
@@ -3437,6 +3441,24 @@ checksum = "97d095ae15e245a057c8e8451bab9b3ee1e1f68e9ba2b4fbc18d0ac5237835f2"
 dependencies = [
  "pin-project",
  "tracing",
+]
+
+[[package]]
+name = "tracy-client"
+version = "0.12.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62c0e37fbf87980abd5c35c3d86fd150c5ed349c3ae90959ba1877c799388203"
+dependencies = [
+ "tracy-client-sys",
+]
+
+[[package]]
+name = "tracy-client-sys"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6226e4e77f0d46ce7ebb0a4b1daa82790035248b75bbf605b932a1d7b3b22b6d"
+dependencies = [
+ "cc",
 ]
 
 [[package]]

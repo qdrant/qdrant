@@ -13,7 +13,7 @@ criterion = "0.3"
 rmp-serde = "~0.14"
 
 [dependencies]
-
+tracy-client = "0.12.6"
 ndarray = { version = "0.15", features = ["blas"] }
 blas-src = { version = "0.8", default-features = false, features = ["openblas"] }
 openblas-src = { version = "0.10", default-features = false, features = ["cblas", "static"] }

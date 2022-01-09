@@ -9,7 +9,7 @@ edition = "2021"
 tempdir = "0.3.7"
 
 [dependencies]
-
+tracy-client = "0.12.6"
 sled = "0.34"
 num_cpus = "1.0"
 thiserror = "1.0"

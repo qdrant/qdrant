@@ -14,7 +14,14 @@ use storage::content_manager::toc::TableOfContent;
 use crate::common::helpers::create_search_runtime;
 use crate::settings::Settings;
 
+use tracy_client::*;
+
+#[global_allocator]
+static GLOBAL: ProfiledAllocator<std::alloc::System> =
+    ProfiledAllocator::new(std::alloc::System, 100);
+
 fn main() -> std::io::Result<()> {
+    let _span = Span::new("main", "main", file!(), line!(), 100);
     let settings = Settings::new().expect("Can't read config.");
     std::env::set_var("RUST_LOG", &settings.log_level);
     env_logger::init();
