@@ -208,6 +208,7 @@ Thanks to the people who contributed to Qdrant:
   <tr>
     <td align="center"><a href="https://github.com/daniilsunyaev"><img src="https://avatars.githubusercontent.com/u/3955599?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Daniil</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=daniilsunyaev" title="Code">💻</a></td>
     <td align="center"><a href="http://homeonrails.com"><img src="https://avatars.githubusercontent.com/u/1282182?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Anton Kaliaev</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=melekes" title="Code">💻</a></td>
+    <td align="center"><a href="https://soundcloud.com/norom"><img src="https://avatars.githubusercontent.com/u/7762532?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Andre Julius</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=NotNorom" title="Code">💻</a></td>
   </tr>
 </table>
 
