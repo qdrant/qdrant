@@ -1,3 +1,6 @@
+extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use std::collections::HashMap;
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::path::{Path, PathBuf};
@@ -50,6 +53,7 @@ pub struct TableOfContent {
 }
 
 impl TableOfContent {
+    #[trace]
     pub fn new(storage_config: &StorageConfig, search_runtime: Runtime) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
 
@@ -93,12 +97,14 @@ impl TableOfContent {
         }
     }
 
+    #[trace]
     fn get_collection_path(&self, collection_name: &str) -> PathBuf {
         Path::new(&self.storage_config.storage_path)
             .join(&COLLECTIONS_DIR)
             .join(collection_name)
     }
 
+    #[trace]
     fn create_collection_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
         let path = self.get_collection_path(collection_name);
 
@@ -123,6 +129,7 @@ impl TableOfContent {
     /// If the collection exists - return its name
     /// If alias exists - returns the original collection name
     /// If neither exists - returns [`StorageError`]
+    #[trace]
     async fn resolve_name(&self, collection_name: &str) -> Result<String, StorageError> {
         let alias_collection_name = self.alias_persistence.get(collection_name.as_bytes())?;
 
@@ -138,6 +145,7 @@ impl TableOfContent {
         Ok(resolved_name)
     }
 
+    #[trace]
     pub async fn create_collection(
         &self,
         collection_name: &str,
@@ -194,6 +202,7 @@ impl TableOfContent {
         Ok(true)
     }
 
+    #[trace]
     pub async fn update_collection(
         &self,
         collection_name: &str,
@@ -211,6 +220,7 @@ impl TableOfContent {
         Ok(true)
     }
 
+    #[trace]
     pub async fn delete_collection(&self, collection_name: &str) -> Result<bool, StorageError> {
         if let Some(removed) = self.collections.write().await.remove(collection_name) {
             removed.stop().await?;
@@ -232,6 +242,7 @@ impl TableOfContent {
         }
     }
 
+    #[trace]
     pub async fn update_aliases(
         &self,
         operation: ChangeAliasesOperation,
@@ -295,6 +306,7 @@ impl TableOfContent {
         Ok(true)
     }
 
+    #[trace]
     pub async fn perform_collection_operation(
         &self,
         operation: StorageOperations,
@@ -315,6 +327,7 @@ impl TableOfContent {
         }
     }
 
+    #[trace]
     pub async fn get_collection(
         &self,
         collection_name: &str,
@@ -335,6 +348,7 @@ impl TableOfContent {
     /// # Result
     ///
     /// Points with recommendation score
+    #[trace]
     pub async fn recommend(
         &self,
         collection_name: &str,
@@ -362,6 +376,7 @@ impl TableOfContent {
     /// # Result
     ///
     /// Points with search score
+    #[trace]
     pub async fn search(
         &self,
         collection_name: &str,
@@ -390,6 +405,7 @@ impl TableOfContent {
     /// # Result
     ///
     /// List of points with specified information included
+    #[trace]
     pub async fn retrieve(
         &self,
         collection_name: &str,
@@ -405,11 +421,13 @@ impl TableOfContent {
     }
 
     /// List of all collections
+    #[trace]
     pub async fn all_collections(&self) -> Vec<String> {
         self.collections.read().await.keys().cloned().collect()
     }
 
     /// List of all aliases for a given collection
+    #[trace]
     pub fn collection_aliases(&self, collection_name: &str) -> Result<Vec<String>, StorageError> {
         let mut result = vec![];
         for pair in self.alias_persistence.iter() {
@@ -433,6 +451,7 @@ impl TableOfContent {
     /// # Result
     ///
     /// List of points with specified information included
+    #[trace]
     pub async fn scroll(
         &self,
         collection_name: &str,
@@ -445,6 +464,7 @@ impl TableOfContent {
             .map_err(|err| err.into())
     }
 
+    #[trace]
     pub async fn update(
         &self,
         collection_name: &str,

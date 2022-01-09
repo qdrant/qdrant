@@ -9,7 +9,7 @@ edition = "2021"
 tempdir = "0.3.7"
 
 [dependencies]
-tracy-client = "0.12.6"
+tracy-client = { version = "0.12.6", features = ["enable"] }
 sled = "0.34"
 num_cpus = "1.0"
 thiserror = "1.0"
@@ -24,3 +24,4 @@ async-trait = "0.1.51"
 
 segment = {path = "../segment"}
 collection = {path = "../collection"}
+profiler_proc_macro = {path = "../profiler_proc_macro"}

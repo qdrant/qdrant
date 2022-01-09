@@ -1,0 +1,10 @@
+[package]
+name = "profiler_proc_macro"
+version = "0.1.0"
+authors = ["Andrey Vasnetsov <vasnetsov93@gmail.com>"]
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
