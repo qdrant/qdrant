@@ -18,11 +18,12 @@
             padding: 0;
         }
     </style>
+    <script src="./default_version.js"></script>
 
     <script>
         const url_string = window.location.href;
         const url = new URL(url_string);
-        const version = url.searchParams.get("v") || 'master';
+        const version = url.searchParams.get("v") || defaultApiVersion;
     </script>
 </head>
 <body>
