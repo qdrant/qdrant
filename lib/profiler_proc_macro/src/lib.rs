@@ -1,17 +1,22 @@
 extern crate proc_macro;
 
-use proc_macro::*;
+use proc_macro::TokenStream;
+use ::syn::{ ItemFn, parse_macro_input };
 
 #[proc_macro_attribute]
 // #[cfg(feature = "profiling_enabled")]
 pub fn trace(_: TokenStream, input: TokenStream) -> TokenStream {
-    let string_to_insert = "let _span = tracy_client::span!(\"some span\");";
-    // let string_to_insert = "println!(\"traced\");";
-    let mut input = input.to_string();
-    if let Some(idx) = input.find("{") {
-        input.insert_str(idx+1, &string_to_insert);
+    let mut input_string = input.to_string();
+    let input_fn = parse_macro_input!(input as ItemFn);
+    
+    let string_to_insert = format!("let _span = tracy_client::span!(\"{:#?}\");", input_fn);
+
+    if let Some(idx) = input_string.find("{") {
+        input_string.insert_str(idx+1, &string_to_insert);
     }
-    input.parse().unwrap()
+    let result = input_string.parse().unwrap();
+    
+    result
 }
 
 /*
