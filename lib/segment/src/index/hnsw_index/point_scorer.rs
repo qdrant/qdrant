@@ -17,10 +17,9 @@ impl<'a> FilteredScorer<'a> {
         FilteredScorer {
             raw_scorer,
             condition_checker,
-            filter
+            filter,
         }
     }
-
 
     pub fn check_point(&self, point_id: PointOffsetType) -> bool {
         match self.filter {
