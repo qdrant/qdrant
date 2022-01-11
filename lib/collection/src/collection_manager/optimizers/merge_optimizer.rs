@@ -100,7 +100,7 @@ impl SegmentOptimizer for MergeOptimizer {
                 }
             })
             .sorted_by_key(|(_, size)| *size)
-            .scan(0 as usize, |size_sum, (sid, size)| {
+            .scan(0, |size_sum, (sid, size)| {
                 *size_sum += size; // produce a cumulative sum of segment sizes starting from smallest
                 Some((sid, *size_sum))
             })
