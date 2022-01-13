@@ -449,8 +449,8 @@ mod tests {
             original_segment,
             write_segment,
             deleted_points,
-            deleted_indexes.clone(),
-            created_indexes.clone(),
+            created_indexes,
+            deleted_indexes,
         );
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
@@ -527,8 +527,8 @@ mod tests {
             original_segment,
             write_segment,
             deleted_points,
-            deleted_indexes.clone(),
-            created_indexes.clone(),
+            created_indexes,
+            deleted_indexes,
         );
 
         proxy_segment.delete_point(100, 2).unwrap();

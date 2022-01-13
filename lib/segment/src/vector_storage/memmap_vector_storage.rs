@@ -329,7 +329,7 @@ mod tests {
             let storage2 = open_simple_vector_storage(dir2.path(), 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
-                borrowed_storage2.put_vector(vec1.clone()).unwrap();
+                borrowed_storage2.put_vector(vec1).unwrap();
                 borrowed_storage2.put_vector(vec2.clone()).unwrap();
                 borrowed_storage2.put_vector(vec3.clone()).unwrap();
             }
@@ -351,8 +351,8 @@ mod tests {
             let storage2 = open_simple_vector_storage(dir2.path(), 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
-                borrowed_storage2.put_vector(vec4.clone()).unwrap();
-                borrowed_storage2.put_vector(vec5.clone()).unwrap();
+                borrowed_storage2.put_vector(vec4).unwrap();
+                borrowed_storage2.put_vector(vec5).unwrap();
             }
             borrowed_storage.update_from(&*storage2.borrow()).unwrap();
         }
@@ -393,11 +393,11 @@ mod tests {
             let storage2 = open_simple_vector_storage(dir2.path(), 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
-                borrowed_storage2.put_vector(vec1.clone()).unwrap();
-                borrowed_storage2.put_vector(vec2.clone()).unwrap();
-                borrowed_storage2.put_vector(vec3.clone()).unwrap();
-                borrowed_storage2.put_vector(vec4.clone()).unwrap();
-                borrowed_storage2.put_vector(vec5.clone()).unwrap();
+                borrowed_storage2.put_vector(vec1).unwrap();
+                borrowed_storage2.put_vector(vec2).unwrap();
+                borrowed_storage2.put_vector(vec3).unwrap();
+                borrowed_storage2.put_vector(vec4).unwrap();
+                borrowed_storage2.put_vector(vec5).unwrap();
             }
             borrowed_storage.update_from(&*storage2.borrow()).unwrap();
         }
@@ -405,7 +405,7 @@ mod tests {
         let query = vec![-1.0, -1.0, -1.0, -1.0];
         let query_points: Vec<PointOffsetType> = vec![0, 2, 4];
 
-        let scorer = borrowed_storage.raw_scorer(query.clone());
+        let scorer = borrowed_storage.raw_scorer(query);
 
         let res = scorer
             .score_points(&mut query_points.iter().cloned())

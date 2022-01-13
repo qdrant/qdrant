@@ -353,11 +353,11 @@ mod tests {
         let vec3 = vec![1.0, 1.0, 0.0, 1.0];
         let vec4 = vec![1.0, 0.0, 0.0, 0.0];
 
-        let _id1 = borrowed_storage.put_vector(vec0.clone()).unwrap();
-        let id2 = borrowed_storage.put_vector(vec1.clone()).unwrap();
-        let _id3 = borrowed_storage.put_vector(vec2.clone()).unwrap();
-        let _id4 = borrowed_storage.put_vector(vec3.clone()).unwrap();
-        let id5 = borrowed_storage.put_vector(vec4.clone()).unwrap();
+        let _id1 = borrowed_storage.put_vector(vec0).unwrap();
+        let id2 = borrowed_storage.put_vector(vec1).unwrap();
+        let _id3 = borrowed_storage.put_vector(vec2).unwrap();
+        let _id4 = borrowed_storage.put_vector(vec3).unwrap();
+        let id5 = borrowed_storage.put_vector(vec4).unwrap();
 
         assert_eq!(id2, 1);
         assert_eq!(id5, 4);
@@ -382,7 +382,7 @@ mod tests {
         let closest =
             borrowed_storage.score_points(&query, &mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
-        let raw_scorer = borrowed_storage.raw_scorer(query.clone());
+        let raw_scorer = borrowed_storage.raw_scorer(query);
 
         let query_points = vec![0, 1, 2, 3, 4];
         let mut query_points1 = query_points.iter().cloned();
