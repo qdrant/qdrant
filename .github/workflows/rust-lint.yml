@@ -20,10 +20,12 @@ jobs:
       with:
         profile: minimal
         toolchain: stable
+        override: true
+        components: rustfmt, clippy
     - uses: actions/checkout@v2
     - name: Install dependencies
       run: sudo apt-get install clang libopenblas-dev libgfortran-10-dev gfortran
     - name: Check code formatting
       run: cargo fmt --all -- --check
     - name: Check cargo clippy warnings
-      run: cargo clippy --all-targets --all-features -- -D warnings
+      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
