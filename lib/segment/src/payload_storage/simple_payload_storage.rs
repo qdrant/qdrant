@@ -248,56 +248,56 @@ mod tests {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], "John Doe".to_string());
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
         match &pload[&"age".to_string()] {
             PayloadType::Integer(x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], 43);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
         match &pload[&"floating".to_string()] {
             PayloadType::Float(x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], 30.5);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
         match &pload[&"boolean".to_string()] {
             PayloadType::Keyword(x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], "true");
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
         match &pload[&"metadata__temperature".to_string()] {
             PayloadType::Float(x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], 60.5);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
         match &pload[&"metadata__width".to_string()] {
             PayloadType::Integer(x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], 60);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
         match &pload[&"metadata__height".to_string()] {
             PayloadType::Integer(x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], 50);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
         match &pload[&"metadata__nested__feature".to_string()] {
             PayloadType::Float(x) => {
                 assert_eq!(x.len(), 1);
                 assert_eq!(x[0], 30.5);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
         match &pload[&"string_array".to_string()] {
             PayloadType::Keyword(x) => {
@@ -305,7 +305,7 @@ mod tests {
                 assert_eq!(x[0], "hello");
                 assert_eq!(x[1], "world");
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
         match &pload[&"integer_array".to_string()] {
             PayloadType::Integer(x) => {
@@ -313,7 +313,7 @@ mod tests {
                 assert_eq!(x[0], 1);
                 assert_eq!(x[1], 2);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
         match &pload[&"metadata__integer_array".to_string()] {
             PayloadType::Integer(x) => {
@@ -321,7 +321,7 @@ mod tests {
                 assert_eq!(x[0], 1);
                 assert_eq!(x[1], 2);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
         match &pload[&"float_array".to_string()] {
             PayloadType::Float(x) => {
@@ -329,7 +329,7 @@ mod tests {
                 assert_eq!(x[0], 1.0);
                 assert_eq!(x[1], 2.0);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
         match &pload[&"boolean_array".to_string()] {
             PayloadType::Keyword(x) => {
@@ -337,7 +337,7 @@ mod tests {
                 assert_eq!(x[0], "true");
                 assert_eq!(x[1], "false");
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
         match &pload[&"geo_data".to_string()] {
             PayloadType::Geo(x) => {
@@ -345,7 +345,7 @@ mod tests {
                 assert_eq!(x[0].lat, 1.0);
                 assert_eq!(x[0].lon, 1.0);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
     }
 

@@ -612,16 +612,12 @@ mod tests {
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
         segment.upsert_point(0, 0, &[1.0, 1.0]).unwrap();
+
         let result1 = segment.set_full_payload_with_json(0, 0, &data1.to_string());
-        match result1 {
-            Ok(_) => assert!(false),
-            Err(_) => assert!(true),
-        }
+        assert!(result1.is_err());
+
         let result2 = segment.set_full_payload_with_json(0, 0, &data2.to_string());
-        match result2 {
-            Ok(_) => assert!(false),
-            Err(_) => assert!(true),
-        }
+        assert!(result2.is_err());
     }
 
     #[test]

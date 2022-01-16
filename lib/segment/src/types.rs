@@ -599,7 +599,7 @@ mod tests {
                 assert_eq!(x[0].lat, 1.0);
                 assert_eq!(x[0].lon, 1.0);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
 
         let keyword_query_non_strict = r#"["Berlin", "Barcelona", "Moscow"]"#;
@@ -616,7 +616,7 @@ mod tests {
                 assert_eq!(x[1], "Barcelona");
                 assert_eq!(x[2], "Moscow");
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
 
         let keyword_query_strict =
@@ -634,7 +634,7 @@ mod tests {
                 assert_eq!(x[1], "Barcelona");
                 assert_eq!(x[2], "Moscow");
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
 
         let integer_query_non_strict = r#"[1, 2, 3]"#;
@@ -651,7 +651,7 @@ mod tests {
                 assert_eq!(x[1], 2);
                 assert_eq!(x[2], 3);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
 
         let integer_query_strict = r#"{"type": "integer", "value": [1, 2, 3]}"#;
@@ -668,7 +668,7 @@ mod tests {
                 assert_eq!(x[1], 2);
                 assert_eq!(x[2], 3);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
 
         let float_query_non_strict = r#"[1.0, 2.0, 3.0]"#;
@@ -685,7 +685,7 @@ mod tests {
                 assert_eq!(x[1], 2.0);
                 assert_eq!(x[2], 3.0);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
 
         let float_query_strict = r#"{"type": "float", "value": [1.0, 2.0, 3.0]}"#;
@@ -702,7 +702,7 @@ mod tests {
                 assert_eq!(x[1], 2.0);
                 assert_eq!(x[2], 3.0);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
     }
 
@@ -890,10 +890,10 @@ mod tests {
                 let must_not = &f.must_not;
                 match must_not {
                     Some(v) => assert_eq!(v.len(), 2),
-                    None => assert!(false, "Filter expected"),
+                    None => panic!("Filter expected"),
                 }
             }
-            _ => assert!(false, "Condition expected"),
+            _ => panic!("Condition expected"),
         }
     }
 }

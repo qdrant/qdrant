@@ -57,11 +57,9 @@ mod tests {
         let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
         match segment.upsert_point(1, 120, &wrong_vec) {
-            Err(err) => match err {
-                OperationError::WrongVector { .. } => (),
-                _ => assert!(false, "Wrong error"),
-            },
-            Ok(_) => assert!(false, "Operation with wrong vector should fail"),
+            Err(OperationError::WrongVector { .. }) => (),
+            Err(_) => panic!("Wrong error"),
+            Ok(_) => panic!("Operation with wrong vector should fail"),
         };
 
         segment.upsert_point(2, 1, &vec1).unwrap();

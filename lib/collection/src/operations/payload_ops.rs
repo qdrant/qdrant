@@ -56,10 +56,10 @@ mod tests {
 
                 match payload1 {
                     PayloadType::Keyword(x) => assert_eq!(x, ["hello".to_owned()]),
-                    _ => assert!(false, "Wrong payload type"),
+                    _ => panic!("Wrong payload type"),
                 }
             }
-            _ => assert!(false, "Wrong operation"),
+            _ => panic!("Wrong operation"),
         }
     }
 }

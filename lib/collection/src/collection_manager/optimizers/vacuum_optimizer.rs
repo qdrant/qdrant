@@ -248,10 +248,8 @@ mod tests {
                 .clone();
 
             match payload {
-                PayloadType::Keyword(x) => assert_eq!(x.get(0).unwrap(), &"red".to_string()),
-                PayloadType::Integer(_) => assert!(false),
-                PayloadType::Float(_) => assert!(false),
-                PayloadType::Geo(_) => assert!(false),
+                PayloadType::Keyword(x) => assert_eq!(x[0], "red"),
+                _ => panic!(),
             }
         }
 
