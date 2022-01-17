@@ -140,12 +140,12 @@ impl ConditionChecker for SimpleConditionChecker {
 mod tests {
     use super::*;
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
+    use crate::id_tracker::IdTracker;
     use crate::payload_storage::PayloadStorage;
     use crate::types::GeoPoint;
     use crate::types::{FieldCondition, GeoBoundingBox, Match, PayloadType, Range};
     use std::collections::HashSet;
     use tempdir::TempDir;
-    use crate::id_tracker::IdTracker;
 
     #[test]
     fn test_condition_checker() {
