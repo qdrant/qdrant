@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::tools::peek_top_scores_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
-use crate::vector_storage::{RawScorer, ScoredPointOffset};
+use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageSS};
 
 use super::vector_storage_base::VectorStorage;
 use crate::spaces::metric::Metric;
@@ -85,7 +85,7 @@ pub fn open_simple_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
-) -> OperationResult<Arc<AtomicRefCell<dyn VectorStorage>>> {
+) -> OperationResult<Arc<AtomicRefCell<VectorStorageSS>>> {
     let mut vectors: Vec<Array1<VectorElementType>> = vec![];
     let mut deleted = BitVec::new();
     let mut deleted_count = 0;
@@ -215,10 +215,7 @@ where
         Ok(key)
     }
 
-    fn update_from(
-        &mut self,
-        other: &dyn VectorStorage,
-    ) -> OperationResult<Range<PointOffsetType>> {
+    fn update_from(&mut self, other: &VectorStorageSS) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors.len() as PointOffsetType;
         for id in other.iter_ids() {
             let other_vector = other.get_vector(id).unwrap();
@@ -353,11 +350,11 @@ mod tests {
         let vec3 = vec![1.0, 1.0, 0.0, 1.0];
         let vec4 = vec![1.0, 0.0, 0.0, 0.0];
 
-        let _id1 = borrowed_storage.put_vector(vec0.clone()).unwrap();
-        let id2 = borrowed_storage.put_vector(vec1.clone()).unwrap();
-        let _id3 = borrowed_storage.put_vector(vec2.clone()).unwrap();
-        let _id4 = borrowed_storage.put_vector(vec3.clone()).unwrap();
-        let id5 = borrowed_storage.put_vector(vec4.clone()).unwrap();
+        let _id1 = borrowed_storage.put_vector(vec0).unwrap();
+        let id2 = borrowed_storage.put_vector(vec1).unwrap();
+        let _id3 = borrowed_storage.put_vector(vec2).unwrap();
+        let _id4 = borrowed_storage.put_vector(vec3).unwrap();
+        let id5 = borrowed_storage.put_vector(vec4).unwrap();
 
         assert_eq!(id2, 1);
         assert_eq!(id5, 4);
@@ -382,7 +379,7 @@ mod tests {
         let closest =
             borrowed_storage.score_points(&query, &mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
-        let raw_scorer = borrowed_storage.raw_scorer(query.clone());
+        let raw_scorer = borrowed_storage.raw_scorer(query);
 
         let query_points = vec![0, 1, 2, 3, 4];
         let mut query_points1 = query_points.iter().cloned();

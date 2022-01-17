@@ -1,9 +1,9 @@
-use crate::index::{PayloadIndex, VectorIndex};
-use crate::payload_storage::ConditionChecker;
+use crate::index::{PayloadIndex, PayloadIndexSS, VectorIndex};
+use crate::payload_storage::ConditionCheckerSS;
 use crate::types::{
     Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType, SearchParams, VectorElementType,
 };
-use crate::vector_storage::{ScoredPointOffset, VectorStorage};
+use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
@@ -18,8 +18,8 @@ use std::sync::Arc;
 /// Used for small segments, which are easier to keep simple for faster updates,
 /// rather than spend time for index re-building
 pub struct PlainPayloadIndex {
-    condition_checker: Arc<dyn ConditionChecker>,
-    vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
+    condition_checker: Arc<ConditionCheckerSS>,
+    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
     config: PayloadConfig,
     path: PathBuf,
 }
@@ -35,8 +35,8 @@ impl PlainPayloadIndex {
     }
 
     pub fn open(
-        condition_checker: Arc<dyn ConditionChecker>,
-        vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
+        condition_checker: Arc<ConditionCheckerSS>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
         path: &Path,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
@@ -120,14 +120,14 @@ impl PayloadIndex for PlainPayloadIndex {
 }
 
 pub struct PlainIndex {
-    vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
-    payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
+    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
 }
 
 impl PlainIndex {
     pub fn new(
-        vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
-        payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+        payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
     ) -> PlainIndex {
         PlainIndex {
             vector_storage,

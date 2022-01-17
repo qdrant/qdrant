@@ -6,7 +6,8 @@ use rand::{thread_rng, SeedableRng};
 use segment::fixtures::index_fixtures::{FakeConditionChecker, TestRawScorerProducer};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
-use segment::types::{Distance, PointOffsetType};
+use segment::spaces::simple::CosineMetric;
+use segment::types::PointOffsetType;
 
 const NUM_VECTORS: usize = 10000;
 const DIM: usize = 32;
@@ -16,7 +17,7 @@ const USE_HEURISTIC: bool = true;
 
 fn hnsw_benchmark(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
-    let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, Distance::Cosine, &mut rng);
+    let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, CosineMetric {}, &mut rng);
     let mut group = c.benchmark_group("hnsw-index-build-group");
     group.sample_size(10);
     group.bench_function("hnsw_index", |b| {

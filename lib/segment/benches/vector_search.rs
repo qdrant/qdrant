@@ -9,7 +9,7 @@ use tempdir::TempDir;
 use segment::spaces::tools::peek_top_scores_iterable;
 use segment::types::{Distance, PointOffsetType, VectorElementType};
 use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
-use segment::vector_storage::{ScoredPointOffset, VectorStorage};
+use segment::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
 const NUM_VECTORS: usize = 50000;
 const DIM: usize = 1000; // Larger dimensionality - greater the BLAS advantage
@@ -25,7 +25,7 @@ fn init_vector_storage(
     dim: usize,
     num: usize,
     dist: Distance,
-) -> Arc<AtomicRefCell<dyn VectorStorage>> {
+) -> Arc<AtomicRefCell<VectorStorageSS>> {
     let storage = open_simple_vector_storage(dir.path(), dim, dist).unwrap();
     {
         let mut borrowed_storage = storage.borrow_mut();

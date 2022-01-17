@@ -4,16 +4,14 @@ use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::sample_estimation::sample_check_cardinality;
-use crate::index::{PayloadIndex, VectorIndex};
-use crate::payload_storage::ConditionChecker;
+use crate::index::{PayloadIndexSS, VectorIndex};
+use crate::payload_storage::ConditionCheckerSS;
 use crate::types::Condition::Field;
-use crate::types::{
-    FieldCondition, Filter, HnswConfig, PointOffsetType, SearchParams, VectorElementType,
-};
-use crate::vector_storage::{ScoredPointOffset, VectorStorage};
+use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VectorElementType};
+use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 use atomic_refcell::AtomicRefCell;
 use log::debug;
-use rand::prelude::ThreadRng;
+
 use rand::thread_rng;
 use std::cmp::max;
 use std::fs::create_dir_all;
@@ -23,25 +21,23 @@ use std::sync::Arc;
 const HNSW_USE_HEURISTIC: bool = true;
 
 pub struct HNSWIndex {
-    condition_checker: Arc<dyn ConditionChecker>,
-    vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
-    payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
+    condition_checker: Arc<ConditionCheckerSS>,
+    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
     config: HnswGraphConfig,
     path: PathBuf,
-    thread_rng: ThreadRng,
     graph: GraphLayers,
 }
 
 impl HNSWIndex {
     pub fn open(
         path: &Path,
-        condition_checker: Arc<dyn ConditionChecker>,
-        vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
-        payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
+        condition_checker: Arc<ConditionCheckerSS>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+        payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
         hnsw_config: HnswConfig,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
-        let rng = thread_rng();
 
         let config_path = HnswGraphConfig::get_config_path(path);
         let config = if config_path.exists() {
@@ -75,7 +71,6 @@ impl HNSWIndex {
             payload_index,
             config,
             path: path.to_owned(),
-            thread_rng: rng,
             graph,
         })
     }
@@ -94,12 +89,6 @@ impl HNSWIndex {
         self.save_config()?;
         self.save_graph()?;
         Ok(())
-    }
-
-    pub fn link_point(&mut self, point_id: PointOffsetType, points_scorer: &FilteredScorer) {
-        let point_level = self.graph.get_random_layer(&mut self.thread_rng);
-        self.graph
-            .link_new_point(point_id, point_level, points_scorer);
     }
 
     pub fn build_filtered_graph(

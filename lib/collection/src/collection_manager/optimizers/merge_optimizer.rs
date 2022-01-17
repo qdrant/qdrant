@@ -119,18 +119,18 @@ mod tests {
 
         let mut holder = SegmentHolder::default();
 
-        let mut segments_to_merge = vec![];
+        let segments_to_merge = vec![
+            holder.add(random_segment(dir.path(), 100, 3, 4)),
+            holder.add(random_segment(dir.path(), 100, 3, 4)),
+            holder.add(random_segment(dir.path(), 100, 3, 4)),
+        ];
 
-        segments_to_merge.push(holder.add(random_segment(dir.path(), 100, 3, 4)));
-        segments_to_merge.push(holder.add(random_segment(dir.path(), 100, 3, 4)));
-        segments_to_merge.push(holder.add(random_segment(dir.path(), 100, 3, 4)));
-
-        let mut other_segment_ids: Vec<SegmentId> = vec![];
-
-        other_segment_ids.push(holder.add(random_segment(dir.path(), 100, 20, 4)));
-        other_segment_ids.push(holder.add(random_segment(dir.path(), 100, 20, 4)));
-        other_segment_ids.push(holder.add(random_segment(dir.path(), 100, 20, 4)));
-        other_segment_ids.push(holder.add(random_segment(dir.path(), 100, 20, 4)));
+        let other_segment_ids: Vec<SegmentId> = vec![
+            holder.add(random_segment(dir.path(), 100, 20, 4)),
+            holder.add(random_segment(dir.path(), 100, 20, 4)),
+            holder.add(random_segment(dir.path(), 100, 20, 4)),
+            holder.add(random_segment(dir.path(), 100, 20, 4)),
+        ];
 
         let merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path());
 

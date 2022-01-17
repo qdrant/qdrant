@@ -18,18 +18,18 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
 
     let temp_segment: LockedSegment = empty_segment(path).into();
 
-    let optimizing_segment = write_segments.get(sid).unwrap();
+    let optimizing_segment = write_segments.get(sid).unwrap().clone();
 
     let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
     let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
     let proxy_created_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
 
     let proxy = ProxySegment::new(
-        optimizing_segment.clone(),
-        temp_segment.clone(),
-        proxy_deleted_points.clone(),
-        proxy_deleted_indexes.clone(),
-        proxy_created_indexes.clone(),
+        optimizing_segment,
+        temp_segment,
+        proxy_deleted_points,
+        proxy_deleted_indexes,
+        proxy_created_indexes,
     );
 
     write_segments.swap(proxy, &[sid], false).unwrap()

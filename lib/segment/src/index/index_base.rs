@@ -47,3 +47,6 @@ pub trait PayloadIndex {
         threshold: usize,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
 }
+
+pub type VectorIndexSS = dyn VectorIndex + Sync + Send;
+pub type PayloadIndexSS = dyn PayloadIndex + Sync + Send;

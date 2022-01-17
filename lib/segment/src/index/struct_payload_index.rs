@@ -8,7 +8,7 @@ use itertools::Itertools;
 use log::debug;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
@@ -16,11 +16,11 @@ use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
-use crate::payload_storage::{ConditionChecker, PayloadStorage};
+use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
 use crate::types::{
     Condition, FieldCondition, Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType,
 };
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::VectorStorageSS;
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 
@@ -28,11 +28,11 @@ type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
 
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
 pub struct StructPayloadIndex {
-    condition_checker: Arc<dyn ConditionChecker>,
-    vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
+    condition_checker: Arc<ConditionCheckerSS>,
+    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
     /// Payload storage
-    payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
-    id_tracker: Arc<AtomicRefCell<dyn IdTracker>>,
+    payload: Arc<AtomicRefCell<PayloadStorageSS>>,
+    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     /// Indexes, associated with fields
     field_indexes: IndexesMap,
     config: PayloadConfig,
@@ -152,10 +152,10 @@ impl StructPayloadIndex {
     }
 
     pub fn open(
-        condition_checker: Arc<dyn ConditionChecker>,
-        vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
-        payload: Arc<AtomicRefCell<dyn PayloadStorage>>,
-        id_tracker: Arc<AtomicRefCell<dyn IdTracker>>,
+        condition_checker: Arc<ConditionCheckerSS>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+        payload: Arc<AtomicRefCell<PayloadStorageSS>>,
+        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         path: &Path,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;

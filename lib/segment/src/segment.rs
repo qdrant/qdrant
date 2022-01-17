@@ -1,16 +1,16 @@
 use crate::entry::entry_point::{
     get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };
-use crate::id_tracker::IdTracker;
-use crate::index::{PayloadIndex, VectorIndex};
-use crate::payload_storage::{ConditionChecker, PayloadStorage};
+use crate::id_tracker::IdTrackerSS;
+use crate::index::{PayloadIndexSS, VectorIndexSS};
+use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
 use crate::spaces::tools::mertic_object;
 use crate::types::{
     Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo, PayloadType, PointIdType,
     PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState,
     SegmentType, SeqNumberType, TheMap, VectorElementType, WithPayload,
 };
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use std::fs::{remove_dir_all, rename};
@@ -34,12 +34,12 @@ pub struct Segment {
     /// Path of the storage root
     pub current_path: PathBuf,
     /// Component for mapping external ids to internal and also keeping track of point versions
-    pub id_tracker: Arc<AtomicRefCell<dyn IdTracker>>,
-    pub vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
-    pub payload_storage: Arc<AtomicRefCell<dyn PayloadStorage>>,
-    pub payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
-    pub condition_checker: Arc<dyn ConditionChecker>,
-    pub vector_index: Arc<AtomicRefCell<dyn VectorIndex>>,
+    pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    pub vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    pub payload_storage: Arc<AtomicRefCell<PayloadStorageSS>>,
+    pub payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
+    pub condition_checker: Arc<ConditionCheckerSS>,
+    pub vector_index: Arc<AtomicRefCell<VectorIndexSS>>,
     /// Shows if it is possible to insert more points into this segment
     pub appendable_flag: bool,
     /// Shows what kind of indexes and storages are used in this segment
@@ -612,16 +612,12 @@ mod tests {
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
         segment.upsert_point(0, 0, &[1.0, 1.0]).unwrap();
+
         let result1 = segment.set_full_payload_with_json(0, 0, &data1.to_string());
-        match result1 {
-            Ok(_) => assert!(false),
-            Err(_) => assert!(true),
-        }
+        assert!(result1.is_err());
+
         let result2 = segment.set_full_payload_with_json(0, 0, &data2.to_string());
-        match result2 {
-            Ok(_) => assert!(false),
-            Err(_) => assert!(true),
-        }
+        assert!(result2.is_err());
     }
 
     #[test]

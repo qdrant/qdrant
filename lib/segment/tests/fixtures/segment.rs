@@ -8,6 +8,7 @@ pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()
 }
 
+#[allow(dead_code)]
 pub fn build_segment_1(path: &Path) -> Segment {
     let mut segment1 = empty_segment(path);
 
@@ -33,16 +34,16 @@ pub fn build_segment_1(path: &Path) -> Segment {
         .set_payload(6, 1, &payload_key, payload_option1.clone())
         .unwrap();
     segment1
-        .set_payload(6, 2, &payload_key, payload_option1.clone())
+        .set_payload(6, 2, &payload_key, payload_option1)
         .unwrap();
     segment1
-        .set_payload(6, 3, &payload_key, payload_option3.clone())
+        .set_payload(6, 3, &payload_key, payload_option3)
         .unwrap();
     segment1
         .set_payload(6, 4, &payload_key, payload_option2.clone())
         .unwrap();
     segment1
-        .set_payload(6, 5, &payload_key, payload_option2.clone())
+        .set_payload(6, 5, &payload_key, payload_option2)
         .unwrap();
 
     segment1
@@ -74,16 +75,16 @@ pub fn build_segment_2(path: &Path) -> Segment {
         .set_payload(16, 11, &payload_key, payload_option1.clone())
         .unwrap();
     segment2
-        .set_payload(16, 12, &payload_key, payload_option1.clone())
+        .set_payload(16, 12, &payload_key, payload_option1)
         .unwrap();
     segment2
-        .set_payload(16, 13, &payload_key, payload_option3.clone())
+        .set_payload(16, 13, &payload_key, payload_option3)
         .unwrap();
     segment2
         .set_payload(16, 14, &payload_key, payload_option2.clone())
         .unwrap();
     segment2
-        .set_payload(16, 15, &payload_key, payload_option2.clone())
+        .set_payload(16, 15, &payload_key, payload_option2)
         .unwrap();
 
     segment2

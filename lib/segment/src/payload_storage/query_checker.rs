@@ -1,4 +1,4 @@
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::IdTrackerSS;
 use crate::payload_storage::condition_checker::{
     match_geo, match_geo_radius, match_payload, match_range,
 };
@@ -62,13 +62,13 @@ where
 
 pub struct SimpleConditionChecker {
     payload_storage: Arc<AtomicRefCell<SimplePayloadStorage>>,
-    id_tracker: Arc<AtomicRefCell<dyn IdTracker>>,
+    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
 }
 
 impl SimpleConditionChecker {
     pub fn new(
         payload_storage: Arc<AtomicRefCell<SimplePayloadStorage>>,
-        id_tracker: Arc<AtomicRefCell<dyn IdTracker>>,
+        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     ) -> Self {
         SimpleConditionChecker {
             payload_storage,
@@ -140,6 +140,7 @@ impl ConditionChecker for SimpleConditionChecker {
 mod tests {
     use super::*;
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
+    use crate::id_tracker::IdTracker;
     use crate::payload_storage::PayloadStorage;
     use crate::types::GeoPoint;
     use crate::types::{FieldCondition, GeoBoundingBox, Match, PayloadType, Range};
