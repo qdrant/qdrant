@@ -11,7 +11,7 @@ use storage::content_manager::toc::TableOfContent;
 #[get("/collections")]
 async fn get_collections(toc: web::Data<Arc<TableOfContent>>) -> impl Responder {
     let timing = Instant::now();
-    let response = Ok(do_get_collections(&toc.into_inner()).await);
+    let response = Ok(do_list_collections(&toc.into_inner()).await);
     process_response(response, timing)
 }
 
