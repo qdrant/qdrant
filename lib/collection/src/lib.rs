@@ -7,3 +7,6 @@ pub mod config;
 pub mod operations;
 mod update_handler;
 mod wal;
+
+#[cfg(test)]
+mod tests;

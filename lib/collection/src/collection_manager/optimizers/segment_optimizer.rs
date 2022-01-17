@@ -5,7 +5,7 @@ use crate::collection_manager::holders::segment_holder::{
 use crate::config::CollectionParams;
 use crate::operations::types::CollectionResult;
 use itertools::Itertools;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
@@ -50,7 +50,11 @@ pub trait SegmentOptimizer {
     fn threshold_config(&self) -> &OptimizerThresholds;
 
     /// Checks if segment optimization is required
-    fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId>;
+    fn check_condition(
+        &self,
+        segments: LockedSegmentHolder,
+        excluded_ids: &HashSet<SegmentId>,
+    ) -> Vec<SegmentId>;
 
     /// Build temp segment
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {
@@ -129,21 +133,37 @@ pub trait SegmentOptimizer {
         segments: LockedSegmentHolder,
         ids: Vec<SegmentId>,
     ) -> CollectionResult<bool> {
+        // On the one hand - we want to check consistently if all provided segments are
+        // available for optimization (not already under one) and we want to do it before creating a temp segment
+        // which is an expensive operation. So we can't not unlock `segments` after the check and before the insert.
+        //
+        // On the other hand - we do not want to hold write lock during the segment creation.
+        // Solution in the middle - is a upgradable lock. It ensures consistency after the check and allows to perform read operation.
+        let segment_lock = segments.upgradable_read();
+
+        let optimizing_segments: Vec<_> = ids
+            .iter()
+            .cloned()
+            .map(|id| segment_lock.get(id))
+            .filter_map(|x| x.cloned())
+            .collect();
+
+        // Check if all segments are not under other optimization or some ids are missing
+        let all_segments_ok = optimizing_segments.len() == ids.len()
+            && optimizing_segments
+                .iter()
+                .all(|s| matches!(s, LockedSegment::Original(_)));
+
+        if !all_segments_ok {
+            // Cancel the optimization
+            return Ok(false);
+        }
+
         let tmp_segment = self.temp_segment()?;
 
         let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
         let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let proxy_created_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-
-        // Exclusive lock for the segments operations
-        let mut write_segments = segments.write();
-
-        let optimizing_segments: Vec<_> = ids
-            .iter()
-            .cloned()
-            .map(|id| write_segments.get(id))
-            .filter_map(|x| x.cloned())
-            .collect();
 
         let proxies = optimizing_segments.iter().map(|sg| {
             ProxySegment::new(
@@ -155,13 +175,15 @@ pub trait SegmentOptimizer {
             )
         });
 
-        let proxy_ids: Vec<_> = proxies
-            .zip(ids.iter().cloned())
-            .map(|(proxy, idx)| write_segments.swap(proxy, &[idx], false).unwrap())
-            .collect();
+        let proxy_ids: Vec<_> = {
+            // Exclusive lock for the segments operations
+            let mut write_segments = RwLockUpgradableReadGuard::upgrade(segment_lock);
 
-        // Release segments lock
-        drop(write_segments);
+            proxies
+                .zip(ids.iter().cloned())
+                .map(|(proxy, idx)| write_segments.swap(proxy, &[idx], false).unwrap())
+                .collect()
+        };
 
         let mut segment_builder = self.optimized_segment_builder(&optimizing_segments)?;
 

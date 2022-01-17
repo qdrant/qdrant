@@ -1,4 +1,8 @@
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
+use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
+use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
+use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
+use crate::config::CollectionParams;
 use parking_lot::RwLock;
 use rand::Rng;
 use segment::entry::entry_point::SegmentEntry;
@@ -108,4 +112,45 @@ pub fn build_test_holder(path: &Path) -> RwLock<SegmentHolder> {
     let _sid2 = holder.add(segment2);
 
     RwLock::new(holder)
+}
+
+pub(crate) fn get_merge_optimizer(
+    segment_path: &Path,
+    collection_temp_dir: &Path,
+) -> MergeOptimizer {
+    MergeOptimizer::new(
+        5,
+        OptimizerThresholds {
+            memmap_threshold: 1000000,
+            indexing_threshold: 1000000,
+            payload_indexing_threshold: 1000000,
+        },
+        segment_path.to_owned(),
+        collection_temp_dir.to_owned(),
+        CollectionParams {
+            vector_size: 4,
+            distance: Distance::Dot,
+        },
+        Default::default(),
+    )
+}
+
+pub(crate) fn get_indexing_optimizer(
+    segment_path: &Path,
+    collection_temp_dir: &Path,
+) -> IndexingOptimizer {
+    IndexingOptimizer::new(
+        OptimizerThresholds {
+            memmap_threshold: 100,
+            indexing_threshold: 100,
+            payload_indexing_threshold: 100,
+        },
+        segment_path.to_owned(),
+        collection_temp_dir.to_owned(),
+        CollectionParams {
+            vector_size: 4,
+            distance: Distance::Dot,
+        },
+        Default::default(),
+    )
 }

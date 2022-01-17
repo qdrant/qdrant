@@ -8,6 +8,7 @@ use async_channel::{Receiver, Sender};
 use log::{debug, info};
 use segment::types::SeqNumberType;
 use std::cmp::min;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
@@ -62,7 +63,7 @@ pub struct UpdateHandler {
     runtime_handle: Handle,
     /// WAL, required for operations
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-    optimization_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    optimization_handles: Arc<Mutex<Vec<JoinHandle<bool>>>>,
 }
 
 impl UpdateHandler {
@@ -144,22 +145,28 @@ impl UpdateHandler {
         Ok(0)
     }
 
-    fn process_optimization(
+    pub(crate) fn process_optimization(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
-    ) -> Vec<JoinHandle<()>> {
+    ) -> Vec<JoinHandle<bool>> {
+        let mut scheduled_segment_ids: HashSet<_> = Default::default();
         let mut handles = vec![];
         for optimizer in optimizers.iter() {
             loop {
-                let nonoptimal_segment_ids = optimizer.check_condition(segments.clone());
+                let nonoptimal_segment_ids =
+                    optimizer.check_condition(segments.clone(), &scheduled_segment_ids);
                 if nonoptimal_segment_ids.is_empty() {
                     break;
                 } else {
                     let optim = optimizer.clone();
                     let segs = segments.clone();
                     let nsi = nonoptimal_segment_ids.clone();
+                    for sid in &nsi {
+                        scheduled_segment_ids.insert(*sid);
+                    }
+
                     handles.push(tokio::task::spawn_blocking(move || {
-                        optim.as_ref().optimize(segs, nsi).unwrap();
+                        optim.as_ref().optimize(segs, nsi).unwrap()
                     }));
                 }
             }
@@ -173,7 +180,7 @@ impl UpdateHandler {
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
         flush_timeout_sec: u64,
-        blocking_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+        blocking_handles: Arc<Mutex<Vec<JoinHandle<bool>>>>,
     ) {
         let flush_timeout = Duration::from_secs(flush_timeout_sec);
         let mut last_flushed = Instant::now();

@@ -6,6 +6,7 @@ use crate::collection_manager::optimizers::segment_optimizer::{
 };
 use crate::config::CollectionParams;
 use segment::types::{HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Looks for the segments, which require to be indexed.
@@ -37,11 +38,20 @@ impl IndexingOptimizer {
         }
     }
 
-    fn worst_segment(&self, segments: LockedSegmentHolder) -> Option<(SegmentId, LockedSegment)> {
+    fn worst_segment(
+        &self,
+        segments: LockedSegmentHolder,
+        excluded_ids: &HashSet<SegmentId>,
+    ) -> Option<(SegmentId, LockedSegment)> {
         segments
             .read()
             .iter()
             .filter_map(|(idx, segment)| {
+                if excluded_ids.contains(idx) {
+                    // This segment is excluded externally. It might already be scheduled for optimization
+                    return None;
+                }
+
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let vector_count = read_segment.vectors_count();
@@ -110,8 +120,12 @@ impl SegmentOptimizer for IndexingOptimizer {
         &self.thresholds_config
     }
 
-    fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId> {
-        match self.worst_segment(segments) {
+    fn check_condition(
+        &self,
+        segments: LockedSegmentHolder,
+        excluded_ids: &HashSet<SegmentId>,
+    ) -> Vec<SegmentId> {
+        match self.worst_segment(segments, excluded_ids) {
             None => vec![],
             Some((segment_id, _segment)) => vec![segment_id],
         }
@@ -184,14 +198,18 @@ mod tests {
 
         let locked_holder = Arc::new(RwLock::new(holder));
 
+        let excluded_ids = Default::default();
+
         // ---- check condition for MMap optimization
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize =
+            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.is_empty());
 
         index_optimizer.thresholds_config.memmap_threshold = 150;
         index_optimizer.thresholds_config.indexing_threshold = 50;
 
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize =
+            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
 
         // ----- CREATE AN INDEXED FIELD ------
@@ -203,7 +221,8 @@ mod tests {
         .unwrap();
 
         // ------ Plain -> Mmap & Indexed payload
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize =
+            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
         eprintln!("suggested_to_optimize = {:#?}", suggested_to_optimize);
         index_optimizer
@@ -212,14 +231,16 @@ mod tests {
         eprintln!("Done");
 
         // ------ Plain -> Indexed payload
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize =
+            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&middle_segment_id));
         index_optimizer
             .optimize(locked_holder.clone(), suggested_to_optimize)
             .unwrap();
 
         // ------- Keep smallest segment without changes
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize =
+            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.is_empty());
 
         assert_eq!(
@@ -319,7 +340,8 @@ mod tests {
 
         // Index even the smallest segment
         index_optimizer.thresholds_config.payload_indexing_threshold = 20;
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize =
+            index_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert!(suggested_to_optimize.contains(&small_segment_id));
         index_optimizer
             .optimize(locked_holder.clone(), suggested_to_optimize)
