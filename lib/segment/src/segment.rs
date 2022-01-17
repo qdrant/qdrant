@@ -10,7 +10,7 @@ use crate::types::{
     PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState,
     SegmentType, SeqNumberType, TheMap, VectorElementType, WithPayload,
 };
-use crate::vector_storage::{VectorStorage, VectorStorageSS};
+use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use std::fs::{remove_dir_all, rename};

@@ -4,16 +4,14 @@ use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::sample_estimation::sample_check_cardinality;
-use crate::index::{PayloadIndex, PayloadIndexSS, VectorIndex};
-use crate::payload_storage::{ConditionChecker, ConditionCheckerSS};
+use crate::index::{PayloadIndexSS, VectorIndex};
+use crate::payload_storage::ConditionCheckerSS;
 use crate::types::Condition::Field;
-use crate::types::{
-    FieldCondition, Filter, HnswConfig, PointOffsetType, SearchParams, VectorElementType,
-};
-use crate::vector_storage::{ScoredPointOffset, VectorStorage, VectorStorageSS};
+use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VectorElementType};
+use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 use atomic_refcell::AtomicRefCell;
 use log::debug;
-use rand::prelude::ThreadRng;
+
 use rand::thread_rng;
 use std::cmp::max;
 use std::fs::create_dir_all;

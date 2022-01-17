@@ -1,4 +1,4 @@
-use crate::id_tracker::{IdTracker, IdTrackerSS};
+use crate::id_tracker::IdTrackerSS;
 use crate::payload_storage::condition_checker::{
     match_geo, match_geo_radius, match_payload, match_range,
 };
@@ -145,6 +145,7 @@ mod tests {
     use crate::types::{FieldCondition, GeoBoundingBox, Match, PayloadType, Range};
     use std::collections::HashSet;
     use tempdir::TempDir;
+    use crate::id_tracker::IdTracker;
 
     #[test]
     fn test_condition_checker() {

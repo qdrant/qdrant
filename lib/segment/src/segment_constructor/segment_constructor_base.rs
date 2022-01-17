@@ -3,7 +3,7 @@ use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::plain_payload_index::{PlainIndex, PlainPayloadIndex};
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::{PayloadIndex, PayloadIndexSS, VectorIndex, VectorIndexSS};
+use crate::index::{PayloadIndexSS, VectorIndexSS};
 use crate::payload_storage::query_checker::SimpleConditionChecker;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SEGMENT_STATE_FILE};
@@ -12,7 +12,7 @@ use crate::types::{
 };
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
-use crate::vector_storage::{VectorStorage, VectorStorageSS};
+use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
 use std::fs::{create_dir_all, File};
 use std::io::Read;

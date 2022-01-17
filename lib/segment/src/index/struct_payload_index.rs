@@ -8,7 +8,7 @@ use itertools::Itertools;
 use log::debug;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::id_tracker::{IdTracker, IdTrackerSS};
+use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
@@ -16,9 +16,7 @@ use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
-use crate::payload_storage::{
-    ConditionChecker, ConditionCheckerSS, PayloadStorage, PayloadStorageSS,
-};
+use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
 use crate::types::{
     Condition, FieldCondition, Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType,
 };
