@@ -4,7 +4,7 @@ use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_scores_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
 use crate::vector_storage::mmap_vectors::MmapVectors;
-use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage};
+use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageSS};
 use atomic_refcell::AtomicRefCell;
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
@@ -79,7 +79,7 @@ pub fn open_memmap_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
-) -> OperationResult<Arc<AtomicRefCell<dyn VectorStorage>>> {
+) -> OperationResult<Arc<AtomicRefCell<VectorStorageSS>>> {
     create_dir_all(path)?;
 
     let vectors_path = path.join("matrix.dat");
@@ -154,10 +154,7 @@ where
         panic!("Can't directly update vector in mmap storage")
     }
 
-    fn update_from(
-        &mut self,
-        other: &dyn VectorStorage,
-    ) -> OperationResult<Range<PointOffsetType>> {
+    fn update_from(&mut self, other: &VectorStorageSS) -> OperationResult<Range<PointOffsetType>> {
         let dim = self.vector_dim();
 
         let start_index = self.mmap_store.as_ref().unwrap().num_vectors as PointOffsetType;

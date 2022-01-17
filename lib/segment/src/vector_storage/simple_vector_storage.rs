@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::tools::peek_top_scores_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
-use crate::vector_storage::{RawScorer, ScoredPointOffset};
+use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageSS};
 
 use super::vector_storage_base::VectorStorage;
 use crate::spaces::metric::Metric;
@@ -85,7 +85,7 @@ pub fn open_simple_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
-) -> OperationResult<Arc<AtomicRefCell<dyn VectorStorage>>> {
+) -> OperationResult<Arc<AtomicRefCell<VectorStorageSS>>> {
     let mut vectors: Vec<Array1<VectorElementType>> = vec![];
     let mut deleted = BitVec::new();
     let mut deleted_count = 0;
@@ -215,10 +215,7 @@ where
         Ok(key)
     }
 
-    fn update_from(
-        &mut self,
-        other: &dyn VectorStorage,
-    ) -> OperationResult<Range<PointOffsetType>> {
+    fn update_from(&mut self, other: &VectorStorageSS) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors.len() as PointOffsetType;
         for id in other.iter_ids() {
             let other_vector = other.get_vector(id).unwrap();

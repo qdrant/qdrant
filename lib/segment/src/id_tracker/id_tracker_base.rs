@@ -48,3 +48,5 @@ pub trait IdTracker {
     /// Force persistence of current tracker state.
     fn flush(&self) -> OperationResult<()>;
 }
+
+pub type IdTrackerSS = dyn IdTracker + Sync + Send;

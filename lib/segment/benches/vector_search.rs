@@ -25,7 +25,7 @@ fn init_vector_storage(
     dim: usize,
     num: usize,
     dist: Distance,
-) -> Arc<AtomicRefCell<dyn VectorStorage>> {
+) -> Arc<AtomicRefCell<VectorStorageSS>> {
     let storage = open_simple_vector_storage(dir.path(), dim, dist).unwrap();
     {
         let mut borrowed_storage = storage.borrow_mut();

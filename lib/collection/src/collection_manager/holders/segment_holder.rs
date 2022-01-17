@@ -69,10 +69,6 @@ impl From<ProxySegment> for LockedSegment {
     }
 }
 
-unsafe impl Sync for LockedSegment {}
-
-unsafe impl Send for LockedSegment {}
-
 #[derive(Default)]
 pub struct SegmentHolder {
     segments: HashMap<SegmentId, LockedSegment>,
