@@ -37,7 +37,6 @@ Found 1 outliers among 100 measurements (1.00%)
 
 
 ### FlameGraph and call-graph visualisation
-https://music.yandex.ru/album/4541499
 To run benchmarks with profiler to generate FlameGraph - use the following command:
 
 ```bash
