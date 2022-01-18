@@ -83,7 +83,7 @@ mod tests {
         let mut builder =
             SegmentBuilder::new(dir.path(), temp_dir.path(), &segment_config).unwrap();
 
-        builder.update_from(&segment, &*stopped).unwrap();
+        builder.update_from(segment, &*stopped).unwrap();
 
         let now = Instant::now();
 
@@ -98,13 +98,10 @@ mod tests {
 
         let is_cancelled = match res {
             Ok(_) => false,
-            Err(err) => match err {
-                OperationError::Cancelled { .. } => true,
-                _ => false,
-            },
+            Err(err) => matches!(err, OperationError::Cancelled { .. }),
         };
 
-        return (now.elapsed().as_millis() as u64, is_cancelled);
+        (now.elapsed().as_millis() as u64, is_cancelled)
     }
 
     #[test]
