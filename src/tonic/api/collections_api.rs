@@ -224,8 +224,11 @@ impl From<(Instant, collection::operations::types::CollectionInfo)> for GetColle
                         vacuum_min_vector_number: Some(
                             response.config.optimizer_config.vacuum_min_vector_number as u64,
                         ),
-                        max_segment_number: Some(
-                            response.config.optimizer_config.max_segment_number as u64,
+                        default_segment_number: Some(
+                            response.config.optimizer_config.default_segment_number as u64,
+                        ),
+                        max_segment_size: Some(
+                            response.config.optimizer_config.max_segment_size as u64,
                         ),
                         memmap_threshold: Some(
                             response.config.optimizer_config.memmap_threshold as u64,

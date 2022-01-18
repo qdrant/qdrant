@@ -134,11 +134,11 @@ mod tests {
 
         let mut holder = SegmentHolder::default();
 
-        let mut segments_to_merge = vec![];
-
-        segments_to_merge.push(holder.add(random_segment(dir.path(), 100, 40, 4)));
-        segments_to_merge.push(holder.add(random_segment(dir.path(), 100, 50, 4)));
-        segments_to_merge.push(holder.add(random_segment(dir.path(), 100, 60, 4)));
+        let _segments_to_merge = vec![
+            holder.add(random_segment(dir.path(), 100, 40, 4)),
+            holder.add(random_segment(dir.path(), 100, 50, 4)),
+            holder.add(random_segment(dir.path(), 100, 60, 4)),
+        ];
 
         let mut merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path());
 
@@ -156,7 +156,7 @@ mod tests {
         merge_optimizer.max_segment_size = 200;
 
         let check_result =
-            merge_optimizer.check_condition(locked_holder.clone(), &Default::default());
+            merge_optimizer.check_condition(locked_holder, &Default::default());
 
         assert_eq!(check_result.len(), 3);
     }

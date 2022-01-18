@@ -1,19 +1,17 @@
 mod prof;
 
-use criterion::{criterion_group, criterion_main, Bencher, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
 use ndarray::Array1;
-use rand::rngs::StdRng;
-use rand::{thread_rng, Rng, SeedableRng};
+use rand::{thread_rng, Rng};
 use segment::fixtures::index_fixtures::{
     random_vector, FakeConditionChecker, TestRawScorerProducer,
 };
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::metric::Metric;
-use segment::spaces::simple::{CosineMetric, EuclidMetric};
+use segment::spaces::simple::CosineMetric;
 use segment::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
-use std::sync::atomic::Ordering;
 
 const NUM_VECTORS: usize = 5_000;
 const DIM: usize = 16;
@@ -62,8 +60,6 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
         let raw_scorer = vector_holder.get_raw_scorer(query);
         let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
         graph_layers.search(TOP, EF, &scorer);
-        let num_cmps = scorer.score_counter.load(Ordering::SeqCst);
-        eprintln!("num_cmps = {:#?}", num_cmps);
     }
 
     let (vector_holder, graph_layers) = build_index(NUM_VECTORS * 10);
@@ -97,8 +93,6 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
         let raw_scorer = vector_holder.get_raw_scorer(query);
         let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
         graph_layers.search(TOP, EF, &scorer);
-        let num_cmps = scorer.score_counter.load(Ordering::SeqCst);
-        eprintln!("num_cmps = {:#?}", num_cmps);
     }
 }
 
@@ -122,7 +116,7 @@ impl Metric for FakeMetric {
         v1[0] + v2[0]
     }
 
-    fn preprocess(&self, vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
+    fn preprocess(&self, _vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
         None
     }
 }
@@ -167,7 +161,7 @@ fn scoring_vectors(c: &mut Criterion) {
     });
 
     let num_vectors = base_num_vectors * 50;
-    let vector_holder = TestRawScorerProducer::new(DIM, num_vectors, metric.clone(), &mut rng);
+    let vector_holder = TestRawScorerProducer::new(DIM, num_vectors, metric, &mut rng);
 
     group.bench_function("score-point-50x", |b| {
         b.iter(|| {
@@ -199,7 +193,7 @@ fn basic_scoring_vectors(c: &mut Criterion) {
     group.bench_function("basic-score-point", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
-            let mut points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
+            let points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
 
             let _s: f32 = points_to_score
                 .map(|x| metric.similarity(&vectors[x], &query))
@@ -216,7 +210,7 @@ fn basic_scoring_vectors(c: &mut Criterion) {
     group.bench_function("basic-score-point-10x", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
-            let mut points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
+            let points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
 
             let _s: f32 = points_to_score
                 .map(|x| metric.similarity(&vectors[x], &query))
