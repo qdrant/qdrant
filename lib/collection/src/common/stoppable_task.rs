@@ -69,7 +69,7 @@ mod tests {
             }
             thread::sleep(Duration::from_millis(STEP_MILLIS));
         }
-        return n;
+        n
     }
 
     #[tokio::test]
