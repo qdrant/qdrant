@@ -135,6 +135,7 @@ impl SegmentOptimizer for IndexingOptimizer {
 #[cfg(test)]
 mod tests {
     use std::ops::Deref;
+    use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
     use itertools::Itertools;
@@ -165,6 +166,7 @@ mod tests {
 
         let payload_field = "number".to_owned();
 
+        let stopped = AtomicBool::new(false);
         let dim = 4;
 
         let segments_dir = TempDir::new("segments_dir").unwrap();
@@ -226,7 +228,7 @@ mod tests {
         assert!(suggested_to_optimize.contains(&large_segment_id));
         eprintln!("suggested_to_optimize = {:#?}", suggested_to_optimize);
         index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize)
+            .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
             .unwrap();
         eprintln!("Done");
 
@@ -235,7 +237,7 @@ mod tests {
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&middle_segment_id));
         index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize)
+            .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
             .unwrap();
 
         // ------- Keep smallest segment without changes
@@ -344,7 +346,7 @@ mod tests {
             index_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert!(suggested_to_optimize.contains(&small_segment_id));
         index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize)
+            .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
             .unwrap();
 
         let new_infos2 = locked_holder

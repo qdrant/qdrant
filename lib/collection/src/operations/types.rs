@@ -174,6 +174,8 @@ pub enum CollectionError {
     ServiceError { error: String },
     #[error("Bad request: {description}")]
     BadRequest { description: String },
+    #[error("Operation Cancelled: {description}")]
+    Cancelled { description: String },
 }
 
 impl From<OperationError> for CollectionError {
@@ -189,6 +191,7 @@ impl From<OperationError> for CollectionError {
             OperationError::TypeError { .. } => Self::BadInput {
                 description: format!("{}", err),
             },
+            OperationError::Cancelled { description } => Self::Cancelled { description },
         }
     }
 }

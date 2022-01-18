@@ -2,7 +2,7 @@ use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
 use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
 use async_channel::{Receiver, Sender};
@@ -175,8 +175,23 @@ impl UpdateHandler {
                         scheduled_segment_ids.insert(*sid);
                     }
 
-                    handles.push(spawn_stoppable(move |_stopped| {
-                        optim.as_ref().optimize(segs, nsi).unwrap()
+                    handles.push(spawn_stoppable(move |stopped| {
+                        match optim.as_ref().optimize(segs, nsi, stopped) {
+                            Ok(result) => result,
+                            Err(error) => match error {
+                                CollectionError::Cancelled { description } => {
+                                    log::info!("Optimization cancelled - {}", description);
+                                    false
+                                }
+                                _ => {
+                                    // Error of the optimization can not be handled by API user
+                                    // It is only possible to fix after full restart,
+                                    // so the best available action here is to stop whole
+                                    // optimization thread and log the error
+                                    panic!("Optimization error: {}", error);
+                                }
+                            },
+                        }
                     }));
                 }
             }

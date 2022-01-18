@@ -5,9 +5,9 @@ use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{PayloadKeyType, SegmentConfig};
 use core::cmp;
 use std::collections::HashSet;
-use std::convert::TryInto;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Structure for constructing segment out of several other segments
 pub struct SegmentBuilder {
@@ -38,7 +38,16 @@ impl SegmentBuilder {
 
     /// Update current segment builder with all (not deleted) vectors and payload form `other` segment
     /// Perform index building at the end of update
-    pub fn update_from(&mut self, other: &Segment) -> OperationResult<()> {
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - segment to add into construction
+    ///
+    /// # Result
+    ///
+    /// * `bool` - if `true` - data successfully added, if `false` - process was interrupted
+    ///
+    pub fn update_from(&mut self, other: &Segment, stopped: &AtomicBool) -> OperationResult<bool> {
         match &mut self.segment {
             None => Err(OperationError::ServiceError {
                 description: "Segment building error: created segment not found".to_owned(),
@@ -59,6 +68,11 @@ impl SegmentBuilder {
                 for (new_internal_id, old_internal_id) in
                     new_internal_range.zip(other_vector_storage.iter_ids())
                 {
+                    if stopped.load(Ordering::Relaxed) {
+                        return Err(OperationError::Cancelled {
+                            description: "Cancelled by external thread".to_string(),
+                        });
+                    }
                     let external_id = other_id_tracker.external_id(old_internal_id).unwrap();
                     let other_version = other_id_tracker.version(external_id).unwrap();
 
@@ -98,16 +112,12 @@ impl SegmentBuilder {
                     self.indexed_fields.insert(field);
                 }
 
-                Ok(())
+                Ok(true)
             }
         }
     }
-}
 
-impl TryInto<Segment> for SegmentBuilder {
-    type Error = OperationError;
-
-    fn try_into(mut self) -> Result<Segment, Self::Error> {
+    pub fn build(mut self, stopped: &AtomicBool) -> Result<Segment, OperationError> {
         {
             let mut segment = self.segment.ok_or(OperationError::ServiceError {
                 description: "Segment building error: created segment not found".to_owned(),
@@ -116,9 +126,14 @@ impl TryInto<Segment> for SegmentBuilder {
 
             for field in &self.indexed_fields {
                 segment.create_field_index(segment.version(), field)?;
+                if stopped.load(Ordering::Relaxed) {
+                    return Err(OperationError::Cancelled {
+                        description: "Cancelled by external thread".to_string(),
+                    });
+                }
             }
 
-            segment.vector_index.borrow_mut().build_index()?;
+            segment.vector_index.borrow_mut().build_index(stopped)?;
 
             segment.flush()?;
             // Now segment is going to be evicted from RAM

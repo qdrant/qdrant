@@ -25,6 +25,8 @@ pub enum OperationError {
     },
     #[error("Service runtime error: {description}")]
     ServiceError { description: String },
+    #[error("Operation cancelled: {description}")]
+    Cancelled { description: String },
 }
 
 /// Contains information regarding last operation error, which should be fixed before next operation could be processed

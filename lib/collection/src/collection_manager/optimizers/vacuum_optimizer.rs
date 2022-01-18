@@ -119,6 +119,7 @@ mod tests {
     use parking_lot::RwLock;
     use rand::Rng;
     use segment::types::{Distance, PayloadType};
+    use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     use tempdir::TempDir;
 
@@ -215,7 +216,11 @@ mod tests {
         assert_eq!(suggested_to_optimize.len(), 1);
 
         vacuum_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize)
+            .optimize(
+                locked_holder.clone(),
+                suggested_to_optimize,
+                &AtomicBool::new(false),
+            )
             .unwrap();
 
         let after_optimization_segments =
