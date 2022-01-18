@@ -120,6 +120,7 @@ pub(crate) fn get_merge_optimizer(
 ) -> MergeOptimizer {
     MergeOptimizer::new(
         5,
+        100_000,
         OptimizerThresholds {
             memmap_threshold: 1000000,
             indexing_threshold: 1000000,

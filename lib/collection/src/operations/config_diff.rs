@@ -49,8 +49,21 @@ pub struct OptimizersConfigDiff {
     pub deleted_threshold: Option<f64>,
     /// The minimal number of vectors in a segment, required to perform segment optimization
     pub vacuum_min_vector_number: Option<usize>,
-    /// If the number of segments exceeds this value, the optimizer will merge the smallest segments.
-    pub max_segment_number: Option<usize>,
+    /// Target amount of segments optimizer will try to keep.
+    /// Real amount of segments may vary depending on multiple parameters:
+    ///  - Amount of stored points
+    ///  - Current write RPS
+    ///
+    /// It is recommended to select default number of segments as a factor of the number of search threads,
+    /// so that each segment would be handled evenly by one of the threads
+    pub default_segment_number: Option<usize>,
+    /// Do not create segments larger this number of points.
+    /// Large segments might require disproportionately long indexation times,
+    /// therefore it makes sense to limit the size of segments.
+    ///
+    /// If indexation speed have more priority for your - make this parameter lower.
+    /// If search speed is more important - make this parameter higher.
+    pub max_segment_size: Option<usize>,
     /// Maximum number of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmaped file.
     pub memmap_threshold: Option<usize>,
@@ -105,7 +118,8 @@ mod tests {
         let base_config = OptimizersConfig {
             deleted_threshold: 0.9,
             vacuum_min_vector_number: 1000,
-            max_segment_number: 10,
+            default_segment_number: 10,
+            max_segment_size: 100_000,
             memmap_threshold: 100_000,
             indexing_threshold: 50_000,
             payload_indexing_threshold: 20_000,

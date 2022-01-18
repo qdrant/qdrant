@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dev-dependencies]
-pprof = { version = "0.4", features = ["flamegraph"] }
+pprof = { version = "0.4", features = ["flamegraph", "protobuf"] }
 tempdir = "0.3.7"
 criterion = "0.3"
 rmp-serde = "~0.14"
@@ -52,6 +52,10 @@ harness = false
 
 [[bench]]
 name = "hnsw_search_graph"
+harness = false
+
+[[bench]]
+name = "hnsw_build_asymptotic"
 harness = false
 
 [[bench]]

@@ -8,7 +8,7 @@ use ndarray::{Array, Array1};
 use rand::Rng;
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
-    (0..size).map(|_| rnd_gen.gen()).collect()
+    (0..size).map(|_| rnd_gen.gen_range(0.0..1.0)).collect()
 }
 
 pub struct FakeConditionChecker {}

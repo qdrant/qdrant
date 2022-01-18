@@ -171,7 +171,8 @@ impl From<OptimizersConfigDiff> for collection::operations::config_diff::Optimiz
         Self {
             deleted_threshold: value.deleted_threshold,
             vacuum_min_vector_number: value.vacuum_min_vector_number.map(|v| v as usize),
-            max_segment_number: value.max_segment_number.map(|v| v as usize),
+            default_segment_number: value.default_segment_number.map(|v| v as usize),
+            max_segment_size: value.max_segment_size.map(|v| v as usize),
             memmap_threshold: value.memmap_threshold.map(|v| v as usize),
             indexing_threshold: value.indexing_threshold.map(|v| v as usize),
             payload_indexing_threshold: value.payload_indexing_threshold.map(|v| v as usize),
@@ -223,8 +224,11 @@ impl From<(Instant, collection::operations::types::CollectionInfo)> for GetColle
                         vacuum_min_vector_number: Some(
                             response.config.optimizer_config.vacuum_min_vector_number as u64,
                         ),
-                        max_segment_number: Some(
-                            response.config.optimizer_config.max_segment_number as u64,
+                        default_segment_number: Some(
+                            response.config.optimizer_config.default_segment_number as u64,
+                        ),
+                        max_segment_size: Some(
+                            response.config.optimizer_config.max_segment_size as u64,
                         ),
                         memmap_threshold: Some(
                             response.config.optimizer_config.memmap_threshold as u64,

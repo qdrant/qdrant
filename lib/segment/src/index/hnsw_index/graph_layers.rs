@@ -385,10 +385,9 @@ impl GraphLayers {
                                         level_m,
                                         scorer,
                                     );
-                                for (idx, selected) in
-                                    selected_candidates.iter().copied().enumerate()
-                                {
-                                    other_point_links[idx] = selected;
+                                other_point_links.clear(); // this do not free memory, which is good
+                                for selected in selected_candidates.iter().copied() {
+                                    other_point_links.push(selected);
                                 }
                             }
                         }
@@ -490,8 +489,9 @@ mod tests {
         random_vector, FakeConditionChecker, TestRawScorerProducer,
     };
     use crate::spaces::metric::Metric;
-    use crate::spaces::simple::{CosineMetric, DotProductMetric};
+    use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
     use crate::types::VectorElementType;
+    use crate::vector_storage::RawScorer;
     use itertools::Itertools;
     use ndarray::Array;
     use rand::rngs::StdRng;
@@ -567,11 +567,7 @@ mod tests {
     ) -> Vec<ScoredPointOffset> {
         let fake_condition_checker = FakeConditionChecker {};
         let raw_scorer = vector_storage.get_raw_scorer(query.to_owned());
-        let scorer = FilteredScorer {
-            raw_scorer: &raw_scorer,
-            condition_checker: &fake_condition_checker,
-            filter: None,
-        };
+        let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
         let ef = 16;
         graph.search(top, ef, &scorer)
     }
@@ -606,11 +602,7 @@ mod tests {
             let fake_condition_checker = FakeConditionChecker {};
             let added_vector = vector_holder.vectors[idx as usize].to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
-            let scorer = FilteredScorer {
-                raw_scorer: &raw_scorer,
-                condition_checker: &fake_condition_checker,
-                filter: None,
-            };
+            let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
             let level = graph_layers.get_random_layer(rng);
             graph_layers.link_new_point(idx, level, &scorer);
         }
@@ -641,11 +633,7 @@ mod tests {
         let fake_condition_checker = FakeConditionChecker {};
         let added_vector = vector_holder.vectors[linking_idx as usize].to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector);
-        let scorer = FilteredScorer {
-            raw_scorer: &raw_scorer,
-            condition_checker: &fake_condition_checker,
-            filter: None,
-        };
+        let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
 
         let nearest_on_level = graph_layers.search_on_level(
             ScoredPointOffset {
@@ -747,6 +735,87 @@ mod tests {
         let graph_search = search_in_graph(&query, top, &vector_holder, &graph_layers);
 
         assert_eq!(reference_top.into_vec(), graph_search);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_hnsw_graph_properties() {
+        const NUM_VECTORS: usize = 5_000;
+        const DIM: usize = 16;
+        const M: usize = 16;
+        const EF_CONSTRUCT: usize = 64;
+        const USE_HEURISTIC: bool = true;
+
+        let mut rng = StdRng::seed_from_u64(42);
+
+        let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, CosineMetric {}, &mut rng);
+        let mut graph_layers =
+            GraphLayers::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
+        let fake_condition_checker = FakeConditionChecker {};
+        for idx in 0..(NUM_VECTORS as PointOffsetType) {
+            let added_vector = vector_holder.vectors[idx as usize].to_vec();
+            let raw_scorer = vector_holder.get_raw_scorer(added_vector);
+            let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
+            let level = graph_layers.get_random_layer(&mut rng);
+            graph_layers.link_new_point(idx, level, &scorer);
+        }
+
+        let number_layers = graph_layers.links_layers.len();
+        eprintln!("number_layers = {:#?}", number_layers);
+
+        let max_layers = graph_layers.links_layers.iter().map(|x| x.len()).max();
+        eprintln!("max_layers = {:#?}", max_layers);
+
+        eprintln!(
+            "graph_layers.links_layers[910] = {:#?}",
+            graph_layers.links_layers[910]
+        );
+
+        let total_edges: usize = graph_layers.links_layers.iter().map(|x| x[0].len()).sum();
+        let avg_connectivity = total_edges as f64 / NUM_VECTORS as f64;
+        eprintln!("avg_connectivity = {:#?}", avg_connectivity);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_candidate_selection_heuristics() {
+        const NUM_VECTORS: usize = 100;
+        const DIM: usize = 16;
+        const M: usize = 16;
+
+        let mut rng = StdRng::seed_from_u64(42);
+
+        let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, EuclidMetric {}, &mut rng);
+
+        let mut candidates: FixedLengthPriorityQueue<ScoredPointOffset> =
+            FixedLengthPriorityQueue::new(NUM_VECTORS);
+
+        let new_vector_to_insert = random_vector(&mut rng, DIM);
+
+        let scorer = vector_holder.get_raw_scorer(new_vector_to_insert);
+
+        for i in 0..NUM_VECTORS {
+            candidates.push(ScoredPointOffset {
+                idx: i as PointOffsetType,
+                score: scorer.score_point(i as PointOffsetType),
+            });
+        }
+
+        let sorted_candidates = candidates.into_vec();
+
+        for x in sorted_candidates.iter().take(M) {
+            eprintln!("sorted_candidates = ({}, {})", x.idx, x.score);
+        }
+
+        let selected_candidates = GraphLayers::select_candidate_with_heuristic_from_sorted(
+            sorted_candidates.into_iter(),
+            M,
+            |a, b| scorer.score_internal(a, b),
+        );
+
+        for x in selected_candidates.iter() {
+            eprintln!("selected_candidates = {}", x);
+        }
     }
 
     #[test]

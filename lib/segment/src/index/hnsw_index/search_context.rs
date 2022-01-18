@@ -7,7 +7,9 @@ use std::iter::FromIterator;
 
 /// Structure that holds context of the search
 pub struct SearchContext {
+    /// Overall nearest points found so far
     pub nearest: FixedLengthPriorityQueue<ScoredPointOffset>,
+    /// Current candidates to process
     pub candidates: BinaryHeap<ScoredPointOffset>,
 }
 

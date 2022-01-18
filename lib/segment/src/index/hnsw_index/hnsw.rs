@@ -115,11 +115,8 @@ impl HNSWIndex {
             let vector = vector_storage.get_vector(block_point_id).unwrap();
             let raw_scorer = vector_storage.raw_scorer(vector);
             block_condition_checker.current_point = block_point_id;
-            let points_scorer = FilteredScorer {
-                raw_scorer: raw_scorer.as_ref(),
-                condition_checker: block_condition_checker,
-                filter: None,
-            };
+            let points_scorer =
+                FilteredScorer::new(raw_scorer.as_ref(), block_condition_checker, None);
 
             let level = self.graph.point_level(block_point_id);
             graph.link_new_point(block_point_id, level, &points_scorer);
@@ -143,11 +140,8 @@ impl HNSWIndex {
         let vector_storage = self.vector_storage.borrow();
         let raw_scorer = vector_storage.raw_scorer(vector.to_owned());
 
-        let points_scorer = FilteredScorer {
-            raw_scorer: raw_scorer.as_ref(),
-            condition_checker: &*self.condition_checker,
-            filter,
-        };
+        let points_scorer =
+            FilteredScorer::new(raw_scorer.as_ref(), &*self.condition_checker, filter);
 
         self.graph.search(top, ef, &points_scorer)
     }
@@ -230,11 +224,8 @@ impl VectorIndex for HNSWIndex {
             }
             let vector = vector_storage.get_vector(vector_id).unwrap();
             let raw_scorer = vector_storage.raw_scorer(vector);
-            let points_scorer = FilteredScorer {
-                raw_scorer: raw_scorer.as_ref(),
-                condition_checker: &*self.condition_checker,
-                filter: None,
-            };
+            let points_scorer =
+                FilteredScorer::new(raw_scorer.as_ref(), &*self.condition_checker, None);
 
             let level = self.graph.get_random_layer(&mut rng);
             self.graph.link_new_point(vector_id, level, &points_scorer);

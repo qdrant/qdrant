@@ -47,16 +47,18 @@ pub struct OptimizersConfigDiff {
     #[prost(uint64, optional, tag = "2")]
     pub vacuum_min_vector_number: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "3")]
-    pub max_segment_number: ::core::option::Option<u64>,
+    pub default_segment_number: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "4")]
-    pub memmap_threshold: ::core::option::Option<u64>,
+    pub max_segment_size: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "5")]
-    pub indexing_threshold: ::core::option::Option<u64>,
+    pub memmap_threshold: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "6")]
-    pub payload_indexing_threshold: ::core::option::Option<u64>,
+    pub indexing_threshold: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "7")]
-    pub flush_interval_sec: ::core::option::Option<u64>,
+    pub payload_indexing_threshold: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "8")]
+    pub flush_interval_sec: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "9")]
     pub max_optimization_threads: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

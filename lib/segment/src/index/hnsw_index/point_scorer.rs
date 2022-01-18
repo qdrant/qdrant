@@ -8,7 +8,19 @@ pub struct FilteredScorer<'a> {
     pub filter: Option<&'a Filter>,
 }
 
-impl FilteredScorer<'_> {
+impl<'a> FilteredScorer<'a> {
+    pub fn new(
+        raw_scorer: &'a dyn RawScorer,
+        condition_checker: &'a dyn ConditionChecker,
+        filter: Option<&'a Filter>,
+    ) -> Self {
+        FilteredScorer {
+            raw_scorer,
+            condition_checker,
+            filter,
+        }
+    }
+
     pub fn check_point(&self, point_id: PointOffsetType) -> bool {
         match self.filter {
             None => self.raw_scorer.check_point(point_id),

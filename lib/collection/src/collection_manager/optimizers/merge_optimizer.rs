@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 /// will be less than before.
 pub struct MergeOptimizer {
     max_segments: usize,
+    max_segment_size: usize,
     thresholds_config: OptimizerThresholds,
     segments_path: PathBuf,
     collection_temp_dir: PathBuf,
@@ -26,6 +27,7 @@ pub struct MergeOptimizer {
 impl MergeOptimizer {
     pub fn new(
         max_segments: usize,
+        max_segment_size: usize,
         thresholds_config: OptimizerThresholds,
         segments_path: PathBuf,
         collection_temp_dir: PathBuf,
@@ -34,6 +36,7 @@ impl MergeOptimizer {
     ) -> Self {
         MergeOptimizer {
             max_segments,
+            max_segment_size,
             thresholds_config,
             segments_path,
             collection_temp_dir,
@@ -85,7 +88,7 @@ impl SegmentOptimizer for MergeOptimizer {
         // Find top-3 smallest segments to join.
         // We need 3 segments because in this case we can guarantee that total segments number will be less
 
-        raw_segments
+        let candidates: Vec<_> = raw_segments
             .iter()
             .cloned()
             .filter_map(|(idx, segment)| {
@@ -97,9 +100,20 @@ impl SegmentOptimizer for MergeOptimizer {
                 }
             })
             .sorted_by_key(|(_, size)| *size)
+            .scan(0, |size_sum, (sid, size)| {
+                *size_sum += size; // produce a cumulative sum of segment sizes starting from smallest
+                Some((sid, *size_sum))
+            })
+            .take_while(|(_, size)| *size < self.max_segment_size)
             .take(3)
             .map(|x| x.0)
-            .collect()
+            .collect();
+
+        if candidates.len() < 3 {
+            return vec![];
+        }
+
+        candidates
     }
 }
 
@@ -112,6 +126,39 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     use tempdir::TempDir;
+
+    #[test]
+    fn test_max_merge_size() {
+        let dir = TempDir::new("segment_dir").unwrap();
+        let temp_dir = TempDir::new("segment_temp_dir").unwrap();
+
+        let mut holder = SegmentHolder::default();
+
+        let _segments_to_merge = vec![
+            holder.add(random_segment(dir.path(), 100, 40, 4)),
+            holder.add(random_segment(dir.path(), 100, 50, 4)),
+            holder.add(random_segment(dir.path(), 100, 60, 4)),
+        ];
+
+        let mut merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path());
+
+        let locked_holder = Arc::new(RwLock::new(holder));
+
+        merge_optimizer.max_segments = 1;
+
+        merge_optimizer.max_segment_size = 100;
+
+        let check_result_empty =
+            merge_optimizer.check_condition(locked_holder.clone(), &Default::default());
+
+        assert!(check_result_empty.is_empty());
+
+        merge_optimizer.max_segment_size = 200;
+
+        let check_result = merge_optimizer.check_condition(locked_holder, &Default::default());
+
+        assert_eq!(check_result.len(), 3);
+    }
 
     #[test]
     fn test_merge_optimizer() {
