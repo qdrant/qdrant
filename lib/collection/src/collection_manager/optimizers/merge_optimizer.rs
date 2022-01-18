@@ -155,8 +155,7 @@ mod tests {
 
         merge_optimizer.max_segment_size = 200;
 
-        let check_result =
-            merge_optimizer.check_condition(locked_holder, &Default::default());
+        let check_result = merge_optimizer.check_condition(locked_holder, &Default::default());
 
         assert_eq!(check_result.len(), 3);
     }
