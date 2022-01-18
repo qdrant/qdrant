@@ -95,9 +95,8 @@ message DeleteCollection {
 }
 
 message CollectionOperationResponse {
-  optional bool result = 1;
-  optional string error = 2;
-  double time = 3;
+  bool result = 1;
+  double time = 2;
 }
 
 message CollectionParams {

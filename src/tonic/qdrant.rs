@@ -88,11 +88,9 @@ pub struct DeleteCollection {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionOperationResponse {
-    #[prost(bool, optional, tag = "1")]
-    pub result: ::core::option::Option<bool>,
-    #[prost(string, optional, tag = "2")]
-    pub error: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(double, tag = "3")]
+    #[prost(bool, tag = "1")]
+    pub result: bool,
+    #[prost(double, tag = "2")]
     pub time: f64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -611,9 +609,7 @@ pub struct GeoPoint {
 pub struct PointsOperationResponse {
     #[prost(message, optional, tag = "1")]
     pub result: ::core::option::Option<UpdateResult>,
-    #[prost(string, optional, tag = "2")]
-    pub error: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(double, tag = "3")]
+    #[prost(double, tag = "2")]
     pub time: f64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

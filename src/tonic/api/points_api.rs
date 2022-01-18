@@ -1,6 +1,7 @@
 use tonic::{Request, Response, Status};
 
 use crate::common::points::do_update_points;
+use crate::tonic::api::common::error_to_status;
 use crate::tonic::qdrant::points_server::Points;
 use crate::tonic::qdrant::{
     FloatPayload, GeoPayload, GeoPoint, IntegerPayload, KeywordPayload, PointStruct,
@@ -14,7 +15,6 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 use std::time::Instant;
-use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 
 pub struct PointsService {
@@ -54,7 +54,8 @@ impl Points for PointsService {
             operation,
             wait.unwrap_or(false),
         )
-        .await;
+        .await
+        .map_err(error_to_status)?;
 
         let response = PointsOperationResponse::from((timing, result));
         Ok(Response::new(response))
@@ -136,28 +137,12 @@ impl From<GeoPoint> for segment::types::GeoPoint {
     }
 }
 
-impl From<(Instant, Result<CollectionUpdateResult, StorageError>)> for PointsOperationResponse {
-    fn from(value: (Instant, Result<CollectionUpdateResult, StorageError>)) -> Self {
+impl From<(Instant, CollectionUpdateResult)> for PointsOperationResponse {
+    fn from(value: (Instant, CollectionUpdateResult)) -> Self {
         let (timing, response) = value;
-        match response {
-            Ok(res) => Self {
-                result: Some(res.into()),
-                error: None,
-                time: timing.elapsed().as_secs_f64(),
-            },
-            Err(err) => {
-                let error_description = match err {
-                    StorageError::BadInput { description } => description,
-                    StorageError::NotFound { description } => description,
-                    StorageError::ServiceError { description } => description,
-                    StorageError::BadRequest { description } => description,
-                };
-                Self {
-                    result: None,
-                    error: Some(error_description),
-                    time: timing.elapsed().as_secs_f64(),
-                }
-            }
+        Self {
+            result: Some(response.into()),
+            time: timing.elapsed().as_secs_f64(),
         }
     }
 }
