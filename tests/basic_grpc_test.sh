@@ -3,6 +3,9 @@
 
 set -ex
 
+# Ensure current path is project root
+cd "$(dirname "$0")/../"
+
 QDRANT_HOST='localhost:6334'
 
 docker_grpcurl="docker run --rm -it --network=host -v ${PWD}/src/tonic/proto:/proto fullstorydev/grpcurl -plaintext -import-path /proto -proto qdrant.proto"
@@ -18,9 +21,9 @@ $docker_grpcurl -d '{
    "distance": "Dot"
 }' $QDRANT_HOST qdrant.Collections/Create
 
-$docker_grpcurl -d '{}' $QDRANT_HOST qdrant.Collections/Get
+$docker_grpcurl -d '{}' $QDRANT_HOST qdrant.Collections/List
 
-# ToDo: Add get collection info request
+$docker_grpcurl -d '{ "name": "test_collection" }' $QDRANT_HOST qdrant.Collections/Get
 
 $docker_grpcurl -d '{
   "collection": "test_collection",

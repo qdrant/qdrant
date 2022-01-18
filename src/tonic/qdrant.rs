@@ -1,12 +1,24 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetCollectionsRequest {}
+pub struct GetCollectionInfoRequest {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListCollectionsRequest {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionDescription {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetCollectionsResponse {
+pub struct GetCollectionInfoResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<CollectionInfo>,
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListCollectionsResponse {
     #[prost(message, repeated, tag = "1")]
     pub collections: ::prost::alloc::vec::Vec<CollectionDescription>,
     #[prost(double, tag = "2")]
@@ -83,12 +95,70 @@ pub struct CollectionOperationResponse {
     #[prost(double, tag = "3")]
     pub time: f64,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionParams {
+    #[prost(uint64, tag = "1")]
+    pub vector_size: u64,
+    #[prost(enumeration = "Distance", tag = "2")]
+    pub distance: i32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionConfig {
+    #[prost(message, optional, tag = "1")]
+    pub params: ::core::option::Option<CollectionParams>,
+    #[prost(message, optional, tag = "2")]
+    pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
+    #[prost(message, optional, tag = "3")]
+    pub optimizer_config: ::core::option::Option<OptimizersConfigDiff>,
+    #[prost(message, optional, tag = "4")]
+    pub wal_config: ::core::option::Option<WalConfigDiff>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PayloadSchemaInfo {
+    #[prost(enumeration = "PayloadSchemaType", tag = "1")]
+    pub data_type: i32,
+    #[prost(bool, tag = "2")]
+    pub indexed: bool,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionInfo {
+    #[prost(enumeration = "CollectionStatus", tag = "1")]
+    pub status: i32,
+    #[prost(uint64, tag = "2")]
+    pub vectors_count: u64,
+    #[prost(uint64, tag = "3")]
+    pub segments_count: u64,
+    #[prost(uint64, tag = "4")]
+    pub disk_data_size: u64,
+    #[prost(uint64, tag = "5")]
+    pub ram_data_size: u64,
+    #[prost(message, optional, tag = "6")]
+    pub config: ::core::option::Option<CollectionConfig>,
+    #[prost(map = "string, message", tag = "7")]
+    pub payload_schema:
+        ::std::collections::HashMap<::prost::alloc::string::String, PayloadSchemaInfo>,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Distance {
     Cosine = 0,
     Euclid = 1,
     Dot = 2,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CollectionStatus {
+    Green = 0,
+    Yellow = 1,
+    Red = 2,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum PayloadSchemaType {
+    Keyword = 0,
+    Integer = 1,
+    Float = 2,
+    Geo = 3,
 }
 #[doc = r" Generated client implementations."]
 pub mod collections_client {
@@ -152,8 +222,8 @@ pub mod collections_client {
         }
         pub async fn get(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetCollectionsRequest>,
-        ) -> Result<tonic::Response<super::GetCollectionsResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::GetCollectionInfoRequest>,
+        ) -> Result<tonic::Response<super::GetCollectionInfoResponse>, tonic::Status> {
             self.inner.ready().await.map_err(|e| {
                 tonic::Status::new(
                     tonic::Code::Unknown,
@@ -162,6 +232,20 @@ pub mod collections_client {
             })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/Get");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn list(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListCollectionsRequest>,
+        ) -> Result<tonic::Response<super::ListCollectionsResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/List");
             self.inner.unary(request.into_request(), path, codec).await
         }
         pub async fn create(
@@ -217,8 +301,12 @@ pub mod collections_server {
     pub trait Collections: Send + Sync + 'static {
         async fn get(
             &self,
-            request: tonic::Request<super::GetCollectionsRequest>,
-        ) -> Result<tonic::Response<super::GetCollectionsResponse>, tonic::Status>;
+            request: tonic::Request<super::GetCollectionInfoRequest>,
+        ) -> Result<tonic::Response<super::GetCollectionInfoResponse>, tonic::Status>;
+        async fn list(
+            &self,
+            request: tonic::Request<super::ListCollectionsRequest>,
+        ) -> Result<tonic::Response<super::ListCollectionsResponse>, tonic::Status>;
         async fn create(
             &self,
             request: tonic::Request<super::CreateCollection>,
@@ -274,12 +362,14 @@ pub mod collections_server {
                 "/qdrant.Collections/Get" => {
                     #[allow(non_camel_case_types)]
                     struct GetSvc<T: Collections>(pub Arc<T>);
-                    impl<T: Collections> tonic::server::UnaryService<super::GetCollectionsRequest> for GetSvc<T> {
-                        type Response = super::GetCollectionsResponse;
+                    impl<T: Collections>
+                        tonic::server::UnaryService<super::GetCollectionInfoRequest> for GetSvc<T>
+                    {
+                        type Response = super::GetCollectionInfoResponse;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetCollectionsRequest>,
+                            request: tonic::Request<super::GetCollectionInfoRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
                             let fut = async move { (*inner).get(request).await };
@@ -292,6 +382,37 @@ pub mod collections_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Collections/List" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListSvc<T: Collections>(pub Arc<T>);
+                    impl<T: Collections> tonic::server::UnaryService<super::ListCollectionsRequest> for ListSvc<T> {
+                        type Response = super::ListCollectionsResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListCollectionsRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).list(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ListSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
                             accept_compression_encodings,

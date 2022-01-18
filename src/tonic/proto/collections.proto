@@ -7,20 +7,30 @@ option java_outer_classname = "QdrantProto";
 package qdrant;
 
 service Collections {
-  rpc Get (GetCollectionsRequest) returns (GetCollectionsResponse) {}
+  rpc Get (GetCollectionInfoRequest) returns (GetCollectionInfoResponse) {}
+  rpc List (ListCollectionsRequest) returns (ListCollectionsResponse) {}
   rpc Create (CreateCollection) returns (CollectionOperationResponse) {}
   rpc Update (UpdateCollection) returns (CollectionOperationResponse) {}
   rpc Delete (DeleteCollection) returns (CollectionOperationResponse) {}
 }
 
-message GetCollectionsRequest {
+message GetCollectionInfoRequest {
+  string name = 1;
+}
+
+message ListCollectionsRequest {
 }
 
 message CollectionDescription {
   string name = 1;
 }
 
-message GetCollectionsResponse {
+message GetCollectionInfoResponse {
+  CollectionInfo result = 1;
+  double time = 2;
+}
+
+message ListCollectionsResponse {
   repeated CollectionDescription collections = 1;
   double time = 2;
 }
@@ -29,6 +39,19 @@ enum Distance {
   Cosine = 0;
   Euclid = 1;
   Dot = 2;
+}
+
+enum CollectionStatus {
+  Green = 0;
+  Yellow = 1;
+  Red = 2;
+}
+
+enum PayloadSchemaType {
+  Keyword = 0;
+  Integer = 1;
+  Float = 2;
+  Geo = 3;
 }
 
 message HnswConfigDiff {
@@ -75,4 +98,31 @@ message CollectionOperationResponse {
   optional bool result = 1;
   optional string error = 2;
   double time = 3;
+}
+
+message CollectionParams {
+  uint64 vector_size = 1;
+  Distance distance = 2;
+}
+
+message CollectionConfig {
+  CollectionParams params = 1;
+  HnswConfigDiff hnsw_config = 2;
+  OptimizersConfigDiff optimizer_config = 3;
+  WalConfigDiff wal_config = 4;
+}
+
+message PayloadSchemaInfo {
+  PayloadSchemaType data_type = 1;
+  bool indexed = 2;
+}
+
+message CollectionInfo {
+  CollectionStatus status = 1;
+  uint64 vectors_count = 2;
+  uint64 segments_count = 3;
+  uint64 disk_data_size = 4;
+  uint64 ram_data_size = 5;
+  CollectionConfig config = 6;
+  map<string, PayloadSchemaInfo> payload_schema = 7;
 }
