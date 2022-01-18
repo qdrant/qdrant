@@ -392,15 +392,20 @@ impl Drop for Collection {
 
         block_on(self.wait_update_workers_stop()).unwrap();
 
-        // The drop could be called from the tokio context, e.g. from perform_collection_operation method.
-        // Calling remove from there would lead to the following error in a new version of tokio:
-        // "Cannot drop a runtime in a context where blocking is not allowed. This happens when a runtime is dropped from within an asynchronous context."
-        // So the workaround for move out the runtime handler and drop it in the separate thread.
-        // The proper solution is to reconsider the collection to be an owner of the runtime
-        let handle = self.runtime_handle.take();
-        let thread_handler = thread::spawn(move || {
-            drop(handle);
-        });
-        thread_handler.join().unwrap();
+        match self.runtime_handle.take() {
+            None => {}
+            Some(handle) => {
+                // The drop could be called from the tokio context, e.g. from perform_collection_operation method.
+                // Calling remove from there would lead to the following error in a new version of tokio:
+                // "Cannot drop a runtime in a context where blocking is not allowed. This happens when a runtime is dropped from within an asynchronous context."
+                // So the workaround for move out the runtime handler and drop it in the separate thread.
+                // The proper solution is to reconsider the collection to be an owner of the runtime
+
+                let thread_handler = thread::spawn(move || {
+                    drop(handle);
+                });
+                thread_handler.join().unwrap();
+            }
+        }
     }
 }
