@@ -13,7 +13,7 @@ tempdir = "0.3.7"
 sled = "0.34"
 num_cpus = "1.0"
 thiserror = "1.0"
-rand = "0.7.3"
+rand = "0.8.3"
 wal = { git = "https://github.com/generall/wal.git" }
 tokio = {version = "~1.14", features = ["rt-multi-thread"]}
 serde = { version = "~1.0", features = ["derive"] }
