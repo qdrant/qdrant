@@ -114,3 +114,92 @@ paths:
               $ref: "#/components/schemas/ChangeAliasesOperation"
 
       responses: #@ response(type("boolean"))
+
+  /collections/{collection_name}/index/{index_name}:
+    post:
+      tags:
+        - index
+      summary: Create index in collection
+      description: Create new index for collection
+      operationId: create_index
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+        - name: index_name
+          in: path
+          description: Name of the new index
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum:
+                      - ok
+                  result:
+                    type: boolean
+
+    delete:
+      tags:
+        - collections
+      summary: Create index in collection
+      description: Create new index for collection
+      operationId: create_index
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+        - name: index_name
+          in: path
+          description: Name of the new index
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum:
+                      - ok
+                  result:
+                    type: boolean
