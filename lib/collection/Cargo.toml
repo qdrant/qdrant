@@ -38,4 +38,4 @@ segment = {path = "../segment"}
 itertools = "0.9"
 indicatif = "0.16.2"
 schemars = "0.8.0"
-num_cpus = "1.13.0"
+num_cpus = "1.13.1"
