@@ -19,7 +19,7 @@ rand = "0.7.3"
 thiserror = "1.0"
 serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"
-serde_cbor = "0.11.1"
+serde_cbor = "0.11.2"
 rmp-serde = "~0.14"
 wal = { git = "https://github.com/generall/wal.git" }
 ordered-float = "2.10"

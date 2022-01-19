@@ -25,7 +25,7 @@ uuid = { version = "0.8", features = ["v4"] }
 bincode = "1.3"
 serde = { version = "~1.0", features = ["derive", "rc"] }
 serde_json = "~1.0"
-serde_cbor = "0.11.1"
+serde_cbor = "0.11.2"
 ordered-float = "2.10"
 thiserror = "1.0"
 atomic_refcell = "0.1.6"
