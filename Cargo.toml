@@ -16,7 +16,6 @@ service_debug = ["parking_lot", "parking_lot/deadlock_detection"]
 
 [dev-dependencies]
 tempdir = "0.3.7"
-criterion = "0.3"
 
 
 [dependencies]
@@ -29,7 +28,6 @@ log = "0.4"
 env_logger = "0.7.1"
 rand = "0.7.3"
 serde = { version = "~1.0", features = ["derive"] }
-serde_yaml = "~0.8"
 serde_json = "~1.0"
 schemars = "0.8.0"
 itertools = "0.9"

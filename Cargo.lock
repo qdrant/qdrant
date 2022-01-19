@@ -198,12 +198,6 @@ checksum = "f26201604c87b1e01bd3d98f8d5d9a8fcbb815e8cedb41ffccbeb4bf593a35fe"
 
 [[package]]
 name = "ahash"
-version = "0.4.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "739f4a8db6605981345c5654f3a85b056ce52f37a39d34da03f25bf2151ea16e"
-
-[[package]]
-name = "ahash"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "796540673305a66d127804eef19ad696f1f204b8c1025aaca4958c17eab32877"
@@ -893,12 +887,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dtoa"
-version = "0.4.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56899898ce76aaf4a0f24d914c97ea6ed976d42fec6ad33fcbb0a1103e07b2b0"
-
-[[package]]
 name = "dyn-clone"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1269,9 +1257,6 @@ name = "hashbrown"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7afe4a420e3fe79967a00898cc1f4db7c8a49a9333a29f8a4bd76a253d5cd04"
-dependencies = [
- "ahash 0.4.7",
-]
 
 [[package]]
 name = "heapless"
@@ -1624,15 +1609,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51b9bbe6c47d51fc3e1a9b945965946b4c44142ab8792c50835a980d362c2710"
 dependencies = [
  "cfg-if 1.0.0",
-]
-
-[[package]]
-name = "lru"
-version = "0.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f374d42cdfc1d7dbf3d3dec28afab2eb97ffbf43a3234d795b5986dbf4b90ba"
-dependencies = [
- "hashbrown",
 ]
 
 [[package]]
@@ -2293,7 +2269,6 @@ dependencies = [
  "actix-web",
  "collection",
  "config",
- "criterion",
  "env_logger 0.7.1",
  "itertools 0.9.0",
  "log 0.4.14",
@@ -2306,7 +2281,6 @@ dependencies = [
  "segment",
  "serde 1.0.126",
  "serde_json",
- "serde_yaml",
  "storage",
  "tempdir",
  "thiserror",
@@ -2726,11 +2700,9 @@ dependencies = [
  "bit-vec",
  "blas-src",
  "criterion",
- "env_logger 0.7.1",
  "geo",
  "itertools 0.10.0",
  "log 0.4.14",
- "lru",
  "memmap 0.7.0",
  "ndarray",
  "num-derive",
@@ -2860,18 +2832,6 @@ dependencies = [
  "itoa 0.4.7",
  "ryu",
  "serde 1.0.126",
-]
-
-[[package]]
-name = "serde_yaml"
-version = "0.8.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15654ed4ab61726bf918a39cb8d98a2e2995b002387807fa6ba58fdf7f59bb23"
-dependencies = [
- "dtoa",
- "linked-hash-map 0.5.4",
- "serde 1.0.126",
- "yaml-rust",
 ]
 
 [[package]]
