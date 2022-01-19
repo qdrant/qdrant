@@ -20,9 +20,9 @@ pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: 
     let mut rnd = rand::thread_rng();
     let payload_key = "number".to_owned();
     for _ in 0..num_vectors {
-        let random_vector: Vec<_> = (0..dim).map(|_| rnd.gen_range(0.0, 1.0)).collect();
-        let point_id = rnd.gen_range(1, 100_000_000);
-        let payload_value = rnd.gen_range(1, 1_000);
+        let random_vector: Vec<_> = (0..dim).map(|_| rnd.gen_range(0.0..1.0)).collect();
+        let point_id = rnd.gen_range(1..100_000_000);
+        let payload_value = rnd.gen_range(1..1_000);
         segment
             .upsert_point(opnum, point_id, &random_vector)
             .unwrap();
