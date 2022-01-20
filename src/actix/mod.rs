@@ -12,7 +12,7 @@ use storage::content_manager::toc::TableOfContent;
 use crate::actix::api::recommend_api::recommend_points;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::search_points;
-use crate::actix::api::update_api::{delete_points, set_payload, upsert_points, clear_payload, delete_payload};
+use crate::actix::api::update_api::{delete_points, set_payload, upsert_points, clear_payload, delete_payload, create_index, delete_index};
 use crate::common::models::VersionInfo;
 use crate::settings::{max_web_workers, Settings};
 
@@ -55,6 +55,8 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
                 .service(set_payload)
                 .service(delete_payload)
                 .service(clear_payload)
+                .service(create_index)
+                .service(delete_index)
                 .service(get_point)
                 .service(get_points)
                 .service(scroll_points)

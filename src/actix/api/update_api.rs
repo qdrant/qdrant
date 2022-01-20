@@ -115,7 +115,7 @@ pub async fn clear_payload(
 }
 
 #[put("/collections/{name}/index/{index_name}}")]
-async fn create_index(
+pub async fn create_index(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<(String, String)>,
     params: Query<UpdateParam>,
@@ -129,7 +129,7 @@ async fn create_index(
 }
 
 #[delete("/collections/{name}/index/{index_name}}")]
-async fn delete_index(
+pub async fn delete_index(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<(String, String)>,
     params: Query<UpdateParam>,
