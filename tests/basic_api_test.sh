@@ -151,12 +151,6 @@ INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection"
   exit 1
 }
 
-# clear payload
-curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/payload/clear?wait=true" \
-  -H 'Content-Type: application/json' \
-  --data-raw '[ 6 ]' \
-  --fail -s | jq
-
 # delete payload
 curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/payload/delete?wait=true" \
   -H 'Content-Type: application/json' \
@@ -164,7 +158,4 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/payload/
     "keys": [ "test_payload" ],
     "points": [ 6 ]
   }' \
-  --fail -s | jq
-
-curl -L -X GET "http://$QDRANT_HOST/collections/test_collection" \
   --fail -s | jq
