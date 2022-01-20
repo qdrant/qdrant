@@ -154,12 +154,10 @@ mod tests {
         process_payload_operation(
             &segments,
             100,
-            &PayloadOps::SetPayload(
-                SetPayload {
-                    payload,
-                    points: points.clone(),
-                }
-            ),
+            &PayloadOps::SetPayload(SetPayload {
+                payload,
+                points: points.clone(),
+            }),
         )
         .unwrap();
 
@@ -184,12 +182,10 @@ mod tests {
         process_payload_operation(
             &segments,
             101,
-            &PayloadOps::DeletePayload(
-                DeletePayload {
-                    points: vec![3],
-                    keys: vec!["color".to_string(), "empty".to_string()],
-                }
-            ),
+            &PayloadOps::DeletePayload(DeletePayload {
+                points: vec![3],
+                keys: vec!["color".to_string(), "empty".to_string()],
+            }),
         )
         .unwrap();
 

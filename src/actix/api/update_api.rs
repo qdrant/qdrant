@@ -1,15 +1,18 @@
 use crate::actix::helpers::process_response;
-use crate::common::points::{do_update_points, do_delete_points, do_set_payload, do_delete_payload, do_upsert_points, do_create_index};
+use crate::common::points::{
+    do_create_index, do_delete_payload, do_delete_points, do_set_payload, do_update_points,
+    do_upsert_points,
+};
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
-use actix_web::{post, put, delete, web, Responder};
+use actix_web::{delete, post, put, web, Responder};
+use collection::operations::payload_ops::{DeletePayload, SetPayload};
+use collection::operations::point_ops::PointInsertOperations;
+use collection::operations::CollectionUpdateOperations;
 use schemars::JsonSchema;
+use segment::types::PointIdType;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use collection::operations::CollectionUpdateOperations;
-use collection::operations::payload_ops::{DeletePayload, SetPayload};
-use collection::operations::point_ops::{PointInsertOperations};
-use segment::types::PointIdType;
 use storage::content_manager::toc::TableOfContent;
 
 #[derive(Deserialize, Serialize, JsonSchema)]

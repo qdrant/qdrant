@@ -159,12 +159,11 @@ async fn test_collection_loading() {
             PayloadInterface::KeywordShortcut(PayloadVariant::Value("red".to_string())),
         );
 
-        let assign_payload = CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(
-            SetPayload {
+        let assign_payload =
+            CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayload {
                 payload,
                 points: vec![2, 3],
-            }
-        ));
+            }));
 
         collection.update(assign_payload, true).await.unwrap();
     }

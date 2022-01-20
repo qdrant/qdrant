@@ -52,7 +52,7 @@ mod tests {
         let operation: PayloadOps = serde_json::from_str(query1).unwrap();
 
         match operation {
-            PayloadOps::SetPayload (set_payload ) => {
+            PayloadOps::SetPayload(set_payload) => {
                 let payload = &set_payload.payload;
                 assert_eq!(payload.len(), 2);
 
