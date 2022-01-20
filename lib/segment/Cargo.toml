@@ -10,7 +10,7 @@ edition = "2021"
 pprof = { version = "0.6", features = ["flamegraph", "protobuf"] }
 tempdir = "0.3.7"
 criterion = "0.3"
-rmp-serde = "~0.14"
+rmp-serde = "~1.0"
 
 [dependencies]
 
