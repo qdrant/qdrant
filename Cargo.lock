@@ -2072,9 +2072,9 @@ dependencies = [
 
 [[package]]
 name = "pprof"
-version = "0.6.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d47237f290398d4cfcd293fcc9dcc53cdb1f9bde65b78fcbfaafa7f8190d9e9"
+checksum = "55f35f865aa964be21fcde114cbd1cfbd9bf8a471460ed965b0f84f96c711401"
 dependencies = [
  "backtrace",
  "cfg-if",
@@ -2088,6 +2088,7 @@ dependencies = [
  "prost 0.9.0",
  "prost-build 0.9.0",
  "prost-derive 0.9.0",
+ "smallvec",
  "symbolic-demangle",
  "tempfile",
  "thiserror",
@@ -2801,9 +2802,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.6.1"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
+checksum = "f2dd574626839106c320a323308629dcb1acfc96e32a8cba364ddc61ac23ee83"
 
 [[package]]
 name = "socket2"
