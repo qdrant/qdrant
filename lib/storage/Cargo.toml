@@ -19,7 +19,7 @@ tokio = {version = "~1.15", features = ["rt-multi-thread"]}
 serde = { version = "~1.0", features = ["derive"] }
 schemars = "0.8.8"
 itertools = "0.10"
-async-trait = "0.1.51"
+async-trait = "0.1.52"
 
 
 segment = {path = "../segment"}
