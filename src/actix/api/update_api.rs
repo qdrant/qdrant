@@ -1,8 +1,8 @@
 use crate::actix::helpers::process_response;
-use crate::common::points::{do_update_points, do_delete_points, do_set_payload, do_delete_payload, do_upsert_points};
+use crate::common::points::{do_update_points, do_delete_points, do_set_payload, do_delete_payload, do_upsert_points, do_create_index};
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
-use actix_web::{post, web, Responder};
+use actix_web::{post, put, delete, web, Responder};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -111,5 +111,33 @@ pub async fn clear_payload(
     let timing = Instant::now();
 
     let response = do_delete_points(&toc.into_inner(), &collection_name, operation, wait).await;
+    process_response(response, timing)
+}
+
+#[put("/collections/{name}/index/{index_name}}")]
+async fn create_index(
+    toc: web::Data<Arc<TableOfContent>>,
+    path: web::Path<(String, String)>,
+    params: Query<UpdateParam>,
+) -> impl Responder {
+    let (collection_name, index_name) = path.into_inner();
+    let wait = params.wait.unwrap_or(false);
+    let timing = Instant::now();
+
+    let response = do_create_index(&toc.into_inner(), &collection_name, index_name, wait).await;
+    process_response(response, timing)
+}
+
+#[delete("/collections/{name}/index/{index_name}}")]
+async fn delete_index(
+    toc: web::Data<Arc<TableOfContent>>,
+    path: web::Path<(String, String)>,
+    params: Query<UpdateParam>,
+) -> impl Responder {
+    let (collection_name, index_name) = path.into_inner();
+    let wait = params.wait.unwrap_or(false);
+    let timing = Instant::now();
+
+    let response = do_create_index(&toc.into_inner(), &collection_name, index_name, wait).await;
     process_response(response, timing)
 }

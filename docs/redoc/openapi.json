@@ -344,6 +344,30 @@
         "description": "Operation for deleting collection with given name",
         "type": "string"
       },
+      "DeletePayload": {
+        "properties": {
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "points": {
+            "description": "Deletes values from each point in this list",
+            "items": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "keys",
+          "points"
+        ],
+        "type": "object"
+      },
       "Distance": {
         "description": "Type of internal tags, build from payload Distance function types used to compare vectors",
         "enum": [
@@ -871,28 +895,7 @@
             "description": "Set payload value, overrides if it is already exists",
             "properties": {
               "set_payload": {
-                "properties": {
-                  "payload": {
-                    "additionalProperties": {
-                      "$ref": "#/components/schemas/PayloadInterface"
-                    },
-                    "type": "object"
-                  },
-                  "points": {
-                    "description": "Assigns payload to each point in this list",
-                    "items": {
-                      "format": "uint64",
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "type": "array"
-                  }
-                },
-                "required": [
-                  "payload",
-                  "points"
-                ],
-                "type": "object"
+                "$ref": "#/components/schemas/SetPayload"
               }
             },
             "required": [
@@ -905,28 +908,7 @@
             "description": "Deletes specified payload values if they are assigned",
             "properties": {
               "delete_payload": {
-                "properties": {
-                  "keys": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "points": {
-                    "description": "Deletes values from each point in this list",
-                    "items": {
-                      "format": "uint64",
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "type": "array"
-                  }
-                },
-                "required": [
-                  "keys",
-                  "points"
-                ],
-                "type": "object"
+                "$ref": "#/components/schemas/DeletePayload"
               }
             },
             "required": [
@@ -1721,6 +1703,30 @@
         ],
         "type": "object"
       },
+      "SetPayload": {
+        "properties": {
+          "payload": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PayloadInterface"
+            },
+            "type": "object"
+          },
+          "points": {
+            "description": "Assigns payload to each point in this list",
+            "items": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "payload",
+          "points"
+        ],
+        "type": "object"
+      },
       "StorageOperations": {
         "anyOf": [
           {
@@ -2080,8 +2086,8 @@
     },
     "/collections/{collection_name}/index/{index_name}": {
       "delete": {
-        "description": "Create new index for collection",
-        "operationId": "create_index",
+        "description": "Delete index for collection",
+        "operationId": "delete_index",
         "parameters": [
           {
             "description": "Name of the collection",
@@ -2093,7 +2099,7 @@
             }
           },
           {
-            "description": "Name of the new index",
+            "description": "Name of the index to delete",
             "in": "path",
             "name": "index_name",
             "required": true,
@@ -2140,7 +2146,7 @@
             "description": "error"
           }
         },
-        "summary": "Create index in collection",
+        "summary": "Delete index in collection",
         "tags": [
           "collections"
         ]

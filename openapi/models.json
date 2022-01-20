@@ -344,6 +344,30 @@
                 "description": "Operation for deleting collection with given name",
                 "type": "string"
             },
+            "DeletePayload": {
+                "type": "object",
+                "required": [
+                    "keys",
+                    "points"
+                ],
+                "properties": {
+                    "keys": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "points": {
+                        "description": "Deletes values from each point in this list",
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "uint64",
+                            "minimum": 0
+                        }
+                    }
+                }
+            },
             "Distance": {
                 "description": "Type of internal tags, build from payload Distance function types used to compare vectors",
                 "type": "string",
@@ -852,28 +876,7 @@
                         ],
                         "properties": {
                             "set_payload": {
-                                "type": "object",
-                                "required": [
-                                    "payload",
-                                    "points"
-                                ],
-                                "properties": {
-                                    "payload": {
-                                        "type": "object",
-                                        "additionalProperties": {
-                                            "$ref": "#/components/schemas/PayloadInterface"
-                                        }
-                                    },
-                                    "points": {
-                                        "description": "Assigns payload to each point in this list",
-                                        "type": "array",
-                                        "items": {
-                                            "type": "integer",
-                                            "format": "uint64",
-                                            "minimum": 0
-                                        }
-                                    }
-                                }
+                                "$ref": "#/components/schemas/SetPayload"
                             }
                         },
                         "additionalProperties": false
@@ -886,28 +889,7 @@
                         ],
                         "properties": {
                             "delete_payload": {
-                                "type": "object",
-                                "required": [
-                                    "keys",
-                                    "points"
-                                ],
-                                "properties": {
-                                    "keys": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "string"
-                                        }
-                                    },
-                                    "points": {
-                                        "description": "Deletes values from each point in this list",
-                                        "type": "array",
-                                        "items": {
-                                            "type": "integer",
-                                            "format": "uint64",
-                                            "minimum": 0
-                                        }
-                                    }
-                                }
+                                "$ref": "#/components/schemas/DeletePayload"
                             }
                         },
                         "additionalProperties": false
@@ -1695,6 +1677,30 @@
                         "description": "Return point vector with the result. Default: false",
                         "type": "boolean",
                         "nullable": true
+                    }
+                }
+            },
+            "SetPayload": {
+                "type": "object",
+                "required": [
+                    "payload",
+                    "points"
+                ],
+                "properties": {
+                    "payload": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/PayloadInterface"
+                        }
+                    },
+                    "points": {
+                        "description": "Assigns payload to each point in this list",
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "uint64",
+                            "minimum": 0
+                        }
                     }
                 }
             },
