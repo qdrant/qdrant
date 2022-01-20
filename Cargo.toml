@@ -46,7 +46,7 @@ collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 
 [build-dependencies]
-tonic-build = { version = "0.5.0", features = ["prost"], optional = true }
+tonic-build = { version = "0.6.2", features = ["prost"], optional = true }
 
 [patch.crates-io]
 # Env flag OPENBLAS_DYNAMIC_ARCH is implemented in this custom fork

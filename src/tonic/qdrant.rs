@@ -182,7 +182,7 @@ pub mod collections_client {
     impl<T> CollectionsClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::ResponseBody: Body + Send + Sync + 'static,
+        T::ResponseBody: Body + Send + 'static,
         T::Error: Into<StdError>,
         <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {
@@ -195,7 +195,7 @@ pub mod collections_client {
             interceptor: F,
         ) -> CollectionsClient<InterceptedService<T, F>>
         where
-            F: FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status>,
+            F: tonic::service::Interceptor,
             T: tonic::codegen::Service<
                 http::Request<tonic::body::BoxBody>,
                 Response = http::Response<
@@ -339,7 +339,7 @@ pub mod collections_server {
         }
         pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
-            F: FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status>,
+            F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
         }
@@ -347,7 +347,7 @@ pub mod collections_server {
     impl<T, B> tonic::codegen::Service<http::Request<B>> for CollectionsServer<T>
     where
         T: Collections,
-        B: Body + Send + Sync + 'static,
+        B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;
@@ -649,7 +649,7 @@ pub mod points_client {
     impl<T> PointsClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::ResponseBody: Body + Send + Sync + 'static,
+        T::ResponseBody: Body + Send + 'static,
         T::Error: Into<StdError>,
         <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {
@@ -662,7 +662,7 @@ pub mod points_client {
             interceptor: F,
         ) -> PointsClient<InterceptedService<T, F>>
         where
-            F: FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status>,
+            F: tonic::service::Interceptor,
             T: tonic::codegen::Service<
                 http::Request<tonic::body::BoxBody>,
                 Response = http::Response<
@@ -734,7 +734,7 @@ pub mod points_server {
         }
         pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
-            F: FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status>,
+            F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
         }
@@ -742,7 +742,7 @@ pub mod points_server {
     impl<T, B> tonic::codegen::Service<http::Request<B>> for PointsServer<T>
     where
         T: Points,
-        B: Body + Send + Sync + 'static,
+        B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;
@@ -851,7 +851,7 @@ pub mod qdrant_client {
     impl<T> QdrantClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::ResponseBody: Body + Send + Sync + 'static,
+        T::ResponseBody: Body + Send + 'static,
         T::Error: Into<StdError>,
         <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {
@@ -864,7 +864,7 @@ pub mod qdrant_client {
             interceptor: F,
         ) -> QdrantClient<InterceptedService<T, F>>
         where
-            F: FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status>,
+            F: tonic::service::Interceptor,
             T: tonic::codegen::Service<
                 http::Request<tonic::body::BoxBody>,
                 Response = http::Response<
@@ -936,7 +936,7 @@ pub mod qdrant_server {
         }
         pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
-            F: FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status>,
+            F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
         }
@@ -944,7 +944,7 @@ pub mod qdrant_server {
     impl<T, B> tonic::codegen::Service<http::Request<B>> for QdrantServer<T>
     where
         T: Qdrant,
-        B: Body + Send + Sync + 'static,
+        B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;
