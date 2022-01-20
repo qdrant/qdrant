@@ -1,5 +1,8 @@
 use crate::actix::helpers::process_response;
-use crate::common::points::{do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points, do_set_payload, do_update_points, do_upsert_points};
+use crate::common::points::{
+    do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
+    do_set_payload, do_update_points, do_upsert_points,
+};
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{delete, post, put, web, Responder};

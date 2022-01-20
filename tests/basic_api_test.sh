@@ -5,10 +5,12 @@ set -ex
 
 QDRANT_HOST='localhost:6333'
 
+# cleanup collection if it exists
 curl -X DELETE "http://$QDRANT_HOST/collections/test_collection" \
   -H 'Content-Type: application/json' \
   --fail -s | jq
 
+# create collection
 curl -X PUT "http://$QDRANT_HOST/collections/test_collection" \
   -H 'Content-Type: application/json' \
   --fail -s \
@@ -19,6 +21,7 @@ curl -X PUT "http://$QDRANT_HOST/collections/test_collection" \
 
 curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq
 
+# insert points
 curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points?wait=true" \
   -H 'Content-Type: application/json' \
   --fail -s \
@@ -39,6 +42,7 @@ SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_colle
   exit 1
 }
 
+# search points
 curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/search" \
   -H 'Content-Type: application/json' \
   --fail -s \
@@ -66,11 +70,13 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/search" 
   }' | jq
 
 
+# scroll points
 curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/scroll" \
   --fail -s \
   -H 'Content-Type: application/json' \
   --data-raw '{ "offset": 2, "limit": 2, "with_vector": true }' | jq
 
+# change aliases
 curl -L -X POST "http://$QDRANT_HOST/collections" \
   --fail -s \
   -H 'Content-Type: application/json' \
@@ -87,6 +93,7 @@ curl -L -X POST "http://$QDRANT_HOST/collections" \
       }
   }' | jq
 
+# search points
 curl -L -X POST "http://$QDRANT_HOST/collections/test_alias/points/search" \
   -H 'Content-Type: application/json' \
   --fail -s \
@@ -95,39 +102,69 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_alias/points/search" \
         "top": 3
     }' | jq
 
+# delete points
 curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/delete?wait=true" \
   -H 'Content-Type: application/json' \
   --fail -s \
-  --data-raw '[1, 2, 3, 4, 5, 6]' | jq
+  --data-raw '[ 1, 2, 3, 4, 5 ]' | jq
 
 SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')
-[[ "$SAVED_VECTORS_COUNT" == "0" ]] || {
-  echo 'check failed - 0 points expected'
+[[ "$SAVED_VECTORS_COUNT" == "1" ]] || {
+  echo 'check failed - 1 points expected'
   exit 1
 }
 
-INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.payload_schema.city.indexed')
+# create payload
+curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/payload?wait=true" \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+    "payload": { "test_payload" : "keyword" },
+    "points": [ 6 ]
+  }' \
+  --fail -s | jq
+
+# index payload
+INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.payload_schema.test_payload.indexed')
 [[ "$INDEXED_FIELD" == "false" ]] || {
   echo 'check failed - field should not be indexed'
   exit 1
 }
 
-curl -X PUT "http://$QDRANT_HOST/collections/test_collection/index/city?wait=true" \
+curl -X PUT "http://$QDRANT_HOST/collections/test_collection/index/test_payload?wait=true" \
   -H 'Content-Type: application/json' \
   --fail -s | jq
 
-INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.payload_schema.city.indexed')
+INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.payload_schema.test_payload.indexed')
 [[ "$INDEXED_FIELD" == "true" ]] || {
   echo 'check failed - field should be indexed'
   exit 1
 }
 
-curl -X DELETE "http://$QDRANT_HOST/collections/test_collection/index/city?wait=true" \
+# delete index on payload
+curl -X DELETE "http://$QDRANT_HOST/collections/test_collection/index/test_payload?wait=true" \
   -H 'Content-Type: application/json' \
   --fail -s | jq
 
-INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.payload_schema.city.indexed')
+INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.payload_schema.test_payload.indexed')
 [[ "$INDEXED_FIELD" == "false" ]] || {
   echo 'check failed - field should not be indexed'
   exit 1
 }
+
+# clear payload
+curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/payload/clear?wait=true" \
+  -H 'Content-Type: application/json' \
+  --data-raw '[ 6 ]' \
+  --fail -s | jq
+
+# delete payload
+curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/payload/delete?wait=true" \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+    "keys": [ "test_payload" ],
+    "points": [ 6 ]
+  }' \
+  --fail -s | jq
+
+curl -L -X GET "http://$QDRANT_HOST/collections/test_collection" \
+  --fail -s | jq
