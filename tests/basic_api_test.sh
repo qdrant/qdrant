@@ -35,7 +35,7 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points?wait=tru
 
 SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')
 [[ "$SAVED_VECTORS_COUNT" == "6" ]] || {
-  echo 'check failed'
+  echo 'check failed - 6 points expected'
   exit 1
 }
 
@@ -94,3 +94,40 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_alias/points/search" \
         "vector": [0.2,0.1,0.9,0.7],
         "top": 3
     }' | jq
+
+curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/delete?wait=true" \
+  -H 'Content-Type: application/json' \
+  --fail -s \
+  --data-raw '[1, 2, 3, 4, 5, 6]' | jq
+
+SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')
+[[ "$SAVED_VECTORS_COUNT" == "0" ]] || {
+  echo 'check failed - 0 points expected'
+  exit 1
+}
+
+INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.payload_schema.city.indexed')
+[[ "$INDEXED_FIELD" == "false" ]] || {
+  echo 'check failed - field should not be indexed'
+  exit 1
+}
+
+curl -X PUT "http://$QDRANT_HOST/collections/test_collection/index/city?wait=true" \
+  -H 'Content-Type: application/json' \
+  --fail -s | jq
+
+INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.payload_schema.city.indexed')
+[[ "$INDEXED_FIELD" == "true" ]] || {
+  echo 'check failed - field should be indexed'
+  exit 1
+}
+
+curl -X DELETE "http://$QDRANT_HOST/collections/test_collection/index/city?wait=true" \
+  -H 'Content-Type: application/json' \
+  --fail -s | jq
+
+INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.payload_schema.city.indexed')
+[[ "$INDEXED_FIELD" == "false" ]] || {
+  echo 'check failed - field should not be indexed'
+  exit 1
+}
