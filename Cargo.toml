@@ -37,16 +37,16 @@ config = "~0.11.0"
 tokio = { version = "~1.15", features = ["full"] }
 
 actix-web = { version = "4.0.0-beta.20", optional = true }
-tonic =  { version = "0.5.0", optional = true }
+tonic =  { version = "0.6.2", optional = true }
 num-traits = { version = "0.2.14", optional = true }
-prost = { version = "0.8", optional = true }
+prost = { version = "0.9", optional = true }
 
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 
 [build-dependencies]
-tonic-build = { version = "0.5.0", features = ["prost"], optional = true }
+tonic-build = { version = "0.6.2", features = ["prost"], optional = true }
 
 [patch.crates-io]
 # Env flag OPENBLAS_DYNAMIC_ARCH is implemented in this custom fork
