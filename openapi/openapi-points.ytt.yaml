@@ -96,6 +96,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{name}/points/delete:
@@ -110,7 +116,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/DeletePoints"
+              $ref: "#/components/schemas/PointsIds"
 
       parameters:
         - name: name
@@ -119,7 +125,13 @@ paths:
           required: true
           schema:
             type: string
-      responses: #@ response(type("boolean"))
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(reference("UpdateResult"))
 
   /collections/{name}/points/payload:
     post:
@@ -142,6 +154,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{name}/points/payload/delete:
@@ -165,13 +183,19 @@ paths:
           required: true
           schema:
             type: string
-      responses: #@ response(type("boolean"))
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(reference("UpdateResult"))
 
   /collections/{name}/points/payload/clear:
     post:
       tags:
         - points
-      summary: Delete payload
+      summary: Clear payload
       description: Clear payload for points
       operationId: clear_payload
       requestBody:
@@ -179,7 +203,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ClearPayload"
+              $ref: "#/components/schemas/PointsIds"
 
       parameters:
         - name: name
@@ -188,4 +212,10 @@ paths:
           required: true
           schema:
             type: string
-      responses: #@ response(reference("UpdateResult"))
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+    responses: #@ response(reference("UpdateResult"))

@@ -117,7 +117,7 @@ pub async fn clear_payload(
 }
 
 #[put("/collections/{name}/index")]
-pub async fn create_index(
+pub async fn create_field_index(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,
     operation: web::Json<CreateFieldIndex>,
@@ -133,7 +133,7 @@ pub async fn create_index(
 }
 
 #[delete("/collections/{name}/index/{field_name}")]
-pub async fn delete_index(
+pub async fn delete_field_index(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<(String, String)>,
     params: Query<UpdateParam>,
@@ -153,6 +153,6 @@ pub fn config_update_api(cfg: &mut web::ServiceConfig) {
         .service(set_payload)
         .service(delete_payload)
         .service(clear_payload)
-        .service(create_index)
-        .service(delete_index);
+        .service(create_field_index)
+        .service(delete_field_index);
 }

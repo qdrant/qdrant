@@ -457,7 +457,7 @@
         "type": "object"
       },
       "FieldIndexOperations": {
-        "anyOf": [
+        "oneOf": [
           {
             "additionalProperties": false,
             "description": "Create index for payload field",
@@ -812,7 +812,8 @@
         "description": "Structure for converting user-provided payload into internal structure representation\n\nUsed to allow user provide payload in more human-friendly format, and do not force explicit brackets, included constructions, e.t.c.\n\nExample:\n\n```json {..., \"payload\": {\"city\": \"Berlin\"}, ... } ```\n\nShould be captured by `KeywordShortcut`"
       },
       "PayloadInterfaceStrict": {
-        "anyOf": [
+        "description": "Fallback for `PayloadInterface` which is used if user explicitly specifies type of payload\n\nExample:\n\n```json {..., \"payload\": {\"city\": { \"type\": \"keyword\", \"value\": \"Berlin\" }}, ... } ```\n\nShould be captured by `Keyword(PayloadVariant<String>)`",
+        "oneOf": [
           {
             "properties": {
               "type": {
@@ -885,11 +886,11 @@
             ],
             "type": "object"
           }
-        ],
-        "description": "Fallback for `PayloadInterface` which is used if user explicitly specifies type of payload\n\nExample:\n\n```json {..., \"payload\": {\"city\": { \"type\": \"keyword\", \"value\": \"Berlin\" }}, ... } ```\n\nShould be captured by `Keyword(PayloadVariant<String>)`"
+        ]
       },
       "PayloadOps": {
-        "anyOf": [
+        "description": "Define operations description for point payloads manipulation",
+        "oneOf": [
           {
             "additionalProperties": false,
             "description": "Set payload value, overrides if it is already exists",
@@ -942,8 +943,7 @@
             ],
             "type": "object"
           }
-        ],
-        "description": "Define operations description for point payloads manipulation"
+        ]
       },
       "PayloadSchemaInfo": {
         "description": "Payload field type & index information",
@@ -962,7 +962,8 @@
         "type": "object"
       },
       "PayloadSchemaType": {
-        "anyOf": [
+        "description": "All possible names of payload types",
+        "oneOf": [
           {
             "properties": {
               "type": {
@@ -1019,8 +1020,7 @@
             ],
             "type": "object"
           }
-        ],
-        "description": "All possible names of payload types"
+        ]
       },
       "PayloadSelector": {
         "additionalProperties": false,
@@ -1048,7 +1048,8 @@
         "type": "object"
       },
       "PayloadType": {
-        "anyOf": [
+        "description": "All possible payload types",
+        "oneOf": [
           {
             "properties": {
               "type": {
@@ -1135,8 +1136,7 @@
             ],
             "type": "object"
           }
-        ],
-        "description": "All possible payload types"
+        ]
       },
       "PayloadVariant_for_GeoPoint": {
         "anyOf": [
@@ -1199,7 +1199,7 @@
         "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
       },
       "PointInsertOperations": {
-        "anyOf": [
+        "oneOf": [
           {
             "additionalProperties": false,
             "description": "Inset points from a batch.",
@@ -1267,7 +1267,7 @@
         ]
       },
       "PointOperations": {
-        "anyOf": [
+        "oneOf": [
           {
             "additionalProperties": false,
             "description": "Insert or update points",
@@ -1728,7 +1728,8 @@
         "type": "object"
       },
       "StorageOperations": {
-        "anyOf": [
+        "description": "Enumeration of all possible collection update operations",
+        "oneOf": [
           {
             "additionalProperties": false,
             "properties": {
@@ -1777,8 +1778,7 @@
             ],
             "type": "object"
           }
-        ],
-        "description": "Enumeration of all possible collection update operations"
+        ]
       },
       "UpdateCollection": {
         "description": "Operation for updating parameters of the existing collection",
@@ -2084,10 +2084,10 @@
         ]
       }
     },
-    "/collections/{collection_name}/index/{index_name}": {
+    "/collections/{collection_name}/index": {
       "delete": {
-        "description": "Delete index for collection",
-        "operationId": "delete_index",
+        "description": "Delete field index for collection",
+        "operationId": "delete_field_index",
         "parameters": [
           {
             "description": "Name of the collection",
@@ -2099,9 +2099,9 @@
             }
           },
           {
-            "description": "Name of the index to delete",
+            "description": "Name of the field where to delete the index",
             "in": "path",
-            "name": "index_name",
+            "name": "field_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2115,7 +2115,7 @@
                 "schema": {
                   "properties": {
                     "result": {
-                      "type": "boolean"
+                      "$ref": "#/components/schemas/UpdateResult"
                     },
                     "status": {
                       "enum": [
@@ -2152,8 +2152,8 @@
         ]
       },
       "post": {
-        "description": "Create new index for collection",
-        "operationId": "create_index",
+        "description": "Create index for field in collection",
+        "operationId": "create_field_index",
         "parameters": [
           {
             "description": "Name of the collection",
@@ -2163,17 +2163,18 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "Name of the new index",
-            "in": "path",
-            "name": "index_name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFieldIndex"
+              }
+            }
+          },
+          "description": "Field name"
+        },
         "responses": {
           "200": {
             "content": {
@@ -2181,7 +2182,7 @@
                 "schema": {
                   "properties": {
                     "result": {
-                      "type": "boolean"
+                      "$ref": "#/components/schemas/UpdateResult"
                     },
                     "status": {
                       "enum": [
@@ -2212,7 +2213,7 @@
             "description": "error"
           }
         },
-        "summary": "Create index in collection",
+        "summary": "Create index for field in collection",
         "tags": [
           "index"
         ]
@@ -2628,6 +2629,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -2697,13 +2707,22 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DeletePoints"
+                "$ref": "#/components/schemas/PointsIds"
               }
             }
           },
@@ -2716,7 +2735,7 @@
                 "schema": {
                   "properties": {
                     "result": {
-                      "type": "boolean"
+                      "$ref": "#/components/schemas/UpdateResult"
                     },
                     "status": {
                       "enum": [
@@ -2765,6 +2784,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -2835,60 +2863,69 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ClearPayload"
+                "$ref": "#/components/schemas/PointsIds"
               }
             }
           },
           "description": "clear payload on points"
         },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "$ref": "#/components/schemas/UpdateResult"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Delete payload",
+        "summary": "Clear payload",
         "tags": [
           "points"
         ]
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "result": {
+                    "$ref": "#/components/schemas/UpdateResult"
+                  },
+                  "status": {
+                    "enum": [
+                      "ok"
+                    ],
+                    "type": "string"
+                  },
+                  "time": {
+                    "description": "Time spent to process this request",
+                    "format": "float",
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "description": "successful operation"
+        },
+        "default": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErrorResponse"
+              }
+            }
+          },
+          "description": "error"
+        }
       }
     },
     "/collections/{name}/points/payload/delete": {
@@ -2903,6 +2940,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -2923,7 +2969,7 @@
                 "schema": {
                   "properties": {
                     "result": {
-                      "type": "boolean"
+                      "$ref": "#/components/schemas/UpdateResult"
                     },
                     "status": {
                       "enum": [

@@ -434,7 +434,7 @@
                 }
             },
             "FieldIndexOperations": {
-                "anyOf": [
+                "oneOf": [
                     {
                         "description": "Create index for payload field",
                         "type": "object",
@@ -790,7 +790,7 @@
             },
             "PayloadInterfaceStrict": {
                 "description": "Fallback for `PayloadInterface` which is used if user explicitly specifies type of payload\n\nExample:\n\n```json {..., \"payload\": {\"city\": { \"type\": \"keyword\", \"value\": \"Berlin\" }}, ... } ```\n\nShould be captured by `Keyword(PayloadVariant<String>)`",
-                "anyOf": [
+                "oneOf": [
                     {
                         "type": "object",
                         "required": [
@@ -867,7 +867,7 @@
             },
             "PayloadOps": {
                 "description": "Define operations description for point payloads manipulation",
-                "anyOf": [
+                "oneOf": [
                     {
                         "description": "Set payload value, overrides if it is already exists",
                         "type": "object",
@@ -940,7 +940,7 @@
             },
             "PayloadSchemaType": {
                 "description": "All possible names of payload types",
-                "anyOf": [
+                "oneOf": [
                     {
                         "type": "object",
                         "required": [
@@ -1026,7 +1026,7 @@
             },
             "PayloadType": {
                 "description": "All possible payload types",
-                "anyOf": [
+                "oneOf": [
                     {
                         "type": "object",
                         "required": [
@@ -1176,7 +1176,7 @@
                 ]
             },
             "PointInsertOperations": {
-                "anyOf": [
+                "oneOf": [
                     {
                         "description": "Inset points from a batch.",
                         "type": "object",
@@ -1244,7 +1244,7 @@
                 ]
             },
             "PointOperations": {
-                "anyOf": [
+                "oneOf": [
                     {
                         "description": "Insert or update points",
                         "type": "object",
@@ -1706,7 +1706,7 @@
             },
             "StorageOperations": {
                 "description": "Enumeration of all possible collection update operations",
-                "anyOf": [
+                "oneOf": [
                     {
                         "type": "object",
                         "required": [

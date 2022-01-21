@@ -115,13 +115,13 @@ paths:
 
       responses: #@ response(type("boolean"))
 
-  /collections/{collection_name}/index/{index_name}:
+  /collections/{collection_name}/index:
     post:
       tags:
         - index
-      summary: Create index in collection
-      description: Create new index for collection
-      operationId: create_index
+      summary: Create index for field in collection
+      description: Create index for field in collection
+      operationId: create_field_index
       parameters:
         - name: collection_name
           in: path
@@ -129,43 +129,21 @@ paths:
           required: true
           schema:
             type: string
-        - name: index_name
-          in: path
-          description: Name of the new index
-          required: true
-          schema:
-            type: string
-      responses:
-        default:
-          description: error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        200:
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  time:
-                    type: number
-                    format: float
-                    description: Time spent to process this request
-                  status:
-                    type: string
-                    enum:
-                      - ok
-                  result:
-                    type: boolean
+      requestBody:
+        description: Field name
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFieldIndex"
+
+      responses: #@ response(reference("UpdateResult"))
 
     delete:
       tags:
         - collections
       summary: Delete index in collection
-      description: Delete index for collection
-      operationId: delete_index
+      description: Delete field index for collection
+      operationId: delete_field_index
       parameters:
         - name: collection_name
           in: path
@@ -173,33 +151,10 @@ paths:
           required: true
           schema:
             type: string
-        - name: index_name
+        - name: field_name
           in: path
-          description: Name of the index to delete
+          description: Name of the field where to delete the index
           required: true
           schema:
             type: string
-      responses:
-        default:
-          description: error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        200:
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  time:
-                    type: number
-                    format: float
-                    description: Time spent to process this request
-                  status:
-                    type: string
-                    enum:
-                      - ok
-                  result:
-                    type: boolean
+      responses: #@ response(reference("UpdateResult"))
