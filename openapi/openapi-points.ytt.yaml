@@ -116,7 +116,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PointsIds"
+              $ref: "#/components/schemas/PointsSelector"
 
       parameters:
         - name: name
@@ -203,7 +203,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PointsIds"
+              $ref: "#/components/schemas/PointsSelector"
 
       parameters:
         - name: name

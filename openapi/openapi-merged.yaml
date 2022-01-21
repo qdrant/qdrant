@@ -151,7 +151,7 @@ paths:
     patch:
       tags:
         - collections
-      summary: Update collection paranmeters
+      summary: Update collection parameters
       description: Update parameters of the existing collection
       operationId: update_collection
       requestBody:
@@ -552,7 +552,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PointsIds'
+              $ref: '#/components/schemas/PointsSelector'
       parameters:
         - name: name
           in: path
@@ -702,7 +702,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PointsIds'
+              $ref: '#/components/schemas/PointsSelector'
       parameters:
         - name: name
           in: path
