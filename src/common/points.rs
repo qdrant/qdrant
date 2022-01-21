@@ -9,8 +9,8 @@ use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct PointIds {
-    ids: Vec<PointIdType>,
+pub struct PointsSelector {
+    points: Vec<PointIdType>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -43,12 +43,12 @@ pub async fn do_upsert_points(
 pub async fn do_delete_points(
     toc: &TableOfContent,
     collection_name: &str,
-    points: PointIds,
+    points: PointsSelector,
     wait: bool,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation =
         CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
-            ids: points.ids,
+            ids: points.points,
         });
     toc.update(collection_name, collection_operation, wait)
         .await
@@ -81,12 +81,12 @@ pub async fn do_delete_payload(
 pub async fn do_clear_payload(
     toc: &TableOfContent,
     collection_name: &str,
-    points: PointIds,
+    points: PointsSelector,
     wait: bool,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation =
         CollectionUpdateOperations::PayloadOperation(PayloadOps::ClearPayload {
-            points: points.ids,
+            points: points.points,
         });
     toc.update(collection_name, collection_operation, wait)
         .await

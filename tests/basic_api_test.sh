@@ -107,7 +107,7 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/delete?w
   -H 'Content-Type: application/json' \
   --fail -s \
   --data-raw '{
-    "ids" : [ 1, 2, 3, 4, 5 ]
+    "points" : [ 1, 2, 3, 4, 5 ]
   }' | jq
 
 SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')

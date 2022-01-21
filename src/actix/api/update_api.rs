@@ -1,7 +1,7 @@
 use crate::actix::helpers::process_response;
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_set_payload, do_update_points, do_upsert_points, CreateFieldIndex, PointIds,
+    do_set_payload, do_update_points, do_upsert_points, CreateFieldIndex, PointsSelector,
 };
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
@@ -56,7 +56,7 @@ pub async fn upsert_points(
 pub async fn delete_points(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,
-    operation: web::Json<PointIds>,
+    operation: web::Json<PointsSelector>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
@@ -104,7 +104,7 @@ pub async fn delete_payload(
 pub async fn clear_payload(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,
-    operation: web::Json<PointIds>,
+    operation: web::Json<PointsSelector>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
