@@ -144,3 +144,14 @@ pub async fn delete_index(
     let response = do_delete_index(&toc.into_inner(), &collection_name, index_name, wait).await;
     process_response(response, timing)
 }
+
+// Configure services
+pub fn config_update_api(cfg: &mut web::ServiceConfig) {
+    cfg.service(upsert_points)
+        .service(delete_points)
+        .service(set_payload)
+        .service(delete_payload)
+        .service(clear_payload)
+        .service(create_index)
+        .service(delete_index);
+}
