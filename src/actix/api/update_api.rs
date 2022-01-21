@@ -1,7 +1,7 @@
 use crate::actix::helpers::process_response;
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_set_payload, do_update_points, do_upsert_points,
+    do_set_payload, do_update_points, do_upsert_points, PointIds,
 };
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
@@ -10,7 +10,6 @@ use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::PointInsertOperations;
 use collection::operations::CollectionUpdateOperations;
 use schemars::JsonSchema;
-use segment::types::PointIdType;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use storage::content_manager::toc::TableOfContent;
@@ -57,7 +56,7 @@ pub async fn upsert_points(
 pub async fn delete_points(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,
-    operation: web::Json<Vec<PointIdType>>,
+    operation: web::Json<PointIds>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
@@ -105,7 +104,7 @@ pub async fn delete_payload(
 pub async fn clear_payload(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,
-    operation: web::Json<Vec<PointIdType>>,
+    operation: web::Json<PointIds>,
     params: Query<UpdateParam>,
 ) -> impl Responder {
     let collection_name = path.into_inner();

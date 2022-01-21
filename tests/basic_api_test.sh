@@ -106,7 +106,9 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_alias/points/search" \
 curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/delete?wait=true" \
   -H 'Content-Type: application/json' \
   --fail -s \
-  --data-raw '[ 1, 2, 3, 4, 5 ]' | jq
+  --data-raw '{
+    "ids" : [ 1, 2, 3, 4, 5 ]
+  }' | jq
 
 SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')
 [[ "$SAVED_VECTORS_COUNT" == "1" ]] || {

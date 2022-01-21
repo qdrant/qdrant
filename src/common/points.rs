@@ -2,9 +2,16 @@ use collection::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload}
 use collection::operations::point_ops::{PointInsertOperations, PointOperations};
 use collection::operations::types::UpdateResult;
 use collection::operations::{CollectionUpdateOperations, FieldIndexOperations};
+use schemars::JsonSchema;
 use segment::types::PointIdType;
+use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct PointIds {
+    ids: Vec<PointIdType>,
+}
 
 // Deprecated
 pub async fn do_update_points(
@@ -31,11 +38,13 @@ pub async fn do_upsert_points(
 pub async fn do_delete_points(
     toc: &TableOfContent,
     collection_name: &str,
-    ids: Vec<PointIdType>,
+    points: PointIds,
     wait: bool,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation =
-        CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints { ids });
+        CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
+            ids: points.ids,
+        });
     toc.update(collection_name, collection_operation, wait)
         .await
 }
@@ -67,11 +76,13 @@ pub async fn do_delete_payload(
 pub async fn do_clear_payload(
     toc: &TableOfContent,
     collection_name: &str,
-    points: Vec<PointIdType>,
+    points: PointIds,
     wait: bool,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation =
-        CollectionUpdateOperations::PayloadOperation(PayloadOps::ClearPayload { points });
+        CollectionUpdateOperations::PayloadOperation(PayloadOps::ClearPayload {
+            points: points.ids,
+        });
     toc.update(collection_name, collection_operation, wait)
         .await
 }
