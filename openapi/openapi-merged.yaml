@@ -317,7 +317,7 @@ paths:
   /collections/{collection_name}/index:
     post:
       tags:
-        - index
+        - collections
       summary: Create index for field in collection
       description: Create index for field in collection
       operationId: create_field_index
@@ -361,7 +361,7 @@ paths:
     delete:
       tags:
         - collections
-      summary: Delete index in collection
+      summary: Delete index for field in collection
       description: Delete field index for collection
       operationId: delete_field_index
       parameters:
@@ -502,7 +502,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpsertPoints'
+              $ref: '#/components/schemas/PointInsertOperations'
       parameters:
         - name: name
           in: path
@@ -1252,6 +1252,13 @@ components:
         - name
         - vector_size
       type: object
+    CreateFieldIndex:
+      properties:
+        field_name:
+          type: string
+      required:
+        - field_name
+      type: object
     DeleteAlias:
       description: Delete alias if exists
       properties:
@@ -1989,6 +1996,17 @@ components:
       required:
         - id
         - vector
+      type: object
+    PointsSelector:
+      properties:
+        points:
+          items:
+            format: uint64
+            minimum: 0
+            type: integer
+          type: array
+      required:
+        - points
       type: object
     Range:
       description: Range filter request

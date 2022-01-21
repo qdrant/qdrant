@@ -316,6 +316,17 @@
         ],
         "type": "object"
       },
+      "CreateFieldIndex": {
+        "properties": {
+          "field_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field_name"
+        ],
+        "type": "object"
+      },
       "DeleteAlias": {
         "description": "Delete alias if exists",
         "properties": {
@@ -1366,6 +1377,22 @@
         ],
         "type": "object"
       },
+      "PointsSelector": {
+        "properties": {
+          "points": {
+            "items": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "points"
+        ],
+        "type": "object"
+      },
       "Range": {
         "description": "Range filter request",
         "properties": {
@@ -2146,7 +2173,7 @@
             "description": "error"
           }
         },
-        "summary": "Delete index in collection",
+        "summary": "Delete index for field in collection",
         "tags": [
           "collections"
         ]
@@ -2215,7 +2242,7 @@
         },
         "summary": "Create index for field in collection",
         "tags": [
-          "index"
+          "collections"
         ]
       }
     },
@@ -2644,7 +2671,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpsertPoints"
+                "$ref": "#/components/schemas/PointInsertOperations"
               }
             }
           },

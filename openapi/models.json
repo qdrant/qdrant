@@ -316,6 +316,17 @@
                     }
                 }
             },
+            "CreateFieldIndex": {
+                "type": "object",
+                "required": [
+                    "field_name"
+                ],
+                "properties": {
+                    "field_name": {
+                        "type": "string"
+                    }
+                }
+            },
             "DeleteAlias": {
                 "description": "Delete alias if exists",
                 "type": "object",
@@ -1339,6 +1350,22 @@
                         "items": {
                             "type": "number",
                             "format": "float"
+                        }
+                    }
+                }
+            },
+            "PointsSelector": {
+                "type": "object",
+                "required": [
+                    "points"
+                ],
+                "properties": {
+                    "points": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "uint64",
+                            "minimum": 0
                         }
                     }
                 }

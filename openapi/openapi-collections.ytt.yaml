@@ -118,7 +118,7 @@ paths:
   /collections/{collection_name}/index:
     post:
       tags:
-        - index
+        - collections
       summary: Create index for field in collection
       description: Create index for field in collection
       operationId: create_field_index
@@ -141,7 +141,7 @@ paths:
     delete:
       tags:
         - collections
-      summary: Delete index in collection
+      summary: Delete index for field in collection
       description: Delete field index for collection
       operationId: delete_field_index
       parameters:
