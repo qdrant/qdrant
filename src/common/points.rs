@@ -13,6 +13,11 @@ pub struct PointIds {
     ids: Vec<PointIdType>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct CreateFieldIndex {
+    field_name: String,
+}
+
 // Deprecated
 pub async fn do_update_points(
     toc: &TableOfContent,
@@ -90,11 +95,11 @@ pub async fn do_clear_payload(
 pub async fn do_create_index(
     toc: &TableOfContent,
     collection_name: &str,
-    index_name: String,
+    operation: CreateFieldIndex,
     wait: bool,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
-        FieldIndexOperations::CreateIndex(index_name),
+        FieldIndexOperations::CreateIndex(operation.field_name),
     );
     toc.update(collection_name, collection_operation, wait)
         .await

@@ -132,8 +132,11 @@ INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection"
   exit 1
 }
 
-curl -X PUT "http://$QDRANT_HOST/collections/test_collection/index/test_payload?wait=true" \
+curl -X PUT "http://$QDRANT_HOST/collections/test_collection/index?wait=true" \
   -H 'Content-Type: application/json' \
+  --data-raw '{
+    "field_name": "test_payload"
+  }' \
   --fail -s | jq
 
 INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.payload_schema.test_payload.indexed')
