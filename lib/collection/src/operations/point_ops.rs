@@ -17,7 +17,7 @@ pub struct PointStruct {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub struct BatchPoints {
+pub struct Batch {
     pub ids: Vec<PointIdType>,
     pub vectors: Vec<VectorType>,
     pub payloads: Option<Vec<Option<HashMap<PayloadKeyType, PayloadInterface>>>>,
@@ -25,8 +25,8 @@ pub struct BatchPoints {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub struct BatchInsertOperation {
-    pub batch: BatchPoints,
+pub struct PointsBatch {
+    pub batch: Batch,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -40,7 +40,7 @@ pub struct PointsList {
 #[serde(untagged)]
 pub enum PointInsertOperations {
     /// Inset points from a batch.
-    BatchPoints(BatchInsertOperation),
+    PointsBatch(PointsBatch),
     /// Insert points from a list
     PointsList(PointsList),
 }
@@ -54,9 +54,9 @@ pub enum PointOperations {
     DeletePoints { ids: Vec<PointIdType> },
 }
 
-impl From<BatchPoints> for PointInsertOperations {
-    fn from(batch: BatchPoints) -> Self {
-        PointInsertOperations::BatchPoints(BatchInsertOperation { batch })
+impl From<Batch> for PointInsertOperations {
+    fn from(batch: Batch) -> Self {
+        PointInsertOperations::PointsBatch(PointsBatch { batch })
     }
 }
 
@@ -66,11 +66,9 @@ impl From<Vec<PointStruct>> for PointInsertOperations {
     }
 }
 
-impl From<BatchPoints> for PointOperations {
-    fn from(batch: BatchPoints) -> Self {
-        PointOperations::UpsertPoints(PointInsertOperations::BatchPoints(BatchInsertOperation {
-            batch,
-        }))
+impl From<Batch> for PointOperations {
+    fn from(batch: Batch) -> Self {
+        PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch { batch }))
     }
 }
 

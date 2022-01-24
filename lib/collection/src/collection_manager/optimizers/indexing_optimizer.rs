@@ -145,7 +145,7 @@ mod tests {
     use segment::types::StorageType;
 
     use crate::operations::point_ops::{
-        BatchInsertOperation, BatchPoints, PointInsertOperations, PointOperations,
+        Batch, PointInsertOperations, PointOperations, PointsBatch,
     };
     use crate::operations::FieldIndexOperations;
 
@@ -300,9 +300,9 @@ mod tests {
             );
         }
 
-        let insert_point_ops = PointOperations::UpsertPoints(PointInsertOperations::BatchPoints(
-            BatchInsertOperation {
-                batch: BatchPoints {
+        let insert_point_ops =
+            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
+                batch: Batch {
                     ids: vec![501, 502, 503],
                     vectors: vec![
                         vec![1.0, 0.0, 0.5, 0.0],
@@ -311,8 +311,7 @@ mod tests {
                     ],
                     payloads: None,
                 },
-            },
-        ));
+            }));
 
         let smallest_size = infos
             .iter()
@@ -366,9 +365,9 @@ mod tests {
             "Check that new appendable segment was created"
         );
 
-        let insert_point_ops = PointOperations::UpsertPoints(PointInsertOperations::BatchPoints(
-            BatchInsertOperation {
-                batch: BatchPoints {
+        let insert_point_ops =
+            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
+                batch: Batch {
                     ids: vec![601, 602, 603],
                     vectors: vec![
                         vec![0.0, 1.0, 0.5, 0.0],
@@ -377,8 +376,7 @@ mod tests {
                     ],
                     payloads: None,
                 },
-            },
-        ));
+            }));
 
         process_point_operation(
             locked_holder.deref(),

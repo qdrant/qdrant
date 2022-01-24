@@ -15,18 +15,7 @@
                     }
                 ]
             },
-            "BatchInsertOperation": {
-                "type": "object",
-                "required": [
-                    "batch"
-                ],
-                "properties": {
-                    "batch": {
-                        "$ref": "#/components/schemas/BatchPoints"
-                    }
-                }
-            },
-            "BatchPoints": {
+            "Batch": {
                 "type": "object",
                 "required": [
                     "ids",
@@ -1238,7 +1227,7 @@
             "PointInsertOperations": {
                 "anyOf": [
                     {
-                        "$ref": "#/components/schemas/BatchInsertOperation"
+                        "$ref": "#/components/schemas/PointsBatch"
                     },
                     {
                         "$ref": "#/components/schemas/PointsList"
@@ -1342,6 +1331,17 @@
                             "type": "number",
                             "format": "float"
                         }
+                    }
+                }
+            },
+            "PointsBatch": {
+                "type": "object",
+                "required": [
+                    "batch"
+                ],
+                "properties": {
+                    "batch": {
+                        "$ref": "#/components/schemas/Batch"
                     }
                 }
             },
