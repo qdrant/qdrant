@@ -218,4 +218,4 @@ paths:
           required: false
           schema:
             type: boolean
-    responses: #@ response(reference("UpdateResult"))
+      responses: #@ response(reference("UpdateResult"))

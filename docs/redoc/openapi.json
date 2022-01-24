@@ -2112,72 +2112,6 @@
       }
     },
     "/collections/{collection_name}/index": {
-      "delete": {
-        "description": "Delete field index for collection",
-        "operationId": "delete_field_index",
-        "parameters": [
-          {
-            "description": "Name of the collection",
-            "in": "path",
-            "name": "collection_name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Name of the field where to delete the index",
-            "in": "path",
-            "name": "field_name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "$ref": "#/components/schemas/UpdateResult"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Delete index for field in collection",
-        "tags": [
-          "collections"
-        ]
-      },
       "post": {
         "description": "Create index for field in collection",
         "operationId": "create_field_index",
@@ -2241,6 +2175,74 @@
           }
         },
         "summary": "Create index for field in collection",
+        "tags": [
+          "collections"
+        ]
+      }
+    },
+    "/collections/{collection_name}/index/{field_name}": {
+      "delete": {
+        "description": "Delete field index for collection",
+        "operationId": "delete_field_index",
+        "parameters": [
+          {
+            "description": "Name of the collection",
+            "in": "path",
+            "name": "collection_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Name of the field where to delete the index",
+            "in": "path",
+            "name": "field_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Delete index for field in collection",
         "tags": [
           "collections"
         ]
@@ -2911,48 +2913,48 @@
           },
           "description": "clear payload on points"
         },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
         "summary": "Clear payload",
         "tags": [
           "points"
         ]
-      },
-      "responses": {
-        "200": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "result": {
-                    "$ref": "#/components/schemas/UpdateResult"
-                  },
-                  "status": {
-                    "enum": [
-                      "ok"
-                    ],
-                    "type": "string"
-                  },
-                  "time": {
-                    "description": "Time spent to process this request",
-                    "format": "float",
-                    "type": "number"
-                  }
-                },
-                "type": "object"
-              }
-            }
-          },
-          "description": "successful operation"
-        },
-        "default": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ErrorResponse"
-              }
-            }
-          },
-          "description": "error"
-        }
       }
     },
     "/collections/{name}/points/payload/delete": {

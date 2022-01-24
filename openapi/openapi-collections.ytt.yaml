@@ -138,6 +138,7 @@ paths:
 
       responses: #@ response(reference("UpdateResult"))
 
+  /collections/{collection_name}/index/{field_name}:
     delete:
       tags:
         - collections
