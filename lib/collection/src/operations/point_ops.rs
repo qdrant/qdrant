@@ -17,17 +17,32 @@ pub struct PointStruct {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+pub struct BatchPoints {
+    pub ids: Vec<PointIdType>,
+    pub vectors: Vec<VectorType>,
+    pub payloads: Option<Vec<Option<HashMap<PayloadKeyType, PayloadInterface>>>>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct BatchInsertOperation {
+    pub batch: BatchPoints,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct PointsList {
+    pub points: Vec<PointStruct>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
 pub enum PointInsertOperations {
-    #[serde(rename = "batch")]
     /// Inset points from a batch.
-    BatchPoints {
-        ids: Vec<PointIdType>,
-        vectors: Vec<VectorType>,
-        payloads: Option<Vec<Option<HashMap<PayloadKeyType, PayloadInterface>>>>,
-    },
-    #[serde(rename = "points")]
+    BatchPoints(BatchInsertOperation),
     /// Insert points from a list
-    PointsList(Vec<PointStruct>),
+    PointsList(PointsList),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -37,4 +52,30 @@ pub enum PointOperations {
     UpsertPoints(PointInsertOperations),
     /// Delete point if exists
     DeletePoints { ids: Vec<PointIdType> },
+}
+
+impl From<BatchPoints> for PointInsertOperations {
+    fn from(batch: BatchPoints) -> Self {
+        PointInsertOperations::BatchPoints(BatchInsertOperation { batch })
+    }
+}
+
+impl From<Vec<PointStruct>> for PointInsertOperations {
+    fn from(points: Vec<PointStruct>) -> Self {
+        PointInsertOperations::PointsList(PointsList { points })
+    }
+}
+
+impl From<BatchPoints> for PointOperations {
+    fn from(batch: BatchPoints) -> Self {
+        PointOperations::UpsertPoints(PointInsertOperations::BatchPoints(BatchInsertOperation {
+            batch,
+        }))
+    }
+}
+
+impl From<Vec<PointStruct>> for PointOperations {
+    fn from(points: Vec<PointStruct>) -> Self {
+        PointOperations::UpsertPoints(PointInsertOperations::PointsList(PointsList { points }))
+    }
 }

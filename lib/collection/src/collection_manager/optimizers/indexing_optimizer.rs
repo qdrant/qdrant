@@ -144,7 +144,9 @@ mod tests {
 
     use segment::types::StorageType;
 
-    use crate::operations::point_ops::{PointInsertOperations, PointOperations};
+    use crate::operations::point_ops::{
+        BatchInsertOperation, BatchPoints, PointInsertOperations, PointOperations,
+    };
     use crate::operations::FieldIndexOperations;
 
     use super::*;
@@ -298,15 +300,19 @@ mod tests {
             );
         }
 
-        let insert_point_ops = PointOperations::UpsertPoints(PointInsertOperations::BatchPoints {
-            ids: vec![501, 502, 503],
-            vectors: vec![
-                vec![1.0, 0.0, 0.5, 0.0],
-                vec![1.0, 0.0, 0.5, 0.5],
-                vec![1.0, 0.0, 0.5, 1.0],
-            ],
-            payloads: None,
-        });
+        let insert_point_ops = PointOperations::UpsertPoints(PointInsertOperations::BatchPoints(
+            BatchInsertOperation {
+                batch: BatchPoints {
+                    ids: vec![501, 502, 503],
+                    vectors: vec![
+                        vec![1.0, 0.0, 0.5, 0.0],
+                        vec![1.0, 0.0, 0.5, 0.5],
+                        vec![1.0, 0.0, 0.5, 1.0],
+                    ],
+                    payloads: None,
+                },
+            },
+        ));
 
         let smallest_size = infos
             .iter()
@@ -360,15 +366,19 @@ mod tests {
             "Check that new appendable segment was created"
         );
 
-        let insert_point_ops = PointOperations::UpsertPoints(PointInsertOperations::BatchPoints {
-            ids: vec![601, 602, 603],
-            vectors: vec![
-                vec![0.0, 1.0, 0.5, 0.0],
-                vec![0.0, 1.0, 0.5, 0.5],
-                vec![0.0, 1.0, 0.5, 1.0],
-            ],
-            payloads: None,
-        });
+        let insert_point_ops = PointOperations::UpsertPoints(PointInsertOperations::BatchPoints(
+            BatchInsertOperation {
+                batch: BatchPoints {
+                    ids: vec![601, 602, 603],
+                    vectors: vec![
+                        vec![0.0, 1.0, 0.5, 0.0],
+                        vec![0.0, 1.0, 0.5, 0.5],
+                        vec![0.0, 1.0, 0.5, 1.0],
+                    ],
+                    payloads: None,
+                },
+            },
+        ));
 
         process_point_operation(
             locked_holder.deref(),

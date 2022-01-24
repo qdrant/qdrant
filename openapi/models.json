@@ -15,6 +15,55 @@
                     }
                 ]
             },
+            "BatchInsertOperation": {
+                "type": "object",
+                "required": [
+                    "batch"
+                ],
+                "properties": {
+                    "batch": {
+                        "$ref": "#/components/schemas/BatchPoints"
+                    }
+                }
+            },
+            "BatchPoints": {
+                "type": "object",
+                "required": [
+                    "ids",
+                    "vectors"
+                ],
+                "properties": {
+                    "ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "uint64",
+                            "minimum": 0
+                        }
+                    },
+                    "payloads": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/components/schemas/PayloadInterface"
+                            },
+                            "nullable": true
+                        },
+                        "nullable": true
+                    },
+                    "vectors": {
+                        "type": "array",
+                        "items": {
+                            "type": "array",
+                            "items": {
+                                "type": "number",
+                                "format": "float"
+                            }
+                        }
+                    }
+                }
+            },
             "ChangeAliasesOperation": {
                 "description": "Operation for performing changes of collection aliases. Alias changes are atomic, meaning that no collection modifications can happen between alias operations.",
                 "type": "object",
@@ -1187,70 +1236,12 @@
                 ]
             },
             "PointInsertOperations": {
-                "oneOf": [
+                "anyOf": [
                     {
-                        "description": "Inset points from a batch.",
-                        "type": "object",
-                        "required": [
-                            "batch"
-                        ],
-                        "properties": {
-                            "batch": {
-                                "type": "object",
-                                "required": [
-                                    "ids",
-                                    "vectors"
-                                ],
-                                "properties": {
-                                    "ids": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "integer",
-                                            "format": "uint64",
-                                            "minimum": 0
-                                        }
-                                    },
-                                    "payloads": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                                "$ref": "#/components/schemas/PayloadInterface"
-                                            },
-                                            "nullable": true
-                                        },
-                                        "nullable": true
-                                    },
-                                    "vectors": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "number",
-                                                "format": "float"
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                        "additionalProperties": false
+                        "$ref": "#/components/schemas/BatchInsertOperation"
                     },
                     {
-                        "description": "Insert points from a list",
-                        "type": "object",
-                        "required": [
-                            "points"
-                        ],
-                        "properties": {
-                            "points": {
-                                "type": "array",
-                                "items": {
-                                    "$ref": "#/components/schemas/PointStruct"
-                                }
-                            }
-                        },
-                        "additionalProperties": false
+                        "$ref": "#/components/schemas/PointsList"
                     }
                 ]
             },
@@ -1350,6 +1341,20 @@
                         "items": {
                             "type": "number",
                             "format": "float"
+                        }
+                    }
+                }
+            },
+            "PointsList": {
+                "type": "object",
+                "required": [
+                    "points"
+                ],
+                "properties": {
+                    "points": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PointStruct"
                         }
                     }
                 }

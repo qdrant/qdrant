@@ -6,8 +6,7 @@ use tokio::runtime::Handle;
 
 use collection::collection_builder::collection_loader::load_collection;
 use collection::operations::payload_ops::{PayloadOps, SetPayload};
-use collection::operations::point_ops::PointInsertOperations::{BatchPoints, PointsList};
-use collection::operations::point_ops::{PointOperations, PointStruct};
+use collection::operations::point_ops::{BatchPoints, PointOperations, PointStruct};
 use collection::operations::types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus};
 use collection::operations::CollectionUpdateOperations;
 use segment::types::{
@@ -26,8 +25,8 @@ async fn test_collection_updater() {
 
     let collection = simple_collection_fixture(collection_dir.path()).await;
 
-    let insert_points =
-        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(BatchPoints {
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        BatchPoints {
             ids: vec![0, 1, 2, 3, 4],
             vectors: vec![
                 vec![1.0, 0.0, 1.0, 1.0],
@@ -37,7 +36,9 @@ async fn test_collection_updater() {
                 vec![1.0, 0.0, 0.0, 0.0],
             ],
             payloads: None,
-        }));
+        }
+        .into(),
+    );
 
     let insert_result = collection.update(insert_points, true).await;
 
@@ -82,15 +83,17 @@ async fn test_collection_search_with_payload_and_vector() {
 
     let collection = simple_collection_fixture(collection_dir.path()).await;
 
-    let insert_points =
-        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(BatchPoints {
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        BatchPoints {
             ids: vec![0, 1],
             vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
             payloads: serde_json::from_str(
                 r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2" , "v": "v3"}]"#,
             )
             .unwrap(),
-        }));
+        }
+        .into(),
+    );
 
     let insert_result = collection.update(insert_points, true).await;
 
@@ -137,7 +140,7 @@ async fn test_collection_loading() {
     {
         let collection = simple_collection_fixture(collection_dir.path()).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
-            PointOperations::UpsertPoints(BatchPoints {
+            BatchPoints {
                 ids: vec![0, 1, 2, 3, 4],
                 vectors: vec![
                     vec![1.0, 0.0, 1.0, 1.0],
@@ -147,7 +150,8 @@ async fn test_collection_loading() {
                     vec![1.0, 0.0, 0.0, 0.0],
                 ],
                 payloads: None,
-            }),
+            }
+            .into(),
         );
 
         collection.update(insert_points, true).await.unwrap();
@@ -193,12 +197,14 @@ async fn test_collection_loading() {
 
 #[test]
 fn test_deserialization() {
-    let insert_points =
-        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(BatchPoints {
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        BatchPoints {
             ids: vec![0, 1],
             vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
             payloads: None,
-        }));
+        }
+        .into(),
+    );
     let json_str = serde_json::to_string_pretty(&insert_points).unwrap();
 
     let _read_obj: CollectionUpdateOperations = serde_json::from_str(&json_str).unwrap();
@@ -210,8 +216,8 @@ fn test_deserialization() {
 
 #[test]
 fn test_deserialization2() {
-    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointsList(vec![
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        vec![
             PointStruct {
                 id: 0,
                 vector: vec![1.0, 0.0, 1.0, 1.0],
@@ -222,8 +228,9 @@ fn test_deserialization2() {
                 vector: vec![1.0, 0.0, 1.0, 0.0],
                 payload: None,
             },
-        ]),
-    ));
+        ]
+        .into(),
+    );
 
     let json_str = serde_json::to_string_pretty(&insert_points).unwrap();
 
@@ -239,8 +246,8 @@ async fn test_recommendation_api() {
     let collection_dir = TempDir::new("collection").unwrap();
     let collection = simple_collection_fixture(collection_dir.path()).await;
 
-    let insert_points =
-        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(BatchPoints {
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        BatchPoints {
             ids: vec![0, 1, 2, 3, 4, 5, 6, 7, 8],
             vectors: vec![
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -254,7 +261,9 @@ async fn test_recommendation_api() {
                 vec![0.0, 0.0, 0.0, 1.0],
             ],
             payloads: None,
-        }));
+        }
+        .into(),
+    );
 
     collection.update(insert_points, true).await.unwrap();
     let segment_searcher = SimpleCollectionSearcher::new();
@@ -283,8 +292,8 @@ async fn test_read_api() {
     let collection_dir = TempDir::new("collection").unwrap();
     let collection = simple_collection_fixture(collection_dir.path()).await;
 
-    let insert_points =
-        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(BatchPoints {
+    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        BatchPoints {
             ids: vec![0, 1, 2, 3, 4, 5, 6, 7, 8],
             vectors: vec![
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -298,7 +307,9 @@ async fn test_read_api() {
                 vec![0.0, 0.0, 0.0, 1.0],
             ],
             payloads: None,
-        }));
+        }
+        .into(),
+    ));
 
     collection.update(insert_points, true).await.unwrap();
 
