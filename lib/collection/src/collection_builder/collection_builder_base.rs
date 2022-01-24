@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use num_cpus;
@@ -37,6 +38,11 @@ pub fn construct_collection(
     };
     let optimize_runtime = runtime::Builder::new_multi_thread()
         .worker_threads(2)
+        .thread_name_fn(|| {
+            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+            format!("optimizer-{}", id)
+        })
         .max_blocking_threads(blocking_threads)
         .build()
         .unwrap();

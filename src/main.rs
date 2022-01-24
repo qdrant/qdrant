@@ -41,14 +41,20 @@ fn main() -> std::io::Result<()> {
     {
         let toc_arc = toc_arc.clone();
         let settings = settings.clone();
-        let handle = thread::spawn(move || actix::init(toc_arc, settings));
+        let handle = thread::Builder::new()
+            .name("web".to_string())
+            .spawn(move || actix::init(toc_arc, settings))
+            .unwrap();
         handles.push(handle);
     }
     #[cfg(feature = "grpc")]
     {
         let toc_arc = toc_arc.clone();
         let settings = settings.clone();
-        let handle = thread::spawn(move || tonic::init(toc_arc, settings));
+        let handle = thread::Builder::new()
+            .name("grpc".to_string())
+            .spawn(move || tonic::init(toc_arc, settings))
+            .unwrap();
         handles.push(handle);
     }
 
@@ -59,26 +65,29 @@ fn main() -> std::io::Result<()> {
 
         const DEADLOCK_CHECK_PERIOD: Duration = Duration::from_secs(10);
 
-        thread::spawn(move || loop {
-            thread::sleep(DEADLOCK_CHECK_PERIOD);
-            let deadlocks = deadlock::check_deadlock();
-            if deadlocks.is_empty() {
-                continue;
-            }
-
-            let mut error = format!("{} deadlocks detected\n", deadlocks.len());
-            for (i, threads) in deadlocks.iter().enumerate() {
-                error.push_str(&format!("Deadlock #{}\n", i));
-                for t in threads {
-                    error.push_str(&format!(
-                        "Thread Id {:#?}\n{:#?}\n",
-                        t.thread_id(),
-                        t.backtrace()
-                    ));
+        thread::Builder::new()
+            .name("deadlock_checker".to_string())
+            .spawn(move || loop {
+                thread::sleep(DEADLOCK_CHECK_PERIOD);
+                let deadlocks = deadlock::check_deadlock();
+                if deadlocks.is_empty() {
+                    continue;
                 }
-            }
-            log::error!("{}", error);
-        });
+
+                let mut error = format!("{} deadlocks detected\n", deadlocks.len());
+                for (i, threads) in deadlocks.iter().enumerate() {
+                    error.push_str(&format!("Deadlock #{}\n", i));
+                    for t in threads {
+                        error.push_str(&format!(
+                            "Thread Id {:#?}\n{:#?}\n",
+                            t.thread_id(),
+                            t.backtrace()
+                        ));
+                    }
+                }
+                log::error!("{}", error);
+            })
+            .unwrap();
     }
 
     for handle in handles.into_iter() {
