@@ -417,6 +417,18 @@
                     }
                 }
             },
+            "DeleteRequest": {
+                "description": "Delete request - deletes all points which matches given condition",
+                "type": "object",
+                "required": [
+                    "filter"
+                ],
+                "properties": {
+                    "filter": {
+                        "$ref": "#/components/schemas/Filter"
+                    }
+                }
+            },
             "Distance": {
                 "description": "Type of internal tags, build from payload Distance function types used to compare vectors",
                 "type": "string",
@@ -1271,6 +1283,19 @@
                                         }
                                     }
                                 }
+                            }
+                        },
+                        "additionalProperties": false
+                    },
+                    {
+                        "description": "Delete points by given filter criteria",
+                        "type": "object",
+                        "required": [
+                            "delete_points_by_filter"
+                        ],
+                        "properties": {
+                            "delete_points_by_filter": {
+                                "$ref": "#/components/schemas/Filter"
                             }
                         },
                         "additionalProperties": false

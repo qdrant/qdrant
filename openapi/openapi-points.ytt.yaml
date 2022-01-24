@@ -133,6 +133,35 @@ paths:
             type: boolean
       responses: #@ response(reference("UpdateResult"))
 
+  /collections/{name}/points/delete/by_filter:
+    post:
+      tags:
+        - points
+      summary: Delete points by filter
+      description: Delete points by filter
+      operationId: delete_points_by_filter
+      requestBody:
+        description: Filter criteria of points to be deleted
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteRequest"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to delete from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(reference("UpdateResult"))
+
   /collections/{name}/points/payload:
     post:
       tags:

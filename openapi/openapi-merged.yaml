@@ -675,6 +675,62 @@ paths:
                       - ok
                   result:
                     $ref: '#/components/schemas/UpdateResult'
+  /collections/{name}/points/delete/by_filter:
+    post:
+      tags:
+        - points
+      summary: Delete points by filter
+      description: Delete points by filter
+      operationId: delete_points_by_filter
+      requestBody:
+        description: Filter criteria of points to be deleted
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteRequest'
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to delete from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: If true, wait for changes to actually happen
+          required: false
+          schema:
+            type: boolean
+      responses:
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        4xx:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum:
+                      - ok
+                  result:
+                    $ref: '#/components/schemas/UpdateResult'
   /collections/{name}/points/payload:
     post:
       tags:
@@ -1443,6 +1499,14 @@ components:
         - keys
         - points
       type: object
+    DeleteRequest:
+      description: Delete request - deletes all points which matches given condition
+      properties:
+        filter:
+          $ref: '#/components/schemas/Filter'
+      required:
+        - filter
+      type: object
     Distance:
       description: Type of internal tags, build from payload Distance function types used to compare vectors
       enum:
@@ -2065,6 +2129,14 @@ components:
               type: object
           required:
             - delete_points
+          type: object
+        - additionalProperties: false
+          description: Delete points by given filter criteria
+          properties:
+            delete_points_by_filter:
+              $ref: '#/components/schemas/Filter'
+          required:
+            - delete_points_by_filter
           type: object
     PointRequest:
       properties:

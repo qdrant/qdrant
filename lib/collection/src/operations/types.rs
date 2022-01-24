@@ -121,6 +121,26 @@ pub struct ScrollResult {
     pub next_page_offset: Option<PointIdType>,
 }
 
+/// Delete request - deletes all points which matches given condition
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct DeleteRequest {
+    /// Look only for points which satisfies this conditions
+    pub filter: Filter,
+}
+
+impl Default for DeleteRequest {
+    fn default() -> Self {
+        Self {
+            filter: Filter {
+                must: None,
+                must_not: None,
+                should: None,
+            },
+        }
+    }
+}
+
 /// Search request.
 /// Holds all conditions and parameters for the search of most similar points by vector similarity
 /// given the filtering restrictions.

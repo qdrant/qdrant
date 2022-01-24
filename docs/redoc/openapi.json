@@ -417,6 +417,18 @@
         ],
         "type": "object"
       },
+      "DeleteRequest": {
+        "description": "Delete request - deletes all points which matches given condition",
+        "properties": {
+          "filter": {
+            "$ref": "#/components/schemas/Filter"
+          }
+        },
+        "required": [
+          "filter"
+        ],
+        "type": "object"
+      },
       "Distance": {
         "description": "Type of internal tags, build from payload Distance function types used to compare vectors",
         "enum": [
@@ -1295,6 +1307,19 @@
             },
             "required": [
               "delete_points"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Delete points by given filter criteria",
+            "properties": {
+              "delete_points_by_filter": {
+                "$ref": "#/components/schemas/Filter"
+              }
+            },
+            "required": [
+              "delete_points_by_filter"
             ],
             "type": "object"
           }
@@ -2931,6 +2956,94 @@
           }
         },
         "summary": "Delete points",
+        "tags": [
+          "points"
+        ]
+      }
+    },
+    "/collections/{name}/points/delete/by_filter": {
+      "post": {
+        "description": "Delete points by filter",
+        "operationId": "delete_points_by_filter",
+        "parameters": [
+          {
+            "description": "Name of the collection to delete from",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteRequest"
+              }
+            }
+          },
+          "description": "Filter criteria of points to be deleted"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Delete points by filter",
         "tags": [
           "points"
         ]

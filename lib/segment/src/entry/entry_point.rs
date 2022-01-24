@@ -216,4 +216,11 @@ pub trait SegmentEntry {
 
     /// Checks if segment errored during last operations
     fn check_error(&self) -> Option<SegmentFailedState>;
+
+    /// Delete points by the given filter
+    fn delete_filtered<'a>(
+        &'a mut self,
+        op_num: SeqNumberType,
+        filter: &'a Filter,
+    ) -> OperationResult<usize>;
 }
