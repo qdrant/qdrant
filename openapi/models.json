@@ -316,6 +316,17 @@
                     }
                 }
             },
+            "CreateFieldIndex": {
+                "type": "object",
+                "required": [
+                    "field_name"
+                ],
+                "properties": {
+                    "field_name": {
+                        "type": "string"
+                    }
+                }
+            },
             "DeleteAlias": {
                 "description": "Delete alias if exists",
                 "type": "object",
@@ -343,6 +354,30 @@
             "DeleteCollectionOperation": {
                 "description": "Operation for deleting collection with given name",
                 "type": "string"
+            },
+            "DeletePayload": {
+                "type": "object",
+                "required": [
+                    "keys",
+                    "points"
+                ],
+                "properties": {
+                    "keys": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "points": {
+                        "description": "Deletes values from each point in this list",
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "uint64",
+                            "minimum": 0
+                        }
+                    }
+                }
             },
             "Distance": {
                 "description": "Type of internal tags, build from payload Distance function types used to compare vectors",
@@ -410,7 +445,7 @@
                 }
             },
             "FieldIndexOperations": {
-                "anyOf": [
+                "oneOf": [
                     {
                         "description": "Create index for payload field",
                         "type": "object",
@@ -766,7 +801,7 @@
             },
             "PayloadInterfaceStrict": {
                 "description": "Fallback for `PayloadInterface` which is used if user explicitly specifies type of payload\n\nExample:\n\n```json {..., \"payload\": {\"city\": { \"type\": \"keyword\", \"value\": \"Berlin\" }}, ... } ```\n\nShould be captured by `Keyword(PayloadVariant<String>)`",
-                "anyOf": [
+                "oneOf": [
                     {
                         "type": "object",
                         "required": [
@@ -843,7 +878,7 @@
             },
             "PayloadOps": {
                 "description": "Define operations description for point payloads manipulation",
-                "anyOf": [
+                "oneOf": [
                     {
                         "description": "Set payload value, overrides if it is already exists",
                         "type": "object",
@@ -852,28 +887,7 @@
                         ],
                         "properties": {
                             "set_payload": {
-                                "type": "object",
-                                "required": [
-                                    "payload",
-                                    "points"
-                                ],
-                                "properties": {
-                                    "payload": {
-                                        "type": "object",
-                                        "additionalProperties": {
-                                            "$ref": "#/components/schemas/PayloadInterface"
-                                        }
-                                    },
-                                    "points": {
-                                        "description": "Assigns payload to each point in this list",
-                                        "type": "array",
-                                        "items": {
-                                            "type": "integer",
-                                            "format": "uint64",
-                                            "minimum": 0
-                                        }
-                                    }
-                                }
+                                "$ref": "#/components/schemas/SetPayload"
                             }
                         },
                         "additionalProperties": false
@@ -886,28 +900,7 @@
                         ],
                         "properties": {
                             "delete_payload": {
-                                "type": "object",
-                                "required": [
-                                    "keys",
-                                    "points"
-                                ],
-                                "properties": {
-                                    "keys": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "string"
-                                        }
-                                    },
-                                    "points": {
-                                        "description": "Deletes values from each point in this list",
-                                        "type": "array",
-                                        "items": {
-                                            "type": "integer",
-                                            "format": "uint64",
-                                            "minimum": 0
-                                        }
-                                    }
-                                }
+                                "$ref": "#/components/schemas/DeletePayload"
                             }
                         },
                         "additionalProperties": false
@@ -958,7 +951,7 @@
             },
             "PayloadSchemaType": {
                 "description": "All possible names of payload types",
-                "anyOf": [
+                "oneOf": [
                     {
                         "type": "object",
                         "required": [
@@ -1044,7 +1037,7 @@
             },
             "PayloadType": {
                 "description": "All possible payload types",
-                "anyOf": [
+                "oneOf": [
                     {
                         "type": "object",
                         "required": [
@@ -1194,7 +1187,7 @@
                 ]
             },
             "PointInsertOperations": {
-                "anyOf": [
+                "oneOf": [
                     {
                         "description": "Inset points from a batch.",
                         "type": "object",
@@ -1262,7 +1255,7 @@
                 ]
             },
             "PointOperations": {
-                "anyOf": [
+                "oneOf": [
                     {
                         "description": "Insert or update points",
                         "type": "object",
@@ -1357,6 +1350,22 @@
                         "items": {
                             "type": "number",
                             "format": "float"
+                        }
+                    }
+                }
+            },
+            "PointsSelector": {
+                "type": "object",
+                "required": [
+                    "points"
+                ],
+                "properties": {
+                    "points": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "uint64",
+                            "minimum": 0
                         }
                     }
                 }
@@ -1698,9 +1707,33 @@
                     }
                 }
             },
+            "SetPayload": {
+                "type": "object",
+                "required": [
+                    "payload",
+                    "points"
+                ],
+                "properties": {
+                    "payload": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/PayloadInterface"
+                        }
+                    },
+                    "points": {
+                        "description": "Assigns payload to each point in this list",
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "uint64",
+                            "minimum": 0
+                        }
+                    }
+                }
+            },
             "StorageOperations": {
                 "description": "Enumeration of all possible collection update operations",
-                "anyOf": [
+                "oneOf": [
                     {
                         "type": "object",
                         "required": [

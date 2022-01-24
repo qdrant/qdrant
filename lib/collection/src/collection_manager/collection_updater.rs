@@ -82,7 +82,7 @@ mod tests {
     use crate::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 
     use super::*;
-    use crate::operations::payload_ops::PayloadOps;
+    use crate::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
     use crate::operations::point_ops::PointOperations;
     use std::collections::HashMap;
 
@@ -154,10 +154,10 @@ mod tests {
         process_payload_operation(
             &segments,
             100,
-            &PayloadOps::SetPayload {
+            &PayloadOps::SetPayload(SetPayload {
                 payload,
                 points: points.clone(),
-            },
+            }),
         )
         .unwrap();
 
@@ -182,10 +182,10 @@ mod tests {
         process_payload_operation(
             &segments,
             101,
-            &PayloadOps::DeletePayload {
+            &PayloadOps::DeletePayload(DeletePayload {
                 points: vec![3],
                 keys: vec!["color".to_string(), "empty".to_string()],
-            },
+            }),
         )
         .unwrap();
 

@@ -1,6 +1,7 @@
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 
+use collection::operations::point_ops::PointInsertOperations;
 use collection::operations::types::{
     CollectionInfo, RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
     UpdateResult,
@@ -13,6 +14,7 @@ use storage::content_manager::storage_ops::{
 
 use crate::actix::api::retrieve_api::PointRequest;
 use crate::common::models::CollectionsResponse;
+use crate::common::points::{CreateFieldIndex, PointsSelector};
 
 mod actix;
 mod common;
@@ -35,6 +37,9 @@ struct AllDefinitions {
     ad: CreateCollection,
     ae: UpdateCollection,
     af: ChangeAliasesOperation,
+    ag: CreateFieldIndex,
+    ah: PointsSelector,
+    ai: PointInsertOperations,
 }
 
 fn save_schema<T: JsonSchema>() {

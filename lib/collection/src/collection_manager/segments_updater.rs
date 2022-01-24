@@ -270,11 +270,11 @@ pub(crate) fn process_payload_operation(
     payload_operation: &PayloadOps,
 ) -> CollectionResult<usize> {
     match payload_operation {
-        PayloadOps::SetPayload {
-            payload, points, ..
-        } => set_payload(&segments.read(), op_num, payload, points),
-        PayloadOps::DeletePayload { keys, points, .. } => {
-            delete_payload(&segments.read(), op_num, points, keys)
+        PayloadOps::SetPayload(sp) => {
+            set_payload(&segments.read(), op_num, &sp.payload, &sp.points)
+        }
+        PayloadOps::DeletePayload(dp) => {
+            delete_payload(&segments.read(), op_num, &dp.points, &dp.keys)
         }
         PayloadOps::ClearPayload { points, .. } => clear_payload(&segments.read(), op_num, points),
     }

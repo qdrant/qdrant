@@ -151,7 +151,7 @@ paths:
     patch:
       tags:
         - collections
-      summary: Update collection paranmeters
+      summary: Update collection parameters
       description: Update parameters of the existing collection
       operationId: update_collection
       requestBody:
@@ -234,6 +234,7 @@ paths:
       summary: Update points
       description: Perform point update operation (vectors, payloads, indexes) in collection
       operationId: update_points
+      deprecated: true
       requestBody:
         description: Collection update operations
         content:
@@ -313,6 +314,93 @@ paths:
                       - ok
                   result:
                     type: boolean
+  /collections/{collection_name}/index:
+    post:
+      tags:
+        - collections
+      summary: Create index for field in collection
+      description: Create index for field in collection
+      operationId: create_field_index
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Field name
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFieldIndex'
+      responses:
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum:
+                      - ok
+                  result:
+                    $ref: '#/components/schemas/UpdateResult'
+    delete:
+      tags:
+        - collections
+      summary: Delete index for field in collection
+      description: Delete field index for collection
+      operationId: delete_field_index
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+        - name: field_name
+          in: path
+          description: Name of the field where to delete the index
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum:
+                      - ok
+                  result:
+                    $ref: '#/components/schemas/UpdateResult'
   /collections/{name}/points/{id}:
     get:
       tags:
@@ -403,6 +491,255 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Record'
+    put:
+      tags:
+        - points
+      summary: Update points
+      description: Perform updates on points
+      operationId: upsert_points
+      requestBody:
+        description: Operation to perform on points
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PointInsertOperations'
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to update from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: If true, wait for changes to actually happen
+          required: false
+          schema:
+            type: boolean
+      responses:
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum:
+                      - ok
+                  result:
+                    $ref: '#/components/schemas/UpdateResult'
+  /collections/{name}/points/delete:
+    post:
+      tags:
+        - points
+      summary: Delete points
+      description: Delete points
+      operationId: delete_points
+      requestBody:
+        description: Operation to perform on points
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PointsSelector'
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to delete from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: If true, wait for changes to actually happen
+          required: false
+          schema:
+            type: boolean
+      responses:
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum:
+                      - ok
+                  result:
+                    $ref: '#/components/schemas/UpdateResult'
+  /collections/{name}/points/payload:
+    post:
+      tags:
+        - points
+      summary: Set payload
+      description: Set payload for points
+      operationId: set_payload
+      requestBody:
+        description: Set payload on points
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetPayload'
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to set from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: If true, wait for changes to actually happen
+          required: false
+          schema:
+            type: boolean
+      responses:
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum:
+                      - ok
+                  result:
+                    $ref: '#/components/schemas/UpdateResult'
+  /collections/{name}/points/payload/delete:
+    post:
+      tags:
+        - points
+      summary: Delete payload
+      description: Delete payload for points
+      operationId: delete_payload
+      requestBody:
+        description: delete payload on points
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeletePayload'
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to delete from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: If true, wait for changes to actually happen
+          required: false
+          schema:
+            type: boolean
+      responses:
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  time:
+                    type: number
+                    format: float
+                    description: Time spent to process this request
+                  status:
+                    type: string
+                    enum:
+                      - ok
+                  result:
+                    $ref: '#/components/schemas/UpdateResult'
+  /collections/{name}/points/payload/clear:
+    post:
+      tags:
+        - points
+      summary: Clear payload
+      description: Clear payload for points
+      operationId: clear_payload
+      requestBody:
+        description: clear payload on points
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PointsSelector'
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to clear payload from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: If true, wait for changes to actually happen
+          required: false
+          schema:
+            type: boolean
+    responses:
+      default:
+        description: error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      200:
+        description: successful operation
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                time:
+                  type: number
+                  format: float
+                  description: Time spent to process this request
+                status:
+                  type: string
+                  enum:
+                    - ok
+                result:
+                  $ref: '#/components/schemas/UpdateResult'
   /collections/{name}/points/scroll:
     post:
       tags:
@@ -615,17 +952,15 @@ info:
     ### Add points
     Let's now add vectors with some payload:
     ```
-    curl -L -X POST 'http://localhost:6333/collections/test_collection?wait=true' \ -H 'Content-Type: application/json' \ --data-raw '{
-      "upsert_points": {
-        "points": [
-          {"id": 1, "vector": [0.05, 0.61, 0.76, 0.74], "payload": {"city": {"type": "keyword", "value": "Berlin"}}},
-          {"id": 2, "vector": [0.19, 0.81, 0.75, 0.11], "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}},
-          {"id": 3, "vector": [0.36, 0.55, 0.47, 0.94], "payload": {"city": {"type": "keyword", "value": ["Berlin", "Moscow"] }}},
-          {"id": 4, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"city": {"type": "keyword", "value": ["London", "Moscow"]}}},
-          {"id": 5, "vector": [0.24, 0.18, 0.22, 0.44], "payload": {"count": {"type": "integer", "value": [0]}}},
-          {"id": 6, "vector": [0.35, 0.08, 0.11, 0.44]}
-        ]
-      }
+    curl -L -X POST 'http://localhost:6333/collections/test_collection/points?wait=true' \ -H 'Content-Type: application/json' \ --data-raw '{
+      "points": [
+        {"id": 1, "vector": [0.05, 0.61, 0.76, 0.74], "payload": {"city": {"type": "keyword", "value": "Berlin"}}},
+        {"id": 2, "vector": [0.19, 0.81, 0.75, 0.11], "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}},
+        {"id": 3, "vector": [0.36, 0.55, 0.47, 0.94], "payload": {"city": {"type": "keyword", "value": ["Berlin", "Moscow"] }}},
+        {"id": 4, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"city": {"type": "keyword", "value": ["London", "Moscow"]}}},
+        {"id": 5, "vector": [0.24, 0.18, 0.22, 0.44], "payload": {"count": {"type": "integer", "value": [0]}}},
+        {"id": 6, "vector": [0.35, 0.08, 0.11, 0.44]}
+      ]
     }'
     ```
     Expected response:
@@ -917,6 +1252,13 @@ components:
         - name
         - vector_size
       type: object
+    CreateFieldIndex:
+      properties:
+        field_name:
+          type: string
+      required:
+        - field_name
+      type: object
     DeleteAlias:
       description: Delete alias if exists
       properties:
@@ -936,6 +1278,23 @@ components:
     DeleteCollectionOperation:
       description: Operation for deleting collection with given name
       type: string
+    DeletePayload:
+      properties:
+        keys:
+          items:
+            type: string
+          type: array
+        points:
+          description: Deletes values from each point in this list
+          items:
+            format: uint64
+            minimum: 0
+            type: integer
+          type: array
+      required:
+        - keys
+        - points
+      type: object
     Distance:
       description: Type of internal tags, build from payload Distance function types used to compare vectors
       enum:
@@ -972,7 +1331,7 @@ components:
         - key
       type: object
     FieldIndexOperations:
-      anyOf:
+      oneOf:
         - additionalProperties: false
           description: Create index for payload field
           properties:
@@ -1266,7 +1625,15 @@ components:
 
         Should be captured by `KeywordShortcut`
     PayloadInterfaceStrict:
-      anyOf:
+      description: |-
+        Fallback for `PayloadInterface` which is used if user explicitly specifies type of payload
+
+        Example:
+
+        ```json {..., "payload": {"city": { "type": "keyword", "value": "Berlin" }}, ... } ```
+
+        Should be captured by `Keyword(PayloadVariant<String>)`
+      oneOf:
         - properties:
             type:
               enum:
@@ -1311,36 +1678,14 @@ components:
             - type
             - value
           type: object
-      description: |-
-        Fallback for `PayloadInterface` which is used if user explicitly specifies type of payload
-
-        Example:
-
-        ```json {..., "payload": {"city": { "type": "keyword", "value": "Berlin" }}, ... } ```
-
-        Should be captured by `Keyword(PayloadVariant<String>)`
     PayloadOps:
-      anyOf:
+      description: Define operations description for point payloads manipulation
+      oneOf:
         - additionalProperties: false
           description: Set payload value, overrides if it is already exists
           properties:
             set_payload:
-              properties:
-                payload:
-                  additionalProperties:
-                    $ref: '#/components/schemas/PayloadInterface'
-                  type: object
-                points:
-                  description: Assigns payload to each point in this list
-                  items:
-                    format: uint64
-                    minimum: 0
-                    type: integer
-                  type: array
-              required:
-                - payload
-                - points
-              type: object
+              $ref: '#/components/schemas/SetPayload'
           required:
             - set_payload
           type: object
@@ -1348,22 +1693,7 @@ components:
           description: Deletes specified payload values if they are assigned
           properties:
             delete_payload:
-              properties:
-                keys:
-                  items:
-                    type: string
-                  type: array
-                points:
-                  description: Deletes values from each point in this list
-                  items:
-                    format: uint64
-                    minimum: 0
-                    type: integer
-                  type: array
-              required:
-                - keys
-                - points
-              type: object
+              $ref: '#/components/schemas/DeletePayload'
           required:
             - delete_payload
           type: object
@@ -1384,7 +1714,6 @@ components:
           required:
             - clear_payload
           type: object
-      description: Define operations description for point payloads manipulation
     PayloadSchemaInfo:
       description: Payload field type & index information
       properties:
@@ -1397,7 +1726,8 @@ components:
         - indexed
       type: object
     PayloadSchemaType:
-      anyOf:
+      description: All possible names of payload types
+      oneOf:
         - properties:
             type:
               enum:
@@ -1430,7 +1760,6 @@ components:
           required:
             - type
           type: object
-      description: All possible names of payload types
     PayloadSelector:
       additionalProperties: false
       description: Specifies how to treat payload selector
@@ -1450,7 +1779,8 @@ components:
         - include
       type: object
     PayloadType:
-      anyOf:
+      description: All possible payload types
+      oneOf:
         - properties:
             type:
               enum:
@@ -1505,7 +1835,6 @@ components:
             - type
             - value
           type: object
-      description: All possible payload types
     PayloadVariant_for_GeoPoint:
       anyOf:
         - items:
@@ -1559,7 +1888,7 @@ components:
 
         Both versions should work: ```json {..., "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}}, {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}}, ```
     PointInsertOperations:
-      anyOf:
+      oneOf:
         - additionalProperties: false
           description: Inset points from a batch.
           properties:
@@ -1604,7 +1933,7 @@ components:
             - points
           type: object
     PointOperations:
-      anyOf:
+      oneOf:
         - additionalProperties: false
           description: Insert or update points
           properties:
@@ -1667,6 +1996,17 @@ components:
       required:
         - id
         - vector
+      type: object
+    PointsSelector:
+      properties:
+        points:
+          items:
+            format: uint64
+            minimum: 0
+            type: integer
+          type: array
+      required:
+        - points
       type: object
     Range:
       description: Range filter request
@@ -1904,8 +2244,26 @@ components:
         - top
         - vector
       type: object
+    SetPayload:
+      properties:
+        payload:
+          additionalProperties:
+            $ref: '#/components/schemas/PayloadInterface'
+          type: object
+        points:
+          description: Assigns payload to each point in this list
+          items:
+            format: uint64
+            minimum: 0
+            type: integer
+          type: array
+      required:
+        - payload
+        - points
+      type: object
     StorageOperations:
-      anyOf:
+      description: Enumeration of all possible collection update operations
+      oneOf:
         - additionalProperties: false
           properties:
             create_collection:
@@ -1934,7 +2292,6 @@ components:
           required:
             - change_aliases
           type: object
-      description: Enumeration of all possible collection update operations
     UpdateCollection:
       description: Operation for updating parameters of the existing collection
       properties:

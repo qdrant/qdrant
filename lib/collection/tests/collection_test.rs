@@ -5,7 +5,7 @@ use tempdir::TempDir;
 use tokio::runtime::Handle;
 
 use collection::collection_builder::collection_loader::load_collection;
-use collection::operations::payload_ops::PayloadOps;
+use collection::operations::payload_ops::{PayloadOps, SetPayload};
 use collection::operations::point_ops::PointInsertOperations::{BatchPoints, PointsList};
 use collection::operations::point_ops::{PointOperations, PointStruct};
 use collection::operations::types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus};
@@ -159,10 +159,11 @@ async fn test_collection_loading() {
             PayloadInterface::KeywordShortcut(PayloadVariant::Value("red".to_string())),
         );
 
-        let assign_payload = CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload {
-            payload,
-            points: vec![2, 3],
-        });
+        let assign_payload =
+            CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayload {
+                payload,
+                points: vec![2, 3],
+            }));
 
         collection.update(assign_payload, true).await.unwrap();
     }

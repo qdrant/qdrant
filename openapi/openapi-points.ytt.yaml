@@ -8,6 +8,7 @@ paths:
       summary: Update points
       description: Perform point update operation (vectors, payloads, indexes) in collection
       operationId: update_points
+      deprecated: true
       requestBody:
         description: Collection update operations
         content:
@@ -74,3 +75,147 @@ paths:
           schema:
             type: string
       responses: #@ response(array(reference("Record")))
+
+    put:
+      tags:
+        - points
+      summary: Update points
+      description: Perform updates on points
+      operationId: upsert_points
+      requestBody:
+        description: Operation to perform on points
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PointInsertOperations"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to update from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(reference("UpdateResult"))
+
+  /collections/{name}/points/delete:
+    post:
+      tags:
+        - points
+      summary: Delete points
+      description: Delete points
+      operationId: delete_points
+      requestBody:
+        description: Operation to perform on points
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PointsSelector"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to delete from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(reference("UpdateResult"))
+
+  /collections/{name}/points/payload:
+    post:
+      tags:
+        - points
+      summary: Set payload
+      description: Set payload for points
+      operationId: set_payload
+      requestBody:
+        description: Set payload on points
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetPayload"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to set from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(reference("UpdateResult"))
+
+  /collections/{name}/points/payload/delete:
+    post:
+      tags:
+        - points
+      summary: Delete payload
+      description: Delete payload for points
+      operationId: delete_payload
+      requestBody:
+        description: delete payload on points
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeletePayload"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to delete from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(reference("UpdateResult"))
+
+  /collections/{name}/points/payload/clear:
+    post:
+      tags:
+        - points
+      summary: Clear payload
+      description: Clear payload for points
+      operationId: clear_payload
+      requestBody:
+        description: clear payload on points
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PointsSelector"
+
+      parameters:
+        - name: name
+          in: path
+          description: Name of the collection to clear payload from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+    responses: #@ response(reference("UpdateResult"))
