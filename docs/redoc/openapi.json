@@ -1980,6 +1980,16 @@
             },
             "description": "successful operation"
           },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2037,6 +2047,16 @@
             },
             "description": "successful operation"
           },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2093,6 +2113,16 @@
               }
             },
             "description": "successful operation"
+          },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
           },
           "default": {
             "content": {
@@ -2163,6 +2193,16 @@
             },
             "description": "successful operation"
           },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2231,6 +2271,16 @@
             },
             "description": "successful operation"
           },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2290,6 +2340,16 @@
             },
             "description": "successful operation"
           },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2346,6 +2406,16 @@
               }
             },
             "description": "successful operation"
+          },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
           },
           "default": {
             "content": {
@@ -2413,6 +2483,16 @@
               }
             },
             "description": "successful operation"
+          },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
           },
           "default": {
             "content": {
@@ -2491,6 +2571,16 @@
             },
             "description": "successful operation"
           },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2557,6 +2647,16 @@
               }
             },
             "description": "successful operation"
+          },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
           },
           "default": {
             "content": {
@@ -2630,6 +2730,16 @@
             },
             "description": "successful operation"
           },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2647,7 +2757,7 @@
         ]
       },
       "put": {
-        "description": "Perform updates on points",
+        "description": "Perform insert + updates on points. If point with given ID already exists - it will be overwritten.",
         "operationId": "upsert_points",
         "parameters": [
           {
@@ -2706,6 +2816,16 @@
             },
             "description": "successful operation"
           },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2717,7 +2837,7 @@
             "description": "error"
           }
         },
-        "summary": "Update points",
+        "summary": "Upsert points",
         "tags": [
           "points"
         ]
@@ -2783,6 +2903,16 @@
               }
             },
             "description": "successful operation"
+          },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
           },
           "default": {
             "content": {
@@ -2862,6 +2992,16 @@
             },
             "description": "successful operation"
           },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2881,7 +3021,7 @@
     },
     "/collections/{name}/points/payload/clear": {
       "post": {
-        "description": "Clear payload for points",
+        "description": "Remove all payload for specified points",
         "operationId": "clear_payload",
         "parameters": [
           {
@@ -2940,6 +3080,16 @@
             },
             "description": "successful operation"
           },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2959,7 +3109,7 @@
     },
     "/collections/{name}/points/payload/delete": {
       "post": {
-        "description": "Delete payload for points",
+        "description": "Delete specified key payload for points",
         "operationId": "delete_payload",
         "parameters": [
           {
@@ -3017,6 +3167,16 @@
               }
             },
             "description": "successful operation"
+          },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
           },
           "default": {
             "content": {
@@ -3090,6 +3250,16 @@
             },
             "description": "successful operation"
           },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -3158,6 +3328,16 @@
               }
             },
             "description": "successful operation"
+          },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
           },
           "default": {
             "content": {
@@ -3231,6 +3411,16 @@
             },
             "description": "successful operation"
           },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -3298,6 +3488,16 @@
               }
             },
             "description": "successful operation"
+          },
+          "4xx": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
           },
           "default": {
             "content": {
