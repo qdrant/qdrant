@@ -79,8 +79,8 @@ paths:
     put:
       tags:
         - points
-      summary: Update points
-      description: Perform updates on points
+      summary: Upsert points
+      description: Perform insert + updates on points. If point with given ID already exists - it will be overwritten.
       operationId: upsert_points
       requestBody:
         description: Operation to perform on points
@@ -167,7 +167,7 @@ paths:
       tags:
         - points
       summary: Delete payload
-      description: Delete payload for points
+      description: Delete specified key payload for points
       operationId: delete_payload
       requestBody:
         description: delete payload on points
@@ -196,7 +196,7 @@ paths:
       tags:
         - points
       summary: Clear payload
-      description: Clear payload for points
+      description: Remove all payload for specified points
       operationId: clear_payload
       requestBody:
         description: clear payload on points
@@ -218,4 +218,4 @@ paths:
           required: false
           schema:
             type: boolean
-    responses: #@ response(reference("UpdateResult"))
+      responses: #@ response(reference("UpdateResult"))

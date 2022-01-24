@@ -72,3 +72,4 @@ Here is a quick step-by-step guide:
 6. move newly created openapi.json `cp docs/redoc/openapi.json docs/redoc/master/openapi.json`
 7. expose file by starting an HTTP server, for instance `python -m http.server`, in `/docs/redoc`
 8. validate specs by browsing redoc on `http://localhost:8000/?v=master`
+9. validate `openapi-merged.yaml` using [swagger editor](https://editor.swagger.io/)
