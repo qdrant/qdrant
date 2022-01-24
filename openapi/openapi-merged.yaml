@@ -1183,14 +1183,7 @@ components:
         - $ref: '#/components/schemas/DeleteAliasOperation'
         - $ref: '#/components/schemas/RenameAliasOperation'
       description: Group of all the possible operations related to collection aliases
-    BatchInsertOperation:
-      properties:
-        batch:
-          $ref: '#/components/schemas/BatchPoints'
-      required:
-        - batch
-      type: object
-    BatchPoints:
+    Batch:
       properties:
         ids:
           items:
@@ -2044,7 +2037,7 @@ components:
         Both versions should work: ```json {..., "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}}, {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}}, ```
     PointInsertOperations:
       anyOf:
-        - $ref: '#/components/schemas/BatchInsertOperation'
+        - $ref: '#/components/schemas/PointsBatch'
         - $ref: '#/components/schemas/PointsList'
     PointOperations:
       oneOf:
@@ -2110,6 +2103,13 @@ components:
       required:
         - id
         - vector
+      type: object
+    PointsBatch:
+      properties:
+        batch:
+          $ref: '#/components/schemas/Batch'
+      required:
+        - batch
       type: object
     PointsList:
       properties:

@@ -15,18 +15,7 @@
         ],
         "description": "Group of all the possible operations related to collection aliases"
       },
-      "BatchInsertOperation": {
-        "properties": {
-          "batch": {
-            "$ref": "#/components/schemas/BatchPoints"
-          }
-        },
-        "required": [
-          "batch"
-        ],
-        "type": "object"
-      },
-      "BatchPoints": {
+      "Batch": {
         "properties": {
           "ids": {
             "items": {
@@ -1261,7 +1250,7 @@
       "PointInsertOperations": {
         "anyOf": [
           {
-            "$ref": "#/components/schemas/BatchInsertOperation"
+            "$ref": "#/components/schemas/PointsBatch"
           },
           {
             "$ref": "#/components/schemas/PointsList"
@@ -1365,6 +1354,17 @@
         "required": [
           "id",
           "vector"
+        ],
+        "type": "object"
+      },
+      "PointsBatch": {
+        "properties": {
+          "batch": {
+            "$ref": "#/components/schemas/Batch"
+          }
+        },
+        "required": [
+          "batch"
         ],
         "type": "object"
       },
