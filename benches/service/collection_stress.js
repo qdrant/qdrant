@@ -110,15 +110,13 @@ export function setup() {
 }
 
 export default function () {
-    var url = `${host}/collections/${collection_name}`;
+    var url = `${host}/collections/${collection_name}/points`;
 
     var payload = JSON.stringify({
-        "upsert_points": {
-            "points": Array.from({ length: vectors_per_batch }, () => generate_point()),
-        }
+        "points": Array.from({ length: vectors_per_batch }, () => generate_point()),
     });
 
-    let res_upsert = http.post(url, payload, params);
+    let res_upsert = http.put(url, payload, params);
     check(res_upsert, {
         'upsert_points is status 200': (r) => r.status === 200,
     });
