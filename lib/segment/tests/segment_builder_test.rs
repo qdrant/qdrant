@@ -89,10 +89,13 @@ mod tests {
 
         let stopped_t = stopped.clone();
 
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(stop_timeout_millis));
-            stopped_t.store(true, Ordering::Release);
-        });
+        std::thread::Builder::new()
+            .name("build_estimator_timeout".to_string())
+            .spawn(move || {
+                std::thread::sleep(Duration::from_millis(stop_timeout_millis));
+                stopped_t.store(true, Ordering::Release);
+            })
+            .unwrap();
 
         let res = builder.build(&*stopped);
 

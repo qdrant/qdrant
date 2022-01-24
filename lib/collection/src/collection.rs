@@ -401,9 +401,10 @@ impl Drop for Collection {
                 // So the workaround for move out the runtime handler and drop it in the separate thread.
                 // The proper solution is to reconsider the collection to be an owner of the runtime
 
-                let thread_handler = thread::spawn(move || {
-                    drop(handle);
-                });
+                let thread_handler = thread::Builder::new()
+                    .name("collection_drop".to_string())
+                    .spawn(move || drop(handle))
+                    .unwrap();
                 thread_handler.join().unwrap();
             }
         }
