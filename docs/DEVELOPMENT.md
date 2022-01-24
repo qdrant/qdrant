@@ -55,3 +55,20 @@ Use [pprof](https://github.com/google/pprof) and the following command to genera
 ```
 
 ![call-graph example](./imgs/call-graph-profile.png)
+
+## API changes
+
+Qdrant uses the [openapi](https://spec.openapis.org/oas/latest.html) specification to document its API.
+
+This means changes to the API must be followed by changes to the specification.
+
+Here is a quick step-by-step guide:
+
+1. code endpoints and model in Rust
+2. update integration tests `/tests/basic_api_test.sh`
+3. change specs in `/openapi/*ytt.yaml`
+4. add new schema definitions to `src/schema_generator.rs`
+5. run `/tools/generate_openapi_models.sh` to generate specs
+6. move newly created openapi.json `cp docs/redoc/openapi.json docs/redoc/master/openapi.json`
+7. expose file by starting an HTTP server, for instance `python -m http.server`, in `/docs/redoc`
+8. validate specs by browsing redoc on `http://localhost:8000/?v=master`
