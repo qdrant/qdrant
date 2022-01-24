@@ -7,7 +7,7 @@ use crate::tonic::qdrant::{
     FloatPayload, GeoPayload, GeoPoint, IntegerPayload, KeywordPayload, PointStruct,
     PointsOperationResponse, UpdateResult, UpsertPoints,
 };
-use collection::operations::point_ops::{PointInsertOperations, PointOperations};
+use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsList};
 use collection::operations::types::UpdateResult as CollectionUpdateResult;
 use collection::operations::CollectionUpdateOperations;
 use segment::types::{PayloadInterface, PayloadInterfaceStrict, PayloadVariant};
@@ -44,7 +44,7 @@ impl Points for PointsService {
             .map(|point| point.try_into())
             .collect::<Result<_, _>>()?;
         let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-            PointInsertOperations::PointsList(points),
+            PointInsertOperations::PointsList(PointsList { points }),
         ));
 
         let timing = Instant::now();

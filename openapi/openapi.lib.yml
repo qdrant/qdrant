@@ -5,6 +5,12 @@ default:
     application/json:
       schema:
         $ref: "#/components/schemas/ErrorResponse"
+4xx:
+  description: error
+  content:
+    application/json:
+      schema:
+        $ref: "#/components/schemas/ErrorResponse"
 200:
   description: successful operation
   content:

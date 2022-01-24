@@ -13,6 +13,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        4xx:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         200:
           description: successful operation
           content:
@@ -45,6 +51,12 @@ paths:
               $ref: '#/components/schemas/StorageOperations'
       responses:
         default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        4xx:
           description: error
           content:
             application/json:
@@ -83,6 +95,12 @@ paths:
             type: string
       responses:
         default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        4xx:
           description: error
           content:
             application/json:
@@ -131,6 +149,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        4xx:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         200:
           description: successful operation
           content:
@@ -174,6 +198,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        4xx:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         200:
           description: successful operation
           content:
@@ -206,6 +236,12 @@ paths:
             type: string
       responses:
         default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        4xx:
           description: error
           content:
             application/json:
@@ -261,6 +297,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        4xx:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         200:
           description: successful operation
           content:
@@ -292,6 +334,12 @@ paths:
               $ref: '#/components/schemas/ChangeAliasesOperation'
       responses:
         default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        4xx:
           description: error
           content:
             application/json:
@@ -341,6 +389,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        4xx:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         200:
           description: successful operation
           content:
@@ -380,6 +434,12 @@ paths:
             type: string
       responses:
         default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        4xx:
           description: error
           content:
             application/json:
@@ -429,6 +489,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        4xx:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         200:
           description: successful operation
           content:
@@ -473,6 +539,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        4xx:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         200:
           description: successful operation
           content:
@@ -495,8 +567,8 @@ paths:
     put:
       tags:
         - points
-      summary: Update points
-      description: Perform updates on points
+      summary: Upsert points
+      description: Perform insert + updates on points. If point with given ID already exists - it will be overwritten.
       operationId: upsert_points
       requestBody:
         description: Operation to perform on points
@@ -519,6 +591,12 @@ paths:
             type: boolean
       responses:
         default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        4xx:
           description: error
           content:
             application/json:
@@ -574,6 +652,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        4xx:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         200:
           description: successful operation
           content:
@@ -624,6 +708,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        4xx:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         200:
           description: successful operation
           content:
@@ -646,7 +736,7 @@ paths:
       tags:
         - points
       summary: Delete payload
-      description: Delete payload for points
+      description: Delete specified key payload for points
       operationId: delete_payload
       requestBody:
         description: delete payload on points
@@ -674,6 +764,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        4xx:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         200:
           description: successful operation
           content:
@@ -696,7 +792,7 @@ paths:
       tags:
         - points
       summary: Clear payload
-      description: Clear payload for points
+      description: Remove all payload for specified points
       operationId: clear_payload
       requestBody:
         description: clear payload on points
@@ -719,6 +815,12 @@ paths:
             type: boolean
       responses:
         default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        4xx:
           description: error
           content:
             application/json:
@@ -768,6 +870,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        4xx:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         200:
           description: successful operation
           content:
@@ -807,6 +915,12 @@ paths:
             type: string
       responses:
         default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        4xx:
           description: error
           content:
             application/json:
@@ -853,6 +967,12 @@ paths:
             type: string
       responses:
         default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        4xx:
           description: error
           content:
             application/json:
@@ -953,7 +1073,7 @@ info:
     ### Add points
     Let's now add vectors with some payload:
     ```
-    curl -L -X POST 'http://localhost:6333/collections/test_collection/points?wait=true' \ -H 'Content-Type: application/json' \ --data-raw '{
+    curl -L -X PUT 'http://localhost:6333/collections/test_collection/points?wait=true' \ -H 'Content-Type: application/json' \ --data-raw '{
       "points": [
         {"id": 1, "vector": [0.05, 0.61, 0.76, 0.74], "payload": {"city": {"type": "keyword", "value": "Berlin"}}},
         {"id": 2, "vector": [0.19, 0.81, 0.75, 0.11], "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}},
@@ -1063,6 +1183,40 @@ components:
         - $ref: '#/components/schemas/DeleteAliasOperation'
         - $ref: '#/components/schemas/RenameAliasOperation'
       description: Group of all the possible operations related to collection aliases
+    BatchInsertOperation:
+      properties:
+        batch:
+          $ref: '#/components/schemas/BatchPoints'
+      required:
+        - batch
+      type: object
+    BatchPoints:
+      properties:
+        ids:
+          items:
+            format: uint64
+            minimum: 0
+            type: integer
+          type: array
+        payloads:
+          items:
+            additionalProperties:
+              $ref: '#/components/schemas/PayloadInterface'
+            nullable: true
+            type: object
+          nullable: true
+          type: array
+        vectors:
+          items:
+            items:
+              format: float
+              type: number
+            type: array
+          type: array
+      required:
+        - ids
+        - vectors
+      type: object
     ChangeAliasesOperation:
       description: Operation for performing changes of collection aliases. Alias changes are atomic, meaning that no collection modifications can happen between alias operations.
       properties:
@@ -1889,50 +2043,9 @@ components:
 
         Both versions should work: ```json {..., "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}}, {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}}, ```
     PointInsertOperations:
-      oneOf:
-        - additionalProperties: false
-          description: Inset points from a batch.
-          properties:
-            batch:
-              properties:
-                ids:
-                  items:
-                    format: uint64
-                    minimum: 0
-                    type: integer
-                  type: array
-                payloads:
-                  items:
-                    additionalProperties:
-                      $ref: '#/components/schemas/PayloadInterface'
-                    nullable: true
-                    type: object
-                  nullable: true
-                  type: array
-                vectors:
-                  items:
-                    items:
-                      format: float
-                      type: number
-                    type: array
-                  type: array
-              required:
-                - ids
-                - vectors
-              type: object
-          required:
-            - batch
-          type: object
-        - additionalProperties: false
-          description: Insert points from a list
-          properties:
-            points:
-              items:
-                $ref: '#/components/schemas/PointStruct'
-              type: array
-          required:
-            - points
-          type: object
+      anyOf:
+        - $ref: '#/components/schemas/BatchInsertOperation'
+        - $ref: '#/components/schemas/PointsList'
     PointOperations:
       oneOf:
         - additionalProperties: false
@@ -1997,6 +2110,15 @@ components:
       required:
         - id
         - vector
+      type: object
+    PointsList:
+      properties:
+        points:
+          items:
+            $ref: '#/components/schemas/PointStruct'
+          type: array
+      required:
+        - points
       type: object
     PointsSelector:
       properties:

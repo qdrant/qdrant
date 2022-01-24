@@ -2,7 +2,9 @@ use tempdir::TempDir;
 
 use collection::collection_builder::collection_loader::load_collection;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
-use collection::operations::point_ops::{PointInsertOperations, PointOperations};
+use collection::operations::point_ops::{
+    BatchInsertOperation, BatchPoints, PointInsertOperations, PointOperations,
+};
 use collection::operations::types::ScrollRequest;
 use collection::operations::CollectionUpdateOperations;
 use segment::types::{PayloadSelector, PayloadType, WithPayloadInterface};
@@ -20,13 +22,16 @@ async fn test_collection_reloading() {
     }
     for _i in 0..5 {
         let collection = load_collection(collection_dir.path());
-        let insert_points = CollectionUpdateOperations::PointOperation(
-            PointOperations::UpsertPoints(PointInsertOperations::BatchPoints {
-                ids: vec![0, 1],
-                vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
-                payloads: None,
-            }),
-        );
+        let insert_points =
+            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperations::BatchPoints(BatchInsertOperation {
+                    batch: BatchPoints {
+                        ids: vec![0, 1],
+                        vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
+                        payloads: None,
+                    },
+                }),
+            ));
         collection.update(insert_points, true).await.unwrap();
     }
 
@@ -39,16 +44,19 @@ async fn test_collection_payload_reloading() {
     let collection_dir = TempDir::new("collection").unwrap();
     {
         let collection = simple_collection_fixture(collection_dir.path()).await;
-        let insert_points = CollectionUpdateOperations::PointOperation(
-            PointOperations::UpsertPoints(PointInsertOperations::BatchPoints {
-                ids: vec![0, 1],
-                vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
-                payloads: serde_json::from_str(
-                    r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2"}]"#,
-                )
-                .unwrap(),
-            }),
-        );
+        let insert_points =
+            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperations::BatchPoints(BatchInsertOperation {
+                    batch: BatchPoints {
+                        ids: vec![0, 1],
+                        vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
+                        payloads: serde_json::from_str(
+                            r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2"}]"#,
+                        )
+                        .unwrap(),
+                    },
+                }),
+            ));
         collection.update(insert_points, true).await.unwrap();
     }
 
@@ -94,14 +102,14 @@ async fn test_collection_payload_custom_payload() {
     {
         let collection = simple_collection_fixture(collection_dir.path()).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
-            PointOperations::UpsertPoints(PointInsertOperations::BatchPoints {
+            PointOperations::UpsertPoints(PointInsertOperations::BatchPoints(BatchInsertOperation { batch: BatchPoints {
                 ids: vec![0, 1],
                 vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
                 payloads: serde_json::from_str(
                     r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2" , "v": "v3", "v2": "v4"}]"#,
                 )
-                .unwrap(),
-            }),
+                    .unwrap(),
+            }})),
         );
         collection.update(insert_points, true).await.unwrap();
     }
