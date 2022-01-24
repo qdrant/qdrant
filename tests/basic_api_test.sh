@@ -22,7 +22,7 @@ curl -X PUT "http://$QDRANT_HOST/collections/test_collection" \
 curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq
 
 # insert points
-curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points?wait=true" \
+curl -L -X PUT "http://$QDRANT_HOST/collections/test_collection/points?wait=true" \
   -H 'Content-Type: application/json' \
   --fail -s \
   --data-raw '{
@@ -34,6 +34,14 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points?wait=tru
         {"id": 5, "vector": [0.24, 0.18, 0.22, 0.44], "payload": {"count": {"type": "integer", "value": [0]}}},
         {"id": 6, "vector": [0.35, 0.08, 0.11, 0.44]}
       ]
+    }' | jq
+
+# retrieve points
+curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points" \
+  -H 'Content-Type: application/json' \
+  --fail -s \
+  --data-raw '{
+      "ids": [1, 2]
     }' | jq
 
 SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')

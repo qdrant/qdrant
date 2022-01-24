@@ -36,7 +36,7 @@ pub async fn update_points(
     process_response(response, timing)
 }
 
-#[post("/collections/{name}/points")]
+#[put("/collections/{name}/points")]
 pub async fn upsert_points(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,

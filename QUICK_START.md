@@ -73,7 +73,7 @@ Expected response:
 Let's now add vectors with some payload:
 
 ```bash
-curl -L -X POST 'http://localhost:6333/collections/test_collection/points?wait=true' \
+curl -L -X PUT 'http://localhost:6333/collections/test_collection/points?wait=true' \
     -H 'Content-Type: application/json' \
     --data-raw '{
     "points": [
