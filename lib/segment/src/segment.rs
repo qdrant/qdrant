@@ -579,6 +579,19 @@ impl SegmentEntry for Segment {
     fn check_error(&self) -> Option<SegmentFailedState> {
         self.error_status.clone()
     }
+
+    fn delete_filtered<'a>(
+        &'a mut self,
+        op_num: SeqNumberType,
+        filter: &'a Filter,
+    ) -> OperationResult<usize> {
+        let mut deleted_points = 0;
+        for point_id in self.read_filtered(0, std::usize::MAX, Some(filter)) {
+            deleted_points += self.delete_point(op_num, point_id)? as usize;
+        }
+
+        Ok(deleted_points)
+    }
 }
 
 #[cfg(test)]

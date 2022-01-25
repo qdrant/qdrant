@@ -565,6 +565,17 @@
         },
         "type": "object"
       },
+      "FilterSelector": {
+        "properties": {
+          "filter": {
+            "$ref": "#/components/schemas/Filter"
+          }
+        },
+        "required": [
+          "filter"
+        ],
+        "type": "object"
+      },
       "GeoBoundingBox": {
         "description": "Geo filter request\n\nMatches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges",
         "properties": {
@@ -1247,6 +1258,22 @@
         ],
         "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
       },
+      "PointIdsList": {
+        "properties": {
+          "points": {
+            "items": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "points"
+        ],
+        "type": "object"
+      },
       "PointInsertOperations": {
         "anyOf": [
           {
@@ -1295,6 +1322,19 @@
             },
             "required": [
               "delete_points"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Delete points by given filter criteria",
+            "properties": {
+              "delete_points_by_filter": {
+                "$ref": "#/components/schemas/Filter"
+              }
+            },
+            "required": [
+              "delete_points_by_filter"
             ],
             "type": "object"
           }
@@ -1383,20 +1423,14 @@
         "type": "object"
       },
       "PointsSelector": {
-        "properties": {
-          "points": {
-            "items": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
-            },
-            "type": "array"
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PointIdsList"
+          },
+          {
+            "$ref": "#/components/schemas/FilterSelector"
           }
-        },
-        "required": [
-          "points"
-        ],
-        "type": "object"
+        ]
       },
       "Range": {
         "description": "Range filter request",

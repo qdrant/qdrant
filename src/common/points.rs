@@ -1,17 +1,11 @@
 use collection::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
-use collection::operations::point_ops::{PointInsertOperations, PointOperations};
+use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsSelector};
 use collection::operations::types::UpdateResult;
 use collection::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use schemars::JsonSchema;
-use segment::types::PointIdType;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct PointsSelector {
-    points: Vec<PointIdType>,
-}
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CreateFieldIndex {
@@ -46,10 +40,15 @@ pub async fn do_delete_points(
     points: PointsSelector,
     wait: bool,
 ) -> Result<UpdateResult, StorageError> {
-    let collection_operation =
-        CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
-            ids: points.points,
-        });
+    let point_operation = match points {
+        PointsSelector::PointIdsSelector(points) => {
+            PointOperations::DeletePoints { ids: points.points }
+        }
+        PointsSelector::FilterSelector(filter_selector) => {
+            PointOperations::DeletePointsByFilter(filter_selector.filter)
+        }
+    };
+    let collection_operation = CollectionUpdateOperations::PointOperation(point_operation);
     toc.update(collection_name, collection_operation, wait)
         .await
 }
@@ -84,10 +83,18 @@ pub async fn do_clear_payload(
     points: PointsSelector,
     wait: bool,
 ) -> Result<UpdateResult, StorageError> {
-    let collection_operation =
-        CollectionUpdateOperations::PayloadOperation(PayloadOps::ClearPayload {
+    let points_operation = match points {
+        PointsSelector::PointIdsSelector(points) => PayloadOps::ClearPayload {
             points: points.points,
-        });
+        },
+        PointsSelector::FilterSelector(_) => {
+            return Err(StorageError::BadRequest {
+                description: "Clear payload by filter is not implemented yet".to_string(), // ToDo: Implement
+            });
+        }
+    };
+
+    let collection_operation = CollectionUpdateOperations::PayloadOperation(points_operation);
     toc.update(collection_name, collection_operation, wait)
         .await
 }

@@ -1518,6 +1518,13 @@ components:
           nullable: true
           type: array
       type: object
+    FilterSelector:
+      properties:
+        filter:
+          $ref: '#/components/schemas/Filter'
+      required:
+        - filter
+      type: object
     GeoBoundingBox:
       description: |-
         Geo filter request
@@ -2035,6 +2042,17 @@ components:
         Example:
 
         Both versions should work: ```json {..., "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}}, {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}}, ```
+    PointIdsList:
+      properties:
+        points:
+          items:
+            format: uint64
+            minimum: 0
+            type: integer
+          type: array
+      required:
+        - points
+      type: object
     PointInsertOperations:
       anyOf:
         - $ref: '#/components/schemas/PointsBatch'
@@ -2065,6 +2083,14 @@ components:
               type: object
           required:
             - delete_points
+          type: object
+        - additionalProperties: false
+          description: Delete points by given filter criteria
+          properties:
+            delete_points_by_filter:
+              $ref: '#/components/schemas/Filter'
+          required:
+            - delete_points_by_filter
           type: object
     PointRequest:
       properties:
@@ -2121,16 +2147,9 @@ components:
         - points
       type: object
     PointsSelector:
-      properties:
-        points:
-          items:
-            format: uint64
-            minimum: 0
-            type: integer
-          type: array
-      required:
-        - points
-      type: object
+      anyOf:
+        - $ref: '#/components/schemas/PointIdsList'
+        - $ref: '#/components/schemas/FilterSelector'
     Range:
       description: Range filter request
       properties:

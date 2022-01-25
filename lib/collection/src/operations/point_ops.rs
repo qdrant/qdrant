@@ -1,6 +1,6 @@
 use crate::operations::types::VectorType;
 use schemars::JsonSchema;
-use segment::types::{PayloadInterface, PayloadKeyType, PointIdType};
+use segment::types::{Filter, PayloadInterface, PayloadKeyType, PointIdType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -37,6 +37,28 @@ pub struct PointsList {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+pub struct PointIdsList {
+    pub points: Vec<PointIdType>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct FilterSelector {
+    pub filter: Filter,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum PointsSelector {
+    /// Select points by list of IDs
+    PointIdsSelector(PointIdsList),
+    /// Select points by filtering condition
+    FilterSelector(FilterSelector),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum PointInsertOperations {
     /// Inset points from a batch.
@@ -52,6 +74,8 @@ pub enum PointOperations {
     UpsertPoints(PointInsertOperations),
     /// Delete point if exists
     DeletePoints { ids: Vec<PointIdType> },
+    /// Delete points by given filter criteria
+    DeletePointsByFilter(Filter),
 }
 
 impl From<Batch> for PointInsertOperations {

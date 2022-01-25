@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use tempdir::TempDir;
@@ -10,7 +10,8 @@ use collection::operations::point_ops::{Batch, PointOperations, PointStruct};
 use collection::operations::types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus};
 use collection::operations::CollectionUpdateOperations;
 use segment::types::{
-    PayloadInterface, PayloadKeyType, PayloadVariant, WithPayload, WithPayloadInterface,
+    Condition, HasIdCondition, PayloadInterface, PayloadKeyType, PayloadVariant, PointIdType,
+    WithPayload, WithPayloadInterface,
 };
 
 use crate::common::simple_collection_fixture;
@@ -330,4 +331,77 @@ async fn test_read_api() {
 
     assert_eq!(result.next_page_offset, Some(2));
     assert_eq!(result.points.len(), 2);
+}
+
+#[tokio::test]
+async fn test_collection_delete_points_by_filter() {
+    let collection_dir = TempDir::new("collection").unwrap();
+
+    let collection = simple_collection_fixture(collection_dir.path()).await;
+
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        Batch {
+            ids: vec![0, 1, 2, 3, 4],
+            vectors: vec![
+                vec![1.0, 0.0, 1.0, 1.0],
+                vec![1.0, 0.0, 1.0, 0.0],
+                vec![1.0, 1.0, 1.0, 1.0],
+                vec![1.0, 1.0, 0.0, 1.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+            ],
+            payloads: None,
+        }
+        .into(),
+    );
+
+    let insert_result = collection.update(insert_points, true).await;
+
+    match insert_result {
+        Ok(res) => {
+            assert_eq!(res.status, UpdateStatus::Completed)
+        }
+        Err(err) => panic!("operation failed: {:?}", err),
+    }
+
+    // delete points with id (0, 3)
+    let to_be_deleted: HashSet<PointIdType> = vec![0, 3].into_iter().collect();
+    let delete_filter = segment::types::Filter {
+        should: None,
+        must: Some(vec![Condition::HasId(HasIdCondition::from(to_be_deleted))]),
+        must_not: None,
+    };
+
+    let delete_points = CollectionUpdateOperations::PointOperation(
+        PointOperations::DeletePointsByFilter(delete_filter),
+    );
+
+    let delete_result = collection.update(delete_points, true).await;
+
+    match delete_result {
+        Ok(res) => {
+            assert_eq!(res.status, UpdateStatus::Completed)
+        }
+        Err(err) => panic!("operation failed: {:?}", err),
+    }
+
+    let segment_searcher = SimpleCollectionSearcher::new();
+    let result = collection
+        .scroll_by(
+            ScrollRequest {
+                offset: Some(0),
+                limit: Some(10),
+                filter: None,
+                with_payload: Some(WithPayloadInterface::Bool(false)),
+                with_vector: None,
+            },
+            &segment_searcher,
+        )
+        .await
+        .unwrap();
+
+    // check if we only have 3 out of 5 points left and that the point id were really deleted
+    assert_eq!(result.points.len(), 3);
+    assert_eq!(result.points.get(0).unwrap().id, 1);
+    assert_eq!(result.points.get(1).unwrap().id, 2);
+    assert_eq!(result.points.get(2).unwrap().id, 4);
 }

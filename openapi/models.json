@@ -542,6 +542,17 @@
                 },
                 "additionalProperties": false
             },
+            "FilterSelector": {
+                "type": "object",
+                "required": [
+                    "filter"
+                ],
+                "properties": {
+                    "filter": {
+                        "$ref": "#/components/schemas/Filter"
+                    }
+                }
+            },
             "GeoBoundingBox": {
                 "description": "Geo filter request\n\nMatches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges",
                 "type": "object",
@@ -1224,6 +1235,22 @@
                     }
                 ]
             },
+            "PointIdsList": {
+                "type": "object",
+                "required": [
+                    "points"
+                ],
+                "properties": {
+                    "points": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "format": "uint64",
+                            "minimum": 0
+                        }
+                    }
+                }
+            },
             "PointInsertOperations": {
                 "anyOf": [
                     {
@@ -1271,6 +1298,19 @@
                                         }
                                     }
                                 }
+                            }
+                        },
+                        "additionalProperties": false
+                    },
+                    {
+                        "description": "Delete points by given filter criteria",
+                        "type": "object",
+                        "required": [
+                            "delete_points_by_filter"
+                        ],
+                        "properties": {
+                            "delete_points_by_filter": {
+                                "$ref": "#/components/schemas/Filter"
                             }
                         },
                         "additionalProperties": false
@@ -1360,20 +1400,14 @@
                 }
             },
             "PointsSelector": {
-                "type": "object",
-                "required": [
-                    "points"
-                ],
-                "properties": {
-                    "points": {
-                        "type": "array",
-                        "items": {
-                            "type": "integer",
-                            "format": "uint64",
-                            "minimum": 0
-                        }
+                "anyOf": [
+                    {
+                        "$ref": "#/components/schemas/PointIdsList"
+                    },
+                    {
+                        "$ref": "#/components/schemas/FilterSelector"
                     }
-                }
+                ]
             },
             "Range": {
                 "description": "Range filter request",

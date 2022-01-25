@@ -1,7 +1,7 @@
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 
-use collection::operations::point_ops::PointInsertOperations;
+use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
 use collection::operations::types::{
     CollectionInfo, RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
     UpdateResult,
@@ -14,7 +14,7 @@ use storage::content_manager::storage_ops::{
 
 use crate::actix::api::retrieve_api::PointRequest;
 use crate::common::models::CollectionsResponse;
-use crate::common::points::{CreateFieldIndex, PointsSelector};
+use crate::common::points::CreateFieldIndex;
 
 mod actix;
 mod common;

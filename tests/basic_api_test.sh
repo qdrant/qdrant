@@ -110,6 +110,25 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_alias/points/search" \
         "top": 3
     }' | jq
 
+# delete point by filter (has_id)
+curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/delete?wait=true" \
+  -H 'Content-Type: application/json' \
+  --fail -s \
+  --data-raw '{ 
+    "filter": {
+      "must": [
+        { "has_id": [5] }
+      ]
+    }
+  }' | jq
+
+# quantity check if the above point id was deleted
+SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')
+[[ "$SAVED_VECTORS_COUNT" == "5" ]] || {
+  echo 'check failed - 5 points expected'
+  exit 1
+}
+
 # delete points
 curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/delete?wait=true" \
   -H 'Content-Type: application/json' \
