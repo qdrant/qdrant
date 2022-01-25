@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
 use collection::operations::types::{
-    CollectionInfo, RecommendRequest, Record, ScrollRequest, ScrollResult,
-    SearchRequest, UpdateResult,
+    CollectionInfo, RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
+    UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
 use segment::types::ScoredPoint;
