@@ -166,6 +166,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "elbart",
+      "name": "Tim Eggert",
+      "avatar_url": "https://avatars.githubusercontent.com/u/48974?v=4",
+      "profile": "https://github.com/elbart",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
