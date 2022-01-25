@@ -9,7 +9,6 @@ use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Res
 use std::sync::Arc;
 use storage::content_manager::toc::TableOfContent;
 
-use crate::actix::api::delete_api::delete_points;
 use crate::actix::api::recommend_api::recommend_points;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::search_points;
@@ -57,7 +56,6 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
                 .service(scroll_points)
                 .service(search_points)
                 .service(recommend_points)
-                .service(delete_points)
         })
         .workers(max_web_workers(&settings))
         .bind(format!(

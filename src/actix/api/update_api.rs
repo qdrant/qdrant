@@ -1,13 +1,13 @@
 use crate::actix::helpers::process_response;
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_set_payload, do_update_points, do_upsert_points, CreateFieldIndex, PointsSelector,
+    do_set_payload, do_update_points, do_upsert_points, CreateFieldIndex,
 };
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{delete, post, put, web, Responder};
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
-use collection::operations::point_ops::PointInsertOperations;
+use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
 use collection::operations::CollectionUpdateOperations;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

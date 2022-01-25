@@ -111,13 +111,13 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_alias/points/search" \
     }' | jq
 
 # delete point by filter (has_id)
-curl -L -X DELETE "http://$QDRANT_HOST/collections/test_collection/points/by_filter?wait=true" \
+curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/delete?wait=true" \
   -H 'Content-Type: application/json' \
   --fail -s \
   --data-raw '{ 
     "filter": {
       "must": [
-        { "has_id": [5]}
+        { "has_id": [5] }
       ]
     }
   }' | jq

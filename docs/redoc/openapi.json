@@ -417,18 +417,6 @@
         ],
         "type": "object"
       },
-      "DeleteRequest": {
-        "description": "Delete request - deletes all points which matches given condition",
-        "properties": {
-          "filter": {
-            "$ref": "#/components/schemas/Filter"
-          }
-        },
-        "required": [
-          "filter"
-        ],
-        "type": "object"
-      },
       "Distance": {
         "description": "Type of internal tags, build from payload Distance function types used to compare vectors",
         "enum": [
@@ -575,6 +563,17 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "FilterSelector": {
+        "properties": {
+          "filter": {
+            "$ref": "#/components/schemas/Filter"
+          }
+        },
+        "required": [
+          "filter"
+        ],
         "type": "object"
       },
       "GeoBoundingBox": {
@@ -1259,6 +1258,22 @@
         ],
         "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
       },
+      "PointIdsList": {
+        "properties": {
+          "points": {
+            "items": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "points"
+        ],
+        "type": "object"
+      },
       "PointInsertOperations": {
         "anyOf": [
           {
@@ -1408,20 +1423,14 @@
         "type": "object"
       },
       "PointsSelector": {
-        "properties": {
-          "points": {
-            "items": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
-            },
-            "type": "array"
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PointIdsList"
+          },
+          {
+            "$ref": "#/components/schemas/FilterSelector"
           }
-        },
-        "required": [
-          "points"
-        ],
-        "type": "object"
+        ]
       },
       "Range": {
         "description": "Range filter request",
@@ -2956,94 +2965,6 @@
           }
         },
         "summary": "Delete points",
-        "tags": [
-          "points"
-        ]
-      }
-    },
-    "/collections/{name}/points/delete/by_filter": {
-      "post": {
-        "description": "Delete points by filter",
-        "operationId": "delete_points_by_filter",
-        "parameters": [
-          {
-            "description": "Name of the collection to delete from",
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "If true, wait for changes to actually happen",
-            "in": "query",
-            "name": "wait",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DeleteRequest"
-              }
-            }
-          },
-          "description": "Filter criteria of points to be deleted"
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "$ref": "#/components/schemas/UpdateResult"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "4xx": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Delete points by filter",
         "tags": [
           "points"
         ]

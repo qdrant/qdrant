@@ -339,8 +339,8 @@ async fn test_collection_delete_points_by_filter() {
 
     let collection = simple_collection_fixture(collection_dir.path()).await;
 
-    let insert_points =
-        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(BatchPoints {
+    let insert_points = CollectionUpdateOperations::PointOperation(
+        Batch {
             ids: vec![0, 1, 2, 3, 4],
             vectors: vec![
                 vec![1.0, 0.0, 1.0, 1.0],
@@ -350,7 +350,9 @@ async fn test_collection_delete_points_by_filter() {
                 vec![1.0, 0.0, 0.0, 0.0],
             ],
             payloads: None,
-        }));
+        }
+        .into(),
+    );
 
     let insert_result = collection.update(insert_points, true).await;
 

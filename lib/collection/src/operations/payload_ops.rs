@@ -8,14 +8,14 @@ use std::collections::HashMap;
 pub struct SetPayload {
     pub payload: HashMap<PayloadKeyType, PayloadInterface>,
     /// Assigns payload to each point in this list
-    pub points: Vec<PointIdType>,
+    pub points: Vec<PointIdType>, // ToDo: replace with point selector
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct DeletePayload {
     pub keys: Vec<PayloadKeyType>,
     /// Deletes values from each point in this list
-    pub points: Vec<PointIdType>,
+    pub points: Vec<PointIdType>, // ToDo: replace with point selector
 }
 
 /// Define operations description for point payloads manipulation
