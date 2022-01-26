@@ -6,10 +6,7 @@ mod tests {
         random_filter, random_int_payload, random_keyword_payload, random_vector,
     };
     use segment::segment_constructor::build_segment;
-    use segment::types::{
-        Condition, Distance, FieldCondition, Filter, Indexes, PayloadIndexType, PayloadKeyType,
-        PayloadType, Range, SegmentConfig, StorageType, TheMap, WithPayload,
-    };
+    use segment::types::{Condition, Distance, FieldCondition, Filter, Indexes, PayloadIndexType, PayloadKeyType, PayloadType, PointIdType, Range, SegmentConfig, StorageType, TheMap, WithPayload};
     use tempdir::TempDir;
 
     #[test]
@@ -114,6 +111,7 @@ mod tests {
 
         let mut opnum = 0;
         for idx in 0..num_points {
+            let point_id = idx as PointIdType;
             let vector = random_vector(&mut rnd, dim);
             let mut payload: TheMap<PayloadKeyType, PayloadType> = Default::default();
             payload.insert(str_key.clone(), random_keyword_payload(&mut rnd));
@@ -122,14 +120,14 @@ mod tests {
                 random_int_payload(&mut rnd, num_int_values),
             );
 
-            plain_segment.upsert_point(idx, idx, &vector).unwrap();
-            struct_segment.upsert_point(idx, idx, &vector).unwrap();
+            plain_segment.upsert_point(idx, point_id, &vector).unwrap();
+            struct_segment.upsert_point(idx, point_id, &vector).unwrap();
 
             plain_segment
-                .set_full_payload(idx, idx, payload.clone())
+                .set_full_payload(idx, point_id, payload.clone())
                 .unwrap();
             struct_segment
-                .set_full_payload(idx, idx, payload.clone())
+                .set_full_payload(idx, point_id, payload.clone())
                 .unwrap();
 
             opnum += 1;

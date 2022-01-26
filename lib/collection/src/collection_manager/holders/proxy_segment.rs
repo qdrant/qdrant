@@ -214,8 +214,8 @@ impl SegmentEntry for ProxySegment {
 
     fn set_full_payload_with_json(
         &mut self,
-        op_num: u64,
-        point_id: u64,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
         full_payload: &str,
     ) -> OperationResult<bool> {
         self.move_if_exists(op_num, point_id)?;

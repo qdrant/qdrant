@@ -54,7 +54,7 @@ fn test_update_proxy_segments() {
     let vectors = vec![vec![0.0, 0.0, 0.0, 0.0], vec![0.0, 0.0, 0.0, 0.0]];
 
     for i in 1..10 {
-        let ids = vec![100 * i + 1, 100 * i + 2];
+        let ids = vec![100 * i as PointIdType + 1, 100 * i as PointIdType + 2];
         upsert_points(&segments, 1000 + i, &ids, &vectors, &None).unwrap();
     }
 
