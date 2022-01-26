@@ -213,7 +213,6 @@ impl TableOfContent {
 
     pub async fn delete_collection(&self, collection_name: &str) -> Result<bool, StorageError> {
         if let Some(removed) = self.collections.write().await.remove(collection_name) {
-            removed.stop().await?;
             {
                 // Wait for optimizer to finish.
                 // TODO: Enhance optimizer to shutdown faster

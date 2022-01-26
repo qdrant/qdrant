@@ -44,6 +44,7 @@ pub fn construct_collection(
             format!("optimizer-{}", id)
         })
         .max_blocking_threads(blocking_threads)
+        .enable_time() // needed to schedule update loops
         .build()
         .unwrap();
 

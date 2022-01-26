@@ -110,6 +110,7 @@ export function setup() {
 }
 
 export default function () {
+    // not using `wait=true` to stress the ingestion of points without backpressure
     var url = `${host}/collections/${collection_name}/points`;
 
     var payload = JSON.stringify({

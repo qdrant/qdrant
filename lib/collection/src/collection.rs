@@ -299,11 +299,6 @@ impl Collection {
         })
     }
 
-    pub async fn stop(&self) -> CollectionResult<()> {
-        self.update_sender.send(UpdateSignal::Stop).await?;
-        Ok(())
-    }
-
     pub fn avg_vectors<'a>(
         vectors: impl Iterator<Item = &'a Vec<VectorElementType>>,
     ) -> Vec<VectorElementType> {
@@ -335,6 +330,7 @@ impl Collection {
         &self,
         optimizer_config_diff: OptimizersConfigDiff,
     ) -> CollectionResult<()> {
+        log::debug!("updating optimizer params");
         {
             let mut config = self.config.write().await;
             config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
@@ -342,7 +338,6 @@ impl Collection {
         }
         let config = self.config.read().await;
         let mut update_handler = self.update_handler.lock().await;
-        self.stop().await?;
         update_handler.wait_workers_stops().await?;
         let new_optimizers = build_optimizers(
             &self.path,
@@ -387,9 +382,8 @@ impl Collection {
 
 impl Drop for Collection {
     fn drop(&mut self) {
+        log::debug!("dropping collection");
         // Finishes update tasks right before destructor stuck to do so with runtime
-        block_on(self.stop()).unwrap();
-
         block_on(self.wait_update_workers_stop()).unwrap();
 
         match self.runtime_handle.take() {

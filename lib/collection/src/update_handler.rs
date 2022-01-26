@@ -1,20 +1,21 @@
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
+use crate::common::stoppable_async_task::{async_spawn_stoppable, StoppableAsyncTaskHandle};
 use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
-use async_channel::{Receiver, Sender};
+use async_channel::{Receiver, Sender, TryRecvError};
 use itertools::Itertools;
 use log::{debug, info};
 use segment::types::SeqNumberType;
 use std::cmp::min;
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
-use tokio::task::JoinHandle;
 use tokio::time::{Duration, Instant};
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
@@ -33,8 +34,6 @@ pub struct OperationData {
 pub enum UpdateSignal {
     /// Requested operation to perform
     Operation(OperationData),
-    /// Stop all optimizers and listening
-    Stop,
     /// Empty signal used to trigger optimizers
     Nop,
 }
@@ -43,8 +42,6 @@ pub enum UpdateSignal {
 pub enum OptimizerSignal {
     /// Sequential number of the operation
     Operation(SeqNumberType),
-    /// Stop all optimizers and listening
-    Stop,
     /// Empty signal used to trigger optimizers
     Nop,
 }
@@ -59,9 +56,9 @@ pub struct UpdateHandler {
     /// Channel receiver, which is listened by the updater process
     update_receiver: Receiver<UpdateSignal>,
     /// Process, that listens updates signals and perform updates
-    update_worker: Option<JoinHandle<()>>,
+    update_worker: Option<StoppableAsyncTaskHandle<()>>,
     /// Process, that listens for post-update signals and performs optimization
-    optimizer_worker: Option<JoinHandle<()>>,
+    optimizer_worker: Option<StoppableAsyncTaskHandle<()>>,
     runtime_handle: Handle,
     /// WAL, required for operations
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
@@ -94,37 +91,45 @@ impl UpdateHandler {
 
     pub fn run_workers(&mut self) {
         let (tx, rx) = async_channel::unbounded();
-        self.optimizer_worker = Some(self.runtime_handle.spawn(Self::optimization_worker_fn(
-            self.optimizers.clone(),
-            rx,
-            self.segments.clone(),
-            self.wal.clone(),
-            self.flush_timeout_sec,
-            self.optimization_handles.clone(),
-        )));
-        self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
-            self.update_receiver.clone(),
-            tx,
-            self.segments.clone(),
-        )));
+        self.optimizer_worker = Some(async_spawn_stoppable(&self.runtime_handle, |stop| {
+            Self::optimization_worker_fn(
+                self.optimizers.clone(),
+                rx,
+                self.segments.clone(),
+                self.wal.clone(),
+                self.flush_timeout_sec,
+                self.optimization_handles.clone(),
+                stop,
+            )
+        }));
+        self.update_worker = Some(async_spawn_stoppable(&self.runtime_handle, |stop| {
+            Self::update_worker_fn(
+                self.update_receiver.clone(),
+                tx,
+                self.segments.clone(),
+                stop,
+            )
+        }));
     }
 
     /// Gracefully wait before all optimizations stop
     /// If some optimization is in progress - it will be finished before shutdown.
     pub async fn wait_workers_stops(&mut self) -> CollectionResult<()> {
-        let maybe_handle = self.update_worker.take();
-        if let Some(handle) = maybe_handle {
-            handle.await?;
+        debug!("waiting for workers to stop");
+        let maybe_update_handle = self.update_worker.take();
+        if let Some(handle) = maybe_update_handle {
+            debug!("awaiting update_worker thread handle");
+            handle.stop().await?;
         }
-        let maybe_handle = self.optimizer_worker.take();
-        if let Some(handle) = maybe_handle {
-            handle.await?;
+        let maybe_optimizer_handle = self.optimizer_worker.take();
+        if let Some(handle) = maybe_optimizer_handle {
+            debug!("awaiting optimizer_worker thread handle");
+            handle.stop().await?;
         }
-
         let mut opt_handles_guard = self.optimization_handles.lock().await;
         let opt_handles = std::mem::take(&mut *opt_handles_guard);
         let stopping_handles = opt_handles.into_iter().map(|h| h.stop()).collect_vec();
-
+        debug!("waiting for {} stop handles", { stopping_handles.len() });
         for res in stopping_handles {
             res.await?;
         }
@@ -217,15 +222,23 @@ impl UpdateHandler {
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
         flush_timeout_sec: u64,
         optimization_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
+        stopped: Arc<AtomicBool>,
     ) {
         let flush_timeout = Duration::from_secs(flush_timeout_sec);
         let mut last_flushed = Instant::now();
         loop {
-            let recv_res = receiver.recv().await;
+            if stopped.load(Ordering::Relaxed) {
+                debug!("stopping optimization_worker_fn loop");
+                break;
+            }
+            // do not block on receiving to have the possibility to shutdown an idle pipeline
+            let recv_res = receiver.try_recv();
             match recv_res {
                 Ok(signal) => {
+                    debug!("optimization_worker_fn got signal!");
                     match signal {
                         OptimizerSignal::Nop => {
+                            debug!("optimization_worker_fn receiving `NOP`");
                             if Self::try_recover(segments.clone(), wal.clone())
                                 .await
                                 .is_err()
@@ -270,10 +283,20 @@ impl UpdateHandler {
                                 wal.lock().await.ack(confirmed_version).unwrap();
                             }
                         }
-                        OptimizerSignal::Stop => break, // Stop gracefully
                     }
                 }
-                Err(_) => break, // Transmitter was destroyed
+                Err(err) => {
+                    match err {
+                        TryRecvError::Empty => {
+                            // loop back after a small delay
+                            tokio::time::sleep(Duration::from_millis(5)).await;
+                        }
+                        TryRecvError::Closed => {
+                            debug!("channel closed");
+                            break;
+                        } // Transmitter was destroyed
+                    }
+                }
             }
         }
     }
@@ -282,11 +305,18 @@ impl UpdateHandler {
         receiver: Receiver<UpdateSignal>,
         optimize_sender: Sender<OptimizerSignal>,
         segments: LockedSegmentHolder,
+        stopped: Arc<AtomicBool>,
     ) {
         loop {
-            let recv_res = receiver.recv().await;
+            if stopped.load(Ordering::Relaxed) {
+                debug!("stopping update_worker_fn loop");
+                break;
+            }
+            // do not block on receiving to have the possibility to shutdown an idle pipeline
+            let recv_res = receiver.try_recv();
             match recv_res {
                 Ok(signal) => {
+                    debug!("update_worker_fn got signal!");
                     match signal {
                         UpdateSignal::Operation(OperationData {
                             op_num,
@@ -309,23 +339,27 @@ impl UpdateHandler {
                                 });
                             };
                         }
-                        UpdateSignal::Stop => {
-                            optimize_sender.send(OptimizerSignal::Stop).await.unwrap_or_else(|_| {
-                                debug!("Optimizer already stopped")
-                            });
-                            break;
+                        UpdateSignal::Nop => {
+                            debug!("update_worker_fn receiving `STOP`");
+                            optimize_sender.send(OptimizerSignal::Nop).await.unwrap_or_else(|_| {
+                                info!("Can't notify optimizers, assume process is dead. Restart is required");
+                            })
                         }
-                        UpdateSignal::Nop => optimize_sender.send(OptimizerSignal::Nop).await.unwrap_or_else(|_| {
-                            info!("Can't notify optimizers, assume process is dead. Restart is required");
-                        }),
                     }
                 }
-                Err(_) => {
-                    optimize_sender.send(OptimizerSignal::Stop).await.unwrap_or_else(|_| {
-                        debug!("Optimizer already stopped")
-                    });
-                    break;
-                } // Transmitter was destroyed
+
+                Err(err) => {
+                    match err {
+                        TryRecvError::Empty => {
+                            // loop back after a small delay
+                            tokio::time::sleep(Duration::from_millis(5)).await;
+                        }
+                        TryRecvError::Closed => {
+                            debug!("channel closed");
+                            break;
+                        } // Transmitter was destroyed
+                    }
+                }
             }
         }
     }
