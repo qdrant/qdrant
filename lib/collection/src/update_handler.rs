@@ -168,7 +168,6 @@ impl UpdateHandler {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
     ) -> Vec<StoppableTaskHandle<bool>> {
-        debug!("launch_optimization");
         let mut scheduled_segment_ids: HashSet<_> = Default::default();
         let mut handles = vec![];
         for (i, optimizer) in optimizers.iter().enumerate() {
@@ -186,12 +185,12 @@ impl UpdateHandler {
                     }
 
                     handles.push(spawn_stoppable(move |stopped| {
-                        debug!("launch_optimization spawn_stoppable {}", i);
+                        debug!("launch_optimization spawn_stoppable '{}' on {}", i, thread::current().name().unwrap());
                         match optim.as_ref().optimize(segs, nsi, stopped) {
                             Ok(result) => result,
                             Err(error) => match error {
                                 CollectionError::Cancelled { description } => {
-                                    log::info!("Optimization cancelled - {}", description);
+                                    log::info!("Optimization cancelled - {} - {}", description, thread::current().name().unwrap());
                                     false
                                 }
                                 _ => {

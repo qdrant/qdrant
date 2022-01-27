@@ -189,7 +189,7 @@ pub(crate) fn upsert_points(
                 })
                 .collect(),
         };
-    log::debug!("upsert_points - trying to get SegmentHolder RW lock {}", thread::current().name().unwrap());
+    log::debug!("upsert_points - trying to get SegmentHolder read RWlock {}", thread::current().name().unwrap());
     let segments = segments.read();
     log::debug!("upsert_points - got SegmentHolder read RWlock {}", thread::current().name().unwrap());
     // Update points in writable segments

@@ -304,7 +304,7 @@ pub trait SegmentOptimizer {
         ids: Vec<SegmentId>,
         stopped: &AtomicBool,
     ) -> CollectionResult<bool> {
-        debug!("optimize {}", thread::current().name().unwrap());
+        debug!("optimize on {}", thread::current().name().unwrap());
         // On the one hand - we want to check consistently if all provided segments are
         // available for optimization (not already under one) and we want to do it before creating a temp segment
         // which is an expensive operation. So we can't not unlock `segments` after the check and before the insert.

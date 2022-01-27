@@ -95,7 +95,12 @@ impl IndexingOptimizer {
                 }
             })
             .max_by_key(|(_, num_vectors)| *num_vectors)
-            .map(|(idx, _)| (idx, segments.read().get(idx).unwrap().clone()))
+            .map(|(idx, _)| {
+                log::debug!("worst_segment locking read SegmentHolder for `{}` on {}", idx, std::thread::current().name().unwrap());
+                let r = (idx, segments.read().get(idx).unwrap().clone());
+                log::debug!("worst_segment releasing read SegmentHolder for `{}` on {}", idx, std::thread::current().name().unwrap());
+                r
+            })
     }
 }
 
