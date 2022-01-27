@@ -43,8 +43,8 @@ impl IndexingOptimizer {
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
     ) -> Option<(SegmentId, LockedSegment)> {
-        segments
-            .read()
+        let segments_read_guard = segments.read();
+        segments_read_guard
             .iter()
             .filter_map(|(idx, segment)| {
                 if excluded_ids.contains(idx) {
@@ -95,7 +95,7 @@ impl IndexingOptimizer {
                 }
             })
             .max_by_key(|(_, num_vectors)| *num_vectors)
-            .map(|(idx, _)| (idx, segments.read().get(idx).unwrap().clone()))
+            .map(|(idx, _)| (idx, segments_read_guard.get(idx).unwrap().clone()))
     }
 }
 

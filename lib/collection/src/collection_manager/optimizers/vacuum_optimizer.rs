@@ -48,8 +48,8 @@ impl VacuumOptimizer {
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
     ) -> Option<(SegmentId, LockedSegment)> {
-        segments
-            .read()
+        let segments_read_guard = segments.read();
+        segments_read_guard
             .iter()
             // .map(|(idx, segment)| (*idx, segment.get().read().info()))
             .filter_map(|(idx, segment)| {
@@ -73,7 +73,7 @@ impl VacuumOptimizer {
                 }
             })
             .max_by_key(|(_, ratio)| OrderedFloat(*ratio))
-            .map(|(idx, _)| (idx, segments.read().get(idx).unwrap().clone()))
+            .map(|(idx, _)| (idx, segments_read_guard.get(idx).unwrap().clone()))
     }
 }
 
