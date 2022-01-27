@@ -17,6 +17,8 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::thread;
+use log::debug;
 
 #[derive(Debug, Clone)]
 pub struct OptimizerThresholds {
@@ -302,6 +304,7 @@ pub trait SegmentOptimizer {
         ids: Vec<SegmentId>,
         stopped: &AtomicBool,
     ) -> CollectionResult<bool> {
+        debug!("optimize {}", thread::current().name().unwrap());
         // On the one hand - we want to check consistently if all provided segments are
         // available for optimization (not already under one) and we want to do it before creating a temp segment
         // which is an expensive operation. So we can't not unlock `segments` after the check and before the insert.
@@ -325,6 +328,7 @@ pub trait SegmentOptimizer {
 
         if !all_segments_ok {
             // Cancel the optimization
+            debug!("optimize - cancel optim - release upgradable read lock on SegmentHolder {}", thread::current().name().unwrap());
             return Ok(false);
         }
 
@@ -346,13 +350,15 @@ pub trait SegmentOptimizer {
 
         let proxy_ids: Vec<_> = {
             // Exclusive lock for the segments operations
+            debug!("optimize - trying to upgrade RwLockUpgradableReadGuard to write on SegmentHolder {}", thread::current().name().unwrap());
             let mut write_segments = RwLockUpgradableReadGuard::upgrade(segment_lock);
-
+            debug!("optimize - got the write lock on SegmentHolder {}", thread::current().name().unwrap());
             proxies
                 .zip(ids.iter().cloned())
                 .map(|(proxy, idx)| write_segments.swap(proxy, &[idx], false).unwrap())
                 .collect()
         };
+        debug!("optimize - releasing write RwLockUpgradableReadGuard on SegmentHolder {}", thread::current().name().unwrap());
 
         // ---- SLOW PART -----
         let mut optimized_segment = match self.build_new_segment(
@@ -387,25 +393,32 @@ pub trait SegmentOptimizer {
 
         {
             // This block locks all operations with collection. It should be fast
+            debug!("optimize - trying to get the write RwLockUpgradableReadGuard on SegmentHolder {}", thread::current().name().unwrap());
             let mut write_segments = segments.write();
+            debug!("optimize - released the write RwLockUpgradableReadGuard on SegmentHolder {}", thread::current().name().unwrap());
             let deleted_points = proxy_deleted_points.read();
+            debug!("optimize - 2");
             let points_diff = already_remove_points.difference(&deleted_points);
+            debug!("optimize - 3");
             for &point_id in points_diff {
                 optimized_segment
                     .delete_point(optimized_segment.version(), point_id)
                     .unwrap();
             }
-
+            debug!("optimize - delete_points");
             for deleted_field_name in proxy_deleted_indexes.read().iter() {
                 optimized_segment
                     .delete_field_index(optimized_segment.version(), deleted_field_name)?;
             }
+
+            debug!("optimize - delete_field_name");
 
             for created_field_name in proxy_created_indexes.read().iter() {
                 optimized_segment
                     .create_field_index(optimized_segment.version(), created_field_name)?;
             }
 
+            debug!("optimize - swap");
             write_segments.swap(optimized_segment, &proxy_ids, true)?;
 
             let has_appendable_segments = write_segments.random_appendable_segment().is_some();

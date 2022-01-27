@@ -14,6 +14,7 @@ use std::cmp::min;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::thread;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 use tokio::time::{Duration, Instant};
@@ -148,10 +149,13 @@ impl UpdateHandler {
         match first_failed_operation_option {
             None => {}
             Some(first_failed_op) => {
+                debug!("try_recover trying to get Mutex on WAL {}", thread::current().name().unwrap());
                 let wal_lock = wal.lock().await;
+                debug!("try_recover got wal lock {}", thread::current().name().unwrap());
                 for (op_num, operation) in wal_lock.read(first_failed_op) {
                     CollectionUpdater::update(&segments, op_num, operation)?;
                 }
+                debug!("try_recover release wal lock {}", thread::current().name().unwrap());
             }
         };
         Ok(0)
@@ -164,9 +168,10 @@ impl UpdateHandler {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
     ) -> Vec<StoppableTaskHandle<bool>> {
+        debug!("launch_optimization");
         let mut scheduled_segment_ids: HashSet<_> = Default::default();
         let mut handles = vec![];
-        for optimizer in optimizers.iter() {
+        for (i, optimizer) in optimizers.iter().enumerate() {
             loop {
                 let nonoptimal_segment_ids =
                     optimizer.check_condition(segments.clone(), &scheduled_segment_ids);
@@ -181,6 +186,7 @@ impl UpdateHandler {
                     }
 
                     handles.push(spawn_stoppable(move |stopped| {
+                        debug!("launch_optimization spawn_stoppable {}", i);
                         match optim.as_ref().optimize(segs, nsi, stopped) {
                             Ok(result) => result,
                             Err(error) => match error {
@@ -227,7 +233,7 @@ impl UpdateHandler {
         let flush_timeout = Duration::from_secs(flush_timeout_sec);
         let mut last_flushed = Instant::now();
         loop {
-            if stopped.load(Ordering::Relaxed) {
+            if stopped.load(Ordering::SeqCst) {
                 debug!("stopping optimization_worker_fn loop");
                 break;
             }
@@ -235,7 +241,6 @@ impl UpdateHandler {
             let recv_res = receiver.try_recv();
             match recv_res {
                 Ok(signal) => {
-                    debug!("optimization_worker_fn got signal!");
                     match signal {
                         OptimizerSignal::Nop => {
                             debug!("optimization_worker_fn receiving `NOP`");
@@ -253,6 +258,7 @@ impl UpdateHandler {
                             .await;
                         }
                         OptimizerSignal::Operation(operation_id) => {
+                            debug!("optimization_worker_fn operation!");
                             if Self::try_recover(segments.clone(), wal.clone())
                                 .await
                                 .is_err()
@@ -289,6 +295,7 @@ impl UpdateHandler {
                     match err {
                         TryRecvError::Empty => {
                             // loop back after a small delay
+                            debug!("optimization_worker_fn looping!");
                             tokio::time::sleep(Duration::from_millis(5)).await;
                         }
                         TryRecvError::Closed => {
@@ -308,7 +315,7 @@ impl UpdateHandler {
         stopped: Arc<AtomicBool>,
     ) {
         loop {
-            if stopped.load(Ordering::Relaxed) {
+            if stopped.load(Ordering::SeqCst) {
                 debug!("stopping update_worker_fn loop");
                 break;
             }
@@ -316,7 +323,7 @@ impl UpdateHandler {
             let recv_res = receiver.try_recv();
             match recv_res {
                 Ok(signal) => {
-                    debug!("update_worker_fn got signal!");
+                    //debug!("update_worker_fn got signal!");
                     match signal {
                         UpdateSignal::Operation(OperationData {
                             op_num,
@@ -332,7 +339,6 @@ impl UpdateHandler {
                                     .map_err(|send_err| send_err.into()),
                                 Err(err) => Err(err),
                             };
-
                             if let Some(feedback) = sender {
                                 feedback.send(res).await.unwrap_or_else(|_| {
                                     info!("Can't report operation {} result. Assume already not required", op_num);
@@ -352,6 +358,7 @@ impl UpdateHandler {
                     match err {
                         TryRecvError::Empty => {
                             // loop back after a small delay
+                            debug!("update_worker_fn looping!");
                             tokio::time::sleep(Duration::from_millis(5)).await;
                         }
                         TryRecvError::Closed => {

@@ -45,7 +45,7 @@ storage:
 
     # Maximum number of vectors allowed for plain index.
     # Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
-    indexing_threshold: 20000
+    indexing_threshold: 200
 
     # Starting from this amount of vectors per-segment the engine will start building index for payload.
     payload_indexing_threshold: 10000

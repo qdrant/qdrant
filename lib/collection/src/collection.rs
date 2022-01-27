@@ -80,7 +80,8 @@ impl Collection {
     ) -> CollectionResult<UpdateResult> {
         let sndr = self.update_sender.clone();
         let (callback_sender, callback_receiver) = if wait {
-            let (tx, rx) = async_channel::unbounded();
+            // at most one answer sent back
+            let (tx, rx) = async_channel::bounded(1);
             (Some(tx), Some(rx))
         } else {
             (None, None)

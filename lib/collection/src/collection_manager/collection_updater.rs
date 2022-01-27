@@ -1,3 +1,4 @@
+use std::thread;
 use parking_lot::RwLock;
 
 use segment::types::SeqNumberType;
@@ -24,22 +25,32 @@ impl CollectionUpdater {
     ) {
         match operation_result {
             Ok(_) => {
-                if !segments.read().failed_operation.is_empty() {
+                log::debug!("handle_update_result trying to get RWLock in read for SegmentHolder {}", thread::current().name().unwrap());
+                let lock = segments.read();
+                log::debug!("handle_update_result got read lock on SegmentHolder! {}", thread::current().name().unwrap());
+                if !lock.failed_operation.is_empty() {
+                    log::debug!("handle_update_result trying to get RWLock in write for SegmentHolder {}", thread::current().name().unwrap());
                     let mut write_segments = segments.write();
+                    log::debug!("handle_update_result got RWLock in write for SegmentHolder {}", thread::current().name().unwrap());
                     if write_segments.failed_operation.contains(&op_num) {
                         // Failed operation successfully fixed
                         write_segments.failed_operation.remove(&op_num);
                     }
+                    log::debug!("handle_update_result release RWLock in write for SegmentHolder {}", thread::current().name().unwrap());
                 }
+                log::debug!("handle_update_result release read lock on SegmentHolder! {}", thread::current().name().unwrap());
             }
-            Err(collection_error) => match collection_error {
-                CollectionError::ServiceError { error } => {
-                    let mut write_segments = segments.write();
-                    write_segments.failed_operation.insert(op_num);
-                    log::error!("Update operation failed: {}", error)
-                }
-                _ => {
-                    log::warn!("Update operation declined: {}", collection_error)
+            Err(collection_error) => {
+                log::debug!("handle_update_result - error {:?}", collection_error);
+                match collection_error {
+                    CollectionError::ServiceError { error } => {
+                        let mut write_segments = segments.write();
+                        write_segments.failed_operation.insert(op_num);
+                        log::error!("Update operation failed: {}", error)
+                    }
+                    _ => {
+                        log::warn!("Update operation declined: {}", collection_error)
+                    }
                 }
             },
         }
@@ -63,7 +74,6 @@ impl CollectionUpdater {
                 process_field_index_operation(segments, op_num, &index_operation)
             }
         };
-
         CollectionUpdater::handle_update_result(segments, op_num, &operation_result);
 
         operation_result

@@ -1,6 +1,6 @@
 
 debug: true
-log_level: DEBUG,sled=INFO
+log_level: DEBUG,sled=INFO,actix_web=WARN
 
 service:
   host: 127.0.0.1

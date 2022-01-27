@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::thread;
 
 use parking_lot::{RwLock, RwLockWriteGuard};
 
@@ -188,8 +189,9 @@ pub(crate) fn upsert_points(
                 })
                 .collect(),
         };
-
+    log::debug!("upsert_points - trying to get SegmentHolder RW lock {}", thread::current().name().unwrap());
     let segments = segments.read();
+    log::debug!("upsert_points - got SegmentHolder read RWlock {}", thread::current().name().unwrap());
     // Update points in writable segments
     let updated_points =
         segments.apply_points_to_appendable(op_num, ids, |id, write_segment| {
@@ -216,9 +218,10 @@ pub(crate) fn upsert_points(
                 .ok_or(CollectionError::ServiceError {
                     error: "No segments exists, expected at least one".to_string(),
                 })?;
-
+        log::debug!("upsert_points - getting default_write_segment {}", thread::current().name().unwrap());
         let segment_arc = default_write_segment.get();
         let mut write_segment = segment_arc.write();
+        log::debug!("upsert_points - got write lock for segment entry {}", thread::current().name().unwrap());
         for point_id in new_point_ids {
             res += upsert_with_payload(
                 &mut write_segment,
@@ -228,8 +231,9 @@ pub(crate) fn upsert_points(
                 payloads_map.get(&point_id).cloned(),
             )? as usize;
         }
+        log::debug!("upsert_points - releasing write lock for segment entry {}", thread::current().name().unwrap());
     };
-
+    log::debug!("upsert_points - release SegmentHolder read RWlock {}", thread::current().name().unwrap());
     Ok(res)
 }
 

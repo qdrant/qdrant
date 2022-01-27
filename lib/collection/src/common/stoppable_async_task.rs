@@ -1,19 +1,17 @@
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
 pub struct StoppableAsyncTaskHandle<T> {
     pub join_handle: JoinHandle<T>,
-    stopped: Weak<AtomicBool>,
+    stopped: Arc<AtomicBool>,
 }
 
 impl<T> StoppableAsyncTaskHandle<T> {
     pub fn ask_to_stop(&self) {
-        if let Some(v) = self.stopped.upgrade() {
-            v.store(true, Ordering::Relaxed);
-        }
+        self.stopped.store(true, Ordering::SeqCst);
     }
 
     pub fn stop(self) -> JoinHandle<T> {
@@ -32,13 +30,9 @@ where
     Fut: Future<Output = T> + Send + 'static,
 {
     let stopped = Arc::new(AtomicBool::new(false));
-    // We are OK if original value is destroyed with the thread
-    // Weak reference is sufficient
-    let stopped_w = Arc::downgrade(&stopped);
-
     StoppableAsyncTaskHandle {
-        join_handle: runtime_handle.spawn(f(stopped)),
-        stopped: stopped_w,
+        join_handle: runtime_handle.spawn(f(stopped.clone())),
+        stopped,
     }
 }
 
