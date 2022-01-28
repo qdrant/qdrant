@@ -34,7 +34,7 @@ itertools = "0.10"
 
 config = "~0.11.0"
 
-tokio = { version = "~1.15", features = ["full"] }
+tokio = { version = "~1.16", features = ["full"] }
 
 actix-web = { version = "4.0.0-beta.21", optional = true }
 tonic =  { version = "0.6.2", optional = true }
