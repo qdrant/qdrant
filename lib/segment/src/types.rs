@@ -12,7 +12,7 @@ pub type PointOffsetType = u32;
 pub type PayloadKeyType = String;
 pub type PayloadKeyTypeRef<'a> = &'a str;
 pub type SeqNumberType = u64;
-/// Sequential number of modification, applied to segemnt
+/// Sequential number of modification, applied to segment
 pub type ScoreType = f32;
 /// Type of vector matching score
 pub type TagType = u64;
