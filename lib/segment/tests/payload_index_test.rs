@@ -6,7 +6,10 @@ mod tests {
         random_filter, random_int_payload, random_keyword_payload, random_vector,
     };
     use segment::segment_constructor::build_segment;
-    use segment::types::{Condition, Distance, FieldCondition, Filter, Indexes, PayloadIndexType, PayloadKeyType, PayloadType, PointIdType, Range, SegmentConfig, StorageType, TheMap, WithPayload};
+    use segment::types::{
+        Condition, Distance, FieldCondition, Filter, Indexes, PayloadIndexType, PayloadKeyType,
+        PayloadType, PointIdType, Range, SegmentConfig, StorageType, TheMap, WithPayload,
+    };
     use tempdir::TempDir;
 
     #[test]

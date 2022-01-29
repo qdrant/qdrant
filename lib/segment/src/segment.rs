@@ -191,6 +191,30 @@ impl Segment {
         Ok(())
     }
 
+    /// Retrieve vector by internal ID
+    ///
+    /// Panics if vector does not exists or deleted
+    #[inline]
+    fn vector_by_offset(
+        &self,
+        point_offset: PointOffsetType,
+    ) -> OperationResult<Vec<VectorElementType>> {
+        Ok(self
+            .vector_storage
+            .borrow()
+            .get_vector(point_offset)
+            .unwrap())
+    }
+
+    /// Retrieve payload by internal ID
+    #[inline]
+    fn payload_by_offset(
+        &self,
+        point_offset: PointOffsetType,
+    ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
+        Ok(self.payload_storage.borrow().payload(point_offset))
+    }
+
     pub fn save_current_state(&self) -> OperationResult<()> {
         self.save_state(&self.get_state())
     }
@@ -234,14 +258,16 @@ impl SegmentEntry for Segment {
         let res: OperationResult<Vec<ScoredPoint>> = internal_result
             .iter()
             .map(|&scored_point_offset| {
-                let point_id = id_tracker.external_id(scored_point_offset.idx).ok_or(
-                    OperationError::ServiceError {
-                        description: format!(
-                            "Corrupter id_tracker, no external value for {}",
-                            scored_point_offset.idx
-                        ),
-                    },
-                )?;
+                let point_offset = scored_point_offset.idx;
+                let point_id =
+                    id_tracker
+                        .external_id(point_offset)
+                        .ok_or(OperationError::ServiceError {
+                            description: format!(
+                                "Corrupter id_tracker, no external value for {}",
+                                scored_point_offset.idx
+                            ),
+                        })?;
                 let point_version =
                     id_tracker
                         .version(point_id)
@@ -252,7 +278,7 @@ impl SegmentEntry for Segment {
                             ),
                         })?;
                 let payload = if with_payload.enable {
-                    let initial_payload = self.payload(point_id)?;
+                    let initial_payload = self.payload_by_offset(point_offset)?;
                     let processed_payload = if let Some(i) = &with_payload.payload_selector {
                         i.process(initial_payload)
                     } else {
@@ -264,7 +290,7 @@ impl SegmentEntry for Segment {
                 };
 
                 let vector = if with_vector {
-                    Some(self.vector(point_id)?)
+                    Some(self.vector_by_offset(point_offset)?)
                 } else {
                     None
                 };
@@ -427,11 +453,7 @@ impl SegmentEntry for Segment {
 
     fn vector(&self, point_id: PointIdType) -> OperationResult<Vec<VectorElementType>> {
         let internal_id = self.lookup_internal_id(point_id)?;
-        Ok(self
-            .vector_storage
-            .borrow()
-            .get_vector(internal_id)
-            .unwrap())
+        self.vector_by_offset(internal_id)
     }
 
     fn payload(
@@ -439,7 +461,7 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
     ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
         let internal_id = self.lookup_internal_id(point_id)?;
-        Ok(self.payload_storage.borrow().payload(internal_id))
+        self.payload_by_offset(internal_id)
     }
 
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {

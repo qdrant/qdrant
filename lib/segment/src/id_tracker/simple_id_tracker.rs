@@ -1,10 +1,54 @@
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTracker;
-use crate::types::{PointIdType, PointOffsetType, SeqNumberType};
+use crate::types::{ExtendedPointId, PointIdType, PointOffsetType, SeqNumberType};
 use bincode;
 use rocksdb::{IteratorMode, Options, DB};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
+use uuid::Uuid;
+
+/// Point Id type used for storing ids internally
+/// Should be serializable by `bincode`, therefore is not untagged.
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+enum StoredPointId {
+    NumId(u64),
+    Uuid(Uuid),
+    String(String),
+}
+
+impl From<ExtendedPointId> for StoredPointId {
+    fn from(point_id: ExtendedPointId) -> Self {
+        match point_id {
+            ExtendedPointId::NumId(idx) => StoredPointId::NumId(idx),
+            ExtendedPointId::Uuid(uuid) => StoredPointId::Uuid(uuid),
+        }
+    }
+}
+
+impl From<StoredPointId> for ExtendedPointId {
+    fn from(point_id: StoredPointId) -> Self {
+        match point_id {
+            StoredPointId::NumId(idx) => ExtendedPointId::NumId(idx),
+            StoredPointId::Uuid(uuid) => ExtendedPointId::Uuid(uuid),
+            StoredPointId::String(_str) => unimplemented!(),
+        }
+    }
+}
+
+#[inline]
+fn stored_to_external_id(point_id: StoredPointId) -> PointIdType {
+    match point_id {
+        StoredPointId::NumId(idx) => idx,
+        StoredPointId::Uuid(_) => unimplemented!(),
+        StoredPointId::String(_) => unimplemented!(),
+    }
+}
+
+#[inline]
+fn external_to_stored_id(point_id: &PointIdType) -> StoredPointId {
+    StoredPointId::NumId(*point_id)
+}
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
@@ -34,7 +78,7 @@ impl SimpleIdTracker {
         for (key, val) in
             store.iterator_cf(store.cf_handle(MAPPING_CF).unwrap(), IteratorMode::Start)
         {
-            let external_id: PointIdType = bincode::deserialize(&key).unwrap();
+            let external_id = Self::restore_key(&key);
             let internal_id: PointOffsetType = bincode::deserialize(&val).unwrap();
             internal_to_external.insert(internal_id, external_id);
             external_to_internal.insert(external_id, internal_id);
@@ -43,7 +87,7 @@ impl SimpleIdTracker {
         for (key, val) in
             store.iterator_cf(store.cf_handle(VERSIONS_CF).unwrap(), IteratorMode::Start)
         {
-            let external_id: PointIdType = bincode::deserialize(&key).unwrap();
+            let external_id = Self::restore_key(&key);
             let version: SeqNumberType = bincode::deserialize(&val).unwrap();
             external_to_version.insert(external_id, version);
         }
@@ -54,6 +98,15 @@ impl SimpleIdTracker {
             external_to_version,
             store,
         })
+    }
+
+    fn store_key(external_id: &PointIdType) -> Vec<u8> {
+        bincode::serialize(&external_to_stored_id(external_id)).unwrap()
+    }
+
+    fn restore_key(data: &[u8]) -> PointIdType {
+        let stored_external_id: StoredPointId = bincode::deserialize(data).unwrap();
+        stored_to_external_id(stored_external_id)
     }
 }
 
@@ -70,7 +123,7 @@ impl IdTracker for SimpleIdTracker {
         self.external_to_version.insert(external_id, version);
         self.store.put_cf(
             self.store.cf_handle(VERSIONS_CF).unwrap(),
-            bincode::serialize(&external_id).unwrap(),
+            Self::store_key(&external_id),
             bincode::serialize(&version).unwrap(),
         )?;
         Ok(())
@@ -94,7 +147,7 @@ impl IdTracker for SimpleIdTracker {
 
         self.store.put_cf(
             self.store.cf_handle(MAPPING_CF).unwrap(),
-            bincode::serialize(&external_id).unwrap(),
+            Self::store_key(&external_id),
             bincode::serialize(&internal_id).unwrap(),
         )?;
         Ok(())
@@ -110,11 +163,11 @@ impl IdTracker for SimpleIdTracker {
         };
         self.store.delete_cf(
             self.store.cf_handle(MAPPING_CF).unwrap(),
-            bincode::serialize(&external_id).unwrap(),
+            Self::store_key(&external_id),
         )?;
         self.store.delete_cf(
             self.store.cf_handle(VERSIONS_CF).unwrap(),
-            bincode::serialize(&external_id).unwrap(),
+            Self::store_key(&external_id),
         )?;
         Ok(())
     }
@@ -151,7 +204,26 @@ impl IdTracker for SimpleIdTracker {
 mod tests {
     use super::*;
     use itertools::Itertools;
+    use serde::de::DeserializeOwned;
     use tempdir::TempDir;
+
+    fn check_bincode_serialization<
+        T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug,
+    >(
+        record: T,
+    ) {
+        let binary_entity = bincode::serialize(&record).expect("serialization ok");
+        let de_record: T = bincode::deserialize(&binary_entity).expect("deserialization ok");
+
+        assert_eq!(record, de_record);
+    }
+
+    #[test]
+    fn test_serializaton() {
+        check_bincode_serialization(StoredPointId::NumId(123));
+        check_bincode_serialization(StoredPointId::Uuid(Uuid::from_u128(123_u128)));
+        check_bincode_serialization(StoredPointId::String("hello".to_string()));
+    }
 
     #[test]
     fn test_iterator() {

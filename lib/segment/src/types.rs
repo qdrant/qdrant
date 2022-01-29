@@ -3,9 +3,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use uuid::Uuid;
 
 /// Type of point index across all segments
-pub type PointIdType = u128;
+pub type PointIdType = u64;
 /// Type of point index inside a segment
 pub type PointOffsetType = u32;
 pub type PayloadKeyType = String;
@@ -21,6 +22,16 @@ pub type VectorElementType = f32;
 pub type FloatPayloadType = f64;
 /// Type of integer point payload
 pub type IntPayloadType = i64;
+
+/// Type, used for specifying point ID in user interface
+#[derive(
+    Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema,
+)]
+#[serde(untagged)]
+pub enum ExtendedPointId {
+    NumId(u64),
+    Uuid(Uuid),
+}
 
 /// Type of internal tags, build from payload
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, FromPrimitive)]
@@ -751,37 +762,38 @@ mod tests {
         eprintln!("de_record = {:#?}", de_record);
     }
 
-    #[test]
-    fn test_long_id_deserialization() {
-        let query1 = r#"
-        {
-            "has_id": [7730993719707444524137094407]
-        }"#;
-
-        let de_record: Condition = serde_json::from_str(query1).expect("deserialization ok");
-        eprintln!("de_record = {:#?}", de_record);
-
-        let query2 = HasIdCondition {
-            has_id: HashSet::from_iter(vec![7730993719707444524137094407].iter().cloned()),
-        };
-
-        let json = serde_json::to_string(&query2).expect("serialization ok");
-
-        eprintln!("json = {:#?}", json);
-    }
-
-    #[test]
-    fn test_long_ids_serialization() {
-        let operation = Filter {
-            should: None,
-            must: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: HashSet::from_iter(vec![7730993719707444524137094407].iter().cloned()),
-            })]),
-            must_not: None,
-        };
-        check_json_serialization(operation.clone());
-        check_cbor_serialization(operation);
-    }
+    // ToDo: Check serialization of UUID here later
+    // #[test]
+    // fn test_long_id_deserialization() {
+    //     let query1 = r#"
+    //     {
+    //         "has_id": [7730993719707444524137094407]
+    //     }"#;
+    //
+    //     let de_record: Condition = serde_json::from_str(query1).expect("deserialization ok");
+    //     eprintln!("de_record = {:#?}", de_record);
+    //
+    //     let query2 = HasIdCondition {
+    //         has_id: HashSet::from_iter(vec![7730993719707444524137094407].iter().cloned()),
+    //     };
+    //
+    //     let json = serde_json::to_string(&query2).expect("serialization ok");
+    //
+    //     eprintln!("json = {:#?}", json);
+    // }
+    //
+    // #[test]
+    // fn test_long_ids_serialization() {
+    //     let operation = Filter {
+    //         should: None,
+    //         must: Some(vec![Condition::HasId(HasIdCondition {
+    //             has_id: HashSet::from_iter(vec![7730993719707444524137094407].iter().cloned()),
+    //         })]),
+    //         must_not: None,
+    //     };
+    //     check_json_serialization(operation.clone());
+    //     check_cbor_serialization(operation);
+    // }
 
     #[test]
     fn test_rms_serialization() {
