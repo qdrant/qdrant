@@ -17,11 +17,11 @@ enum StoredPointId {
     String(String),
 }
 
-impl From<ExtendedPointId> for StoredPointId {
-    fn from(point_id: ExtendedPointId) -> Self {
+impl From<&ExtendedPointId> for StoredPointId {
+    fn from(point_id: &ExtendedPointId) -> Self {
         match point_id {
-            ExtendedPointId::NumId(idx) => StoredPointId::NumId(idx),
-            ExtendedPointId::Uuid(uuid) => StoredPointId::Uuid(uuid),
+            ExtendedPointId::NumId(idx) => StoredPointId::NumId(*idx),
+            ExtendedPointId::Uuid(uuid) => StoredPointId::Uuid(*uuid),
         }
     }
 }
@@ -38,16 +38,12 @@ impl From<StoredPointId> for ExtendedPointId {
 
 #[inline]
 fn stored_to_external_id(point_id: StoredPointId) -> PointIdType {
-    match point_id {
-        StoredPointId::NumId(idx) => idx,
-        StoredPointId::Uuid(_) => unimplemented!(),
-        StoredPointId::String(_) => unimplemented!(),
-    }
+    point_id.into()
 }
 
 #[inline]
 fn external_to_stored_id(point_id: &PointIdType) -> StoredPointId {
-    StoredPointId::NumId(*point_id)
+    point_id.into()
 }
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
@@ -182,13 +178,14 @@ impl IdTracker for SimpleIdTracker {
 
     fn iter_from(
         &self,
-        external_id: PointIdType,
+        external_id: Option<PointIdType>,
     ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        Box::new(
-            self.external_to_internal
-                .range(external_id..PointIdType::MAX)
-                .map(|(key, value)| (*key, *value)),
-        )
+        let range = match external_id {
+            None => self.external_to_internal.range(..),
+            Some(offset) => self.external_to_internal.range(offset..),
+        };
+
+        Box::new(range.map(|(key, value)| (*key, *value)))
     }
 
     fn flush(&self) -> OperationResult<()> {
@@ -231,23 +228,23 @@ mod tests {
 
         let mut id_tracker = SimpleIdTracker::open(dir.path()).unwrap();
 
-        id_tracker.set_link(200, 0).unwrap();
-        id_tracker.set_link(100, 1).unwrap();
-        id_tracker.set_link(150, 2).unwrap();
-        id_tracker.set_link(120, 3).unwrap();
-        id_tracker.set_link(180, 4).unwrap();
-        id_tracker.set_link(110, 5).unwrap();
-        id_tracker.set_link(115, 6).unwrap();
-        id_tracker.set_link(190, 7).unwrap();
-        id_tracker.set_link(177, 8).unwrap();
-        id_tracker.set_link(118, 9).unwrap();
+        id_tracker.set_link(200.into(), 0).unwrap();
+        id_tracker.set_link(100.into(), 1).unwrap();
+        id_tracker.set_link(150.into(), 2).unwrap();
+        id_tracker.set_link(120.into(), 3).unwrap();
+        id_tracker.set_link(180.into(), 4).unwrap();
+        id_tracker.set_link(110.into(), 5).unwrap();
+        id_tracker.set_link(115.into(), 6).unwrap();
+        id_tracker.set_link(190.into(), 7).unwrap();
+        id_tracker.set_link(177.into(), 8).unwrap();
+        id_tracker.set_link(118.into(), 9).unwrap();
 
-        let first_four = id_tracker.iter_from(0).take(4).collect_vec();
+        let first_four = id_tracker.iter_from(None).take(4).collect_vec();
 
         assert_eq!(first_four.len(), 4);
-        assert_eq!(first_four[0].0, 100);
+        assert_eq!(first_four[0].0, 100.into());
 
-        let last = id_tracker.iter_from(first_four[3].0 + 1).collect_vec();
-        assert_eq!(last.len(), 6);
+        let last = id_tracker.iter_from(Some(first_four[3].0)).collect_vec();
+        assert_eq!(last.len(), 7);
     }
 }

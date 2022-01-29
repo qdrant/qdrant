@@ -30,7 +30,9 @@ mod tests {
             SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
 
         // Include overlapping with segment1 to check the
-        segment2.upsert_point(100, 3, &[0., 0., 0., 0.]).unwrap();
+        segment2
+            .upsert_point(100, 3.into(), &[0., 0., 0., 0.])
+            .unwrap();
 
         builder.update_from(&segment1, &stopped).unwrap();
         builder.update_from(&segment2, &stopped).unwrap();
@@ -63,7 +65,7 @@ mod tests {
                 .count()
         );
 
-        assert_eq!(merged_segment.point_version(3), Some(100));
+        assert_eq!(merged_segment.point_version(3.into()), Some(100));
     }
 
     fn estimate_build_time(segment: &Segment, stop_timeout_millis: u64) -> (u64, bool) {
@@ -114,7 +116,9 @@ mod tests {
         let mut segment = empty_segment(dir.path());
 
         for idx in 0..1000 {
-            segment.upsert_point(1, idx, &[0., 0., 0., 0.]).unwrap();
+            segment
+                .upsert_point(1, idx.into(), &[0., 0., 0., 0.])
+                .unwrap();
         }
 
         // Checks that optimization with longed cancellation timeout will also finishes fast

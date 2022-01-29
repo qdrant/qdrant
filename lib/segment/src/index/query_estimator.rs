@@ -161,7 +161,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{FieldCondition, HasIdCondition, PointOffsetType};
+    use crate::types::{FieldCondition, HasIdCondition};
     use std::collections::HashSet;
     use std::iter::FromIterator;
 
@@ -206,7 +206,7 @@ mod tests {
                     has_id
                         .has_id
                         .iter()
-                        .map(|&x| x as PointOffsetType)
+                        .map(|&x| format!("{}", x).parse().unwrap()) // hack to convert ID as "number"
                         .collect(),
                 )],
                 min: has_id.has_id.len(),
@@ -308,7 +308,7 @@ mod tests {
             ]),
             must: None,
             must_not: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: HashSet::from_iter([1, 2, 3, 4, 5]),
+                has_id: HashSet::from_iter([1, 2, 3, 4, 5].into_iter().map(|x| x.into())),
             })]),
         };
 
@@ -342,7 +342,7 @@ mod tests {
                 }),
             ]),
             must_not: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: HashSet::from_iter([1, 2, 3, 4, 5]),
+                has_id: HashSet::from_iter([1, 2, 3, 4, 5].into_iter().map(|x| x.into())),
             })]),
         };
 

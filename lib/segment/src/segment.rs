@@ -474,7 +474,7 @@ impl SegmentEntry for Segment {
 
     fn read_filtered<'a>(
         &'a self,
-        offset: PointIdType,
+        offset: Option<PointIdType>,
         limit: usize,
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType> {
@@ -608,7 +608,7 @@ impl SegmentEntry for Segment {
         filter: &'a Filter,
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
-        for point_id in self.read_filtered(0, std::usize::MAX, Some(filter)) {
+        for point_id in self.read_filtered(None, usize::MAX, Some(filter)) {
             deleted_points += self.delete_point(op_num, point_id)? as usize;
         }
 
@@ -646,12 +646,12 @@ mod tests {
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
-        segment.upsert_point(0, 0, &[1.0, 1.0]).unwrap();
+        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
 
-        let result1 = segment.set_full_payload_with_json(0, 0, &data1.to_string());
+        let result1 = segment.set_full_payload_with_json(0, 0.into(), &data1.to_string());
         assert!(result1.is_err());
 
-        let result2 = segment.set_full_payload_with_json(0, 0, &data2.to_string());
+        let result2 = segment.set_full_payload_with_json(0, 0.into(), &data2.to_string());
         assert!(result2.is_err());
     }
 
@@ -678,9 +678,9 @@ mod tests {
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
-        segment.upsert_point(0, 0, &[1.0, 1.0]).unwrap();
+        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
         segment
-            .set_full_payload_with_json(0, 0, &data.to_string())
+            .set_full_payload_with_json(0, 0.into(), &data.to_string())
             .unwrap();
 
         let filter_valid_str = r#"
@@ -720,7 +720,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(results_with_valid_filter.len(), 1);
-        assert_eq!(results_with_valid_filter.first().unwrap().id, 0);
+        assert_eq!(results_with_valid_filter.first().unwrap().id, 0.into());
         let results_with_invalid_filter = segment
             .search(
                 &[1.0, 1.0],

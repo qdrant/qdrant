@@ -119,9 +119,7 @@ impl Collection {
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequest::default();
 
-        let offset = request
-            .offset
-            .unwrap_or_else(|| default_request.offset.unwrap());
+        let offset = request.offset;
         let limit = request
             .limit
             .unwrap_or_else(|| default_request.limit.unwrap());
@@ -139,33 +137,38 @@ impl Collection {
             });
         }
 
+        // Retrieve 1 extra point to determine proper `next_page_offset`
+        let retrieve_limit = limit + 1;
+
         // ToDo: Make faster points selection with a set
         let segments = self.segments();
-        let point_ids = segments
+        let mut point_ids = segments
             .read()
             .iter()
             .flat_map(|(_, segment)| {
                 segment
                     .get()
                     .read()
-                    .read_filtered(offset, limit, request.filter.as_ref())
+                    .read_filtered(offset, retrieve_limit, request.filter.as_ref())
             })
             .sorted()
             .dedup()
-            .take(limit)
+            .take(retrieve_limit)
             .collect_vec();
+
+        let next_page_offset = if point_ids.len() < retrieve_limit {
+            // This was the last page
+            None
+        } else {
+            // remove extra point, it would be a first point of the next page
+            Some(point_ids.pop().unwrap())
+        };
 
         let with_payload = WithPayload::from(with_payload_interface);
         let mut points = segment_searcher
             .retrieve(segments, &point_ids, &with_payload, with_vector)
             .await?;
         points.sort_by_key(|point| point.id);
-
-        let next_page_offset = if point_ids.len() < limit {
-            None
-        } else {
-            Some(point_ids.last().unwrap() + 1)
-        };
 
         Ok(ScrollResult {
             points,

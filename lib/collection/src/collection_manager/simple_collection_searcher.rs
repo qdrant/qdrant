@@ -190,8 +190,8 @@ mod tests {
 
         assert_eq!(result.len(), 5);
 
-        assert!(result[0].id == 3 || result[0].id == 11);
-        assert!(result[1].id == 3 || result[1].id == 11);
+        assert!(result[0].id == 3.into() || result[0].id == 11.into());
+        assert!(result[1].id == 3.into() || result[1].id == 11.into());
     }
 
     #[tokio::test]
@@ -202,7 +202,12 @@ mod tests {
         let searcher = SimpleCollectionSearcher::new();
 
         let records = searcher
-            .retrieve(&segment_holder, &[1, 2, 3], &WithPayload::from(true), true)
+            .retrieve(
+                &segment_holder,
+                &[1.into(), 2.into(), 3.into()],
+                &WithPayload::from(true),
+                true,
+            )
             .await
             .unwrap();
         assert_eq!(records.len(), 3);

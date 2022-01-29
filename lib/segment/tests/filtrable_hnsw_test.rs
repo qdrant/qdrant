@@ -11,8 +11,8 @@ mod tests {
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, PayloadIndexType,
-        PayloadKeyType, PayloadType, PointIdType, Range, SearchParams, SegmentConfig,
-        SeqNumberType, StorageType, TheMap,
+        PayloadKeyType, PayloadType, Range, SearchParams, SegmentConfig, SeqNumberType,
+        StorageType, TheMap,
     };
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
@@ -24,7 +24,7 @@ mod tests {
 
         let dim = 8;
         let m = 8;
-        let num_vectors: PointIdType = 5_000;
+        let num_vectors: u64 = 5_000;
         let ef = 32;
         let ef_construct = 16;
         let distance = Distance::Cosine;
@@ -48,7 +48,8 @@ mod tests {
         let int_key = "int".to_string();
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
-        for idx in 0..num_vectors {
+        for n in 0..num_vectors {
+            let idx = n.into();
             let vector = random_vector(&mut rnd, dim);
             let mut payload: TheMap<PayloadKeyType, PayloadType> = Default::default();
             payload.insert(
@@ -57,10 +58,10 @@ mod tests {
             );
 
             segment
-                .upsert_point(idx as SeqNumberType, idx, &vector)
+                .upsert_point(n as SeqNumberType, idx, &vector)
                 .unwrap();
             segment
-                .set_full_payload(idx as SeqNumberType, idx, payload.clone())
+                .set_full_payload(n as SeqNumberType, idx, payload.clone())
                 .unwrap();
         }
         // let opnum = num_vectors + 1;

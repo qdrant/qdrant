@@ -8,7 +8,7 @@ mod tests {
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, Indexes, PayloadIndexType, PayloadKeyType,
-        PayloadType, PointIdType, Range, SegmentConfig, StorageType, TheMap, WithPayload,
+        PayloadType, Range, SegmentConfig, StorageType, TheMap, WithPayload,
     };
     use tempdir::TempDir;
 
@@ -34,7 +34,8 @@ mod tests {
         let mut struct_segment = build_segment(dir1.path(), &config).unwrap();
 
         let mut opnum = 0;
-        for idx in 0..num_points {
+        for n in 0..num_points {
+            let idx = n.into();
             let vector = random_vector(&mut rnd, dim);
             let mut payload: TheMap<PayloadKeyType, PayloadType> = Default::default();
             payload.insert(str_key.clone(), random_keyword_payload(&mut rnd));
@@ -114,7 +115,7 @@ mod tests {
 
         let mut opnum = 0;
         for idx in 0..num_points {
-            let point_id = idx as PointIdType;
+            let point_id = idx.into();
             let vector = random_vector(&mut rnd, dim);
             let mut payload: TheMap<PayloadKeyType, PayloadType> = Default::default();
             payload.insert(str_key.clone(), random_keyword_payload(&mut rnd));

@@ -3,10 +3,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Formatter;
 use uuid::Uuid;
 
-/// Type of point index across all segments
-pub type PointIdType = u64;
 /// Type of point index inside a segment
 pub type PointOffsetType = u32;
 pub type PayloadKeyType = String;
@@ -32,6 +31,24 @@ pub enum ExtendedPointId {
     NumId(u64),
     Uuid(Uuid),
 }
+
+impl std::fmt::Display for ExtendedPointId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExtendedPointId::NumId(idx) => write!(f, "{}", idx),
+            ExtendedPointId::Uuid(uuid) => write!(f, "{}", uuid),
+        }
+    }
+}
+
+impl From<u64> for ExtendedPointId {
+    fn from(idx: u64) -> Self {
+        ExtendedPointId::NumId(idx)
+    }
+}
+
+/// Type of point index across all segments
+pub type PointIdType = ExtendedPointId;
 
 /// Type of internal tags, build from payload
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, FromPrimitive)]
