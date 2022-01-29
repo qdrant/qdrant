@@ -50,7 +50,7 @@ paths:
           description: Id of the point
           required: true
           schema:
-            type: integer
+            $ref: "#/components/schemas/ExtendedPointId"
       responses: #@ response(reference("Record"))
 
   /collections/{name}/points:

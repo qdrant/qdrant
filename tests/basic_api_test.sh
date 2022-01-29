@@ -36,6 +36,11 @@ curl -L -X PUT "http://$QDRANT_HOST/collections/test_collection/points?wait=true
       ]
     }' | jq
 
+# retrieve point
+curl -L -X GET "http://$QDRANT_HOST/collections/test_collection/points/2" \
+  -H 'Content-Type: application/json' \
+  --fail -s | jq
+
 # retrieve points
 curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points" \
   -H 'Content-Type: application/json' \
@@ -190,4 +195,21 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/payload/
     "keys": [ "test_payload" ],
     "points": [ 6 ]
   }' \
+  --fail -s | jq
+
+
+# UUID points write
+curl -L -X PUT "http://$QDRANT_HOST/collections/test_collection/points?wait=true" \
+  -H 'Content-Type: application/json' \
+  --fail -s \
+  --data-raw '{
+      "points": [
+        {"id": "b524a3c4-c568-4383-8019-c9ca08243d6a", "vector": [0.15, 0.21, 0.96, 0.04], "payload": {"city": {"type": "keyword", "value": "Berlin"}}},
+        {"id": "1d675313-d3dd-4646-8b98-8052364872da", "vector": [0.19, 0.81, 0.75, 0.11], "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}}
+      ]
+    }' | jq
+
+# UUID points retrieve
+curl -L -X GET "http://$QDRANT_HOST/collections/test_collection/points/1d675313-d3dd-4646-8b98-8052364872da" \
+  -H 'Content-Type: application/json' \
   --fail -s | jq

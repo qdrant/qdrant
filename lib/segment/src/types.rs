@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Formatter;
+use std::str::FromStr;
 use uuid::Uuid;
 
 /// Type of point index inside a segment
@@ -44,6 +45,22 @@ impl std::fmt::Display for ExtendedPointId {
 impl From<u64> for ExtendedPointId {
     fn from(idx: u64) -> Self {
         ExtendedPointId::NumId(idx)
+    }
+}
+
+impl FromStr for ExtendedPointId {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let try_num: Result<u64, _> = s.parse();
+        if let Ok(num) = try_num {
+            return Ok(Self::NumId(num));
+        }
+        let try_uuid = Uuid::from_str(s);
+        if let Ok(uuid) = try_uuid {
+            return Ok(Self::Uuid(uuid));
+        }
+        Err(())
     }
 }
 
