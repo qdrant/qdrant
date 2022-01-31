@@ -2190,6 +2190,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -2277,6 +2286,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
