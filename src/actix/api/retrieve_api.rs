@@ -16,6 +16,7 @@ use crate::actix::helpers::process_response;
 pub struct PointRequest {
     pub ids: Vec<PointIdType>,
     pub with_payload: Option<WithPayloadInterface>,
+    pub with_vector: Option<bool>,
 }
 
 async fn do_get_point(
@@ -37,8 +38,13 @@ async fn do_get_points(
         .with_payload
         .unwrap_or(WithPayloadInterface::Bool(true));
     let with_payload = WithPayload::from(with_payload_interface);
-    toc.retrieve(collection_name, &request.ids, &with_payload, true)
-        .await
+    toc.retrieve(
+        collection_name,
+        &request.ids,
+        &with_payload,
+        request.with_vector.unwrap_or(false),
+    )
+    .await
 }
 
 async fn scroll_get_points(

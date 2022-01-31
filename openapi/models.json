@@ -1340,6 +1340,10 @@
                                 "nullable": true
                             }
                         ]
+                    },
+                    "with_vector": {
+                        "type": "boolean",
+                        "nullable": true
                     }
                 }
             },
