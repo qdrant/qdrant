@@ -129,6 +129,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
       requestBody:
         description: Field name
         content:
@@ -158,4 +164,10 @@ paths:
           required: true
           schema:
             type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
       responses: #@ response(reference("UpdateResult"))
