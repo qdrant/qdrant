@@ -85,20 +85,18 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/scroll" 
   --data-raw '{ "offset": 2, "limit": 2, "with_vector": true }' | jq
 
 # change aliases
-curl -L -X POST "http://$QDRANT_HOST/collections" \
+curl -L -X POST "http://$QDRANT_HOST/collections/aliases" \
   --fail -s \
   -H 'Content-Type: application/json' \
   --data-raw '{
-      "change_aliases": {
-          "actions": [
-              {
-                  "create_alias": {
-                      "alias_name": "test_alias",
-                      "collection_name": "test_collection"
-                  }
+      "actions": [
+          {
+              "create_alias": {
+                  "alias_name": "test_alias",
+                  "collection_name": "test_collection"
               }
-          ]
-      }
+          }
+      ]
   }' | jq
 
 # search points
