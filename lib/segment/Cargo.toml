@@ -18,7 +18,7 @@ ndarray = { version = "0.15", features = ["blas"] }
 blas-src = { version = "0.8", default-features = false, features = ["openblas"] }
 openblas-src = { version = "0.10", default-features = false, features = ["cblas", "static"] }
 
-parking_lot = "0.11"
+parking_lot = "0.12"
 itertools = "0.10"
 rocksdb = { version = "0.17.0", default-features = false, features = [ "snappy" ] }
 uuid = { version = "0.8", features = ["v4", "serde"] }
