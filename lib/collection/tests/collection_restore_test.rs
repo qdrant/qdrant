@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use tempdir::TempDir;
 
 use collection::collection_builder::collection_loader::load_collection;
@@ -25,7 +26,7 @@ async fn test_collection_reloading() {
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
                 batch: Batch {
-                    ids: vec![0, 1],
+                    ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
                     vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
                     payloads: None,
                 },
@@ -46,7 +47,7 @@ async fn test_collection_payload_reloading() {
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
                 batch: Batch {
-                    ids: vec![0, 1],
+                    ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
                     vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
                     payloads: serde_json::from_str(
                         r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2"}]"#,
@@ -64,7 +65,7 @@ async fn test_collection_payload_reloading() {
     let res = collection
         .scroll_by(
             ScrollRequest {
-                offset: Some(0),
+                offset: None,
                 limit: Some(10),
                 filter: None,
                 with_payload: Some(WithPayloadInterface::Bool(true)),
@@ -101,7 +102,7 @@ async fn test_collection_payload_custom_payload() {
         let collection = simple_collection_fixture(collection_dir.path()).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch { batch: Batch {
-                ids: vec![0, 1],
+                ids: vec![0.into(), 1.into()],
                 vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
                 payloads: serde_json::from_str(
                     r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2" , "v": "v3", "v2": "v4"}]"#,
@@ -119,7 +120,7 @@ async fn test_collection_payload_custom_payload() {
     let res_with_custom_payload = collection
         .scroll_by(
             ScrollRequest {
-                offset: Some(0),
+                offset: None,
                 limit: Some(10),
                 filter: None,
                 with_payload: Some(WithPayloadInterface::Fields(vec![String::from("v")])),
@@ -155,7 +156,7 @@ async fn test_collection_payload_custom_payload() {
     let res_with_custom_payload = collection
         .scroll_by(
             ScrollRequest {
-                offset: Some(0),
+                offset: None,
                 limit: Some(10),
                 filter: None,
                 with_payload: Some(WithPayloadInterface::Selector(PayloadSelector {

@@ -164,7 +164,7 @@ pub trait SegmentEntry {
     /// Paginate over points which satisfies filtering condition starting with `offset` id including.
     fn read_filtered<'a>(
         &'a self,
-        offset: PointIdType,
+        offset: Option<PointIdType>,
         limit: usize,
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType>;

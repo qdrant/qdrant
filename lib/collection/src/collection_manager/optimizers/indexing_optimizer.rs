@@ -303,7 +303,7 @@ mod tests {
         let insert_point_ops =
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
                 batch: Batch {
-                    ids: vec![501, 502, 503],
+                    ids: vec![501.into(), 502.into(), 503.into()],
                     vectors: vec![
                         vec![1.0, 0.0, 0.5, 0.0],
                         vec![1.0, 0.0, 0.5, 0.5],
@@ -368,7 +368,7 @@ mod tests {
         let insert_point_ops =
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
                 batch: Batch {
-                    ids: vec![601, 602, 603],
+                    ids: vec![601.into(), 602.into(), 603.into()],
                     vectors: vec![
                         vec![0.0, 1.0, 0.5, 0.0],
                         vec![0.0, 1.0, 0.5, 0.5],

@@ -19,9 +19,7 @@
         "properties": {
           "ids": {
             "items": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
+              "$ref": "#/components/schemas/ExtendedPointId"
             },
             "type": "array"
           },
@@ -404,9 +402,7 @@
           "points": {
             "description": "Deletes values from each point in this list",
             "items": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
+              "$ref": "#/components/schemas/ExtendedPointId"
             },
             "type": "array"
           }
@@ -448,6 +444,20 @@
           }
         },
         "type": "object"
+      },
+      "ExtendedPointId": {
+        "anyOf": [
+          {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "format": "uuid",
+            "type": "string"
+          }
+        ],
+        "description": "Type, used for specifying point ID in user interface"
       },
       "FieldCondition": {
         "description": "All possible payload filtering conditions",
@@ -633,9 +643,7 @@
         "properties": {
           "has_id": {
             "items": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
+              "$ref": "#/components/schemas/ExtendedPointId"
             },
             "type": "array",
             "uniqueItems": true
@@ -985,9 +993,7 @@
                 "properties": {
                   "points": {
                     "items": {
-                      "format": "uint64",
-                      "minimum": 0,
-                      "type": "integer"
+                      "$ref": "#/components/schemas/ExtendedPointId"
                     },
                     "type": "array"
                   }
@@ -1262,9 +1268,7 @@
         "properties": {
           "points": {
             "items": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
+              "$ref": "#/components/schemas/ExtendedPointId"
             },
             "type": "array"
           }
@@ -1307,9 +1311,7 @@
                 "properties": {
                   "ids": {
                     "items": {
-                      "format": "uint64",
-                      "minimum": 0,
-                      "type": "integer"
+                      "$ref": "#/components/schemas/ExtendedPointId"
                     },
                     "type": "array"
                   }
@@ -1344,9 +1346,7 @@
         "properties": {
           "ids": {
             "items": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
+              "$ref": "#/components/schemas/ExtendedPointId"
             },
             "type": "array"
           },
@@ -1373,10 +1373,7 @@
       "PointStruct": {
         "properties": {
           "id": {
-            "description": "Point id",
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
+            "$ref": "#/components/schemas/ExtendedPointId"
           },
           "payload": {
             "additionalProperties": {
@@ -1483,9 +1480,7 @@
           "negative": {
             "description": "Try to avoid vectors like this",
             "items": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
+              "$ref": "#/components/schemas/ExtendedPointId"
             },
             "type": "array"
           },
@@ -1503,9 +1498,7 @@
           "positive": {
             "description": "Look for vectors closest to those",
             "items": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
+              "$ref": "#/components/schemas/ExtendedPointId"
             },
             "type": "array"
           },
@@ -1527,10 +1520,7 @@
         "description": "Point data",
         "properties": {
           "id": {
-            "description": "Id of the point",
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
+            "$ref": "#/components/schemas/ExtendedPointId"
           },
           "payload": {
             "additionalProperties": {
@@ -1587,10 +1577,7 @@
         "description": "Search result",
         "properties": {
           "id": {
-            "description": "Point id",
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
+            "$ref": "#/components/schemas/ExtendedPointId"
           },
           "payload": {
             "additionalProperties": {
@@ -1650,11 +1637,15 @@
             "type": "integer"
           },
           "offset": {
-            "description": "Start ID to read points from. Default: 0",
-            "format": "uint64",
-            "minimum": 0,
-            "nullable": true,
-            "type": "integer"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtendedPointId"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Start ID to read points from. Default: 0"
           },
           "with_payload": {
             "anyOf": [
@@ -1679,11 +1670,15 @@
         "description": "Result of the points read request",
         "properties": {
           "next_page_offset": {
-            "description": "Offset which should be used to retrieve a next page result",
-            "format": "uint64",
-            "minimum": 0,
-            "nullable": true,
-            "type": "integer"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtendedPointId"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Offset which should be used to retrieve a next page result"
           },
           "points": {
             "description": "List of retrieved points",
@@ -1784,9 +1779,7 @@
           "points": {
             "description": "Assigns payload to each point in this list",
             "items": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
+              "$ref": "#/components/schemas/ExtendedPointId"
             },
             "type": "array"
           }
@@ -3501,7 +3494,7 @@
             "name": "id",
             "required": true,
             "schema": {
-              "type": "integer"
+              "$ref": "#/components/schemas/ExtendedPointId"
             }
           }
         ],

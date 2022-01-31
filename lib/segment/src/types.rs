@@ -3,11 +3,12 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Formatter;
+use std::str::FromStr;
+use uuid::Uuid;
 
-pub type PointIdType = u64;
-/// Type of point index across all segments
-pub type PointOffsetType = u32;
 /// Type of point index inside a segment
+pub type PointOffsetType = u32;
 pub type PayloadKeyType = String;
 pub type PayloadKeyTypeRef<'a> = &'a str;
 pub type SeqNumberType = u64;
@@ -21,6 +22,50 @@ pub type VectorElementType = f32;
 pub type FloatPayloadType = f64;
 /// Type of integer point payload
 pub type IntPayloadType = i64;
+
+/// Type, used for specifying point ID in user interface
+#[derive(
+    Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema,
+)]
+#[serde(untagged)]
+pub enum ExtendedPointId {
+    NumId(u64),
+    Uuid(Uuid),
+}
+
+impl std::fmt::Display for ExtendedPointId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExtendedPointId::NumId(idx) => write!(f, "{}", idx),
+            ExtendedPointId::Uuid(uuid) => write!(f, "{}", uuid),
+        }
+    }
+}
+
+impl From<u64> for ExtendedPointId {
+    fn from(idx: u64) -> Self {
+        ExtendedPointId::NumId(idx)
+    }
+}
+
+impl FromStr for ExtendedPointId {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let try_num: Result<u64, _> = s.parse();
+        if let Ok(num) = try_num {
+            return Ok(Self::NumId(num));
+        }
+        let try_uuid = Uuid::from_str(s);
+        if let Ok(uuid) = try_uuid {
+            return Ok(Self::Uuid(uuid));
+        }
+        Err(())
+    }
+}
+
+/// Type of point index across all segments
+pub type PointIdType = ExtendedPointId;
 
 /// Type of internal tags, build from payload
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, FromPrimitive)]
@@ -373,7 +418,7 @@ impl From<&PayloadInterface> for PayloadType {
 }
 
 /// Match filter request
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct Match {
     /// Keyword value to match
@@ -399,7 +444,7 @@ pub struct Range {
 /// Geo filter request
 ///
 /// Matches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoBoundingBox {
     /// Coordinates of the top left point of the area rectangle
@@ -411,7 +456,7 @@ pub struct GeoBoundingBox {
 /// Geo filter request
 ///
 /// Matches coordinates inside the circle of `radius` and center with coordinates `center`
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoRadius {
     /// Coordinates of the top left point of the area rectangle
@@ -421,7 +466,7 @@ pub struct GeoRadius {
 }
 
 /// All possible payload filtering conditions
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct FieldCondition {
     pub key: PayloadKeyType,
@@ -436,7 +481,7 @@ pub struct FieldCondition {
 }
 
 /// ID-based filtering condition
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 pub struct HasIdCondition {
     pub has_id: HashSet<PointIdType>,
 }
@@ -447,7 +492,7 @@ impl From<HashSet<PointIdType>> for HasIdCondition {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum Condition {
     /// Check if field satisfies provided condition
@@ -540,7 +585,7 @@ pub struct WithPayload {
     /// Filter include and exclude payloads
     pub payload_selector: Option<PayloadSelector>,
 }
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct Filter {
@@ -750,6 +795,39 @@ mod tests {
         eprintln!("payload = {:#?}", payload);
         eprintln!("de_record = {:#?}", de_record);
     }
+
+    // ToDo: Check serialization of UUID here later
+    // #[test]
+    // fn test_long_id_deserialization() {
+    //     let query1 = r#"
+    //     {
+    //         "has_id": [7730993719707444524137094407]
+    //     }"#;
+    //
+    //     let de_record: Condition = serde_json::from_str(query1).expect("deserialization ok");
+    //     eprintln!("de_record = {:#?}", de_record);
+    //
+    //     let query2 = HasIdCondition {
+    //         has_id: HashSet::from_iter(vec![7730993719707444524137094407].iter().cloned()),
+    //     };
+    //
+    //     let json = serde_json::to_string(&query2).expect("serialization ok");
+    //
+    //     eprintln!("json = {:#?}", json);
+    // }
+    //
+    // #[test]
+    // fn test_long_ids_serialization() {
+    //     let operation = Filter {
+    //         should: None,
+    //         must: Some(vec![Condition::HasId(HasIdCondition {
+    //             has_id: HashSet::from_iter(vec![7730993719707444524137094407].iter().cloned()),
+    //         })]),
+    //         must_not: None,
+    //     };
+    //     check_json_serialization(operation.clone());
+    //     check_cbor_serialization(operation);
+    // }
 
     #[test]
     fn test_rms_serialization() {

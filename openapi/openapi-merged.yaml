@@ -481,7 +481,7 @@ paths:
           description: Id of the point
           required: true
           schema:
-            type: integer
+            $ref: '#/components/schemas/ExtendedPointId'
       responses:
         default:
           description: error
@@ -1187,9 +1187,7 @@ components:
       properties:
         ids:
           items:
-            format: uint64
-            minimum: 0
-            type: integer
+            $ref: '#/components/schemas/ExtendedPointId'
           type: array
         payloads:
           items:
@@ -1435,9 +1433,7 @@ components:
         points:
           description: Deletes values from each point in this list
           items:
-            format: uint64
-            minimum: 0
-            type: integer
+            $ref: '#/components/schemas/ExtendedPointId'
           type: array
       required:
         - keys
@@ -1450,6 +1446,14 @@ components:
         - Euclid
         - Dot
       type: string
+    ExtendedPointId:
+      anyOf:
+        - format: uint64
+          minimum: 0
+          type: integer
+        - format: uuid
+          type: string
+      description: Type, used for specifying point ID in user interface
     FieldCondition:
       description: All possible payload filtering conditions
       properties:
@@ -1573,9 +1577,7 @@ components:
       properties:
         has_id:
           items:
-            format: uint64
-            minimum: 0
-            type: integer
+            $ref: '#/components/schemas/ExtendedPointId'
           type: array
           uniqueItems: true
       required:
@@ -1859,9 +1861,7 @@ components:
               properties:
                 points:
                   items:
-                    format: uint64
-                    minimum: 0
-                    type: integer
+                    $ref: '#/components/schemas/ExtendedPointId'
                   type: array
               required:
                 - points
@@ -2046,9 +2046,7 @@ components:
       properties:
         points:
           items:
-            format: uint64
-            minimum: 0
-            type: integer
+            $ref: '#/components/schemas/ExtendedPointId'
           type: array
       required:
         - points
@@ -2074,9 +2072,7 @@ components:
               properties:
                 ids:
                   items:
-                    format: uint64
-                    minimum: 0
-                    type: integer
+                    $ref: '#/components/schemas/ExtendedPointId'
                   type: array
               required:
                 - ids
@@ -2096,9 +2092,7 @@ components:
       properties:
         ids:
           items:
-            format: uint64
-            minimum: 0
-            type: integer
+            $ref: '#/components/schemas/ExtendedPointId'
           type: array
         with_payload:
           anyOf:
@@ -2113,10 +2107,7 @@ components:
     PointStruct:
       properties:
         id:
-          description: Point id
-          format: uint64
-          minimum: 0
-          type: integer
+          $ref: '#/components/schemas/ExtendedPointId'
         payload:
           additionalProperties:
             $ref: '#/components/schemas/PayloadInterface'
@@ -2191,9 +2182,7 @@ components:
         negative:
           description: Try to avoid vectors like this
           items:
-            format: uint64
-            minimum: 0
-            type: integer
+            $ref: '#/components/schemas/ExtendedPointId'
           type: array
         params:
           anyOf:
@@ -2203,9 +2192,7 @@ components:
         positive:
           description: Look for vectors closest to those
           items:
-            format: uint64
-            minimum: 0
-            type: integer
+            $ref: '#/components/schemas/ExtendedPointId'
           type: array
         top:
           description: Max number of result to return
@@ -2221,10 +2208,7 @@ components:
       description: Point data
       properties:
         id:
-          description: Id of the point
-          format: uint64
-          minimum: 0
-          type: integer
+          $ref: '#/components/schemas/ExtendedPointId'
         payload:
           additionalProperties:
             $ref: '#/components/schemas/PayloadType'
@@ -2264,10 +2248,7 @@ components:
       description: Search result
       properties:
         id:
-          description: Point id
-          format: uint64
-          minimum: 0
-          type: integer
+          $ref: '#/components/schemas/ExtendedPointId'
         payload:
           additionalProperties:
             $ref: '#/components/schemas/PayloadType'
@@ -2310,11 +2291,10 @@ components:
           nullable: true
           type: integer
         offset:
+          anyOf:
+            - $ref: '#/components/schemas/ExtendedPointId'
+            - nullable: true
           description: 'Start ID to read points from. Default: 0'
-          format: uint64
-          minimum: 0
-          nullable: true
-          type: integer
         with_payload:
           anyOf:
             - $ref: '#/components/schemas/WithPayloadInterface'
@@ -2329,11 +2309,10 @@ components:
       description: Result of the points read request
       properties:
         next_page_offset:
+          anyOf:
+            - $ref: '#/components/schemas/ExtendedPointId'
+            - nullable: true
           description: Offset which should be used to retrieve a next page result
-          format: uint64
-          minimum: 0
-          nullable: true
-          type: integer
         points:
           description: List of retrieved points
           items:
@@ -2398,9 +2377,7 @@ components:
         points:
           description: Assigns payload to each point in this list
           items:
-            format: uint64
-            minimum: 0
-            type: integer
+            $ref: '#/components/schemas/ExtendedPointId'
           type: array
       required:
         - payload

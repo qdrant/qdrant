@@ -93,7 +93,7 @@ mod tests {
         let segments = build_test_holder(dir.path());
         let searcher = SimpleCollectionSearcher::new();
 
-        let points = vec![1, 500];
+        let points = vec![1.into(), 500.into()];
 
         let vectors = vec![vec![2., 2., 2., 2.], vec![2., 0., 2., 0.]];
 
@@ -101,7 +101,12 @@ mod tests {
         assert!(matches!(res, Ok(1)));
 
         let records = searcher
-            .retrieve(&segments, &[1, 2, 500], &WithPayload::from(true), true)
+            .retrieve(
+                &segments,
+                &[1.into(), 2.into(), 500.into()],
+                &WithPayload::from(true),
+                true,
+            )
             .await
             .unwrap();
 
@@ -110,10 +115,10 @@ mod tests {
         for record in records {
             let v = record.vector.unwrap();
 
-            if record.id == 1 {
+            if record.id == 1.into() {
                 assert_eq!(&v, &vec![2., 2., 2., 2.])
             }
-            if record.id == 500 {
+            if record.id == 500.into() {
                 assert_eq!(&v, &vec![2., 0., 2., 0.])
             }
         }
@@ -121,18 +126,25 @@ mod tests {
         process_point_operation(
             &segments,
             101,
-            PointOperations::DeletePoints { ids: vec![500] },
+            PointOperations::DeletePoints {
+                ids: vec![500.into()],
+            },
         )
         .unwrap();
 
         let records = searcher
-            .retrieve(&segments, &[1, 2, 500], &WithPayload::from(true), true)
+            .retrieve(
+                &segments,
+                &[1.into(), 2.into(), 500.into()],
+                &WithPayload::from(true),
+                true,
+            )
             .await
             .unwrap();
 
         for record in records {
             let _v = record.vector.unwrap();
-            assert_ne!(record.id, 500);
+            assert_ne!(record.id, 500.into());
         }
     }
 
@@ -149,7 +161,7 @@ mod tests {
             PayloadInterface::KeywordShortcut(PayloadVariant::Value("red".to_string())),
         );
 
-        let points = vec![1, 2, 3];
+        let points = vec![1.into(), 2.into(), 3.into()];
 
         process_payload_operation(
             &segments,
@@ -183,14 +195,14 @@ mod tests {
             &segments,
             101,
             &PayloadOps::DeletePayload(DeletePayload {
-                points: vec![3],
+                points: vec![3.into()],
                 keys: vec!["color".to_string(), "empty".to_string()],
             }),
         )
         .unwrap();
 
         let res = searcher
-            .retrieve(&segments, &[3], &WithPayload::from(true), false)
+            .retrieve(&segments, &[3.into()], &WithPayload::from(true), false)
             .await
             .unwrap();
         assert_eq!(res.len(), 1);
@@ -199,7 +211,7 @@ mod tests {
         // Test clear payload
 
         let res = searcher
-            .retrieve(&segments, &[2], &WithPayload::from(true), false)
+            .retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
             .await
             .unwrap();
         assert_eq!(res.len(), 1);
@@ -208,11 +220,13 @@ mod tests {
         process_payload_operation(
             &segments,
             102,
-            &PayloadOps::ClearPayload { points: vec![2] },
+            &PayloadOps::ClearPayload {
+                points: vec![2.into()],
+            },
         )
         .unwrap();
         let res = searcher
-            .retrieve(&segments, &[2], &WithPayload::from(true), false)
+            .retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
             .await
             .unwrap();
         assert_eq!(res.len(), 1);

@@ -58,10 +58,23 @@ async fn scroll_get_points(
 #[get("/collections/{name}/points/{id}")]
 pub async fn get_point(
     toc: web::Data<Arc<TableOfContent>>,
-    path: web::Path<(String, PointIdType)>,
+    path: web::Path<(String, String)>,
 ) -> impl Responder {
-    let (collection_name, point_id) = path.into_inner();
     let timing = Instant::now();
+    let (collection_name, point_id_str) = path.into_inner();
+
+    let point_id: PointIdType = {
+        let parse_res = point_id_str.parse();
+        match parse_res {
+            Ok(x) => x,
+            Err(_) => {
+                let error = Err(StorageError::BadInput {
+                    description: format!("Can not recognize \"{}\" as point id", point_id_str),
+                });
+                return process_response(error, timing);
+            }
+        }
+    };
 
     let response = do_get_point(&toc.into_inner(), &collection_name, point_id).await;
 

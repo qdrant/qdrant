@@ -10,7 +10,7 @@ use crate::tonic::qdrant::{
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsList};
 use collection::operations::types::UpdateResult as CollectionUpdateResult;
 use collection::operations::CollectionUpdateOperations;
-use segment::types::{PayloadInterface, PayloadInterfaceStrict, PayloadVariant};
+use segment::types::{PayloadInterface, PayloadInterfaceStrict, PayloadVariant, PointIdType};
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
@@ -89,7 +89,7 @@ impl TryFrom<PointStruct> for collection::operations::point_ops::PointStruct {
         }
 
         Ok(Self {
-            id,
+            id: PointIdType::NumId(id),
             vector,
             payload: Some(converted_payload),
         })

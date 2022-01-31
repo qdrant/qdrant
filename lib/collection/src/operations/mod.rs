@@ -33,7 +33,7 @@ mod tests {
     fn test_deserialize() {
         let op =
             CollectionUpdateOperations::PayloadOperation(payload_ops::PayloadOps::ClearPayload {
-                points: vec![1, 2, 3],
+                points: vec![1.into(), 2.into(), 3.into()],
             });
 
         let json = serde_json::to_string_pretty(&op).unwrap();

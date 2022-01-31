@@ -102,7 +102,7 @@ pub struct ScrollRequest {
 impl Default for ScrollRequest {
     fn default() -> Self {
         ScrollRequest {
-            offset: Some(0),
+            offset: None,
             limit: Some(10),
             filter: None,
             with_payload: Some(WithPayloadInterface::Bool(true)),

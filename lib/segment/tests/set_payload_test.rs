@@ -43,11 +43,11 @@ mod tests {
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
-        segment.upsert_point(0, 0, &[1.0, 1.0]).unwrap();
+        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
         segment
-            .set_full_payload_with_json(0, 0, &data.to_string())
+            .set_full_payload_with_json(0, 0.into(), &data.to_string())
             .unwrap();
-        let payload = segment.payload(0).unwrap();
+        let payload = segment.payload(0.into()).unwrap();
         let keys: Vec<PayloadKeyType> = payload.keys().cloned().collect();
         assert!(keys.contains(&"geo_data".to_string()));
         assert!(keys.contains(&"name".to_string()));
