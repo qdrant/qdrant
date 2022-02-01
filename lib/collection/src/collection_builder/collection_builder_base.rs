@@ -7,7 +7,7 @@ use std::sync::Arc;
 use num_cpus;
 use parking_lot::RwLock;
 use tokio::runtime;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::HnswConfig;
@@ -49,7 +49,7 @@ pub fn construct_collection(
 
     let locked_wal = Arc::new(Mutex::new(wal));
 
-    let (tx, rx) = async_channel::unbounded();
+    let (tx, rx) = mpsc::unbounded_channel();
 
     let update_handler = UpdateHandler::new(
         optimizers,

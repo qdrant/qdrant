@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Error as JsonError;
 use std::result;
 use thiserror::Error;
-use tokio::task::JoinError;
+use tokio::{sync::mpsc::error::SendError, task::JoinError};
 
 use segment::entry::entry_point::OperationError;
 use segment::types::{
@@ -15,7 +15,6 @@ use segment::types::{
 
 use crate::config::CollectionConfig;
 use crate::wal::WalError;
-use async_channel::{RecvError, SendError};
 use std::collections::HashMap;
 
 /// Type of vector in API
@@ -192,14 +191,6 @@ impl From<OperationError> for CollectionError {
                 description: format!("{}", err),
             },
             OperationError::Cancelled { description } => Self::Cancelled { description },
-        }
-    }
-}
-
-impl From<RecvError> for CollectionError {
-    fn from(err: RecvError) -> Self {
-        Self::ServiceError {
-            error: format!("{}", err),
         }
     }
 }
