@@ -13,8 +13,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::{
-    mpsc::{self, Sender, UnboundedReceiver, UnboundedSender},
-    Mutex,
+    mpsc::{self, UnboundedReceiver, UnboundedSender},
+    oneshot, Mutex,
 };
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, Instant};
@@ -28,7 +28,7 @@ pub struct OperationData {
     /// Operation
     pub operation: CollectionUpdateOperations,
     /// Callback notification channel
-    pub sender: Option<Sender<CollectionResult<usize>>>,
+    pub sender: Option<oneshot::Sender<CollectionResult<usize>>>,
 }
 
 /// Signal, used to inform Updater process
@@ -293,7 +293,7 @@ impl UpdateHandler {
                     };
 
                     if let Some(feedback) = sender {
-                        feedback.send(res).await.unwrap_or_else(|_| {
+                        feedback.send(res).unwrap_or_else(|_| {
                             info!(
                                 "Can't report operation {} result. Assume already not required",
                                 op_num

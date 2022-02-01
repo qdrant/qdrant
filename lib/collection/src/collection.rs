@@ -8,10 +8,7 @@ use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use tokio::runtime::{Handle, Runtime};
-use tokio::sync::{
-    mpsc::{self, UnboundedSender},
-    Mutex,
-};
+use tokio::sync::{mpsc::UnboundedSender, oneshot, Mutex};
 
 use segment::types::{
     Condition, Filter, HasIdCondition, PayloadKeyType, PayloadSchemaInfo, PointIdType, ScoredPoint,
@@ -82,7 +79,7 @@ impl Collection {
     ) -> CollectionResult<UpdateResult> {
         let sndr = self.update_sender.clone();
         let (callback_sender, callback_receiver) = if wait {
-            let (tx, rx) = mpsc::channel(1);
+            let (tx, rx) = oneshot::channel();
             (Some(tx), Some(rx))
         } else {
             (None, None)
@@ -99,16 +96,8 @@ impl Collection {
             operation_id
         };
 
-        if let Some(mut receiver) = callback_receiver {
-            let _res =
-                match receiver.recv().await {
-                    Some(res) => res?,
-                    None => return Err(CollectionError::ServiceError {
-                        error:
-                            "Channel dropped before result was received during collection update."
-                                .to_string(),
-                    }),
-                };
+        if let Some(receiver) = callback_receiver {
+            let _res = receiver.await??;
             Ok(UpdateResult {
                 operation_id,
                 status: UpdateStatus::Completed,

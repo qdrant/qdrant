@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Error as JsonError;
 use std::result;
 use thiserror::Error;
-use tokio::{sync::mpsc::error::SendError, task::JoinError};
+use tokio::{
+    sync::{mpsc::error::SendError, oneshot::error::RecvError as OneshotRecvError},
+    task::JoinError,
+};
 
 use segment::entry::entry_point::OperationError;
 use segment::types::{
@@ -191,6 +194,14 @@ impl From<OperationError> for CollectionError {
                 description: format!("{}", err),
             },
             OperationError::Cancelled { description } => Self::Cancelled { description },
+        }
+    }
+}
+
+impl From<OneshotRecvError> for CollectionError {
+    fn from(err: OneshotRecvError) -> Self {
+        Self::ServiceError {
+            error: format!("{}", err),
         }
     }
 }
