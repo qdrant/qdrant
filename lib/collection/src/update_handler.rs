@@ -5,7 +5,6 @@ use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
-use async_channel::{Receiver, Sender};
 use itertools::Itertools;
 use log::{debug, info};
 use segment::types::SeqNumberType;
@@ -13,7 +12,10 @@ use std::cmp::min;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::runtime::Handle;
-use tokio::sync::Mutex;
+use tokio::sync::{
+    mpsc::{self, UnboundedReceiver, UnboundedSender},
+    oneshot, Mutex,
+};
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, Instant};
 
@@ -26,7 +28,7 @@ pub struct OperationData {
     /// Operation
     pub operation: CollectionUpdateOperations,
     /// Callback notification channel
-    pub sender: Option<Sender<CollectionResult<usize>>>,
+    pub sender: Option<oneshot::Sender<CollectionResult<usize>>>,
 }
 
 /// Signal, used to inform Updater process
@@ -57,7 +59,7 @@ pub struct UpdateHandler {
     pub flush_timeout_sec: u64,
     segments: LockedSegmentHolder,
     /// Channel receiver, which is listened by the updater process
-    update_receiver: Receiver<UpdateSignal>,
+    update_receiver: Option<UnboundedReceiver<UpdateSignal>>,
     /// Process, that listens updates signals and perform updates
     update_worker: Option<JoinHandle<()>>,
     /// Process, that listens for post-update signals and performs optimization
@@ -71,7 +73,7 @@ pub struct UpdateHandler {
 impl UpdateHandler {
     pub fn new(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
-        update_receiver: Receiver<UpdateSignal>,
+        update_receiver: UnboundedReceiver<UpdateSignal>,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
@@ -80,7 +82,7 @@ impl UpdateHandler {
         let mut handler = UpdateHandler {
             optimizers,
             segments,
-            update_receiver,
+            update_receiver: Some(update_receiver),
             update_worker: None,
             optimizer_worker: None,
             runtime_handle,
@@ -93,7 +95,7 @@ impl UpdateHandler {
     }
 
     pub fn run_workers(&mut self) {
-        let (tx, rx) = async_channel::unbounded();
+        let (tx, rx) = mpsc::unbounded_channel();
         self.optimizer_worker = Some(self.runtime_handle.spawn(Self::optimization_worker_fn(
             self.optimizers.clone(),
             rx,
@@ -103,7 +105,7 @@ impl UpdateHandler {
             self.optimization_handles.clone(),
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
-            self.update_receiver.clone(),
+            self.update_receiver.take().expect("Unreachable."),
             tx,
             self.segments.clone(),
         )));
@@ -212,7 +214,7 @@ impl UpdateHandler {
 
     async fn optimization_worker_fn(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
-        receiver: Receiver<OptimizerSignal>,
+        mut receiver: UnboundedReceiver<OptimizerSignal>,
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
         flush_timeout_sec: u64,
@@ -220,113 +222,105 @@ impl UpdateHandler {
     ) {
         let flush_timeout = Duration::from_secs(flush_timeout_sec);
         let mut last_flushed = Instant::now();
-        loop {
-            let recv_res = receiver.recv().await;
-            match recv_res {
-                Ok(signal) => {
-                    match signal {
-                        OptimizerSignal::Nop => {
-                            if Self::try_recover(segments.clone(), wal.clone())
-                                .await
-                                .is_err()
-                            {
-                                continue;
-                            }
-                            Self::process_optimization(
-                                optimizers.clone(),
-                                segments.clone(),
-                                optimization_handles.clone(),
-                            )
-                            .await;
-                        }
-                        OptimizerSignal::Operation(operation_id) => {
-                            if Self::try_recover(segments.clone(), wal.clone())
-                                .await
-                                .is_err()
-                            {
-                                continue;
-                            }
-                            Self::process_optimization(
-                                optimizers.clone(),
-                                segments.clone(),
-                                optimization_handles.clone(),
-                            )
-                            .await;
+        while let Some(signal) = receiver.recv().await {
+            match signal {
+                OptimizerSignal::Nop => {
+                    if Self::try_recover(segments.clone(), wal.clone())
+                        .await
+                        .is_err()
+                    {
+                        continue;
+                    }
+                    Self::process_optimization(
+                        optimizers.clone(),
+                        segments.clone(),
+                        optimization_handles.clone(),
+                    )
+                    .await;
+                }
+                OptimizerSignal::Operation(operation_id) => {
+                    if Self::try_recover(segments.clone(), wal.clone())
+                        .await
+                        .is_err()
+                    {
+                        continue;
+                    }
+                    Self::process_optimization(
+                        optimizers.clone(),
+                        segments.clone(),
+                        optimization_handles.clone(),
+                    )
+                    .await;
 
-                            let elapsed = last_flushed.elapsed();
-                            if elapsed > flush_timeout {
-                                debug!("Performing flushing: {}", operation_id);
-                                last_flushed = Instant::now();
-                                let confirmed_version = {
-                                    let read_segments = segments.read();
-                                    let flushed_version = read_segments.flush_all().unwrap();
-                                    match read_segments.failed_operation.iter().cloned().min() {
-                                        None => flushed_version,
-                                        Some(failed_operation) => {
-                                            min(failed_operation, flushed_version)
-                                        }
-                                    }
-                                };
-                                wal.lock().await.ack(confirmed_version).unwrap();
+                    let elapsed = last_flushed.elapsed();
+                    if elapsed > flush_timeout {
+                        debug!("Performing flushing: {}", operation_id);
+                        last_flushed = Instant::now();
+                        let confirmed_version = {
+                            let read_segments = segments.read();
+                            let flushed_version = read_segments.flush_all().unwrap();
+                            match read_segments.failed_operation.iter().cloned().min() {
+                                None => flushed_version,
+                                Some(failed_operation) => min(failed_operation, flushed_version),
                             }
-                        }
-                        OptimizerSignal::Stop => break, // Stop gracefully
+                        };
+                        wal.lock().await.ack(confirmed_version).unwrap();
                     }
                 }
-                Err(_) => break, // Transmitter was destroyed
+                OptimizerSignal::Stop => break, // Stop gracefully
             }
         }
     }
 
     async fn update_worker_fn(
-        receiver: Receiver<UpdateSignal>,
-        optimize_sender: Sender<OptimizerSignal>,
+        mut receiver: UnboundedReceiver<UpdateSignal>,
+        optimize_sender: UnboundedSender<OptimizerSignal>,
         segments: LockedSegmentHolder,
     ) {
-        loop {
-            let recv_res = receiver.recv().await;
-            match recv_res {
-                Ok(signal) => {
-                    match signal {
-                        UpdateSignal::Operation(OperationData {
-                            op_num,
-                            operation,
-                            sender,
-                        }) => {
-                            let res = match CollectionUpdater::update(&segments, op_num, operation)
-                            {
-                                Ok(update_res) => optimize_sender
-                                    .send(OptimizerSignal::Operation(op_num))
-                                    .await
-                                    .and(Ok(update_res))
-                                    .map_err(|send_err| send_err.into()),
-                                Err(err) => Err(err),
-                            };
+        while let Some(signal) = receiver.recv().await {
+            match signal {
+                UpdateSignal::Operation(OperationData {
+                    op_num,
+                    operation,
+                    sender,
+                }) => {
+                    let res = match CollectionUpdater::update(&segments, op_num, operation) {
+                        Ok(update_res) => optimize_sender
+                            .send(OptimizerSignal::Operation(op_num))
+                            .and(Ok(update_res))
+                            .map_err(|send_err| send_err.into()),
+                        Err(err) => Err(err),
+                    };
 
-                            if let Some(feedback) = sender {
-                                feedback.send(res).await.unwrap_or_else(|_| {
-                                    info!("Can't report operation {} result. Assume already not required", op_num);
-                                });
-                            };
-                        }
-                        UpdateSignal::Stop => {
-                            optimize_sender.send(OptimizerSignal::Stop).await.unwrap_or_else(|_| {
-                                debug!("Optimizer already stopped")
-                            });
-                            break;
-                        }
-                        UpdateSignal::Nop => optimize_sender.send(OptimizerSignal::Nop).await.unwrap_or_else(|_| {
-                            info!("Can't notify optimizers, assume process is dead. Restart is required");
-                        }),
-                    }
+                    if let Some(feedback) = sender {
+                        feedback.send(res).unwrap_or_else(|_| {
+                            info!(
+                                "Can't report operation {} result. Assume already not required",
+                                op_num
+                            );
+                        });
+                    };
                 }
-                Err(_) => {
-                    optimize_sender.send(OptimizerSignal::Stop).await.unwrap_or_else(|_| {
-                        debug!("Optimizer already stopped")
-                    });
+                UpdateSignal::Stop => {
+                    optimize_sender
+                        .send(OptimizerSignal::Stop)
+                        .unwrap_or_else(|_| debug!("Optimizer already stopped"));
                     break;
-                } // Transmitter was destroyed
+                }
+                UpdateSignal::Nop => {
+                    optimize_sender
+                        .send(OptimizerSignal::Nop)
+                        .unwrap_or_else(|_| {
+                            info!(
+                            "Can't notify optimizers, assume process is dead. Restart is required"
+                        );
+                        })
+                }
             }
         }
+        // Transmitter was destroyed
+        optimize_sender
+            .send(OptimizerSignal::Stop)
+            .unwrap_or_else(|_| debug!("Optimizer already stopped"));
     }
 }

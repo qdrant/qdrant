@@ -8,7 +8,7 @@ use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use tokio::runtime::{Handle, Runtime};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc::UnboundedSender, oneshot, Mutex};
 
 use segment::types::{
     Condition, Filter, HasIdCondition, PayloadKeyType, PayloadSchemaInfo, PointIdType, ScoredPoint,
@@ -28,7 +28,6 @@ use crate::operations::types::{
 use crate::operations::CollectionUpdateOperations;
 use crate::update_handler::{OperationData, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
-use async_channel::Sender;
 use futures::executor::block_on;
 
 /// Collection
@@ -40,7 +39,7 @@ pub struct Collection {
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
     update_handler: Arc<Mutex<UpdateHandler>>,
     runtime_handle: Option<Runtime>,
-    update_sender: Sender<UpdateSignal>,
+    update_sender: UnboundedSender<UpdateSignal>,
     path: PathBuf,
 }
 
@@ -52,7 +51,7 @@ impl Collection {
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
         update_handler: UpdateHandler,
         runtime_handle: Runtime,
-        update_sender: Sender<UpdateSignal>,
+        update_sender: UnboundedSender<UpdateSignal>,
         path: PathBuf,
     ) -> Self {
         Self {
@@ -80,7 +79,7 @@ impl Collection {
     ) -> CollectionResult<UpdateResult> {
         let sndr = self.update_sender.clone();
         let (callback_sender, callback_receiver) = if wait {
-            let (tx, rx) = async_channel::bounded(1);
+            let (tx, rx) = oneshot::channel();
             (Some(tx), Some(rx))
         } else {
             (None, None)
@@ -93,13 +92,12 @@ impl Collection {
                 op_num: operation_id,
                 operation,
                 sender: callback_sender,
-            }))
-            .await?;
+            }))?;
             operation_id
         };
 
         if let Some(receiver) = callback_receiver {
-            let _res = receiver.recv().await??;
+            let _res = receiver.await??;
             Ok(UpdateResult {
                 operation_id,
                 status: UpdateStatus::Completed,
@@ -303,7 +301,7 @@ impl Collection {
     }
 
     pub async fn stop(&self) -> CollectionResult<()> {
-        self.update_sender.send(UpdateSignal::Stop).await?;
+        self.update_sender.send(UpdateSignal::Stop)?;
         Ok(())
     }
 
@@ -356,7 +354,7 @@ impl Collection {
         update_handler.optimizers = new_optimizers;
         update_handler.flush_timeout_sec = config.optimizer_config.flush_interval_sec;
         update_handler.run_workers();
-        self.update_sender.send(UpdateSignal::Nop).await?;
+        self.update_sender.send(UpdateSignal::Nop)?;
 
         Ok(())
     }
