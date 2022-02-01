@@ -363,7 +363,7 @@ paths:
                   result:
                     type: boolean
   /collections/{collection_name}/index:
-    post:
+    put:
       tags:
         - collections
       summary: Create index for field in collection

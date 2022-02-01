@@ -2178,7 +2178,7 @@
       }
     },
     "/collections/{collection_name}/index": {
-      "post": {
+      "put": {
         "description": "Create index for field in collection",
         "operationId": "create_field_index",
         "parameters": [
