@@ -87,10 +87,8 @@ pub async fn do_clear_payload(
         PointsSelector::PointIdsSelector(points) => PayloadOps::ClearPayload {
             points: points.points,
         },
-        PointsSelector::FilterSelector(_) => {
-            return Err(StorageError::BadRequest {
-                description: "Clear payload by filter is not implemented yet".to_string(), // ToDo: Implement
-            });
+        PointsSelector::FilterSelector(filter_selector) => {
+            PayloadOps::ClearPayloadByFilter(filter_selector.filter)
         }
     };
 

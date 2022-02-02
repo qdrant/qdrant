@@ -1,5 +1,5 @@
 use schemars::JsonSchema;
-use segment::types::{PayloadInterface, PayloadKeyType, PointIdType};
+use segment::types::{Filter, PayloadInterface, PayloadKeyType, PointIdType};
 use serde;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -28,6 +28,8 @@ pub enum PayloadOps {
     DeletePayload(DeletePayload),
     /// Drops all Payload values associated with given points.
     ClearPayload { points: Vec<PointIdType> },
+    /// Clear all Payload values by given filter criteria.
+    ClearPayloadByFilter(Filter),
 }
 
 #[cfg(test)]

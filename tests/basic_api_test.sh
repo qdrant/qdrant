@@ -155,6 +155,42 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/payload?
   }' \
   --fail -s | jq
 
+# check payload
+PAYLOAD_LEN=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection/points/6" | jq '.result.payload | length')
+[[ "$PAYLOAD_LEN" == "1" ]] || {
+  echo 'check failed - payload data expected'
+  exit 1
+}
+
+# clean payload by filter
+curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/payload/clear?wait=true" \
+  -H 'Content-Type: application/json' \
+  --fail -s \
+  --data-raw '{
+    "filter": {
+      "must": [
+        { "has_id": [6] }
+      ]
+    }
+  }' | jq .
+
+# check empty payload
+PAYLOAD_LEN=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection/points/6" | jq '.result.payload | length')
+[[ "$PAYLOAD_LEN" == "0" ]] || {
+  echo 'check failed - empty payload expected'
+  exit 1
+}
+
+# create payload
+curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/payload?wait=true" \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+    "payload": { "test_payload" : "keyword" },
+    "points": [ 6 ]
+  }' \
+  --fail -s | jq
+
+
 # index payload
 INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.payload_schema.test_payload.indexed')
 [[ "$INDEXED_FIELD" == "false" ]] || {
