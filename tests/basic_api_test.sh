@@ -117,7 +117,7 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_alias/points/search" \
 curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/delete?wait=true" \
   -H 'Content-Type: application/json' \
   --fail -s \
-  --data-raw '{ 
+  --data-raw '{
     "filter": {
       "must": [
         { "has_id": [5] }
@@ -137,7 +137,7 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/delete?w
   -H 'Content-Type: application/json' \
   --fail -s \
   --data-raw '{
-    "points" : [ 1, 2, 3, 4, 5 ]
+    "points" : [ 1, 2, 3, 4 ]
   }' | jq
 
 SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')
