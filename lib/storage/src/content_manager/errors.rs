@@ -3,6 +3,7 @@ use sled::transaction::TransactionError;
 use sled::Error;
 use std::io::Error as IoError;
 use thiserror::Error;
+use tokio::task::JoinError;
 
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
@@ -53,6 +54,14 @@ impl From<TransactionError> for StorageError {
 
 impl From<IoError> for StorageError {
     fn from(err: IoError) -> Self {
+        StorageError::ServiceError {
+            description: format!("{}", err),
+        }
+    }
+}
+
+impl From<JoinError> for StorageError {
+    fn from(err: JoinError) -> Self {
         StorageError::ServiceError {
             description: format!("{}", err),
         }

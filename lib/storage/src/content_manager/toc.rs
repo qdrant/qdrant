@@ -213,12 +213,7 @@ impl TableOfContent {
 
     pub async fn delete_collection(&self, collection_name: &str) -> Result<bool, StorageError> {
         if let Some(removed) = self.collections.write().await.remove(collection_name) {
-            removed.stop().await?;
-            {
-                // Wait for optimizer to finish.
-                // TODO: Enhance optimizer to shutdown faster
-                removed.wait_update_workers_stop().await?;
-            }
+            tokio::task::spawn_blocking(move || drop(removed)).await?;
             let path = self.get_collection_path(collection_name);
             remove_dir_all(path).map_err(|err| StorageError::ServiceError {
                 description: format!(
