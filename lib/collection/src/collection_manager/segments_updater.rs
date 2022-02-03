@@ -104,6 +104,29 @@ pub(crate) fn clear_payload(
     Ok(updated_points.len())
 }
 
+/// Clear Payloads from all segments matching the given filter
+pub(crate) fn clear_payload_by_filter(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    filter: &Filter,
+) -> CollectionResult<usize> {
+    let mut points_to_clear: Vec<PointIdType> = Vec::new();
+
+    segments.apply_segments(|s| {
+        let points = s.read_filtered(None, usize::MAX, Some(filter));
+        points_to_clear.extend_from_slice(points.as_slice());
+        Ok(true)
+    })?;
+
+    let updated_points = segments.apply_points_to_appendable(
+        op_num,
+        points_to_clear.as_slice(),
+        |id, write_segment| write_segment.clear_payload(op_num, id),
+    )?;
+
+    Ok(updated_points.len())
+}
+
 pub(crate) fn create_field_index(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -285,6 +308,9 @@ pub(crate) fn process_payload_operation(
             delete_payload(&segments.read(), op_num, &dp.points, &dp.keys)
         }
         PayloadOps::ClearPayload { points, .. } => clear_payload(&segments.read(), op_num, points),
+        PayloadOps::ClearPayloadByFilter(filter) => {
+            clear_payload_by_filter(&segments.read(), op_num, filter)
+        }
     }
 }
 
