@@ -8,7 +8,7 @@ cd "$(dirname "$0")/../"
 
 QDRANT_HOST='localhost:6334'
 
-docker_grpcurl="docker run --rm -it --network=host -v ${PWD}/src/tonic/proto:/proto fullstorydev/grpcurl -plaintext -import-path /proto -proto qdrant.proto"
+docker_grpcurl="docker run --rm --network=host -v ${PWD}/src/tonic/proto:/proto fullstorydev/grpcurl -plaintext -import-path /proto -proto qdrant.proto"
 
 $docker_grpcurl -d '{
    "name": "test_collection"
