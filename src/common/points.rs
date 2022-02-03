@@ -9,7 +9,7 @@ use storage::content_manager::toc::TableOfContent;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CreateFieldIndex {
-    field_name: String,
+    pub field_name: String,
 }
 
 // Deprecated
