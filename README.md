@@ -141,13 +141,13 @@ Qdrant does not rely on any external database or orchestration controller, which
 Build your own from source
 
 ```bash
-docker build . --tag=generall/qdrant
+docker build . --tag=qdrant/qdrant
 ```
 
-Or use latest pre-built image from [DockerHub](https://hub.docker.com/r/generall/qdrant)
+Or use latest pre-built image from [DockerHub](https://hub.docker.com/r/qdrant/qdrant)
 
 ```bash
-docker pull generall/qdrant
+docker pull qdrant/qdrant
 ```
 
 To run container use command:
@@ -156,7 +156,7 @@ To run container use command:
 docker run -p 6333:6333 \
     -v $(pwd)/path/to/data:/qdrant/storage \
     -v $(pwd)/path/to/custom_config.yaml:/qdrant/config/production.yaml \
-    generall/qdrant
+    qdrant/qdrant
 ```
 
 * `/qdrant/storage` - is a place where Qdrant persists all your data. 
