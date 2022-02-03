@@ -26,6 +26,7 @@ async fn get_collection(
     process_response(response, timing)
 }
 
+// Deprecated
 #[post("/collections")]
 async fn update_collections(
     toc: web::Data<Arc<TableOfContent>>,
