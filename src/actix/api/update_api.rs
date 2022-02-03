@@ -148,7 +148,8 @@ pub async fn delete_field_index(
 
 // Configure services
 pub fn config_update_api(cfg: &mut web::ServiceConfig) {
-    cfg.service(upsert_points)
+    cfg.service(update_points)
+        .service(upsert_points)
         .service(delete_points)
         .service(set_payload)
         .service(delete_payload)
