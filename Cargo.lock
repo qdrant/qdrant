@@ -2181,7 +2181,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "actix-web",
  "collection",
