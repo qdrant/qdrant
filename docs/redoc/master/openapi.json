@@ -1008,6 +1008,19 @@
               "clear_payload"
             ],
             "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Clear all Payload values by given filter criteria.",
+            "properties": {
+              "clear_payload_by_filter": {
+                "$ref": "#/components/schemas/Filter"
+              }
+            },
+            "required": [
+              "clear_payload_by_filter"
+            ],
+            "type": "object"
           }
         ]
       },
