@@ -25,7 +25,7 @@ wal = { git = "https://github.com/generall/wal.git" }
 ordered-float = "2.10"
 
 tokio = {version = "~1.16", features = ["full"]}
-futures = "0.3.19"
+futures = "0.3.21"
 atomicwrites = "0.3.1"
 log = "0.4"
 env_logger = "0.9.0"
