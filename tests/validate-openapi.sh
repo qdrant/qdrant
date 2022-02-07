@@ -10,7 +10,18 @@ cd "$(dirname "$0")/../"
 ./tools/generate_openapi_models.sh
 
 # Build rust client
-docker run --rm -v "${PWD}"/openapi:/local openapitools/openapi-generator-cli generate \
+docker run --user $(id -u):$(id -g) --rm \
+      -v "${PWD}"/openapi:/local openapitools/openapi-generator-cli generate \
       -i /local/openapi-merged.yaml \
       -g rust \
       -o /local/rust-client
+
+cd openapi/rust-client
+
+# master is not a valid version
+sed -i 's/master/0.1.0/g' Cargo.toml
+
+# should not belong to current workspace
+printf "[workspace]" >> Cargo.toml
+
+cargo build
