@@ -58,7 +58,7 @@ Expected response:
 ### List all collections
 We can now view the list of collections to ensure that the collection was created:
 ```bash
-grpcurl -plaintext -import-path ./src/tonic/proto -proto qdrant.proto [::]:6334 qdrant.Collections/Get
+grpcurl -plaintext -import-path ./src/tonic/proto -proto qdrant.proto [::]:6334 qdrant.Collections/List
 ```
 
 Expected response:

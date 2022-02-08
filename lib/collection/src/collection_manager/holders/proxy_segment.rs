@@ -226,8 +226,8 @@ impl SegmentEntry for ProxySegment {
     #[trace]
     fn set_full_payload_with_json(
         &mut self,
-        op_num: u64,
-        point_id: u64,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
         full_payload: &str,
     ) -> OperationResult<bool> {
         self.move_if_exists(op_num, point_id)?;
@@ -324,7 +324,7 @@ impl SegmentEntry for ProxySegment {
     #[trace]
     fn read_filtered<'a>(
         &'a self,
-        offset: PointIdType,
+        offset: Option<PointIdType>,
         limit: usize,
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType> {
@@ -451,6 +451,17 @@ impl SegmentEntry for ProxySegment {
     fn check_error(&self) -> Option<SegmentFailedState> {
         self.write_segment.get().read().check_error()
     }
+
+    fn delete_filtered<'a>(
+        &'a mut self,
+        op_num: SeqNumberType,
+        filter: &'a Filter,
+    ) -> OperationResult<usize> {
+        self.write_segment
+            .get()
+            .write()
+            .delete_filtered(op_num, filter)
+    }
 }
 
 #[cfg(test)]
@@ -474,15 +485,15 @@ mod tests {
             original_segment,
             write_segment,
             deleted_points,
-            deleted_indexes.clone(),
-            created_indexes.clone(),
+            created_indexes,
+            deleted_indexes,
         );
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
-        proxy_segment.upsert_point(100, 4, &vec4).unwrap();
+        proxy_segment.upsert_point(100, 4.into(), &vec4).unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
-        proxy_segment.upsert_point(101, 6, &vec6).unwrap();
-        proxy_segment.delete_point(102, 1).unwrap();
+        proxy_segment.upsert_point(101, 6.into(), &vec6).unwrap();
+        proxy_segment.delete_point(102, 1.into()).unwrap();
 
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
         let search_result = proxy_segment
@@ -501,21 +512,23 @@ mod tests {
         let mut seen_points: HashSet<PointIdType> = Default::default();
         for res in search_result {
             if seen_points.contains(&res.id) {
-                assert!(false, "point {} appears multiple times", res.id);
+                panic!("point {} appears multiple times", res.id);
             }
             seen_points.insert(res.id);
         }
 
-        assert!(seen_points.contains(&4));
-        assert!(seen_points.contains(&6));
-        assert!(!seen_points.contains(&1));
+        assert!(seen_points.contains(&4.into()));
+        assert!(seen_points.contains(&6.into()));
+        assert!(!seen_points.contains(&1.into()));
 
-        assert!(!proxy_segment.write_segment.get().read().has_point(2));
+        assert!(!proxy_segment.write_segment.get().read().has_point(2.into()));
 
         let payload_key = "color".to_owned();
-        proxy_segment.delete_payload(103, 2, &payload_key).unwrap();
+        proxy_segment
+            .delete_payload(103, 2.into(), &payload_key)
+            .unwrap();
 
-        assert!(proxy_segment.write_segment.get().read().has_point(2))
+        assert!(proxy_segment.write_segment.get().read().has_point(2.into()))
     }
 
     #[test]
@@ -534,13 +547,13 @@ mod tests {
             geo_radius: None,
         }));
 
-        let original_points = original_segment.get().read().read_filtered(0, 100, None);
+        let original_points = original_segment.get().read().read_filtered(None, 100, None);
 
         let original_points_filtered =
             original_segment
                 .get()
                 .read()
-                .read_filtered(0, 100, Some(&filter));
+                .read_filtered(None, 100, Some(&filter));
 
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
@@ -552,14 +565,14 @@ mod tests {
             original_segment,
             write_segment,
             deleted_points,
-            deleted_indexes.clone(),
-            created_indexes.clone(),
+            created_indexes,
+            deleted_indexes,
         );
 
-        proxy_segment.delete_point(100, 2).unwrap();
+        proxy_segment.delete_point(100, 2.into()).unwrap();
 
-        let proxy_res = proxy_segment.read_filtered(0, 100, None);
-        let proxy_res_filtered = proxy_segment.read_filtered(0, 100, Some(&filter));
+        let proxy_res = proxy_segment.read_filtered(None, 100, None);
+        let proxy_res_filtered = proxy_segment.read_filtered(None, 100, Some(&filter));
 
         assert_eq!(original_points_filtered.len() - 1, proxy_res_filtered.len());
         assert_eq!(original_points.len() - 1, proxy_res.len());

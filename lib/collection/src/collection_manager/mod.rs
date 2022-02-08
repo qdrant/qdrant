@@ -7,7 +7,7 @@ pub mod simple_collection_searcher;
 mod segments_updater;
 
 #[allow(dead_code)]
-mod fixtures;
+pub(crate) mod fixtures;
 
 #[cfg(test)]
 mod tests;

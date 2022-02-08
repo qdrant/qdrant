@@ -8,6 +8,114 @@ package qdrant;
 
 service Points {
   rpc Upsert (UpsertPoints) returns (PointsOperationResponse) {}
+  rpc Delete (DeletePoints) returns (PointsOperationResponse) {}
+  rpc SetPayload (SetPayloadPoints) returns (PointsOperationResponse) {}
+  rpc DeletePayload (DeletePayloadPoints) returns (PointsOperationResponse) {}
+  rpc ClearPayload (ClearPayloadPoints) returns (PointsOperationResponse) {}
+  rpc CreateFieldIndex (CreateFieldIndexCollection) returns (PointsOperationResponse) {}
+  rpc DeleteFieldIndex (DeleteFieldIndexCollection) returns (PointsOperationResponse) {}
+}
+
+message CreateFieldIndexCollection {
+  string collection = 1;
+  optional bool wait = 2;
+  string field_name = 3;
+}
+
+message DeleteFieldIndexCollection {
+  string collection = 1;
+  optional bool wait = 2;
+  string field_name = 3;
+}
+
+message DeletePayloadPoints {
+  string collection = 1;
+  optional bool wait = 2;
+  repeated string keys = 3;
+  repeated uint64 points = 4;
+}
+
+message SetPayloadPoints {
+  string collection = 1;
+  optional bool wait = 2;
+  map<string, Payload> payload = 3;
+  repeated uint64 points = 4;
+}
+
+message ClearPayloadPoints {
+  string collection = 1;
+  optional bool wait = 2;
+  PointsSelector points = 3;
+}
+
+message DeletePoints {
+  string collection = 1;
+  optional bool wait = 2;
+  PointsSelector points = 3;
+}
+
+
+message PointsSelector {
+  oneof points_selector_one_of {
+    PointsIdsList ids = 1;
+    FilterSelector filter_selector = 2;
+  }
+}
+
+message PointsIdsList {
+  repeated uint64 ids = 1;
+}
+
+message FilterSelector {
+  Filter filter = 1;
+}
+
+message Filter {
+  repeated Condition should = 1;
+  repeated Condition must = 2;
+  repeated Condition must_not = 3;
+}
+
+message Condition {
+  oneof condition_one_of {
+    FieldCondition field = 1;
+    HasIdCondition hasId = 2;
+    Filter filter = 3;
+  }
+}
+
+message FieldCondition {
+  KeywordPayloadRequest key = 1;
+  Match match = 2;
+  Range range = 3;
+  GeoBoundingBox geo_bounding_box = 4;
+  GeoRadius geo_radius = 5;
+}
+
+message GeoBoundingBox {
+  GeoPoint top_left = 1;
+  GeoPoint bottom_right = 2;
+}
+
+message GeoRadius {
+  GeoPoint center = 1;
+  float radius = 2;
+}
+
+message HasIdCondition {
+  repeated uint64 has_id = 1;
+}
+
+message Range {
+  FloatPayloadRequest lt = 1;
+  FloatPayloadRequest gt = 2;
+  FloatPayloadRequest gte = 3;
+  FloatPayloadRequest lte = 4;
+}
+
+message Match {
+  optional string keyword = 1;
+  IntegerPayloadRequest integer = 2;
 }
 
 message UpsertPoints {
@@ -22,16 +130,31 @@ message PointStruct {
   map<string, Payload> payload = 3;
 }
 
+message KeywordPayloadRequest {
+  string value = 1;
+}
+
+message IntegerPayloadRequest {
+  int64 value = 1;
+}
+
+message FloatPayloadRequest {
+  double value = 1;
+}
+
 message Payload {
-  optional KeywordPayload keyword = 1;
-  optional IntegerPayload integer = 2;
-  optional FloatPayload float = 3;
-  optional GeoPayload geo = 4;
+  oneof payload_one_of {
+    KeywordPayload keyword = 1;
+    IntegerPayload integer = 2;
+    FloatPayload float = 3;
+    GeoPayload geo = 4;
+  }
 }
 
 message KeywordPayload {
   repeated string value = 1;
 }
+
 message IntegerPayload {
   repeated int64 value = 1;
 }
@@ -50,9 +173,8 @@ message GeoPoint {
 }
 
 message PointsOperationResponse {
-  optional UpdateResult result = 1;
-  optional string error = 2;
-  double time = 3;
+  UpdateResult result = 1;
+  double time = 2;
 }
 
 message UpdateResult {

@@ -10,6 +10,7 @@ use qdrant::points_server::PointsServer;
 use qdrant::qdrant_server::{Qdrant, QdrantServer};
 use qdrant::{HealthCheckReply, HealthCheckRequest};
 use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use storage::content_manager::toc::TableOfContent;
 use tokio::{runtime, signal};
@@ -41,6 +42,11 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
     let tonic_runtime = runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
+        .thread_name_fn(|| {
+            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+            format!("tonic-{}", id)
+        })
         .build()?;
     tonic_runtime
         .block_on(async {

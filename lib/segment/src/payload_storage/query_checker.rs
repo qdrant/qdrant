@@ -1,4 +1,4 @@
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::IdTrackerSS;
 use crate::payload_storage::condition_checker::{
     match_geo, match_geo_radius, match_payload, match_range,
 };
@@ -62,13 +62,13 @@ where
 
 pub struct SimpleConditionChecker {
     payload_storage: Arc<AtomicRefCell<SimplePayloadStorage>>,
-    id_tracker: Arc<AtomicRefCell<dyn IdTracker>>,
+    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
 }
 
 impl SimpleConditionChecker {
     pub fn new(
         payload_storage: Arc<AtomicRefCell<SimplePayloadStorage>>,
-        id_tracker: Arc<AtomicRefCell<dyn IdTracker>>,
+        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     ) -> Self {
         SimpleConditionChecker {
             payload_storage,
@@ -140,6 +140,7 @@ impl ConditionChecker for SimpleConditionChecker {
 mod tests {
     use super::*;
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
+    use crate::id_tracker::IdTracker;
     use crate::payload_storage::PayloadStorage;
     use crate::types::GeoPoint;
     use crate::types::{FieldCondition, GeoBoundingBox, Match, PayloadType, Range};
@@ -175,10 +176,10 @@ mod tests {
         let mut payload_storage = SimplePayloadStorage::open(dir.path()).unwrap();
         let mut id_tracker = SimpleIdTracker::open(dir_id_tracker.path()).unwrap();
 
-        id_tracker.set_link(0, 0).unwrap();
-        id_tracker.set_link(1, 1).unwrap();
-        id_tracker.set_link(2, 2).unwrap();
-        id_tracker.set_link(10, 10).unwrap();
+        id_tracker.set_link(0.into(), 0).unwrap();
+        id_tracker.set_link(1.into(), 1).unwrap();
+        id_tracker.set_link(2.into(), 2).unwrap();
+        id_tracker.set_link(10.into(), 10).unwrap();
         payload_storage.assign_all(0, payload).unwrap();
 
         let payload_checker = SimpleConditionChecker::new(
@@ -351,7 +352,7 @@ mod tests {
         };
         assert!(!payload_checker.check(0, &query));
 
-        let ids: HashSet<_> = vec![1, 2, 3].into_iter().collect();
+        let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
         let query = Filter {
             should: None,
@@ -360,7 +361,7 @@ mod tests {
         };
         assert!(!payload_checker.check(2, &query));
 
-        let ids: HashSet<_> = vec![1, 2, 3].into_iter().collect();
+        let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
         let query = Filter {
             should: None,
@@ -369,7 +370,7 @@ mod tests {
         };
         assert!(payload_checker.check(10, &query));
 
-        let ids: HashSet<_> = vec![1, 2, 3].into_iter().collect();
+        let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
         let query = Filter {
             should: None,

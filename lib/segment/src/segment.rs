@@ -4,16 +4,16 @@ use profiler_proc_macro::trace;
 use crate::entry::entry_point::{
     get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };
-use crate::id_tracker::IdTracker;
-use crate::index::{PayloadIndex, VectorIndex};
-use crate::payload_storage::{ConditionChecker, PayloadStorage};
+use crate::id_tracker::IdTrackerSS;
+use crate::index::{PayloadIndexSS, VectorIndexSS};
+use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
 use crate::spaces::tools::mertic_object;
 use crate::types::{
     Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo, PayloadType, PointIdType,
     PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState,
     SegmentType, SeqNumberType, TheMap, VectorElementType, WithPayload,
 };
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use std::fs::{remove_dir_all, rename};
@@ -37,12 +37,12 @@ pub struct Segment {
     /// Path of the storage root
     pub current_path: PathBuf,
     /// Component for mapping external ids to internal and also keeping track of point versions
-    pub id_tracker: Arc<AtomicRefCell<dyn IdTracker>>,
-    pub vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
-    pub payload_storage: Arc<AtomicRefCell<dyn PayloadStorage>>,
-    pub payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
-    pub condition_checker: Arc<dyn ConditionChecker>,
-    pub vector_index: Arc<AtomicRefCell<dyn VectorIndex>>,
+    pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    pub vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    pub payload_storage: Arc<AtomicRefCell<PayloadStorageSS>>,
+    pub payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
+    pub condition_checker: Arc<ConditionCheckerSS>,
+    pub vector_index: Arc<AtomicRefCell<VectorIndexSS>>,
     /// Shows if it is possible to insert more points into this segment
     pub appendable_flag: bool,
     /// Shows what kind of indexes and storages are used in this segment
@@ -199,7 +199,30 @@ impl Segment {
         Ok(())
     }
 
-    #[trace]
+    /// Retrieve vector by internal ID
+    ///
+    /// Panics if vector does not exists or deleted
+    #[inline]
+    fn vector_by_offset(
+        &self,
+        point_offset: PointOffsetType,
+    ) -> OperationResult<Vec<VectorElementType>> {
+        Ok(self
+            .vector_storage
+            .borrow()
+            .get_vector(point_offset)
+            .unwrap())
+    }
+
+    /// Retrieve payload by internal ID
+    #[inline]
+    fn payload_by_offset(
+        &self,
+        point_offset: PointOffsetType,
+    ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
+        Ok(self.payload_storage.borrow().payload(point_offset))
+    }
+
     pub fn save_current_state(&self) -> OperationResult<()> {
         self.save_state(&self.get_state())
     }
@@ -244,14 +267,16 @@ impl SegmentEntry for Segment {
         let res: OperationResult<Vec<ScoredPoint>> = internal_result
             .iter()
             .map(|&scored_point_offset| {
-                let point_id = id_tracker.external_id(scored_point_offset.idx).ok_or(
-                    OperationError::ServiceError {
-                        description: format!(
-                            "Corrupter id_tracker, no external value for {}",
-                            scored_point_offset.idx
-                        ),
-                    },
-                )?;
+                let point_offset = scored_point_offset.idx;
+                let point_id =
+                    id_tracker
+                        .external_id(point_offset)
+                        .ok_or(OperationError::ServiceError {
+                            description: format!(
+                                "Corrupter id_tracker, no external value for {}",
+                                scored_point_offset.idx
+                            ),
+                        })?;
                 let point_version =
                     id_tracker
                         .version(point_id)
@@ -262,7 +287,7 @@ impl SegmentEntry for Segment {
                             ),
                         })?;
                 let payload = if with_payload.enable {
-                    let initial_payload = self.payload(point_id)?;
+                    let initial_payload = self.payload_by_offset(point_offset)?;
                     let processed_payload = if let Some(i) = &with_payload.payload_selector {
                         i.process(initial_payload)
                     } else {
@@ -274,7 +299,7 @@ impl SegmentEntry for Segment {
                 };
 
                 let vector = if with_vector {
-                    Some(self.vector(point_id)?)
+                    Some(self.vector_by_offset(point_offset)?)
                 } else {
                     None
                 };
@@ -445,11 +470,7 @@ impl SegmentEntry for Segment {
     #[trace]
     fn vector(&self, point_id: PointIdType) -> OperationResult<Vec<VectorElementType>> {
         let internal_id = self.lookup_internal_id(point_id)?;
-        Ok(self
-            .vector_storage
-            .borrow()
-            .get_vector(internal_id)
-            .unwrap())
+        self.vector_by_offset(internal_id)
     }
 
     #[trace]
@@ -458,7 +479,7 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
     ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
         let internal_id = self.lookup_internal_id(point_id)?;
-        Ok(self.payload_storage.borrow().payload(internal_id))
+        self.payload_by_offset(internal_id)
     }
 
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
@@ -472,7 +493,7 @@ impl SegmentEntry for Segment {
     #[trace]
     fn read_filtered<'a>(
         &'a self,
-        offset: PointIdType,
+        offset: Option<PointIdType>,
         limit: usize,
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType> {
@@ -604,6 +625,19 @@ impl SegmentEntry for Segment {
     fn check_error(&self) -> Option<SegmentFailedState> {
         self.error_status.clone()
     }
+
+    fn delete_filtered<'a>(
+        &'a mut self,
+        op_num: SeqNumberType,
+        filter: &'a Filter,
+    ) -> OperationResult<usize> {
+        let mut deleted_points = 0;
+        for point_id in self.read_filtered(None, usize::MAX, Some(filter)) {
+            deleted_points += self.delete_point(op_num, point_id)? as usize;
+        }
+
+        Ok(deleted_points)
+    }
 }
 
 #[cfg(test)]
@@ -636,17 +670,13 @@ mod tests {
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
-        segment.upsert_point(0, 0, &[1.0, 1.0]).unwrap();
-        let result1 = segment.set_full_payload_with_json(0, 0, &data1.to_string());
-        match result1 {
-            Ok(_) => assert!(false),
-            Err(_) => assert!(true),
-        }
-        let result2 = segment.set_full_payload_with_json(0, 0, &data2.to_string());
-        match result2 {
-            Ok(_) => assert!(false),
-            Err(_) => assert!(true),
-        }
+        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
+
+        let result1 = segment.set_full_payload_with_json(0, 0.into(), &data1.to_string());
+        assert!(result1.is_err());
+
+        let result2 = segment.set_full_payload_with_json(0, 0.into(), &data2.to_string());
+        assert!(result2.is_err());
     }
 
     #[test]
@@ -672,9 +702,9 @@ mod tests {
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
-        segment.upsert_point(0, 0, &[1.0, 1.0]).unwrap();
+        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
         segment
-            .set_full_payload_with_json(0, 0, &data.to_string())
+            .set_full_payload_with_json(0, 0.into(), &data.to_string())
             .unwrap();
 
         let filter_valid_str = r#"
@@ -714,7 +744,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(results_with_valid_filter.len(), 1);
-        assert_eq!(results_with_valid_filter.first().unwrap().id, 0);
+        assert_eq!(results_with_valid_filter.first().unwrap().id, 0.into());
         let results_with_invalid_filter = segment
             .search(
                 &[1.0, 1.0],

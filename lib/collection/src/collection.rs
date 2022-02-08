@@ -8,7 +8,7 @@ use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use tokio::runtime::{Handle, Runtime};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc::UnboundedSender, oneshot, Mutex};
 
 use segment::types::{
     Condition, Filter, HasIdCondition, PayloadKeyType, PayloadSchemaInfo, PointIdType, ScoredPoint,
@@ -28,7 +28,6 @@ use crate::operations::types::{
 use crate::operations::CollectionUpdateOperations;
 use crate::update_handler::{OperationData, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
-use async_channel::Sender;
 use futures::executor::block_on;
 
 /// Collection
@@ -40,7 +39,7 @@ pub struct Collection {
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
     update_handler: Arc<Mutex<UpdateHandler>>,
     runtime_handle: Option<Runtime>,
-    update_sender: Sender<UpdateSignal>,
+    update_sender: UnboundedSender<UpdateSignal>,
     path: PathBuf,
 }
 
@@ -52,7 +51,7 @@ impl Collection {
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
         update_handler: UpdateHandler,
         runtime_handle: Runtime,
-        update_sender: Sender<UpdateSignal>,
+        update_sender: UnboundedSender<UpdateSignal>,
         path: PathBuf,
     ) -> Self {
         Self {
@@ -80,7 +79,7 @@ impl Collection {
     ) -> CollectionResult<UpdateResult> {
         let sndr = self.update_sender.clone();
         let (callback_sender, callback_receiver) = if wait {
-            let (tx, rx) = async_channel::unbounded();
+            let (tx, rx) = oneshot::channel();
             (Some(tx), Some(rx))
         } else {
             (None, None)
@@ -93,13 +92,12 @@ impl Collection {
                 op_num: operation_id,
                 operation,
                 sender: callback_sender,
-            }))
-            .await?;
+            }))?;
             operation_id
         };
 
         if let Some(receiver) = callback_receiver {
-            let _res = receiver.recv().await??;
+            let _res = receiver.await??;
             Ok(UpdateResult {
                 operation_id,
                 status: UpdateStatus::Completed,
@@ -119,9 +117,7 @@ impl Collection {
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequest::default();
 
-        let offset = request
-            .offset
-            .unwrap_or_else(|| default_request.offset.unwrap());
+        let offset = request.offset;
         let limit = request
             .limit
             .unwrap_or_else(|| default_request.limit.unwrap());
@@ -139,33 +135,38 @@ impl Collection {
             });
         }
 
+        // Retrieve 1 extra point to determine proper `next_page_offset`
+        let retrieve_limit = limit + 1;
+
         // ToDo: Make faster points selection with a set
         let segments = self.segments();
-        let point_ids = segments
+        let mut point_ids = segments
             .read()
             .iter()
             .flat_map(|(_, segment)| {
                 segment
                     .get()
                     .read()
-                    .read_filtered(offset, limit, request.filter.as_ref())
+                    .read_filtered(offset, retrieve_limit, request.filter.as_ref())
             })
             .sorted()
             .dedup()
-            .take(limit)
+            .take(retrieve_limit)
             .collect_vec();
+
+        let next_page_offset = if point_ids.len() < retrieve_limit {
+            // This was the last page
+            None
+        } else {
+            // remove extra point, it would be a first point of the next page
+            Some(point_ids.pop().unwrap())
+        };
 
         let with_payload = WithPayload::from(with_payload_interface);
         let mut points = segment_searcher
             .retrieve(segments, &point_ids, &with_payload, with_vector)
             .await?;
         points.sort_by_key(|point| point.id);
-
-        let next_page_offset = if point_ids.len() < limit {
-            None
-        } else {
-            Some(point_ids.last().unwrap() + 1)
-        };
 
         Ok(ScrollResult {
             points,
@@ -264,6 +265,7 @@ impl Collection {
 
     /// Collect overview information about the collection
     pub async fn info(&self) -> CollectionResult<CollectionInfo> {
+        let collection_config = self.config.read().await.clone();
         let segments = self.segments.read();
         let mut vectors_count = 0;
         let mut segments_count = 0;
@@ -293,13 +295,13 @@ impl Collection {
             segments_count,
             disk_data_size: disk_size,
             ram_data_size: ram_size,
-            config: self.config.read().await.clone(),
+            config: collection_config,
             payload_schema: schema,
         })
     }
 
     pub async fn stop(&self) -> CollectionResult<()> {
-        self.update_sender.send(UpdateSignal::Stop).await?;
+        self.update_sender.send(UpdateSignal::Stop)?;
         Ok(())
     }
 
@@ -352,7 +354,7 @@ impl Collection {
         update_handler.optimizers = new_optimizers;
         update_handler.flush_timeout_sec = config.optimizer_config.flush_interval_sec;
         update_handler.run_workers();
-        self.update_sender.send(UpdateSignal::Nop).await?;
+        self.update_sender.send(UpdateSignal::Nop)?;
 
         Ok(())
     }
@@ -391,15 +393,21 @@ impl Drop for Collection {
 
         block_on(self.wait_update_workers_stop()).unwrap();
 
-        // The drop could be called from the tokio context, e.g. from perform_collection_operation method.
-        // Calling remove from there would lead to the following error in a new version of tokio:
-        // "Cannot drop a runtime in a context where blocking is not allowed. This happens when a runtime is dropped from within an asynchronous context."
-        // So the workaround for move out the runtime handler and drop it in the separate thread.
-        // The proper solution is to reconsider the collection to be an owner of the runtime
-        let handle = self.runtime_handle.take();
-        let thread_handler = thread::spawn(move || {
-            drop(handle);
-        });
-        thread_handler.join().unwrap();
+        match self.runtime_handle.take() {
+            None => {}
+            Some(handle) => {
+                // The drop could be called from the tokio context, e.g. from perform_collection_operation method.
+                // Calling remove from there would lead to the following error in a new version of tokio:
+                // "Cannot drop a runtime in a context where blocking is not allowed. This happens when a runtime is dropped from within an asynchronous context."
+                // So the workaround for move out the runtime handler and drop it in the separate thread.
+                // The proper solution is to reconsider the collection to be an owner of the runtime
+
+                let thread_handler = thread::Builder::new()
+                    .name("collection_drop".to_string())
+                    .spawn(move || drop(handle))
+                    .unwrap();
+                thread_handler.join().unwrap();
+            }
+        }
     }
 }

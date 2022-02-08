@@ -15,7 +15,7 @@ mod tests {
 
         let segment = build_segment_1(dir.path());
 
-        assert!(segment.has_point(3));
+        assert!(segment.has_point(3.into()));
 
         let query_vector = vec![1.0, 1.0, 1.0, 1.0];
 
@@ -24,9 +24,9 @@ mod tests {
             .unwrap();
 
         let best_match = res.get(0).expect("Non-empty result");
-        assert_eq!(best_match.id, 3);
+        assert_eq!(best_match.id, 3.into());
 
-        let ids: HashSet<_> = HashSet::from_iter([3]);
+        let ids: HashSet<_> = HashSet::from_iter([3.into()]);
 
         let frt = Filter {
             should: None,
@@ -46,7 +46,7 @@ mod tests {
             .unwrap();
 
         let best_match = res.get(0).expect("Non-empty result");
-        assert_ne!(best_match.id, 3);
+        assert_ne!(best_match.id, 3.into());
 
         let point_ids1: Vec<_> = segment.iter_points().collect();
         let point_ids2: Vec<_> = segment.iter_points().collect();

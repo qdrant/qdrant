@@ -25,6 +25,8 @@ pub enum OperationError {
     },
     #[error("Service runtime error: {description}")]
     ServiceError { description: String },
+    #[error("Operation cancelled: {description}")]
+    Cancelled { description: String },
 }
 
 /// Contains information regarding last operation error, which should be fixed before next operation could be processed
@@ -162,7 +164,7 @@ pub trait SegmentEntry {
     /// Paginate over points which satisfies filtering condition starting with `offset` id including.
     fn read_filtered<'a>(
         &'a self,
-        offset: PointIdType,
+        offset: Option<PointIdType>,
         limit: usize,
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType>;
@@ -214,4 +216,11 @@ pub trait SegmentEntry {
 
     /// Checks if segment errored during last operations
     fn check_error(&self) -> Option<SegmentFailedState>;
+
+    /// Delete points by the given filter
+    fn delete_filtered<'a>(
+        &'a mut self,
+        op_num: SeqNumberType,
+        filter: &'a Filter,
+    ) -> OperationResult<usize>;
 }

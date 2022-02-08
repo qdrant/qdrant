@@ -4,12 +4,13 @@ use profiler_proc_macro::trace;
 use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use num_cpus;
 use parking_lot::RwLock;
 use tokio::runtime;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::HnswConfig;
@@ -41,13 +42,18 @@ pub fn construct_collection(
     };
     let optimize_runtime = runtime::Builder::new_multi_thread()
         .worker_threads(2)
+        .thread_name_fn(|| {
+            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+            format!("optimizer-{}", id)
+        })
         .max_blocking_threads(blocking_threads)
         .build()
         .unwrap();
 
     let locked_wal = Arc::new(Mutex::new(wal));
 
-    let (tx, rx) = async_channel::unbounded();
+    let (tx, rx) = mpsc::unbounded_channel();
 
     let update_handler = UpdateHandler::new(
         optimizers,
@@ -92,7 +98,7 @@ pub fn build_collection(
 
     let mut segment_holder = SegmentHolder::default();
 
-    for _sid in 0..optimizers_config.max_segment_number {
+    for _sid in 0..optimizers_config.default_segment_number {
         let segment = build_simple_segment(
             &segments_path,
             collection_params.vector_size,

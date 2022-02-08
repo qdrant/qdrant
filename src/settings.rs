@@ -9,6 +9,7 @@ pub struct ServiceConfig {
     pub port: u16,
     pub grpc_port: u16,
     pub max_request_size_mb: usize,
+    pub max_workers: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -43,5 +44,20 @@ impl Settings {
 
         // You can deserialize (and thus freeze) the entire configuration as
         s.try_into()
+    }
+}
+
+/// Returns the number of maximum actix workers.
+#[allow(dead_code)]
+pub fn max_web_workers(settings: &Settings) -> usize {
+    let max_workers = settings.service.max_workers;
+
+    if max_workers == Some(0) {
+        let num_cpu = num_cpus::get();
+        std::cmp::max(1, num_cpu - 1)
+    } else if max_workers == None {
+        settings.storage.performance.max_search_threads
+    } else {
+        max_workers.unwrap()
     }
 }

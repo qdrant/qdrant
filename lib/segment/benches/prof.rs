@@ -1,7 +1,9 @@
+use std::io::Write;
 use std::{fs::File, os::raw::c_int, path::Path};
 
 use criterion::profiler::Profiler;
 use pprof::flamegraph::TextTruncateDirection;
+use pprof::protos::Message;
 use pprof::ProfilerGuard;
 
 /// Small custom profiler that can be used with Criterion to create a flamegraph for benchmarks.
@@ -58,19 +60,26 @@ impl<'a> Profiler for FlamegraphProfiler<'a> {
 
     fn stop_profiling(&mut self, _benchmark_id: &str, benchmark_dir: &Path) {
         std::fs::create_dir_all(benchmark_dir).unwrap();
+        let pprof_path = benchmark_dir.join("profile.pb");
         let flamegraph_path = benchmark_dir.join("flamegraph.svg");
         eprintln!("\nflamegraph_path = {:#?}", flamegraph_path);
         let flamegraph_file = File::create(&flamegraph_path)
             .expect("File system error while creating flamegraph.svg");
         let mut options = pprof::flamegraph::Options::default();
+        options.hash = true;
         options.image_width = Some(2500);
         options.text_truncate_direction = TextTruncateDirection::Left;
         options.font_size /= 3;
         if let Some(profiler) = self.active_profiler.take() {
-            profiler
-                .report()
-                .build()
-                .unwrap()
+            let report = profiler.report().build().unwrap();
+
+            let mut file = File::create(pprof_path).unwrap();
+            let profile = report.pprof().unwrap();
+            let mut content = Vec::new();
+            profile.encode(&mut content).unwrap();
+            file.write_all(&content).unwrap();
+
+            report
                 .flamegraph_with_options(flamegraph_file, &mut options)
                 .expect("Error writing flamegraph");
         }

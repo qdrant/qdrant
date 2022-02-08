@@ -7,20 +7,30 @@ option java_outer_classname = "QdrantProto";
 package qdrant;
 
 service Collections {
-  rpc Get (GetCollectionsRequest) returns (GetCollectionsResponse) {}
+  rpc Get (GetCollectionInfoRequest) returns (GetCollectionInfoResponse) {}
+  rpc List (ListCollectionsRequest) returns (ListCollectionsResponse) {}
   rpc Create (CreateCollection) returns (CollectionOperationResponse) {}
   rpc Update (UpdateCollection) returns (CollectionOperationResponse) {}
   rpc Delete (DeleteCollection) returns (CollectionOperationResponse) {}
 }
 
-message GetCollectionsRequest {
+message GetCollectionInfoRequest {
+  string name = 1;
+}
+
+message ListCollectionsRequest {
 }
 
 message CollectionDescription {
   string name = 1;
 }
 
-message GetCollectionsResponse {
+message GetCollectionInfoResponse {
+  CollectionInfo result = 1;
+  double time = 2;
+}
+
+message ListCollectionsResponse {
   repeated CollectionDescription collections = 1;
   double time = 2;
 }
@@ -29,6 +39,19 @@ enum Distance {
   Cosine = 0;
   Euclid = 1;
   Dot = 2;
+}
+
+enum CollectionStatus {
+  Green = 0;
+  Yellow = 1;
+  Red = 2;
+}
+
+enum PayloadSchemaType {
+  Keyword = 0;
+  Integer = 1;
+  Float = 2;
+  Geo = 3;
 }
 
 message HnswConfigDiff {
@@ -45,12 +68,13 @@ message WalConfigDiff {
 message OptimizersConfigDiff {
   optional double deleted_threshold = 1;
   optional uint64 vacuum_min_vector_number = 2;
-  optional uint64 max_segment_number = 3;
-  optional uint64 memmap_threshold = 4;
-  optional uint64 indexing_threshold = 5;
-  optional uint64 payload_indexing_threshold = 6;
-  optional uint64 flush_interval_sec = 7;
-  optional uint64 max_optimization_threads = 8;
+  optional uint64 default_segment_number = 3;
+  optional uint64 max_segment_size = 4;
+  optional uint64 memmap_threshold = 5;
+  optional uint64 indexing_threshold = 6;
+  optional uint64 payload_indexing_threshold = 7;
+  optional uint64 flush_interval_sec = 8;
+  optional uint64 max_optimization_threads = 9;
 }
 
 message CreateCollection {
@@ -72,7 +96,33 @@ message DeleteCollection {
 }
 
 message CollectionOperationResponse {
-  optional bool result = 1;
-  optional string error = 2;
-  double time = 3;
+  bool result = 1;
+  double time = 2;
+}
+
+message CollectionParams {
+  uint64 vector_size = 1;
+  Distance distance = 2;
+}
+
+message CollectionConfig {
+  CollectionParams params = 1;
+  HnswConfigDiff hnsw_config = 2;
+  OptimizersConfigDiff optimizer_config = 3;
+  WalConfigDiff wal_config = 4;
+}
+
+message PayloadSchemaInfo {
+  PayloadSchemaType data_type = 1;
+  bool indexed = 2;
+}
+
+message CollectionInfo {
+  CollectionStatus status = 1;
+  uint64 vectors_count = 2;
+  uint64 segments_count = 3;
+  uint64 disk_data_size = 4;
+  uint64 ram_data_size = 5;
+  CollectionConfig config = 6;
+  map<string, PayloadSchemaInfo> payload_schema = 7;
 }

@@ -9,6 +9,7 @@ use crate::collection_manager::optimizers::segment_optimizer::{
 };
 use crate::config::CollectionParams;
 use segment::types::{HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Looks for the segments, which require to be indexed.
@@ -41,11 +42,20 @@ impl IndexingOptimizer {
     }
 
     #[trace]
-    fn worst_segment(&self, segments: LockedSegmentHolder) -> Option<(SegmentId, LockedSegment)> {
-        segments
-            .read()
+    fn worst_segment(
+        &self,
+        segments: LockedSegmentHolder,
+        excluded_ids: &HashSet<SegmentId>,
+    ) -> Option<(SegmentId, LockedSegment)> {
+        let segments_read_guard = segments.read();
+        segments_read_guard
             .iter()
             .filter_map(|(idx, segment)| {
+                if excluded_ids.contains(idx) {
+                    // This segment is excluded externally. It might already be scheduled for optimization
+                    return None;
+                }
+
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let vector_count = read_segment.vectors_count();
@@ -89,7 +99,7 @@ impl IndexingOptimizer {
                 }
             })
             .max_by_key(|(_, num_vectors)| *num_vectors)
-            .map(|(idx, _)| (idx, segments.read().get(idx).unwrap().clone()))
+            .map(|(idx, _)| (idx, segments_read_guard.get(idx).unwrap().clone()))
     }
 }
 
@@ -114,8 +124,12 @@ impl SegmentOptimizer for IndexingOptimizer {
         &self.thresholds_config
     }
 
-    fn check_condition(&self, segments: LockedSegmentHolder) -> Vec<SegmentId> {
-        match self.worst_segment(segments) {
+    fn check_condition(
+        &self,
+        segments: LockedSegmentHolder,
+        excluded_ids: &HashSet<SegmentId>,
+    ) -> Vec<SegmentId> {
+        match self.worst_segment(segments, excluded_ids) {
             None => vec![],
             Some((segment_id, _segment)) => vec![segment_id],
         }
@@ -125,6 +139,7 @@ impl SegmentOptimizer for IndexingOptimizer {
 #[cfg(test)]
 mod tests {
     use std::ops::Deref;
+    use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
     use itertools::Itertools;
@@ -133,7 +148,9 @@ mod tests {
 
     use segment::types::StorageType;
 
-    use crate::operations::point_ops::{PointInsertOperations, PointOperations};
+    use crate::operations::point_ops::{
+        Batch, PointInsertOperations, PointOperations, PointsBatch,
+    };
     use crate::operations::FieldIndexOperations;
 
     use super::*;
@@ -155,6 +172,7 @@ mod tests {
 
         let payload_field = "number".to_owned();
 
+        let stopped = AtomicBool::new(false);
         let dim = 4;
 
         let segments_dir = TempDir::new("segments_dir").unwrap();
@@ -188,14 +206,18 @@ mod tests {
 
         let locked_holder = Arc::new(RwLock::new(holder));
 
+        let excluded_ids = Default::default();
+
         // ---- check condition for MMap optimization
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize =
+            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.is_empty());
 
         index_optimizer.thresholds_config.memmap_threshold = 150;
         index_optimizer.thresholds_config.indexing_threshold = 50;
 
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize =
+            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
 
         // ----- CREATE AN INDEXED FIELD ------
@@ -207,23 +229,26 @@ mod tests {
         .unwrap();
 
         // ------ Plain -> Mmap & Indexed payload
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize =
+            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
         eprintln!("suggested_to_optimize = {:#?}", suggested_to_optimize);
         index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize)
+            .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
             .unwrap();
         eprintln!("Done");
 
         // ------ Plain -> Indexed payload
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize =
+            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&middle_segment_id));
         index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize)
+            .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
             .unwrap();
 
         // ------- Keep smallest segment without changes
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize =
+            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.is_empty());
 
         assert_eq!(
@@ -279,15 +304,18 @@ mod tests {
             );
         }
 
-        let insert_point_ops = PointOperations::UpsertPoints(PointInsertOperations::BatchPoints {
-            ids: vec![501, 502, 503],
-            vectors: vec![
-                vec![1.0, 0.0, 0.5, 0.0],
-                vec![1.0, 0.0, 0.5, 0.5],
-                vec![1.0, 0.0, 0.5, 1.0],
-            ],
-            payloads: None,
-        });
+        let insert_point_ops =
+            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
+                batch: Batch {
+                    ids: vec![501.into(), 502.into(), 503.into()],
+                    vectors: vec![
+                        vec![1.0, 0.0, 0.5, 0.0],
+                        vec![1.0, 0.0, 0.5, 0.5],
+                        vec![1.0, 0.0, 0.5, 1.0],
+                    ],
+                    payloads: None,
+                },
+            }));
 
         let smallest_size = infos
             .iter()
@@ -323,10 +351,11 @@ mod tests {
 
         // Index even the smallest segment
         index_optimizer.thresholds_config.payload_indexing_threshold = 20;
-        let suggested_to_optimize = index_optimizer.check_condition(locked_holder.clone());
+        let suggested_to_optimize =
+            index_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert!(suggested_to_optimize.contains(&small_segment_id));
         index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize)
+            .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
             .unwrap();
 
         let new_infos2 = locked_holder
@@ -340,15 +369,18 @@ mod tests {
             "Check that new appendable segment was created"
         );
 
-        let insert_point_ops = PointOperations::UpsertPoints(PointInsertOperations::BatchPoints {
-            ids: vec![601, 602, 603],
-            vectors: vec![
-                vec![0.0, 1.0, 0.5, 0.0],
-                vec![0.0, 1.0, 0.5, 0.5],
-                vec![0.0, 1.0, 0.5, 1.0],
-            ],
-            payloads: None,
-        });
+        let insert_point_ops =
+            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
+                batch: Batch {
+                    ids: vec![601.into(), 602.into(), 603.into()],
+                    vectors: vec![
+                        vec![0.0, 1.0, 0.5, 0.0],
+                        vec![0.0, 1.0, 0.5, 0.5],
+                        vec![0.0, 1.0, 0.5, 1.0],
+                    ],
+                    payloads: None,
+                },
+            }));
 
         process_point_operation(
             locked_holder.deref(),

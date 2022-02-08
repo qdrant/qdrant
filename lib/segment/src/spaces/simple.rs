@@ -6,10 +6,13 @@ use crate::types::{Distance, ScoreType, VectorElementType};
 
 use super::metric::Metric;
 
+#[derive(Clone)]
 pub struct DotProductMetric {}
 
+#[derive(Clone)]
 pub struct CosineMetric {}
 
+#[derive(Clone)]
 pub struct EuclidMetric {}
 
 impl Metric for EuclidMetric {

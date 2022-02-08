@@ -73,10 +73,6 @@ impl From<ProxySegment> for LockedSegment {
     }
 }
 
-unsafe impl Sync for LockedSegment {}
-
-unsafe impl Send for LockedSegment {}
-
 #[derive(Default)]
 pub struct SegmentHolder {
     segments: HashMap<SegmentId, LockedSegment>,
@@ -145,6 +141,17 @@ impl<'s> SegmentHolder {
     }
 
     /// Replace old segments with a new one
+    ///
+    /// # Arguments
+    ///
+    /// * `segment` - segment to insert
+    /// * `remove_ids` - ids of segments to replace
+    /// * `drop_data` - if `true` - also drop data of removed segments
+    ///
+    /// # Result
+    ///
+    /// id of newly inserted segment
+    ///
     #[trace]
     pub fn swap<T>(
         &mut self,
@@ -468,11 +475,15 @@ mod tests {
 
         let mut processed_points: Vec<PointIdType> = vec![];
         holder
-            .apply_points_to_appendable(100, &[1, 2, 11, 12], |point_id, segment| {
-                processed_points.push(point_id);
-                assert!(segment.has_point(point_id));
-                Ok(true)
-            })
+            .apply_points_to_appendable(
+                100,
+                &[1.into(), 2.into(), 11.into(), 12.into()],
+                |point_id, segment| {
+                    processed_points.push(point_id);
+                    assert!(segment.has_point(point_id));
+                    Ok(true)
+                },
+            )
             .unwrap();
 
         assert_eq!(4, processed_points.len());
@@ -480,11 +491,11 @@ mod tests {
         let locked_segment_1 = holder.get(sid1).unwrap().get();
         let read_segment_1 = locked_segment_1.read();
 
-        assert!(read_segment_1.has_point(1));
-        assert!(read_segment_1.has_point(2));
+        assert!(read_segment_1.has_point(1.into()));
+        assert!(read_segment_1.has_point(2.into()));
 
         // Points moved on apply
-        assert!(read_segment_1.has_point(11));
-        assert!(read_segment_1.has_point(12));
+        assert!(read_segment_1.has_point(11.into()));
+        assert!(read_segment_1.has_point(12.into()));
     }
 }

@@ -171,7 +171,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{FieldCondition, HasIdCondition, PointOffsetType};
+    use crate::types::{FieldCondition, HasIdCondition};
     use std::collections::HashSet;
     use std::iter::FromIterator;
 
@@ -216,7 +216,7 @@ mod tests {
                     has_id
                         .has_id
                         .iter()
-                        .map(|&x| x as PointOffsetType)
+                        .map(|&x| format!("{}", x).parse().unwrap()) // hack to convert ID as "number"
                         .collect(),
                 )],
                 min: has_id.has_id.len(),
@@ -250,7 +250,7 @@ mod tests {
         assert_eq!(estimation.primary_clauses.len(), 1);
         match &estimation.primary_clauses[0] {
             PrimaryCondition::Condition(field) => assert_eq!(&field.key, "size"),
-            PrimaryCondition::Ids(_) => assert!(false),
+            PrimaryCondition::Ids(_) => panic!(),
         }
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);
@@ -318,7 +318,7 @@ mod tests {
             ]),
             must: None,
             must_not: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: HashSet::from_iter([1, 2, 3, 4, 5]),
+                has_id: HashSet::from_iter([1, 2, 3, 4, 5].into_iter().map(|x| x.into())),
             })]),
         };
 
@@ -352,7 +352,7 @@ mod tests {
                 }),
             ]),
             must_not: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: HashSet::from_iter([1, 2, 3, 4, 5]),
+                has_id: HashSet::from_iter([1, 2, 3, 4, 5].into_iter().map(|x| x.into())),
             })]),
         };
 
@@ -362,7 +362,7 @@ mod tests {
             PrimaryCondition::Condition(field) => {
                 assert!(vec!["price".to_owned(), "size".to_owned(),].contains(&field.key))
             }
-            PrimaryCondition::Ids(_) => assert!(false, "Should not go here"),
+            PrimaryCondition::Ids(_) => panic!("Should not go here"),
         });
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);

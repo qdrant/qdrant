@@ -1,12 +1,24 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetCollectionsRequest {}
+pub struct GetCollectionInfoRequest {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListCollectionsRequest {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionDescription {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetCollectionsResponse {
+pub struct GetCollectionInfoResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<CollectionInfo>,
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListCollectionsResponse {
     #[prost(message, repeated, tag = "1")]
     pub collections: ::prost::alloc::vec::Vec<CollectionDescription>,
     #[prost(double, tag = "2")]
@@ -35,16 +47,18 @@ pub struct OptimizersConfigDiff {
     #[prost(uint64, optional, tag = "2")]
     pub vacuum_min_vector_number: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "3")]
-    pub max_segment_number: ::core::option::Option<u64>,
+    pub default_segment_number: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "4")]
-    pub memmap_threshold: ::core::option::Option<u64>,
+    pub max_segment_size: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "5")]
-    pub indexing_threshold: ::core::option::Option<u64>,
+    pub memmap_threshold: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "6")]
-    pub payload_indexing_threshold: ::core::option::Option<u64>,
+    pub indexing_threshold: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "7")]
-    pub flush_interval_sec: ::core::option::Option<u64>,
+    pub payload_indexing_threshold: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "8")]
+    pub flush_interval_sec: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "9")]
     pub max_optimization_threads: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -76,12 +90,53 @@ pub struct DeleteCollection {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionOperationResponse {
-    #[prost(bool, optional, tag = "1")]
-    pub result: ::core::option::Option<bool>,
-    #[prost(string, optional, tag = "2")]
-    pub error: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(double, tag = "3")]
+    #[prost(bool, tag = "1")]
+    pub result: bool,
+    #[prost(double, tag = "2")]
     pub time: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionParams {
+    #[prost(uint64, tag = "1")]
+    pub vector_size: u64,
+    #[prost(enumeration = "Distance", tag = "2")]
+    pub distance: i32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionConfig {
+    #[prost(message, optional, tag = "1")]
+    pub params: ::core::option::Option<CollectionParams>,
+    #[prost(message, optional, tag = "2")]
+    pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
+    #[prost(message, optional, tag = "3")]
+    pub optimizer_config: ::core::option::Option<OptimizersConfigDiff>,
+    #[prost(message, optional, tag = "4")]
+    pub wal_config: ::core::option::Option<WalConfigDiff>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PayloadSchemaInfo {
+    #[prost(enumeration = "PayloadSchemaType", tag = "1")]
+    pub data_type: i32,
+    #[prost(bool, tag = "2")]
+    pub indexed: bool,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionInfo {
+    #[prost(enumeration = "CollectionStatus", tag = "1")]
+    pub status: i32,
+    #[prost(uint64, tag = "2")]
+    pub vectors_count: u64,
+    #[prost(uint64, tag = "3")]
+    pub segments_count: u64,
+    #[prost(uint64, tag = "4")]
+    pub disk_data_size: u64,
+    #[prost(uint64, tag = "5")]
+    pub ram_data_size: u64,
+    #[prost(message, optional, tag = "6")]
+    pub config: ::core::option::Option<CollectionConfig>,
+    #[prost(map = "string, message", tag = "7")]
+    pub payload_schema:
+        ::std::collections::HashMap<::prost::alloc::string::String, PayloadSchemaInfo>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -89,6 +144,21 @@ pub enum Distance {
     Cosine = 0,
     Euclid = 1,
     Dot = 2,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CollectionStatus {
+    Green = 0,
+    Yellow = 1,
+    Red = 2,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum PayloadSchemaType {
+    Keyword = 0,
+    Integer = 1,
+    Float = 2,
+    Geo = 3,
 }
 #[doc = r" Generated client implementations."]
 pub mod collections_client {
@@ -112,7 +182,7 @@ pub mod collections_client {
     impl<T> CollectionsClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::ResponseBody: Body + Send + Sync + 'static,
+        T::ResponseBody: Body + Send + 'static,
         T::Error: Into<StdError>,
         <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {
@@ -125,7 +195,7 @@ pub mod collections_client {
             interceptor: F,
         ) -> CollectionsClient<InterceptedService<T, F>>
         where
-            F: FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status>,
+            F: tonic::service::Interceptor,
             T: tonic::codegen::Service<
                 http::Request<tonic::body::BoxBody>,
                 Response = http::Response<
@@ -152,8 +222,8 @@ pub mod collections_client {
         }
         pub async fn get(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetCollectionsRequest>,
-        ) -> Result<tonic::Response<super::GetCollectionsResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::GetCollectionInfoRequest>,
+        ) -> Result<tonic::Response<super::GetCollectionInfoResponse>, tonic::Status> {
             self.inner.ready().await.map_err(|e| {
                 tonic::Status::new(
                     tonic::Code::Unknown,
@@ -162,6 +232,20 @@ pub mod collections_client {
             })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/Get");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn list(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListCollectionsRequest>,
+        ) -> Result<tonic::Response<super::ListCollectionsResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/List");
             self.inner.unary(request.into_request(), path, codec).await
         }
         pub async fn create(
@@ -217,8 +301,12 @@ pub mod collections_server {
     pub trait Collections: Send + Sync + 'static {
         async fn get(
             &self,
-            request: tonic::Request<super::GetCollectionsRequest>,
-        ) -> Result<tonic::Response<super::GetCollectionsResponse>, tonic::Status>;
+            request: tonic::Request<super::GetCollectionInfoRequest>,
+        ) -> Result<tonic::Response<super::GetCollectionInfoResponse>, tonic::Status>;
+        async fn list(
+            &self,
+            request: tonic::Request<super::ListCollectionsRequest>,
+        ) -> Result<tonic::Response<super::ListCollectionsResponse>, tonic::Status>;
         async fn create(
             &self,
             request: tonic::Request<super::CreateCollection>,
@@ -251,7 +339,7 @@ pub mod collections_server {
         }
         pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
-            F: FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status>,
+            F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
         }
@@ -259,7 +347,7 @@ pub mod collections_server {
     impl<T, B> tonic::codegen::Service<http::Request<B>> for CollectionsServer<T>
     where
         T: Collections,
-        B: Body + Send + Sync + 'static,
+        B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;
@@ -274,12 +362,14 @@ pub mod collections_server {
                 "/qdrant.Collections/Get" => {
                     #[allow(non_camel_case_types)]
                     struct GetSvc<T: Collections>(pub Arc<T>);
-                    impl<T: Collections> tonic::server::UnaryService<super::GetCollectionsRequest> for GetSvc<T> {
-                        type Response = super::GetCollectionsResponse;
+                    impl<T: Collections>
+                        tonic::server::UnaryService<super::GetCollectionInfoRequest> for GetSvc<T>
+                    {
+                        type Response = super::GetCollectionInfoResponse;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetCollectionsRequest>,
+                            request: tonic::Request<super::GetCollectionInfoRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
                             let fut = async move { (*inner).get(request).await };
@@ -292,6 +382,37 @@ pub mod collections_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Collections/List" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListSvc<T: Collections>(pub Arc<T>);
+                    impl<T: Collections> tonic::server::UnaryService<super::ListCollectionsRequest> for ListSvc<T> {
+                        type Response = super::ListCollectionsResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListCollectionsRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).list(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ListSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
                             accept_compression_encodings,
@@ -431,6 +552,165 @@ pub mod collections_server {
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateFieldIndexCollection {
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    #[prost(string, tag = "3")]
+    pub field_name: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteFieldIndexCollection {
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    #[prost(string, tag = "3")]
+    pub field_name: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeletePayloadPoints {
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    #[prost(string, repeated, tag = "3")]
+    pub keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(uint64, repeated, tag = "4")]
+    pub points: ::prost::alloc::vec::Vec<u64>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SetPayloadPoints {
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    #[prost(map = "string, message", tag = "3")]
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Payload>,
+    #[prost(uint64, repeated, tag = "4")]
+    pub points: ::prost::alloc::vec::Vec<u64>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClearPayloadPoints {
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    #[prost(message, optional, tag = "3")]
+    pub points: ::core::option::Option<PointsSelector>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeletePoints {
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    #[prost(message, optional, tag = "3")]
+    pub points: ::core::option::Option<PointsSelector>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PointsSelector {
+    #[prost(oneof = "points_selector::PointsSelectorOneOf", tags = "1, 2")]
+    pub points_selector_one_of: ::core::option::Option<points_selector::PointsSelectorOneOf>,
+}
+/// Nested message and enum types in `PointsSelector`.
+pub mod points_selector {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum PointsSelectorOneOf {
+        #[prost(message, tag = "1")]
+        Ids(super::PointsIdsList),
+        #[prost(message, tag = "2")]
+        FilterSelector(super::FilterSelector),
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PointsIdsList {
+    #[prost(uint64, repeated, tag = "1")]
+    pub ids: ::prost::alloc::vec::Vec<u64>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FilterSelector {
+    #[prost(message, optional, tag = "1")]
+    pub filter: ::core::option::Option<Filter>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Filter {
+    #[prost(message, repeated, tag = "1")]
+    pub should: ::prost::alloc::vec::Vec<Condition>,
+    #[prost(message, repeated, tag = "2")]
+    pub must: ::prost::alloc::vec::Vec<Condition>,
+    #[prost(message, repeated, tag = "3")]
+    pub must_not: ::prost::alloc::vec::Vec<Condition>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Condition {
+    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3")]
+    pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
+}
+/// Nested message and enum types in `Condition`.
+pub mod condition {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum ConditionOneOf {
+        #[prost(message, tag = "1")]
+        Field(super::FieldCondition),
+        #[prost(message, tag = "2")]
+        HasId(super::HasIdCondition),
+        #[prost(message, tag = "3")]
+        Filter(super::Filter),
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FieldCondition {
+    #[prost(message, optional, tag = "1")]
+    pub key: ::core::option::Option<KeywordPayloadRequest>,
+    #[prost(message, optional, tag = "2")]
+    pub r#match: ::core::option::Option<Match>,
+    #[prost(message, optional, tag = "3")]
+    pub range: ::core::option::Option<Range>,
+    #[prost(message, optional, tag = "4")]
+    pub geo_bounding_box: ::core::option::Option<GeoBoundingBox>,
+    #[prost(message, optional, tag = "5")]
+    pub geo_radius: ::core::option::Option<GeoRadius>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GeoBoundingBox {
+    #[prost(message, optional, tag = "1")]
+    pub top_left: ::core::option::Option<GeoPoint>,
+    #[prost(message, optional, tag = "2")]
+    pub bottom_right: ::core::option::Option<GeoPoint>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GeoRadius {
+    #[prost(message, optional, tag = "1")]
+    pub center: ::core::option::Option<GeoPoint>,
+    #[prost(float, tag = "2")]
+    pub radius: f32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HasIdCondition {
+    #[prost(uint64, repeated, tag = "1")]
+    pub has_id: ::prost::alloc::vec::Vec<u64>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Range {
+    #[prost(message, optional, tag = "1")]
+    pub lt: ::core::option::Option<FloatPayloadRequest>,
+    #[prost(message, optional, tag = "2")]
+    pub gt: ::core::option::Option<FloatPayloadRequest>,
+    #[prost(message, optional, tag = "3")]
+    pub gte: ::core::option::Option<FloatPayloadRequest>,
+    #[prost(message, optional, tag = "4")]
+    pub lte: ::core::option::Option<FloatPayloadRequest>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Match {
+    #[prost(string, optional, tag = "1")]
+    pub keyword: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "2")]
+    pub integer: ::core::option::Option<IntegerPayloadRequest>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpsertPoints {
     #[prost(string, tag = "1")]
     pub collection: ::prost::alloc::string::String,
@@ -449,15 +729,38 @@ pub struct PointStruct {
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Payload>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct KeywordPayloadRequest {
+    #[prost(string, tag = "1")]
+    pub value: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntegerPayloadRequest {
+    #[prost(int64, tag = "1")]
+    pub value: i64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FloatPayloadRequest {
+    #[prost(double, tag = "1")]
+    pub value: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Payload {
-    #[prost(message, optional, tag = "1")]
-    pub keyword: ::core::option::Option<KeywordPayload>,
-    #[prost(message, optional, tag = "2")]
-    pub integer: ::core::option::Option<IntegerPayload>,
-    #[prost(message, optional, tag = "3")]
-    pub float: ::core::option::Option<FloatPayload>,
-    #[prost(message, optional, tag = "4")]
-    pub geo: ::core::option::Option<GeoPayload>,
+    #[prost(oneof = "payload::PayloadOneOf", tags = "1, 2, 3, 4")]
+    pub payload_one_of: ::core::option::Option<payload::PayloadOneOf>,
+}
+/// Nested message and enum types in `Payload`.
+pub mod payload {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum PayloadOneOf {
+        #[prost(message, tag = "1")]
+        Keyword(super::KeywordPayload),
+        #[prost(message, tag = "2")]
+        Integer(super::IntegerPayload),
+        #[prost(message, tag = "3")]
+        Float(super::FloatPayload),
+        #[prost(message, tag = "4")]
+        Geo(super::GeoPayload),
+    }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct KeywordPayload {
@@ -490,9 +793,7 @@ pub struct GeoPoint {
 pub struct PointsOperationResponse {
     #[prost(message, optional, tag = "1")]
     pub result: ::core::option::Option<UpdateResult>,
-    #[prost(string, optional, tag = "2")]
-    pub error: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(double, tag = "3")]
+    #[prost(double, tag = "2")]
     pub time: f64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -530,7 +831,7 @@ pub mod points_client {
     impl<T> PointsClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::ResponseBody: Body + Send + Sync + 'static,
+        T::ResponseBody: Body + Send + 'static,
         T::Error: Into<StdError>,
         <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {
@@ -543,7 +844,7 @@ pub mod points_client {
             interceptor: F,
         ) -> PointsClient<InterceptedService<T, F>>
         where
-            F: FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status>,
+            F: tonic::service::Interceptor,
             T: tonic::codegen::Service<
                 http::Request<tonic::body::BoxBody>,
                 Response = http::Response<
@@ -582,6 +883,90 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Upsert");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn delete(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeletePoints>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Delete");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn set_payload(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SetPayloadPoints>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/SetPayload");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn delete_payload(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeletePayloadPoints>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/DeletePayload");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn clear_payload(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ClearPayloadPoints>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/ClearPayload");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn create_field_index(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateFieldIndexCollection>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/CreateFieldIndex");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn delete_field_index(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteFieldIndexCollection>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/DeleteFieldIndex");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 #[doc = r" Generated server implementations."]
@@ -594,6 +979,30 @@ pub mod points_server {
         async fn upsert(
             &self,
             request: tonic::Request<super::UpsertPoints>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn delete(
+            &self,
+            request: tonic::Request<super::DeletePoints>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn set_payload(
+            &self,
+            request: tonic::Request<super::SetPayloadPoints>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn delete_payload(
+            &self,
+            request: tonic::Request<super::DeletePayloadPoints>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn clear_payload(
+            &self,
+            request: tonic::Request<super::ClearPayloadPoints>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn create_field_index(
+            &self,
+            request: tonic::Request<super::CreateFieldIndexCollection>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn delete_field_index(
+            &self,
+            request: tonic::Request<super::DeleteFieldIndexCollection>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
     }
     #[derive(Debug)]
@@ -615,7 +1024,7 @@ pub mod points_server {
         }
         pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
-            F: FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status>,
+            F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
         }
@@ -623,7 +1032,7 @@ pub mod points_server {
     impl<T, B> tonic::codegen::Service<http::Request<B>> for PointsServer<T>
     where
         T: Points,
-        B: Body + Send + Sync + 'static,
+        B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;
@@ -656,6 +1065,196 @@ pub mod points_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = UpsertSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/Delete" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::DeletePoints> for DeleteSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeletePoints>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).delete(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/SetPayload" => {
+                    #[allow(non_camel_case_types)]
+                    struct SetPayloadSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::SetPayloadPoints> for SetPayloadSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SetPayloadPoints>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).set_payload(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = SetPayloadSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/DeletePayload" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeletePayloadSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::DeletePayloadPoints> for DeletePayloadSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeletePayloadPoints>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).delete_payload(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeletePayloadSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/ClearPayload" => {
+                    #[allow(non_camel_case_types)]
+                    struct ClearPayloadSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::ClearPayloadPoints> for ClearPayloadSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ClearPayloadPoints>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).clear_payload(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ClearPayloadSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/CreateFieldIndex" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateFieldIndexSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::CreateFieldIndexCollection>
+                        for CreateFieldIndexSvc<T>
+                    {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CreateFieldIndexCollection>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).create_field_index(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CreateFieldIndexSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/DeleteFieldIndex" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteFieldIndexSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::DeleteFieldIndexCollection>
+                        for DeleteFieldIndexSvc<T>
+                    {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteFieldIndexCollection>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).delete_field_index(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteFieldIndexSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
                             accept_compression_encodings,
@@ -732,7 +1331,7 @@ pub mod qdrant_client {
     impl<T> QdrantClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::ResponseBody: Body + Send + Sync + 'static,
+        T::ResponseBody: Body + Send + 'static,
         T::Error: Into<StdError>,
         <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {
@@ -745,7 +1344,7 @@ pub mod qdrant_client {
             interceptor: F,
         ) -> QdrantClient<InterceptedService<T, F>>
         where
-            F: FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status>,
+            F: tonic::service::Interceptor,
             T: tonic::codegen::Service<
                 http::Request<tonic::body::BoxBody>,
                 Response = http::Response<
@@ -817,7 +1416,7 @@ pub mod qdrant_server {
         }
         pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
-            F: FnMut(tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status>,
+            F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
         }
@@ -825,7 +1424,7 @@ pub mod qdrant_server {
     impl<T, B> tonic::codegen::Service<http::Request<B>> for QdrantServer<T>
     where
         T: Qdrant,
-        B: Body + Send + Sync + 'static,
+        B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;
