@@ -1,4 +1,4 @@
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use parking_lot::RwLock;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::{PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PayloadType, TheMap};
@@ -21,23 +21,22 @@ impl SchemaStorage {
         key: PayloadKeyTypeRef,
         value: &PayloadType,
     ) -> OperationResult<()> {
-        let schema = self.schema.upgradable_read();
-        return match schema.get(key) {
+        let schema_read = self.schema.read();
+        return match schema_read.get(key) {
             None => {
-                let mut schema = RwLockUpgradableReadGuard::upgrade(schema);
-                schema.insert(key.to_owned(), value.into());
-                Ok(())
-            }
-            Some(schema_type) => {
-                if schema_type == &value.into() {
-                    Ok(())
-                } else {
-                    Err(OperationError::TypeError {
-                        field_name: key.to_owned(),
-                        expected_type: format!("{:?}", schema_type),
-                    })
+                drop(schema_read);
+                let mut schema_write = self.schema.write();
+                match schema_write.get(key) {
+                    None => {
+                        schema_write.insert(key.to_owned(), value.into());
+                        Ok(())
+                    }
+                    Some(schema_type) => {
+                        SchemaStorage::check_schema_type(key, value, schema_type)
+                    }
                 }
             }
+            Some(schema_type) => SchemaStorage::check_schema_type(key, value, schema_type),
         };
     }
 
@@ -48,6 +47,21 @@ impl SchemaStorage {
 
     pub fn as_map(&self) -> TheMap<PayloadKeyType, PayloadSchemaType> {
         self.schema.read().clone()
+    }
+
+    fn check_schema_type(
+        key: PayloadKeyTypeRef,
+        value: &PayloadType,
+        schema_type: &PayloadSchemaType,
+    ) -> OperationResult<()> {
+        if schema_type == &value.into() {
+            Ok(())
+        } else {
+            Err(OperationError::TypeError {
+                field_name: key.to_owned(),
+                expected_type: format!("{:?}", schema_type),
+            })
+        }
     }
 }
 
