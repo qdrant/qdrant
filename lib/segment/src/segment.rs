@@ -620,6 +620,7 @@ impl SegmentEntry for Segment {
 mod tests {
     use super::*;
     use crate::entry::entry_point::SegmentEntry;
+    use crate::payload_storage::schema_storage::SchemaStorage;
     use crate::segment_constructor::build_segment;
     use crate::types::{Distance, Indexes, PayloadIndexType, SegmentConfig, StorageType};
     use tempdir::TempDir;
@@ -645,7 +646,8 @@ mod tests {
             distance: Distance::Dot,
         };
 
-        let mut segment = build_segment(dir.path(), &config).unwrap();
+        let mut segment =
+            build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
         segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
 
         let result1 = segment.set_full_payload_with_json(0, 0.into(), &data1.to_string());
@@ -677,7 +679,8 @@ mod tests {
             distance: Distance::Dot,
         };
 
-        let mut segment = build_segment(dir.path(), &config).unwrap();
+        let mut segment =
+            build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
         segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
         segment
             .set_full_payload_with_json(0, 0.into(), &data.to_string())

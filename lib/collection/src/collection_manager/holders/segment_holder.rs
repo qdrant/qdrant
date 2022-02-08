@@ -385,6 +385,7 @@ mod tests {
     use crate::collection_manager::fixtures::{build_segment_1, build_segment_2};
 
     use super::*;
+    use segment::payload_storage::schema_storage::SchemaStorage;
     use std::{thread, time};
 
     #[test]
@@ -400,7 +401,9 @@ mod tests {
 
         assert_ne!(sid1, sid2);
 
-        let segment3 = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+        let segment3 =
+            build_simple_segment(dir.path(), 4, Distance::Dot, Arc::new(SchemaStorage::new()))
+                .unwrap();
 
         let _sid3 = holder.swap(segment3, &[sid1, sid2], true).unwrap();
     }

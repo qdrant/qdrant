@@ -8,6 +8,7 @@ mod tests {
     use segment::index::hnsw_index::hnsw::HNSWIndex;
     use segment::index::struct_payload_index::StructPayloadIndex;
     use segment::index::{PayloadIndex, VectorIndex};
+    use segment::payload_storage::schema_storage::SchemaStorage;
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, PayloadIndexType,
@@ -47,7 +48,8 @@ mod tests {
 
         let int_key = "int".to_string();
 
-        let mut segment = build_segment(dir.path(), &config).unwrap();
+        let mut segment =
+            build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
         for n in 0..num_vectors {
             let idx = n.into();
             let vector = random_vector(&mut rnd, dim);

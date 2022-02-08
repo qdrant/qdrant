@@ -1,3 +1,10 @@
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use segment::payload_storage::schema_storage::SchemaStorage;
+use segment::types::{HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType};
+
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
@@ -5,9 +12,6 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
-use segment::types::{HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType};
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
 
 /// Looks for the segments, which require to be indexed.
 /// If segment is too large, but still does not have indexes - it is time to create some indexes.
@@ -19,6 +23,7 @@ pub struct IndexingOptimizer {
     collection_temp_dir: PathBuf,
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
+    schema_store: Arc<SchemaStorage>,
 }
 
 impl IndexingOptimizer {
@@ -28,6 +33,7 @@ impl IndexingOptimizer {
         collection_temp_dir: PathBuf,
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
+        schema_store: Arc<SchemaStorage>,
     ) -> Self {
         IndexingOptimizer {
             thresholds_config,
@@ -35,6 +41,7 @@ impl IndexingOptimizer {
             collection_temp_dir,
             collection_params,
             hnsw_config,
+            schema_store,
         }
     }
 
@@ -130,6 +137,10 @@ impl SegmentOptimizer for IndexingOptimizer {
             Some((segment_id, _segment)) => vec![segment_id],
         }
     }
+
+    fn schema_store(&self) -> Arc<SchemaStorage> {
+        self.schema_store.clone()
+    }
 }
 
 #[cfg(test)]
@@ -144,17 +155,17 @@ mod tests {
 
     use segment::types::StorageType;
 
+    use crate::collection_manager::fixtures::random_segment;
+    use crate::collection_manager::holders::segment_holder::SegmentHolder;
+    use crate::collection_manager::segments_updater::{
+        process_field_index_operation, process_point_operation,
+    };
     use crate::operations::point_ops::{
         Batch, PointInsertOperations, PointOperations, PointsBatch,
     };
     use crate::operations::FieldIndexOperations;
 
     use super::*;
-    use crate::collection_manager::fixtures::random_segment;
-    use crate::collection_manager::holders::segment_holder::SegmentHolder;
-    use crate::collection_manager::segments_updater::{
-        process_field_index_operation, process_point_operation,
-    };
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -198,6 +209,7 @@ mod tests {
                 distance: segment_config.distance,
             },
             Default::default(),
+            Arc::new(SchemaStorage::new()),
         );
 
         let locked_holder = Arc::new(RwLock::new(holder));

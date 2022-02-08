@@ -247,3 +247,65 @@ curl -L -X PUT "http://$QDRANT_HOST/collections/test_collection/points?wait=true
 curl -L -X GET "http://$QDRANT_HOST/collections/test_collection/points/1d675313-d3dd-4646-8b98-8052364872da" \
   -H 'Content-Type: application/json' \
   --fail -s | jq
+
+# #101 payload consistency enforcement
+
+curl --request POST \
+  --url "http://$QDRANT_HOST/collections?wait=true" \
+  --header 'Content-Type: application/json' \
+  --fail -s \
+  --data '{
+	"create_collection": {
+		"name": "example_collection_2",
+		"distance": "Cosine",
+		"vector_size": 3
+	}
+}'
+
+curl --request POST \
+  --url "http://$QDRANT_HOST/collections/example_collection_2?wait=true" \
+  --header 'Content-Type: application/json' \
+  --fail -s \
+  --data '{
+	"upsert_points": {
+		"points": [
+			{
+				"id": 1,
+				"payload": {
+					"price": 11.8
+				},
+				"vector": [
+					0.9,
+					0.1,
+					0.1
+				]
+			}
+		]
+	}
+}'
+
+ERROR=$( curl --request POST \
+  --url "http://$QDRANT_HOST/collections/example_collection_2?wait=true" \
+  --header 'Content-Type: application/json' \
+  --data '{
+	"upsert_points": {
+		"points": [
+			{
+				"id": 2,
+				"payload": {
+					"price": "cheap"
+				},
+				"vector": [
+					0.9,
+					0.1,
+					0.1
+				]
+			}
+		]
+	}
+}' | jq -r '.status.error' )
+
+[[ "$ERROR" == "Wrong input: Payload type does not match with previously given for field price. Expected: Float" ]] || {
+  echo 'check failed - error message expected'
+  exit 1
+}

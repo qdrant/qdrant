@@ -1,11 +1,13 @@
 #[cfg(test)]
 mod tests {
     use segment::entry::entry_point::SegmentEntry;
+    use segment::payload_storage::schema_storage::SchemaStorage;
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Distance, Indexes, PayloadIndexType, PayloadKeyType, PayloadType, SegmentConfig,
         StorageType,
     };
+    use std::sync::Arc;
     use tempdir::TempDir;
 
     #[test]
@@ -42,7 +44,8 @@ mod tests {
             distance: Distance::Dot,
         };
 
-        let mut segment = build_segment(dir.path(), &config).unwrap();
+        let mut segment =
+            build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
         segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
         segment
             .set_full_payload_with_json(0, 0.into(), &data.to_string())

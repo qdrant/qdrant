@@ -29,6 +29,7 @@ use crate::operations::CollectionUpdateOperations;
 use crate::update_handler::{OperationData, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 use futures::executor::block_on;
+use segment::payload_storage::schema_storage::SchemaStorage;
 
 /// Collection
 ///
@@ -41,10 +42,12 @@ pub struct Collection {
     runtime_handle: Option<Runtime>,
     update_sender: UnboundedSender<UpdateSignal>,
     path: PathBuf,
+    schema_store: Arc<SchemaStorage>,
 }
 
 /// Collection holds information about segments and WAL.
 impl Collection {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         segments: Arc<RwLock<SegmentHolder>>,
         config: CollectionConfig,
@@ -53,6 +56,7 @@ impl Collection {
         runtime_handle: Runtime,
         update_sender: UnboundedSender<UpdateSignal>,
         path: PathBuf,
+        schema_store: Arc<SchemaStorage>,
     ) -> Self {
         Self {
             segments,
@@ -62,6 +66,7 @@ impl Collection {
             runtime_handle: Some(runtime_handle),
             update_sender,
             path,
+            schema_store,
         }
     }
 
@@ -350,6 +355,7 @@ impl Collection {
             &config.params,
             &config.optimizer_config,
             &config.hnsw_config,
+            self.schema_store.clone(),
         );
         update_handler.optimizers = new_optimizers;
         update_handler.flush_timeout_sec = config.optimizer_config.flush_interval_sec;

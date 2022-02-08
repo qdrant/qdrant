@@ -141,6 +141,7 @@ mod tests {
     use super::*;
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTracker;
+    use crate::payload_storage::schema_storage::SchemaStorage;
     use crate::payload_storage::PayloadStorage;
     use crate::types::GeoPoint;
     use crate::types::{FieldCondition, GeoBoundingBox, Match, PayloadType, Range};
@@ -173,7 +174,8 @@ mod tests {
         .cloned()
         .collect();
 
-        let mut payload_storage = SimplePayloadStorage::open(dir.path()).unwrap();
+        let mut payload_storage =
+            SimplePayloadStorage::open(dir.path(), Arc::new(SchemaStorage::new())).unwrap();
         let mut id_tracker = SimpleIdTracker::open(dir_id_tracker.path()).unwrap();
 
         id_tracker.set_link(0.into(), 0).unwrap();
