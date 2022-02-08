@@ -36,7 +36,7 @@ config = "~0.11.0"
 
 tokio = { version = "~1.16", features = ["full"] }
 
-actix-web = { version = "4.0.0-rc.2", optional = true }
+actix-web = { version = "4.0.0-rc.3", optional = true }
 tonic =  { version = "0.6.2", optional = true }
 num-traits = { version = "0.2.14", optional = true }
 prost = { version = "0.9", optional = true }
