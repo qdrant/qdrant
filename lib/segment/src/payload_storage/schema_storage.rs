@@ -1,4 +1,4 @@
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::{PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PayloadType, TheMap};
@@ -21,9 +21,10 @@ impl SchemaStorage {
         key: PayloadKeyTypeRef,
         value: &PayloadType,
     ) -> OperationResult<()> {
-        let mut schema = self.schema.write();
+        let schema = self.schema.upgradable_read();
         return match schema.get(key) {
             None => {
+                let mut schema = RwLockUpgradableReadGuard::upgrade(schema);
                 schema.insert(key.to_owned(), value.into());
                 Ok(())
             }
