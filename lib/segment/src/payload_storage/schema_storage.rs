@@ -31,9 +31,7 @@ impl SchemaStorage {
                         schema_write.insert(key.to_owned(), value.into());
                         Ok(())
                     }
-                    Some(schema_type) => {
-                        SchemaStorage::check_schema_type(key, value, schema_type)
-                    }
+                    Some(schema_type) => SchemaStorage::check_schema_type(key, value, schema_type),
                 }
             }
             Some(schema_type) => SchemaStorage::check_schema_type(key, value, schema_type),
