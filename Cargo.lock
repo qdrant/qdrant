@@ -29,7 +29,7 @@ dependencies = [
  "actix-rt",
  "actix-service",
  "actix-utils",
- "ahash 0.7.4",
+ "ahash",
  "base64",
  "bitflags",
  "brotli",
@@ -144,7 +144,7 @@ dependencies = [
  "actix-service",
  "actix-utils",
  "actix-web-codegen",
- "ahash 0.7.4",
+ "ahash",
  "bytes",
  "cfg-if",
  "cookie",
@@ -194,17 +194,6 @@ name = "adler"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f26201604c87b1e01bd3d98f8d5d9a8fcbb815e8cedb41ffccbeb4bf593a35fe"
-
-[[package]]
-name = "ahash"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "796540673305a66d127804eef19ad696f1f204b8c1025aaca4958c17eab32877"
-dependencies = [
- "getrandom",
- "once_cell",
- "version_check",
-]
 
 [[package]]
 name = "ahash"
@@ -594,6 +583,7 @@ dependencies = [
  "num_cpus",
  "ordered-float",
  "parking_lot 0.12.0",
+ "profiler_proc_macro",
  "rand 0.8.4",
  "rmp-serde",
  "schemars",
@@ -1380,7 +1370,7 @@ version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fe3ba15e9cce341de198353aebd07d8009d211fb5556920bd4bdd3bb79fafd7"
 dependencies = [
- "ahash 0.7.4",
+ "ahash",
  "atty",
  "indexmap",
  "itoa 0.4.7",
@@ -2200,6 +2190,7 @@ dependencies = [
  "num-traits 0.2.14",
  "num_cpus",
  "parking_lot 0.12.0",
+ "profiler_proc_macro",
  "prost",
  "rand 0.8.4",
  "schemars",
@@ -2585,6 +2576,7 @@ dependencies = [
  "ordered-float",
  "parking_lot 0.12.0",
  "pprof",
+ "profiler_proc_macro",
  "rand 0.8.4",
  "rmp-serde",
  "rocksdb",
@@ -2783,6 +2775,7 @@ dependencies = [
  "collection",
  "itertools",
  "num_cpus",
+ "profiler_proc_macro",
  "rand 0.8.4",
  "schemars",
  "segment",
