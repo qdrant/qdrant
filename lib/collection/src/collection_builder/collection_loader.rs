@@ -1,6 +1,8 @@
 use futures::executor::block_on;
+use segment::payload_storage::schema_storage::SchemaStorage;
 use std::fs::{read_dir, remove_dir_all};
 use std::path::Path;
+use std::sync::Arc;
 
 use segment::segment_constructor::load_segment;
 
@@ -31,6 +33,8 @@ pub fn load_collection(collection_path: &Path) -> Collection {
     )
     .expect("Can't read WAL");
 
+    let schema_storage = Arc::new(SchemaStorage::new());
+
     let segment_dirs = read_dir(&segments_path).unwrap_or_else(|err| {
         panic!(
             "Can't read segments directory due to {}\nat {}",
@@ -50,7 +54,7 @@ pub fn load_collection(collection_path: &Path) -> Collection {
             });
             continue;
         }
-        let segment = match load_segment(&segments_path) {
+        let segment = match load_segment(&segments_path, schema_storage.clone()) {
             Ok(x) => x,
             Err(err) => panic!(
                 "Can't load segments from {}, error: {}",
@@ -66,6 +70,7 @@ pub fn load_collection(collection_path: &Path) -> Collection {
         &collection_config.params,
         &collection_config.optimizer_config,
         &collection_config.hnsw_config,
+        schema_storage.clone(),
     );
 
     let collection = construct_collection(
@@ -74,6 +79,7 @@ pub fn load_collection(collection_path: &Path) -> Collection {
         wal,
         optimizers,
         collection_path,
+        schema_storage,
     );
 
     block_on(collection.load_from_wal());

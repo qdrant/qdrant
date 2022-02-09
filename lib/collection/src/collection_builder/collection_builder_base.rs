@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use num_cpus;
 use parking_lot::RwLock;
+use segment::payload_storage::schema_storage::SchemaStorage;
 use tokio::runtime;
 use tokio::sync::{mpsc, Mutex};
 
@@ -28,6 +29,7 @@ pub fn construct_collection(
     wal: SerdeWal<CollectionUpdateOperations>,
     optimizers: Arc<Vec<Arc<Optimizer>>>,
     collection_path: &Path,
+    schema_store: Arc<SchemaStorage>,
 ) -> Collection {
     let segment_holder = Arc::new(RwLock::new(segment_holder));
 
@@ -68,6 +70,7 @@ pub fn construct_collection(
         optimize_runtime,
         tx,
         collection_path.to_owned(),
+        schema_store,
     )
 }
 
@@ -93,11 +96,14 @@ pub fn build_collection(
 
     let mut segment_holder = SegmentHolder::default();
 
+    let schema_storage = Arc::new(SchemaStorage::new());
+
     for _sid in 0..optimizers_config.default_segment_number {
         let segment = build_simple_segment(
             &segments_path,
             collection_params.vector_size,
             collection_params.distance,
+            schema_storage.clone(),
         )?;
         segment_holder.add(segment);
     }
@@ -119,6 +125,7 @@ pub fn build_collection(
         collection_params,
         optimizers_config,
         &collection_config.hnsw_config,
+        schema_storage.clone(),
     );
 
     let collection = construct_collection(
@@ -127,6 +134,7 @@ pub fn build_collection(
         wal,
         optimizers,
         collection_path,
+        schema_storage,
     );
 
     Ok(collection)

@@ -3,10 +3,12 @@ use crate::types::{
 };
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
 use rocksdb::{IteratorMode, Options, DB};
 
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::entry::entry_point::OperationResult;
+use crate::payload_storage::schema_storage::SchemaStorage;
 use crate::payload_storage::PayloadStorage;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
@@ -17,12 +19,12 @@ const DB_NAME: &str = "payload";
 /// Persists all changes to disk using `store`, but only uses this storage during the initial load
 pub struct SimplePayloadStorage {
     payload: HashMap<PointOffsetType, TheMap<PayloadKeyType, PayloadType>>,
-    schema: TheMap<PayloadKeyType, PayloadSchemaType>,
     store: DB,
+    schema_store: Arc<SchemaStorage>,
 }
 
 impl SimplePayloadStorage {
-    pub fn open(path: &Path) -> OperationResult<Self> {
+    pub fn open(path: &Path, schema_store: Arc<SchemaStorage>) -> OperationResult<Self> {
         let mut options: Options = Options::default();
         options.set_write_buffer_size(DB_CACHE_SIZE);
         options.create_if_missing(true);
@@ -31,53 +33,29 @@ impl SimplePayloadStorage {
 
         let mut payload_map: HashMap<PointOffsetType, TheMap<PayloadKeyType, PayloadType>> =
             Default::default();
-        let mut schema: TheMap<PayloadKeyType, PayloadSchemaType> = Default::default();
 
         let cf_handle = store.cf_handle(DB_NAME).unwrap();
         for (key, val) in store.iterator_cf(cf_handle, IteratorMode::Start) {
             let point_id: PointOffsetType = serde_cbor::from_slice(&key).unwrap();
             let payload: TheMap<PayloadKeyType, PayloadType> =
                 serde_cbor::from_slice(&val).unwrap();
-            SimplePayloadStorage::update_schema(&mut schema, &payload).unwrap();
+            SimplePayloadStorage::update_schema(schema_store.clone(), &payload).unwrap();
             payload_map.insert(point_id, payload);
         }
 
         Ok(SimplePayloadStorage {
             payload: payload_map,
-            schema,
             store,
+            schema_store,
         })
     }
 
-    fn update_schema_value(
-        schema: &mut TheMap<PayloadKeyType, PayloadSchemaType>,
-        key: PayloadKeyTypeRef,
-        value: &PayloadType,
-    ) -> OperationResult<()> {
-        return match schema.get(key) {
-            None => {
-                schema.insert(key.to_owned(), value.into());
-                Ok(())
-            }
-            Some(schema_type) => {
-                if schema_type == &value.into() {
-                    Ok(())
-                } else {
-                    Err(OperationError::TypeError {
-                        field_name: key.to_owned(),
-                        expected_type: format!("{:?}", schema_type),
-                    })
-                }
-            }
-        };
-    }
-
     fn update_schema(
-        schema: &mut TheMap<PayloadKeyType, PayloadSchemaType>,
+        schema: Arc<SchemaStorage>,
         payload: &TheMap<PayloadKeyType, PayloadType>,
     ) -> OperationResult<()> {
         for (key, value) in payload.iter() {
-            SimplePayloadStorage::update_schema_value(schema, key, value)?;
+            schema.update_schema_value(key, value)?;
         }
         Ok(())
     }
@@ -112,7 +90,8 @@ impl PayloadStorage for SimplePayloadStorage {
         key: PayloadKeyTypeRef,
         payload: PayloadType,
     ) -> OperationResult<()> {
-        SimplePayloadStorage::update_schema_value(&mut self.schema, key, &payload)?;
+        self.schema_store.update_schema_value(key, &payload)?;
+
         if let Some(point_payload) = self.payload.get_mut(&point_id) {
             point_payload.insert(key.to_owned(), payload);
         } else {
@@ -120,7 +99,9 @@ impl PayloadStorage for SimplePayloadStorage {
             new_payload.insert(key.to_owned(), payload);
             self.payload.insert(point_id, new_payload);
         }
+
         self.update_storage(&point_id)?;
+
         Ok(())
     }
 
@@ -158,7 +139,6 @@ impl PayloadStorage for SimplePayloadStorage {
         options.set_write_buffer_size(DB_CACHE_SIZE);
         options.create_if_missing(true);
         self.store.create_cf(DB_NAME, &options)?;
-        self.schema = TheMap::new();
         Ok(())
     }
 
@@ -168,7 +148,7 @@ impl PayloadStorage for SimplePayloadStorage {
     }
 
     fn schema(&self) -> TheMap<PayloadKeyType, PayloadSchemaType> {
-        self.schema.clone()
+        self.schema_store.as_map()
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
@@ -185,7 +165,8 @@ mod tests {
     #[test]
     fn test_wipe() {
         let dir = TempDir::new("storage_dir").unwrap();
-        let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
+        let mut storage =
+            SimplePayloadStorage::open(dir.path(), Arc::new(SchemaStorage::new())).unwrap();
         let payload = PayloadType::Integer(vec![1, 2, 3]);
         let key = "key".to_owned();
         storage.assign(100, &key, payload.clone()).unwrap();
@@ -224,7 +205,8 @@ mod tests {
 
         let v = serde_json::from_str(data).unwrap();
         let dir = TempDir::new("storage_dir").unwrap();
-        let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
+        let mut storage =
+            SimplePayloadStorage::open(dir.path(), Arc::new(SchemaStorage::new())).unwrap();
         storage.assign_all_with_value(100, v).unwrap();
         let pload = storage.payload(100);
         let keys: Vec<_> = pload.keys().cloned().collect();
@@ -358,7 +340,8 @@ mod tests {
 
         let v = serde_json::from_str(data).unwrap();
         let dir = TempDir::new("storage_dir").unwrap();
-        let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
+        let mut storage =
+            SimplePayloadStorage::open(dir.path(), Arc::new(SchemaStorage::new())).unwrap();
         storage.assign_all_with_value(100, v).unwrap();
     }
 }

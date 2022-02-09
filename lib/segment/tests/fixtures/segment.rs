@@ -1,11 +1,13 @@
 use segment::entry::entry_point::SegmentEntry;
+use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{Distance, PayloadType};
 use std::path::Path;
+use std::sync::Arc;
 
 pub fn empty_segment(path: &Path) -> Segment {
-    build_simple_segment(path, 4, Distance::Dot).unwrap()
+    build_simple_segment(path, 4, Distance::Dot, Arc::new(SchemaStorage::new())).unwrap()
 }
 
 #[allow(dead_code)]

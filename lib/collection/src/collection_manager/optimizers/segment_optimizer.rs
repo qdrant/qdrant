@@ -1,22 +1,26 @@
-use crate::collection_manager::holders::proxy_segment::ProxySegment;
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentId,
-};
-use crate::config::CollectionParams;
-use crate::operations::types::{CollectionError, CollectionResult};
+use std::collections::HashSet;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use itertools::Itertools;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+
 use segment::entry::entry_point::SegmentEntry;
+use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
     HnswConfig, Indexes, PayloadIndexType, PayloadKeyType, PointIdType, SegmentConfig, StorageType,
 };
-use std::collections::HashSet;
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+
+use crate::collection_manager::holders::proxy_segment::ProxySegment;
+use crate::collection_manager::holders::segment_holder::{
+    LockedSegment, LockedSegmentHolder, SegmentId,
+};
+use crate::config::CollectionParams;
+use crate::operations::types::{CollectionError, CollectionResult};
 
 #[derive(Debug, Clone)]
 pub struct OptimizerThresholds {
@@ -56,6 +60,8 @@ pub trait SegmentOptimizer {
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId>;
 
+    fn schema_store(&self) -> Arc<SchemaStorage>;
+
     /// Build temp segment
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {
         let collection_params = self.collection_params();
@@ -70,6 +76,7 @@ pub trait SegmentOptimizer {
             self.collection_path(),
             config.vector_size,
             config.distance,
+            self.schema_store(),
         )?))
     }
 
@@ -122,6 +129,7 @@ pub trait SegmentOptimizer {
             self.collection_path(),
             self.temp_path(),
             &optimized_config,
+            self.schema_store(),
         )?)
     }
 
