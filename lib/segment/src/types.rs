@@ -280,10 +280,45 @@ pub struct SegmentState {
 
 /// Geo point payload schema
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(try_from = "GeoPointShadow")]
 pub struct GeoPoint {
     pub lon: f64,
     pub lat: f64,
+}
+
+#[derive(Deserialize)]
+struct GeoPointShadow {
+    pub lon: f64,
+    pub lat: f64,
+}
+
+pub struct GeoPointValidationError;
+
+// The error type has to implement Display
+impl std::fmt::Display for GeoPointValidationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "Wrong format of GeoPoint payload: expected `lat` within [-90;90] and `lon` within [-180;180]")
+    }
+}
+
+impl TryFrom<GeoPointShadow> for GeoPoint {
+    type Error = GeoPointValidationError;
+
+    fn try_from(value: GeoPointShadow) -> Result<Self, Self::Error> {
+        let max_lat = 90f64;
+        let min_lat = -90f64;
+        let max_lon = 180f64;
+        let min_lon = -180f64;
+
+        if !(min_lon..=max_lon).contains(&value.lon) || !(min_lat..=max_lat).contains(&value.lat) {
+            return Err(GeoPointValidationError);
+        }
+
+        Ok(Self {
+            lon: value.lon,
+            lat: value.lat,
+        })
+    }
 }
 
 /// All possible payload types
@@ -973,6 +1008,33 @@ mod tests {
             }
             _ => panic!("Condition expected"),
         }
+    }
+
+    #[test]
+    fn test_geo_validation() {
+        let query1 = r#"
+        {
+            "must": [
+                {
+                    "key": "geo_field",
+                    "geo_bounding_box": {
+                        "top_left": {
+                            "lon": 1113.410146,
+                            "lat": 52.519289
+                        },
+                        "bottom_right": {
+                            "lon": 13.432683,
+                            "lat": 52.505582
+                        }
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Result<Filter, _> = serde_json::from_str(query1);
+
+        assert!(filter.is_err());
     }
 }
 
