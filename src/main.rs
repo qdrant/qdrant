@@ -14,7 +14,7 @@ use storage::content_manager::toc::TableOfContent;
 use crate::common::helpers::create_search_runtime;
 use crate::settings::Settings;
 
-fn main() -> std::io::Result<()> {
+fn main() ->  std::io::Result<()> {
     let settings = Settings::new().expect("Can't read config.");
     std::env::set_var("RUST_LOG", &settings.log_level);
     env_logger::init();
