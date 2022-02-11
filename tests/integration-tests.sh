@@ -27,6 +27,8 @@ done
 
 echo "server ready to serve traffic"
 
+./tests/openapi_integration_test.sh
+
 ./tests/basic_api_test.sh
 
 ./tests/basic_grpc_test.sh

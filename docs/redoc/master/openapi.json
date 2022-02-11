@@ -2029,7 +2029,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2096,7 +2096,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2163,7 +2163,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2185,181 +2185,6 @@
           }
         },
         "summary": "Update aliases of the collections",
-        "tags": [
-          "collections"
-        ]
-      }
-    },
-    "/collections/{collection_name}/index": {
-      "put": {
-        "description": "Create index for field in collection",
-        "operationId": "create_field_index",
-        "parameters": [
-          {
-            "description": "Name of the collection",
-            "in": "path",
-            "name": "collection_name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "If true, wait for changes to actually happen",
-            "in": "query",
-            "name": "wait",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateFieldIndex"
-              }
-            }
-          },
-          "description": "Field name"
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "$ref": "#/components/schemas/UpdateResult"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "4xx": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Create index for field in collection",
-        "tags": [
-          "collections"
-        ]
-      }
-    },
-    "/collections/{collection_name}/index/{field_name}": {
-      "delete": {
-        "description": "Delete field index for collection",
-        "operationId": "delete_field_index",
-        "parameters": [
-          {
-            "description": "Name of the collection",
-            "in": "path",
-            "name": "collection_name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Name of the field where to delete the index",
-            "in": "path",
-            "name": "field_name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "If true, wait for changes to actually happen",
-            "in": "query",
-            "name": "wait",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "$ref": "#/components/schemas/UpdateResult"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "4xx": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Delete index for field in collection",
         "tags": [
           "collections"
         ]
@@ -2407,7 +2232,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2474,7 +2299,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2551,7 +2376,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2638,7 +2463,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2715,7 +2540,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2737,6 +2562,181 @@
           }
         },
         "summary": "Create collection",
+        "tags": [
+          "collections"
+        ]
+      }
+    },
+    "/collections/{name}/index": {
+      "put": {
+        "description": "Create index for field in collection",
+        "operationId": "create_field_index",
+        "parameters": [
+          {
+            "description": "Name of the collection",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFieldIndex"
+              }
+            }
+          },
+          "description": "Field name"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Create index for field in collection",
+        "tags": [
+          "collections"
+        ]
+      }
+    },
+    "/collections/{name}/index/{field_name}": {
+      "delete": {
+        "description": "Delete field index for collection",
+        "operationId": "delete_field_index",
+        "parameters": [
+          {
+            "description": "Name of the collection",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Name of the field where to delete the index",
+            "in": "path",
+            "name": "field_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Delete index for field in collection",
         "tags": [
           "collections"
         ]
@@ -2797,7 +2797,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2883,7 +2883,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2971,7 +2971,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3059,7 +3059,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3147,7 +3147,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3235,7 +3235,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3317,7 +3317,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3396,7 +3396,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3478,7 +3478,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3556,7 +3556,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
