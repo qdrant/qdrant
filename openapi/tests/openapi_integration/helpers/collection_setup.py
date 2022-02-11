@@ -1,4 +1,4 @@
-from .helpers import request_with_validation
+from openapi_integration.helpers.helpers import request_with_validation
 
 
 def drop_collection(collection_name='test_collection'):

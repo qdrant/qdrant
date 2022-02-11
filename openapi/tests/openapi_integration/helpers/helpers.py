@@ -3,7 +3,8 @@ import requests
 from schemathesis.models import APIOperation
 from schemathesis.specs.openapi.references import ConvertingResolver
 from schemathesis.specs.openapi.schemas import OpenApi30
-from .settings import SCHEMA, QDRANT_HOST
+
+from openapi_integration.helpers.settings import QDRANT_HOST, SCHEMA
 
 
 def get_api_string(host, api, path_params):
