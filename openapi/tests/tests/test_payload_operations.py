@@ -60,3 +60,39 @@ def test_payload_operations():
     )
     assert response.ok
     assert len(response.json()['result']['payload']) == 0
+
+    # create payload
+    response = request_with_validation(
+        api='/collections/{name}/points/payload',
+        method="POST",
+        path_params={'name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "payload": {"test_payload": "keyword"},
+            "points": [6]
+        }
+    )
+    assert response.ok
+
+    # delete payload by id
+    response = request_with_validation(
+        api='/collections/{name}/points/payload/delete',
+        method="POST",
+        path_params={'name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "keys": ["test_payload"],
+            "points": [6]
+        }
+    )
+    assert response.ok
+
+    # check payload
+    response = request_with_validation(
+        api='/collections/{name}/points/{id}',
+        method="GET",
+        path_params={'name': collection_name, 'id': 6},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 0
+

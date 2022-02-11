@@ -125,15 +125,6 @@ INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection"
   exit 1
 }
 
-# delete payload
-curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/payload/delete?wait=true" \
-  -H 'Content-Type: application/json' \
-  --data-raw '{
-    "keys": [ "test_payload" ],
-    "points": [ 6 ]
-  }' \
-  --fail -s | jq
-
 
 # UUID points write
 curl -L -X PUT "http://$QDRANT_HOST/collections/test_collection/points?wait=true" \
