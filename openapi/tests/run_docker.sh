@@ -6,8 +6,6 @@ set -ex
 
 cd "$(dirname "$0")"
 
-pip install -r requirements.txt
-
 pytest
 
 rm -rf .hypothesis .pytest_cache

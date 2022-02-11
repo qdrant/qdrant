@@ -7,9 +7,8 @@ cd "$(dirname "$0")/../"
 
 cp docs/redoc/master/openapi.json openapi/tests/openapi.json
 
-docker run \
-            --rm \
+docker run --rm \
             --network=host \
             -e OPENAPI_FILE='openapi.json' \
             -v ${PWD}/openapi/tests:/code \
-            python:3.9-alpine sh -c /code/run_docker.sh
+            $(docker build -q ./openapi/tests) sh -c /code/run_docker.sh
