@@ -84,48 +84,6 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/search" 
 
 
 
-# create payload
-curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/payload?wait=true" \
-  -H 'Content-Type: application/json' \
-  --data-raw '{
-    "payload": { "test_payload" : "keyword" },
-    "points": [ 6 ]
-  }' \
-  --fail -s | jq
-
-
-# index payload
-INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.payload_schema.test_payload.indexed')
-[[ "$INDEXED_FIELD" == "false" ]] || {
-  echo 'check failed - field should not be indexed'
-  exit 1
-}
-
-curl -X PUT "http://$QDRANT_HOST/collections/test_collection/index?wait=true" \
-  -H 'Content-Type: application/json' \
-  --data-raw '{
-    "field_name": "test_payload"
-  }' \
-  --fail -s | jq
-
-INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.payload_schema.test_payload.indexed')
-[[ "$INDEXED_FIELD" == "true" ]] || {
-  echo 'check failed - field should be indexed'
-  exit 1
-}
-
-# delete index on payload
-curl -X DELETE "http://$QDRANT_HOST/collections/test_collection/index/test_payload?wait=true" \
-  -H 'Content-Type: application/json' \
-  --fail -s | jq
-
-INDEXED_FIELD=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.payload_schema.test_payload.indexed')
-[[ "$INDEXED_FIELD" == "false" ]] || {
-  echo 'check failed - field should not be indexed'
-  exit 1
-}
-
-
 # UUID points write
 curl -L -X PUT "http://$QDRANT_HOST/collections/test_collection/points?wait=true" \
   -H 'Content-Type: application/json' \
