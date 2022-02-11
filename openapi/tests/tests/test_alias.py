@@ -13,7 +13,7 @@ def setup():
     drop_collection(collection_name=collection_name)
 
 
-def test_points_retrieve():
+def test_alias_operations():
     response = request_with_validation(
         api='/collections/aliases',
         method="POST",
