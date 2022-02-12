@@ -3,11 +3,13 @@ use std::hash::Hash;
 use std::{iter, mem};
 
 use serde::{Deserialize, Serialize};
+use try_match::try_match;
 
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
 use crate::types::{
-    FieldCondition, IntPayloadType, Match, PayloadKeyType, PayloadType, PointOffsetType,
+    FieldCondition, IntPayloadType, Match, MatchInteger, MatchKeyword, PayloadKeyType, PayloadType,
+    PointOffsetType,
 };
 
 /// HashMap-based type of index
@@ -59,22 +61,25 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
         condition: &FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         condition.r#match.as_ref().and_then(|match_condition| {
-            match_condition
-                .keyword
-                .as_ref()
-                .map(|keyword| self.get_iterator(keyword))
+            if let Match::Keyword(MatchKeyword { keyword }) = match_condition {
+                Some(self.get_iterator(keyword))
+            } else {
+                None
+            }
         })
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         condition.r#match.as_ref().and_then(|match_condition| {
-            match_condition.keyword.as_ref().map(|keyword| {
+            if let Match::Keyword(MatchKeyword { keyword }) = match_condition {
                 let mut estimation = self.match_cardinality(keyword);
                 estimation
                     .primary_clauses
                     .push(PrimaryCondition::Condition(condition.clone()));
-                estimation
-            })
+                Some(estimation)
+            } else {
+                None
+            }
         })
     }
 
@@ -90,10 +95,7 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
             .map(move |(value, point_ids)| PayloadBlockCondition {
                 condition: FieldCondition {
                     key: key.clone(),
-                    r#match: Some(Match {
-                        keyword: Some(value.to_owned()),
-                        integer: None,
-                    }),
+                    r#match: Some(value.to_owned().into()),
                     range: None,
                     geo_bounding_box: None,
                     geo_radius: None,
@@ -110,22 +112,23 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
         condition: &FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         condition.r#match.as_ref().and_then(|match_condition| {
-            match_condition
-                .integer
-                .as_ref()
+            try_match!(match_condition, Match::Integer(MatchInteger { integer }))
+                .ok()
                 .map(|int| self.get_iterator(int))
         })
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         condition.r#match.as_ref().and_then(|match_condition| {
-            match_condition.integer.as_ref().map(|number| {
-                let mut estimation = self.match_cardinality(number);
-                estimation
-                    .primary_clauses
-                    .push(PrimaryCondition::Condition(condition.clone()));
-                estimation
-            })
+            try_match!(match_condition, Match::Integer(MatchInteger { integer }))
+                .ok()
+                .map(|number| {
+                    let mut estimation = self.match_cardinality(number);
+                    estimation
+                        .primary_clauses
+                        .push(PrimaryCondition::Condition(condition.clone()));
+                    estimation
+                })
         })
     }
 
@@ -141,10 +144,7 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
             .map(move |(value, point_ids)| PayloadBlockCondition {
                 condition: FieldCondition {
                     key: key.clone(),
-                    r#match: Some(Match {
-                        keyword: None,
-                        integer: Some(*value),
-                    }),
+                    r#match: Some((*value).into()),
                     range: None,
                     geo_bounding_box: None,
                     geo_radius: None,

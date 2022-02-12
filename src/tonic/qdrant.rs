@@ -676,8 +676,8 @@ pub struct HasIdCondition {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FieldCondition {
-    #[prost(message, optional, tag = "1")]
-    pub key: ::core::option::Option<KeywordPayloadRequest>,
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "2")]
     pub r#match: ::core::option::Option<Match>,
     #[prost(message, optional, tag = "3")]
@@ -688,37 +688,30 @@ pub struct FieldCondition {
     pub geo_radius: ::core::option::Option<GeoRadius>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct KeywordPayloadRequest {
-    #[prost(string, tag = "1")]
-    pub value: ::prost::alloc::string::String,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
-    #[prost(string, optional, tag = "1")]
-    pub keyword: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(message, optional, tag = "2")]
-    pub integer: ::core::option::Option<IntegerPayloadRequest>,
+    #[prost(oneof = "r#match::MatchValue", tags = "1, 2")]
+    pub match_value: ::core::option::Option<r#match::MatchValue>,
+}
+/// Nested message and enum types in `Match`.
+pub mod r#match {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum MatchValue {
+        #[prost(string, tag = "1")]
+        Keyword(::prost::alloc::string::String),
+        #[prost(int64, tag = "2")]
+        Integer(i64),
+    }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Range {
-    #[prost(message, optional, tag = "1")]
-    pub lt: ::core::option::Option<FloatPayloadRequest>,
-    #[prost(message, optional, tag = "2")]
-    pub gt: ::core::option::Option<FloatPayloadRequest>,
-    #[prost(message, optional, tag = "3")]
-    pub gte: ::core::option::Option<FloatPayloadRequest>,
-    #[prost(message, optional, tag = "4")]
-    pub lte: ::core::option::Option<FloatPayloadRequest>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct IntegerPayloadRequest {
-    #[prost(int64, tag = "1")]
-    pub value: i64,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FloatPayloadRequest {
-    #[prost(double, tag = "1")]
-    pub value: f64,
+    #[prost(double, optional, tag = "1")]
+    pub lt: ::core::option::Option<f64>,
+    #[prost(double, optional, tag = "2")]
+    pub gt: ::core::option::Option<f64>,
+    #[prost(double, optional, tag = "3")]
+    pub gte: ::core::option::Option<f64>,
+    #[prost(double, optional, tag = "4")]
+    pub lte: ::core::option::Option<f64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoBoundingBox {
@@ -748,20 +741,15 @@ pub mod points_selector {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum PointsSelectorOneOf {
         #[prost(message, tag = "1")]
-        Ids(super::PointsIdsList),
+        Points(super::PointsIdsList),
         #[prost(message, tag = "2")]
-        FilterSelector(super::FilterSelector),
+        Filter(super::Filter),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsIdsList {
     #[prost(uint64, repeated, tag = "1")]
     pub ids: ::prost::alloc::vec::Vec<u64>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FilterSelector {
-    #[prost(message, optional, tag = "1")]
-    pub filter: ::core::option::Option<Filter>,
 }
 // ---------------------------------------------
 // ------------------- Point -------------------
@@ -802,22 +790,22 @@ pub mod payload {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct KeywordPayload {
     #[prost(string, repeated, tag = "1")]
-    pub value: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    pub values: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IntegerPayload {
     #[prost(int64, repeated, tag = "1")]
-    pub value: ::prost::alloc::vec::Vec<i64>,
+    pub values: ::prost::alloc::vec::Vec<i64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FloatPayload {
     #[prost(double, repeated, tag = "1")]
-    pub value: ::prost::alloc::vec::Vec<f64>,
+    pub values: ::prost::alloc::vec::Vec<f64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoPayload {
     #[prost(message, repeated, tag = "1")]
-    pub value: ::prost::alloc::vec::Vec<GeoPoint>,
+    pub values: ::prost::alloc::vec::Vec<GeoPoint>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoPoint {

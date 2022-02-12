@@ -9,12 +9,13 @@ use crate::tonic::qdrant::condition::ConditionOneOf;
 use crate::tonic::qdrant::payload::PayloadOneOf::{Float, Geo, Integer, Keyword};
 use crate::tonic::qdrant::points_selector::PointsSelectorOneOf;
 use crate::tonic::qdrant::points_server::Points;
+use crate::tonic::qdrant::r#match::MatchValue;
 use crate::tonic::qdrant::{
     ClearPayloadPoints, Condition, CreateFieldIndexCollection, DeleteFieldIndexCollection,
-    DeletePayloadPoints, DeletePoints, FieldCondition, Filter, FilterSelector, FloatPayload,
-    GeoBoundingBox, GeoPayload, GeoPoint, GeoRadius, HasIdCondition, IntegerPayload,
-    KeywordPayload, Match, Payload, PointStruct, PointsOperationResponse, PointsSelector, Range,
-    SetPayloadPoints, UpdateResult, UpsertPoints,
+    DeletePayloadPoints, DeletePoints, FieldCondition, Filter, FloatPayload, GeoBoundingBox,
+    GeoPayload, GeoPoint, GeoRadius, HasIdCondition, IntegerPayload, KeywordPayload, Match,
+    Payload, PointStruct, PointsOperationResponse, PointsSelector, Range, SetPayloadPoints,
+    UpdateResult, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{
@@ -287,12 +288,12 @@ impl TryFrom<PointsSelector> for collection::operations::point_ops::PointsSelect
 
     fn try_from(value: PointsSelector) -> Result<Self, Self::Error> {
         match value.points_selector_one_of {
-            Some(PointsSelectorOneOf::Ids(ids)) => Ok(
+            Some(PointsSelectorOneOf::Points(points)) => Ok(
                 collection::operations::point_ops::PointsSelector::PointIdsSelector(PointIdsList {
-                    points: ids.ids.into_iter().map(|p| p.into()).collect(),
+                    points: points.ids.into_iter().map(|p| p.into()).collect(),
                 }),
             ),
-            Some(PointsSelectorOneOf::FilterSelector(FilterSelector { filter: Some(f) })) => Ok(
+            Some(PointsSelectorOneOf::Filter(f)) => Ok(
                 collection::operations::point_ops::PointsSelector::FilterSelector(
                     collection::operations::point_ops::FilterSelector {
                         filter: f.try_into()?,
@@ -364,7 +365,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
     fn try_from(value: FieldCondition) -> Result<Self, Self::Error> {
         match value {
             FieldCondition {
-                key: Some(k),
+                key,
                 r#match,
                 range,
                 geo_bounding_box,
@@ -374,14 +375,13 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
                     geo_bounding_box.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
                 let geo_radius = geo_radius.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
                 Ok(Self {
-                    key: k.value,
-                    r#match: r#match.map(|m| m.into()),
+                    key,
+                    r#match: r#match.map_or_else(|| Ok(None), |m| m.try_into().map(Some))?,
                     range: range.map(|r| r.into()),
                     geo_bounding_box,
                     geo_radius,
                 })
             }
-            _ => Err(Status::invalid_argument("Malformed FieldCondition type")),
         }
     }
 }
@@ -389,7 +389,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
 impl From<KeywordPayload> for PayloadInterface {
     fn from(value: KeywordPayload) -> Self {
         PayloadInterface::Payload(PayloadInterfaceStrict::Keyword(PayloadVariant::List(
-            value.value,
+            value.values,
         )))
     }
 }
@@ -397,7 +397,7 @@ impl From<KeywordPayload> for PayloadInterface {
 impl From<IntegerPayload> for PayloadInterface {
     fn from(value: IntegerPayload) -> Self {
         PayloadInterface::Payload(PayloadInterfaceStrict::Integer(PayloadVariant::List(
-            value.value,
+            value.values,
         )))
     }
 }
@@ -405,7 +405,7 @@ impl From<IntegerPayload> for PayloadInterface {
 impl From<FloatPayload> for PayloadInterface {
     fn from(value: FloatPayload) -> Self {
         PayloadInterface::Payload(PayloadInterfaceStrict::Float(PayloadVariant::List(
-            value.value,
+            value.values,
         )))
     }
 }
@@ -413,7 +413,7 @@ impl From<FloatPayload> for PayloadInterface {
 impl From<GeoPayload> for PayloadInterface {
     fn from(value: GeoPayload) -> Self {
         let variant =
-            PayloadVariant::List(value.value.into_iter().map(|point| point.into()).collect());
+            PayloadVariant::List(value.values.into_iter().map(|point| point.into()).collect());
         PayloadInterface::Payload(PayloadInterfaceStrict::Geo(variant))
     }
 }
@@ -464,19 +464,24 @@ impl From<GeoPoint> for segment::types::GeoPoint {
 impl From<Range> for segment::types::Range {
     fn from(value: Range) -> Self {
         Self {
-            lt: value.lt.map(|v| v.value),
-            gt: value.gt.map(|v| v.value),
-            gte: value.gte.map(|v| v.value),
-            lte: value.lte.map(|v| v.value),
+            lt: value.lt,
+            gt: value.gt,
+            gte: value.gte,
+            lte: value.lte,
         }
     }
 }
 
-impl From<Match> for segment::types::Match {
-    fn from(value: Match) -> Self {
-        Self {
-            keyword: value.keyword,
-            integer: value.integer.map(|i| i.value),
+impl TryFrom<Match> for segment::types::Match {
+    type Error = Status;
+
+    fn try_from(value: Match) -> Result<Self, Self::Error> {
+        match value.match_value {
+            Some(mv) => Ok(match mv {
+                MatchValue::Keyword(kw) => kw.into(),
+                MatchValue::Integer(int) => int.into(),
+            }),
+            _ => Err(Status::invalid_argument("Malformed Match condition")),
         }
     }
 }
@@ -497,5 +502,14 @@ impl From<CollectionUpdateResult> for UpdateResult {
             operation_id: value.operation_id,
             status: value.status as i32,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_grpc() {
+        // For running build from IDE
+        eprintln!("hello");
     }
 }

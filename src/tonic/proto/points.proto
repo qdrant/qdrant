@@ -107,35 +107,25 @@ message HasIdCondition {
 }
 
 message FieldCondition {
-  KeywordPayloadRequest key = 1;
+  string key = 1;
   Match match = 2;
   Range range = 3;
   GeoBoundingBox geo_bounding_box = 4;
   GeoRadius geo_radius = 5;
 }
 
-message KeywordPayloadRequest {
-  string value = 1;
-}
-
 message Match {
-  optional string keyword = 1;
-  IntegerPayloadRequest integer = 2;
+  oneof match_value {
+    string keyword = 1;
+    int64 integer = 2;
+  }
 }
 
 message Range {
-  FloatPayloadRequest lt = 1;
-  FloatPayloadRequest gt = 2;
-  FloatPayloadRequest gte = 3;
-  FloatPayloadRequest lte = 4;
-}
-
-message IntegerPayloadRequest {
-  int64 value = 1;
-}
-
-message FloatPayloadRequest {
-  double value = 1;
+  optional double lt = 1;
+  optional double gt = 2;
+  optional double gte = 3;
+  optional double lte = 4;
 }
 
 message GeoBoundingBox {
@@ -154,17 +144,13 @@ message GeoRadius {
 
 message PointsSelector {
   oneof points_selector_one_of {
-    PointsIdsList ids = 1;
-    FilterSelector filter_selector = 2;
+    PointsIdsList points = 1;
+    Filter filter = 2;
   }
 }
 
 message PointsIdsList {
   repeated uint64 ids = 1;
-}
-
-message FilterSelector {
-  Filter filter = 1;
 }
 
 // ---------------------------------------------
@@ -193,19 +179,19 @@ message Payload {
 }
 
 message KeywordPayload {
-  repeated string value = 1;
+  repeated string values = 1;
 }
 
 message IntegerPayload {
-  repeated int64 value = 1;
+  repeated int64 values = 1;
 }
 
 message FloatPayload {
-  repeated double value = 1;
+  repeated double values = 1;
 }
 
 message GeoPayload {
-  repeated GeoPoint value = 1;
+  repeated GeoPoint values = 1;
 }
 
 message GeoPoint {

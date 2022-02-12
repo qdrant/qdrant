@@ -443,7 +443,7 @@ impl SegmentEntry for ProxySegment {
 mod tests {
     use super::*;
     use crate::collection_manager::fixtures::{build_segment_1, empty_segment};
-    use segment::types::{FieldCondition, Match};
+    use segment::types::FieldCondition;
     use tempdir::TempDir;
 
     #[test]
@@ -513,10 +513,7 @@ mod tests {
 
         let filter = Filter::new_must_not(Condition::Field(FieldCondition {
             key: "color".to_string(),
-            r#match: Some(Match {
-                keyword: Some("blue".to_string()),
-                integer: None,
-            }),
+            r#match: Some("blue".to_string().into()),
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
