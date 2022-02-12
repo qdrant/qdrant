@@ -16,6 +16,42 @@ service Points {
   rpc DeleteFieldIndex (DeleteFieldIndexCollection) returns (PointsOperationResponse) {}
 }
 
+// ---------------------------------------------
+// ---------------- RPC Requests ---------------
+// ---------------------------------------------
+
+message UpsertPoints {
+  string collection = 1;
+  optional bool wait = 2;
+  repeated PointStruct points = 3;
+}
+
+message DeletePoints {
+  string collection = 1;
+  optional bool wait = 2;
+  PointsSelector points = 3;
+}
+
+message SetPayloadPoints {
+  string collection = 1;
+  optional bool wait = 2;
+  map<string, Payload> payload = 3;
+  repeated uint64 points = 4;
+}
+
+message DeletePayloadPoints {
+  string collection = 1;
+  optional bool wait = 2;
+  repeated string keys = 3;
+  repeated uint64 points = 4;
+}
+
+message ClearPayloadPoints {
+  string collection = 1;
+  optional bool wait = 2;
+  PointsSelector points = 3;
+}
+
 message CreateFieldIndexCollection {
   string collection = 1;
   optional bool wait = 2;
@@ -28,32 +64,93 @@ message DeleteFieldIndexCollection {
   string field_name = 3;
 }
 
-message DeletePayloadPoints {
-  string collection = 1;
-  optional bool wait = 2;
-  repeated string keys = 3;
-  repeated uint64 points = 4;
+// ---------------------------------------------
+// ---------------- RPC Response ---------------
+// ---------------------------------------------
+
+message PointsOperationResponse {
+  UpdateResult result = 1;
+  double time = 2;
 }
 
-message SetPayloadPoints {
-  string collection = 1;
-  optional bool wait = 2;
-  map<string, Payload> payload = 3;
-  repeated uint64 points = 4;
+message UpdateResult {
+  uint64 operation_id = 1;
+  UpdateStatus status = 2;
 }
 
-message ClearPayloadPoints {
-  string collection = 1;
-  optional bool wait = 2;
-  PointsSelector points = 3;
+enum UpdateStatus {
+  Acknowledged = 0;
+  Completed = 1;
 }
 
-message DeletePoints {
-  string collection = 1;
-  optional bool wait = 2;
-  PointsSelector points = 3;
+
+// ---------------------------------------------
+// ------------- Filter Conditions -------------
+// ---------------------------------------------
+
+message Filter {
+  repeated Condition should = 1;
+  repeated Condition must = 2;
+  repeated Condition must_not = 3;
 }
 
+message Condition {
+  oneof condition_one_of {
+    FieldCondition field = 1;
+    HasIdCondition hasId = 2;
+    Filter filter = 3;
+  }
+}
+
+message HasIdCondition {
+  repeated uint64 has_id = 1;
+}
+
+message FieldCondition {
+  KeywordPayloadRequest key = 1;
+  Match match = 2;
+  Range range = 3;
+  GeoBoundingBox geo_bounding_box = 4;
+  GeoRadius geo_radius = 5;
+}
+
+message KeywordPayloadRequest {
+  string value = 1;
+}
+
+message Match {
+  optional string keyword = 1;
+  IntegerPayloadRequest integer = 2;
+}
+
+message Range {
+  FloatPayloadRequest lt = 1;
+  FloatPayloadRequest gt = 2;
+  FloatPayloadRequest gte = 3;
+  FloatPayloadRequest lte = 4;
+}
+
+message IntegerPayloadRequest {
+  int64 value = 1;
+}
+
+message FloatPayloadRequest {
+  double value = 1;
+}
+
+message GeoBoundingBox {
+  GeoPoint top_left = 1;
+  GeoPoint bottom_right = 2;
+}
+
+message GeoRadius {
+  GeoPoint center = 1;
+  float radius = 2;
+}
+
+// ---------------------------------------------
+// -------------- Points Selector --------------
+// ---------------------------------------------
 
 message PointsSelector {
   oneof points_selector_one_of {
@@ -70,59 +167,10 @@ message FilterSelector {
   Filter filter = 1;
 }
 
-message Filter {
-  repeated Condition should = 1;
-  repeated Condition must = 2;
-  repeated Condition must_not = 3;
-}
+// ---------------------------------------------
+// ------------------- Point -------------------
+// ---------------------------------------------
 
-message Condition {
-  oneof condition_one_of {
-    FieldCondition field = 1;
-    HasIdCondition hasId = 2;
-    Filter filter = 3;
-  }
-}
-
-message FieldCondition {
-  KeywordPayloadRequest key = 1;
-  Match match = 2;
-  Range range = 3;
-  GeoBoundingBox geo_bounding_box = 4;
-  GeoRadius geo_radius = 5;
-}
-
-message GeoBoundingBox {
-  GeoPoint top_left = 1;
-  GeoPoint bottom_right = 2;
-}
-
-message GeoRadius {
-  GeoPoint center = 1;
-  float radius = 2;
-}
-
-message HasIdCondition {
-  repeated uint64 has_id = 1;
-}
-
-message Range {
-  FloatPayloadRequest lt = 1;
-  FloatPayloadRequest gt = 2;
-  FloatPayloadRequest gte = 3;
-  FloatPayloadRequest lte = 4;
-}
-
-message Match {
-  optional string keyword = 1;
-  IntegerPayloadRequest integer = 2;
-}
-
-message UpsertPoints {
-  string collection = 1;
-  optional bool wait = 2;
-  repeated PointStruct points = 3;
-}
 
 message PointStruct {
   uint64 id = 1;
@@ -130,17 +178,10 @@ message PointStruct {
   map<string, Payload> payload = 3;
 }
 
-message KeywordPayloadRequest {
-  string value = 1;
-}
 
-message IntegerPayloadRequest {
-  int64 value = 1;
-}
-
-message FloatPayloadRequest {
-  double value = 1;
-}
+// ---------------------------------------------
+// ------------------ Payload ------------------
+// ---------------------------------------------
 
 message Payload {
   oneof payload_one_of {
@@ -170,19 +211,4 @@ message GeoPayload {
 message GeoPoint {
   double lon = 1;
   double lat = 2;
-}
-
-message PointsOperationResponse {
-  UpdateResult result = 1;
-  double time = 2;
-}
-
-message UpdateResult {
-  uint64 operation_id = 1;
-  UpdateStatus status = 2;
-}
-
-enum UpdateStatus {
-  Acknowledged = 0;
-  Completed = 1;
 }
