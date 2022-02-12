@@ -363,26 +363,24 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
     type Error = Status;
 
     fn try_from(value: FieldCondition) -> Result<Self, Self::Error> {
-        match value {
-            FieldCondition {
-                key,
-                r#match,
-                range,
-                geo_bounding_box,
-                geo_radius,
-            } => {
-                let geo_bounding_box =
-                    geo_bounding_box.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
-                let geo_radius = geo_radius.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
-                Ok(Self {
-                    key,
-                    r#match: r#match.map_or_else(|| Ok(None), |m| m.try_into().map(Some))?,
-                    range: range.map(|r| r.into()),
-                    geo_bounding_box,
-                    geo_radius,
-                })
-            }
-        }
+        let FieldCondition {
+            key,
+            r#match,
+            range,
+            geo_bounding_box,
+            geo_radius,
+        } = value;
+
+        let geo_bounding_box =
+            geo_bounding_box.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
+        let geo_radius = geo_radius.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
+        Ok(Self {
+            key,
+            r#match: r#match.map_or_else(|| Ok(None), |m| m.try_into().map(Some))?,
+            range: range.map(|r| r.into()),
+            geo_bounding_box,
+            geo_radius,
+        })
     }
 }
 

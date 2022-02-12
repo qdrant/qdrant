@@ -3,7 +3,6 @@ use std::hash::Hash;
 use std::{iter, mem};
 
 use serde::{Deserialize, Serialize};
-use try_match::try_match;
 
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
@@ -60,27 +59,23 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
         &self,
         condition: &FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        condition.r#match.as_ref().and_then(|match_condition| {
-            if let Match::Keyword(MatchKeyword { keyword }) = match_condition {
-                Some(self.get_iterator(keyword))
-            } else {
-                None
-            }
-        })
+        match &condition.r#match {
+            Some(Match::Keyword(MatchKeyword { keyword })) => Some(self.get_iterator(keyword)),
+            _ => None,
+        }
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
-        condition.r#match.as_ref().and_then(|match_condition| {
-            if let Match::Keyword(MatchKeyword { keyword }) = match_condition {
+        match &condition.r#match {
+            Some(Match::Keyword(MatchKeyword { keyword })) => {
                 let mut estimation = self.match_cardinality(keyword);
                 estimation
                     .primary_clauses
                     .push(PrimaryCondition::Condition(condition.clone()));
                 Some(estimation)
-            } else {
-                None
             }
-        })
+            _ => None,
+        }
     }
 
     fn payload_blocks(
@@ -111,25 +106,23 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
         &self,
         condition: &FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        condition.r#match.as_ref().and_then(|match_condition| {
-            try_match!(match_condition, Match::Integer(MatchInteger { integer }))
-                .ok()
-                .map(|int| self.get_iterator(int))
-        })
+        match &condition.r#match {
+            Some(Match::Integer(MatchInteger { integer })) => Some(self.get_iterator(integer)),
+            _ => None,
+        }
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
-        condition.r#match.as_ref().and_then(|match_condition| {
-            try_match!(match_condition, Match::Integer(MatchInteger { integer }))
-                .ok()
-                .map(|number| {
-                    let mut estimation = self.match_cardinality(number);
-                    estimation
-                        .primary_clauses
-                        .push(PrimaryCondition::Condition(condition.clone()));
-                    estimation
-                })
-        })
+        match &condition.r#match {
+            Some(Match::Integer(MatchInteger { integer })) => {
+                let mut estimation = self.match_cardinality(integer);
+                estimation
+                    .primary_clauses
+                    .push(PrimaryCondition::Condition(condition.clone()));
+                Some(estimation)
+            }
+            _ => None,
+        }
     }
 
     fn payload_blocks(
