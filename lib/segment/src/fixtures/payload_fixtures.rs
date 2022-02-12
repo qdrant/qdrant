@@ -1,6 +1,5 @@
 use crate::types::{
-    Condition, FieldCondition, Filter, PayloadType, Range as RangeCondition,
-    VectorElementType,
+    Condition, FieldCondition, Filter, PayloadType, Range as RangeCondition, VectorElementType,
 };
 use itertools::Itertools;
 use rand::prelude::ThreadRng;
