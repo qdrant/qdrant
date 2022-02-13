@@ -51,7 +51,7 @@ impl TryFrom<String> for ExtendedPointId {
             Ok(num) => Ok(ExtendedPointId::NumId(num)),
             Err(_) => match Uuid::from_str(&value) {
                 Ok(uuid) => Ok(ExtendedPointId::Uuid(uuid)),
-                Err(_) => Err(PointIdParseError {bad_id: value}),
+                Err(_) => Err(PointIdParseError { bad_id: value }),
             },
         }
     }
