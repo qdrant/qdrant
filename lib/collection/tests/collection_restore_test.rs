@@ -101,14 +101,16 @@ async fn test_collection_payload_custom_payload() {
     {
         let collection = simple_collection_fixture(collection_dir.path()).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
-            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch { batch: Batch {
-                ids: vec![0.into(), 1.into()],
-                vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
-                payloads: serde_json::from_str(
-                    r#"[{ "k1": "v1" }, { "k1": "v2" , "k2": "v3", "k3": "v4"}]"#,
-                )
+            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
+                batch: Batch {
+                    ids: vec![0.into(), 1.into()],
+                    vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]],
+                    payloads: serde_json::from_str(
+                        r#"[{ "k1": "v1" }, { "k1": "v2" , "k2": "v3", "k3": "v4"}]"#,
+                    )
                     .unwrap(),
-            }})),
+                },
+            })),
         );
         collection.update(insert_points, true).await.unwrap();
     }
@@ -146,7 +148,7 @@ async fn test_collection_payload_custom_payload() {
         PayloadType::Keyword(values) => assert_eq!(&vec!["v3".to_string()], values),
         _ => panic!("unexpected type"),
     }
-    
+
     // Test res with filter payload dict
     let res_with_custom_payload = collection
         .scroll_by(
@@ -167,7 +169,14 @@ async fn test_collection_payload_custom_payload() {
         .expect("has payload")
         .is_empty());
 
-    assert_eq!(res_with_custom_payload.points[1].payload.as_ref().expect("has payload").len(), 2);
+    assert_eq!(
+        res_with_custom_payload.points[1]
+            .payload
+            .as_ref()
+            .expect("has payload")
+            .len(),
+        2
+    );
 
     match res_with_custom_payload.points[1]
         .payload

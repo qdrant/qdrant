@@ -639,7 +639,6 @@ pub enum PayloadSelector {
     Exclude(PayloadSelectorExclude),
 }
 
-
 impl From<PayloadSelectorExclude> for WithPayloadInterface {
     fn from(selector: PayloadSelectorExclude) -> Self {
         WithPayloadInterface::Selector(PayloadSelector::Exclude(selector))
@@ -651,7 +650,6 @@ impl From<PayloadSelectorInclude> for WithPayloadInterface {
         WithPayloadInterface::Selector(PayloadSelector::Include(selector))
     }
 }
-
 
 impl PayloadSelector {
     pub fn new_include(vecs_payload_key_type: Vec<PayloadKeyType>) -> Self {

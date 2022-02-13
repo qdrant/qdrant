@@ -3,8 +3,8 @@ use collection::operations::point_ops::{PointInsertOperations, PointOperations, 
 use collection::operations::types::{SearchRequest, UpdateResult};
 use collection::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 use segment::types::ScoredPoint;
+use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 
