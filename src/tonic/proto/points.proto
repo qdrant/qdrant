@@ -14,6 +14,7 @@ service Points {
   rpc ClearPayload (ClearPayloadPoints) returns (PointsOperationResponse) {}
   rpc CreateFieldIndex (CreateFieldIndexCollection) returns (PointsOperationResponse) {}
   rpc DeleteFieldIndex (DeleteFieldIndexCollection) returns (PointsOperationResponse) {}
+  rpc Search (SearchPoints) returns (SearchResponse) {}
 }
 
 // ---------------------------------------------
@@ -76,6 +77,36 @@ message DeleteFieldIndexCollection {
   string field_name = 3;
 }
 
+message PayloadIncludeSelector {
+  repeated string include = 1;
+}
+
+message PayloadExcludeSelector {
+  repeated string exclude = 1;
+}
+
+message WithPayloadSelector {
+  oneof selector_options {
+    bool enable = 1;
+    PayloadIncludeSelector include = 2;
+    PayloadExcludeSelector exclude = 3;
+  }
+}
+
+message SearchParams {
+  optional uint64 hnsw_ef = 1;
+}
+
+message SearchPoints {
+  string collection = 1;
+  repeated float vector = 2;
+  Filter filter = 3;
+  uint64 top = 4;
+  optional bool with_vector = 5;
+  WithPayloadSelector with_payload = 6;
+  SearchParams params = 7;
+}
+
 // ---------------------------------------------
 // ---------------- RPC Response ---------------
 // ---------------------------------------------
@@ -95,6 +126,18 @@ enum UpdateStatus {
   Completed = 1;
 }
 
+message ScoredPoint {
+  PointId id = 1;
+  map<string, Payload> payload = 2;
+  float score = 3;
+  repeated float vector = 4;
+  uint64 version = 5;
+}
+
+message SearchResponse {
+  repeated ScoredPoint result = 1;
+  double time = 2;
+}
 
 // ---------------------------------------------
 // ------------- Filter Conditions -------------
