@@ -139,7 +139,7 @@ impl TryFrom<PointStruct> for collection::operations::point_ops::PointStruct {
     }
 }
 
-fn payload_to_interface(
+pub fn payload_to_interface(
     payload: HashMap<String, Payload>,
 ) -> Result<HashMap<PayloadKeyType, PayloadInterface>, Status> {
     let mut converted_payload = HashMap::new();

@@ -1,5 +1,4 @@
 use tonic::{Request, Response, Status};
-use uuid::Uuid;
 
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
@@ -7,33 +6,18 @@ use crate::common::points::{
 };
 use crate::tonic::api::common::error_to_status;
 use crate::tonic::api::conversions::*;
-use crate::tonic::qdrant::condition::ConditionOneOf;
-use crate::tonic::qdrant::payload::PayloadOneOf;
-use crate::tonic::qdrant::payload::PayloadOneOf::{Float, Geo, Integer, Keyword};
-use crate::tonic::qdrant::point_id::PointIdOptions;
-use crate::tonic::qdrant::points_selector::PointsSelectorOneOf;
 use crate::tonic::qdrant::points_server::Points;
-use crate::tonic::qdrant::with_payload_selector::SelectorOptions;
+
 use crate::tonic::qdrant::{
-    ClearPayloadPoints, Condition, CreateFieldIndexCollection, DeleteFieldIndexCollection,
-    DeletePayloadPoints, DeletePoints, FieldCondition, Filter, FloatPayload, GeoBoundingBox,
-    GeoPayload, GeoPoint, GeoRadius, HasIdCondition, IntegerPayload, KeywordPayload, Match,
-    Payload, PointId, PointStruct, PointsOperationResponse, PointsSelector, Range, ScoredPoint,
-    SearchParams, SearchPoints, SearchResponse, SetPayloadPoints, UpdateResult, UpsertPoints,
-    WithPayloadSelector,
+    ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
+    DeletePayloadPoints, DeletePoints, PointsOperationResponse, SearchPoints, SearchResponse,
+    SetPayloadPoints, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
-use collection::operations::point_ops::{
-    PointIdsList, PointInsertOperations, PointOperations, PointsList,
-};
+use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsList};
 use collection::operations::types::SearchRequest;
 use collection::operations::CollectionUpdateOperations;
-use segment::types::{
-    PayloadInterface, PayloadInterfaceStrict, PayloadKeyType, PayloadSelectorExclude,
-    PayloadSelectorInclude, PayloadType, PayloadVariant, PointIdType, TheMap, WithPayloadInterface,
-};
-use std::collections::{HashMap, HashSet};
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Instant;
 use storage::content_manager::toc::TableOfContent;
