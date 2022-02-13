@@ -45,7 +45,8 @@ mod tests {
                 "points": [1, 2, 3],
                 "payload": {
                     "key1": {"type": "keyword", "value": "hello"},
-                    "key2": {"type": "integer", "value": [1,2,3,4]}
+                    "key2": {"type": "integer", "value": [1,2,3,4]},
+                    "key3": {"json": {"key1":"value1"} }
                 }
             }
         }
@@ -56,7 +57,7 @@ mod tests {
         match operation {
             PayloadOps::SetPayload(set_payload) => {
                 let payload = &set_payload.payload;
-                assert_eq!(payload.len(), 2);
+                assert_eq!(payload.len(), 3);
 
                 assert!(payload.contains_key("key1"));
 
@@ -65,6 +66,16 @@ mod tests {
 
                 match payload1 {
                     PayloadType::Keyword(x) => assert_eq!(x, ["hello".to_owned()]),
+                    _ => panic!("Wrong payload type"),
+                }
+
+                let payload_interface = payload.get("key3").expect("No key key3");
+
+                let json_payload = payload_interface.into();
+                let expected_json: serde_json::Value =
+                    serde_json::from_str(r#"{"json": {"key1":"value1"} }"#).unwrap();
+                match json_payload {
+                    PayloadType::Json(x) => assert_eq!(x, expected_json),
                     _ => panic!("Wrong payload type"),
                 }
             }

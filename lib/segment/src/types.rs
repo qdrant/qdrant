@@ -1,3 +1,4 @@
+use crate::entry::entry_point::{OperationError, OperationResult};
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -322,7 +323,7 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
 }
 
 /// All possible payload types
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "value")]
 pub enum PayloadType {
@@ -330,6 +331,7 @@ pub enum PayloadType {
     Integer(Vec<IntPayloadType>),
     Float(Vec<FloatPayloadType>),
     Geo(Vec<GeoPoint>),
+    Json(serde_json::Value),
 }
 
 /// All possible names of payload types
@@ -350,6 +352,7 @@ impl From<&PayloadType> for PayloadSchemaType {
             PayloadType::Integer(_) => PayloadSchemaType::Integer,
             PayloadType::Float(_) => PayloadSchemaType::Float,
             PayloadType::Geo(_) => PayloadSchemaType::Geo,
+            _ => panic!("cannot convert to PayloadSchemaType"),
         }
     }
 }
@@ -402,6 +405,7 @@ pub enum PayloadInterface {
     IntShortcut(PayloadVariant<i64>),
     FloatShortcut(PayloadVariant<f64>),
     Payload(PayloadInterfaceStrict),
+    JsonPayload(serde_json::Value),
 }
 
 /// Fallback for `PayloadInterface` which is used if user explicitly specifies type of payload
@@ -448,8 +452,109 @@ impl From<&PayloadInterface> for PayloadType {
             PayloadInterface::KeywordShortcut(x) => PayloadType::Keyword(x.to_list()),
             PayloadInterface::FloatShortcut(x) => PayloadType::Float(x.to_list()),
             PayloadInterface::IntShortcut(x) => PayloadType::Integer(x.to_list()),
+            PayloadInterface::JsonPayload(x) => PayloadType::Json(x.clone()),
         }
     }
+}
+
+/// Flat a payload map.
+pub fn flat_payload(
+    key: PayloadKeyTypeRef,
+    payload: &PayloadType,
+) -> OperationResult<BTreeMap<PayloadKeyType, PayloadType>> {
+    let mut map = BTreeMap::new();
+
+    match payload {
+        PayloadType::Json(value) => {
+            flat(&mut map, key, value)?;
+        }
+        _ => {
+            map.insert(key.into(), payload.to_owned());
+        }
+    };
+
+    Ok(map)
+}
+
+fn flat(
+    map: &mut BTreeMap<PayloadKeyType, PayloadType>,
+    key: PayloadKeyTypeRef,
+    payload: &serde_json::Value,
+) -> OperationResult<()> {
+    match payload {
+        serde_json::Value::Object(json_object) => {
+            for (json_key, value) in json_object.iter() {
+                flat(map, &format!("{}.{}", key, json_key), value)?;
+            }
+        }
+        serde_json::Value::Array(array) => {
+            for value in array {
+                flat(map, key, value)?;
+            }
+        }
+        serde_json::Value::String(value) => {
+            let payload_type = map
+                .entry(key.into())
+                .or_insert_with(|| PayloadType::Keyword(Vec::new()));
+            match payload_type {
+                PayloadType::Keyword(values) => values.push(value.to_owned()),
+                _ => {
+                    return Err(OperationError::TypeError {
+                        field_name: key.to_owned(),
+                        expected_type: "Keyword".to_string(),
+                    })
+                }
+            }
+        }
+        serde_json::Value::Number(number) => {
+            if number.is_f64() {
+                let payload_type = map
+                    .entry(key.into())
+                    .or_insert_with(|| PayloadType::Float(Vec::new()));
+                match payload_type {
+                    PayloadType::Float(values) => values.push(number.as_f64().unwrap()),
+                    _ => {
+                        return Err(OperationError::TypeError {
+                            field_name: key.to_owned(),
+                            expected_type: "Float".to_string(),
+                        })
+                    }
+                }
+            }
+            if number.is_i64() || number.is_u64() {
+                let payload_type = map
+                    .entry(key.into())
+                    .or_insert_with(|| PayloadType::Integer(Vec::new()));
+                let int = match number.as_i64() {
+                    Some(i) => i,
+                    None => {
+                        return Err(OperationError::TypeError {
+                            field_name: key.to_owned(),
+                            expected_type: "Integer".to_string(),
+                        })
+                    }
+                };
+                match payload_type {
+                    PayloadType::Integer(values) => values.push(int),
+                    _ => {
+                        return Err(OperationError::TypeError {
+                            field_name: key.to_owned(),
+                            expected_type: "Float".to_string(),
+                        })
+                    }
+                };
+            }
+        }
+        serde_json::Value::Null => {} // ignore nulls
+        serde_json::Value::Bool(_) => {
+            return Err(OperationError::TypeError {
+                field_name: key.to_owned(),
+                expected_type: "bool not supported".to_string(),
+            })
+        }
+    };
+
+    Ok(())
 }
 
 /// Match filter request
@@ -1035,6 +1140,35 @@ mod tests {
         let filter: Result<Filter, _> = serde_json::from_str(query1);
 
         assert!(filter.is_err());
+    }
+
+    #[test]
+    fn test_json_flatten() {
+        let data = r#"
+        {
+            "object": {"nested":1},
+            "array": [{"num":1,"keyword":"k1"},{"num":2,"keyword":"k2"}]
+        }"#;
+
+        let v = serde_json::from_str(data).unwrap();
+
+        let flatten_payload = flat_payload("prefix", &PayloadType::Json(v)).unwrap();
+
+        assert_eq!(
+            flatten_payload.get("prefix.object.nested"),
+            Some(&PayloadType::Integer(vec![1]))
+        );
+        assert_eq!(
+            flatten_payload.get("prefix.array.num"),
+            Some(&PayloadType::Integer(vec![1, 2]))
+        );
+        assert_eq!(
+            flatten_payload.get("prefix.array.keyword"),
+            Some(&PayloadType::Keyword(vec![
+                "k1".to_string(),
+                "k2".to_string()
+            ]))
+        );
     }
 }
 
