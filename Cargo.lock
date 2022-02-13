@@ -2275,6 +2275,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tonic-build",
+ "uuid",
 ]
 
 [[package]]
