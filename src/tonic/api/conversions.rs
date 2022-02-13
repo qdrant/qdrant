@@ -62,7 +62,7 @@ impl TryFrom<WithPayloadSelector> for WithPayloadInterface {
                 SelectorOptions::Exclude(s) => PayloadSelectorExclude::new(s.exclude).into(),
                 SelectorOptions::Include(s) => PayloadSelectorInclude::new(s.include).into(),
             }),
-            _ => Err(Status::invalid_argument(format!("No PayloadSelector"))),
+            _ => Err(Status::invalid_argument("No PayloadSelector".to_string())),
         }
     }
 }
@@ -90,12 +90,9 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
     fn from(point: segment::types::ScoredPoint) -> Self {
         Self {
             id: Some(point.id.into()),
-            payload: point
-                .payload
-                .map(|payload| payload_to_proto(payload))
-                .unwrap_or_default(),
+            payload: point.payload.map(payload_to_proto).unwrap_or_default(),
             score: point.score,
-            vector: point.vector.unwrap_or(vec![]),
+            vector: point.vector.unwrap_or_default(),
             version: point.version,
         }
     }
@@ -108,11 +105,13 @@ impl TryFrom<PointId> for PointIdType {
         match value.point_id_options {
             Some(PointIdOptions::Num(num_id)) => Ok(PointIdType::NumId(num_id)),
             Some(PointIdOptions::Uuid(uui_str)) => Uuid::parse_str(&uui_str)
-                .map(|uuid| PointIdType::Uuid(uuid))
+                .map(PointIdType::Uuid)
                 .map_err(|_err| {
                     Status::invalid_argument(format!("Unable to parse UUID: {}", uui_str))
                 }),
-            _ => Err(Status::invalid_argument(format!("No ID options provided"))),
+            _ => Err(Status::invalid_argument(
+                "No ID options provided".to_string(),
+            )),
         }
     }
 }
@@ -131,7 +130,7 @@ impl TryFrom<PointStruct> for collection::operations::point_ops::PointStruct {
 
         Ok(Self {
             id: id
-                .ok_or(Status::invalid_argument("Empty ID is not allowed"))?
+                .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
                 .try_into()?,
             vector,
             payload: Some(converted_payload),
