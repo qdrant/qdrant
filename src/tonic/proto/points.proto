@@ -17,18 +17,6 @@ service Points {
 }
 
 // ---------------------------------------------
-// ------------- Point Id Requests -------------
-// ---------------------------------------------
-
-message PointId {
-  oneof point_id_options {
-    uint64 num = 1;
-    string uuid = 2;
-  }
-}
-
-
-// ---------------------------------------------
 // ---------------- RPC Requests ---------------
 // ---------------------------------------------
 
@@ -48,14 +36,14 @@ message SetPayloadPoints {
   string collection = 1;
   optional bool wait = 2;
   map<string, Payload> payload = 3;
-  repeated PointId points = 4;
+  repeated string points = 4;
 }
 
 message DeletePayloadPoints {
   string collection = 1;
   optional bool wait = 2;
   repeated string keys = 3;
-  repeated PointId points = 4;
+  repeated string points = 4;
 }
 
 message ClearPayloadPoints {
@@ -115,7 +103,7 @@ message Condition {
 }
 
 message HasIdCondition {
-  repeated PointId has_id = 1;
+  repeated string has_id = 1;
 }
 
 message FieldCondition {
@@ -162,7 +150,7 @@ message PointsSelector {
 }
 
 message PointsIdsList {
-  repeated PointId ids = 1;
+  repeated string ids = 1;
 }
 
 // ---------------------------------------------
@@ -171,7 +159,7 @@ message PointsIdsList {
 
 
 message PointStruct {
-  PointId id = 1;
+  string id = 1;
   repeated float vector = 2;
   map<string, Payload> payload = 3;
 }

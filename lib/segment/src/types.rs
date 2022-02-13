@@ -33,6 +33,30 @@ pub enum ExtendedPointId {
     Uuid(Uuid),
 }
 
+pub struct PointIdParseError {
+    pub bad_id: String,
+}
+
+impl std::fmt::Display for PointIdParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Can't parse id `{}` into uint or UUID ", self.bad_id)
+    }
+}
+
+impl TryFrom<String> for ExtendedPointId {
+    type Error = PointIdParseError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match u64::from_str(&value) {
+            Ok(num) => Ok(ExtendedPointId::NumId(num)),
+            Err(_) => match Uuid::from_str(&value) {
+                Ok(uuid) => Ok(ExtendedPointId::Uuid(uuid)),
+                Err(_) => Err(PointIdParseError {bad_id: value}),
+            },
+        }
+    }
+}
+
 impl std::fmt::Display for ExtendedPointId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {

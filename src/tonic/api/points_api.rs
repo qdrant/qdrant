@@ -1,5 +1,4 @@
 use tonic::{Request, Response, Status};
-use uuid::Uuid;
 
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
@@ -8,7 +7,6 @@ use crate::common::points::{
 use crate::tonic::api::common::error_to_status;
 use crate::tonic::qdrant::condition::ConditionOneOf;
 use crate::tonic::qdrant::payload::PayloadOneOf::{Float, Geo, Integer, Keyword};
-use crate::tonic::qdrant::point_id::PointIdOptions;
 use crate::tonic::qdrant::points_selector::PointsSelectorOneOf;
 use crate::tonic::qdrant::points_server::Points;
 use crate::tonic::qdrant::r#match::MatchValue;
@@ -16,8 +14,8 @@ use crate::tonic::qdrant::{
     ClearPayloadPoints, Condition, CreateFieldIndexCollection, DeleteFieldIndexCollection,
     DeletePayloadPoints, DeletePoints, FieldCondition, Filter, FloatPayload, GeoBoundingBox,
     GeoPayload, GeoPoint, GeoRadius, HasIdCondition, IntegerPayload, KeywordPayload, Match,
-    Payload, PointId, PointStruct, PointsOperationResponse, PointsSelector, Range,
-    SetPayloadPoints, UpdateResult, UpsertPoints,
+    Payload, PointStruct, PointsOperationResponse, PointsSelector, Range, SetPayloadPoints,
+    UpdateResult, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{
@@ -26,7 +24,8 @@ use collection::operations::point_ops::{
 use collection::operations::types::UpdateResult as CollectionUpdateResult;
 use collection::operations::CollectionUpdateOperations;
 use segment::types::{
-    PayloadInterface, PayloadInterfaceStrict, PayloadKeyType, PayloadVariant, PointIdType,
+    PayloadInterface, PayloadInterfaceStrict, PayloadKeyType, PayloadVariant, PointIdParseError,
+    PointIdType,
 };
 use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
@@ -41,6 +40,15 @@ pub struct PointsService {
 impl PointsService {
     pub fn new(toc: Arc<TableOfContent>) -> Self {
         Self { toc }
+    }
+
+    pub fn point_ids_into_internal<B: FromIterator<PointIdType>, T: IntoIterator<Item = String>>(
+        ids: T,
+    ) -> Result<B, Status> {
+        ids.into_iter()
+            .map(|p| p.try_into())
+            .collect::<Result<_, _>>()
+            .map_err(|err: PointIdParseError| Status::invalid_argument(err.to_string()))
     }
 }
 
@@ -121,10 +129,7 @@ impl Points for PointsService {
 
         let operation = collection::operations::payload_ops::SetPayload {
             payload: payload_to_interface(payload)?,
-            points: points
-                .into_iter()
-                .map(|p| p.try_into())
-                .collect::<Result<_, _>>()?,
+            points: Self::point_ids_into_internal(points)?,
         };
 
         let timing = Instant::now();
@@ -154,10 +159,7 @@ impl Points for PointsService {
 
         let operation = DeletePayload {
             keys,
-            points: points
-                .into_iter()
-                .map(|p| p.try_into())
-                .collect::<Result<_, _>>()?,
+            points: Self::point_ids_into_internal(points)?,
         };
 
         let timing = Instant::now();
@@ -254,22 +256,6 @@ impl Points for PointsService {
     }
 }
 
-impl TryFrom<PointId> for PointIdType {
-    type Error = Status;
-
-    fn try_from(value: PointId) -> Result<Self, Self::Error> {
-        match value.point_id_options {
-            Some(PointIdOptions::Num(num_id)) => Ok(PointIdType::NumId(num_id)),
-            Some(PointIdOptions::Uuid(uui_str)) => Uuid::parse_str(&uui_str)
-                .map(|uuid| PointIdType::Uuid(uuid))
-                .map_err(|_err| {
-                    Status::invalid_argument(format!("Unable to parse UUID: {}", uui_str))
-                }),
-            _ => Err(Status::invalid_argument(format!("No ID options provided"))),
-        }
-    }
-}
-
 impl TryFrom<PointStruct> for collection::operations::point_ops::PointStruct {
     type Error = Status;
 
@@ -284,8 +270,8 @@ impl TryFrom<PointStruct> for collection::operations::point_ops::PointStruct {
 
         Ok(Self {
             id: id
-                .ok_or(Status::invalid_argument("Empty ID is not allowed"))?
-                .try_into()?,
+                .try_into()
+                .map_err(|err: PointIdParseError| Status::invalid_argument(err.to_string()))?,
             vector,
             payload: Some(converted_payload),
         })
@@ -316,11 +302,7 @@ impl TryFrom<PointsSelector> for collection::operations::point_ops::PointsSelect
         match value.points_selector_one_of {
             Some(PointsSelectorOneOf::Points(points)) => Ok(
                 collection::operations::point_ops::PointsSelector::PointIdsSelector(PointIdsList {
-                    points: points
-                        .ids
-                        .into_iter()
-                        .map(|p| p.try_into())
-                        .collect::<Result<Vec<_>, _>>()?,
+                    points: PointsService::point_ids_into_internal(points.ids)?,
                 }),
             ),
             Some(PointsSelectorOneOf::Filter(f)) => Ok(
@@ -384,11 +366,7 @@ impl TryFrom<HasIdCondition> for segment::types::HasIdCondition {
     type Error = Status;
 
     fn try_from(value: HasIdCondition) -> Result<Self, Self::Error> {
-        let set: HashSet<PointIdType> = value
-            .has_id
-            .into_iter()
-            .map(|p| p.try_into())
-            .collect::<Result<_, _>>()?;
+        let set: HashSet<PointIdType> = PointsService::point_ids_into_internal(value.has_id)?;
         Ok(Self { has_id: set })
     }
 }
