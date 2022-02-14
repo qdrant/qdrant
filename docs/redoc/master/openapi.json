@@ -1123,18 +1123,39 @@
         ]
       },
       "PayloadSelector": {
-        "additionalProperties": false,
         "description": "Specifies how to treat payload selector",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "include": {
+                "$ref": "#/components/schemas/PayloadSelectorInclude"
+              }
+            },
+            "required": [
+              "include"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "exclude": {
+                "$ref": "#/components/schemas/PayloadSelectorExclude"
+              }
+            },
+            "required": [
+              "exclude"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "PayloadSelectorExclude": {
+        "additionalProperties": false,
         "properties": {
           "exclude": {
-            "description": "Post-exclude return payload key type",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "include": {
-            "description": "Include return payload key type",
+            "description": "Exclude this fields from returning payload",
             "items": {
               "type": "string"
             },
@@ -1142,7 +1163,22 @@
           }
         },
         "required": [
-          "exclude",
+          "exclude"
+        ],
+        "type": "object"
+      },
+      "PayloadSelectorInclude": {
+        "additionalProperties": false,
+        "properties": {
+          "include": {
+            "description": "Only include this payload keys",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
           "include"
         ],
         "type": "object"
