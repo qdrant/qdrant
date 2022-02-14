@@ -30,7 +30,7 @@ $docker_grpcurl -d '{
   "wait": true,
   "points": [
     {
-      "id": 1,
+      "id": { "num": 1 },
       "vector": [0.05, 0.61, 0.76, 0.74],
       "payload": {
         "city": { "keyword": { "values": ["Berlin"] }},
@@ -40,10 +40,10 @@ $docker_grpcurl -d '{
         "coords": { "geo": { "values": [{ "lat": 1.0, "lon": 2.0 }]}}
       }
     },
-    {"id": 2, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"square": {"float": { "values": [10, 11]}}}},
-    {"id": 3, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"count": {"integer": {"values": [0]}}}},
-    {"id": 4, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"coords": {"geo": {"values": [{ "lat": 1.0, "lon": 2.0}, { "lat": 3.0, "lon": 4.0}]}}}},
-    {"id": 5, "vector": [0.35, 0.08, 0.11, 0.44]}
+    {"id": { "num": 2 }, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"square": {"float": { "values": [10, 11]}}}},
+    {"id": { "num": 3 }, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"count": {"integer": {"values": [0]}}}},
+    {"id": { "num": 4 }, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"coords": {"geo": {"values": [{ "lat": 1.0, "lon": 2.0}, { "lat": 3.0, "lon": 4.0}]}}}},
+    {"id": { "num": 5 }, "vector": [0.35, 0.08, 0.11, 0.44]}
   ]
 }' $QDRANT_HOST qdrant.Points/Upsert
 

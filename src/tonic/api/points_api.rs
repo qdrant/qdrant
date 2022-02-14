@@ -1,4 +1,5 @@
 use tonic::{Request, Response, Status};
+use uuid::Uuid;
 
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
@@ -7,6 +8,7 @@ use crate::common::points::{
 use crate::tonic::api::common::error_to_status;
 use crate::tonic::qdrant::condition::ConditionOneOf;
 use crate::tonic::qdrant::payload::PayloadOneOf::{Float, Geo, Integer, Keyword};
+use crate::tonic::qdrant::point_id::PointIdOptions;
 use crate::tonic::qdrant::points_selector::PointsSelectorOneOf;
 use crate::tonic::qdrant::points_server::Points;
 use crate::tonic::qdrant::r#match::MatchValue;
@@ -14,8 +16,8 @@ use crate::tonic::qdrant::{
     ClearPayloadPoints, Condition, CreateFieldIndexCollection, DeleteFieldIndexCollection,
     DeletePayloadPoints, DeletePoints, FieldCondition, Filter, FloatPayload, GeoBoundingBox,
     GeoPayload, GeoPoint, GeoRadius, HasIdCondition, IntegerPayload, KeywordPayload, Match,
-    Payload, PointStruct, PointsOperationResponse, PointsSelector, Range, SetPayloadPoints,
-    UpdateResult, UpsertPoints,
+    Payload, PointId, PointStruct, PointsOperationResponse, PointsSelector, Range,
+    SetPayloadPoints, UpdateResult, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{
@@ -119,7 +121,10 @@ impl Points for PointsService {
 
         let operation = collection::operations::payload_ops::SetPayload {
             payload: payload_to_interface(payload)?,
-            points: points.into_iter().map(|p| p.into()).collect(),
+            points: points
+                .into_iter()
+                .map(|p| p.try_into())
+                .collect::<Result<_, _>>()?,
         };
 
         let timing = Instant::now();
@@ -149,7 +154,10 @@ impl Points for PointsService {
 
         let operation = DeletePayload {
             keys,
-            points: points.into_iter().map(|p| p.into()).collect(),
+            points: points
+                .into_iter()
+                .map(|p| p.try_into())
+                .collect::<Result<_, _>>()?,
         };
 
         let timing = Instant::now();
@@ -246,6 +254,24 @@ impl Points for PointsService {
     }
 }
 
+impl TryFrom<PointId> for PointIdType {
+    type Error = Status;
+
+    fn try_from(value: PointId) -> Result<Self, Self::Error> {
+        match value.point_id_options {
+            Some(PointIdOptions::Num(num_id)) => Ok(PointIdType::NumId(num_id)),
+            Some(PointIdOptions::Uuid(uui_str)) => Uuid::parse_str(&uui_str)
+                .map(PointIdType::Uuid)
+                .map_err(|_err| {
+                    Status::invalid_argument(format!("Unable to parse UUID: {}", uui_str))
+                }),
+            _ => Err(Status::invalid_argument(
+                "No ID options provided".to_string(),
+            )),
+        }
+    }
+}
+
 impl TryFrom<PointStruct> for collection::operations::point_ops::PointStruct {
     type Error = Status;
 
@@ -259,7 +285,9 @@ impl TryFrom<PointStruct> for collection::operations::point_ops::PointStruct {
         let converted_payload = payload_to_interface(payload)?;
 
         Ok(Self {
-            id: PointIdType::NumId(id),
+            id: id
+                .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
+                .try_into()?,
             vector,
             payload: Some(converted_payload),
         })
@@ -290,7 +318,11 @@ impl TryFrom<PointsSelector> for collection::operations::point_ops::PointsSelect
         match value.points_selector_one_of {
             Some(PointsSelectorOneOf::Points(points)) => Ok(
                 collection::operations::point_ops::PointsSelector::PointIdsSelector(PointIdsList {
-                    points: points.ids.into_iter().map(|p| p.into()).collect(),
+                    points: points
+                        .ids
+                        .into_iter()
+                        .map(|p| p.try_into())
+                        .collect::<Result<Vec<_>, _>>()?,
                 }),
             ),
             Some(PointsSelectorOneOf::Filter(f)) => Ok(
@@ -354,7 +386,11 @@ impl TryFrom<HasIdCondition> for segment::types::HasIdCondition {
     type Error = Status;
 
     fn try_from(value: HasIdCondition) -> Result<Self, Self::Error> {
-        let set: HashSet<PointIdType> = value.has_id.into_iter().map(|p| p.into()).collect();
+        let set: HashSet<PointIdType> = value
+            .has_id
+            .into_iter()
+            .map(|p| p.try_into())
+            .collect::<Result<_, _>>()?;
         Ok(Self { has_id: set })
     }
 }

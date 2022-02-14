@@ -551,8 +551,27 @@ pub mod collections_server {
         const NAME: &'static str = "qdrant.Collections";
     }
 } // ---------------------------------------------
-  // ---------------- RPC Requests ---------------
+  // ------------- Point Id Requests -------------
   // ---------------------------------------------
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PointId {
+    #[prost(oneof = "point_id::PointIdOptions", tags = "1, 2")]
+    pub point_id_options: ::core::option::Option<point_id::PointIdOptions>,
+}
+/// Nested message and enum types in `PointId`.
+pub mod point_id {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum PointIdOptions {
+        #[prost(uint64, tag = "1")]
+        Num(u64),
+        #[prost(string, tag = "2")]
+        Uuid(::prost::alloc::string::String),
+    }
+}
+// ---------------------------------------------
+// ---------------- RPC Requests ---------------
+// ---------------------------------------------
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpsertPoints {
@@ -580,8 +599,8 @@ pub struct SetPayloadPoints {
     pub wait: ::core::option::Option<bool>,
     #[prost(map = "string, message", tag = "3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Payload>,
-    #[prost(uint64, repeated, tag = "4")]
-    pub points: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, repeated, tag = "4")]
+    pub points: ::prost::alloc::vec::Vec<PointId>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePayloadPoints {
@@ -591,8 +610,8 @@ pub struct DeletePayloadPoints {
     pub wait: ::core::option::Option<bool>,
     #[prost(string, repeated, tag = "3")]
     pub keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(uint64, repeated, tag = "4")]
-    pub points: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, repeated, tag = "4")]
+    pub points: ::prost::alloc::vec::Vec<PointId>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClearPayloadPoints {
@@ -671,8 +690,8 @@ pub mod condition {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HasIdCondition {
-    #[prost(uint64, repeated, tag = "1")]
-    pub has_id: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, repeated, tag = "1")]
+    pub has_id: ::prost::alloc::vec::Vec<PointId>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FieldCondition {
@@ -748,8 +767,8 @@ pub mod points_selector {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsIdsList {
-    #[prost(uint64, repeated, tag = "1")]
-    pub ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, repeated, tag = "1")]
+    pub ids: ::prost::alloc::vec::Vec<PointId>,
 }
 // ---------------------------------------------
 // ------------------- Point -------------------
@@ -757,8 +776,8 @@ pub struct PointsIdsList {
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointStruct {
-    #[prost(uint64, tag = "1")]
-    pub id: u64,
+    #[prost(message, optional, tag = "1")]
+    pub id: ::core::option::Option<PointId>,
     #[prost(float, repeated, tag = "2")]
     pub vector: ::prost::alloc::vec::Vec<f32>,
     #[prost(map = "string, message", tag = "3")]
