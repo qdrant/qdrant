@@ -144,7 +144,7 @@ mod tests {
     use crate::payload_storage::schema_storage::SchemaStorage;
     use crate::payload_storage::PayloadStorage;
     use crate::types::GeoPoint;
-    use crate::types::{FieldCondition, GeoBoundingBox, Match, PayloadType, Range};
+    use crate::types::{FieldCondition, GeoBoundingBox, PayloadType, Range};
     use std::collections::HashSet;
     use tempdir::TempDir;
 
@@ -191,10 +191,7 @@ mod tests {
 
         let match_red = Condition::Field(FieldCondition {
             key: "color".to_string(),
-            r#match: Some(Match {
-                keyword: Some("red".to_owned()),
-                integer: None,
-            }),
+            r#match: Some("red".to_owned().into()),
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
@@ -202,10 +199,7 @@ mod tests {
 
         let match_blue = Condition::Field(FieldCondition {
             key: "color".to_string(),
-            r#match: Some(Match {
-                keyword: Some("blue".to_owned()),
-                integer: None,
-            }),
+            r#match: Some("blue".to_owned().into()),
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
@@ -213,10 +207,7 @@ mod tests {
 
         let with_delivery = Condition::Field(FieldCondition {
             key: "has_delivery".to_string(),
-            r#match: Some(Match {
-                keyword: None,
-                integer: Some(1),
-            }),
+            r#match: Some(1.into()),
             range: None,
             geo_bounding_box: None,
             geo_radius: None,

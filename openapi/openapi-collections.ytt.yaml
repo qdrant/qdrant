@@ -115,7 +115,7 @@ paths:
 
       responses: #@ response(type("boolean"))
 
-  /collections/{collection_name}/index:
+  /collections/{name}/index:
     put:
       tags:
         - collections
@@ -123,7 +123,7 @@ paths:
       description: Create index for field in collection
       operationId: create_field_index
       parameters:
-        - name: collection_name
+        - name: name
           in: path
           description: Name of the collection
           required: true
@@ -144,7 +144,7 @@ paths:
 
       responses: #@ response(reference("UpdateResult"))
 
-  /collections/{collection_name}/index/{field_name}:
+  /collections/{name}/index/{field_name}:
     delete:
       tags:
         - collections
@@ -152,7 +152,7 @@ paths:
       description: Delete field index for collection
       operationId: delete_field_index
       parameters:
-        - name: collection_name
+        - name: name
           in: path
           description: Name of the collection
           required: true

@@ -550,6 +550,77 @@ pub mod collections_server {
     impl<T: Collections> tonic::transport::NamedService for CollectionsServer<T> {
         const NAME: &'static str = "qdrant.Collections";
     }
+} // ---------------------------------------------
+  // ------------- Point Id Requests -------------
+  // ---------------------------------------------
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PointId {
+    #[prost(oneof = "point_id::PointIdOptions", tags = "1, 2")]
+    pub point_id_options: ::core::option::Option<point_id::PointIdOptions>,
+}
+/// Nested message and enum types in `PointId`.
+pub mod point_id {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum PointIdOptions {
+        #[prost(uint64, tag = "1")]
+        Num(u64),
+        #[prost(string, tag = "2")]
+        Uuid(::prost::alloc::string::String),
+    }
+}
+// ---------------------------------------------
+// ---------------- RPC Requests ---------------
+// ---------------------------------------------
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpsertPoints {
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    #[prost(message, repeated, tag = "3")]
+    pub points: ::prost::alloc::vec::Vec<PointStruct>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeletePoints {
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    #[prost(message, optional, tag = "3")]
+    pub points: ::core::option::Option<PointsSelector>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SetPayloadPoints {
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    #[prost(map = "string, message", tag = "3")]
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Payload>,
+    #[prost(message, repeated, tag = "4")]
+    pub points: ::prost::alloc::vec::Vec<PointId>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeletePayloadPoints {
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    #[prost(string, repeated, tag = "3")]
+    pub keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(message, repeated, tag = "4")]
+    pub points: ::prost::alloc::vec::Vec<PointId>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClearPayloadPoints {
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(bool, optional, tag = "2")]
+    pub wait: ::core::option::Option<bool>,
+    #[prost(message, optional, tag = "3")]
+    pub points: ::core::option::Option<PointsSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateFieldIndexCollection {
@@ -570,70 +641,96 @@ pub struct DeleteFieldIndexCollection {
     pub field_name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeletePayloadPoints {
-    #[prost(string, tag = "1")]
-    pub collection: ::prost::alloc::string::String,
-    #[prost(bool, optional, tag = "2")]
-    pub wait: ::core::option::Option<bool>,
-    #[prost(string, repeated, tag = "3")]
-    pub keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(uint64, repeated, tag = "4")]
-    pub points: ::prost::alloc::vec::Vec<u64>,
+pub struct PayloadIncludeSelector {
+    #[prost(string, repeated, tag = "1")]
+    pub include: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SetPayloadPoints {
-    #[prost(string, tag = "1")]
-    pub collection: ::prost::alloc::string::String,
-    #[prost(bool, optional, tag = "2")]
-    pub wait: ::core::option::Option<bool>,
-    #[prost(map = "string, message", tag = "3")]
-    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Payload>,
-    #[prost(uint64, repeated, tag = "4")]
-    pub points: ::prost::alloc::vec::Vec<u64>,
+pub struct PayloadExcludeSelector {
+    #[prost(string, repeated, tag = "1")]
+    pub exclude: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ClearPayloadPoints {
-    #[prost(string, tag = "1")]
-    pub collection: ::prost::alloc::string::String,
-    #[prost(bool, optional, tag = "2")]
-    pub wait: ::core::option::Option<bool>,
-    #[prost(message, optional, tag = "3")]
-    pub points: ::core::option::Option<PointsSelector>,
+pub struct WithPayloadSelector {
+    #[prost(oneof = "with_payload_selector::SelectorOptions", tags = "1, 2, 3")]
+    pub selector_options: ::core::option::Option<with_payload_selector::SelectorOptions>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeletePoints {
-    #[prost(string, tag = "1")]
-    pub collection: ::prost::alloc::string::String,
-    #[prost(bool, optional, tag = "2")]
-    pub wait: ::core::option::Option<bool>,
-    #[prost(message, optional, tag = "3")]
-    pub points: ::core::option::Option<PointsSelector>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PointsSelector {
-    #[prost(oneof = "points_selector::PointsSelectorOneOf", tags = "1, 2")]
-    pub points_selector_one_of: ::core::option::Option<points_selector::PointsSelectorOneOf>,
-}
-/// Nested message and enum types in `PointsSelector`.
-pub mod points_selector {
+/// Nested message and enum types in `WithPayloadSelector`.
+pub mod with_payload_selector {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum PointsSelectorOneOf {
-        #[prost(message, tag = "1")]
-        Ids(super::PointsIdsList),
+    pub enum SelectorOptions {
+        #[prost(bool, tag = "1")]
+        Enable(bool),
         #[prost(message, tag = "2")]
-        FilterSelector(super::FilterSelector),
+        Include(super::PayloadIncludeSelector),
+        #[prost(message, tag = "3")]
+        Exclude(super::PayloadExcludeSelector),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PointsIdsList {
-    #[prost(uint64, repeated, tag = "1")]
-    pub ids: ::prost::alloc::vec::Vec<u64>,
+pub struct SearchParams {
+    #[prost(uint64, optional, tag = "1")]
+    pub hnsw_ef: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FilterSelector {
-    #[prost(message, optional, tag = "1")]
+pub struct SearchPoints {
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(float, repeated, tag = "2")]
+    pub vector: ::prost::alloc::vec::Vec<f32>,
+    #[prost(message, optional, tag = "3")]
     pub filter: ::core::option::Option<Filter>,
+    #[prost(uint64, tag = "4")]
+    pub top: u64,
+    #[prost(bool, optional, tag = "5")]
+    pub with_vector: ::core::option::Option<bool>,
+    #[prost(message, optional, tag = "6")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    #[prost(message, optional, tag = "7")]
+    pub params: ::core::option::Option<SearchParams>,
 }
+// ---------------------------------------------
+// ---------------- RPC Response ---------------
+// ---------------------------------------------
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PointsOperationResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<UpdateResult>,
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateResult {
+    #[prost(uint64, tag = "1")]
+    pub operation_id: u64,
+    #[prost(enumeration = "UpdateStatus", tag = "2")]
+    pub status: i32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ScoredPoint {
+    #[prost(message, optional, tag = "1")]
+    pub id: ::core::option::Option<PointId>,
+    #[prost(map = "string, message", tag = "2")]
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Payload>,
+    #[prost(float, tag = "3")]
+    pub score: f32,
+    #[prost(float, repeated, tag = "4")]
+    pub vector: ::prost::alloc::vec::Vec<f32>,
+    #[prost(uint64, tag = "5")]
+    pub version: u64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+// ---------------------------------------------
+// ------------- Filter Conditions -------------
+// ---------------------------------------------
+
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Filter {
     #[prost(message, repeated, tag = "1")]
@@ -661,9 +758,14 @@ pub mod condition {
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HasIdCondition {
+    #[prost(message, repeated, tag = "1")]
+    pub has_id: ::prost::alloc::vec::Vec<PointId>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FieldCondition {
-    #[prost(message, optional, tag = "1")]
-    pub key: ::core::option::Option<KeywordPayloadRequest>,
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "2")]
     pub r#match: ::core::option::Option<Match>,
     #[prost(message, optional, tag = "3")]
@@ -672,6 +774,32 @@ pub struct FieldCondition {
     pub geo_bounding_box: ::core::option::Option<GeoBoundingBox>,
     #[prost(message, optional, tag = "5")]
     pub geo_radius: ::core::option::Option<GeoRadius>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Match {
+    #[prost(oneof = "r#match::MatchValue", tags = "1, 2")]
+    pub match_value: ::core::option::Option<r#match::MatchValue>,
+}
+/// Nested message and enum types in `Match`.
+pub mod r#match {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum MatchValue {
+        #[prost(string, tag = "1")]
+        Keyword(::prost::alloc::string::String),
+        #[prost(int64, tag = "2")]
+        Integer(i64),
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Range {
+    #[prost(double, optional, tag = "1")]
+    pub lt: ::core::option::Option<f64>,
+    #[prost(double, optional, tag = "2")]
+    pub gt: ::core::option::Option<f64>,
+    #[prost(double, optional, tag = "3")]
+    pub gte: ::core::option::Option<f64>,
+    #[prost(double, optional, tag = "4")]
+    pub lte: ::core::option::Option<f64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoBoundingBox {
@@ -687,62 +815,47 @@ pub struct GeoRadius {
     #[prost(float, tag = "2")]
     pub radius: f32,
 }
+// ---------------------------------------------
+// -------------- Points Selector --------------
+// ---------------------------------------------
+
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct HasIdCondition {
-    #[prost(uint64, repeated, tag = "1")]
-    pub has_id: ::prost::alloc::vec::Vec<u64>,
+pub struct PointsSelector {
+    #[prost(oneof = "points_selector::PointsSelectorOneOf", tags = "1, 2")]
+    pub points_selector_one_of: ::core::option::Option<points_selector::PointsSelectorOneOf>,
+}
+/// Nested message and enum types in `PointsSelector`.
+pub mod points_selector {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum PointsSelectorOneOf {
+        #[prost(message, tag = "1")]
+        Points(super::PointsIdsList),
+        #[prost(message, tag = "2")]
+        Filter(super::Filter),
+    }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Range {
-    #[prost(message, optional, tag = "1")]
-    pub lt: ::core::option::Option<FloatPayloadRequest>,
-    #[prost(message, optional, tag = "2")]
-    pub gt: ::core::option::Option<FloatPayloadRequest>,
-    #[prost(message, optional, tag = "3")]
-    pub gte: ::core::option::Option<FloatPayloadRequest>,
-    #[prost(message, optional, tag = "4")]
-    pub lte: ::core::option::Option<FloatPayloadRequest>,
+pub struct PointsIdsList {
+    #[prost(message, repeated, tag = "1")]
+    pub ids: ::prost::alloc::vec::Vec<PointId>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Match {
-    #[prost(string, optional, tag = "1")]
-    pub keyword: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(message, optional, tag = "2")]
-    pub integer: ::core::option::Option<IntegerPayloadRequest>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct UpsertPoints {
-    #[prost(string, tag = "1")]
-    pub collection: ::prost::alloc::string::String,
-    #[prost(bool, optional, tag = "2")]
-    pub wait: ::core::option::Option<bool>,
-    #[prost(message, repeated, tag = "3")]
-    pub points: ::prost::alloc::vec::Vec<PointStruct>,
-}
+// ---------------------------------------------
+// ------------------- Point -------------------
+// ---------------------------------------------
+
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointStruct {
-    #[prost(uint64, tag = "1")]
-    pub id: u64,
+    #[prost(message, optional, tag = "1")]
+    pub id: ::core::option::Option<PointId>,
     #[prost(float, repeated, tag = "2")]
     pub vector: ::prost::alloc::vec::Vec<f32>,
     #[prost(map = "string, message", tag = "3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Payload>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct KeywordPayloadRequest {
-    #[prost(string, tag = "1")]
-    pub value: ::prost::alloc::string::String,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct IntegerPayloadRequest {
-    #[prost(int64, tag = "1")]
-    pub value: i64,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FloatPayloadRequest {
-    #[prost(double, tag = "1")]
-    pub value: f64,
-}
+// ---------------------------------------------
+// ------------------ Payload ------------------
+// ---------------------------------------------
+
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Payload {
     #[prost(oneof = "payload::PayloadOneOf", tags = "1, 2, 3, 4")]
@@ -765,22 +878,22 @@ pub mod payload {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct KeywordPayload {
     #[prost(string, repeated, tag = "1")]
-    pub value: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    pub values: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IntegerPayload {
     #[prost(int64, repeated, tag = "1")]
-    pub value: ::prost::alloc::vec::Vec<i64>,
+    pub values: ::prost::alloc::vec::Vec<i64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FloatPayload {
     #[prost(double, repeated, tag = "1")]
-    pub value: ::prost::alloc::vec::Vec<f64>,
+    pub values: ::prost::alloc::vec::Vec<f64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoPayload {
     #[prost(message, repeated, tag = "1")]
-    pub value: ::prost::alloc::vec::Vec<GeoPoint>,
+    pub values: ::prost::alloc::vec::Vec<GeoPoint>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoPoint {
@@ -788,20 +901,6 @@ pub struct GeoPoint {
     pub lon: f64,
     #[prost(double, tag = "2")]
     pub lat: f64,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PointsOperationResponse {
-    #[prost(message, optional, tag = "1")]
-    pub result: ::core::option::Option<UpdateResult>,
-    #[prost(double, tag = "2")]
-    pub time: f64,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct UpdateResult {
-    #[prost(uint64, tag = "1")]
-    pub operation_id: u64,
-    #[prost(enumeration = "UpdateStatus", tag = "2")]
-    pub status: i32,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -967,6 +1066,20 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/DeleteFieldIndex");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn search(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SearchPoints>,
+        ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Search");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 #[doc = r" Generated server implementations."]
@@ -1004,6 +1117,10 @@ pub mod points_server {
             &self,
             request: tonic::Request<super::DeleteFieldIndexCollection>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn search(
+            &self,
+            request: tonic::Request<super::SearchPoints>,
+        ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct PointsServer<T: Points> {
@@ -1255,6 +1372,37 @@ pub mod points_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = DeleteFieldIndexSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/Search" => {
+                    #[allow(non_camel_case_types)]
+                    struct SearchSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::SearchPoints> for SearchSvc<T> {
+                        type Response = super::SearchResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SearchPoints>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).search(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = SearchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
                             accept_compression_encodings,

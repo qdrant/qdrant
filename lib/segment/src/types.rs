@@ -557,14 +557,41 @@ fn flat(
     Ok(())
 }
 
+/// Match by keyword
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchKeyword {
+    /// Keyword value to match
+    pub keyword: String,
+}
+
 /// Match filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub struct Match {
-    /// Keyword value to match
-    pub keyword: Option<String>,
+pub struct MatchInteger {
     /// Integer value to match
-    pub integer: Option<IntPayloadType>,
+    pub integer: IntPayloadType,
+}
+
+/// Match filter request
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum Match {
+    Keyword(MatchKeyword),
+    Integer(MatchInteger),
+}
+
+impl From<String> for Match {
+    fn from(keyword: String) -> Self {
+        Self::Keyword(MatchKeyword { keyword })
+    }
+}
+
+impl From<IntPayloadType> for Match {
+    fn from(integer: IntPayloadType) -> Self {
+        Self::Integer(MatchInteger { integer })
+    }
 }
 
 /// Range filter request
@@ -680,39 +707,74 @@ impl From<&WithPayloadInterface> for WithPayload {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
+pub struct PayloadSelectorInclude {
+    /// Only include this payload keys
+    pub include: Vec<PayloadKeyType>,
+}
+
+impl PayloadSelectorInclude {
+    pub fn new(include: Vec<PayloadKeyType>) -> Self {
+        Self { include }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
+pub struct PayloadSelectorExclude {
+    /// Exclude this fields from returning payload
+    pub exclude: Vec<PayloadKeyType>,
+}
+
+impl PayloadSelectorExclude {
+    pub fn new(exclude: Vec<PayloadKeyType>) -> Self {
+        Self { exclude }
+    }
+}
+
 /// Specifies how to treat payload selector
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
-pub struct PayloadSelector {
-    /// Include return payload key type
-    pub include: Vec<PayloadKeyType>,
-    /// Post-exclude return payload key type
-    pub exclude: Vec<PayloadKeyType>,
+pub enum PayloadSelector {
+    Include(PayloadSelectorInclude),
+    Exclude(PayloadSelectorExclude),
+}
+
+impl From<PayloadSelectorExclude> for WithPayloadInterface {
+    fn from(selector: PayloadSelectorExclude) -> Self {
+        WithPayloadInterface::Selector(PayloadSelector::Exclude(selector))
+    }
+}
+
+impl From<PayloadSelectorInclude> for WithPayloadInterface {
+    fn from(selector: PayloadSelectorInclude) -> Self {
+        WithPayloadInterface::Selector(PayloadSelector::Include(selector))
+    }
 }
 
 impl PayloadSelector {
     pub fn new_include(vecs_payload_key_type: Vec<PayloadKeyType>) -> Self {
-        PayloadSelector {
+        PayloadSelector::Include(PayloadSelectorInclude {
             include: vecs_payload_key_type,
-            exclude: Vec::new(),
-        }
+        })
     }
 
-    pub fn new_include_and_exclude(
-        include: Vec<PayloadKeyType>,
-        exclude: Vec<PayloadKeyType>,
-    ) -> Self {
-        PayloadSelector { include, exclude }
+    pub fn check(&self, key: &PayloadKeyType) -> bool {
+        match self {
+            PayloadSelector::Include(selector) => selector.include.contains(key),
+            PayloadSelector::Exclude(selector) => !selector.exclude.contains(key),
+        }
     }
 
     pub fn process(
         &self,
         x: TheMap<PayloadKeyType, PayloadType>,
     ) -> TheMap<PayloadKeyType, PayloadType> {
-        x.into_iter()
-            .filter(|(key, _)| self.include.contains(key) && !self.exclude.contains(key))
-            .collect()
+        x.into_iter().filter(|(key, _)| self.check(key)).collect()
     }
 }
 
@@ -1036,10 +1098,7 @@ mod tests {
         let filter = Filter {
             must: Some(vec![Condition::Field(FieldCondition {
                 key: "hello".to_owned(),
-                r#match: Some(Match {
-                    keyword: Some("world".to_owned()),
-                    integer: None,
-                }),
+                r#match: Some("world".to_owned().into()),
                 range: None,
                 geo_bounding_box: None,
                 geo_radius: None,
