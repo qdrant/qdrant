@@ -40,12 +40,39 @@ $docker_grpcurl -d '{
         "coords": { "geo": { "values": [{ "lat": 1.0, "lon": 2.0 }]}}
       }
     },
-    {"id": { "num": 2 }, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"square": {"float": { "values": [10, 11]}}}},
-    {"id": { "num": 3 }, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"count": {"integer": {"values": [0]}}}},
-    {"id": { "num": 4 }, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"coords": {"geo": {"values": [{ "lat": 1.0, "lon": 2.0}, { "lat": 3.0, "lon": 4.0}]}}}},
-    {"id": { "num": 5 }, "vector": [0.35, 0.08, 0.11, 0.44]}
+    {"id": { "num": 2 }, "vector": [0.19, 0.81, 0.75, 0.11], "payload": {"city": {"keyword": { "values": ["Berlin", "London"] }}}},
+    {"id": { "num": 3 }, "vector": [0.36, 0.55, 0.47, 0.94], "payload": {"city": {"keyword": { "values": ["Berlin", "Moscow"] }}}},
+    {"id": { "num": 4 }, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"city": {"keyword": { "values": ["London", "Moscow"] }}}},
+    {"id": { "num": 5 }, "vector": [0.24, 0.18, 0.22, 0.44], "payload": {"count": { "integer": { "values": [0] }}}},
+    {"id": { "num": 6 }, "vector": [0.35, 0.08, 0.11, 0.44]}
   ]
 }' $QDRANT_HOST qdrant.Points/Upsert
+
+$docker_grpcurl -d '{
+  "collection": "test_collection",
+  "vector": [0.2,0.1,0.9,0.7],
+  "top": 3
+}' $QDRANT_HOST qdrant.Points/Search
+
+
+$docker_grpcurl -d '{
+  "collection": "test_collection",
+  "filter": {
+    "should": [
+      {
+        "field": {
+          "key": "city",
+          "match": {
+            "keyword": "London"
+          }
+        }
+      }
+    ]
+  },
+  "vector": [0.2,0.1,0.9,0.7],
+  "top": 3
+}' $QDRANT_HOST qdrant.Points/Search
+
 
 
 #SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')

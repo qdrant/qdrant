@@ -640,6 +640,55 @@ pub struct DeleteFieldIndexCollection {
     #[prost(string, tag = "3")]
     pub field_name: ::prost::alloc::string::String,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PayloadIncludeSelector {
+    #[prost(string, repeated, tag = "1")]
+    pub include: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PayloadExcludeSelector {
+    #[prost(string, repeated, tag = "1")]
+    pub exclude: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WithPayloadSelector {
+    #[prost(oneof = "with_payload_selector::SelectorOptions", tags = "1, 2, 3")]
+    pub selector_options: ::core::option::Option<with_payload_selector::SelectorOptions>,
+}
+/// Nested message and enum types in `WithPayloadSelector`.
+pub mod with_payload_selector {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum SelectorOptions {
+        #[prost(bool, tag = "1")]
+        Enable(bool),
+        #[prost(message, tag = "2")]
+        Include(super::PayloadIncludeSelector),
+        #[prost(message, tag = "3")]
+        Exclude(super::PayloadExcludeSelector),
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchParams {
+    #[prost(uint64, optional, tag = "1")]
+    pub hnsw_ef: ::core::option::Option<u64>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchPoints {
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(float, repeated, tag = "2")]
+    pub vector: ::prost::alloc::vec::Vec<f32>,
+    #[prost(message, optional, tag = "3")]
+    pub filter: ::core::option::Option<Filter>,
+    #[prost(uint64, tag = "4")]
+    pub top: u64,
+    #[prost(bool, optional, tag = "5")]
+    pub with_vector: ::core::option::Option<bool>,
+    #[prost(message, optional, tag = "6")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    #[prost(message, optional, tag = "7")]
+    pub params: ::core::option::Option<SearchParams>,
+}
 // ---------------------------------------------
 // ---------------- RPC Response ---------------
 // ---------------------------------------------
@@ -657,6 +706,26 @@ pub struct UpdateResult {
     pub operation_id: u64,
     #[prost(enumeration = "UpdateStatus", tag = "2")]
     pub status: i32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ScoredPoint {
+    #[prost(message, optional, tag = "1")]
+    pub id: ::core::option::Option<PointId>,
+    #[prost(map = "string, message", tag = "2")]
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Payload>,
+    #[prost(float, tag = "3")]
+    pub score: f32,
+    #[prost(float, repeated, tag = "4")]
+    pub vector: ::prost::alloc::vec::Vec<f32>,
+    #[prost(uint64, tag = "5")]
+    pub version: u64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
+    #[prost(double, tag = "2")]
+    pub time: f64,
 }
 // ---------------------------------------------
 // ------------- Filter Conditions -------------
@@ -997,6 +1066,20 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/DeleteFieldIndex");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn search(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SearchPoints>,
+        ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Search");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 #[doc = r" Generated server implementations."]
@@ -1034,6 +1117,10 @@ pub mod points_server {
             &self,
             request: tonic::Request<super::DeleteFieldIndexCollection>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn search(
+            &self,
+            request: tonic::Request<super::SearchPoints>,
+        ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct PointsServer<T: Points> {
@@ -1285,6 +1372,37 @@ pub mod points_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = DeleteFieldIndexSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/Search" => {
+                    #[allow(non_camel_case_types)]
+                    struct SearchSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::SearchPoints> for SearchSvc<T> {
+                        type Response = super::SearchResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SearchPoints>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).search(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = SearchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
                             accept_compression_encodings,

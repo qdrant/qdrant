@@ -602,39 +602,74 @@ impl From<&WithPayloadInterface> for WithPayload {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
+pub struct PayloadSelectorInclude {
+    /// Only include this payload keys
+    pub include: Vec<PayloadKeyType>,
+}
+
+impl PayloadSelectorInclude {
+    pub fn new(include: Vec<PayloadKeyType>) -> Self {
+        Self { include }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
+pub struct PayloadSelectorExclude {
+    /// Exclude this fields from returning payload
+    pub exclude: Vec<PayloadKeyType>,
+}
+
+impl PayloadSelectorExclude {
+    pub fn new(exclude: Vec<PayloadKeyType>) -> Self {
+        Self { exclude }
+    }
+}
+
 /// Specifies how to treat payload selector
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
-pub struct PayloadSelector {
-    /// Include return payload key type
-    pub include: Vec<PayloadKeyType>,
-    /// Post-exclude return payload key type
-    pub exclude: Vec<PayloadKeyType>,
+pub enum PayloadSelector {
+    Include(PayloadSelectorInclude),
+    Exclude(PayloadSelectorExclude),
+}
+
+impl From<PayloadSelectorExclude> for WithPayloadInterface {
+    fn from(selector: PayloadSelectorExclude) -> Self {
+        WithPayloadInterface::Selector(PayloadSelector::Exclude(selector))
+    }
+}
+
+impl From<PayloadSelectorInclude> for WithPayloadInterface {
+    fn from(selector: PayloadSelectorInclude) -> Self {
+        WithPayloadInterface::Selector(PayloadSelector::Include(selector))
+    }
 }
 
 impl PayloadSelector {
     pub fn new_include(vecs_payload_key_type: Vec<PayloadKeyType>) -> Self {
-        PayloadSelector {
+        PayloadSelector::Include(PayloadSelectorInclude {
             include: vecs_payload_key_type,
-            exclude: Vec::new(),
-        }
+        })
     }
 
-    pub fn new_include_and_exclude(
-        include: Vec<PayloadKeyType>,
-        exclude: Vec<PayloadKeyType>,
-    ) -> Self {
-        PayloadSelector { include, exclude }
+    pub fn check(&self, key: &PayloadKeyType) -> bool {
+        match self {
+            PayloadSelector::Include(selector) => selector.include.contains(key),
+            PayloadSelector::Exclude(selector) => !selector.exclude.contains(key),
+        }
     }
 
     pub fn process(
         &self,
         x: TheMap<PayloadKeyType, PayloadType>,
     ) -> TheMap<PayloadKeyType, PayloadType> {
-        x.into_iter()
-            .filter(|(key, _)| self.include.contains(key) && !self.exclude.contains(key))
-            .collect()
+        x.into_iter().filter(|(key, _)| self.check(key)).collect()
     }
 }
 
