@@ -28,8 +28,25 @@ def test_collection_update():
     assert response.ok
 
     response = request_with_validation(
+        api='/collections/{name}/points',
+        method="PUT",
+        path_params={'name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 7,
+                    "vector": [0.15, 0.31, 0.76, 0.74],
+                    "payload": {"city": {"type": "keyword", "value": "Rome"}}
+                }
+            ]
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
         api='/collections/{name}/points/{id}',
         method="GET",
-        path_params={'name': collection_name, 'id': 6},
+        path_params={'name': collection_name, 'id': 7},
     )
     assert response.ok

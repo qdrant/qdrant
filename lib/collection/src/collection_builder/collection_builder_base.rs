@@ -8,7 +8,7 @@ use num_cpus;
 use parking_lot::RwLock;
 use segment::payload_storage::schema_storage::SchemaStorage;
 use tokio::runtime;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::Mutex;
 
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::HnswConfig;
@@ -51,11 +51,8 @@ pub fn construct_collection(
 
     let locked_wal = Arc::new(Mutex::new(wal));
 
-    let (tx, rx) = mpsc::unbounded_channel();
-
     let update_handler = UpdateHandler::new(
         optimizers,
-        rx,
         optimize_runtime.handle().clone(),
         segment_holder.clone(),
         locked_wal.clone(),
@@ -68,7 +65,6 @@ pub fn construct_collection(
         locked_wal,
         update_handler,
         optimize_runtime,
-        tx,
         collection_path.to_owned(),
         schema_store,
     )

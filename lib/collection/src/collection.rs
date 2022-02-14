@@ -1,3 +1,4 @@
+use arc_swap::ArcSwap;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -8,7 +9,7 @@ use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use tokio::runtime::{Handle, Runtime};
-use tokio::sync::{mpsc::UnboundedSender, oneshot, Mutex};
+use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot, Mutex};
 
 use segment::types::{
     Condition, Filter, HasIdCondition, PayloadKeyType, PayloadSchemaInfo, PointIdType, ScoredPoint,
@@ -40,7 +41,7 @@ pub struct Collection {
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
     update_handler: Arc<Mutex<UpdateHandler>>,
     runtime_handle: Option<Runtime>,
-    update_sender: UnboundedSender<UpdateSignal>,
+    update_sender: ArcSwap<UnboundedSender<UpdateSignal>>,
     path: PathBuf,
     schema_store: Arc<SchemaStorage>,
 }
@@ -52,19 +53,21 @@ impl Collection {
         segments: Arc<RwLock<SegmentHolder>>,
         config: CollectionConfig,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-        update_handler: UpdateHandler,
+        mut update_handler: UpdateHandler,
         runtime_handle: Runtime,
-        update_sender: UnboundedSender<UpdateSignal>,
         path: PathBuf,
         schema_store: Arc<SchemaStorage>,
     ) -> Self {
+        let (update_sender, update_receiver) = mpsc::unbounded_channel();
+        update_handler.run_workers(update_receiver);
+
         Self {
             segments,
             config: Arc::new(tokio::sync::RwLock::new(config)),
             wal,
             update_handler: Arc::new(tokio::sync::Mutex::new(update_handler)),
             runtime_handle: Some(runtime_handle),
-            update_sender,
+            update_sender: ArcSwap::from_pointee(update_sender),
             path,
             schema_store,
         }
@@ -82,7 +85,6 @@ impl Collection {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        let sndr = self.update_sender.clone();
         let (callback_sender, callback_receiver) = if wait {
             let (tx, rx) = oneshot::channel();
             (Some(tx), Some(rx))
@@ -93,11 +95,13 @@ impl Collection {
         let operation_id = {
             let mut wal_lock = self.wal.lock().await;
             let operation_id = wal_lock.write(&operation)?;
-            sndr.send(UpdateSignal::Operation(OperationData {
-                op_num: operation_id,
-                operation,
-                sender: callback_sender,
-            }))?;
+            self.update_sender
+                .load()
+                .send(UpdateSignal::Operation(OperationData {
+                    op_num: operation_id,
+                    operation,
+                    sender: callback_sender,
+                }))?;
             operation_id
         };
 
@@ -305,11 +309,6 @@ impl Collection {
         })
     }
 
-    pub async fn stop(&self) -> CollectionResult<()> {
-        self.update_sender.send(UpdateSignal::Stop)?;
-        Ok(())
-    }
-
     pub fn avg_vectors<'a>(
         vectors: impl Iterator<Item = &'a Vec<VectorElementType>>,
     ) -> Vec<VectorElementType> {
@@ -348,7 +347,12 @@ impl Collection {
         }
         let config = self.config.read().await;
         let mut update_handler = self.update_handler.lock().await;
-        self.stop().await?;
+
+        let (update_sender, update_receiver) = mpsc::unbounded_channel();
+        // makes sure that the Stop signal is the last one in this channel
+        let old_sender = self.update_sender.swap(Arc::new(update_sender));
+        old_sender.send(UpdateSignal::Stop)?;
+
         update_handler.wait_workers_stops().await?;
         let new_optimizers = build_optimizers(
             &self.path,
@@ -359,8 +363,8 @@ impl Collection {
         );
         update_handler.optimizers = new_optimizers;
         update_handler.flush_timeout_sec = config.optimizer_config.flush_interval_sec;
-        update_handler.run_workers();
-        self.update_sender.send(UpdateSignal::Nop)?;
+        update_handler.run_workers(update_receiver);
+        self.update_sender.load().send(UpdateSignal::Nop)?;
 
         Ok(())
     }
@@ -395,7 +399,7 @@ impl Collection {
 impl Drop for Collection {
     fn drop(&mut self) {
         // Finishes update tasks right before destructor stuck to do so with runtime
-        block_on(self.stop()).unwrap();
+        self.update_sender.load().send(UpdateSignal::Stop).unwrap();
 
         block_on(self.wait_update_workers_stop()).unwrap();
 
