@@ -1,21 +1,28 @@
 //! Contains functions for interpreting filter queries and defining if given points pass the conditions
 
-use crate::types::{GeoBoundingBox, GeoRadius, Match, PayloadType, Range};
+use crate::types::{
+    GeoBoundingBox, GeoRadius, Match, MatchInteger, MatchKeyword, PayloadType, Range,
+};
 use geo::algorithm::haversine_distance::HaversineDistance;
 use geo::Point;
 
 pub fn match_payload(payload: &PayloadType, condition_match: &Match) -> bool {
     match payload {
-        PayloadType::Keyword(payload_kws) => payload_kws.iter().any(|payload_kw| {
-            condition_match
-                .keyword
-                .as_ref()
-                .map_or(false, |x| x == payload_kw)
-        }),
-        PayloadType::Integer(payload_ints) => payload_ints
-            .iter()
-            .copied()
-            .any(|payload_int| condition_match.integer.map_or(false, |x| x == payload_int)),
+        PayloadType::Keyword(payload_kws) => {
+            payload_kws.iter().any(|payload_kw| match condition_match {
+                Match::Keyword(MatchKeyword { keyword }) => keyword == payload_kw,
+                _ => false,
+            })
+        }
+        PayloadType::Integer(payload_ints) => {
+            payload_ints
+                .iter()
+                .copied()
+                .any(|payload_int| match condition_match {
+                    Match::Integer(MatchInteger { integer }) => *integer == payload_int,
+                    _ => false,
+                })
+        }
         _ => false,
     }
 }

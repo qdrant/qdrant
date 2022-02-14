@@ -710,20 +710,41 @@
         "type": "object"
       },
       "Match": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/MatchKeyword"
+          },
+          {
+            "$ref": "#/components/schemas/MatchInteger"
+          }
+        ],
+        "description": "Match filter request"
+      },
+      "MatchInteger": {
         "description": "Match filter request",
         "properties": {
           "integer": {
             "description": "Integer value to match",
             "format": "int64",
-            "nullable": true,
             "type": "integer"
-          },
+          }
+        },
+        "required": [
+          "integer"
+        ],
+        "type": "object"
+      },
+      "MatchKeyword": {
+        "description": "Match by keyword",
+        "properties": {
           "keyword": {
             "description": "Keyword value to match",
-            "nullable": true,
             "type": "string"
           }
         },
+        "required": [
+          "keyword"
+        ],
         "type": "object"
       },
       "OptimizersConfig": {

@@ -452,14 +452,41 @@ impl From<&PayloadInterface> for PayloadType {
     }
 }
 
+/// Match by keyword
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchKeyword {
+    /// Keyword value to match
+    pub keyword: String,
+}
+
 /// Match filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub struct Match {
-    /// Keyword value to match
-    pub keyword: Option<String>,
+pub struct MatchInteger {
     /// Integer value to match
-    pub integer: Option<IntPayloadType>,
+    pub integer: IntPayloadType,
+}
+
+/// Match filter request
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum Match {
+    Keyword(MatchKeyword),
+    Integer(MatchInteger),
+}
+
+impl From<String> for Match {
+    fn from(keyword: String) -> Self {
+        Self::Keyword(MatchKeyword { keyword })
+    }
+}
+
+impl From<IntPayloadType> for Match {
+    fn from(integer: IntPayloadType) -> Self {
+        Self::Integer(MatchInteger { integer })
+    }
 }
 
 /// Range filter request
@@ -931,10 +958,7 @@ mod tests {
         let filter = Filter {
             must: Some(vec![Condition::Field(FieldCondition {
                 key: "hello".to_owned(),
-                r#match: Some(Match {
-                    keyword: Some("world".to_owned()),
-                    integer: None,
-                }),
+                r#match: Some("world".to_owned().into()),
                 range: None,
                 geo_bounding_box: None,
                 geo_radius: None,

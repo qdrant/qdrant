@@ -1,6 +1,5 @@
 use crate::types::{
-    Condition, FieldCondition, Filter, Match, PayloadType, Range as RangeCondition,
-    VectorElementType,
+    Condition, FieldCondition, Filter, PayloadType, Range as RangeCondition, VectorElementType,
 };
 use itertools::Itertools;
 use rand::prelude::ThreadRng;
@@ -66,10 +65,7 @@ pub fn random_field_condition(rnd_gen: &mut ThreadRng) -> Condition {
     if kv_or_int {
         Condition::Field(FieldCondition {
             key: "kvd".to_string(),
-            r#match: Some(Match {
-                keyword: Some(random_keyword(rnd_gen)),
-                integer: None,
-            }),
+            r#match: Some(random_keyword(rnd_gen).into()),
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
