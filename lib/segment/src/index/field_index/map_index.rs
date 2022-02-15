@@ -150,10 +150,15 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
 
 impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
     fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
-        match value {
-            PayloadType::Keyword(keywords) => self.add_many(id, keywords),
+        let values = match value {
+            PayloadType::String(keyword) => vec![keyword.to_owned()],
+            PayloadType::Array(array) => array
+                .iter()
+                .map(|item| item.as_str().unwrap().to_owned())
+                .collect(),
             _ => panic!("Unexpected payload type: {:?}", value),
-        }
+        };
+        self.add_many(id, &values);
     }
 
     fn build(&mut self) -> FieldIndex {
@@ -165,10 +170,12 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
 
 impl PayloadFieldIndexBuilder for PersistedMapIndex<IntPayloadType> {
     fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
-        match value {
-            PayloadType::Integer(numbers) => self.add_many(id, numbers),
+        let values = match value {
+            PayloadType::Number(number) => vec![number.as_i64().unwrap()],
+            PayloadType::Array(array) => array.iter().map(|item| item.as_i64().unwrap()).collect(),
             _ => panic!("Unexpected payload type: {:?}", value),
-        }
+        };
+        self.add_many(id, &values)
     }
 
     fn build(&mut self) -> FieldIndex {

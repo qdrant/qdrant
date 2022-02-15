@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SetPayload {
-    pub payload: HashMap<PayloadKeyType, PayloadInterface>,
+    pub payload: serde_json::Value,
     /// Assigns payload to each point in this list
     pub points: Vec<PointIdType>, // ToDo: replace with point selector
 }

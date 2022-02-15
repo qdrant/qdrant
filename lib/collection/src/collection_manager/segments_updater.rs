@@ -55,14 +55,14 @@ pub(crate) fn delete_points(
 pub(crate) fn set_payload(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
-    payload: &HashMap<PayloadKeyType, PayloadInterface>,
+    payload: &serde_json::Value,
     points: &[PointIdType],
 ) -> CollectionResult<usize> {
     let updated_points =
         segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
             let mut res = true;
             for (key, payload) in payload {
-                res = write_segment.set_payload(op_num, id, key, payload.into())? && res;
+                res = write_segment.set_payload(op_num, id, payload)? && res;
             }
             Ok(res)
         })?;

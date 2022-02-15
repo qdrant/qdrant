@@ -2,6 +2,7 @@ use crate::entry::entry_point::{OperationError, OperationResult};
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Formatter;
@@ -95,7 +96,7 @@ pub struct ScoredPoint {
     /// Points vector distance to the query vector
     pub score: ScoreType,
     /// Payload - values assigned to the point
-    pub payload: Option<TheMap<PayloadKeyType, PayloadType>>,
+    pub payload: Option<serde_json::Value>,
     /// Vector of the point
     pub vector: Option<Vec<VectorElementType>>,
 }
@@ -322,17 +323,19 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
     }
 }
 
-/// All possible payload types
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type", content = "value")]
-pub enum PayloadType {
-    Keyword(Vec<String>),
-    Integer(Vec<IntPayloadType>),
-    Float(Vec<FloatPayloadType>),
-    Geo(Vec<GeoPoint>),
-    Json(serde_json::Value),
-}
+// /// All possible payload types
+// #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+// #[serde(rename_all = "snake_case")]
+// #[serde(tag = "type", content = "value")]
+// pub enum PayloadType {
+//     Keyword(Vec<String>),
+//     Integer(Vec<IntPayloadType>),
+//     Float(Vec<FloatPayloadType>),
+//     Geo(Vec<GeoPoint>),
+//     Json(serde_json::Value),
+// }
+
+pub type PayloadType = serde_json::Value;
 
 /// All possible names of payload types
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
@@ -345,216 +348,24 @@ pub enum PayloadSchemaType {
     Geo,
 }
 
-impl From<&PayloadType> for PayloadSchemaType {
-    fn from(payload_type: &PayloadType) -> Self {
-        match payload_type {
-            PayloadType::Keyword(_) => PayloadSchemaType::Keyword,
-            PayloadType::Integer(_) => PayloadSchemaType::Integer,
-            PayloadType::Float(_) => PayloadSchemaType::Float,
-            PayloadType::Geo(_) => PayloadSchemaType::Geo,
-            _ => panic!("cannot convert to PayloadSchemaType"),
-        }
-    }
-}
-
-/// Payload interface structure which ensures that user is allowed to pass payload in
-/// both - array and single element forms.
-///
-/// Example:
-///
-/// Both versions should work:
-/// ```json
-/// {..., "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}},
-/// {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}},
-/// ```
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
-pub enum PayloadVariant<T> {
-    List(Vec<T>),
-    Value(T),
-}
-
-impl<T: Clone> PayloadVariant<T> {
-    pub fn to_list(&self) -> Vec<T> {
-        match self {
-            PayloadVariant::Value(x) => vec![x.clone()],
-            PayloadVariant::List(vec) => vec.clone(),
-        }
-    }
-}
-
-/// Structure for converting user-provided payload into internal structure representation
-///
-/// Used to allow user provide payload in more human-friendly format,
-/// and do not force explicit brackets, included constructions, e.t.c.
-///
-/// Example:
-///
-/// ```json
-/// {..., "payload": {"city": "Berlin"}, ... }
-/// ```
-///
-/// Should be captured by `KeywordShortcut`
-///
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
-pub enum PayloadInterface {
-    KeywordShortcut(PayloadVariant<String>),
-    IntShortcut(PayloadVariant<i64>),
-    FloatShortcut(PayloadVariant<f64>),
-    Payload(PayloadInterfaceStrict),
-    JsonPayload(serde_json::Value),
-}
-
-/// Fallback for `PayloadInterface` which is used if user explicitly specifies type of payload
-///
-/// Example:
-///
-/// ```json
-/// {..., "payload": {"city": { "type": "keyword", "value": "Berlin" }}, ... }
-/// ```
-///
-/// Should be captured by `Keyword(PayloadVariant<String>)`
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type", content = "value")]
-pub enum PayloadInterfaceStrict {
-    Keyword(PayloadVariant<String>),
-    Integer(PayloadVariant<i64>),
-    Float(PayloadVariant<f64>),
-    Geo(PayloadVariant<GeoPoint>),
-}
-
-// For tests
-impl From<PayloadInterfaceStrict> for PayloadInterface {
-    fn from(x: PayloadInterfaceStrict) -> Self {
-        PayloadInterface::Payload(x)
-    }
-}
-
-impl From<&PayloadInterfaceStrict> for PayloadType {
-    fn from(interface: &PayloadInterfaceStrict) -> Self {
-        match interface {
-            PayloadInterfaceStrict::Keyword(x) => PayloadType::Keyword(x.to_list()),
-            PayloadInterfaceStrict::Integer(x) => PayloadType::Integer(x.to_list()),
-            PayloadInterfaceStrict::Float(x) => PayloadType::Float(x.to_list()),
-            PayloadInterfaceStrict::Geo(x) => PayloadType::Geo(x.to_list()),
-        }
-    }
-}
-
-impl From<&PayloadInterface> for PayloadType {
-    fn from(interface: &PayloadInterface) -> Self {
-        match interface {
-            PayloadInterface::Payload(x) => x.into(),
-            PayloadInterface::KeywordShortcut(x) => PayloadType::Keyword(x.to_list()),
-            PayloadInterface::FloatShortcut(x) => PayloadType::Float(x.to_list()),
-            PayloadInterface::IntShortcut(x) => PayloadType::Integer(x.to_list()),
-            PayloadInterface::JsonPayload(x) => PayloadType::Json(x.clone()),
-        }
-    }
-}
-
-/// Flat a payload map.
-pub fn flat_payload(
-    key: PayloadKeyTypeRef,
-    payload: &PayloadType,
-) -> OperationResult<BTreeMap<PayloadKeyType, PayloadType>> {
-    let mut map = BTreeMap::new();
-
-    match payload {
-        PayloadType::Json(value) => {
-            flat(&mut map, key, value)?;
-        }
-        _ => {
-            map.insert(key.into(), payload.to_owned());
-        }
-    };
-
-    Ok(map)
-}
-
-fn flat(
-    map: &mut BTreeMap<PayloadKeyType, PayloadType>,
-    key: PayloadKeyTypeRef,
-    payload: &serde_json::Value,
-) -> OperationResult<()> {
-    match payload {
-        serde_json::Value::Object(json_object) => {
-            for (json_key, value) in json_object.iter() {
-                flat(map, &format!("{}.{}", key, json_key), value)?;
+// TODO(gvelo): implement for all json types.
+pub fn get_schema_type(value: &Value) -> Option<PayloadSchemaType> {
+    match value {
+        Value::Null => None,
+        Value::Bool(_) => None,
+        Value::Number(value) => {
+            if value.as_i64().is_some() {
+                Some(PayloadSchemaType::Integer);
             }
-        }
-        serde_json::Value::Array(array) => {
-            for value in array {
-                flat(map, key, value)?;
+            if value.as_i64().is_some() {
+                Some(PayloadSchemaType::Float);
             }
+            None
         }
-        serde_json::Value::String(value) => {
-            let payload_type = map
-                .entry(key.into())
-                .or_insert_with(|| PayloadType::Keyword(Vec::new()));
-            match payload_type {
-                PayloadType::Keyword(values) => values.push(value.to_owned()),
-                _ => {
-                    return Err(OperationError::TypeError {
-                        field_name: key.to_owned(),
-                        expected_type: "Keyword".to_string(),
-                    })
-                }
-            }
-        }
-        serde_json::Value::Number(number) => {
-            if number.is_f64() {
-                let payload_type = map
-                    .entry(key.into())
-                    .or_insert_with(|| PayloadType::Float(Vec::new()));
-                match payload_type {
-                    PayloadType::Float(values) => values.push(number.as_f64().unwrap()),
-                    _ => {
-                        return Err(OperationError::TypeError {
-                            field_name: key.to_owned(),
-                            expected_type: "Float".to_string(),
-                        })
-                    }
-                }
-            }
-            if number.is_i64() || number.is_u64() {
-                let payload_type = map
-                    .entry(key.into())
-                    .or_insert_with(|| PayloadType::Integer(Vec::new()));
-                let int = match number.as_i64() {
-                    Some(i) => i,
-                    None => {
-                        return Err(OperationError::TypeError {
-                            field_name: key.to_owned(),
-                            expected_type: "Integer".to_string(),
-                        })
-                    }
-                };
-                match payload_type {
-                    PayloadType::Integer(values) => values.push(int),
-                    _ => {
-                        return Err(OperationError::TypeError {
-                            field_name: key.to_owned(),
-                            expected_type: "Float".to_string(),
-                        })
-                    }
-                };
-            }
-        }
-        serde_json::Value::Null => {} // ignore nulls
-        serde_json::Value::Bool(_) => {
-            return Err(OperationError::TypeError {
-                field_name: key.to_owned(),
-                expected_type: "bool not supported".to_string(),
-            })
-        }
-    };
-
-    Ok(())
+        Value::String(_) => Some(PayloadSchemaType::Keyword),
+        Value::Array(_) => None,
+        Value::Object(_) => None,
+    }
 }
 
 /// Match by keyword
@@ -770,10 +581,7 @@ impl PayloadSelector {
         }
     }
 
-    pub fn process(
-        &self,
-        x: TheMap<PayloadKeyType, PayloadType>,
-    ) -> TheMap<PayloadKeyType, PayloadType> {
+    pub fn process(&self, x: &serde_json::Value) -> serde_json::Value {
         x.into_iter().filter(|(key, _)| self.check(key)).collect()
     }
 }

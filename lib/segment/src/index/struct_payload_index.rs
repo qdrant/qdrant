@@ -6,6 +6,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
 use log::debug;
+use serde_json::Value;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::IdTrackerSS;
@@ -18,7 +19,8 @@ use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
 use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
 use crate::types::{
-    Condition, FieldCondition, Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType,
+    get_schema_type, Condition, FieldCondition, Filter, PayloadKeyType, PayloadKeyTypeRef,
+    PointOffsetType,
 };
 use crate::vector_storage::VectorStorageSS;
 
@@ -189,18 +191,32 @@ impl StructPayloadIndex {
 
     pub fn build_field_index(&self, field: PayloadKeyTypeRef) -> OperationResult<Vec<FieldIndex>> {
         let payload_ref = self.payload.borrow();
-        let schema = payload_ref.schema();
 
-        let field_type_opt = schema.get(field);
+        let id = match payload_ref.iter_ids().next() {
+            Some(value) => value,
+            None => return Ok(vec![]), // There is not data to index
+        };
 
-        if field_type_opt.is_none() {
-            // There is not data to index
-            return Ok(vec![]);
-        }
+        let payload = payload_ref.payload(id);
 
-        let field_type = field_type_opt.unwrap();
+        let payload_field = match get_field_value(&payload, field) {
+            Some(field) => field,
+            None => {
+                // There is not data to index
+                return Ok(vec![]);
+            }
+        };
 
-        let mut builders = index_selector(field_type);
+        let payload_type = match get_schema_type(payload_field) {
+            Some(v) => v,
+            None => {
+                return Err(OperationError::ServiceError {
+                    description: "cannot determine field type".to_string(),
+                })
+            }
+        };
+
+        let mut builders = index_selector(&payload_type);
 
         for point_id in payload_ref.iter_ids() {
             let point_payload = payload_ref.payload(point_id);
@@ -366,5 +382,16 @@ impl PayloadIndex for StructPayloadIndex {
                 }))
             }
         }
+    }
+}
+
+// TODO(gvelo): move
+fn get_field_value<'a>(
+    json_value: &'a serde_json::Value,
+    field_name: &str,
+) -> Option<&'a serde_json::Value> {
+    match json_value {
+        Value::Object(map) => map.get(field_name),
+        _ => None,
     }
 }

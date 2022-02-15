@@ -1,6 +1,6 @@
 use crate::types::{
-    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType, ScoredPoint, SearchParams,
-    SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap, VectorElementType, WithPayload,
+    Filter, PayloadKeyType, PayloadKeyTypeRef, PointIdType, ScoredPoint, SearchParams,
+    SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, VectorElementType, WithPayload,
 };
 use atomicwrites::Error as AtomicIoError;
 use rocksdb::Error;
@@ -117,26 +117,11 @@ pub trait SegmentEntry {
         point_id: PointIdType,
     ) -> OperationResult<bool>;
 
-    fn set_full_payload(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        full_payload: TheMap<PayloadKeyType, PayloadType>,
-    ) -> OperationResult<bool>;
-
-    fn set_full_payload_with_json(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        full_payload: &str,
-    ) -> OperationResult<bool>;
-
     fn set_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        key: PayloadKeyTypeRef,
-        payload: PayloadType,
+        payload: &serde_json::Value,
     ) -> OperationResult<bool>;
 
     fn delete_payload(
@@ -154,10 +139,7 @@ pub trait SegmentEntry {
 
     fn vector(&self, point_id: PointIdType) -> OperationResult<Vec<VectorElementType>>;
 
-    fn payload(
-        &self,
-        point_id: PointIdType,
-    ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>>;
+    fn payload(&self, point_id: PointIdType) -> OperationResult<serde_json::Value>;
 
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
 

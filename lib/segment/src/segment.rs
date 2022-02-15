@@ -6,9 +6,9 @@ use crate::index::{PayloadIndexSS, VectorIndexSS};
 use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
 use crate::spaces::tools::mertic_object;
 use crate::types::{
-    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo, PayloadType, PointIdType,
-    PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState,
-    SegmentType, SeqNumberType, TheMap, VectorElementType, WithPayload,
+    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo, PointIdType, PointOffsetType,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState, SegmentType,
+    SeqNumberType, VectorElementType, WithPayload,
 };
 use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
@@ -65,7 +65,7 @@ impl Segment {
             let mut payload_storage = self.payload_storage.borrow_mut();
             let payload = payload_storage.drop(old_internal_id)?;
             if let Some(payload) = payload {
-                payload_storage.assign_all(new_internal_index, payload)?;
+                payload_storage.assign(new_internal_index, &payload)?;
             }
         }
 
@@ -211,7 +211,7 @@ impl Segment {
     fn payload_by_offset(
         &self,
         point_offset: PointOffsetType,
-    ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
+    ) -> OperationResult<serde_json::Value> {
         Ok(self.payload_storage.borrow().payload(point_offset))
     }
 
@@ -280,7 +280,7 @@ impl SegmentEntry for Segment {
                 let payload = if with_payload.enable {
                     let initial_payload = self.payload_by_offset(point_offset)?;
                     let processed_payload = if let Some(i) = &with_payload.payload_selector {
-                        i.process(initial_payload)
+                        i.process(&initial_payload)
                     } else {
                         initial_payload
                     };
@@ -372,53 +372,18 @@ impl SegmentEntry for Segment {
         })
     }
 
-    fn set_full_payload(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        full_payload: TheMap<PayloadKeyType, PayloadType>,
-    ) -> OperationResult<bool> {
-        self.handle_version_and_failure(op_num, Some(point_id), |segment| {
-            let internal_id = segment.lookup_internal_id(point_id)?;
-            segment
-                .payload_storage
-                .borrow_mut()
-                .assign_all(internal_id, full_payload)?;
-            Ok(true)
-        })
-    }
-
-    fn set_full_payload_with_json(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        full_payload: &str,
-    ) -> OperationResult<bool> {
-        self.handle_version_and_failure(op_num, Some(point_id), |segment| {
-            let internal_id = segment.lookup_internal_id(point_id)?;
-            let payload: TheMap<PayloadKeyType, serde_json::value::Value> =
-                serde_json::from_str(full_payload)?;
-            segment
-                .payload_storage
-                .borrow_mut()
-                .assign_all_with_value(internal_id, payload)?;
-            Ok(true)
-        })
-    }
-
     fn set_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        key: PayloadKeyTypeRef,
-        payload: PayloadType,
+        payload: &serde_json::Value,
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
             segment
                 .payload_storage
                 .borrow_mut()
-                .assign(internal_id, key, payload)?;
+                .assign(internal_id, payload)?;
             Ok(true)
         })
     }
@@ -456,10 +421,7 @@ impl SegmentEntry for Segment {
         self.vector_by_offset(internal_id)
     }
 
-    fn payload(
-        &self,
-        point_id: PointIdType,
-    ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
+    fn payload(&self, point_id: PointIdType) -> OperationResult<serde_json::Value> {
         let internal_id = self.lookup_internal_id(point_id)?;
         self.payload_by_offset(internal_id)
     }

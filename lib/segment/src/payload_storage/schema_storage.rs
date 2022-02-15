@@ -1,7 +1,9 @@
 use parking_lot::RwLock;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::types::{PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PayloadType, TheMap};
+use crate::types::{
+    get_schema_type, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PayloadType, TheMap,
+};
 
 /// a shared storage for schema data
 pub struct SchemaStorage {
@@ -21,6 +23,15 @@ impl SchemaStorage {
         key: PayloadKeyTypeRef,
         value: &PayloadType,
     ) -> OperationResult<()> {
+        let schema_type = match get_schema_type(value) {
+            Some(v) => v,
+            None => {
+                return Err(OperationError::ServiceError {
+                    description: "unknown type".to_string(),
+                })
+            }
+        };
+
         let schema_read = self.schema.read();
         return match schema_read.get(key) {
             None => {
@@ -28,7 +39,7 @@ impl SchemaStorage {
                 let mut schema_write = self.schema.write();
                 match schema_write.get(key) {
                     None => {
-                        schema_write.insert(key.to_owned(), value.into());
+                        schema_write.insert(key.to_owned(), schema_type);
                         Ok(())
                     }
                     Some(schema_type) => SchemaStorage::check_schema_type(key, value, schema_type),
