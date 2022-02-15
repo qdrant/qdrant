@@ -160,7 +160,7 @@ impl UpdateHandler {
         callback: F,
     ) -> Vec<StoppableTaskHandle<bool>>
     where
-        F: FnOnce(bool) -> (),
+        F: FnOnce(bool),
         F: Send + 'static,
         F: Clone,
     {

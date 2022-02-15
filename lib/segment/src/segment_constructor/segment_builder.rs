@@ -124,9 +124,9 @@ impl SegmentBuilder {
 
     pub fn build(mut self, stopped: &AtomicBool) -> Result<Segment, OperationError> {
         {
-            let mut segment = self.segment.ok_or(OperationError::service_error(
-                "Segment building error: created segment not found",
-            ))?;
+            let mut segment = self.segment.ok_or_else(|| {
+                OperationError::service_error("Segment building error: created segment not found")
+            })?;
             self.segment = None;
 
             for field in &self.indexed_fields {
