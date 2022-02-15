@@ -11,9 +11,9 @@ use segment::segment::Segment;
 use segment::types::{PointIdType, SeqNumberType};
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
+use crate::operations::types::CollectionError;
 use std::ops::Mul;
 use std::time::Duration;
-use crate::operations::types::CollectionError;
 
 pub type SegmentId = usize;
 

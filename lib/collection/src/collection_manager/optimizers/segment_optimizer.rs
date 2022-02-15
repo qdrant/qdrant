@@ -162,10 +162,8 @@ pub trait SegmentOptimizer {
                     }
                     LockedSegment::Proxy(proxy_segment) => {
                         let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
-                        let (restored_id, _proxies) = segments_lock.swap(
-                            wrapped_segment,
-                            &[proxy_id],
-                        );
+                        let (restored_id, _proxies) =
+                            segments_lock.swap(wrapped_segment, &[proxy_id]);
                         restored_segment_ids.push(restored_id);
                     }
                 }

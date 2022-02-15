@@ -22,7 +22,10 @@ use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
-use crate::operations::types::{CollectionError, CollectionInfo, CollectionResult, CollectionStatus, OptimizersStatus, RecommendRequest, ScrollRequest, ScrollResult, SearchRequest, UpdateResult, UpdateStatus};
+use crate::operations::types::{
+    CollectionError, CollectionInfo, CollectionResult, CollectionStatus, OptimizersStatus,
+    RecommendRequest, ScrollRequest, ScrollResult, SearchRequest, UpdateResult, UpdateStatus,
+};
 use crate::operations::CollectionUpdateOperations;
 use crate::update_handler::{OperationData, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
@@ -298,7 +301,7 @@ impl Collection {
 
         let optimizer_status = match &segments.optimizer_errors {
             None => OptimizersStatus::Ok,
-            Some(error) => OptimizersStatus::Error(error.to_string())
+            Some(error) => OptimizersStatus::Error(error.to_string()),
         };
 
         Ok(CollectionInfo {

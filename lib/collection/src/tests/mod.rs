@@ -45,7 +45,8 @@ async fn test_optimization_process() {
 
     let join_res = join_all(handles.into_iter().map(|x| x.join_handle).collect_vec()).await;
 
-    let handles_2 = UpdateHandler::launch_optimization(optimizers.clone(), segments.clone(), |_| {});
+    let handles_2 =
+        UpdateHandler::launch_optimization(optimizers.clone(), segments.clone(), |_| {});
 
     assert_eq!(handles_2.len(), 0);
 

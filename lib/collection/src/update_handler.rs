@@ -162,7 +162,7 @@ impl UpdateHandler {
     where
         F: FnOnce(bool) -> (),
         F: Send + 'static,
-        F: Clone
+        F: Clone,
     {
         let mut scheduled_segment_ids: HashSet<_> = Default::default();
         let mut handles = vec![];
