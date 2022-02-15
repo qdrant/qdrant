@@ -102,9 +102,7 @@ impl StructPayloadIndex {
             Some(indexes) => {
                 let file = File::create(&field_index_path)?;
                 serde_cbor::to_writer(file, indexes).map_err(|err| {
-                    OperationError::ServiceError {
-                        description: format!("Unable to save index: {:?}", err),
-                    }
+                    OperationError::service_error(&format!("Unable to save index: {:?}", err))
                 })?;
             }
         }
@@ -123,10 +121,9 @@ impl StructPayloadIndex {
                 field_index_path.to_str().unwrap()
             );
             let file = File::open(field_index_path)?;
-            let field_indexes: Vec<FieldIndex> =
-                serde_cbor::from_reader(file).map_err(|err| OperationError::ServiceError {
-                    description: format!("Unable to load index: {:?}", err),
-                })?;
+            let field_indexes: Vec<FieldIndex> = serde_cbor::from_reader(file).map_err(|err| {
+                OperationError::service_error(&format!("Unable to load index: {:?}", err))
+            })?;
 
             Ok(field_indexes)
         } else {

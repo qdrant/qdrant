@@ -97,9 +97,7 @@ impl CollectionSearcher for SimpleCollectionSearcher {
         segments.read().read_points(points, |id, segment| {
             let version = segment
                 .point_version(id)
-                .ok_or(OperationError::ServiceError {
-                    description: format!("No version for point {}", id),
-                })?;
+                .ok_or(OperationError::service_error( &format!("No version for point {}", id)))?;
             // If this point was not found yet or this segment have later version
             if !point_version.contains_key(&id) || point_version[&id] < version {
                 point_records.insert(

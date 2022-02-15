@@ -123,14 +123,13 @@ pub fn load_segment(path: &Path, schema_storage: Arc<SchemaStorage>) -> Operatio
     let mut file = File::open(segment_config_path)?;
     file.read_to_string(&mut contents)?;
 
-    let segment_state: SegmentState =
-        serde_json::from_str(&contents).map_err(|err| OperationError::ServiceError {
-            description: format!(
-                "Failed to read segment {}. Error: {}",
-                path.to_str().unwrap(),
-                err
-            ),
-        })?;
+    let segment_state: SegmentState = serde_json::from_str(&contents).map_err(|err| {
+        OperationError::service_error(&format!(
+            "Failed to read segment {}. Error: {}",
+            path.to_str().unwrap(),
+            err
+        ))
+    })?;
 
     create_segment(
         segment_state.version,
