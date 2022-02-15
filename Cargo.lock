@@ -266,6 +266,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-swap"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5d78ce20460b82d3fa150275ed9d55e21064fc7951177baacf86a145c4a4b1f"
+
+[[package]]
 name = "arrayvec"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -602,6 +608,7 @@ dependencies = [
 name = "collection"
 version = "0.3.1"
 dependencies = [
+ "arc-swap",
  "async-trait",
  "atomicwrites",
  "criterion",

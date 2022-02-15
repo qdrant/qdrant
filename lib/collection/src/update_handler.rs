@@ -22,6 +22,7 @@ use tokio::time::{Duration, Instant};
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
 /// Information, required to perform operation and notify regarding the result
+#[derive(Debug)]
 pub struct OperationData {
     /// Sequential number of the operation
     pub op_num: SeqNumberType,
@@ -32,6 +33,7 @@ pub struct OperationData {
 }
 
 /// Signal, used to inform Updater process
+#[derive(Debug)]
 pub enum UpdateSignal {
     /// Requested operation to perform
     Operation(OperationData),
@@ -58,8 +60,6 @@ pub struct UpdateHandler {
     /// How frequent can we flush data
     pub flush_timeout_sec: u64,
     segments: LockedSegmentHolder,
-    /// Channel receiver, which is listened by the updater process
-    update_receiver: Option<UnboundedReceiver<UpdateSignal>>,
     /// Process, that listens updates signals and perform updates
     update_worker: Option<JoinHandle<()>>,
     /// Process, that listens for post-update signals and performs optimization
@@ -73,28 +73,24 @@ pub struct UpdateHandler {
 impl UpdateHandler {
     pub fn new(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
-        update_receiver: UnboundedReceiver<UpdateSignal>,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
         flush_timeout_sec: u64,
     ) -> UpdateHandler {
-        let mut handler = UpdateHandler {
+        UpdateHandler {
             optimizers,
             segments,
-            update_receiver: Some(update_receiver),
             update_worker: None,
             optimizer_worker: None,
             runtime_handle,
             wal,
             flush_timeout_sec,
             optimization_handles: Arc::new(Mutex::new(vec![])),
-        };
-        handler.run_workers();
-        handler
+        }
     }
 
-    pub fn run_workers(&mut self) {
+    pub fn run_workers(&mut self, update_receiver: UnboundedReceiver<UpdateSignal>) {
         let (tx, rx) = mpsc::unbounded_channel();
         self.optimizer_worker = Some(self.runtime_handle.spawn(Self::optimization_worker_fn(
             self.optimizers.clone(),
@@ -105,7 +101,7 @@ impl UpdateHandler {
             self.optimization_handles.clone(),
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
-            self.update_receiver.take().expect("Unreachable."),
+            update_receiver,
             tx,
             self.segments.clone(),
         )));
