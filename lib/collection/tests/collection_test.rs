@@ -1,15 +1,16 @@
+use collection::shard::Shard;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use tempdir::TempDir;
 use tokio::runtime::Handle;
 
-use collection::collection_builder::collection_loader::load_collection;
-use collection::operations::payload_ops::{PayloadOps, SetPayload};
-use collection::operations::point_ops::{Batch, PointOperations, PointStruct};
-use collection::operations::types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus};
-use collection::operations::CollectionUpdateOperations;
+use collection::operations::{
+    payload_ops::{PayloadOps, SetPayload},
+    point_ops::{Batch, PointOperations, PointStruct},
+    types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus},
+    CollectionUpdateOperations,
+};
 use segment::types::{
     Condition, HasIdCondition, PayloadInterface, PayloadKeyType, PayloadVariant, PointIdType,
     WithPayload, WithPayloadInterface,
@@ -64,12 +65,8 @@ async fn test_collection_updater() {
     };
 
     let segment_searcher = SimpleCollectionSearcher::new();
-    let search_res = segment_searcher
-        .search(
-            collection.segments(),
-            Arc::new(search_request),
-            &Handle::current(),
-        )
+    let search_res = collection
+        .search(search_request, &segment_searcher, &Handle::current())
         .await;
 
     match search_res {
@@ -119,12 +116,8 @@ async fn test_collection_search_with_payload_and_vector() {
     };
 
     let segment_searcher = SimpleCollectionSearcher::new();
-    let search_res = segment_searcher
-        .search(
-            collection.segments(),
-            Arc::new(search_request),
-            &Handle::current(),
-        )
+    let search_res = collection
+        .search(search_request, &segment_searcher, &Handle::current())
         .await;
 
     match search_res {
@@ -180,7 +173,7 @@ async fn test_collection_loading() {
         collection.update(assign_payload, true).await.unwrap();
     }
 
-    let loaded_collection = load_collection(collection_dir.path());
+    let loaded_collection = Shard::load(collection_dir.path());
     let segment_searcher = SimpleCollectionSearcher::new();
     let retrieved = segment_searcher
         .retrieve(
@@ -280,13 +273,13 @@ async fn test_recommendation_api() {
     let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection
         .recommend_by(
-            Arc::new(RecommendRequest {
+            RecommendRequest {
                 positive: vec![0.into()],
                 negative: vec![8.into()],
                 filter: None,
                 params: None,
                 top: 5,
-            }),
+            },
             &segment_searcher,
             &Handle::current(),
         )
