@@ -94,6 +94,7 @@ impl UpdateHandler {
         let (tx, rx) = mpsc::unbounded_channel();
         self.optimizer_worker = Some(self.runtime_handle.spawn(Self::optimization_worker_fn(
             self.optimizers.clone(),
+            tx.clone(),
             rx,
             self.segments.clone(),
             self.wal.clone(),
@@ -153,10 +154,16 @@ impl UpdateHandler {
     /// Checks conditions for all optimizers until there is no suggested segment
     /// Starts a task for each optimization
     /// Returns handles for started tasks
-    pub(crate) fn launch_optimization(
+    pub(crate) fn launch_optimization<F>(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
-    ) -> Vec<StoppableTaskHandle<bool>> {
+        callback: F,
+    ) -> Vec<StoppableTaskHandle<bool>>
+    where
+        F: FnOnce(bool),
+        F: Send + 'static,
+        F: Clone,
+    {
         let mut scheduled_segment_ids: HashSet<_> = Default::default();
         let mut handles = vec![];
         for optimizer in optimizers.iter() {
@@ -172,20 +179,33 @@ impl UpdateHandler {
                     for sid in &nsi {
                         scheduled_segment_ids.insert(*sid);
                     }
+                    let callback_cloned = callback.clone();
 
                     handles.push(spawn_stoppable(move |stopped| {
-                        match optim.as_ref().optimize(segs, nsi, stopped) {
-                            Ok(result) => result,
+                        match optim.as_ref().optimize(segs.clone(), nsi, stopped) {
+                            Ok(result) => {
+                                callback_cloned(result); // Perform some actions when optimization if finished
+                                result
+                            }
                             Err(error) => match error {
                                 CollectionError::Cancelled { description } => {
                                     log::info!("Optimization cancelled - {}", description);
                                     false
                                 }
                                 _ => {
+                                    {
+                                        let mut segments_write = segs.write();
+                                        if segments_write.optimizer_errors.is_none() {
+                                            // Save only the first error
+                                            // If is more likely to be the real cause of all further problems
+                                            segments_write.optimizer_errors = Some(error.clone());
+                                        }
+                                    }
                                     // Error of the optimization can not be handled by API user
                                     // It is only possible to fix after full restart,
                                     // so the best available action here is to stop whole
                                     // optimization thread and log the error
+                                    log::error!("Optimization error: {}", error);
                                     panic!("Optimization error: {}", error);
                                 }
                             },
@@ -201,8 +221,18 @@ impl UpdateHandler {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
         optimization_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
+        sender: UnboundedSender<OptimizerSignal>,
     ) {
-        let mut new_handles = Self::launch_optimization(optimizers.clone(), segments.clone());
+        let mut new_handles = Self::launch_optimization(
+            optimizers.clone(),
+            segments.clone(),
+            move |_optimization_result| {
+                // After optimization is finished, we still need to check if there are
+                // some further optimizations possible.
+                // If receiver is already dead - we do not care.
+                let _ = sender.send(OptimizerSignal::Nop);
+            },
+        );
         let mut handles = optimization_handles.lock().await;
         handles.append(&mut new_handles);
         handles.retain(|h| !h.is_finished())
@@ -210,6 +240,7 @@ impl UpdateHandler {
 
     async fn optimization_worker_fn(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
+        sender: UnboundedSender<OptimizerSignal>,
         mut receiver: UnboundedReceiver<OptimizerSignal>,
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
@@ -231,6 +262,7 @@ impl UpdateHandler {
                         optimizers.clone(),
                         segments.clone(),
                         optimization_handles.clone(),
+                        sender.clone(),
                     )
                     .await;
                 }
@@ -245,6 +277,7 @@ impl UpdateHandler {
                         optimizers.clone(),
                         segments.clone(),
                         optimization_handles.clone(),
+                        sender.clone(),
                     )
                     .await;
 

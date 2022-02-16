@@ -95,11 +95,9 @@ impl CollectionSearcher for SimpleCollectionSearcher {
         let mut point_records: HashMap<PointIdType, Record> = Default::default();
 
         segments.read().read_points(points, |id, segment| {
-            let version = segment
-                .point_version(id)
-                .ok_or(OperationError::ServiceError {
-                    description: format!("No version for point {}", id),
-                })?;
+            let version = segment.point_version(id).ok_or_else(|| {
+                OperationError::service_error(&format!("No version for point {}", id))
+            })?;
             // If this point was not found yet or this segment have later version
             if !point_version.contains_key(&id) || point_version[&id] < version {
                 point_records.insert(

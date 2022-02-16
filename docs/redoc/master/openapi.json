@@ -112,6 +112,9 @@
             "minimum": 0,
             "type": "integer"
           },
+          "optimizer_status": {
+            "$ref": "#/components/schemas/OptimizersStatus"
+          },
           "payload_schema": {
             "additionalProperties": {
               "$ref": "#/components/schemas/PayloadSchemaInfo"
@@ -144,6 +147,7 @@
         "required": [
           "config",
           "disk_data_size",
+          "optimizer_status",
           "payload_schema",
           "ram_data_size",
           "segments_count",
@@ -882,6 +886,30 @@
           }
         },
         "type": "object"
+      },
+      "OptimizersStatus": {
+        "description": "Current state of the collection",
+        "oneOf": [
+          {
+            "enum": [
+              "ok"
+            ],
+            "type": "string"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Something wrong happened with optimizers",
+            "properties": {
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "PayloadInterface": {
         "anyOf": [

@@ -11,6 +11,7 @@ use segment::segment::Segment;
 use segment::types::{PointIdType, SeqNumberType};
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
+use crate::operations::types::CollectionError;
 use std::ops::Mul;
 use std::time::Duration;
 
@@ -75,6 +76,9 @@ pub struct SegmentHolder {
     /// Seq number of the first un-recovered operation.
     /// If there are no failed operation - None
     pub failed_operation: BTreeSet<SeqNumberType>,
+
+    /// Holds the first uncorrected error happened with optimizer
+    pub optimizer_errors: Option<CollectionError>,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
@@ -118,18 +122,15 @@ impl<'s> SegmentHolder {
         key
     }
 
-    pub fn remove(&mut self, remove_ids: &[SegmentId], drop_data: bool) -> OperationResult<()> {
+    pub fn remove(&mut self, remove_ids: &[SegmentId]) -> Vec<LockedSegment> {
+        let mut removed_segments = vec![];
         for remove_id in remove_ids {
             let removed_segment = self.segments.remove(remove_id);
-
-            if drop_data {
-                match removed_segment {
-                    None => {}
-                    Some(segment) => segment.drop_data()?,
-                }
+            if let Some(segment) = removed_segment {
+                removed_segments.push(segment);
             }
         }
-        Ok(())
+        removed_segments
     }
 
     /// Replace old segments with a new one
@@ -138,24 +139,21 @@ impl<'s> SegmentHolder {
     ///
     /// * `segment` - segment to insert
     /// * `remove_ids` - ids of segments to replace
-    /// * `drop_data` - if `true` - also drop data of removed segments
     ///
     /// # Result
     ///
-    /// id of newly inserted segment
+    /// Pair of (id of newly inserted segment, Vector of replaced segments)
     ///
     pub fn swap<T>(
         &mut self,
         segment: T,
         remove_ids: &[SegmentId],
-        drop_data: bool,
-    ) -> OperationResult<SegmentId>
+    ) -> (SegmentId, Vec<LockedSegment>)
     where
         T: Into<LockedSegment>,
     {
         let new_id = self.add(segment);
-        self.remove(remove_ids, drop_data)?;
-        Ok(new_id)
+        (new_id, self.remove(remove_ids))
     }
 
     pub fn get(&self, id: SegmentId) -> Option<&LockedSegment> {
@@ -243,9 +241,9 @@ impl<'s> SegmentHolder {
         F: FnMut(SegmentId, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
     {
         if segment_ids.is_empty() {
-            return Err(OperationError::ServiceError {
-                description: "No appendable segments exists, expected at least one".to_string(),
-            });
+            return Err(OperationError::service_error(
+                "No appendable segments exists, expected at least one",
+            ));
         }
 
         let mut entries: Vec<_> = Default::default();
@@ -405,7 +403,10 @@ mod tests {
             build_simple_segment(dir.path(), 4, Distance::Dot, Arc::new(SchemaStorage::new()))
                 .unwrap();
 
-        let _sid3 = holder.swap(segment3, &[sid1, sid2], true).unwrap();
+        let (_sid3, replaced_segments) = holder.swap(segment3, &[sid1, sid2]);
+        replaced_segments
+            .into_iter()
+            .for_each(|s| s.drop_data().unwrap());
     }
 
     #[test]

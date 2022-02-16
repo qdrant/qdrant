@@ -32,7 +32,8 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
         proxy_created_indexes,
     );
 
-    write_segments.swap(proxy, &[sid], false).unwrap()
+    let (new_id, _replaced_segments) = write_segments.swap(proxy, &[sid]);
+    new_id
 }
 
 #[test]

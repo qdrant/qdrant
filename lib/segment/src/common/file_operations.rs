@@ -35,14 +35,13 @@ pub fn read_json<N: DeserializeOwned + Serialize>(path: &Path) -> OperationResul
     let mut file = File::open(path)?;
     file.read_to_string(&mut contents)?;
 
-    let result: N =
-        serde_json::from_str(&contents).map_err(|err| OperationError::ServiceError {
-            description: format!(
-                "Failed to read data {}. Error: {}",
-                path.to_str().unwrap(),
-                err
-            ),
-        })?;
+    let result: N = serde_json::from_str(&contents).map_err(|err| {
+        OperationError::service_error(&format!(
+            "Failed to read data {}. Error: {}",
+            path.to_str().unwrap(),
+            err
+        ))
+    })?;
 
     Ok(result)
 }
@@ -50,14 +49,13 @@ pub fn read_json<N: DeserializeOwned + Serialize>(path: &Path) -> OperationResul
 pub fn read_bin<N: DeserializeOwned + Serialize>(path: &Path) -> OperationResult<N> {
     let mut file = File::open(path)?;
 
-    let result: N =
-        bincode::deserialize_from(&mut file).map_err(|err| OperationError::ServiceError {
-            description: format!(
-                "Failed to read data {}. Error: {}",
-                path.to_str().unwrap(),
-                err
-            ),
-        })?;
+    let result: N = bincode::deserialize_from(&mut file).map_err(|err| {
+        OperationError::service_error(&format!(
+            "Failed to read data {}. Error: {}",
+            path.to_str().unwrap(),
+            err
+        ))
+    })?;
 
     Ok(result)
 }
