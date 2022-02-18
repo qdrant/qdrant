@@ -1,5 +1,6 @@
 use crate::types::{GeoBoundingBox, GeoPoint, GeoRadius};
-use geo::Coordinate;
+use geo::algorithm::haversine_distance::HaversineDistance;
+use geo::{Coordinate, Point};
 use geohash::{decode, encode, neighbor, Direction};
 use std::ops::Range;
 
@@ -39,10 +40,10 @@ impl From<GeoPoint> for Coordinate<f64> {
 
 #[derive(Debug)]
 struct FullGeoBoundingBox {
-    north_west: GeoPoint,
-    south_west: GeoPoint,
-    south_east: GeoPoint,
-    north_east: GeoPoint,
+    north_west: Point<f64>,
+    south_west: Point<f64>,
+    south_east: Point<f64>,
+    north_east: Point<f64>,
 }
 
 impl From<&GeoBoundingBox> for FullGeoBoundingBox {
@@ -56,22 +57,10 @@ impl From<&GeoBoundingBox> for FullGeoBoundingBox {
             lon: max_lon,
         } = bounding_box.bottom_right;
 
-        let north_west = GeoPoint {
-            lon: min_lon,
-            lat: max_lat,
-        };
-        let south_west = GeoPoint {
-            lon: min_lon,
-            lat: min_lat,
-        };
-        let south_east = GeoPoint {
-            lon: max_lon,
-            lat: min_lat,
-        };
-        let north_east = GeoPoint {
-            lon: max_lon,
-            lat: max_lat,
-        };
+        let north_west = Point::new(min_lon, max_lat);
+        let south_west = Point::new(min_lon, min_lat);
+        let south_east = Point::new(max_lon, min_lat);
+        let north_east = Point::new(max_lon, max_lat);
 
         Self {
             north_west,
@@ -85,10 +74,10 @@ impl From<&GeoBoundingBox> for FullGeoBoundingBox {
 impl FullGeoBoundingBox {
     fn shortest_side_length_in_km(&self) -> f64 {
         // the projection on the sphere is a trapeze - calculate 3 distances
-        let upper_width = distance_in_km_between_coordinates(&self.north_west, &self.north_east);
-        let lower_width = distance_in_km_between_coordinates(&self.south_west, &self.south_east);
+        let upper_width = self.north_west.haversine_distance(&self.north_east);
+        let lower_width = self.south_west.haversine_distance(&self.south_east);
         // both height sides are equal in a trapeze - pick only one
-        let height = distance_in_km_between_coordinates(&self.north_west, &self.south_west);
+        let height = self.north_west.haversine_distance(&self.south_west);
         f64::min(f64::min(upper_width, lower_width), height)
     }
 }
@@ -192,20 +181,15 @@ fn circle_hashes(circle: GeoRadius, max_regions: usize) -> Vec<GeoHash> {
 
 /// filter geo hashes for which the center is within a circle
 fn filter_hashes_within_circle(hashes: Vec<GeoHash>, circle: GeoRadius) -> Vec<GeoHash> {
-    let radius_km = circle.radius / 1000.0;
+    let center_point = Point::new(circle.center.lon, circle.center.lat);
     hashes
         .into_iter()
         .map(|h| {
             let coord = decode(&h).unwrap().0;
-            let geo_point = GeoPoint {
-                lon: coord.x,
-                lat: coord.y,
-            };
+            let geo_point = Point::new(coord.x, coord.y);
             (h, geo_point)
         })
-        .filter(|(_, hash_point)| {
-            distance_in_km_between_coordinates(&circle.center, hash_point) <= radius_km
-        })
+        .filter(|(_, hash_point)| center_point.haversine_distance(hash_point) <= circle.radius)
         .map(|(h, _)| h)
         .collect()
 }
@@ -244,32 +228,6 @@ fn geohash_precisions_for_distance(distance_in_meter: f64) -> Range<usize> {
 /// A globally-average value is usually considered to be 6,371 kilometres (3,959 mi) with a 0.3% variability (±10 km).
 /// https://en.wikipedia.org/wiki/Earth_radius.
 const EARTH_RADIUS_KM: f64 = 6371.0;
-
-/// https://rust-lang-nursery.github.io/rust-cookbook/science/mathematics/trigonometry.html#distance-between-two-points-on-the-earth
-fn distance_in_km_between_coordinates(p1: &GeoPoint, p2: &GeoPoint) -> f64 {
-    let GeoPoint {
-        lon: lon1_deg,
-        lat: lat1_deg,
-    } = p1;
-    let GeoPoint {
-        lon: lon2_deg,
-        lat: lat2_deg,
-    } = p2;
-
-    let lat1 = lat1_deg.to_radians();
-    let lat2 = lat2_deg.to_radians();
-
-    let delta_latitude = (lat2_deg - lat1_deg).to_radians();
-    let delta_longitude = (lon2_deg - lon1_deg).to_radians();
-
-    let central_angle_inner = (delta_latitude / 2.0).sin().powi(2)
-        + lat1.cos() * lat2.cos() * (delta_longitude / 2.0).sin().powi(2);
-    let central_angle = 2.0 * central_angle_inner.sqrt().asin();
-
-    let distance = EARTH_RADIUS_KM * central_angle;
-    // rounding decimals
-    (distance * 100.0).round() / 100.0
-}
 
 /// Returns the GeoBoundingBox that defines the MBR
 /// http://janmatuschek.de/LatitudeLongitudeBoundingCoordinates#Longitude
@@ -413,18 +371,6 @@ mod tests {
     }
 
     #[test]
-    fn distance_between_points() {
-        let distance = distance_in_km_between_coordinates(&BERLIN, &NYC);
-        assert_eq!(distance, 6380.77);
-        // symmetric
-        let distance = distance_in_km_between_coordinates(&NYC, &BERLIN);
-        assert_eq!(distance, 6380.77);
-        // identity
-        let distance = distance_in_km_between_coordinates(&BERLIN, &BERLIN);
-        assert_eq!(distance, 0.0)
-    }
-
-    #[test]
     fn validate_possible_geohash_precisions_for_distance() {
         // based on the dimensions from GEOHASH_MAX_LENGTH
         assert_eq!(geohash_precisions_for_distance(5010.0 * 1000.0).len(), 12);
@@ -502,7 +448,7 @@ mod tests {
         };
 
         let nyc_hashes = circle_hashes(near_nyc_circle.clone(), 200);
-        assert_eq!(nyc_hashes.len(), 115);
+        assert_eq!(nyc_hashes.len(), 114);
         assert!(nyc_hashes.iter().all(|h| h.len() == 7)); // geohash precision
 
         let nyc_hashes = circle_hashes(near_nyc_circle.clone(), 10);
