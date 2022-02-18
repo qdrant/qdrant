@@ -1,10 +1,10 @@
-use crate::types::{PayloadKeyTypeRef, PointOffsetType};
-use json_patch::merge;
+use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use rocksdb::{IteratorMode, Options, DB};
+use serde_json::Value;
 
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::schema_storage::SchemaStorage;
@@ -17,7 +17,7 @@ const DB_NAME: &str = "payload";
 /// In-memory implementation of `PayloadStorage`.
 /// Persists all changes to disk using `store`, but only uses this storage during the initial load
 pub struct SimplePayloadStorage {
-    payload: HashMap<PointOffsetType, serde_json::Value>,
+    payload: HashMap<PointOffsetType, Payload>,
     store: DB,
 }
 
@@ -29,12 +29,12 @@ impl SimplePayloadStorage {
         options.create_missing_column_families(true);
         let store = DB::open_cf(&options, path, [DB_NAME])?;
 
-        let mut payload_map: HashMap<PointOffsetType, serde_json::Value> = Default::default();
+        let mut payload_map: HashMap<PointOffsetType, Payload> = Default::default();
 
         let cf_handle = store.cf_handle(DB_NAME).unwrap();
         for (key, val) in store.iterator_cf(cf_handle, IteratorMode::Start) {
             let point_id: PointOffsetType = serde_cbor::from_slice(&key).unwrap();
-            let payload: serde_json::Value = serde_cbor::from_slice(&val).unwrap();
+            let payload: Payload = serde_cbor::from_slice(&val).unwrap();
 
             //TODO(gvelo): handle schema properly
             //SimplePayloadStorage::update_schema(schema_store.clone(), &payload).unwrap();
@@ -63,21 +63,18 @@ impl SimplePayloadStorage {
         Ok(())
     }
 
-    pub fn payload_ptr(&self, point_id: PointOffsetType) -> Option<&serde_json::Value> {
+    pub fn payload_ptr(&self, point_id: PointOffsetType) -> Option<&Payload> {
         self.payload.get(&point_id)
     }
 }
 
 impl PayloadStorage for SimplePayloadStorage {
-    fn assign(
-        &mut self,
-        point_id: PointOffsetType,
-        payload: &serde_json::Value,
-    ) -> OperationResult<()> {
-        if let Some(point_payload) = self.payload.get_mut(&point_id) {
-            merge(point_payload, payload)
-        } else {
-            self.payload.insert(point_id, payload.to_owned());
+    fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+        match self.payload.get_mut(&point_id) {
+            Some(point_payload) => point_payload.merge(payload),
+            None => {
+                self.payload.insert(point_id, payload.to_owned());
+            }
         }
 
         self.update_storage(&point_id)?;
@@ -85,9 +82,9 @@ impl PayloadStorage for SimplePayloadStorage {
         Ok(())
     }
 
-    fn payload(&self, point_id: PointOffsetType) -> serde_json::Value {
+    fn payload(&self, point_id: PointOffsetType) -> Payload {
         match self.payload.get(&point_id) {
-            Some(payload) => payload.clone(),
+            Some(payload) => payload.to_owned(),
             None => Default::default(),
         }
     }
@@ -96,22 +93,20 @@ impl PayloadStorage for SimplePayloadStorage {
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
-    ) -> OperationResult<Option<serde_json::Value>> {
-        let point_payload = self.payload.get_mut(&point_id);
-
+    ) -> OperationResult<Option<Value>> {
         match self.payload.get_mut(&point_id) {
-            Some(&mut serde_json::Value::Object(ref mut map)) => {
-                let res = map.remove(key);
-                if let Some(_) = res {
+            Some(payload) => {
+                let res = payload.remove(key);
+                if res.is_some() {
                     self.update_storage(&point_id)?;
                 }
-                return Ok(res);
+                Ok(res)
             }
-            None => return Ok(None),
+            None => Ok(None),
         }
     }
 
-    fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<serde_json::Value>> {
+    fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         let res = self.payload.remove(&point_id);
         self.update_storage(&point_id)?;
         Ok(res)
@@ -139,8 +134,6 @@ impl PayloadStorage for SimplePayloadStorage {
 
 #[cfg(test)]
 mod tests {
-    use crate::entry::entry_point::OperationError;
-    use crate::types::PayloadInterface;
     use tempdir::TempDir;
 
     use super::*;
@@ -150,7 +143,7 @@ mod tests {
         let dir = TempDir::new("storage_dir").unwrap();
         let mut storage =
             SimplePayloadStorage::open(dir.path(), Arc::new(SchemaStorage::new())).unwrap();
-        let payload = serde_json::from_str(r#"{"name": "John Doe"}"#);
+        let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
         storage.assign(100, &payload).unwrap();
         storage.wipe().unwrap();
         storage.assign(100, &payload).unwrap();
@@ -158,7 +151,7 @@ mod tests {
         storage.assign(100, &payload).unwrap();
         assert!(!storage.payload(100).is_empty());
         storage.wipe().unwrap();
-        assert_eq!(storage.payload(100), serde_json::Value::Null);
+        assert_eq!(storage.payload(100), Default::default());
     }
 
     #[test]
@@ -185,12 +178,12 @@ mod tests {
             }
         }"#;
 
-        let v = serde_json::from_str(data).unwrap();
+        let payload: Payload = serde_json::from_str(data).unwrap();
         let dir = TempDir::new("storage_dir").unwrap();
         let mut storage =
             SimplePayloadStorage::open(dir.path(), Arc::new(SchemaStorage::new())).unwrap();
-        storage.assign(100, &v).unwrap();
+        storage.assign(100, &payload).unwrap();
         let pload = storage.payload(100);
-        assert_eq!(pload, v);
+        assert_eq!(pload, payload);
     }
 }

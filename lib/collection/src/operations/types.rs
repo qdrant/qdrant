@@ -12,8 +12,8 @@ use tokio::{
 
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Filter, PayloadKeyType, PayloadSchemaInfo, PayloadType, PointIdType, SearchParams,
-    SeqNumberType, TheMap, VectorElementType, WithPayloadInterface,
+    Filter, Payload, PayloadKeyType, PayloadSchemaInfo, PointIdType, SearchParams, SeqNumberType,
+    VectorElementType, WithPayloadInterface,
 };
 
 use crate::config::CollectionConfig;
@@ -43,7 +43,7 @@ pub struct Record {
     /// Id of the point
     pub id: PointIdType,
     /// Payload - values assigned to the point
-    pub payload: Option<TheMap<PayloadKeyType, PayloadType>>,
+    pub payload: Option<Payload>,
     /// Vector of the point
     pub vector: Option<Vec<VectorElementType>>,
 }

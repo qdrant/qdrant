@@ -44,16 +44,14 @@ pub fn random_keyword(rnd_gen: &mut ThreadRng) -> String {
     format!("{} {}", random_adj, random_noun)
 }
 
-pub fn random_keyword_payload(rnd_gen: &mut ThreadRng) -> PayloadType {
-    PayloadType::Keyword(vec![random_keyword(rnd_gen)])
+pub fn random_keyword_payload(rnd_gen: &mut ThreadRng) -> String {
+    random_keyword(rnd_gen)
 }
 
-pub fn random_int_payload(rnd_gen: &mut ThreadRng, num_values: usize) -> PayloadType {
-    PayloadType::Integer(
-        (0..num_values)
-            .map(|_| rnd_gen.gen_range(INT_RANGE))
-            .collect_vec(),
-    )
+pub fn random_int_payload(rnd_gen: &mut ThreadRng, num_values: usize) -> Vec<i64> {
+    (0..num_values)
+        .map(|_| rnd_gen.gen_range(INT_RANGE))
+        .collect_vec()
 }
 
 pub fn random_vector(rnd_gen: &mut ThreadRng, size: usize) -> Vec<VectorElementType> {

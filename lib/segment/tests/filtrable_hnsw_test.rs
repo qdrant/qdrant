@@ -11,10 +11,11 @@ mod tests {
     use segment::payload_storage::schema_storage::SchemaStorage;
     use segment::segment_constructor::build_segment;
     use segment::types::{
-        Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, PayloadIndexType,
-        PayloadKeyType, PayloadType, Range, SearchParams, SegmentConfig, SeqNumberType,
-        StorageType, TheMap,
+        Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload,
+        PayloadIndexType, PayloadKeyType, PayloadType, Range, SearchParams, SegmentConfig,
+        SeqNumberType, StorageType, TheMap,
     };
+    use serde_json::json;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     use tempdir::TempDir;
@@ -46,24 +47,22 @@ mod tests {
             distance,
         };
 
-        let int_key = "int".to_string();
+        let int_key = "int";
 
         let mut segment =
             build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
         for n in 0..num_vectors {
             let idx = n.into();
             let vector = random_vector(&mut rnd, dim);
-            let mut payload: TheMap<PayloadKeyType, PayloadType> = Default::default();
-            payload.insert(
-                int_key.clone(),
-                random_int_payload(&mut rnd, num_payload_values),
-            );
+
+            let payload: Payload =
+                json!({int_key:random_int_payload(&mut rnd, num_payload_values),}).into();
 
             segment
                 .upsert_point(n as SeqNumberType, idx, &vector)
                 .unwrap();
             segment
-                .set_full_payload(n as SeqNumberType, idx, payload.clone())
+                .set_full_payload(n as SeqNumberType, idx, &payload)
                 .unwrap();
         }
         // let opnum = num_vectors + 1;
@@ -126,7 +125,7 @@ mod tests {
             let right_range = left_range + range_size;
 
             let filter = Filter::new_must(Condition::Field(FieldCondition {
-                key: int_key.clone(),
+                key: int_key.to_owned(),
                 r#match: None,
                 range: Some(Range {
                     lt: None,

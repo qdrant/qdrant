@@ -38,6 +38,7 @@ mod tests {
     use super::*;
     use crate::entry::entry_point::{OperationError, SegmentEntry};
     use crate::types::PayloadType;
+    use serde_json::json;
     use tempdir::TempDir;
 
     #[test]
@@ -80,14 +81,11 @@ mod tests {
         segment.upsert_point(2, 4.into(), &vec4).unwrap();
         segment.upsert_point(2, 5.into(), &vec5).unwrap();
 
-        let payload_key = "color".to_string();
-
         segment
             .set_payload(
                 3,
                 1.into(),
-                &payload_key,
-                PayloadType::Keyword(vec!["red".to_owned(), "green".to_owned()]),
+                &json!({ "color": vec!["red".to_owned(), "green".to_owned()] }).into(),
             )
             .unwrap();
 
@@ -95,8 +93,7 @@ mod tests {
             .set_payload(
                 3,
                 2.into(),
-                &payload_key,
-                PayloadType::Keyword(vec!["red".to_owned(), "blue".to_owned()]),
+                &json!({ "color": vec!["red".to_owned(), "blue".to_owned()] }).into(),
             )
             .unwrap();
 
@@ -104,8 +101,7 @@ mod tests {
             .set_payload(
                 3,
                 3.into(),
-                &payload_key,
-                PayloadType::Keyword(vec!["red".to_owned(), "yellow".to_owned()]),
+                &json!({ "color": vec!["red".to_owned(), "yellow".to_owned()] }).into(),
             )
             .unwrap();
 
@@ -113,8 +109,7 @@ mod tests {
             .set_payload(
                 3,
                 4.into(),
-                &payload_key,
-                PayloadType::Keyword(vec!["red".to_owned(), "green".to_owned()]),
+                &json!({ "color": vec!["red".to_owned(), "green".to_owned()] }).into(),
             )
             .unwrap();
 

@@ -74,7 +74,7 @@ impl CollectionUpdater {
 mod tests {
     use tempdir::TempDir;
 
-    use segment::types::{PayloadInterface, PayloadKeyType, PayloadVariant, WithPayload};
+    use segment::types::{Payload, PayloadKeyType, WithPayload};
 
     use crate::collection_manager::collection_managers::CollectionSearcher;
     use crate::collection_manager::fixtures::build_test_holder;
@@ -84,6 +84,7 @@ mod tests {
     use super::*;
     use crate::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
     use crate::operations::point_ops::PointOperations;
+    use serde_json::json;
     use std::collections::HashMap;
 
     #[tokio::test]
@@ -154,12 +155,7 @@ mod tests {
         let segments = build_test_holder(dir.path());
         let searcher = SimpleCollectionSearcher::new();
 
-        let mut payload: HashMap<PayloadKeyType, PayloadInterface> = Default::default();
-
-        payload.insert(
-            "color".to_string(),
-            PayloadInterface::KeywordShortcut(PayloadVariant::Value("red".to_string())),
-        );
+        let payload: Payload = json!({"color":"red"}).into();
 
         let points = vec![1.into(), 2.into(), 3.into()];
 

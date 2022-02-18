@@ -1,12 +1,11 @@
 use schemars::JsonSchema;
-use segment::types::{Filter, PayloadInterface, PayloadKeyType, PointIdType};
+use segment::types::{Filter, Payload, PayloadKeyType, PointIdType};
 use serde;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SetPayload {
-    pub payload: serde_json::Value,
+    pub payload: Payload,
     /// Assigns payload to each point in this list
     pub points: Vec<PointIdType>, // ToDo: replace with point selector
 }

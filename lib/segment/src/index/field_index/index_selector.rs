@@ -17,5 +17,6 @@ pub fn index_selector(payload_type: &PayloadSchemaType) -> Vec<Box<dyn PayloadFi
             )]
         }
         PayloadSchemaType::Geo => vec![],
+        PayloadSchemaType::Unknown => vec![],
     }
 }

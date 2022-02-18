@@ -1,9 +1,7 @@
 use parking_lot::RwLock;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::types::{
-    get_schema_type, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PayloadType, TheMap,
-};
+use crate::types::{PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, TheMap};
 
 /// a shared storage for schema data
 pub struct SchemaStorage {
@@ -21,18 +19,16 @@ impl SchemaStorage {
     pub fn update_schema_value(
         &self,
         key: PayloadKeyTypeRef,
-        value: &PayloadType,
+        schema_type: PayloadSchemaType,
     ) -> OperationResult<()> {
-        let schema_type = match get_schema_type(value) {
-            Some(v) => v,
-            None => {
-                return Err(OperationError::ServiceError {
-                    description: "unknown type".to_string(),
-                })
-            }
-        };
+        if schema_type == PayloadSchemaType::Unknown {
+            return Err(OperationError::ServiceError {
+                description: "unknown type".to_string(),
+            });
+        }
 
         let schema_read = self.schema.read();
+
         return match schema_read.get(key) {
             None => {
                 drop(schema_read);
@@ -42,10 +38,14 @@ impl SchemaStorage {
                         schema_write.insert(key.to_owned(), schema_type);
                         Ok(())
                     }
-                    Some(schema_type) => SchemaStorage::check_schema_type(key, value, schema_type),
+                    Some(current_schema_type) => {
+                        SchemaStorage::check_schema_type(key, &schema_type, current_schema_type)
+                    }
                 }
             }
-            Some(schema_type) => SchemaStorage::check_schema_type(key, value, schema_type),
+            Some(current_schema_type) => {
+                SchemaStorage::check_schema_type(key, &schema_type, current_schema_type)
+            }
         };
     }
 
@@ -60,15 +60,15 @@ impl SchemaStorage {
 
     fn check_schema_type(
         key: PayloadKeyTypeRef,
-        value: &PayloadType,
-        schema_type: &PayloadSchemaType,
+        value_schema_type: &PayloadSchemaType,
+        current_schema_type: &PayloadSchemaType,
     ) -> OperationResult<()> {
-        if schema_type == &value.into() {
+        if current_schema_type == value_schema_type {
             Ok(())
         } else {
             Err(OperationError::TypeError {
                 field_name: key.to_owned(),
-                expected_type: format!("{:?}", schema_type),
+                expected_type: format!("{:?}", current_schema_type),
             })
         }
     }

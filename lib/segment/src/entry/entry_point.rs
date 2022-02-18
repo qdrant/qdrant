@@ -1,5 +1,5 @@
 use crate::types::{
-    Filter, PayloadKeyType, PayloadKeyTypeRef, PointIdType, ScoredPoint, SearchParams,
+    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PointIdType, ScoredPoint, SearchParams,
     SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, VectorElementType, WithPayload,
 };
 use atomicwrites::Error as AtomicIoError;
@@ -121,7 +121,14 @@ pub trait SegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        payload: &serde_json::Value,
+        payload: &Payload,
+    ) -> OperationResult<bool>;
+
+    fn set_full_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        full_payload: &Payload,
     ) -> OperationResult<bool>;
 
     fn delete_payload(
@@ -139,7 +146,7 @@ pub trait SegmentEntry {
 
     fn vector(&self, point_id: PointIdType) -> OperationResult<Vec<VectorElementType>>;
 
-    fn payload(&self, point_id: PointIdType) -> OperationResult<serde_json::Value>;
+    fn payload(&self, point_id: PointIdType) -> OperationResult<Payload>;
 
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
 

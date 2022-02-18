@@ -1,9 +1,9 @@
-use crate::entry::entry_point::{OperationError, OperationResult};
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cmp::Ordering;
+use std::collections::btree_map::IntoIter;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Formatter;
 use std::str::FromStr;
@@ -96,7 +96,7 @@ pub struct ScoredPoint {
     /// Points vector distance to the query vector
     pub score: ScoreType,
     /// Payload - values assigned to the point
-    pub payload: Option<serde_json::Value>,
+    pub payload: Option<Payload>,
     /// Vector of the point
     pub vector: Option<Vec<VectorElementType>>,
 }
@@ -323,19 +323,71 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
     }
 }
 
-// /// All possible payload types
-// #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-// #[serde(rename_all = "snake_case")]
-// #[serde(tag = "type", content = "value")]
-// pub enum PayloadType {
-//     Keyword(Vec<String>),
-//     Integer(Vec<IntPayloadType>),
-//     Float(Vec<FloatPayloadType>),
-//     Geo(Vec<GeoPoint>),
-//     Json(serde_json::Value),
-// }
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Default, PartialEq)]
+pub struct Payload(BTreeMap<String, Value>);
 
-pub type PayloadType = serde_json::Value;
+impl Payload {
+    pub fn merge(&mut self, value: &Payload) {
+        todo!()
+    }
+
+    pub fn get(&self, path: &str) -> Option<PayloadType> {
+        todo!()
+    }
+
+    pub fn get_schema_type(&self, path: &str) -> PayloadSchemaType {
+        todo!()
+    }
+
+    pub fn remove(&mut self, path: &str) -> Option<Value> {
+        todo!()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.0.contains_key(key)
+    }
+}
+
+impl IntoIterator for Payload {
+    type Item = (String, Value);
+    type IntoIter = IntoIter<String, Value>;
+
+    fn into_iter(self) -> IntoIter<String, Value> {
+        self.0.into_iter()
+    }
+}
+
+impl From<Value> for Payload {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::Object(map) => {
+                let payload_map: BTreeMap<String, Value> = map.into_iter().collect();
+                Payload(payload_map)
+            }
+            _ => panic!("cannot convert from {:?}", value),
+        }
+    }
+}
+
+/// All possible payload types
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type", content = "value")]
+pub enum PayloadType {
+    Keyword(Vec<String>),
+    Integer(Vec<IntPayloadType>),
+    Float(Vec<FloatPayloadType>),
+    Geo(Vec<GeoPoint>),
+    Json(Value),
+}
 
 /// All possible names of payload types
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
@@ -346,6 +398,7 @@ pub enum PayloadSchemaType {
     Integer,
     Float,
     Geo,
+    Unknown,
 }
 
 // TODO(gvelo): implement for all json types.
@@ -581,8 +634,10 @@ impl PayloadSelector {
         }
     }
 
-    pub fn process(&self, x: &serde_json::Value) -> serde_json::Value {
-        x.into_iter().filter(|(key, _)| self.check(key)).collect()
+    pub fn process(&self, x: Payload) -> Payload {
+        let map: BTreeMap<String, Value> =
+            x.into_iter().filter(|(key, _)| self.check(key)).collect();
+        Payload(map)
     }
 }
 
@@ -639,15 +694,14 @@ mod tests {
 
     use serde::de::DeserializeOwned;
     use serde_json;
+    use serde_json::json;
 
     #[test]
     fn test_value_parse() {
-        let geo_query_strict = r#"{"type": "geo", "value": {"lon": 1.0, "lat": 1.0}}"#;
-        let val_geo_query_strict: serde_json::value::Value =
-            serde_json::from_str(geo_query_strict).unwrap();
-        let payload_interface_geo_query: PayloadInterface =
-            serde_json::from_value(val_geo_query_strict).unwrap();
-        let payload_geo_query: PayloadType = (&payload_interface_geo_query).into();
+        let geo_query_strict =
+            r#"{ "geo_property" : {"type": "geo", "value": {"lon": 1.0, "lat": 1.0}}}"#;
+        let payload: Payload = serde_json::from_str(geo_query_strict).unwrap();
+        let payload_geo_query = payload.get("geo_property").unwrap();
         match &payload_geo_query {
             PayloadType::Geo(x) => {
                 assert_eq!(x.len(), 1);
@@ -657,13 +711,9 @@ mod tests {
             _ => panic!(),
         }
 
-        let keyword_query_non_strict = r#"["Berlin", "Barcelona", "Moscow"]"#;
-        let val_keyword_query_non_strict: serde_json::value::Value =
-            serde_json::from_str(keyword_query_non_strict).unwrap();
-        let payload_interface_keyword_query_non_strict: PayloadInterface =
-            serde_json::from_value(val_keyword_query_non_strict).unwrap();
-        let payload_keyword_query_non_strict: PayloadType =
-            (&payload_interface_keyword_query_non_strict).into();
+        let keyword_query_non_strict = r#"{"keyword":["Berlin", "Barcelona", "Moscow"]}"#;
+        let payload: Payload = serde_json::from_str(keyword_query_non_strict).unwrap();
+        let payload_keyword_query_non_strict = payload.get("keyword").unwrap();
         match &payload_keyword_query_non_strict {
             PayloadType::Keyword(x) => {
                 assert_eq!(x.len(), 3);
@@ -674,14 +724,10 @@ mod tests {
             _ => panic!(),
         }
 
-        let keyword_query_strict =
-            r#"{"type": "keyword", "value": ["Berlin", "Barcelona", "Moscow"]}"#;
-        let val_keyword_query_strict: serde_json::value::Value =
-            serde_json::from_str(keyword_query_strict).unwrap();
-        let payload_interface_keyword_query_strict: PayloadInterface =
-            serde_json::from_value(val_keyword_query_strict).unwrap();
-        let payload_keyword_query_strict: PayloadType =
-            (&payload_interface_keyword_query_strict).into();
+        let keyword_query_strict = r#"{"keyword_strict_prop":"type": "keyword", "value": ["Berlin", "Barcelona", "Moscow"]}}"#;
+        let payload: Payload = serde_json::from_str(keyword_query_strict).unwrap();
+        let payload_keyword_query_strict: PayloadType = payload.get("keyword_strict_prop").unwrap();
+
         match &payload_keyword_query_strict {
             PayloadType::Keyword(x) => {
                 assert_eq!(x.len(), 3);
@@ -692,13 +738,9 @@ mod tests {
             _ => panic!(),
         }
 
-        let integer_query_non_strict = r#"[1, 2, 3]"#;
-        let val_integer_query_non_strict: serde_json::value::Value =
-            serde_json::from_str(integer_query_non_strict).unwrap();
-        let payload_interface_integer_query_non_strict: PayloadInterface =
-            serde_json::from_value(val_integer_query_non_strict).unwrap();
-        let payload_integer_query_non_strict: PayloadType =
-            (&payload_interface_integer_query_non_strict).into();
+        let integer_query_non_strict = r#"{"integer_query_non_strict":[1, 2, 3]}"#;
+        let payload: Payload = serde_json::from_str(integer_query_non_strict).unwrap();
+        let payload_integer_query_non_strict = payload.get("integer_query_non_strict").unwrap();
         match &payload_integer_query_non_strict {
             PayloadType::Integer(x) => {
                 assert_eq!(x.len(), 3);
@@ -709,13 +751,10 @@ mod tests {
             _ => panic!(),
         }
 
-        let integer_query_strict = r#"{"type": "integer", "value": [1, 2, 3]}"#;
-        let val_integer_query_strict: serde_json::value::Value =
-            serde_json::from_str(integer_query_strict).unwrap();
-        let payload_interface_integer_query_strict: PayloadInterface =
-            serde_json::from_value(val_integer_query_strict).unwrap();
-        let payload_integer_query_strict: PayloadType =
-            (&payload_interface_integer_query_strict).into();
+        let integer_query_strict =
+            r#"{"integer_query_strict":{"type": "integer", "value": [1, 2, 3]}}"#;
+        let payload: Payload = serde_json::from_str(integer_query_strict).unwrap();
+        let payload_integer_query_strict = payload.get("integer_query_strict").unwrap();
         match &payload_integer_query_strict {
             PayloadType::Integer(x) => {
                 assert_eq!(x.len(), 3);
@@ -726,13 +765,9 @@ mod tests {
             _ => panic!(),
         }
 
-        let float_query_non_strict = r#"[1.0, 2.0, 3.0]"#;
-        let val_float_query_non_strict: serde_json::value::Value =
-            serde_json::from_str(float_query_non_strict).unwrap();
-        let payload_interface_float_query_non_strict: PayloadInterface =
-            serde_json::from_value(val_float_query_non_strict).unwrap();
-        let payload_float_query_non_strict: PayloadType =
-            (&payload_interface_float_query_non_strict).into();
+        let float_query_non_strict = r#"{"float_query_non_strict":[1.0, 2.0, 3.0]}"#;
+        let payload: Payload = serde_json::from_str(float_query_non_strict).unwrap();
+        let payload_float_query_non_strict = payload.get("float_query_non_strict").unwrap();
         match &payload_float_query_non_strict {
             PayloadType::Float(x) => {
                 assert_eq!(x.len(), 3);
@@ -743,13 +778,10 @@ mod tests {
             _ => panic!(),
         }
 
-        let float_query_strict = r#"{"type": "float", "value": [1.0, 2.0, 3.0]}"#;
-        let val_float_query_strict: serde_json::value::Value =
-            serde_json::from_str(float_query_strict).unwrap();
-        let payload_interface_float_query_strict: PayloadInterface =
-            serde_json::from_value(val_float_query_strict).unwrap();
-        let payload_float_query_strict: PayloadType =
-            (&payload_interface_float_query_strict).into();
+        let float_query_strict =
+            r#"{"float_query_strict":{"type": "float", "value": [1.0, 2.0, 3.0]}}"#;
+        let payload: Payload = serde_json::from_str(float_query_strict).unwrap();
+        let payload_float_query_strict = payload.get("float_query_strict").unwrap();
         match &payload_float_query_strict {
             PayloadType::Float(x) => {
                 assert_eq!(x.len(), 3);
@@ -789,19 +821,20 @@ mod tests {
         assert_eq!(record, de_record);
     }
 
-    #[test]
-    fn test_strict_deserialize() {
-        let de_record: PayloadInterface =
-            serde_json::from_str(r#"[1, 2]"#).expect("deserialization ok");
-        eprintln!("de_record = {:#?}", de_record);
-    }
+    // strict serde tested on `test_value_parse`
+    // #[test]
+    // fn test_strict_deserialize() {
+    //     let de_record: PayloadInterface =
+    //         serde_json::from_str(r#"[1, 2]"#).expect("deserialization ok");
+    //     eprintln!("de_record = {:#?}", de_record);
+    // }
 
     #[test]
     #[ignore]
     fn test_rmp_vs_cbor_deserialize() {
-        let payload = PayloadInterface::KeywordShortcut(PayloadVariant::Value("val".to_string()));
+        let payload: Payload = json!({"payload_key":"payload_value"}).into();
         let raw = rmp_serde::to_vec(&payload).unwrap();
-        let de_record: PayloadInterface = serde_cbor::from_slice(&raw).unwrap();
+        let de_record: Payload = serde_cbor::from_slice(&raw).unwrap();
         eprintln!("payload = {:#?}", payload);
         eprintln!("de_record = {:#?}", de_record);
     }
@@ -839,60 +872,62 @@ mod tests {
     //     check_cbor_serialization(operation);
     // }
 
-    #[test]
-    fn test_rms_serialization() {
-        let payload = PayloadInterface::Payload(PayloadInterfaceStrict::Keyword(
-            PayloadVariant::Value("val".to_string()),
-        ));
-        check_cbor_serialization(payload.clone());
-        check_json_serialization(payload);
-
-        let payload = PayloadVariant::Value("val".to_string());
-        check_cbor_serialization(payload.clone());
-        check_json_serialization(payload);
-
-        let payload = PayloadVariant::Value(1.22);
-        check_cbor_serialization(payload.clone());
-        check_json_serialization(payload);
-
-        let payload = PayloadVariant::Value(1.);
-        check_cbor_serialization(payload.clone());
-        check_json_serialization(payload);
-
-        let payload = PayloadVariant::Value(1);
-        check_cbor_serialization(payload.clone());
-        check_json_serialization(payload);
-
-        let payload = PayloadVariant::List(vec!["val".to_string(), "val2".to_string()]);
-        check_cbor_serialization(payload.clone());
-        check_json_serialization(payload);
-
-        let payload =
-            PayloadInterface::Payload(PayloadInterfaceStrict::Integer(PayloadVariant::List(vec![
-                1, 2,
-            ])));
-        check_cbor_serialization(payload.clone());
-        check_json_serialization(payload);
-
-        let payload = PayloadVariant::List(vec![1, 2]);
-        check_cbor_serialization(payload.clone());
-        check_json_serialization(payload);
-
-        let payload = PayloadInterface::IntShortcut(PayloadVariant::List(vec![1, 2]));
-        check_cbor_serialization(payload.clone());
-        check_json_serialization(payload);
-
-        let payload = PayloadInterface::KeywordShortcut(PayloadVariant::Value("val".to_string()));
-        check_cbor_serialization(payload.clone());
-        check_json_serialization(payload);
-
-        let payload = PayloadInterface::KeywordShortcut(PayloadVariant::List(vec![
-            "val".to_string(),
-            "val2".to_string(),
-        ]));
-        check_cbor_serialization(payload.clone());
-        check_json_serialization(payload);
-    }
+    // `PayloadInterfaceStrict` not longer used in payload structs
+    //
+    // #[test]
+    // fn test_rms_serialization() {
+    //     let payload = PayloadInterface::Payload(PayloadInterfaceStrict::Keyword(
+    //         PayloadVariant::Value("val".to_string()),
+    //     ));
+    //     check_cbor_serialization(payload.clone());
+    //     check_json_serialization(payload);
+    //
+    //     let payload = PayloadVariant::Value("val".to_string());
+    //     check_cbor_serialization(payload.clone());
+    //     check_json_serialization(payload);
+    //
+    //     let payload = PayloadVariant::Value(1.22);
+    //     check_cbor_serialization(payload.clone());
+    //     check_json_serialization(payload);
+    //
+    //     let payload = PayloadVariant::Value(1.);
+    //     check_cbor_serialization(payload.clone());
+    //     check_json_serialization(payload);
+    //
+    //     let payload = PayloadVariant::Value(1);
+    //     check_cbor_serialization(payload.clone());
+    //     check_json_serialization(payload);
+    //
+    //     let payload = PayloadVariant::List(vec!["val".to_string(), "val2".to_string()]);
+    //     check_cbor_serialization(payload.clone());
+    //     check_json_serialization(payload);
+    //
+    //     let payload =
+    //         PayloadInterface::Payload(PayloadInterfaceStrict::Integer(PayloadVariant::List(vec![
+    //             1, 2,
+    //         ])));
+    //     check_cbor_serialization(payload.clone());
+    //     check_json_serialization(payload);
+    //
+    //     let payload = PayloadVariant::List(vec![1, 2]);
+    //     check_cbor_serialization(payload.clone());
+    //     check_json_serialization(payload);
+    //
+    //     let payload = PayloadInterface::IntShortcut(PayloadVariant::List(vec![1, 2]));
+    //     check_cbor_serialization(payload.clone());
+    //     check_json_serialization(payload);
+    //
+    //     let payload = PayloadInterface::KeywordShortcut(PayloadVariant::Value("val".to_string()));
+    //     check_cbor_serialization(payload.clone());
+    //     check_json_serialization(payload);
+    //
+    //     let payload = PayloadInterface::KeywordShortcut(PayloadVariant::List(vec![
+    //         "val".to_string(),
+    //         "val2".to_string(),
+    //     ]));
+    //     check_cbor_serialization(payload.clone());
+    //     check_json_serialization(payload);
+    // }
 
     #[test]
     fn test_name() {
@@ -1007,35 +1042,6 @@ mod tests {
         let filter: Result<Filter, _> = serde_json::from_str(query1);
 
         assert!(filter.is_err());
-    }
-
-    #[test]
-    fn test_json_flatten() {
-        let data = r#"
-        {
-            "object": {"nested":1},
-            "array": [{"num":1,"keyword":"k1"},{"num":2,"keyword":"k2"}]
-        }"#;
-
-        let v = serde_json::from_str(data).unwrap();
-
-        let flatten_payload = flat_payload("prefix", &PayloadType::Json(v)).unwrap();
-
-        assert_eq!(
-            flatten_payload.get("prefix.object.nested"),
-            Some(&PayloadType::Integer(vec![1]))
-        );
-        assert_eq!(
-            flatten_payload.get("prefix.array.num"),
-            Some(&PayloadType::Integer(vec![1, 2]))
-        );
-        assert_eq!(
-            flatten_payload.get("prefix.array.keyword"),
-            Some(&PayloadType::Keyword(vec![
-                "k1".to_string(),
-                "k2".to_string()
-            ]))
-        );
     }
 }
 

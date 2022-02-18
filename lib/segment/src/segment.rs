@@ -6,13 +6,14 @@ use crate::index::{PayloadIndexSS, VectorIndexSS};
 use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
 use crate::spaces::tools::mertic_object;
 use crate::types::{
-    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo, PointIdType, PointOffsetType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState, SegmentType,
-    SeqNumberType, VectorElementType, WithPayload,
+    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PointIdType, PointOffsetType, ScoredPoint,
+    SearchParams, SegmentConfig, SegmentInfo, SegmentState, SegmentType, SeqNumberType,
+    VectorElementType, WithPayload,
 };
 use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
 use atomicwrites::{AllowOverwrite, AtomicFile};
+use std::collections::HashMap;
 use std::fs::{remove_dir_all, rename};
 use std::io::Write;
 use std::path::PathBuf;
@@ -208,10 +209,7 @@ impl Segment {
 
     /// Retrieve payload by internal ID
     #[inline]
-    fn payload_by_offset(
-        &self,
-        point_offset: PointOffsetType,
-    ) -> OperationResult<serde_json::Value> {
+    fn payload_by_offset(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
         Ok(self.payload_storage.borrow().payload(point_offset))
     }
 
@@ -280,7 +278,7 @@ impl SegmentEntry for Segment {
                 let payload = if with_payload.enable {
                     let initial_payload = self.payload_by_offset(point_offset)?;
                     let processed_payload = if let Some(i) = &with_payload.payload_selector {
-                        i.process(&initial_payload)
+                        i.process(initial_payload)
                     } else {
                         initial_payload
                     };
@@ -372,11 +370,27 @@ impl SegmentEntry for Segment {
         })
     }
 
+    fn set_full_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        full_payload: &Payload,
+    ) -> OperationResult<bool> {
+        self.handle_version_and_failure(op_num, Some(point_id), |segment| {
+            let internal_id = segment.lookup_internal_id(point_id)?;
+            segment
+                .payload_storage
+                .borrow_mut()
+                .assign_all(internal_id, full_payload)?;
+            Ok(true)
+        })
+    }
+
     fn set_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        payload: &serde_json::Value,
+        payload: &Payload,
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
@@ -421,7 +435,7 @@ impl SegmentEntry for Segment {
         self.vector_by_offset(internal_id)
     }
 
-    fn payload(&self, point_id: PointIdType) -> OperationResult<serde_json::Value> {
+    fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
         let internal_id = self.lookup_internal_id(point_id)?;
         self.payload_by_offset(internal_id)
     }
@@ -480,23 +494,28 @@ impl SegmentEntry for Segment {
     }
 
     fn info(&self) -> SegmentInfo {
-        let indexed_fields = self.payload_index.borrow().indexed_fields();
-        let schema = self
-            .payload_storage
-            .borrow()
-            .schema()
-            .into_iter()
-            .map(|(key, data_type)| {
-                let is_indexed = indexed_fields.contains(&key);
-                (
-                    key,
-                    PayloadSchemaInfo {
-                        data_type,
-                        indexed: is_indexed,
-                    },
-                )
-            })
-            .collect();
+        // TODO(gvelo): build schema from indexed fields.
+
+        // let indexed_fields = self.payload_index.borrow().indexed_fields();
+
+        // let schema = self
+        //     .payload_storage
+        //     .borrow()
+        //     .schema()
+        //     .into_iter()
+        //     .map(|(key, data_type)| {
+        //         let is_indexed = indexed_fields.contains(&key);
+        //         (
+        //             key,
+        //             PayloadSchemaInfo {
+        //                 data_type,
+        //                 indexed: is_indexed,
+        //             },
+        //         )
+        //     })
+        //     .collect();
+
+        let schema = HashMap::new();
 
         SegmentInfo {
             segment_type: self.segment_type,
@@ -587,37 +606,39 @@ mod tests {
     use crate::types::{Distance, Indexes, PayloadIndexType, SegmentConfig, StorageType};
     use tempdir::TempDir;
 
-    #[test]
-    fn test_set_invalid_payload_from_json() {
-        let data1 = r#"
-        {
-            "invalid_data"
-        }"#;
-        let data2 = r#"
-        {
-            "array": [1, "hello"],
-        }"#;
-
-        let dir = TempDir::new("payload_dir").unwrap();
-        let dim = 2;
-        let config = SegmentConfig {
-            vector_size: dim,
-            index: Indexes::Plain {},
-            payload_index: Some(PayloadIndexType::Plain),
-            storage_type: StorageType::InMemory,
-            distance: Distance::Dot,
-        };
-
-        let mut segment =
-            build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
-        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
-
-        let result1 = segment.set_full_payload_with_json(0, 0.into(), &data1.to_string());
-        assert!(result1.is_err());
-
-        let result2 = segment.set_full_payload_with_json(0, 0.into(), &data2.to_string());
-        assert!(result2.is_err());
-    }
+    // no longer valid since users are now allowed to store arbitrary json objects.
+    // TODO(gvelo): add tests for invalid payload types on indexed fields.
+    // #[test]
+    // fn test_set_invalid_payload_from_json() {
+    //     let data1 = r#"
+    //     {
+    //         "invalid_data"
+    //     }"#;
+    //     let data2 = r#"
+    //     {
+    //         "array": [1, "hello"],
+    //     }"#;
+    //
+    //     let dir = TempDir::new("payload_dir").unwrap();
+    //     let dim = 2;
+    //     let config = SegmentConfig {
+    //         vector_size: dim,
+    //         index: Indexes::Plain {},
+    //         payload_index: Some(PayloadIndexType::Plain),
+    //         storage_type: StorageType::InMemory,
+    //         distance: Distance::Dot,
+    //     };
+    //
+    //     let mut segment =
+    //         build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
+    //     segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
+    //
+    //     let result1 = segment.set_full_payload_with_json(0, 0.into(), &data1.to_string());
+    //     assert!(result1.is_err());
+    //
+    //     let result2 = segment.set_full_payload_with_json(0, 0.into(), &data2.to_string());
+    //     assert!(result2.is_err());
+    // }
 
     #[test]
     fn test_from_filter_attributes() {
@@ -644,9 +665,10 @@ mod tests {
         let mut segment =
             build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
         segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
-        segment
-            .set_full_payload_with_json(0, 0.into(), &data.to_string())
-            .unwrap();
+
+        let payload: Payload = serde_json::from_str(data).unwrap();
+
+        segment.set_full_payload(0, 0.into(), &payload).unwrap();
 
         let filter_valid_str = r#"
         {

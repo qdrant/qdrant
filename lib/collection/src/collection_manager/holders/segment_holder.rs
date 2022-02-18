@@ -316,7 +316,7 @@ impl<'s> SegmentHolder {
                         let payload = write_segment.payload(point_id)?;
 
                         appendable_write_segment.upsert_point(op_num, point_id, &vector)?;
-                        appendable_write_segment.set_full_payload(op_num, point_id, payload)?;
+                        appendable_write_segment.set_full_payload(op_num, point_id, &payload)?;
 
                         write_segment.delete_point(op_num, point_id)?;
 

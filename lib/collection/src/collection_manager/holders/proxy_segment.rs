@@ -2,9 +2,9 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 use parking_lot::RwLock;
 use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
 use segment::types::{
-    Condition, Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType, ScoredPoint,
-    SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap,
-    VectorElementType, WithPayload,
+    Condition, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PointIdType, ScoredPoint,
+    SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, VectorElementType,
+    WithPayload,
 };
 use std::cmp::max;
 use std::collections::HashSet;
@@ -56,7 +56,7 @@ impl ProxySegment {
         let mut write_segment = segment_arc.write();
 
         write_segment.upsert_point(op_num, point_id, &vector)?;
-        write_segment.set_full_payload(op_num, point_id, payload)?;
+        write_segment.set_full_payload(op_num, point_id, &payload)?;
 
         Ok(true)
     }
@@ -203,7 +203,7 @@ impl SegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        full_payload: TheMap<PayloadKeyType, PayloadType>,
+        full_payload: &Payload,
     ) -> OperationResult<bool> {
         self.move_if_exists(op_num, point_id)?;
         self.write_segment
@@ -212,31 +212,17 @@ impl SegmentEntry for ProxySegment {
             .set_full_payload(op_num, point_id, full_payload)
     }
 
-    fn set_full_payload_with_json(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        full_payload: &str,
-    ) -> OperationResult<bool> {
-        self.move_if_exists(op_num, point_id)?;
-        self.write_segment
-            .get()
-            .write()
-            .set_full_payload_with_json(op_num, point_id, full_payload)
-    }
-
     fn set_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        key: PayloadKeyTypeRef,
-        payload: PayloadType,
+        payload: &Payload,
     ) -> OperationResult<bool> {
         self.move_if_exists(op_num, point_id)?;
         self.write_segment
             .get()
             .write()
-            .set_payload(op_num, point_id, key, payload)
+            .set_payload(op_num, point_id, payload)
     }
 
     fn delete_payload(
@@ -279,10 +265,7 @@ impl SegmentEntry for ProxySegment {
         };
     }
 
-    fn payload(
-        &self,
-        point_id: PointIdType,
-    ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
+    fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment.get().read().payload(point_id)
         } else {

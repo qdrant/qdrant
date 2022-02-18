@@ -8,9 +8,10 @@ mod tests {
     use segment::payload_storage::schema_storage::SchemaStorage;
     use segment::segment_constructor::build_segment;
     use segment::types::{
-        Condition, Distance, FieldCondition, Filter, Indexes, PayloadIndexType, PayloadKeyType,
-        PayloadType, Range, SegmentConfig, StorageType, TheMap, WithPayload,
+        Condition, Distance, FieldCondition, Filter, Indexes, Payload, PayloadIndexType,
+        PayloadKeyType, PayloadType, Range, SegmentConfig, StorageType, TheMap, WithPayload,
     };
+    use serde_json::json;
     use std::sync::Arc;
     use tempdir::TempDir;
 
@@ -29,8 +30,8 @@ mod tests {
             distance: Distance::Dot,
         };
 
-        let str_key = "kvd".to_string();
-        let int_key = "int".to_string();
+        let str_key = "kvd";
+        let int_key = "int";
 
         let num_points = 10000;
         let mut struct_segment =
@@ -40,13 +41,16 @@ mod tests {
         for n in 0..num_points {
             let idx = n.into();
             let vector = random_vector(&mut rnd, dim);
-            let mut payload: TheMap<PayloadKeyType, PayloadType> = Default::default();
-            payload.insert(str_key.clone(), random_keyword_payload(&mut rnd));
-            payload.insert(int_key.clone(), random_int_payload(&mut rnd, 2));
+
+            let payload: Payload = json!({
+                str_key:random_keyword_payload(&mut rnd),
+                int_key:random_int_payload(&mut rnd, 2),
+            })
+            .into();
 
             struct_segment.upsert_point(opnum, idx, &vector).unwrap();
             struct_segment
-                .set_full_payload(opnum, idx, payload.clone())
+                .set_full_payload(opnum, idx, &payload)
                 .unwrap();
 
             opnum += 1;
@@ -56,7 +60,7 @@ mod tests {
         struct_segment.create_field_index(opnum, &int_key).unwrap();
 
         let filter = Filter::new_must(Condition::Field(FieldCondition {
-            key: int_key,
+            key: int_key.to_owned(),
             r#match: None,
             range: Some(Range {
                 lt: None,
@@ -112,8 +116,8 @@ mod tests {
         let mut struct_segment =
             build_segment(dir2.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
 
-        let str_key = "kvd".to_string();
-        let int_key = "int".to_string();
+        let str_key = "kvd";
+        let int_key = "int";
 
         let num_points = 1000;
         let num_int_values = 2;
@@ -122,21 +126,21 @@ mod tests {
         for idx in 0..num_points {
             let point_id = idx.into();
             let vector = random_vector(&mut rnd, dim);
-            let mut payload: TheMap<PayloadKeyType, PayloadType> = Default::default();
-            payload.insert(str_key.clone(), random_keyword_payload(&mut rnd));
-            payload.insert(
-                int_key.clone(),
-                random_int_payload(&mut rnd, num_int_values),
-            );
+
+            let payload: Payload = json!({
+                str_key:random_keyword_payload(&mut rnd),
+                int_key:random_int_payload(&mut rnd, num_int_values),
+            })
+            .into();
 
             plain_segment.upsert_point(idx, point_id, &vector).unwrap();
             struct_segment.upsert_point(idx, point_id, &vector).unwrap();
 
             plain_segment
-                .set_full_payload(idx, point_id, payload.clone())
+                .set_full_payload(idx, point_id, &payload)
                 .unwrap();
             struct_segment
-                .set_full_payload(idx, point_id, payload.clone())
+                .set_full_payload(idx, point_id, &payload)
                 .unwrap();
 
             opnum += 1;

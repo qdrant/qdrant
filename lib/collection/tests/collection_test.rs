@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -11,8 +12,8 @@ use collection::operations::point_ops::{Batch, PointOperations, PointStruct};
 use collection::operations::types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus};
 use collection::operations::CollectionUpdateOperations;
 use segment::types::{
-    Condition, HasIdCondition, PayloadInterface, PayloadKeyType, PayloadVariant, PointIdType,
-    WithPayload, WithPayloadInterface,
+    Condition, HasIdCondition, Payload, PayloadKeyType, PointIdType, WithPayload,
+    WithPayloadInterface,
 };
 
 use crate::common::simple_collection_fixture;
@@ -164,12 +165,7 @@ async fn test_collection_loading() {
 
         collection.update(insert_points, true).await.unwrap();
 
-        let mut payload: HashMap<PayloadKeyType, PayloadInterface> = Default::default();
-
-        payload.insert(
-            "color".to_string(),
-            PayloadInterface::KeywordShortcut(PayloadVariant::Value("red".to_string())),
-        );
+        let payload: Payload = json!({"color":"red"}).into();
 
         let assign_payload =
             CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayload {

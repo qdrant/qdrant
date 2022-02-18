@@ -6,7 +6,6 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
 use log::debug;
-use serde_json::Value;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::IdTrackerSS;
@@ -19,8 +18,7 @@ use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
 use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
 use crate::types::{
-    get_schema_type, Condition, FieldCondition, Filter, PayloadKeyType, PayloadKeyTypeRef,
-    PointOffsetType,
+    Condition, FieldCondition, Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType,
 };
 use crate::vector_storage::VectorStorageSS;
 
@@ -190,42 +188,25 @@ impl StructPayloadIndex {
     }
 
     pub fn build_field_index(&self, field: PayloadKeyTypeRef) -> OperationResult<Vec<FieldIndex>> {
-        let payload_ref = self.payload.borrow();
+        let payload_storage = self.payload.borrow();
 
-        let id = match payload_ref.iter_ids().next() {
-            Some(value) => value,
-            None => return Ok(vec![]), // There is not data to index
+        let point_id = match payload_storage.iter_ids().next() {
+            Some(id) => id,
+            None => return Ok(vec![]),
         };
 
-        let payload = payload_ref.payload(id);
+        let payload_value = payload_storage.payload(point_id);
 
-        let payload_field = match get_field_value(&payload, field) {
-            Some(field) => field,
-            None => {
-                // There is not data to index
-                return Ok(vec![]);
-            }
-        };
+        let mut builders = index_selector(&payload_value.get_schema_type(field));
 
-        let payload_type = match get_schema_type(payload_field) {
-            Some(v) => v,
-            None => {
-                return Err(OperationError::ServiceError {
-                    description: "cannot determine field type".to_string(),
-                })
-            }
-        };
-
-        let mut builders = index_selector(&payload_type);
-
-        for point_id in payload_ref.iter_ids() {
-            let point_payload = payload_ref.payload(point_id);
+        for point_id in payload_storage.iter_ids() {
+            let point_payload = payload_storage.payload(point_id);
             let field_value_opt = point_payload.get(field);
             match field_value_opt {
                 None => {}
                 Some(field_value) => {
                     for builder in &mut builders {
-                        builder.add(point_id, field_value);
+                        builder.add(point_id, &field_value);
                     }
                 }
             }
@@ -382,16 +363,5 @@ impl PayloadIndex for StructPayloadIndex {
                 }))
             }
         }
-    }
-}
-
-// TODO(gvelo): move
-fn get_field_value<'a>(
-    json_value: &'a serde_json::Value,
-    field_name: &str,
-) -> Option<&'a serde_json::Value> {
-    match json_value {
-        Value::Object(map) => map.get(field_name),
-        _ => None,
     }
 }

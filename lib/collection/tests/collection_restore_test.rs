@@ -85,7 +85,7 @@ async fn test_collection_payload_reloading() {
         .get("k")
         .expect("has value")
     {
-        PayloadType::Keyword(values) => assert_eq!(&vec!["v1".to_string()], values),
+        PayloadType::Keyword(values) => assert_eq!(vec!["v1".to_string()], values),
         _ => panic!("unexpected type"),
     }
 
@@ -145,7 +145,7 @@ async fn test_collection_payload_custom_payload() {
         .get("k2")
         .expect("has value")
     {
-        PayloadType::Keyword(values) => assert_eq!(&vec!["v3".to_string()], values),
+        PayloadType::Keyword(values) => assert_eq!(vec!["v3".to_string()], values),
         _ => panic!("unexpected type"),
     }
 
@@ -185,7 +185,7 @@ async fn test_collection_payload_custom_payload() {
         .get("k3")
         .expect("has value")
     {
-        PayloadType::Keyword(values) => assert_eq!(&vec!["v4".to_string()], values),
+        PayloadType::Keyword(values) => assert_eq!(vec!["v4".to_string()], values),
         _ => panic!("unexpected type"),
     }
 }

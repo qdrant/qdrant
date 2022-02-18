@@ -129,6 +129,7 @@ mod tests {
     use parking_lot::RwLock;
     use rand::Rng;
     use segment::types::{Distance, PayloadType};
+    use serde_json::json;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     use tempdir::TempDir;
@@ -181,8 +182,7 @@ mod tests {
                 .set_payload(
                     102,
                     point_id,
-                    &"color".to_string(),
-                    PayloadType::Keyword(vec!["red".to_string()]),
+                    &json!({ "color": vec!["red".to_string()] }).into(),
                 )
                 .unwrap();
         }
@@ -191,12 +191,7 @@ mod tests {
             segment
                 .get()
                 .write()
-                .set_payload(
-                    102,
-                    point_id,
-                    &"size".to_string(),
-                    PayloadType::Float(vec![0.42]),
-                )
+                .set_payload(102, point_id, &json!({"size":0.42}).into())
                 .unwrap();
         }
 
