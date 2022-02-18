@@ -29,6 +29,7 @@ pub async fn simple_collection_fixture(collection_path: &Path) -> Collection {
     };
 
     Collection::new(
+        "test".to_string(),
         collection_path,
         &CollectionConfig {
             params: collection_params,

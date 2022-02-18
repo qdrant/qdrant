@@ -12,7 +12,7 @@ use operations::{
     },
     CollectionUpdateOperations,
 };
-use segment::types::{PointIdType, ScoredPoint, WithPayload};
+use segment::types::{PointIdType, ScoredPoint, VectorElementType, WithPayload};
 use shard::Shard;
 use tokio::runtime::Handle;
 
@@ -28,21 +28,27 @@ mod wal;
 #[cfg(test)]
 mod tests;
 
+type CollectionId = String;
+
 /// Collection's data is split into several shards.
 pub struct Collection {
     shard: Shard,
 }
 
 impl Collection {
-    pub fn new(path: &Path, config: &CollectionConfig) -> Result<Self, CollectionError> {
+    pub fn new(
+        id: CollectionId,
+        path: &Path,
+        config: &CollectionConfig,
+    ) -> Result<Self, CollectionError> {
         Ok(Self {
-            shard: Shard::build(path, config)?,
+            shard: Shard::build(0, id, path, config)?,
         })
     }
 
-    pub fn load(path: &Path) -> Self {
+    pub fn load(id: CollectionId, path: &Path) -> Self {
         Self {
-            shard: Shard::load(path),
+            shard: Shard::load(0, id, path),
         }
     }
 
@@ -120,4 +126,27 @@ impl Collection {
     pub async fn info(&self) -> CollectionResult<CollectionInfo> {
         self.shard.info().await
     }
+}
+
+pub fn avg_vectors<'a>(
+    vectors: impl Iterator<Item = &'a Vec<VectorElementType>>,
+) -> Vec<VectorElementType> {
+    let mut count: usize = 0;
+    let mut avg_vector: Vec<VectorElementType> = vec![];
+    for vector in vectors {
+        count += 1;
+        for i in 0..vector.len() {
+            if i >= avg_vector.len() {
+                avg_vector.push(vector[i])
+            } else {
+                avg_vector[i] += vector[i];
+            }
+        }
+    }
+
+    for item in &mut avg_vector {
+        *item /= count as VectorElementType;
+    }
+
+    avg_vector
 }

@@ -33,10 +33,13 @@ use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
+use crate::CollectionId;
 use futures::executor::block_on;
 use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::segment_constructor::load_segment;
 use std::fs::{read_dir, remove_dir_all};
+
+pub type ShardId = u32;
 
 /// Shard
 ///
@@ -59,6 +62,8 @@ pub struct Shard {
 impl Shard {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        id: ShardId,
+        collection_id: CollectionId,
         segment_holder: SegmentHolder,
         config: CollectionConfig,
         wal: SerdeWal<CollectionUpdateOperations>,
@@ -75,10 +80,10 @@ impl Shard {
         };
         let optimize_runtime = runtime::Builder::new_multi_thread()
             .worker_threads(2)
-            .thread_name_fn(|| {
+            .thread_name_fn(move || {
                 static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-                let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("optimizer-{}", id)
+                let optimizer_id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+                format!("collection-{collection_id}-shard-{id}-optimizer-{optimizer_id}")
             })
             .max_blocking_threads(blocking_threads)
             .build()
@@ -109,7 +114,7 @@ impl Shard {
         }
     }
 
-    pub fn load(collection_path: &Path) -> Shard {
+    pub fn load(id: ShardId, collection_id: CollectionId, collection_path: &Path) -> Shard {
         let wal_path = collection_path.join("wal");
         let segments_path = collection_path.join("segments");
         let mut segment_holder = SegmentHolder::default();
@@ -169,6 +174,8 @@ impl Shard {
         );
 
         let collection = Shard::new(
+            id,
+            collection_id,
             segment_holder,
             collection_config,
             wal,
@@ -183,7 +190,12 @@ impl Shard {
     }
 
     /// Creates new empty shard with given configuration, initializing all storages, optimizers and directories.
-    pub fn build(collection_path: &Path, config: &CollectionConfig) -> CollectionResult<Shard> {
+    pub fn build(
+        id: ShardId,
+        collection_id: CollectionId,
+        collection_path: &Path,
+        config: &CollectionConfig,
+    ) -> CollectionResult<Shard> {
         let wal_path = collection_path.join("wal");
 
         create_dir_all(&wal_path).map_err(|err| CollectionError::ServiceError {
@@ -231,6 +243,8 @@ impl Shard {
         );
 
         let collection = Shard::new(
+            id,
+            collection_id,
             segment_holder,
             collection_config,
             wal,
@@ -393,7 +407,7 @@ impl Shard {
             }
         }
 
-        let avg_positive = Shard::avg_vectors(
+        let avg_positive = crate::avg_vectors(
             request
                 .positive
                 .iter()
@@ -403,7 +417,7 @@ impl Shard {
         let search_vector = if request.negative.is_empty() {
             avg_positive
         } else {
-            let avg_negative = Shard::avg_vectors(
+            let avg_negative = crate::avg_vectors(
                 request
                     .negative
                     .iter()
@@ -483,29 +497,6 @@ impl Shard {
             config: collection_config,
             payload_schema: schema,
         })
-    }
-
-    pub fn avg_vectors<'a>(
-        vectors: impl Iterator<Item = &'a Vec<VectorElementType>>,
-    ) -> Vec<VectorElementType> {
-        let mut count: usize = 0;
-        let mut avg_vector: Vec<VectorElementType> = vec![];
-        for vector in vectors {
-            count += 1;
-            for i in 0..vector.len() {
-                if i >= avg_vector.len() {
-                    avg_vector.push(vector[i])
-                } else {
-                    avg_vector[i] += vector[i];
-                }
-            }
-        }
-
-        for item in &mut avg_vector {
-            *item /= count as VectorElementType;
-        }
-
-        avg_vector
     }
 
     /// Updates shard optimization params:

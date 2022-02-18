@@ -24,7 +24,7 @@ async fn test_collection_reloading() {
         let _collection = simple_collection_fixture(collection_dir.path()).await;
     }
     for _i in 0..5 {
-        let collection = Collection::load(collection_dir.path());
+        let collection = Collection::load("test".to_string(), collection_dir.path());
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
                 batch: Batch {
@@ -37,7 +37,7 @@ async fn test_collection_reloading() {
         collection.update(insert_points, true).await.unwrap();
     }
 
-    let collection = Collection::load(collection_dir.path());
+    let collection = Collection::load("test".to_string(), collection_dir.path());
     assert_eq!(collection.info().await.unwrap().vectors_count, 2)
 }
 
@@ -61,7 +61,7 @@ async fn test_collection_payload_reloading() {
         collection.update(insert_points, true).await.unwrap();
     }
 
-    let collection = Collection::load(collection_dir.path());
+    let collection = Collection::load("test".to_string(), collection_dir.path());
 
     let searcher = SimpleCollectionSearcher::new();
     let res = collection
@@ -117,7 +117,7 @@ async fn test_collection_payload_custom_payload() {
         collection.update(insert_points, true).await.unwrap();
     }
 
-    let collection = Collection::load(collection_dir.path());
+    let collection = Collection::load("test".to_string(), collection_dir.path());
 
     let searcher = SimpleCollectionSearcher::new();
     // Test res with filter payload

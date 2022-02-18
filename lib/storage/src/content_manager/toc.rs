@@ -69,7 +69,7 @@ impl TableOfContent {
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
 
-            let collection = Collection::load(&collection_path);
+            let collection = Collection::load(collection_name.clone(), &collection_path);
 
             collections.insert(collection_name, Arc::new(collection));
         }
@@ -177,6 +177,7 @@ impl TableOfContent {
         };
 
         let collection = Collection::new(
+            collection_name.to_string(),
             Path::new(&collection_path),
             &CollectionConfig {
                 wal_config,

@@ -1,15 +1,17 @@
-use collection::shard::Shard;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 
 use tempdir::TempDir;
 use tokio::runtime::Handle;
 
-use collection::operations::{
-    payload_ops::{PayloadOps, SetPayload},
-    point_ops::{Batch, PointOperations, PointStruct},
-    types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus},
-    CollectionUpdateOperations,
+use collection::{
+    operations::{
+        payload_ops::{PayloadOps, SetPayload},
+        point_ops::{Batch, PointOperations, PointStruct},
+        types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus},
+        CollectionUpdateOperations,
+    },
+    Collection,
 };
 use segment::types::{
     Condition, HasIdCondition, PayloadInterface, PayloadKeyType, PayloadVariant, PointIdType,
@@ -17,7 +19,6 @@ use segment::types::{
 };
 
 use crate::common::simple_collection_fixture;
-use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 
 mod common;
@@ -173,14 +174,14 @@ async fn test_collection_loading() {
         collection.update(assign_payload, true).await.unwrap();
     }
 
-    let loaded_collection = Shard::load(collection_dir.path());
+    let loaded_collection = Collection::load("test".to_string(), collection_dir.path());
     let segment_searcher = SimpleCollectionSearcher::new();
-    let retrieved = segment_searcher
+    let retrieved = loaded_collection
         .retrieve(
-            loaded_collection.segments(),
             &[1.into(), 2.into()],
             &WithPayload::from(true),
             true,
+            &segment_searcher,
         )
         .await
         .unwrap();
