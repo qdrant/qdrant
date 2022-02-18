@@ -1,6 +1,6 @@
 use crate::content_manager::errors::StorageError;
 use async_trait::async_trait;
-use collection::collection::Collection;
+use collection::Collection;
 use std::collections::HashMap;
 use std::sync::Arc;
 
