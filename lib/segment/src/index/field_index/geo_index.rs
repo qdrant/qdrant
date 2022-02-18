@@ -174,15 +174,17 @@ impl RectangleGeoHash {
 /// Return as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain the whole circle.
 fn circle_hashes(circle: GeoRadius, max_regions: usize) -> Vec<GeoHash> {
-    let rectangle = minimum_bounding_rectangle_for_circle(&circle);
-    let full_geo_bounding_box: FullGeoBoundingBox = (&rectangle).into();
+    let geo_bounding_box = minimum_bounding_rectangle_for_circle(&circle);
+    let full_geo_bounding_box: FullGeoBoundingBox = (&geo_bounding_box).into();
     let shortest_side_km = full_geo_bounding_box.shortest_side_length_in_km();
     let possible_precisions = geohash_precisions_for_distance(shortest_side_km * 1000.0);
-    // filter precision which generates less than `max_regions`.
+    // filter precisions which generate less than `max_regions`.
     let circle_geohashes = possible_precisions
         .into_iter()
-        .map(|p| RectangleGeoHash::compute_from_bounding_box(&rectangle, p))
-        .map(|rect| filter_hashes_within_circle(rect.geohash_regions(), &circle))
+        .map(|p| {
+            let rect = RectangleGeoHash::compute_from_bounding_box(&geo_bounding_box, p);
+            filter_hashes_within_circle(rect.geohash_regions(), &circle, p)
+        })
         .take_while(|circle_geohashes| circle_geohashes.len() <= max_regions)
         .last();
     match circle_geohashes {
@@ -191,8 +193,17 @@ fn circle_hashes(circle: GeoRadius, max_regions: usize) -> Vec<GeoHash> {
     }
 }
 
-/// filter geo hashes for which the center is within a circle
-fn filter_hashes_within_circle(hashes: Vec<GeoHash>, circle: &GeoRadius) -> Vec<GeoHash> {
+/// Filter geo hashes for which the center is approximately within a circle.
+/// Filtering strictly on `circle.radius` would miss all the tiles whose center is not exactly within the radius,
+/// to mitigate the issue we add half of the tile's diagonal to the distance.
+fn filter_hashes_within_circle(
+    hashes: Vec<GeoHash>,
+    circle: &GeoRadius,
+    geohash_precision: usize,
+) -> Vec<GeoHash> {
+    let (lat_length_in_meters, long_length_in_meters) = HASH_GRID_SIZE[geohash_precision - 1];
+    let tile_diagonal = (lat_length_in_meters.powi(2) + long_length_in_meters.powi(2)).sqrt();
+    let distance = circle.radius + tile_diagonal / 2.0;
     let center_point = Point::new(circle.center.lon, circle.center.lat);
     hashes
         .into_iter()
@@ -201,7 +212,7 @@ fn filter_hashes_within_circle(hashes: Vec<GeoHash>, circle: &GeoRadius) -> Vec<
             let geo_point = Point::new(coord.x, coord.y);
             (h, geo_point)
         })
-        .filter(|(_, hash_point)| center_point.haversine_distance(hash_point) <= circle.radius)
+        .filter(|(_, hash_point)| center_point.haversine_distance(hash_point) <= distance)
         .map(|(h, _)| h)
         .collect()
 }
@@ -212,7 +223,7 @@ fn rectangle_hashes(rectangle: GeoBoundingBox, max_regions: usize) -> Vec<GeoHas
     let full_geo_bounding_box: FullGeoBoundingBox = (&rectangle).into();
     let shortest_side_km = full_geo_bounding_box.shortest_side_length_in_km();
     let possible_precisions = geohash_precisions_for_distance(shortest_side_km * 1000.0);
-    // filter precision which generates less than `max_regions`.
+    // filter precisions which generate less than `max_regions`.
     let rectangle_geohashes = possible_precisions
         .into_iter()
         .map(|p| RectangleGeoHash::compute_from_bounding_box(&rectangle, p))
@@ -460,32 +471,19 @@ mod tests {
         };
 
         let nyc_hashes = circle_hashes(near_nyc_circle.clone(), 200);
-        assert_eq!(nyc_hashes.len(), 114);
+        assert_eq!(nyc_hashes.len(), 140);
         assert!(nyc_hashes.iter().all(|h| h.len() == 7)); // geohash precision
 
         let nyc_hashes = circle_hashes(near_nyc_circle.clone(), 10);
-        assert_eq!(nyc_hashes.len(), 4);
+        assert_eq!(nyc_hashes.len(), 8);
         assert!(nyc_hashes.iter().all(|h| h.len() == 6)); // geohash precision
-        assert_eq!(nyc_hashes, ["dr5ruh", "dr5ru5", "dr5ruk", "dr5ru7"]);
-
-        // Graphical proof using https://www.movable-type.co.uk/scripts/geohash.html
-
-        // dr5rgy dr5run dr5ruq dr5ruw
-        // dr5rgv dr5ruj dr5rum dr5rut
-        // dr5rgu dr5ruh dr5ruk dr5rus
-        // dr5rgg dr5ru5 dr5ru7 dr5rue
-        // dr5rgf dr5ru4 dr5ru6 dr5rud
-        // dr5rgc dr5ru1 dr5ru3 dr5ru9
-
-        // XXXXXX XXXXXX XXXXXX XXXXXX
-        // XXXXXX XXXXXX XXXXXX XXXXXX
-        // XXXXXX dr5ruh dr5ruk XXXXXX
-        // XXXXXX dr5ru5 dr5ru7 XXXXXX
-        // XXXXXX XXXXXX XXXXXX XXXXXX
-        // XXXXXX XXXXXX XXXXXX XXXXXX
+        assert_eq!(
+            nyc_hashes,
+            ["dr5ruj", "dr5ruh", "dr5ru5", "dr5ru4", "dr5rum", "dr5ruk", "dr5ru7", "dr5ru6"]
+        );
 
         // empty result if `max_regions` can not be honored
-        let nyc_hashes = circle_hashes(near_nyc_circle, 3);
+        let nyc_hashes = circle_hashes(near_nyc_circle, 7);
         assert!(nyc_hashes.is_empty());
     }
 }
