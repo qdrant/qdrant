@@ -82,7 +82,6 @@ impl From<&GeoBoundingBox> for FullGeoBoundingBox {
     }
 }
 
-
 impl FullGeoBoundingBox {
     fn shortest_side_length_in_km(&self) -> f64 {
         // the projection on the sphere is a trapeze - calculate 3 distances
@@ -204,7 +203,7 @@ fn filter_hashes_within_circle(hashes: Vec<GeoHash>, circle: GeoRadius) -> Vec<G
             };
             (h, geo_point)
         })
-        .filter(|(h, hash_point)| {
+        .filter(|(_, hash_point)| {
             distance_in_km_between_coordinates(&circle.center, hash_point) <= radius_km
         })
         .map(|(h, _)| h)
