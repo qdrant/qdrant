@@ -45,8 +45,8 @@ struct FullGeoBoundingBox {
     north_east: GeoPoint,
 }
 
-impl FullGeoBoundingBox {
-    fn from_geo_bounding_box(bounding_box: &GeoBoundingBox) -> Self {
+impl From<&GeoBoundingBox> for FullGeoBoundingBox {
+    fn from(bounding_box: &GeoBoundingBox) -> Self {
         let GeoPoint {
             lat: max_lat,
             lon: min_lon,
@@ -80,7 +80,10 @@ impl FullGeoBoundingBox {
             north_east,
         }
     }
+}
 
+
+impl FullGeoBoundingBox {
     fn shortest_side_length_in_km(&self) -> f64 {
         // the projection on the sphere is a trapeze - calculate 3 distances
         let upper_width = distance_in_km_between_coordinates(&self.north_west, &self.north_east);
@@ -107,10 +110,10 @@ impl RectangleGeoHash {
 
         let mut seen: Vec<String> = Vec::new();
         let mut top = self.north_west.clone();
-        // traverse square by columns top to bottom
-        for _i in 0..width {
+        // traverse tiles matrix by columns - top to bottom
+        for _ in 0..width {
             let mut current = top.clone();
-            for _j in 0..height {
+            for _ in 0..height {
                 seen.push(current.clone());
                 current = neighbor(&current, Direction::S).unwrap();
             }
@@ -211,7 +214,7 @@ fn filter_hashes_within_circle(hashes: Vec<GeoHash>, circle: GeoRadius) -> Vec<G
 /// Return as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain the whole rectangle.
 fn rectangle_hashes(rectangle: GeoBoundingBox, max_regions: usize) -> Vec<GeoHash> {
-    let full_geo_bounding_box = FullGeoBoundingBox::from_geo_bounding_box(&rectangle);
+    let full_geo_bounding_box: FullGeoBoundingBox = (&rectangle).into();
     let shortest_side_km = full_geo_bounding_box.shortest_side_length_in_km();
     let possible_precisions = geohash_precisions_for_distance(shortest_side_km * 1000.0);
     // filter precision which generates less than `max_regions`.
