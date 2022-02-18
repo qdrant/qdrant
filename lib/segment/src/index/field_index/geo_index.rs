@@ -175,12 +175,24 @@ impl RectangleGeoHash {
 /// number of geo-hash guaranteed to contain the whole circle.
 fn circle_hashes(circle: GeoRadius, max_regions: usize) -> Vec<GeoHash> {
     let rectangle = minimum_bounding_rectangle_for_circle(&circle);
-    let inner_hashes = rectangle_hashes(rectangle, max_regions);
-    filter_hashes_within_circle(inner_hashes, circle)
+    let full_geo_bounding_box: FullGeoBoundingBox = (&rectangle).into();
+    let shortest_side_km = full_geo_bounding_box.shortest_side_length_in_km();
+    let possible_precisions = geohash_precisions_for_distance(shortest_side_km * 1000.0);
+    // filter precision which generates less than `max_regions`.
+    let circle_geohashes = possible_precisions
+        .into_iter()
+        .map(|p| RectangleGeoHash::compute_from_bounding_box(&rectangle, p))
+        .map(|rect| filter_hashes_within_circle(rect.geohash_regions(), &circle))
+        .take_while(|circle_geohashes| circle_geohashes.len() <= max_regions)
+        .last();
+    match circle_geohashes {
+        None => Vec::new(),
+        Some(v) => v,
+    }
 }
 
 /// filter geo hashes for which the center is within a circle
-fn filter_hashes_within_circle(hashes: Vec<GeoHash>, circle: GeoRadius) -> Vec<GeoHash> {
+fn filter_hashes_within_circle(hashes: Vec<GeoHash>, circle: &GeoRadius) -> Vec<GeoHash> {
     let center_point = Point::new(circle.center.lon, circle.center.lat);
     hashes
         .into_iter()
@@ -201,12 +213,12 @@ fn rectangle_hashes(rectangle: GeoBoundingBox, max_regions: usize) -> Vec<GeoHas
     let shortest_side_km = full_geo_bounding_box.shortest_side_length_in_km();
     let possible_precisions = geohash_precisions_for_distance(shortest_side_km * 1000.0);
     // filter precision which generates less than `max_regions`.
-    let rectangle_geohash = possible_precisions
+    let rectangle_geohashes = possible_precisions
         .into_iter()
         .map(|p| RectangleGeoHash::compute_from_bounding_box(&rectangle, p))
         .take_while(|rectangle_geohash| rectangle_geohash.area_region_count() <= max_regions)
         .last();
-    match rectangle_geohash {
+    match rectangle_geohashes {
         None => Vec::new(),
         Some(r) => r.geohash_regions(),
     }
@@ -473,7 +485,7 @@ mod tests {
         // XXXXXX XXXXXX XXXXXX XXXXXX
 
         // empty result if `max_regions` can not be honored
-        let nyc_hashes = circle_hashes(near_nyc_circle, 7);
+        let nyc_hashes = circle_hashes(near_nyc_circle, 3);
         assert!(nyc_hashes.is_empty());
     }
 }
