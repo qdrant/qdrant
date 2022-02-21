@@ -104,6 +104,7 @@ impl RectangleGeoHash {
             let mut current = top.clone();
             for _ in 0..height {
                 seen.push(current.clone());
+                // Unsafe when at the south pole
                 current = neighbor(&current, Direction::S).unwrap();
             }
             // move top column to the east
@@ -125,9 +126,8 @@ impl RectangleGeoHash {
 
         let mut width_region = 0;
         // count starting tile
-        if self.north_west != self.north_east {
-            width_region += 1;
-        }
+        width_region += 1;
+
         let mut current = self.north_west.clone();
         while current != self.north_east {
             let east_neighbor = neighbor(&current, Direction::E).unwrap();
@@ -144,9 +144,7 @@ impl RectangleGeoHash {
 
         let mut height_region = 0;
         // count starting tile
-        if self.north_west != self.south_west {
-            height_region += 1;
-        }
+        height_region += 1;
         let mut current = self.north_west.clone();
         while current != self.south_west {
             let south_neighbor = neighbor(&current, Direction::S).unwrap();
@@ -302,7 +300,7 @@ fn geohash_precisions_for_distance(distance_in_meter: f64) -> SensiblePrecision 
         .unwrap_or_else(|| Range {
             start: GEOHASH_MAX_LENGTH,
             end: GEOHASH_MAX_LENGTH + 1,
-        }); // Unwrap if the  distance is smaller than highest resolution;
+        }); // Unwrap means the distance is smaller than highest resolution
     PrecisionRange(range)
 }
 
@@ -549,8 +547,33 @@ mod tests {
             let max_hashes = rnd.gen_range(1..32);
             let hashes = circle_hashes(&query, max_hashes);
             assert!(hashes.len() <= max_hashes);
-            assert!(hashes.len() > 0, "query: {:?}", query);
+            assert!(
+                hashes.len() > 0,
+                "max_hashes: {} query: {:?}",
+                max_hashes,
+                query
+            );
         }
+    }
+
+    #[test]
+    fn circle_south_pole() {
+        let query = GeoRadius {
+            center: GeoPoint {
+                lon: 155.85591760141335,
+                lat: -74.19418872656166,
+            },
+            radius: 7133.775526733084,
+        };
+        let max_hashes = 10;
+        let hashes = circle_hashes(&query, max_hashes);
+        assert!(hashes.len() <= max_hashes);
+        assert!(
+            hashes.len() > 0,
+            "max_hashes: {} query: {:?}",
+            max_hashes,
+            query
+        );
     }
 
     #[test]
