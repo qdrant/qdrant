@@ -50,8 +50,8 @@ storage:
     # Starting from this amount of vectors per-segment the engine will start building index for payload.
     payload_indexing_threshold: 10000
 
-    # Minimum interval between forced flushes.
-    flush_interval_sec: 10
+    # Interval between forced flushes.
+    flush_interval_sec: 1
     
     # Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used
     max_optimization_threads: 0

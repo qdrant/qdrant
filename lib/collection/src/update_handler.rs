@@ -6,7 +6,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
 use itertools::Itertools;
-use log::{debug, info};
+use log::{debug, info, trace, warn};
 use segment::types::SeqNumberType;
 use std::cmp::min;
 use std::collections::HashSet;
@@ -17,7 +17,7 @@ use tokio::sync::{
     oneshot, Mutex,
 };
 use tokio::task::JoinHandle;
-use tokio::time::{Duration, Instant};
+use tokio::time::Duration;
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
@@ -58,12 +58,16 @@ pub struct UpdateHandler {
     /// List of used optimizers
     pub optimizers: Arc<Vec<Arc<Optimizer>>>,
     /// How frequent can we flush data
-    pub flush_timeout_sec: u64,
+    pub flush_interval_sec: u64,
     segments: LockedSegmentHolder,
     /// Process, that listens updates signals and perform updates
     update_worker: Option<JoinHandle<()>>,
     /// Process, that listens for post-update signals and performs optimization
     optimizer_worker: Option<JoinHandle<()>>,
+    /// Process that periodically flushes segments and tries to truncate wal
+    flush_worker: Option<JoinHandle<()>>,
+    /// Sender to stop flush worker
+    flush_stop: Option<oneshot::Sender<()>>,
     runtime_handle: Handle,
     /// WAL, required for operations
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
@@ -76,16 +80,18 @@ impl UpdateHandler {
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-        flush_timeout_sec: u64,
+        flush_interval_sec: u64,
     ) -> UpdateHandler {
         UpdateHandler {
             optimizers,
             segments,
             update_worker: None,
             optimizer_worker: None,
+            flush_worker: None,
+            flush_stop: None,
             runtime_handle,
             wal,
-            flush_timeout_sec,
+            flush_interval_sec,
             optimization_handles: Arc::new(Mutex::new(vec![])),
         }
     }
@@ -98,7 +104,6 @@ impl UpdateHandler {
             rx,
             self.segments.clone(),
             self.wal.clone(),
-            self.flush_timeout_sec,
             self.optimization_handles.clone(),
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
@@ -106,6 +111,22 @@ impl UpdateHandler {
             tx,
             self.segments.clone(),
         )));
+        let (flush_tx, flush_rx) = oneshot::channel();
+        self.flush_worker = Some(self.runtime_handle.spawn(Self::flush_worker(
+            self.segments.clone(),
+            self.wal.clone(),
+            self.flush_interval_sec,
+            flush_rx,
+        )));
+        self.flush_stop = Some(flush_tx);
+    }
+
+    pub fn stop_flush_worker(&mut self) {
+        if let Some(flush_stop) = self.flush_stop.take() {
+            if let Err(()) = flush_stop.send(()) {
+                warn!("Failed to stop flush worker as it is already stopped.");
+            }
+        }
     }
 
     /// Gracefully wait before all optimizations stop
@@ -116,6 +137,10 @@ impl UpdateHandler {
             handle.await?;
         }
         let maybe_handle = self.optimizer_worker.take();
+        if let Some(handle) = maybe_handle {
+            handle.await?;
+        }
+        let maybe_handle = self.flush_worker.take();
         if let Some(handle) = maybe_handle {
             handle.await?;
         }
@@ -244,14 +269,11 @@ impl UpdateHandler {
         mut receiver: UnboundedReceiver<OptimizerSignal>,
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-        flush_timeout_sec: u64,
         optimization_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
     ) {
-        let flush_timeout = Duration::from_secs(flush_timeout_sec);
-        let mut last_flushed = Instant::now();
         while let Some(signal) = receiver.recv().await {
             match signal {
-                OptimizerSignal::Nop => {
+                OptimizerSignal::Nop | OptimizerSignal::Operation(_) => {
                     if Self::try_recover(segments.clone(), wal.clone())
                         .await
                         .is_err()
@@ -265,36 +287,6 @@ impl UpdateHandler {
                         sender.clone(),
                     )
                     .await;
-                }
-                OptimizerSignal::Operation(operation_id) => {
-                    if Self::try_recover(segments.clone(), wal.clone())
-                        .await
-                        .is_err()
-                    {
-                        continue;
-                    }
-                    Self::process_optimization(
-                        optimizers.clone(),
-                        segments.clone(),
-                        optimization_handles.clone(),
-                        sender.clone(),
-                    )
-                    .await;
-
-                    let elapsed = last_flushed.elapsed();
-                    if elapsed > flush_timeout {
-                        debug!("Performing flushing: {}", operation_id);
-                        last_flushed = Instant::now();
-                        let confirmed_version = {
-                            let read_segments = segments.read();
-                            let flushed_version = read_segments.flush_all().unwrap();
-                            match read_segments.failed_operation.iter().cloned().min() {
-                                None => flushed_version,
-                                Some(failed_operation) => min(failed_operation, flushed_version),
-                            }
-                        };
-                        wal.lock().await.ack(confirmed_version).unwrap();
-                    }
                 }
                 OptimizerSignal::Stop => break, // Stop gracefully
             }
@@ -351,5 +343,35 @@ impl UpdateHandler {
         optimize_sender
             .send(OptimizerSignal::Stop)
             .unwrap_or_else(|_| debug!("Optimizer already stopped"));
+    }
+
+    async fn flush_worker(
+        segments: LockedSegmentHolder,
+        wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+        flush_interval_sec: u64,
+        mut stop_receiver: oneshot::Receiver<()>,
+    ) {
+        loop {
+            // Stop flush worker on signal or if sender was dropped
+            // Even if timer did not finish
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(flush_interval_sec)) => {},
+                _ = &mut stop_receiver => {
+                    debug!("Stopping flush worker.");
+                    return;
+                }
+            };
+
+            trace!("Attempting flushing");
+            let confirmed_version = {
+                let read_segments = segments.read();
+                let flushed_version = read_segments.flush_all().unwrap();
+                match read_segments.failed_operation.iter().cloned().min() {
+                    None => flushed_version,
+                    Some(failed_operation) => min(failed_operation, flushed_version),
+                }
+            };
+            wal.lock().await.ack(confirmed_version).unwrap();
+        }
     }
 }
