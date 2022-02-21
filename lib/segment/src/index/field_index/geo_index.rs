@@ -476,6 +476,7 @@ mod tests {
         assert_eq!(precisions_for_distance_range(2.0).len(), 4);
         assert_eq!(precisions_for_distance_range(0.15).len(), 3);
         assert_eq!(precisions_for_distance_range(0.1).len(), 2);
+        assert_eq!(precisions_for_distance_range(0.01).len(), 1);
     }
 
     #[test]
