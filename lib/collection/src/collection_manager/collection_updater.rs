@@ -57,7 +57,7 @@ impl CollectionUpdater {
                 process_point_operation(segments, op_num, point_operation)
             }
             CollectionUpdateOperations::PayloadOperation(payload_operation) => {
-                process_payload_operation(segments, op_num, &payload_operation)
+                process_payload_operation(segments, op_num, payload_operation)
             }
             CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
                 process_field_index_operation(segments, op_num, &index_operation)
@@ -84,7 +84,7 @@ mod tests {
     use super::*;
     use crate::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
     use crate::operations::point_ops::PointOperations;
-    use serde_json::json;
+    use serde_json::{json, Map, Value};
     use std::collections::HashMap;
 
     #[tokio::test]
@@ -155,14 +155,14 @@ mod tests {
         let segments = build_test_holder(dir.path());
         let searcher = SimpleCollectionSearcher::new();
 
-        let payload: Payload = json!({"color":"red"}).into();
+        let payload: Map<String, Value> = serde_json::from_str(r#"{"color":"red"}"#).unwrap();
 
         let points = vec![1.into(), 2.into(), 3.into()];
 
         process_payload_operation(
             &segments,
             100,
-            &PayloadOps::SetPayload(SetPayload {
+            PayloadOps::SetPayload(SetPayload {
                 payload,
                 points: points.clone(),
             }),
@@ -190,7 +190,7 @@ mod tests {
         process_payload_operation(
             &segments,
             101,
-            &PayloadOps::DeletePayload(DeletePayload {
+            PayloadOps::DeletePayload(DeletePayload {
                 points: vec![3.into()],
                 keys: vec!["color".to_string(), "empty".to_string()],
             }),
@@ -216,7 +216,7 @@ mod tests {
         process_payload_operation(
             &segments,
             102,
-            &PayloadOps::ClearPayload {
+            PayloadOps::ClearPayload {
                 points: vec![2.into()],
             },
         )

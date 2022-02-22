@@ -153,7 +153,7 @@ fn upsert_with_payload(
 ) -> OperationResult<bool> {
     let mut res = segment.upsert_point(op_num, point_id, vector)?;
     if let Some(full_payload) = payload {
-        res &= segment.set_payload(op_num, point_id, full_payload.into())?;
+        res &= segment.set_payload(op_num, point_id, full_payload)?;
     }
     Ok(res)
 }
@@ -292,17 +292,20 @@ pub(crate) fn process_point_operation(
 pub(crate) fn process_payload_operation(
     segments: &RwLock<SegmentHolder>,
     op_num: SeqNumberType,
-    payload_operation: &PayloadOps,
+    payload_operation: PayloadOps,
 ) -> CollectionResult<usize> {
     match payload_operation {
         PayloadOps::SetPayload(sp) => {
-            set_payload(&segments.read(), op_num, &sp.payload, &sp.points)
+            let payload: Payload = sp.payload.into();
+            set_payload(&segments.read(), op_num, &payload, &sp.points)
         }
         PayloadOps::DeletePayload(dp) => {
             delete_payload(&segments.read(), op_num, &dp.points, &dp.keys)
         }
-        PayloadOps::ClearPayload { points, .. } => clear_payload(&segments.read(), op_num, points),
-        PayloadOps::ClearPayloadByFilter(filter) => {
+        PayloadOps::ClearPayload { ref points, .. } => {
+            clear_payload(&segments.read(), op_num, points)
+        }
+        PayloadOps::ClearPayloadByFilter(ref filter) => {
             clear_payload_by_filter(&segments.read(), op_num, filter)
         }
     }

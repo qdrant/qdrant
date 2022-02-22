@@ -22,7 +22,7 @@ pub struct SimplePayloadStorage {
 }
 
 impl SimplePayloadStorage {
-    pub fn open(path: &Path, schema_store: Arc<SchemaStorage>) -> OperationResult<Self> {
+    pub fn open(path: &Path, _: Arc<SchemaStorage>) -> OperationResult<Self> {
         let mut options: Options = Options::default();
         options.set_write_buffer_size(DB_CACHE_SIZE);
         options.create_if_missing(true);

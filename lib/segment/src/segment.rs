@@ -674,7 +674,7 @@ mod tests {
         {
             "must": [
                 {
-                    "key": "metadata__height",
+                    "key": "metadata.height",
                     "match": {
                         "integer": 50
                     }
@@ -687,7 +687,7 @@ mod tests {
         {
             "must": [
                 {
-                    "key": "metadata__height",
+                    "key": "metadata.height",
                     "match": {
                         "integer": 60
                     }

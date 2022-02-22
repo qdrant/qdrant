@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use serde_json::json;
+use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -165,7 +165,7 @@ async fn test_collection_loading() {
 
         collection.update(insert_points, true).await.unwrap();
 
-        let payload: Payload = json!({"color":"red"}).into();
+        let payload: Map<String, Value> = serde_json::from_str(r#"{"color":"red"}"#).unwrap();
 
         let assign_payload =
             CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayload {

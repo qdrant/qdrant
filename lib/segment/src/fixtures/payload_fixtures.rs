@@ -1,6 +1,4 @@
-use crate::types::{
-    Condition, FieldCondition, Filter, PayloadType, Range as RangeCondition, VectorElementType,
-};
+use crate::types::{Condition, FieldCondition, Filter, Range as RangeCondition, VectorElementType};
 use itertools::Itertools;
 use rand::prelude::ThreadRng;
 use rand::seq::SliceRandom;

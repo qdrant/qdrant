@@ -1,11 +1,12 @@
 use schemars::JsonSchema;
-use segment::types::{Filter, Payload, PayloadKeyType, PointIdType};
+use segment::types::{Filter, PayloadKeyType, PointIdType};
 use serde;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SetPayload {
-    pub payload: Payload,
+    pub payload: Map<String, Value>,
     /// Assigns payload to each point in this list
     pub points: Vec<PointIdType>, // ToDo: replace with point selector
 }
@@ -34,7 +35,7 @@ pub enum PayloadOps {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use segment::types::PayloadType;
+    use segment::types::{Payload, PayloadType};
 
     #[test]
     fn test_serialization() {
@@ -43,8 +44,8 @@ mod tests {
             "set_payload": {
                 "points": [1, 2, 3],
                 "payload": {
-                    "key1": {"type": "keyword", "value": "hello"},
-                    "key2": {"type": "integer", "value": [1,2,3,4]},
+                    "key1":  "hello" ,
+                    "key2": [1,2,3,4],
                     "key3": {"json": {"key1":"value1"} }
                 }
             }
@@ -55,28 +56,21 @@ mod tests {
 
         match operation {
             PayloadOps::SetPayload(set_payload) => {
-                let payload = &set_payload.payload;
+                let payload: Payload = set_payload.payload.into();
                 assert_eq!(payload.len(), 3);
 
                 assert!(payload.contains_key("key1"));
 
-                let payload_interface = payload.get("key1").expect("No key key1");
-                let payload1 = payload_interface.into();
+                let payload_type = payload.get("key1").expect("No key key1");
 
-                match payload1 {
+                match payload_type {
                     PayloadType::Keyword(x) => assert_eq!(x, ["hello".to_owned()]),
                     _ => panic!("Wrong payload type"),
                 }
 
-                let payload_interface = payload.get("key3").expect("No key key3");
+                let payload_type_json = payload.get("key3").expect("No key key3");
 
-                let json_payload = payload_interface.into();
-                let expected_json: serde_json::Value =
-                    serde_json::from_str(r#"{"json": {"key1":"value1"} }"#).unwrap();
-                match json_payload {
-                    PayloadType::Json(x) => assert_eq!(x, expected_json),
-                    _ => panic!("Wrong payload type"),
-                }
+                assert!(matches!(payload_type_json, PayloadType::Unknown))
             }
             _ => panic!("Wrong operation"),
         }
