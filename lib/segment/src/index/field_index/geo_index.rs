@@ -2,7 +2,7 @@ use crate::index::field_index::geo_index::SensiblePrecision::*;
 use crate::types::{GeoBoundingBox, GeoPoint, GeoRadius};
 use geo::algorithm::haversine_distance::HaversineDistance;
 use geo::{Coordinate, Point};
-use geohash::{decode, encode, neighbor, Direction};
+use geohash::{decode, encode, Direction, GeohashError};
 use std::ops::Range;
 
 type GeoHash = String;
@@ -37,6 +37,46 @@ impl From<GeoPoint> for Coordinate<f64> {
             y: point.lon,
         }
     }
+}
+
+/// Fix longitude for spherical overflow
+/// lon: 181.0 -> -179.0
+fn sphere_lon(lon: f64) -> f64 {
+    let max_lon = 180f64;
+    let min_lon = -180f64;
+    let mut res_lon = lon;
+    if res_lon > max_lon {
+        res_lon = min_lon + res_lon - max_lon;
+    }
+    if res_lon < min_lon {
+        res_lon = max_lon + res_lon - min_lon;
+    }
+    res_lon
+}
+
+/// Fix latitude for spherical overflow
+fn sphere_lat(lat: f64) -> f64 {
+    let max_lat = 90f64;
+    let min_lat = -90f64;
+    let mut res_lat = lat;
+    if res_lat > max_lat {
+        res_lat = max_lat - 1e-16;
+    }
+    if res_lat < min_lat {
+        res_lat = min_lat + 1e-16;
+    }
+    res_lat
+}
+
+/// Get neighbour geohash even from the other side of coordinates
+fn sphere_neighbor(hash_str: &str, direction: Direction) -> Result<String, GeohashError> {
+    let (coord, lon_err, lat_err) = decode(hash_str)?;
+    let (dlat, dlng) = direction.to_tuple();
+    let lon = sphere_lon(coord.x + 2f64 * lon_err.abs() * dlng);
+    let lat = sphere_lat(coord.y + 2f64 * lat_err.abs() * dlat);
+
+    let neighbor_coord = Coordinate { x: lon, y: lat };
+    encode(neighbor_coord, hash_str.len())
 }
 
 #[derive(Debug)]
@@ -104,11 +144,10 @@ impl RectangleGeoHash {
             let mut current = top.clone();
             for _ in 0..height {
                 seen.push(current.clone());
-                // Unsafe when at the south pole
-                current = neighbor(&current, Direction::S).unwrap();
+                current = sphere_neighbor(&current, Direction::S).unwrap();
             }
             // move top column to the east
-            top = neighbor(&top, Direction::E).unwrap();
+            top = sphere_neighbor(&top, Direction::E).unwrap();
         }
         seen
     }
@@ -130,7 +169,7 @@ impl RectangleGeoHash {
 
         let mut current = self.north_west.clone();
         while current != self.north_east {
-            let east_neighbor = neighbor(&current, Direction::E).unwrap();
+            let east_neighbor = sphere_neighbor(&current, Direction::E).unwrap();
             current = east_neighbor;
             width_region += 1;
         }
@@ -147,7 +186,7 @@ impl RectangleGeoHash {
         height_region += 1;
         let mut current = self.north_west.clone();
         while current != self.south_west {
-            let south_neighbor = neighbor(&current, Direction::S).unwrap();
+            let south_neighbor = sphere_neighbor(&current, Direction::S).unwrap();
             current = south_neighbor;
             height_region += 1;
         }
@@ -306,13 +345,14 @@ fn geohash_precisions_for_distance(distance_in_meter: f64) -> SensiblePrecision 
 
 /// A globally-average value is usually considered to be 6,371 kilometres (3,959 mi) with a 0.3% variability (±10 km).
 /// https://en.wikipedia.org/wiki/Earth_radius.
-const EARTH_RADIUS_KM: f64 = 6371.0;
+const EARTH_RADIUS_METERS: f64 = 6371.0 * 1000.;
 
 /// Returns the GeoBoundingBox that defines the MBR
 /// http://janmatuschek.de/LatitudeLongitudeBoundingCoordinates#Longitude
 fn minimum_bounding_rectangle_for_circle(circle: &GeoRadius) -> GeoBoundingBox {
     // circle.radius is in meter
-    let angular_radius: f64 = (circle.radius / 1000.0) / EARTH_RADIUS_KM;
+    let angular_radius: f64 = circle.radius / EARTH_RADIUS_METERS;
+
     let angular_lat = circle.center.lat.to_radians();
     let min_lat = (angular_lat - angular_radius).to_degrees();
     let max_lat = (angular_lat + angular_radius).to_degrees();
@@ -324,12 +364,12 @@ fn minimum_bounding_rectangle_for_circle(circle: &GeoRadius) -> GeoBoundingBox {
     let max_lon = (angular_lon + delta_lon).to_degrees();
 
     let top_left = GeoPoint {
-        lat: max_lat,
-        lon: min_lon,
+        lat: sphere_lat(max_lat),
+        lon: sphere_lon(min_lon),
     };
     let bottom_right = GeoPoint {
-        lat: min_lat,
-        lon: max_lon,
+        lat: sphere_lat(min_lat),
+        lon: sphere_lon(max_lon),
     };
 
     GeoBoundingBox {
@@ -544,8 +584,11 @@ mod tests {
                 },
                 radius: r_meters,
             };
+            eprintln!("query = {:#?}", query);
             let max_hashes = rnd.gen_range(1..32);
             let hashes = circle_hashes(&query, max_hashes);
+            eprintln!("hashes = {:#?}", hashes);
+
             assert!(hashes.len() <= max_hashes);
             assert!(
                 hashes.len() > 0,
@@ -554,6 +597,20 @@ mod tests {
                 query
             );
         }
+    }
+
+    #[test]
+    fn circle_meridian() {
+        let query = GeoRadius {
+            center: GeoPoint {
+                lon: -17.81718188959701,
+                lat: 89.9811609411936,
+            },
+            radius: 9199.481636468849,
+        };
+
+        let max_hashes = 10;
+        let hashes = circle_hashes(&query, max_hashes);
     }
 
     #[test]
@@ -598,5 +655,46 @@ mod tests {
         // falls back to finest region that encompasses the whole area
         let nyc_hashes = circle_hashes(&near_nyc_circle, 7);
         assert_eq!(nyc_hashes, ["dr5ru"]);
+    }
+
+    #[test]
+    fn go_north() {
+        let mut geohash = sphere_neighbor("ww8p", Direction::N).unwrap();
+        for _ in 0..1000 {
+            geohash = sphere_neighbor(&geohash, Direction::N).unwrap();
+        }
+    }
+
+    #[test]
+    fn go_west() {
+        let mut geohash = sphere_neighbor("ww8p", Direction::W).unwrap();
+        for _ in 0..1000 {
+            geohash = sphere_neighbor(&geohash, Direction::W).unwrap();
+        }
+    }
+
+    #[test]
+    fn sphere_neighbor_corner_cases() {
+        assert_eq!(
+            sphere_neighbor("ww8p1r4t8", Direction::SE).unwrap(),
+            geohash::neighbor("ww8p1r4t8", Direction::SE).unwrap()
+        );
+
+        assert_eq!(&sphere_neighbor("8", Direction::W).unwrap(), "x");
+        assert_eq!(&sphere_neighbor("8h", Direction::W).unwrap(), "xu");
+        assert_eq!(&sphere_neighbor("r", Direction::E).unwrap(), "2");
+        assert_eq!(&sphere_neighbor("ru", Direction::E).unwrap(), "2h");
+        assert_eq!(&sphere_neighbor("z", Direction::NE).unwrap(), "b");
+        assert_eq!(&sphere_neighbor("zz", Direction::NE).unwrap(), "bp");
+        assert_eq!(&sphere_neighbor("0", Direction::SW).unwrap(), "p");
+        assert_eq!(&sphere_neighbor("00", Direction::SW).unwrap(), "pb");
+    }
+
+    #[test]
+    fn long_overflow_distance() {
+        let dist = Point::new(-179.999, 66.0).haversine_distance(&Point::new(179.999, 66.0));
+        eprintln!("dist` = {:#?}", dist);
+        let dist = Point::new(0.99, 90.).haversine_distance(&Point::new(0.99, -90.0));
+        eprintln!("dist` = {:#?}", dist);
     }
 }
