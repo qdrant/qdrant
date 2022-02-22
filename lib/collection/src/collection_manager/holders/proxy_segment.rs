@@ -23,6 +23,7 @@ pub struct ProxySegment {
     deleted_points: LockedRmSet,
     deleted_indexes: LockedFieldsSet,
     created_indexes: LockedFieldsSet,
+    last_flushed_version: Arc<RwLock<Option<SeqNumberType>>>,
 }
 
 impl ProxySegment {
@@ -39,6 +40,7 @@ impl ProxySegment {
             deleted_points,
             created_indexes,
             deleted_indexes,
+            last_flushed_version: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -381,8 +383,31 @@ impl SegmentEntry for ProxySegment {
         true
     }
 
-    fn flush(&self) -> OperationResult<u64> {
-        Ok(self.wrapped_segment.get().read().version())
+    fn flush(&self) -> OperationResult<SeqNumberType> {
+        let deleted_points_guard = self.deleted_points.read();
+        let deleted_indexes_guard = self.deleted_indexes.read();
+        let created_indexes_guard = self.created_indexes.read();
+
+        if deleted_points_guard.is_empty()
+            && deleted_indexes_guard.is_empty()
+            && created_indexes_guard.is_empty()
+        {
+            // Proxy changes are empty, therefore it is safe to flush write segment
+            // This workaround only makes sense in a context of batch update of new points:
+            //  - initial upload
+            //  - incremental updates
+            let wrapped_version = self.wrapped_segment.get().read().flush()?;
+            let write_segment_version = self.write_segment.get().read().flush()?;
+            let flushed_version = max(wrapped_version, write_segment_version);
+            *self.last_flushed_version.write() = Some(flushed_version);
+            Ok(flushed_version)
+        } else {
+            // If intermediate state is not empty - that is possible that some changes are not persisted
+            Ok(self
+                .last_flushed_version
+                .read()
+                .unwrap_or_else(|| self.wrapped_segment.get().read().version()))
+        }
     }
 
     fn drop_data(&mut self) -> OperationResult<()> {
