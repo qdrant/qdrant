@@ -24,6 +24,8 @@ jobs:
       - uses: Swatinem/rust-cache@v1
       - name: Install dependencies
         run: sudo apt-get install clang libopenblas-dev libgfortran-10-dev gfortran
+      - name: Build with gRPC
+        run: cargo build --features grpc
       - name: Run integration tests
         run: |
           ./tests/integration-tests.sh

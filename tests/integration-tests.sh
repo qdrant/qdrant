@@ -8,8 +8,6 @@ cd "$(dirname "$0")/../"
 
 QDRANT_HOST='localhost:6333'
 
-# Build
-$(cargo build --features grpc)
 # Run in background
 $(./target/debug/qdrant) &
 
