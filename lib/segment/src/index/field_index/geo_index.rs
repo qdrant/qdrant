@@ -113,13 +113,13 @@ impl From<&GeoBoundingBox> for FullGeoBoundingBox {
 }
 
 impl FullGeoBoundingBox {
-    fn shortest_side_length_in_km(&self) -> f64 {
+    fn largest_side_length_in_km(&self) -> f64 {
         // the projection on the sphere is a trapeze - calculate 3 distances
         let upper_width = self.north_west.haversine_distance(&self.north_east);
         let lower_width = self.south_west.haversine_distance(&self.south_east);
         // both height sides are equal in a trapeze - pick only one
         let height = self.north_west.haversine_distance(&self.south_west);
-        f64::min(f64::min(upper_width, lower_width), height)
+        f64::max(f64::max(upper_width, lower_width), height)
     }
 }
 
@@ -229,9 +229,8 @@ fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> Vec<GeoHash> {
     assert_ne!(max_regions, 0, "max_regions cannot be equal to zero");
     let geo_bounding_box = minimum_bounding_rectangle_for_circle(circle);
     let full_geo_bounding_box: FullGeoBoundingBox = (&geo_bounding_box).into();
-    let shortest_side_km = full_geo_bounding_box.shortest_side_length_in_km();
-    let possible_precisions = geohash_precisions_for_distance(shortest_side_km * 1000.0);
-
+    let largest_side_km = full_geo_bounding_box.largest_side_length_in_km();
+    let possible_precisions = geohash_precisions_for_distance(largest_side_km * 1000.0);
     match possible_precisions {
         DistanceLargerThanLowestPrecision if max_regions == 1 => vec!["".to_string()],
         DistanceLargerThanLowestPrecision => {
@@ -249,7 +248,7 @@ fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> Vec<GeoHash> {
                 .into_iter()
                 .map(|p| {
                     let rect = RectangleGeoHash::compute_from_bounding_box(&geo_bounding_box, p);
-                    filter_hashes_within_circle(rect.geohash_regions(), &circle, p)
+                    filter_hashes_within_circle(rect.geohash_regions(), circle, p)
                 })
                 .take_while(|circle_geohashes| circle_geohashes.len() <= max_regions)
                 .last()
@@ -284,16 +283,15 @@ fn filter_hashes_within_circle(
 
 /// Return as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain the whole rectangle.
-fn rectangle_hashes(rectangle: GeoBoundingBox, max_regions: usize) -> Vec<GeoHash> {
+fn rectangle_hashes(rectangle: &GeoBoundingBox, max_regions: usize) -> Vec<GeoHash> {
     assert_ne!(max_regions, 0, "max_regions cannot be equal to zero");
-    let full_geo_bounding_box: FullGeoBoundingBox = (&rectangle).into();
-    let shortest_side_km = full_geo_bounding_box.shortest_side_length_in_km();
-    let possible_precisions = geohash_precisions_for_distance(shortest_side_km * 1000.0);
-
+    let full_geo_bounding_box: FullGeoBoundingBox = rectangle.into();
+    let largest_side_km = full_geo_bounding_box.largest_side_length_in_km();
+    let possible_precisions = geohash_precisions_for_distance(largest_side_km * 1000.0);
     match possible_precisions {
         DistanceLargerThanLowestPrecision if max_regions == 1 => vec!["".to_string()],
         DistanceLargerThanLowestPrecision => {
-            let rectangle = RectangleGeoHash::compute_from_bounding_box(&rectangle, 1);
+            let rectangle = RectangleGeoHash::compute_from_bounding_box(rectangle, 1);
             if rectangle.area_region_count() <= max_regions {
                 rectangle.geohash_regions()
             } else {
@@ -304,10 +302,8 @@ fn rectangle_hashes(rectangle: GeoBoundingBox, max_regions: usize) -> Vec<GeoHas
             // filter precisions which generate less than `max_regions`.
             range
                 .into_iter()
-                .map(|p| RectangleGeoHash::compute_from_bounding_box(&rectangle, p))
-                .take_while(|rectangle_geohash| {
-                    rectangle_geohash.area_region_count() <= max_regions
-                })
+                .map(|p| RectangleGeoHash::compute_from_bounding_box(rectangle, p))
+                .take_while(|rec| rec.area_region_count() <= max_regions)
                 .last()
                 .expect("not possible by construction")
                 .geohash_regions()
@@ -321,25 +317,17 @@ enum SensiblePrecision {
     PrecisionRange(Range<usize>),
 }
 
-/// Given a distance, finds the geo precisions which cover the distance from a single large tile to several smaller tiles.
 fn geohash_precisions_for_distance(distance_in_meter: f64) -> SensiblePrecision {
     let (largest_lat_length_in_meters, _) = HASH_GRID_SIZE[0];
     if distance_in_meter > largest_lat_length_in_meters {
         return DistanceLargerThanLowestPrecision;
     }
 
-    let range = HASH_GRID_SIZE
-        .iter()
-        .enumerate()
-        .find(|(_, (lat_length_in_meters, _))| distance_in_meter > *lat_length_in_meters) // lat > long for all HASH_GRID_SIZE
-        .map(|(index, (_, _))| Range {
-            start: index, // Start from the previous precision which covers the distance with a single tile
-            end: GEOHASH_MAX_LENGTH + 1, // The upper bound of the range (exclusive).
-        })
-        .unwrap_or_else(|| Range {
-            start: GEOHASH_MAX_LENGTH,
-            end: GEOHASH_MAX_LENGTH + 1,
-        }); // Unwrap means the distance is smaller than highest resolution
+    let range = Range {
+        start: 1,
+        end: GEOHASH_MAX_LENGTH + 1, // The upper bound of the range (exclusive).
+    };
+
     PrecisionRange(range)
 }
 
@@ -358,10 +346,11 @@ fn minimum_bounding_rectangle_for_circle(circle: &GeoRadius) -> GeoBoundingBox {
     let max_lat = (angular_lat + angular_radius).to_degrees();
 
     let angular_lon = circle.center.lon.to_radians();
-
     let delta_lon = (angular_radius.sin() / angular_lat.cos()).asin();
-    let min_lon = (angular_lon - delta_lon).to_degrees();
-    let max_lon = (angular_lon + delta_lon).to_degrees();
+
+    // protect from overflow of `delta_lon`
+    let min_lon = f64::max(-180.0, (angular_lon - delta_lon).to_degrees());
+    let max_lon = f64::min(180.0, (angular_lon + delta_lon).to_degrees());
 
     let top_left = GeoPoint {
         lat: sphere_lat(max_lat),
@@ -506,17 +495,6 @@ mod tests {
             DistanceLargerThanLowestPrecision
         );
         assert_eq!(precisions_for_distance_range(1300.0 * 1000.0).len(), 12);
-        assert_eq!(precisions_for_distance_range(157.0 * 1000.0).len(), 11);
-        assert_eq!(precisions_for_distance_range(40.0 * 1000.0).len(), 10);
-        assert_eq!(precisions_for_distance_range(5.0 * 1000.0).len(), 9);
-        assert_eq!(precisions_for_distance_range(2.0 * 1000.0).len(), 8);
-        assert_eq!(precisions_for_distance_range(153.0).len(), 7);
-        assert_eq!(precisions_for_distance_range(39.0).len(), 6);
-        assert_eq!(precisions_for_distance_range(5.0).len(), 5);
-        assert_eq!(precisions_for_distance_range(2.0).len(), 4);
-        assert_eq!(precisions_for_distance_range(0.15).len(), 3);
-        assert_eq!(precisions_for_distance_range(0.1).len(), 2);
-        assert_eq!(precisions_for_distance_range(0.01).len(), 1);
     }
 
     #[test]
@@ -539,11 +517,11 @@ mod tests {
             bottom_right,
         };
 
-        let nyc_hashes = rectangle_hashes(near_nyc_rectangle.clone(), 200);
+        let nyc_hashes = rectangle_hashes(&near_nyc_rectangle, 200);
         assert_eq!(nyc_hashes.len(), 168);
         assert!(nyc_hashes.iter().all(|h| h.len() == 7)); // geohash precision
 
-        let nyc_hashes = rectangle_hashes(near_nyc_rectangle.clone(), 10);
+        let nyc_hashes = rectangle_hashes(&near_nyc_rectangle, 10);
         assert_eq!(nyc_hashes.len(), 8);
         assert!(nyc_hashes.iter().all(|h| h.len() == 6)); // geohash precision
         assert_eq!(
@@ -568,7 +546,7 @@ mod tests {
         // XXXXXX XXXXXX XXXXXX XXXXXX
 
         // falls back to finest region that encompasses the whole area
-        let nyc_hashes = rectangle_hashes(near_nyc_rectangle, 7);
+        let nyc_hashes = rectangle_hashes(&near_nyc_rectangle, 7);
         assert_eq!(nyc_hashes, ["dr5ru"]);
     }
 
@@ -584,18 +562,9 @@ mod tests {
                 },
                 radius: r_meters,
             };
-            eprintln!("query = {:#?}", query);
             let max_hashes = rnd.gen_range(1..32);
             let hashes = circle_hashes(&query, max_hashes);
-            eprintln!("hashes = {:#?}", hashes);
-
             assert!(hashes.len() <= max_hashes);
-            assert!(
-                hashes.len() > 0,
-                "max_hashes: {} query: {:?}",
-                max_hashes,
-                query
-            );
         }
     }
 
@@ -611,6 +580,7 @@ mod tests {
 
         let max_hashes = 10;
         let hashes = circle_hashes(&query, max_hashes);
+        assert!(hashes.len() <= max_hashes);
     }
 
     #[test]
@@ -625,12 +595,6 @@ mod tests {
         let max_hashes = 10;
         let hashes = circle_hashes(&query, max_hashes);
         assert!(hashes.len() <= max_hashes);
-        assert!(
-            hashes.len() > 0,
-            "max_hashes: {} query: {:?}",
-            max_hashes,
-            query
-        );
     }
 
     #[test]
@@ -672,7 +636,7 @@ mod tests {
         let mut is_earth_round = false;
         for _ in 0..1000 {
             geohash = sphere_neighbor(&geohash, Direction::W).unwrap();
-            if &geohash == starting_hash {
+            if geohash == starting_hash {
                 is_earth_round = true;
             }
         }
