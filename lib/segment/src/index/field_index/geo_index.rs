@@ -569,7 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn circle_meridian() {
+    fn wide_circle_meridian() {
         let query = GeoRadius {
             center: GeoPoint {
                 lon: -17.81718188959701,
@@ -581,10 +581,27 @@ mod tests {
         let max_hashes = 10;
         let hashes = circle_hashes(&query, max_hashes);
         assert!(hashes.len() <= max_hashes);
+        assert_eq!(hashes, ["b"]);
     }
 
     #[test]
-    fn circle_south_pole() {
+    fn tight_circle_meridian() {
+        let query = GeoRadius {
+            center: GeoPoint {
+                lon: -17.81718188959701,
+                lat: 89.9811609411936,
+            },
+            radius: 1000.0,
+        };
+
+        let max_hashes = 10;
+        let hashes = circle_hashes(&query, max_hashes);
+        assert!(hashes.len() <= max_hashes);
+        assert_eq!(hashes, ["fz", "gp", "gr", "gx", "gz", "up"]);
+    }
+
+    #[test]
+    fn wide_circle_south_pole() {
         let query = GeoRadius {
             center: GeoPoint {
                 lon: 155.85591760141335,
@@ -595,6 +612,22 @@ mod tests {
         let max_hashes = 10;
         let hashes = circle_hashes(&query, max_hashes);
         assert!(hashes.len() <= max_hashes);
+        assert_eq!(hashes, ["p"]);
+    }
+
+    #[test]
+    fn tight_circle_south_pole() {
+        let query = GeoRadius {
+            center: GeoPoint {
+                lon: 155.85591760141335,
+                lat: -74.19418872656166,
+            },
+            radius: 1000.0,
+        };
+        let max_hashes = 10;
+        let hashes = circle_hashes(&query, max_hashes);
+        assert!(hashes.len() <= max_hashes);
+        assert_eq!(hashes, ["p6ycc", "p6ycf", "p6ycg"]);
     }
 
     #[test]
