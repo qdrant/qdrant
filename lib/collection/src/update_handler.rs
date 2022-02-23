@@ -6,7 +6,8 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
 use itertools::Itertools;
-use log::{debug, info, trace, warn};
+use log::{debug, error, info, trace, warn};
+use segment::entry::entry_point::OperationResult;
 use segment::types::SeqNumberType;
 use std::cmp::min;
 use std::collections::HashSet;
@@ -218,14 +219,10 @@ impl UpdateHandler {
                                     false
                                 }
                                 _ => {
-                                    {
-                                        let mut segments_write = segs.write();
-                                        if segments_write.optimizer_errors.is_none() {
-                                            // Save only the first error
-                                            // If is more likely to be the real cause of all further problems
-                                            segments_write.optimizer_errors = Some(error.clone());
-                                        }
-                                    }
+                                    // Save only the first error
+                                    // If is more likely to be the real cause of all further problems
+                                    segs.write().report_optimizer_error(error.clone());
+
                                     // Error of the optimization can not be handled by API user
                                     // It is only possible to fix after full restart,
                                     // so the best available action here is to stop whole
@@ -363,15 +360,31 @@ impl UpdateHandler {
             };
 
             trace!("Attempting flushing");
-            let confirmed_version = {
-                let read_segments = segments.read();
-                let flushed_version = read_segments.flush_all().unwrap();
-                match read_segments.failed_operation.iter().cloned().min() {
-                    None => flushed_version,
-                    Some(failed_operation) => min(failed_operation, flushed_version),
+            let confirmed_version = Self::flush_segments(segments.clone());
+            let confirmed_version = match confirmed_version {
+                Ok(version) => version,
+                Err(err) => {
+                    error!("Failed to flush: {err}");
+                    segments.write().report_optimizer_error(err);
+                    continue;
                 }
             };
-            wal.lock().await.ack(confirmed_version).unwrap();
+            if let Err(err) = wal.lock().await.ack(confirmed_version) {
+                segments.write().report_optimizer_error(err);
+            }
         }
+    }
+
+    /// Returns confirmed version after flush of all segements
+    ///
+    /// # Errors
+    /// Returns an error on flush failure
+    fn flush_segments(segments: LockedSegmentHolder) -> OperationResult<u64> {
+        let read_segments = segments.read();
+        let flushed_version = read_segments.flush_all()?;
+        Ok(match read_segments.failed_operation.iter().cloned().min() {
+            None => flushed_version,
+            Some(failed_operation) => min(failed_operation, flushed_version),
+        })
     }
 }
