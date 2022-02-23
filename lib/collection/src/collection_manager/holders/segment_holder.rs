@@ -371,6 +371,12 @@ impl<'s> SegmentHolder {
             Ok(max_persisted_version)
         }
     }
+
+    pub fn report_optimizer_error<E: Into<CollectionError>>(&mut self, error: E) {
+        if self.optimizer_errors.is_none() {
+            self.optimizer_errors = Some(error.into());
+        }
+    }
 }
 
 #[cfg(test)]

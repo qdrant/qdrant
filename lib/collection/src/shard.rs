@@ -79,7 +79,8 @@ impl Shard {
             config.optimizer_config.max_optimization_threads
         };
         let optimize_runtime = runtime::Builder::new_multi_thread()
-            .worker_threads(2)
+            .worker_threads(3)
+            .enable_time()
             .thread_name_fn(move || {
                 static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
                 let optimizer_id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
@@ -507,6 +508,7 @@ impl Shard {
         &self,
         optimizer_config_diff: OptimizersConfigDiff,
     ) -> CollectionResult<()> {
+        log::debug!("Updating optimizer params");
         {
             let mut config = self.config.write().await;
             config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
@@ -519,6 +521,7 @@ impl Shard {
         // makes sure that the Stop signal is the last one in this channel
         let old_sender = self.update_sender.swap(Arc::new(update_sender));
         old_sender.send(UpdateSignal::Stop)?;
+        update_handler.stop_flush_worker();
 
         update_handler.wait_workers_stops().await?;
         let new_optimizers = build_optimizers(
@@ -529,11 +532,16 @@ impl Shard {
             self.schema_store.clone(),
         );
         update_handler.optimizers = new_optimizers;
-        update_handler.flush_timeout_sec = config.optimizer_config.flush_interval_sec;
+        update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
         update_handler.run_workers(update_receiver);
         self.update_sender.load().send(UpdateSignal::Nop)?;
 
         Ok(())
+    }
+
+    pub async fn stop_flush_worker(&self) {
+        let mut update_handler = self.update_handler.lock().await;
+        update_handler.stop_flush_worker()
     }
 
     pub async fn wait_update_workers_stop(&self) -> CollectionResult<()> {
@@ -567,6 +575,7 @@ impl Drop for Shard {
     fn drop(&mut self) {
         // Finishes update tasks right before destructor stuck to do so with runtime
         self.update_sender.load().send(UpdateSignal::Stop).unwrap();
+        block_on(self.stop_flush_worker());
 
         block_on(self.wait_update_workers_stop()).unwrap();
 
