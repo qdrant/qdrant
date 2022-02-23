@@ -60,10 +60,10 @@ fn sphere_lat(lat: f64) -> f64 {
     let min_lat = -90f64;
     let mut res_lat = lat;
     if res_lat > max_lat {
-        res_lat = max_lat - 1e-16;
+        res_lat = max_lat - 1e-10;
     }
     if res_lat < min_lat {
-        res_lat = min_lat + 1e-16;
+        res_lat = min_lat + 1e-10;
     }
     res_lat
 }
@@ -667,27 +667,37 @@ mod tests {
 
     #[test]
     fn go_west() {
-        let mut geohash = sphere_neighbor("ww8p", Direction::W).unwrap();
+        let starting_hash = "ww8";
+        let mut geohash = sphere_neighbor(starting_hash, Direction::W).unwrap();
+        let mut is_earth_round = false;
         for _ in 0..1000 {
             geohash = sphere_neighbor(&geohash, Direction::W).unwrap();
+            if &geohash == starting_hash {
+                is_earth_round = true;
+            }
         }
+        assert!(is_earth_round)
     }
 
     #[test]
     fn sphere_neighbor_corner_cases() {
-        assert_eq!(
-            sphere_neighbor("ww8p1r4t8", Direction::SE).unwrap(),
-            geohash::neighbor("ww8p1r4t8", Direction::SE).unwrap()
-        );
+
+        assert_eq!(&sphere_neighbor("z", Direction::NE).unwrap(), "b");
+        assert_eq!(&sphere_neighbor("zz", Direction::NE).unwrap(), "bp");
+        assert_eq!(&sphere_neighbor("0", Direction::SW).unwrap(), "p");
+        assert_eq!(&sphere_neighbor("00", Direction::SW).unwrap(), "pb");
 
         assert_eq!(&sphere_neighbor("8", Direction::W).unwrap(), "x");
         assert_eq!(&sphere_neighbor("8h", Direction::W).unwrap(), "xu");
         assert_eq!(&sphere_neighbor("r", Direction::E).unwrap(), "2");
         assert_eq!(&sphere_neighbor("ru", Direction::E).unwrap(), "2h");
-        assert_eq!(&sphere_neighbor("z", Direction::NE).unwrap(), "b");
-        assert_eq!(&sphere_neighbor("zz", Direction::NE).unwrap(), "bp");
-        assert_eq!(&sphere_neighbor("0", Direction::SW).unwrap(), "p");
-        assert_eq!(&sphere_neighbor("00", Direction::SW).unwrap(), "pb");
+
+
+        assert_eq!(
+            sphere_neighbor("ww8p1r4t8", Direction::SE).unwrap(),
+            geohash::neighbor("ww8p1r4t8", Direction::SE).unwrap()
+        );
+
     }
 
     #[test]
