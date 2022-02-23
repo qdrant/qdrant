@@ -681,7 +681,6 @@ mod tests {
 
     #[test]
     fn sphere_neighbor_corner_cases() {
-
         assert_eq!(&sphere_neighbor("z", Direction::NE).unwrap(), "b");
         assert_eq!(&sphere_neighbor("zz", Direction::NE).unwrap(), "bp");
         assert_eq!(&sphere_neighbor("0", Direction::SW).unwrap(), "p");
@@ -692,12 +691,10 @@ mod tests {
         assert_eq!(&sphere_neighbor("r", Direction::E).unwrap(), "2");
         assert_eq!(&sphere_neighbor("ru", Direction::E).unwrap(), "2h");
 
-
         assert_eq!(
             sphere_neighbor("ww8p1r4t8", Direction::SE).unwrap(),
             geohash::neighbor("ww8p1r4t8", Direction::SE).unwrap()
         );
-
     }
 
     #[test]
