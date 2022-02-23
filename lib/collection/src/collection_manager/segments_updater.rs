@@ -173,31 +173,6 @@ pub(crate) fn upsert_points(
     vectors: &[VectorType],
     payloads: &Option<Vec<Option<HashMap<PayloadKeyType, PayloadInterface>>>>,
 ) -> CollectionResult<usize> {
-    if ids.len() != vectors.len() {
-        return Err(CollectionError::BadInput {
-            description: format!(
-                "Amount of ids ({}) and vectors ({}) does not match",
-                ids.len(),
-                vectors.len()
-            ),
-        });
-    }
-
-    match payloads {
-        None => {}
-        Some(payload_vector) => {
-            if payload_vector.len() != ids.len() {
-                return Err(CollectionError::BadInput {
-                    description: format!(
-                        "Amount of ids ({}) and payloads ({}) does not match",
-                        ids.len(),
-                        payload_vector.len()
-                    ),
-                });
-            }
-        }
-    }
-
     let vectors_map: HashMap<PointIdType, &VectorType> = ids.iter().cloned().zip(vectors).collect();
     let payloads_map: HashMap<PointIdType, &HashMap<PayloadKeyType, PayloadInterface>> =
         match payloads {

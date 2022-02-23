@@ -4,14 +4,16 @@ use serde;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+use super::{split_iter_by_shard, OperationToShard, SplitByShard};
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct SetPayload {
     pub payload: HashMap<PayloadKeyType, PayloadInterface>,
     /// Assigns payload to each point in this list
     pub points: Vec<PointIdType>, // ToDo: replace with point selector
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct DeletePayload {
     pub keys: Vec<PayloadKeyType>,
     /// Deletes values from each point in this list
@@ -19,7 +21,7 @@ pub struct DeletePayload {
 }
 
 /// Define operations description for point payloads manipulation
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadOps {
     /// Set payload value, overrides if it is already exists
@@ -30,6 +32,40 @@ pub enum PayloadOps {
     ClearPayload { points: Vec<PointIdType> },
     /// Clear all Payload values by given filter criteria.
     ClearPayloadByFilter(Filter),
+}
+
+impl SplitByShard for PayloadOps {
+    fn split_by_shard(self) -> OperationToShard<Self> {
+        match self {
+            PayloadOps::SetPayload(operation) => {
+                operation.split_by_shard().map(PayloadOps::SetPayload)
+            }
+            PayloadOps::DeletePayload(operation) => {
+                operation.split_by_shard().map(PayloadOps::DeletePayload)
+            }
+            PayloadOps::ClearPayload { points } => split_iter_by_shard(points, |id| *id)
+                .map(|points| PayloadOps::ClearPayload { points }),
+            operation @ PayloadOps::ClearPayloadByFilter(_) => OperationToShard::to_all(operation),
+        }
+    }
+}
+
+impl SplitByShard for DeletePayload {
+    fn split_by_shard(self) -> OperationToShard<Self> {
+        split_iter_by_shard(self.points, |id| *id).map(|points| DeletePayload {
+            points,
+            keys: self.keys.clone(),
+        })
+    }
+}
+
+impl SplitByShard for SetPayload {
+    fn split_by_shard(self) -> OperationToShard<Self> {
+        split_iter_by_shard(self.points, |id| *id).map(|points| SetPayload {
+            points,
+            payload: self.payload.clone(),
+        })
+    }
 }
 
 #[cfg(test)]
