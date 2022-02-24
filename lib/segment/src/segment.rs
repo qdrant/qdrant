@@ -651,10 +651,10 @@ mod tests {
             build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
         segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
 
-        let result1 = segment.set_full_payload_with_json(0, 0.into(), &data1.to_string());
+        let result1 = segment.set_full_payload_with_json(0, 0.into(), data1);
         assert!(result1.is_err());
 
-        let result2 = segment.set_full_payload_with_json(0, 0.into(), &data2.to_string());
+        let result2 = segment.set_full_payload_with_json(0, 0.into(), data2);
         assert!(result2.is_err());
     }
 
@@ -684,7 +684,7 @@ mod tests {
             build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
         segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
         segment
-            .set_full_payload_with_json(0, 0.into(), &data.to_string())
+            .set_full_payload_with_json(0, 0.into(), data)
             .unwrap();
 
         let filter_valid_str = r#"

@@ -181,7 +181,7 @@ mod tests {
                 .set_payload(
                     102,
                     point_id,
-                    &"color".to_string(),
+                    "color",
                     PayloadType::Keyword(vec!["red".to_string()]),
                 )
                 .unwrap();
@@ -191,12 +191,7 @@ mod tests {
             segment
                 .get()
                 .write()
-                .set_payload(
-                    102,
-                    point_id,
-                    &"size".to_string(),
-                    PayloadType::Float(vec![0.42]),
-                )
+                .set_payload(102, point_id, "size", PayloadType::Float(vec![0.42]))
                 .unwrap();
         }
 

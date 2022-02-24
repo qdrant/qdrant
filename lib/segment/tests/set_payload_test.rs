@@ -48,7 +48,7 @@ mod tests {
             build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
         segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
         segment
-            .set_full_payload_with_json(0, 0.into(), &data.to_string())
+            .set_full_payload_with_json(0, 0.into(), data)
             .unwrap();
         let payload = segment.payload(0.into()).unwrap();
         let keys: Vec<PayloadKeyType> = payload.keys().cloned().collect();

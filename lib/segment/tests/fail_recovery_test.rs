@@ -28,7 +28,7 @@ mod tests {
         let fail_res = segment.set_payload(
             3,
             1.into(),
-            &"color".to_string(),
+            "color",
             PayloadType::Keyword(vec!["red".to_string()]),
         );
         assert!(fail_res.is_err());
@@ -37,7 +37,7 @@ mod tests {
         let fail_res = segment.set_payload(
             3,
             2.into(),
-            &"color".to_string(),
+            "color",
             PayloadType::Keyword(vec!["red".to_string()]),
         );
         assert!(fail_res.is_err());
@@ -46,7 +46,7 @@ mod tests {
         let ok_res = segment.set_payload(
             2,
             2.into(),
-            &"color".to_string(),
+            "color",
             PayloadType::Keyword(vec!["red".to_string()]),
         );
         assert!(ok_res.is_ok());
@@ -56,7 +56,7 @@ mod tests {
         let recover_res = segment.set_payload(
             2,
             1.into(),
-            &"color".to_string(),
+            "color",
             PayloadType::Keyword(vec!["red".to_string()]),
         );
 
