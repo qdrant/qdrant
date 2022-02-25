@@ -23,6 +23,9 @@ jobs:
         override: true
         components: rustfmt, clippy
     - uses: actions/checkout@v2
+    - uses: Swatinem/rust-cache@v1
+      with:
+        key: clippy
     - name: Install dependencies
       run: sudo apt-get install clang libopenblas-dev libgfortran-10-dev gfortran
     - name: Check code formatting

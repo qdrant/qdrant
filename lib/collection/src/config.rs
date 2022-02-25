@@ -10,8 +10,8 @@ use wal::WalOptions;
 
 use segment::types::{Distance, HnswConfig};
 
-use crate::collection_builder::optimizers_builder::OptimizersConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::optimizers_builder::OptimizersConfig;
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 

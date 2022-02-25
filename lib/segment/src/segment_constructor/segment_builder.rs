@@ -54,9 +54,9 @@ impl SegmentBuilder {
     ///
     pub fn update_from(&mut self, other: &Segment, stopped: &AtomicBool) -> OperationResult<bool> {
         match &mut self.segment {
-            None => Err(OperationError::ServiceError {
-                description: "Segment building error: created segment not found".to_owned(),
-            }),
+            None => Err(OperationError::service_error(
+                "Segment building error: created segment not found",
+            )),
             Some(self_segment) => {
                 self_segment.version = cmp::max(self_segment.version(), other.version());
 
@@ -124,8 +124,8 @@ impl SegmentBuilder {
 
     pub fn build(mut self, stopped: &AtomicBool) -> Result<Segment, OperationError> {
         {
-            let mut segment = self.segment.ok_or(OperationError::ServiceError {
-                description: "Segment building error: created segment not found".to_owned(),
+            let mut segment = self.segment.ok_or_else(|| {
+                OperationError::service_error("Segment building error: created segment not found")
             })?;
             self.segment = None;
 

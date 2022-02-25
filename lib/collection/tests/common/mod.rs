@@ -1,7 +1,6 @@
-use collection::collection::Collection;
-use collection::collection_builder::build_collection;
-use collection::collection_builder::optimizers_builder::OptimizersConfig;
-use collection::config::{CollectionParams, WalConfig};
+use collection::config::{CollectionConfig, CollectionParams, WalConfig};
+use collection::optimizers_builder::OptimizersConfig;
+use collection::Collection;
 use segment::types::Distance;
 use std::path::Path;
 
@@ -29,12 +28,15 @@ pub async fn simple_collection_fixture(collection_path: &Path) -> Collection {
         distance: Distance::Dot,
     };
 
-    build_collection(
+    Collection::new(
+        "test".to_string(),
         collection_path,
-        &wal_config,
-        &collection_params,
-        &TEST_OPTIMIZERS_CONFIG,
-        &Default::default(),
+        &CollectionConfig {
+            params: collection_params,
+            optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
+            wal_config,
+            hnsw_config: Default::default(),
+        },
     )
     .unwrap()
 }

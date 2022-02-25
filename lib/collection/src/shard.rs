@@ -1,73 +1,260 @@
+use arc_swap::ArcSwap;
 use std::collections::HashMap;
 use std::ops::Deref;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
-use tokio::runtime::{Handle, Runtime};
-use tokio::sync::{mpsc::UnboundedSender, oneshot, Mutex};
+use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+use std::cmp::max;
+use std::fs::create_dir_all;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use tokio::runtime::{self, Handle, Runtime};
+use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot, Mutex, RwLock as TokioRwLock};
 
 use segment::types::{
     Condition, Filter, HasIdCondition, PayloadKeyType, PayloadSchemaInfo, PointIdType, ScoredPoint,
     SegmentType, VectorElementType, WithPayload,
 };
 
-use crate::collection_builder::optimizers_builder::build_optimizers;
 use crate::collection_manager::collection_managers::CollectionSearcher;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CollectionStatus, RecommendRequest,
-    ScrollRequest, ScrollResult, SearchRequest, UpdateResult, UpdateStatus,
+    CollectionError, CollectionInfo, CollectionResult, CollectionStatus, OptimizersStatus,
+    RecommendRequest, ScrollRequest, ScrollResult, SearchRequest, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::update_handler::{OperationData, UpdateHandler, UpdateSignal};
+use crate::optimizers_builder::build_optimizers;
+use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
+use crate::CollectionId;
 use futures::executor::block_on;
 use segment::payload_storage::schema_storage::SchemaStorage;
+use segment::segment_constructor::load_segment;
+use std::fs::{read_dir, remove_dir_all};
 
-/// Collection
+pub type ShardId = u32;
+
+/// Shard
+///
+/// Shard is an entity that can be moved between peers and contains some part of one collections data.
 ///
 /// Holds all object, required for collection functioning
-pub struct Collection {
+pub struct Shard {
     segments: Arc<RwLock<SegmentHolder>>,
-    config: Arc<tokio::sync::RwLock<CollectionConfig>>,
+    // TODO: Move config into Raft global state
+    config: Arc<TokioRwLock<CollectionConfig>>,
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
     update_handler: Arc<Mutex<UpdateHandler>>,
     runtime_handle: Option<Runtime>,
-    update_sender: UnboundedSender<UpdateSignal>,
+    update_sender: ArcSwap<UnboundedSender<UpdateSignal>>,
     path: PathBuf,
     schema_store: Arc<SchemaStorage>,
 }
 
-/// Collection holds information about segments and WAL.
-impl Collection {
+/// Shard holds information about segments and WAL.
+impl Shard {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        segments: Arc<RwLock<SegmentHolder>>,
+        id: ShardId,
+        collection_id: CollectionId,
+        segment_holder: SegmentHolder,
         config: CollectionConfig,
-        wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-        update_handler: UpdateHandler,
-        runtime_handle: Runtime,
-        update_sender: UnboundedSender<UpdateSignal>,
-        path: PathBuf,
+        wal: SerdeWal<CollectionUpdateOperations>,
+        optimizers: Arc<Vec<Arc<Optimizer>>>,
+        collection_path: &Path,
         schema_store: Arc<SchemaStorage>,
     ) -> Self {
+        let segment_holder = Arc::new(RwLock::new(segment_holder));
+
+        let blocking_threads = if config.optimizer_config.max_optimization_threads == 0 {
+            max(num_cpus::get() - 1, 1)
+        } else {
+            config.optimizer_config.max_optimization_threads
+        };
+        let optimize_runtime = runtime::Builder::new_multi_thread()
+            .worker_threads(3)
+            .enable_time()
+            .thread_name_fn(move || {
+                static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+                let optimizer_id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+                format!("collection-{collection_id}-shard-{id}-optimizer-{optimizer_id}")
+            })
+            .max_blocking_threads(blocking_threads)
+            .build()
+            .unwrap();
+
+        let locked_wal = Arc::new(Mutex::new(wal));
+
+        let mut update_handler = UpdateHandler::new(
+            optimizers,
+            optimize_runtime.handle().clone(),
+            segment_holder.clone(),
+            locked_wal.clone(),
+            config.optimizer_config.flush_interval_sec,
+        );
+
+        let (update_sender, update_receiver) = mpsc::unbounded_channel();
+        update_handler.run_workers(update_receiver);
+
         Self {
-            segments,
-            config: Arc::new(tokio::sync::RwLock::new(config)),
-            wal,
+            segments: segment_holder,
+            config: Arc::new(TokioRwLock::new(config)),
+            wal: locked_wal,
             update_handler: Arc::new(tokio::sync::Mutex::new(update_handler)),
-            runtime_handle: Some(runtime_handle),
-            update_sender,
-            path,
+            runtime_handle: Some(optimize_runtime),
+            update_sender: ArcSwap::from_pointee(update_sender),
+            path: collection_path.to_owned(),
             schema_store,
         }
+    }
+
+    pub fn load(id: ShardId, collection_id: CollectionId, collection_path: &Path) -> Shard {
+        let wal_path = collection_path.join("wal");
+        let segments_path = collection_path.join("segments");
+        let mut segment_holder = SegmentHolder::default();
+
+        let collection_config = CollectionConfig::load(collection_path).unwrap_or_else(|err| {
+            panic!(
+                "Can't read collection config due to {}\nat {}",
+                err,
+                collection_path.to_str().unwrap()
+            )
+        });
+
+        let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(
+            wal_path.to_str().unwrap(),
+            &(&collection_config.wal_config).into(),
+        )
+        .expect("Can't read WAL");
+
+        let schema_storage = Arc::new(SchemaStorage::new());
+
+        let segment_dirs = read_dir(&segments_path).unwrap_or_else(|err| {
+            panic!(
+                "Can't read segments directory due to {}\nat {}",
+                err,
+                segments_path.to_str().unwrap()
+            )
+        });
+
+        for entry in segment_dirs {
+            let segments_path = entry.unwrap().path();
+            if segments_path.ends_with("deleted") {
+                remove_dir_all(&segments_path).unwrap_or_else(|_| {
+                    panic!(
+                        "Can't remove marked-for-remove segment {}",
+                        segments_path.to_str().unwrap()
+                    )
+                });
+                continue;
+            }
+            let segment = match load_segment(&segments_path, schema_storage.clone()) {
+                Ok(x) => x,
+                Err(err) => panic!(
+                    "Can't load segments from {}, error: {}",
+                    segments_path.to_str().unwrap(),
+                    err
+                ),
+            };
+            segment_holder.add(segment);
+        }
+
+        let optimizers = build_optimizers(
+            collection_path,
+            &collection_config.params,
+            &collection_config.optimizer_config,
+            &collection_config.hnsw_config,
+            schema_storage.clone(),
+        );
+
+        let collection = Shard::new(
+            id,
+            collection_id,
+            segment_holder,
+            collection_config,
+            wal,
+            optimizers,
+            collection_path,
+            schema_storage,
+        );
+
+        block_on(collection.load_from_wal());
+
+        collection
+    }
+
+    /// Creates new empty shard with given configuration, initializing all storages, optimizers and directories.
+    pub fn build(
+        id: ShardId,
+        collection_id: CollectionId,
+        collection_path: &Path,
+        config: &CollectionConfig,
+    ) -> CollectionResult<Shard> {
+        let wal_path = collection_path.join("wal");
+
+        create_dir_all(&wal_path).map_err(|err| CollectionError::ServiceError {
+            error: format!("Can't create collection directory. Error: {}", err),
+        })?;
+
+        let segments_path = collection_path.join("segments");
+
+        create_dir_all(&segments_path).map_err(|err| CollectionError::ServiceError {
+            error: format!("Can't create collection directory. Error: {}", err),
+        })?;
+
+        let mut segment_holder = SegmentHolder::default();
+
+        let schema_storage = Arc::new(SchemaStorage::new());
+
+        for _sid in 0..config.optimizer_config.default_segment_number {
+            let segment = build_simple_segment(
+                &segments_path,
+                config.params.vector_size,
+                config.params.distance,
+                schema_storage.clone(),
+            )?;
+            segment_holder.add(segment);
+        }
+
+        let wal: SerdeWal<CollectionUpdateOperations> =
+            SerdeWal::new(wal_path.to_str().unwrap(), &(&config.wal_config).into())?;
+
+        let collection_config = CollectionConfig {
+            params: config.params.clone(),
+            hnsw_config: config.hnsw_config,
+            optimizer_config: config.optimizer_config.clone(),
+            wal_config: config.wal_config.clone(),
+        };
+
+        collection_config.save(collection_path)?;
+
+        let optimizers = build_optimizers(
+            collection_path,
+            &config.params,
+            &config.optimizer_config,
+            &collection_config.hnsw_config,
+            schema_storage.clone(),
+        );
+
+        let collection = Shard::new(
+            id,
+            collection_id,
+            segment_holder,
+            collection_config,
+            wal,
+            optimizers,
+            collection_path,
+            schema_storage,
+        );
+
+        Ok(collection)
     }
 
     pub fn segments(&self) -> &RwLock<SegmentHolder> {
@@ -82,7 +269,6 @@ impl Collection {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        let sndr = self.update_sender.clone();
         let (callback_sender, callback_receiver) = if wait {
             let (tx, rx) = oneshot::channel();
             (Some(tx), Some(rx))
@@ -93,11 +279,13 @@ impl Collection {
         let operation_id = {
             let mut wal_lock = self.wal.lock().await;
             let operation_id = wal_lock.write(&operation)?;
-            sndr.send(UpdateSignal::Operation(OperationData {
-                op_num: operation_id,
-                operation,
-                sender: callback_sender,
-            }))?;
+            self.update_sender
+                .load()
+                .send(UpdateSignal::Operation(OperationData {
+                    op_num: operation_id,
+                    operation,
+                    sender: callback_sender,
+                }))?;
             operation_id
         };
 
@@ -181,7 +369,7 @@ impl Collection {
 
     pub async fn recommend_by(
         &self,
-        request: Arc<RecommendRequest>,
+        request: RecommendRequest,
         segment_searcher: &(dyn CollectionSearcher),
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
@@ -220,7 +408,7 @@ impl Collection {
             }
         }
 
-        let avg_positive = Collection::avg_vectors(
+        let avg_positive = crate::avg_vectors(
             request
                 .positive
                 .iter()
@@ -230,7 +418,7 @@ impl Collection {
         let search_vector = if request.negative.is_empty() {
             avg_positive
         } else {
-            let avg_negative = Collection::avg_vectors(
+            let avg_negative = crate::avg_vectors(
                 request
                     .negative
                     .iter()
@@ -291,11 +479,18 @@ impl Collection {
                 schema.insert(key, val);
             }
         }
-        if !segments.failed_operation.is_empty() {
+        if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
             status = CollectionStatus::Red;
         }
+
+        let optimizer_status = match &segments.optimizer_errors {
+            None => OptimizersStatus::Ok,
+            Some(error) => OptimizersStatus::Error(error.to_string()),
+        };
+
         Ok(CollectionInfo {
             status,
+            optimizer_status,
             vectors_count,
             segments_count,
             disk_data_size: disk_size,
@@ -305,35 +500,7 @@ impl Collection {
         })
     }
 
-    pub async fn stop(&self) -> CollectionResult<()> {
-        self.update_sender.send(UpdateSignal::Stop)?;
-        Ok(())
-    }
-
-    pub fn avg_vectors<'a>(
-        vectors: impl Iterator<Item = &'a Vec<VectorElementType>>,
-    ) -> Vec<VectorElementType> {
-        let mut count: usize = 0;
-        let mut avg_vector: Vec<VectorElementType> = vec![];
-        for vector in vectors {
-            count += 1;
-            for i in 0..vector.len() {
-                if i >= avg_vector.len() {
-                    avg_vector.push(vector[i])
-                } else {
-                    avg_vector[i] += vector[i];
-                }
-            }
-        }
-
-        for item in &mut avg_vector {
-            *item /= count as VectorElementType;
-        }
-
-        avg_vector
-    }
-
-    /// Updates collection optimization params:
+    /// Updates shard optimization params:
     /// - Saves new params on disk
     /// - Stops existing optimization loop
     /// - Runs new optimizers with new params
@@ -341,6 +508,7 @@ impl Collection {
         &self,
         optimizer_config_diff: OptimizersConfigDiff,
     ) -> CollectionResult<()> {
+        log::debug!("Updating optimizer params");
         {
             let mut config = self.config.write().await;
             config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
@@ -348,7 +516,13 @@ impl Collection {
         }
         let config = self.config.read().await;
         let mut update_handler = self.update_handler.lock().await;
-        self.stop().await?;
+
+        let (update_sender, update_receiver) = mpsc::unbounded_channel();
+        // makes sure that the Stop signal is the last one in this channel
+        let old_sender = self.update_sender.swap(Arc::new(update_sender));
+        old_sender.send(UpdateSignal::Stop)?;
+        update_handler.stop_flush_worker();
+
         update_handler.wait_workers_stops().await?;
         let new_optimizers = build_optimizers(
             &self.path,
@@ -358,11 +532,16 @@ impl Collection {
             self.schema_store.clone(),
         );
         update_handler.optimizers = new_optimizers;
-        update_handler.flush_timeout_sec = config.optimizer_config.flush_interval_sec;
-        update_handler.run_workers();
-        self.update_sender.send(UpdateSignal::Nop)?;
+        update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
+        update_handler.run_workers(update_receiver);
+        self.update_sender.load().send(UpdateSignal::Nop)?;
 
         Ok(())
+    }
+
+    pub async fn stop_flush_worker(&self) {
+        let mut update_handler = self.update_handler.lock().await;
+        update_handler.stop_flush_worker()
     }
 
     pub async fn wait_update_workers_stop(&self) -> CollectionResult<()> {
@@ -392,10 +571,11 @@ impl Collection {
     }
 }
 
-impl Drop for Collection {
+impl Drop for Shard {
     fn drop(&mut self) {
         // Finishes update tasks right before destructor stuck to do so with runtime
-        block_on(self.stop()).unwrap();
+        self.update_sender.load().send(UpdateSignal::Stop).unwrap();
+        block_on(self.stop_flush_worker());
 
         block_on(self.wait_update_workers_stop()).unwrap();
 

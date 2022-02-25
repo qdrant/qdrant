@@ -1,4 +1,4 @@
-use collection::collection_builder::optimizers_builder::OptimizersConfig;
+use collection::optimizers_builder::OptimizersConfig;
 use storage::content_manager::toc::TableOfContent;
 use storage::types::{PerformanceConfig, StorageConfig};
 use tempdir::TempDir;

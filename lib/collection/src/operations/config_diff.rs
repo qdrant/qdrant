@@ -1,6 +1,6 @@
-use crate::collection_builder::optimizers_builder::OptimizersConfig;
 use crate::config::WalConfig;
 use crate::operations::types::CollectionResult;
+use crate::optimizers_builder::OptimizersConfig;
 use merge::Merge;
 use schemars::JsonSchema;
 use segment::types::HnswConfig;
@@ -102,7 +102,7 @@ pub fn update_config<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Seri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::collection_builder::optimizers_builder::OptimizersConfig;
+    use crate::optimizers_builder::OptimizersConfig;
     use segment::types::HnswConfig;
 
     #[test]

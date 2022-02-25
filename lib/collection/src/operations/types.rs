@@ -36,6 +36,16 @@ pub enum CollectionStatus {
     Red,
 }
 
+/// Current state of the collection
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum OptimizersStatus {
+    /// Optimizers are reporting as expected
+    Ok,
+    /// Something wrong happened with optimizers
+    Error(String),
+}
+
 /// Point data
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -53,6 +63,8 @@ pub struct Record {
 pub struct CollectionInfo {
     /// Status of the collection
     pub status: CollectionStatus,
+    /// Status of optimizers
+    pub optimizer_status: OptimizersStatus,
     /// Number of vectors in collection
     pub vectors_count: usize,
     /// Number of segments in collection

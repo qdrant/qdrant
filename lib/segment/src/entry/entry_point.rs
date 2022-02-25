@@ -29,6 +29,14 @@ pub enum OperationError {
     Cancelled { description: String },
 }
 
+impl OperationError {
+    pub fn service_error(description: &str) -> OperationError {
+        OperationError::ServiceError {
+            description: description.to_string(),
+        }
+    }
+}
+
 /// Contains information regarding last operation error, which should be fixed before next operation could be processed
 #[derive(Debug, Clone)]
 pub struct SegmentFailedState {
@@ -41,34 +49,28 @@ impl<E> From<AtomicIoError<E>> for OperationError {
     fn from(err: AtomicIoError<E>) -> Self {
         match err {
             AtomicIoError::Internal(io_err) => OperationError::from(io_err),
-            AtomicIoError::User(_user_err) => OperationError::ServiceError {
-                description: "Unknown atomic write error".to_owned(),
-            },
+            AtomicIoError::User(_user_err) => {
+                OperationError::service_error("Unknown atomic write error")
+            }
         }
     }
 }
 
 impl From<IoError> for OperationError {
     fn from(err: IoError) -> Self {
-        OperationError::ServiceError {
-            description: format!("{}", err),
-        }
+        OperationError::service_error(&format!("IO Error: {}", err))
     }
 }
 
 impl From<Error> for OperationError {
     fn from(err: Error) -> Self {
-        OperationError::ServiceError {
-            description: format!("persistence error: {}", err),
-        }
+        OperationError::service_error(&format!("persistence error: {}", err))
     }
 }
 
 impl From<serde_json::Error> for OperationError {
     fn from(err: serde_json::Error) -> Self {
-        OperationError::ServiceError {
-            description: format!("Json error: {}", err),
-        }
+        OperationError::service_error(&format!("Json error: {}", err))
     }
 }
 

@@ -9,15 +9,13 @@ use sled::{Config, Db};
 use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
 
-use collection::collection::Collection;
-use collection::collection_builder::build_collection;
-use collection::collection_builder::collection_loader::load_collection;
-use collection::config::CollectionParams;
+use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::types::{
     RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
+use collection::Collection;
 use segment::types::{PointIdType, ScoredPoint, WithPayload};
 
 use crate::content_manager::collections_ops::{Checker, Collections};
@@ -71,7 +69,7 @@ impl TableOfContent {
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
 
-            let collection = load_collection(&collection_path);
+            let collection = Collection::load(collection_name.clone(), &collection_path);
 
             collections.insert(collection_name, Arc::new(collection));
         }
@@ -178,12 +176,15 @@ impl TableOfContent {
             Some(diff) => diff.update(&self.storage_config.hnsw_index)?,
         };
 
-        let collection = build_collection(
+        let collection = Collection::new(
+            collection_name.to_string(),
             Path::new(&collection_path),
-            &wal_config,
-            &collection_params,
-            &optimizers_config,
-            &hnsw_config,
+            &CollectionConfig {
+                wal_config,
+                params: collection_params,
+                optimizer_config: optimizers_config,
+                hnsw_config,
+            },
         )?;
 
         let mut write_collections = self.collections.write().await;
@@ -333,7 +334,7 @@ impl TableOfContent {
     pub async fn recommend(
         &self,
         collection_name: &str,
-        request: Arc<RecommendRequest>,
+        request: RecommendRequest,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
@@ -363,10 +364,10 @@ impl TableOfContent {
         request: SearchRequest,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        self.segment_searcher
+        collection
             .search(
-                collection.segments(),
-                Arc::new(request),
+                request,
+                self.segment_searcher.as_ref(),
                 self.search_runtime.handle(),
             )
             .await
@@ -393,8 +394,13 @@ impl TableOfContent {
         with_vector: bool,
     ) -> Result<Vec<Record>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        self.segment_searcher
-            .retrieve(collection.segments(), points, with_payload, with_vector)
+        collection
+            .retrieve(
+                points,
+                with_payload,
+                with_vector,
+                self.segment_searcher.as_ref(),
+            )
             .await
             .map_err(|err| err.into())
     }

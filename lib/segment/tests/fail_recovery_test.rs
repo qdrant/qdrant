@@ -21,9 +21,7 @@ mod tests {
         segment.error_status = Some(SegmentFailedState {
             version: 2,
             point_id: Some(1.into()),
-            error: OperationError::ServiceError {
-                description: "test error".to_string(),
-            },
+            error: OperationError::service_error("test error"),
         });
 
         // op_num is greater than errored. Skip because not recovered yet

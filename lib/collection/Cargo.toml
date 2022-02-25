@@ -1,7 +1,7 @@
 [package]
 name = "collection"
 version = "0.3.1"
-authors = ["Andrey Vasnetsov <vasnetsov93@gmail.com>"]
+authors = ["Qdrant Team <info@qdrant.tech>"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -15,7 +15,7 @@ criterion = "0.3"
 
 parking_lot = "0.12"
 
-rand = "0.8.4"
+rand = "0.8.5"
 thiserror = "1.0"
 serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"
@@ -24,13 +24,14 @@ rmp-serde = "~1.0"
 wal = { git = "https://github.com/generall/wal.git" }
 ordered-float = "2.10"
 
-tokio = {version = "~1.16", features = ["full"]}
+tokio = {version = "~1.17", features = ["full"]}
 futures = "0.3.21"
 atomicwrites = "0.3.1"
 log = "0.4"
 env_logger = "0.9.0"
 merge = "0.1.0"
 async-trait = "0.1.52"
+arc-swap = "1.5.0"
 
 segment = {path = "../segment"}
 

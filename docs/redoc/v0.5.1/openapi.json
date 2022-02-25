@@ -2079,7 +2079,7 @@
       "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
     },
     "title": "Qdrant API",
-    "version": "master"
+    "version": "v0.5.1"
   },
   "openapi": "3.0.1",
   "paths": {
