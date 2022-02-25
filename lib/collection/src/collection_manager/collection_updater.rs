@@ -74,7 +74,7 @@ impl CollectionUpdater {
 mod tests {
     use tempdir::TempDir;
 
-    use segment::types::{Payload, PayloadKeyType, WithPayload};
+    use segment::types::WithPayload;
 
     use crate::collection_manager::collection_managers::CollectionSearcher;
     use crate::collection_manager::fixtures::build_test_holder;
@@ -84,8 +84,7 @@ mod tests {
     use super::*;
     use crate::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
     use crate::operations::point_ops::PointOperations;
-    use serde_json::{json, Map, Value};
-    use std::collections::HashMap;
+    use serde_json::{Map, Value};
 
     #[tokio::test]
     async fn test_point_ops() {

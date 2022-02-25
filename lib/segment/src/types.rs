@@ -331,10 +331,7 @@ impl Payload {
     }
 
     pub fn get(&self, path: &str) -> Option<PayloadType> {
-        let path_elements: Vec<&str> = path.split('.').collect();
-        let mut payload_type: Option<PayloadType> = None;
-        get_payload_type(&path_elements, 0, &self.0, &mut payload_type);
-        payload_type
+        get_payload(path, &self.0)
     }
 
     pub fn get_schema_type(&self, path: &str) -> PayloadSchemaType {
@@ -344,7 +341,6 @@ impl Payload {
                 PayloadType::Integer(_) => PayloadSchemaType::Integer,
                 PayloadType::Float(_) => PayloadSchemaType::Float,
                 PayloadType::Geo(_) => PayloadSchemaType::Geo,
-                PayloadType::Unknown => PayloadSchemaType::Unknown,
             },
             None => PayloadSchemaType::Unknown,
         }
@@ -400,115 +396,18 @@ impl From<serde_json::Map<String, Value>> for Payload {
     }
 }
 
-fn get_payload_type(
-    path_elements: &[&str],
-    pos: usize,
-    value: &Value,
-    payload_type: &mut Option<PayloadType>,
-) {
-    if let Some(PayloadType::Unknown) = payload_type {
-        return;
-    }
-
-    let path_element = path_elements.get(pos);
-
-    match path_element {
-        Some(property_name) => match value {
-            Value::Object(map) => match map.get(*property_name) {
-                Some(value) => {
-                    get_payload_type(path_elements, pos + 1, value, payload_type);
-                }
-                None => *payload_type = None,
-            },
-            Value::Array(values) => {
-                for v in values {
-                    get_payload_type(path_elements, pos, v, payload_type)
-                }
-            }
-            _ => *payload_type = Some(PayloadType::Unknown),
-        },
-        None => match value {
-            Value::Number(num) => {
-                if let Some(n) = num.as_i64() {
-                    match payload_type {
-                        Some(PayloadType::Integer(ref mut vec)) => {
-                            vec.push(n);
-                        }
-                        None => {
-                            *payload_type = Some(PayloadType::Integer(vec![n]));
-                        }
-                        _ => *payload_type = Some(PayloadType::Unknown),
-                    }
-                    return;
-                }
-
-                if let Some(n) = num.as_f64() {
-                    match payload_type {
-                        Some(PayloadType::Float(ref mut vec)) => {
-                            vec.push(n);
-                        }
-                        None => {
-                            *payload_type = Some(PayloadType::Float(vec![n]));
-                        }
-                        _ => *payload_type = Some(PayloadType::Unknown),
-                    }
-                    return;
-                }
-
-                *payload_type = Some(PayloadType::Unknown);
-            }
-
-            Value::String(s) => match payload_type {
-                Some(PayloadType::Keyword(ref mut vec)) => {
-                    vec.push(s.to_owned());
-                }
-                None => {
-                    *payload_type = Some(PayloadType::Keyword(vec![s.to_owned()]));
-                }
-                _ => *payload_type = Some(PayloadType::Unknown),
-            },
-
-            Value::Array(values) => {
-                for v in values {
-                    get_payload_type(path_elements, pos, v, payload_type)
-                }
-            }
-            Value::Object(map) => match try_build_geo(map) {
-                Some(geo_point) => match payload_type {
-                    Some(PayloadType::Geo(ref mut vec)) => {
-                        vec.push(geo_point);
-                    }
-                    None => {
-                        *payload_type = Some(PayloadType::Geo(vec![geo_point]));
-                    }
-                    _ => *payload_type = Some(PayloadType::Unknown),
-                },
-                None => *payload_type = Some(PayloadType::Unknown),
-            },
-            _ => *payload_type = Some(PayloadType::Unknown),
-        },
-    };
+fn get_value<'a>(path: &str, value: &'a Value) -> Option<&'a Value> {
+    path.split('.')
+        .try_fold(value, |target, token| match target {
+            Value::Object(map) => map.get(token),
+            _ => None,
+        })
 }
 
-fn try_build_geo(map: &serde_json::Map<String, Value>) -> Option<GeoPoint> {
-    if map.len() != 2 {
-        return None;
-    };
-
-    let lon = get_f64(map, "lon");
-    let lat = get_f64(map, "lat");
-
-    match (lon, lat) {
-        (Some(lon), Some(lat)) => Some(GeoPoint { lon, lat }),
-        _ => None,
-    }
-}
-
-fn get_f64(map: &serde_json::Map<String, Value>, key: &str) -> Option<f64> {
-    match map.get(key) {
-        Some(Value::Number(n)) => n.as_f64(),
-        _ => None,
-    }
+fn get_payload(path: &str, value: &Value) -> Option<PayloadType> {
+    let target = get_value(path, value)?;
+    let json_payload: JsonPayload = serde_json::from_value(target.to_owned()).ok()?;
+    Some(json_payload.into())
 }
 
 /// All possible payload types
@@ -520,7 +419,55 @@ pub enum PayloadType {
     Integer(Vec<IntPayloadType>),
     Float(Vec<FloatPayloadType>),
     Geo(Vec<GeoPoint>),
-    Unknown,
+}
+
+impl From<JsonPayload> for PayloadType {
+    fn from(json_payload: JsonPayload) -> Self {
+        match json_payload {
+            JsonPayload::Keyword(v) => PayloadType::Keyword(v.to_list()),
+            JsonPayload::Integer(v) => PayloadType::Integer(v.to_list()),
+            JsonPayload::Float(v) => PayloadType::Float(v.to_list()),
+            JsonPayload::Geo(v) => PayloadType::Geo(v.to_list()),
+        }
+    }
+}
+
+/// Payload interface structure which ensures that user is allowed to pass payload in
+/// both - array and single element forms.
+///
+/// Example:
+///
+/// Both versions should work:
+/// ```json
+/// {..., "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}},
+/// {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}},
+/// ```
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum PayloadVariant<T> {
+    List(Vec<T>),
+    Value(T),
+}
+
+impl<T: Clone> PayloadVariant<T> {
+    pub fn to_list(&self) -> Vec<T> {
+        match self {
+            PayloadVariant::Value(x) => vec![x.clone()],
+            PayloadVariant::List(vec) => vec.clone(),
+        }
+    }
+}
+
+/// Json representation of a payload
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum JsonPayload {
+    Keyword(PayloadVariant<String>),
+    Integer(PayloadVariant<IntPayloadType>),
+    Float(PayloadVariant<FloatPayloadType>),
+    Geo(PayloadVariant<GeoPoint>),
 }
 
 /// All possible names of payload types
@@ -813,21 +760,6 @@ mod tests {
 
     #[test]
     fn test_value_parse() {
-        // strict no longer supported.
-        //
-        // let geo_query_strict =
-        //     r#"{ "geo_property" : {"type": "geo", "value": {"lon": 1.0, "lat": 1.0}}}"#;
-        // let payload: Payload = serde_json::from_str(geo_query_strict).unwrap();
-        // let payload_geo_query = payload.get("geo_property").unwrap();
-        // match &payload_geo_query {
-        //     PayloadType::Geo(x) => {
-        //         assert_eq!(x.len(), 1);
-        //         assert_eq!(x[0].lat, 1.0);
-        //         assert_eq!(x[0].lon, 1.0);
-        //     }
-        //     _ => panic!(),
-        // }
-
         let keyword_query_non_strict = r#"{"keyword":["Berlin", "Barcelona", "Moscow"]}"#;
         let payload: Payload = serde_json::from_str(keyword_query_non_strict).unwrap();
         let payload_keyword_query_non_strict = payload.get("keyword").unwrap();
@@ -840,22 +772,6 @@ mod tests {
             }
             _ => panic!(),
         }
-
-        // strict no longer supported.
-        //
-        // let keyword_query_strict = r#"{"keyword_strict_prop":"type": "keyword", "value": ["Berlin", "Barcelona", "Moscow"]}}"#;
-        // let payload: Payload = serde_json::from_str(keyword_query_strict).unwrap();
-        // let payload_keyword_query_strict: PayloadType = payload.get("keyword_strict_prop").unwrap();
-        //
-        // match &payload_keyword_query_strict {
-        //     PayloadType::Keyword(x) => {
-        //         assert_eq!(x.len(), 3);
-        //         assert_eq!(x[0], "Berlin");
-        //         assert_eq!(x[1], "Barcelona");
-        //         assert_eq!(x[2], "Moscow");
-        //     }
-        //     _ => panic!(),
-        // }
 
         let integer_query_non_strict = r#"{"integer_query_non_strict":[1, 2, 3]}"#;
         let payload: Payload = serde_json::from_str(integer_query_non_strict).unwrap();
@@ -870,22 +786,6 @@ mod tests {
             _ => panic!(),
         }
 
-        // strict no longer supported.
-        //
-        // let integer_query_strict =
-        //     r#"{"integer_query_strict":{"type": "integer", "value": [1, 2, 3]}}"#;
-        // let payload: Payload = serde_json::from_str(integer_query_strict).unwrap();
-        // let payload_integer_query_strict = payload.get("integer_query_strict").unwrap();
-        // match &payload_integer_query_strict {
-        //     PayloadType::Integer(x) => {
-        //         assert_eq!(x.len(), 3);
-        //         assert_eq!(x[0], 1);
-        //         assert_eq!(x[1], 2);
-        //         assert_eq!(x[2], 3);
-        //     }
-        //     _ => panic!(),
-        // }
-
         let float_query_non_strict = r#"{"float_query_non_strict":[1.0, 2.0, 3.0]}"#;
         let payload: Payload = serde_json::from_str(float_query_non_strict).unwrap();
         let payload_float_query_non_strict = payload.get("float_query_non_strict").unwrap();
@@ -898,22 +798,6 @@ mod tests {
             }
             _ => panic!(),
         }
-
-        // strict no longer supported.
-        //
-        // let float_query_strict =
-        //     r#"{"float_query_strict":{"type": "float", "value": [1.0, 2.0, 3.0]}}"#;
-        // let payload: Payload = serde_json::from_str(float_query_strict).unwrap();
-        // let payload_float_query_strict = payload.get("float_query_strict").unwrap();
-        // match &payload_float_query_strict {
-        //     PayloadType::Float(x) => {
-        //         assert_eq!(x.len(), 3);
-        //         assert_eq!(x[0], 1.0);
-        //         assert_eq!(x[1], 2.0);
-        //         assert_eq!(x[2], 3.0);
-        //     }
-        //     _ => panic!(),
-        // }
     }
 
     #[allow(dead_code)]
@@ -925,32 +809,6 @@ mod tests {
 
         assert_eq!(record, de_record);
     }
-
-    fn check_cbor_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(
-        record: T,
-    ) {
-        let binary_entity = serde_cbor::to_vec(&record).expect("serialization ok");
-        let de_record: T = serde_cbor::from_slice(&binary_entity).expect("deserialization ok");
-
-        assert_eq!(record, de_record);
-    }
-
-    fn check_json_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(
-        record: T,
-    ) {
-        let binary_entity = serde_json::to_vec(&record).expect("serialization ok");
-        let de_record: T = serde_json::from_slice(&binary_entity).expect("deserialization ok");
-
-        assert_eq!(record, de_record);
-    }
-
-    // strict serde tested on `test_value_parse`
-    // #[test]
-    // fn test_strict_deserialize() {
-    //     let de_record: PayloadInterface =
-    //         serde_json::from_str(r#"[1, 2]"#).expect("deserialization ok");
-    //     eprintln!("de_record = {:#?}", de_record);
-    // }
 
     #[test]
     #[ignore]
@@ -1172,17 +1030,14 @@ mod tests {
         let payload_json = r#"
             {
               "key_int_1": {
-                "nested": [
-                  {"a": 1},
-                  {"a": 2}
-                ]
+                "nested": [1, 2]
               },
               "key_int_2": [3,4,5],
               "key_int_3": 6,
               "key_float_1": [0.43,1.5,0.38],
               "key_float_2": 0.17,
               "key_keyword1": ["a","b","c"],
-              "key_keyword2": [{"k": "k1"},{"k": "k2"}],
+              "key_keyword2": ["k1","k2"],
               "key_keyword3": "d",
               "key_unknown1": ["a","b",1],
               "key_geo1": {"lat":52.519134783833024,"lon":13.372463822170474},
@@ -1198,7 +1053,7 @@ mod tests {
         let payload: Payload = payload_value.into();
 
         assert_eq!(
-            payload.get("key_int_1.nested.a").unwrap(),
+            payload.get("key_int_1.nested").unwrap(),
             PayloadType::Integer(vec![1, 2])
         );
         assert_eq!(
@@ -1222,15 +1077,14 @@ mod tests {
             PayloadType::Keyword(vec!["a".to_string(), "b".to_string(), "c".to_string()])
         );
         assert_eq!(
-            payload.get("key_keyword2.k").unwrap(),
+            payload.get("key_keyword2").unwrap(),
             PayloadType::Keyword(vec!["k1".to_string(), "k2".to_string()])
         );
-        assert_eq!(payload.get("key_keyword2").unwrap(), PayloadType::Unknown);
         assert_eq!(
             payload.get("key_keyword3").unwrap(),
             PayloadType::Keyword(vec!["d".to_string()])
         );
-        assert_eq!(payload.get("key_unknown1").unwrap(), PayloadType::Unknown);
+        assert_eq!(payload.get("key_unknown1"), None);
         assert_eq!(
             payload.get("key_geo1").unwrap(),
             PayloadType::Geo(vec![GeoPoint {

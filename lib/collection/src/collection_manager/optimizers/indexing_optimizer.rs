@@ -301,7 +301,7 @@ mod tests {
             "Testing that new segments are persisted and old data is removed"
         );
 
-        for info in &infos {
+        for _info in &infos {
             // TODO(gvelo): build schema from indexed fields.
             // assert!(
             //     info.schema.contains_key(&payload_field),

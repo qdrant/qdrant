@@ -2,7 +2,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, PayloadType};
+use segment::types::Distance;
 use serde_json::json;
 use std::path::Path;
 use std::sync::Arc;

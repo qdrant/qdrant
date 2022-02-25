@@ -12,8 +12,7 @@ mod tests {
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload,
-        PayloadIndexType, PayloadKeyType, PayloadType, Range, SearchParams, SegmentConfig,
-        SeqNumberType, StorageType, TheMap,
+        PayloadIndexType, Range, SearchParams, SegmentConfig, SeqNumberType, StorageType,
     };
     use serde_json::json;
     use std::sync::atomic::AtomicBool;

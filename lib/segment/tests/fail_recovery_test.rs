@@ -4,7 +4,6 @@ mod fixtures;
 mod tests {
     use crate::fixtures::segment::empty_segment;
     use segment::entry::entry_point::{OperationError, SegmentEntry, SegmentFailedState};
-    use segment::types::PayloadType;
     use serde_json::json;
     use tempdir::TempDir;
 

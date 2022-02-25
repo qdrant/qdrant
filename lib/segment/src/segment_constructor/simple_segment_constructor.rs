@@ -37,7 +37,6 @@ pub fn build_simple_segment(
 mod tests {
     use super::*;
     use crate::entry::entry_point::{OperationError, SegmentEntry};
-    use crate::types::PayloadType;
     use serde_json::json;
     use tempdir::TempDir;
 

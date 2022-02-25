@@ -68,9 +68,9 @@ mod tests {
                     _ => panic!("Wrong payload type"),
                 }
 
-                let payload_type_json = payload.get("key3").expect("No key key3");
+                let payload_type_json = payload.get("key3");
 
-                assert!(matches!(payload_type_json, PayloadType::Unknown))
+                assert!(matches!(payload_type_json, None))
             }
             _ => panic!("Wrong operation"),
         }
