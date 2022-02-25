@@ -8,8 +8,8 @@ mod tests {
     use segment::payload_storage::schema_storage::SchemaStorage;
     use segment::segment_constructor::build_segment;
     use segment::types::{
-        Condition, Distance, FieldCondition, Filter, Indexes, Payload, PayloadIndexType,
-        PayloadKeyType, PayloadType, Range, SegmentConfig, StorageType, TheMap, WithPayload,
+        Condition, Distance, FieldCondition, Filter, Indexes, Payload, PayloadIndexType, Range,
+        SegmentConfig, StorageType, WithPayload,
     };
     use serde_json::json;
     use std::sync::Arc;

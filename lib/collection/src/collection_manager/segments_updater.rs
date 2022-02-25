@@ -296,7 +296,7 @@ pub(crate) fn process_payload_operation(
 ) -> CollectionResult<usize> {
     match payload_operation {
         PayloadOps::SetPayload(sp) => {
-            let payload: Payload = sp.payload.into();
+            let payload: Payload = sp.payload;
             set_payload(&segments.read(), op_num, &payload, &sp.points)
         }
         PayloadOps::DeletePayload(dp) => {

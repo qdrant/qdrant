@@ -74,7 +74,7 @@ impl CollectionUpdater {
 mod tests {
     use tempdir::TempDir;
 
-    use segment::types::WithPayload;
+    use segment::types::{Payload, WithPayload};
 
     use crate::collection_manager::collection_managers::CollectionSearcher;
     use crate::collection_manager::fixtures::build_test_holder;
@@ -84,7 +84,6 @@ mod tests {
     use super::*;
     use crate::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
     use crate::operations::point_ops::PointOperations;
-    use serde_json::{Map, Value};
 
     #[tokio::test]
     async fn test_point_ops() {
@@ -154,7 +153,7 @@ mod tests {
         let segments = build_test_holder(dir.path());
         let searcher = SimpleCollectionSearcher::new();
 
-        let payload: Map<String, Value> = serde_json::from_str(r#"{"color":"red"}"#).unwrap();
+        let payload: Payload = serde_json::from_str(r#"{"color":"red"}"#).unwrap();
 
         let points = vec![1.into(), 2.into(), 3.into()];
 

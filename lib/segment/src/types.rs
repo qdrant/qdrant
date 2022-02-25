@@ -323,11 +323,16 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-pub struct Payload(Value);
+pub struct Payload(Map<String, Value>);
 
 impl Payload {
     pub fn merge(&mut self, value: &Payload) {
-        json_patch::merge(&mut self.0, &value.0)
+        for (key, value) in &value.0 {
+            match value {
+                Value::Null => self.0.remove(key),
+                _ => self.0.insert(key.to_owned(), value.to_owned()),
+            };
+        }
     }
 
     pub fn get(&self, path: &str) -> Option<PayloadType> {
@@ -347,25 +352,25 @@ impl Payload {
     }
 
     pub fn remove(&mut self, path: &str) -> Option<Value> {
-        self.0.as_object_mut().unwrap().remove(path)
+        self.0.remove(path)
     }
 
     pub fn len(&self) -> usize {
-        self.0.as_object().unwrap().len()
+        self.0.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.as_object().unwrap().is_empty()
+        self.0.is_empty()
     }
 
     pub fn contains_key(&self, key: &str) -> bool {
-        self.0.as_object().unwrap().contains_key(key)
+        self.0.contains_key(key)
     }
 }
 
 impl Default for Payload {
     fn default() -> Self {
-        Payload(Value::Object(Map::new()))
+        Payload(Map::new())
     }
 }
 
@@ -374,37 +379,40 @@ impl IntoIterator for Payload {
     type IntoIter = serde_json::map::IntoIter;
 
     fn into_iter(self) -> serde_json::map::IntoIter {
-        match self.0 {
-            Value::Object(map) => map.into_iter(),
-            _ => panic!(),
-        }
+        self.0.into_iter()
     }
 }
 
 impl From<Value> for Payload {
     fn from(value: Value) -> Self {
         match value {
-            Value::Object(_) => Payload(value),
+            Value::Object(map) => Payload(map),
             _ => panic!("cannot convert from {:?}", value),
         }
     }
 }
 
-impl From<serde_json::Map<String, Value>> for Payload {
+impl From<Map<String, Value>> for Payload {
     fn from(value: serde_json::Map<String, Value>) -> Self {
-        Payload(Value::Object(value))
+        Payload(value)
     }
 }
 
-fn get_value<'a>(path: &str, value: &'a Value) -> Option<&'a Value> {
-    path.split('.')
-        .try_fold(value, |target, token| match target {
-            Value::Object(map) => map.get(token),
-            _ => None,
-        })
+fn get_value<'a>(path: &str, value: &'a serde_json::Map<String, Value>) -> Option<&'a Value> {
+    match path.split_once('.') {
+        Some((element, path)) => match value.get(element) {
+            Some(Value::Object(map)) => get_value(path, map),
+            Some(value) => match path.is_empty() {
+                true => Some(value),
+                false => None,
+            },
+            None => None,
+        },
+        None => value.get(path),
+    }
 }
 
-fn get_payload(path: &str, value: &Value) -> Option<PayloadType> {
+fn get_payload(path: &str, value: &serde_json::Map<String, Value>) -> Option<PayloadType> {
     let target = get_value(path, value)?;
     let json_payload: JsonPayload = serde_json::from_value(target.to_owned()).ok()?;
     Some(json_payload.into())
