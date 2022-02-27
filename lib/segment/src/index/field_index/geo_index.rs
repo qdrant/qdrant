@@ -164,7 +164,7 @@ fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> Vec<GeoHash> {
     let geo_bounding_box = minimum_bounding_rectangle_for_circle(circle);
     let full_geohash_bounding_box: GeohashBoundingBox = geo_bounding_box.into();
 
-    let hashes = (0..=GEOHASH_MAX_LENGTH)
+    (0..=GEOHASH_MAX_LENGTH)
         .map(|precision| {
             full_geohash_bounding_box
                 .geohash_regions(precision, max_regions)
@@ -178,9 +178,7 @@ fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> Vec<GeoHash> {
         .take_while(|hashes| hashes.is_some())
         .last()
         .expect("no hash coverage for any precision")
-        .expect("geo-hash coverage is empty");
-
-    hashes
+        .expect("geo-hash coverage is empty")
 }
 
 /// Return as-high-as-possible with maximum of `max_regions`
@@ -189,14 +187,12 @@ fn rectangle_hashes(rectangle: &GeoBoundingBox, max_regions: usize) -> Vec<GeoHa
     assert_ne!(max_regions, 0, "max_regions cannot be equal to zero");
     let full_geohash_bounding_box: GeohashBoundingBox = rectangle.clone().into();
 
-    let hashes = (0..=GEOHASH_MAX_LENGTH)
+    (0..=GEOHASH_MAX_LENGTH)
         .map(|precision| full_geohash_bounding_box.geohash_regions(precision, max_regions))
         .take_while(|hashes| hashes.is_some())
         .last()
         .expect("no hash coverage for any precision")
-        .expect("geo-hash coverage is empty");
-
-    hashes
+        .expect("geo-hash coverage is empty")
 }
 
 /// A globally-average value is usually considered to be 6,371 kilometres (3,959 mi) with a 0.3% variability (±10 km).
@@ -379,11 +375,11 @@ mod tests {
         assert!(nyc_hashes.iter().all(|h| h.len() == 7)); // geohash precision
 
         let mut nyc_hashes = rectangle_hashes(&near_nyc_rectangle, 10);
-        nyc_hashes.sort();
+        nyc_hashes.sort_unstable();
         let mut expected = vec![
             "dr5ruj", "dr5ruh", "dr5ru5", "dr5ru4", "dr5rum", "dr5ruk", "dr5ru7", "dr5ru6",
         ];
-        expected.sort();
+        expected.sort_unstable();
 
         assert_eq!(nyc_hashes, expected);
 
@@ -430,7 +426,7 @@ mod tests {
     fn test_lon_threshold() {
         let query = GeoRadius {
             center: GeoPoint {
-                lon: 179.98718188959701,
+                lon: 179.987181,
                 lat: 44.9811609411936,
             },
             radius: 100000.,
@@ -514,11 +510,11 @@ mod tests {
         assert!(nyc_hashes.iter().all(|h| h.len() == 7)); // geohash precision
 
         let mut nyc_hashes = circle_hashes(&near_nyc_circle, 10);
-        nyc_hashes.sort();
+        nyc_hashes.sort_unstable();
         let mut expected = [
             "dr5ruj", "dr5ruh", "dr5ru5", "dr5ru4", "dr5rum", "dr5ruk", "dr5ru7", "dr5ru6",
         ];
-        expected.sort();
+        expected.sort_unstable();
         assert_eq!(nyc_hashes, expected);
 
         // falls back to finest region that encompasses the whole area
