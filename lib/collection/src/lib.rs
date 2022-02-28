@@ -10,11 +10,13 @@ use operations::{
         CollectionError, CollectionInfo, CollectionResult, RecommendRequest, Record, ScrollRequest,
         ScrollResult, SearchRequest, UpdateResult,
     },
-    CollectionUpdateOperations,
+    CollectionUpdateOperations, SplitByShard, Validate,
 };
 use segment::types::{PointIdType, ScoredPoint, VectorElementType, WithPayload};
-use shard::Shard;
+use shard::{Shard, ShardId};
 use tokio::runtime::Handle;
+
+use crate::operations::OperationToShard;
 
 pub mod collection_manager;
 mod common;
@@ -52,8 +54,12 @@ impl Collection {
         }
     }
 
-    fn select_shard<T>(&self, _: &T) -> &Shard {
+    fn shard_by_id(&self, _id: ShardId) -> &Shard {
         &self.shard
+    }
+
+    fn all_shards(&self) -> Vec<&Shard> {
+        vec![&self.shard]
     }
 
     pub async fn update(
@@ -61,7 +67,24 @@ impl Collection {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        self.select_shard(&operation).update(operation, wait).await
+        operation.validate()?;
+        let by_shard = operation.split_by_shard();
+        let mut results = Vec::new();
+        match by_shard {
+            OperationToShard::ByShard(by_shard) => {
+                for (shard_id, operation) in by_shard {
+                    results.push(self.shard_by_id(shard_id).update(operation, wait).await)
+                }
+            }
+            OperationToShard::ToAll(operation) => {
+                for shard in self.all_shards() {
+                    results.push(shard.update(operation.clone(), wait).await)
+                }
+            }
+        }
+        // At least one result is always present.
+        // This is a stub to keep the current API as we have only 1 shard for now.
+        results.pop().unwrap()
     }
 
     pub async fn recommend_by(
