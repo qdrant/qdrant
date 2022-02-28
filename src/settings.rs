@@ -23,27 +23,25 @@ pub struct Settings {
 impl Settings {
     #[allow(dead_code)]
     pub fn new() -> Result<Self, ConfigError> {
-        let mut builder = Config::builder();
-
-        // Start off by merging in the "default" configuration file
-        builder.add_source(File::with_name("config/config"));
-
-        // Add in the current environment file
-        // Default to 'development' env
-        // Note that this file is _optional_
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
-        builder.add_source(File::with_name(&format!("config/{}", env)).required(false));
 
-        // Add in a local configuration file
-        // This file shouldn't be checked in to git
-        builder.add_source(File::with_name("config/local").required(false));
-
-        // Add in settings from the environment (with a prefix of APP)
-        // Eg.. `QDRANT_DEBUG=1 ./target/app` would set the `debug` key
-        builder.add_source(Environment::with_prefix("QDRANT"));
+        let s = Config::builder()
+            // Start off by merging in the "default" configuration file
+            .add_source(File::with_name("config/config"))
+            // Add in the current environment file
+            // Default to 'development' env
+            // Note that this file is _optional_
+            .add_source(File::with_name(&format!("config/{}", env)).required(false))
+            // Add in a local configuration file
+            // This file shouldn't be checked in to git
+            .add_source(File::with_name("config/local").required(false))
+            // Add in settings from the environment (with a prefix of APP)
+            // Eg.. `QDRANT_DEBUG=1 ./target/app` would set the `debug` key
+            .add_source(Environment::with_prefix("QDRANT"))
+            .build()?;
 
         // You can deserialize (and thus freeze) the entire configuration as
-        builder.build()?.try_into()
+        s.try_deserialize()
     }
 }
 
