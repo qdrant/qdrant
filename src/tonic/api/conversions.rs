@@ -12,7 +12,6 @@ use crate::tonic::qdrant::{
     SearchParams, UpdateResult, WithPayloadSelector,
 };
 use collection::operations::point_ops::PointIdsList;
-use collection::operations::types::Record;
 use segment::types::{
     PayloadInterface, PayloadInterfaceStrict, PayloadKeyType, PayloadSelectorExclude,
     PayloadSelectorInclude, PayloadType, PayloadVariant, PointIdType, TheMap, WithPayloadInterface,
@@ -99,8 +98,8 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
     }
 }
 
-impl From<Record> for RetrievedPoint {
-    fn from(record: Record) -> Self {
+impl From<collection::operations::types::Record> for RetrievedPoint {
+    fn from(record: collection::operations::types::Record) -> Self {
         Self {
             id: Some(record.id.into()),
             payload: record.payload.map(payload_to_proto).unwrap_or_default(),
