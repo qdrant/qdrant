@@ -1,8 +1,11 @@
+use hashring::HashRing;
 use schemars::JsonSchema;
 use segment::types::{Filter, PayloadInterface, PayloadKeyType, PointIdType};
 use serde;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+use crate::shard::ShardId;
 
 use super::{split_iter_by_shard, OperationToShard, SplitByShard};
 
@@ -35,15 +38,15 @@ pub enum PayloadOps {
 }
 
 impl SplitByShard for PayloadOps {
-    fn split_by_shard(self) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
         match self {
             PayloadOps::SetPayload(operation) => {
-                operation.split_by_shard().map(PayloadOps::SetPayload)
+                operation.split_by_shard(ring).map(PayloadOps::SetPayload)
             }
-            PayloadOps::DeletePayload(operation) => {
-                operation.split_by_shard().map(PayloadOps::DeletePayload)
-            }
-            PayloadOps::ClearPayload { points } => split_iter_by_shard(points, |id| *id)
+            PayloadOps::DeletePayload(operation) => operation
+                .split_by_shard(ring)
+                .map(PayloadOps::DeletePayload),
+            PayloadOps::ClearPayload { points } => split_iter_by_shard(points, |id| *id, ring)
                 .map(|points| PayloadOps::ClearPayload { points }),
             operation @ PayloadOps::ClearPayloadByFilter(_) => OperationToShard::to_all(operation),
         }
@@ -51,8 +54,8 @@ impl SplitByShard for PayloadOps {
 }
 
 impl SplitByShard for DeletePayload {
-    fn split_by_shard(self) -> OperationToShard<Self> {
-        split_iter_by_shard(self.points, |id| *id).map(|points| DeletePayload {
+    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
+        split_iter_by_shard(self.points, |id| *id, ring).map(|points| DeletePayload {
             points,
             keys: self.keys.clone(),
         })
@@ -60,8 +63,8 @@ impl SplitByShard for DeletePayload {
 }
 
 impl SplitByShard for SetPayload {
-    fn split_by_shard(self) -> OperationToShard<Self> {
-        split_iter_by_shard(self.points, |id| *id).map(|points| SetPayload {
+    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
+        split_iter_by_shard(self.points, |id| *id, ring).map(|points| SetPayload {
             points,
             payload: self.payload.clone(),
         })

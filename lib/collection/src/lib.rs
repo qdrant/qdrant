@@ -5,6 +5,7 @@ use std::{path::Path, sync::Arc};
 use crate::operations::types::PointRequest;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
+use hashring::HashRing;
 use operations::{
     config_diff::OptimizersConfigDiff,
     types::{
@@ -36,6 +37,7 @@ type CollectionId = String;
 /// Collection's data is split into several shards.
 pub struct Collection {
     shard: Shard,
+    ring: HashRing<ShardId>,
 }
 
 impl Collection {
@@ -44,14 +46,20 @@ impl Collection {
         path: &Path,
         config: &CollectionConfig,
     ) -> Result<Self, CollectionError> {
+        let mut ring = HashRing::new();
+        ring.add(0);
         Ok(Self {
             shard: Shard::build(0, id, path, config)?,
+            ring,
         })
     }
 
     pub fn load(id: CollectionId, path: &Path) -> Self {
+        let mut ring = HashRing::new();
+        ring.add(0);
         Self {
             shard: Shard::load(0, id, path),
+            ring,
         }
     }
 
@@ -69,7 +77,7 @@ impl Collection {
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
         operation.validate()?;
-        let by_shard = operation.split_by_shard();
+        let by_shard = operation.split_by_shard(&self.ring);
         let mut results = Vec::new();
         match by_shard {
             OperationToShard::ByShard(by_shard) => {

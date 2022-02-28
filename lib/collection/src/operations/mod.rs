@@ -5,6 +5,7 @@ pub mod types;
 
 use std::collections::HashMap;
 
+use hashring::HashRing;
 use schemars::JsonSchema;
 use segment::types::ExtendedPointId;
 use serde::{Deserialize, Serialize};
@@ -76,20 +77,25 @@ impl Validate for CollectionUpdateOperations {
     }
 }
 
-fn point_to_shard(_point_id: ExtendedPointId) -> ShardId {
-    // TODO: use consistent hashing here
-    0
+fn point_to_shard(point_id: ExtendedPointId, ring: &HashRing<ShardId>) -> ShardId {
+    *ring
+        .get(&point_id)
+        .expect("Hash ring is guaranteed to be non-empty")
 }
 
 /// Split iterator of items that have point ids by shard
-fn split_iter_by_shard<I, F, O>(iter: I, id_extractor: F) -> OperationToShard<Vec<O>>
+fn split_iter_by_shard<I, F, O>(
+    iter: I,
+    id_extractor: F,
+    ring: &HashRing<ShardId>,
+) -> OperationToShard<Vec<O>>
 where
     I: IntoIterator<Item = O>,
     F: Fn(&O) -> ExtendedPointId,
 {
     let mut op_vec_by_shard: HashMap<ShardId, Vec<O>> = HashMap::new();
     for operation in iter {
-        let shard_id = point_to_shard(id_extractor(&operation));
+        let shard_id = point_to_shard(id_extractor(&operation), ring);
         op_vec_by_shard
             .entry(shard_id)
             .or_insert_with(Vec::new)
@@ -100,19 +106,19 @@ where
 
 /// Trait for Operation enums to split them by shard.
 pub trait SplitByShard {
-    fn split_by_shard(self) -> OperationToShard<Self>
+    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self>
     where
         Self: Sized;
 }
 
 impl SplitByShard for CollectionUpdateOperations {
-    fn split_by_shard(self) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
         match self {
             CollectionUpdateOperations::PointOperation(operation) => operation
-                .split_by_shard()
+                .split_by_shard(ring)
                 .map(CollectionUpdateOperations::PointOperation),
             CollectionUpdateOperations::PayloadOperation(operation) => operation
-                .split_by_shard()
+                .split_by_shard(ring)
                 .map(CollectionUpdateOperations::PayloadOperation),
             operation @ CollectionUpdateOperations::FieldIndexOperation(_) => {
                 OperationToShard::to_all(operation)
