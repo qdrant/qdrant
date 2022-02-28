@@ -1,4 +1,5 @@
 use crate::{operations::types::VectorType, shard::ShardId};
+use hashring::HashRing;
 use schemars::JsonSchema;
 use segment::types::{Filter, PayloadInterface, PayloadKeyType, PointIdType};
 use serde::{Deserialize, Serialize};
@@ -126,11 +127,11 @@ impl Validate for PointInsertOperations {
 }
 
 impl SplitByShard for PointsBatch {
-    fn split_by_shard(self) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
         let PointsBatch { batch } = self;
         let mut batch_by_shard: HashMap<ShardId, PointsBatch> = HashMap::new();
         for i in 0..batch.ids.len() {
-            let shard_id = point_to_shard(batch.ids[i]);
+            let shard_id = point_to_shard(batch.ids[i], ring);
             let shard_batch = batch_by_shard
                 .entry(shard_id)
                 .or_insert_with(PointsBatch::default);
@@ -149,20 +150,19 @@ impl SplitByShard for PointsBatch {
 }
 
 impl SplitByShard for PointsList {
-    fn split_by_shard(self) -> OperationToShard<Self> {
-        split_iter_by_shard(self.points, |point| point.id).map(|points| PointsList { points })
+    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
+        split_iter_by_shard(self.points, |point| point.id, ring).map(|points| PointsList { points })
     }
 }
 
 impl SplitByShard for PointOperations {
-    fn split_by_shard(self) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
         match self {
             PointOperations::UpsertPoints(upsert_points) => upsert_points
-                .split_by_shard()
+                .split_by_shard(ring)
                 .map(PointOperations::UpsertPoints),
-            PointOperations::DeletePoints { ids } => {
-                split_iter_by_shard(ids, |id| *id).map(|ids| PointOperations::DeletePoints { ids })
-            }
+            PointOperations::DeletePoints { ids } => split_iter_by_shard(ids, |id| *id, ring)
+                .map(|ids| PointOperations::DeletePoints { ids }),
             by_filter @ PointOperations::DeletePointsByFilter(_) => {
                 OperationToShard::to_all(by_filter)
             }
@@ -171,14 +171,14 @@ impl SplitByShard for PointOperations {
 }
 
 impl SplitByShard for PointInsertOperations {
-    fn split_by_shard(self) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
         match self {
             PointInsertOperations::PointsBatch(batch) => batch
-                .split_by_shard()
+                .split_by_shard(ring)
                 .map(PointInsertOperations::PointsBatch),
-            PointInsertOperations::PointsList(list) => {
-                list.split_by_shard().map(PointInsertOperations::PointsList)
-            }
+            PointInsertOperations::PointsList(list) => list
+                .split_by_shard(ring)
+                .map(PointInsertOperations::PointsList),
         }
     }
 }
