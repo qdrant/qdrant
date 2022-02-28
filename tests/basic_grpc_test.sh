@@ -54,7 +54,6 @@ $docker_grpcurl -d '{
   "top": 3
 }' $QDRANT_HOST qdrant.Points/Search
 
-
 $docker_grpcurl -d '{
   "collection": "test_collection",
   "filter": {
@@ -73,6 +72,29 @@ $docker_grpcurl -d '{
   "top": 3
 }' $QDRANT_HOST qdrant.Points/Search
 
+$docker_grpcurl -d '{
+  "collection": "test_collection",
+  "limit": 2,
+  "with_vector": true,
+  "filter": {
+    "should": [
+      {
+        "field": {
+          "key": "city",
+          "match": {
+            "keyword": "London"
+          }
+        }
+      }
+    ]
+  }
+}' $QDRANT_HOST qdrant.Points/Scroll
+
+$docker_grpcurl -d '{
+  "collection": "test_collection",
+  "with_vector": true,
+  "ids": [{ "num": 2 }, { "num": 3 }, { "num": 4 }]
+}' $QDRANT_HOST qdrant.Points/Get
 
 
 #SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')
@@ -108,10 +130,6 @@ $docker_grpcurl -d '{
 #  }' | jq
 #
 #
-#curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/scroll" \
-#  --fail -s \
-#  -H 'Content-Type: application/json' \
-#  --data-raw '{ "offset": 2, "limit": 2, "with_vector": true }' | jq
 #
 #curl -L -X POST "http://$QDRANT_HOST/collections" \
 #  --fail -s \

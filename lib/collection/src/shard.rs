@@ -306,7 +306,7 @@ impl Shard {
     pub async fn scroll_by(
         &self,
         request: ScrollRequest,
-        segment_searcher: &(dyn CollectionSearcher),
+        segment_searcher: &(dyn CollectionSearcher + Sync),
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequest::default();
 
@@ -370,7 +370,7 @@ impl Shard {
     pub async fn recommend_by(
         &self,
         request: RecommendRequest,
-        segment_searcher: &(dyn CollectionSearcher),
+        segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let segments = self.segments();

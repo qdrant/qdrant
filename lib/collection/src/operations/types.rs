@@ -155,6 +155,17 @@ pub struct SearchRequest {
     pub with_vector: Option<bool>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct PointRequest {
+    /// Look for points with ids
+    pub ids: Vec<PointIdType>,
+    /// Payload interface
+    pub with_payload: Option<WithPayloadInterface>,
+    /// Return point vector with the result. Default: false
+    pub with_vector: Option<bool>,
+}
+
 /// Recommendation request.
 /// Provides positive and negative examples of the vectors, which
 /// are already stored in the collection.

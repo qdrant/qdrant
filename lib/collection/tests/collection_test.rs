@@ -15,11 +15,12 @@ use collection::{
 };
 use segment::types::{
     Condition, HasIdCondition, PayloadInterface, PayloadKeyType, PayloadVariant, PointIdType,
-    WithPayload, WithPayloadInterface,
+    WithPayloadInterface,
 };
 
 use crate::common::simple_collection_fixture;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
+use collection::operations::types::PointRequest;
 
 mod common;
 
@@ -176,13 +177,13 @@ async fn test_collection_loading() {
 
     let loaded_collection = Collection::load("test".to_string(), collection_dir.path());
     let segment_searcher = SimpleCollectionSearcher::new();
+    let request = PointRequest {
+        ids: vec![1.into(), 2.into()],
+        with_payload: Some(WithPayloadInterface::Bool(true)),
+        with_vector: Some(true),
+    };
     let retrieved = loaded_collection
-        .retrieve(
-            &[1.into(), 2.into()],
-            &WithPayload::from(true),
-            true,
-            &segment_searcher,
-        )
+        .retrieve(request, &segment_searcher)
         .await
         .unwrap();
 

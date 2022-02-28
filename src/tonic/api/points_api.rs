@@ -2,7 +2,8 @@ use tonic::{Request, Response, Status};
 
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_search_points, do_set_payload, do_update_points, CreateFieldIndex,
+    do_get_points, do_scroll_points, do_search_points, do_set_payload, do_update_points,
+    CreateFieldIndex,
 };
 use crate::tonic::api::common::error_to_status;
 use crate::tonic::api::conversions::*;
@@ -10,12 +11,12 @@ use crate::tonic::qdrant::points_server::Points;
 
 use crate::tonic::qdrant::{
     ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
-    DeletePayloadPoints, DeletePoints, PointsOperationResponse, SearchPoints, SearchResponse,
-    SetPayloadPoints, UpsertPoints,
+    DeletePayloadPoints, DeletePoints, GetPoints, GetResponse, PointsOperationResponse,
+    ScrollPoints, ScrollResponse, SearchPoints, SearchResponse, SetPayloadPoints, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsList};
-use collection::operations::types::SearchRequest;
+use collection::operations::types::{PointRequest, ScrollRequest, SearchRequest};
 use collection::operations::CollectionUpdateOperations;
 use std::convert::TryInto;
 use std::sync::Arc;
@@ -93,6 +94,37 @@ impl Points for PointsService {
         .map_err(error_to_status)?;
 
         let response = PointsOperationResponse::from((timing, result));
+        Ok(Response::new(response))
+    }
+
+    async fn get(&self, request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
+        let GetPoints {
+            collection,
+            ids,
+            with_vector,
+            with_payload,
+        } = request.into_inner();
+
+        let point_request = PointRequest {
+            ids: ids
+                .into_iter()
+                .map(|p| p.try_into())
+                .collect::<Result<_, _>>()?,
+            with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
+            with_vector,
+        };
+
+        let timing = Instant::now();
+
+        let records = do_get_points(self.toc.as_ref(), &collection, point_request)
+            .await
+            .map_err(error_to_status)?;
+
+        let response = GetResponse {
+            result: records.into_iter().map(|point| point.into()).collect(),
+            time: timing.elapsed().as_secs_f64(),
+        };
+
         Ok(Response::new(response))
     }
 
@@ -271,6 +303,45 @@ impl Points for PointsService {
 
         let response = SearchResponse {
             result: scored_points
+                .into_iter()
+                .map(|point| point.into())
+                .collect(),
+            time: timing.elapsed().as_secs_f64(),
+        };
+
+        Ok(Response::new(response))
+    }
+
+    async fn scroll(
+        &self,
+        request: Request<ScrollPoints>,
+    ) -> Result<Response<ScrollResponse>, Status> {
+        let ScrollPoints {
+            collection,
+            filter,
+            offset,
+            limit,
+            with_vector,
+            with_payload,
+        } = request.into_inner();
+
+        let scroll_request = ScrollRequest {
+            offset: offset.map(|o| o.try_into()).transpose()?,
+            limit: limit.map(|l| l as usize),
+            filter: filter.map(|f| f.try_into()).transpose()?,
+            with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
+            with_vector,
+        };
+
+        let timing = Instant::now();
+        let scrolled_points = do_scroll_points(self.toc.as_ref(), &collection, scroll_request)
+            .await
+            .map_err(error_to_status)?;
+
+        let response = ScrollResponse {
+            next_page_offset: scrolled_points.next_page_offset.map(|n| n.into()),
+            result: scrolled_points
+                .points
                 .into_iter()
                 .map(|point| point.into())
                 .collect(),
