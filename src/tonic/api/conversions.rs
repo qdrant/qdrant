@@ -8,8 +8,8 @@ use crate::tonic::qdrant::with_payload_selector::SelectorOptions;
 use crate::tonic::qdrant::{
     Condition, FieldCondition, Filter, FloatPayload, GeoBoundingBox, GeoPayload, GeoPoint,
     GeoRadius, HasIdCondition, IntegerPayload, KeywordPayload, Match, Payload, PointId,
-    PointStruct, PointsOperationResponse, PointsSelector, Range, ScoredPoint, SearchParams,
-    UpdateResult, WithPayloadSelector,
+    PointStruct, PointsOperationResponse, PointsSelector, Range, RetrievedPoint, ScoredPoint,
+    SearchParams, UpdateResult, WithPayloadSelector,
 };
 use collection::operations::point_ops::PointIdsList;
 use segment::types::{
@@ -94,6 +94,16 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             score: point.score,
             vector: point.vector.unwrap_or_default(),
             version: point.version,
+        }
+    }
+}
+
+impl From<collection::operations::types::Record> for RetrievedPoint {
+    fn from(record: collection::operations::types::Record) -> Self {
+        Self {
+            id: Some(record.id.into()),
+            payload: record.payload.map(payload_to_proto).unwrap_or_default(),
+            vector: record.vector.unwrap_or_default(),
         }
     }
 }

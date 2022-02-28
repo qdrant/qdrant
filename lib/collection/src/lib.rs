@@ -2,6 +2,7 @@
 
 use std::{path::Path, sync::Arc};
 
+use crate::operations::types::PointRequest;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
 use operations::{
@@ -12,7 +13,7 @@ use operations::{
     },
     CollectionUpdateOperations, SplitByShard, Validate,
 };
-use segment::types::{PointIdType, ScoredPoint, VectorElementType, WithPayload};
+use segment::types::{ScoredPoint, VectorElementType, WithPayload, WithPayloadInterface};
 use shard::{Shard, ShardId};
 use tokio::runtime::Handle;
 
@@ -90,7 +91,7 @@ impl Collection {
     pub async fn recommend_by(
         &self,
         request: RecommendRequest,
-        segment_searcher: &(dyn CollectionSearcher),
+        segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         self.shard
@@ -116,20 +117,30 @@ impl Collection {
     pub async fn scroll_by(
         &self,
         request: ScrollRequest,
-        segment_searcher: &(dyn CollectionSearcher),
+        segment_searcher: &(dyn CollectionSearcher + Sync),
     ) -> CollectionResult<ScrollResult> {
         self.shard.scroll_by(request, segment_searcher).await
     }
 
     pub async fn retrieve(
         &self,
-        points: &[PointIdType],
-        with_payload: &WithPayload,
-        with_vector: bool,
-        segment_searcher: &(dyn CollectionSearcher),
+        request: PointRequest,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
     ) -> CollectionResult<Vec<Record>> {
+        let with_payload_interface = request
+            .with_payload
+            .as_ref()
+            .unwrap_or(&WithPayloadInterface::Bool(false));
+        let with_payload = WithPayload::from(with_payload_interface);
+        let with_vector = request.with_vector;
+
         segment_searcher
-            .retrieve(self.shard.segments(), points, with_payload, with_vector)
+            .retrieve(
+                self.shard.segments(),
+                &request.ids,
+                &with_payload,
+                with_vector,
+            )
             .await
     }
 

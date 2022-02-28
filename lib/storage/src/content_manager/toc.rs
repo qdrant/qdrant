@@ -12,11 +12,12 @@ use tokio::sync::RwLock;
 use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::types::{
-    RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
+    PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
+    UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::Collection;
-use segment::types::{PointIdType, ScoredPoint, WithPayload};
+use segment::types::ScoredPoint;
 
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::errors::StorageError;
@@ -379,9 +380,7 @@ impl TableOfContent {
     /// # Arguments
     ///
     /// * `collection_name` - select from this collection
-    /// * `points` - point IDs to select
-    /// * `with_payload` - include payload into response (if so, which keys)?
-    /// * `with_vector` - include vector into response?
+    /// * `request` - [`PointRequest`]
     ///
     /// # Result
     ///
@@ -389,18 +388,11 @@ impl TableOfContent {
     pub async fn retrieve(
         &self,
         collection_name: &str,
-        points: &[PointIdType],
-        with_payload: &WithPayload,
-        with_vector: bool,
+        request: PointRequest,
     ) -> Result<Vec<Record>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .retrieve(
-                points,
-                with_payload,
-                with_vector,
-                self.segment_searcher.as_ref(),
-            )
+            .retrieve(request, self.segment_searcher.as_ref())
             .await
             .map_err(|err| err.into())
     }

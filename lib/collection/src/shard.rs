@@ -306,7 +306,7 @@ impl Shard {
     pub async fn scroll_by(
         &self,
         request: ScrollRequest,
-        segment_searcher: &(dyn CollectionSearcher),
+        segment_searcher: &(dyn CollectionSearcher + Sync),
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequest::default();
 
@@ -318,9 +318,7 @@ impl Shard {
             .with_payload
             .clone()
             .unwrap_or_else(|| default_request.with_payload.clone().unwrap());
-        let with_vector = request
-            .with_vector
-            .unwrap_or_else(|| default_request.with_vector.unwrap());
+        let with_vector = request.with_vector;
 
         if limit == 0 {
             return Err(CollectionError::BadRequest {
@@ -370,7 +368,7 @@ impl Shard {
     pub async fn recommend_by(
         &self,
         request: RecommendRequest,
-        segment_searcher: &(dyn CollectionSearcher),
+        segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let segments = self.segments();
@@ -446,7 +444,7 @@ impl Shard {
                 })]),
             }),
             with_payload: None,
-            with_vector: None,
+            with_vector: false,
             params: request.params,
             top: request.top,
         };

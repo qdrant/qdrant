@@ -592,6 +592,17 @@ pub struct DeletePoints {
     pub points: ::core::option::Option<PointsSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetPoints {
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub ids: ::prost::alloc::vec::Vec<PointId>,
+    #[prost(bool, optional, tag = "3")]
+    pub with_vector: ::core::option::Option<bool>,
+    #[prost(message, optional, tag = "4")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SetPayloadPoints {
     #[prost(string, tag = "1")]
     pub collection: ::prost::alloc::string::String,
@@ -689,6 +700,21 @@ pub struct SearchPoints {
     #[prost(message, optional, tag = "7")]
     pub params: ::core::option::Option<SearchParams>,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ScrollPoints {
+    #[prost(string, tag = "1")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub filter: ::core::option::Option<Filter>,
+    #[prost(message, optional, tag = "3")]
+    pub offset: ::core::option::Option<PointId>,
+    #[prost(uint32, optional, tag = "4")]
+    pub limit: ::core::option::Option<u32>,
+    #[prost(bool, optional, tag = "5")]
+    pub with_vector: ::core::option::Option<bool>,
+    #[prost(message, optional, tag = "6")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+}
 // ---------------------------------------------
 // ---------------- RPC Response ---------------
 // ---------------------------------------------
@@ -724,6 +750,31 @@ pub struct ScoredPoint {
 pub struct SearchResponse {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ScrollResponse {
+    #[prost(message, optional, tag = "1")]
+    pub next_page_offset: ::core::option::Option<PointId>,
+    #[prost(message, repeated, tag = "2")]
+    pub result: ::prost::alloc::vec::Vec<RetrievedPoint>,
+    #[prost(double, tag = "3")]
+    pub time: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RetrievedPoint {
+    #[prost(message, optional, tag = "1")]
+    pub id: ::core::option::Option<PointId>,
+    #[prost(map = "string, message", tag = "2")]
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Payload>,
+    #[prost(float, repeated, tag = "3")]
+    pub vector: ::prost::alloc::vec::Vec<f32>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub result: ::prost::alloc::vec::Vec<RetrievedPoint>,
     #[prost(double, tag = "2")]
     pub time: f64,
 }
@@ -996,6 +1047,20 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Delete");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn get(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetPoints>,
+        ) -> Result<tonic::Response<super::GetResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Get");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
         pub async fn set_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::SetPayloadPoints>,
@@ -1080,6 +1145,20 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Search");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn scroll(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ScrollPoints>,
+        ) -> Result<tonic::Response<super::ScrollResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Scroll");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 #[doc = r" Generated server implementations."]
@@ -1097,6 +1176,10 @@ pub mod points_server {
             &self,
             request: tonic::Request<super::DeletePoints>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn get(
+            &self,
+            request: tonic::Request<super::GetPoints>,
+        ) -> Result<tonic::Response<super::GetResponse>, tonic::Status>;
         async fn set_payload(
             &self,
             request: tonic::Request<super::SetPayloadPoints>,
@@ -1121,6 +1204,10 @@ pub mod points_server {
             &self,
             request: tonic::Request<super::SearchPoints>,
         ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status>;
+        async fn scroll(
+            &self,
+            request: tonic::Request<super::ScrollPoints>,
+        ) -> Result<tonic::Response<super::ScrollResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct PointsServer<T: Points> {
@@ -1213,6 +1300,37 @@ pub mod points_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = DeleteSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/Get" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::GetPoints> for GetSvc<T> {
+                        type Response = super::GetResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetPoints>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).get(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
                             accept_compression_encodings,
@@ -1403,6 +1521,37 @@ pub mod points_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = SearchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/Scroll" => {
+                    #[allow(non_camel_case_types)]
+                    struct ScrollSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::ScrollPoints> for ScrollSvc<T> {
+                        type Response = super::ScrollResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ScrollPoints>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).scroll(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ScrollSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
                             accept_compression_encodings,

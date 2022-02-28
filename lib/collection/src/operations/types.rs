@@ -110,7 +110,8 @@ pub struct ScrollRequest {
     /// Return point payload with the result. Default: True
     pub with_payload: Option<WithPayloadInterface>,
     /// Return point vector with the result. Default: false
-    pub with_vector: Option<bool>,
+    #[serde(default)]
+    pub with_vector: bool,
 }
 
 impl Default for ScrollRequest {
@@ -120,7 +121,7 @@ impl Default for ScrollRequest {
             limit: Some(10),
             filter: None,
             with_payload: Some(WithPayloadInterface::Bool(true)),
-            with_vector: Some(false),
+            with_vector: false,
         }
     }
 }
@@ -152,7 +153,20 @@ pub struct SearchRequest {
     /// Payload interface
     pub with_payload: Option<WithPayloadInterface>,
     /// Return point vector with the result. Default: false
-    pub with_vector: Option<bool>,
+    #[serde(default)]
+    pub with_vector: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct PointRequest {
+    /// Look for points with ids
+    pub ids: Vec<PointIdType>,
+    /// Payload interface
+    pub with_payload: Option<WithPayloadInterface>,
+    /// Return point vector with the result. Default: false
+    #[serde(default)]
+    pub with_vector: bool,
 }
 
 /// Recommendation request.
