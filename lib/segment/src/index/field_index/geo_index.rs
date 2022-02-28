@@ -297,12 +297,12 @@ mod tests {
             south_east: "t".to_string(),
             north_east: "v".to_string(),
         };
-        let area = rect.geohash_regions(1, 100).unwrap();
+        let mut geo_area = rect.geohash_regions(1, 100).unwrap();
+        let mut expected = vec!["u", "s", "v", "t"];
 
-        assert!(area.contains(&"u".to_string()));
-        assert!(area.contains(&"s".to_string()));
-        assert!(area.contains(&"t".to_string()));
-        assert!(area.contains(&"v".to_string()));
+        geo_area.sort_unstable();
+        expected.sort_unstable();
+        assert_eq!(geo_area, expected);
     }
 
     #[test]
@@ -315,7 +315,6 @@ mod tests {
         };
 
         // calling `rect.geohash_regions()` is too expensive
-
         assert!(rect.geohash_regions(12, 100).is_none());
     }
 
@@ -341,13 +340,14 @@ mod tests {
             north_east: "dr5rum".to_string(),
         };
 
-        let geo_area = rect.geohash_regions(6, 100).unwrap();
-        let expected = vec![
-            "dr5ruj", "dr5ruh", "dr5ru5", "dr5ru4", "dr5rum", "dr5ruk", "dr5ru7", "dr5ru6",
+        let mut geo_area = rect.geohash_regions(6, 100).unwrap();
+        let mut expected = vec![
+            "dr5ru4", "dr5ru5", "dr5ru6", "dr5ru7", "dr5ruh", "dr5ruj", "dr5rum", "dr5ruk",
         ];
-        for geohash in expected {
-            assert!(geo_area.contains(&geohash.to_owned()))
-        }
+
+        expected.sort_unstable();
+        geo_area.sort_unstable();
+        assert_eq!(geo_area, expected);
     }
 
     #[test]
@@ -411,8 +411,8 @@ mod tests {
             let r_meters = rnd.gen_range(1.0..10000.0);
             let query = GeoRadius {
                 center: GeoPoint {
-                    lon: rnd.gen_range(-180.0..180.0),
-                    lat: rnd.gen_range(-90.0..90.0),
+                    lon: rnd.gen_range(LON_RANGE),
+                    lat: rnd.gen_range(LAT_RANGE),
                 },
                 radius: r_meters,
             };
