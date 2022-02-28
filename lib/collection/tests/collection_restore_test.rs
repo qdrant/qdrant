@@ -71,7 +71,7 @@ async fn test_collection_payload_reloading() {
                 limit: Some(10),
                 filter: None,
                 with_payload: Some(WithPayloadInterface::Bool(true)),
-                with_vector: Some(true),
+                with_vector: true,
             },
             &searcher,
         )
@@ -128,7 +128,7 @@ async fn test_collection_payload_custom_payload() {
                 limit: Some(10),
                 filter: None,
                 with_payload: Some(WithPayloadInterface::Fields(vec![String::from("k2")])),
-                with_vector: Some(true),
+                with_vector: true,
             },
             &searcher,
         )
@@ -159,7 +159,7 @@ async fn test_collection_payload_custom_payload() {
                 limit: Some(10),
                 filter: None,
                 with_payload: Some(PayloadSelectorExclude::new(vec!["k1".to_string()]).into()),
-                with_vector: Some(false),
+                with_vector: false,
             },
             &searcher,
         )

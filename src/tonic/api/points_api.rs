@@ -111,7 +111,7 @@ impl Points for PointsService {
                 .map(|p| p.try_into())
                 .collect::<Result<_, _>>()?,
             with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-            with_vector,
+            with_vector: with_vector.unwrap_or(false),
         };
 
         let timing = Instant::now();
@@ -293,7 +293,7 @@ impl Points for PointsService {
             params: params.map(|p| p.into()),
             top: top as usize,
             with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-            with_vector,
+            with_vector: with_vector.unwrap_or(false),
         };
 
         let timing = Instant::now();
@@ -330,7 +330,7 @@ impl Points for PointsService {
             limit: limit.map(|l| l as usize),
             filter: filter.map(|f| f.try_into()).transpose()?,
             with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-            with_vector,
+            with_vector: with_vector.unwrap_or(false),
         };
 
         let timing = Instant::now();

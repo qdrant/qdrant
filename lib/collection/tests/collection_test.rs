@@ -60,7 +60,7 @@ async fn test_collection_updater() {
     let search_request = SearchRequest {
         vector: vec![1.0, 1.0, 1.0, 1.0],
         with_payload: None,
-        with_vector: None,
+        with_vector: false,
         filter: None,
         params: None,
         top: 3,
@@ -111,7 +111,7 @@ async fn test_collection_search_with_payload_and_vector() {
     let search_request = SearchRequest {
         vector: vec![1.0, 0.0, 1.0, 1.0],
         with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: Some(true),
+        with_vector: true,
         filter: None,
         params: None,
         top: 3,
@@ -180,7 +180,7 @@ async fn test_collection_loading() {
     let request = PointRequest {
         ids: vec![1.into(), 2.into()],
         with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: Some(true),
+        with_vector: true,
     };
     let retrieved = loaded_collection
         .retrieve(request, &segment_searcher)
@@ -330,7 +330,7 @@ async fn test_read_api() {
                 limit: Some(2),
                 filter: None,
                 with_payload: Some(WithPayloadInterface::Bool(true)),
-                with_vector: None,
+                with_vector: false,
             },
             &segment_searcher,
         )
@@ -403,7 +403,7 @@ async fn test_collection_delete_points_by_filter() {
                 limit: Some(10),
                 filter: None,
                 with_payload: Some(WithPayloadInterface::Bool(false)),
-                with_vector: None,
+                with_vector: false,
             },
             &segment_searcher,
         )
