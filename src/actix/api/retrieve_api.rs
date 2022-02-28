@@ -9,6 +9,7 @@ use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 
 use crate::actix::helpers::process_response;
+use crate::common::points::do_get_points;
 
 async fn do_get_point(
     toc: &TableOfContent,
@@ -23,14 +24,6 @@ async fn do_get_point(
     toc.retrieve(collection_name, request)
         .await
         .map(|points| points.into_iter().next())
-}
-
-async fn do_get_points(
-    toc: &TableOfContent,
-    collection_name: &str,
-    request: PointRequest,
-) -> Result<Vec<Record>, StorageError> {
-    toc.retrieve(collection_name, request).await
 }
 
 async fn scroll_get_points(
