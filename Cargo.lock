@@ -1216,6 +1216,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "geohash"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2531fb8e2edacf602fd1f2672da559dc1527509cf90940b7a0ebd06b998a004f"
+dependencies = [
+ "geo-types",
+ "libm",
+]
+
+[[package]]
 name = "getopts"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1554,6 +1564,12 @@ dependencies = [
  "cfg-if",
  "winapi 0.3.9",
 ]
+
+[[package]]
+name = "libm"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33a33a362ce288760ec6a508b94caaec573ae7d3bbbd91b87aa0bad4456839db"
 
 [[package]]
 name = "librocksdb-sys"
@@ -2635,6 +2651,7 @@ dependencies = [
  "blas-src",
  "criterion",
  "geo",
+ "geohash",
  "itertools",
  "log 0.4.14",
  "memmap 0.7.0",
