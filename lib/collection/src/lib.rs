@@ -13,7 +13,7 @@ use operations::{
     },
     CollectionUpdateOperations, SplitByShard, Validate,
 };
-use segment::types::{PointIdType, ScoredPoint, VectorElementType, WithPayload, WithPayloadInterface};
+use segment::types::{ScoredPoint, VectorElementType, WithPayload, WithPayloadInterface};
 use shard::{Shard, ShardId};
 use tokio::runtime::Handle;
 
