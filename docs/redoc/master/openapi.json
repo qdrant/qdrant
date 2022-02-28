@@ -1443,6 +1443,7 @@
       "PointRequest": {
         "properties": {
           "ids": {
+            "description": "Look for points with ids",
             "items": {
               "$ref": "#/components/schemas/ExtendedPointId"
             },
@@ -1456,10 +1457,12 @@
               {
                 "nullable": true
               }
-            ]
+            ],
+            "description": "Payload interface"
           },
           "with_vector": {
-            "nullable": true,
+            "default": false,
+            "description": "Return point vector with the result. Default: false",
             "type": "boolean"
           }
         },
@@ -1757,8 +1760,8 @@
             "description": "Return point payload with the result. Default: True"
           },
           "with_vector": {
+            "default": false,
             "description": "Return point vector with the result. Default: false",
-            "nullable": true,
             "type": "boolean"
           }
         },
@@ -1855,8 +1858,8 @@
             "description": "Payload interface"
           },
           "with_vector": {
+            "default": false,
             "description": "Return point vector with the result. Default: false",
-            "nullable": true,
             "type": "boolean"
           }
         },
