@@ -207,6 +207,7 @@ mod tests {
             CollectionParams {
                 vector_size: segment_config.vector_size,
                 distance: segment_config.distance,
+                shard_number: 1,
             },
             Default::default(),
             Arc::new(SchemaStorage::new()),

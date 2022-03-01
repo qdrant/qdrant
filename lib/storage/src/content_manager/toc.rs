@@ -161,6 +161,7 @@ impl TableOfContent {
         let collection_params = CollectionParams {
             vector_size,
             distance,
+            shard_number: 1,
         };
         let wal_config = match wal_config_diff {
             None => self.storage_config.wal.clone(),

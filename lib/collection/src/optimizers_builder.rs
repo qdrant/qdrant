@@ -47,14 +47,14 @@ pub struct OptimizersConfig {
 }
 
 pub fn build_optimizers(
-    collection_path: &Path,
+    shard_path: &Path,
     collection_params: &CollectionParams,
     optimizers_config: &OptimizersConfig,
     hnsw_config: &HnswConfig,
     schema_store: Arc<SchemaStorage>,
 ) -> Arc<Vec<Arc<Optimizer>>> {
-    let segments_path = collection_path.join("segments");
-    let temp_segments_path = collection_path.join("temp_segments");
+    let segments_path = shard_path.join("segments");
+    let temp_segments_path = shard_path.join("temp_segments");
 
     let threshold_config = OptimizerThresholds {
         memmap_threshold: optimizers_config.memmap_threshold,

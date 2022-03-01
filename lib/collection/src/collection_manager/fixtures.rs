@@ -137,6 +137,7 @@ pub(crate) fn get_merge_optimizer(
         CollectionParams {
             vector_size: 4,
             distance: Distance::Dot,
+            shard_number: 1,
         },
         Default::default(),
         Arc::new(SchemaStorage::new()),
@@ -158,6 +159,7 @@ pub(crate) fn get_indexing_optimizer(
         CollectionParams {
             vector_size: 4,
             distance: Distance::Dot,
+            shard_number: 1,
         },
         Default::default(),
         Arc::new(SchemaStorage::new()),

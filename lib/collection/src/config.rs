@@ -48,6 +48,13 @@ pub struct CollectionParams {
     pub vector_size: usize,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
+    /// Number of shards the collection has
+    #[serde(default = "default_shard_number")]
+    pub shard_number: u32,
+}
+
+fn default_shard_number() -> u32 {
+    1
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]

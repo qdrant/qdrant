@@ -18,10 +18,15 @@ mod common;
 
 #[tokio::test]
 async fn test_collection_reloading() {
+    test_collection_reloading_with_shards(1).await;
+    test_collection_reloading_with_shards(10).await;
+}
+
+async fn test_collection_reloading_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
     {
-        let _collection = simple_collection_fixture(collection_dir.path()).await;
+        let _collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
     }
     for _i in 0..5 {
         let collection = Collection::load("test".to_string(), collection_dir.path());
@@ -43,9 +48,14 @@ async fn test_collection_reloading() {
 
 #[tokio::test]
 async fn test_collection_payload_reloading() {
+    test_collection_payload_reloading_with_shards(1).await;
+    test_collection_payload_reloading_with_shards(10).await;
+}
+
+async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
     {
-        let collection = simple_collection_fixture(collection_dir.path()).await;
+        let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
                 batch: Batch {
@@ -99,9 +109,14 @@ async fn test_collection_payload_reloading() {
 
 #[tokio::test]
 async fn test_collection_payload_custom_payload() {
+    test_collection_payload_custom_payload_with_shards(1).await;
+    test_collection_payload_custom_payload_with_shards(10).await;
+}
+
+async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
     {
-        let collection = simple_collection_fixture(collection_dir.path()).await;
+        let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
                 batch: Batch {

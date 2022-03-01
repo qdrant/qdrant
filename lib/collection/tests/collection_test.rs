@@ -26,9 +26,14 @@ mod common;
 
 #[tokio::test]
 async fn test_collection_updater() {
+    test_collection_updater_with_shards(1).await;
+    test_collection_updater_with_shards(10).await;
+}
+
+async fn test_collection_updater_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
-    let collection = simple_collection_fixture(collection_dir.path()).await;
+    let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
@@ -83,9 +88,14 @@ async fn test_collection_updater() {
 
 #[tokio::test]
 async fn test_collection_search_with_payload_and_vector() {
+    test_collection_search_with_payload_and_vector_with_shards(1).await;
+    test_collection_search_with_payload_and_vector_with_shards(10).await;
+}
+
+async fn test_collection_search_with_payload_and_vector_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
-    let collection = simple_collection_fixture(collection_dir.path()).await;
+    let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
@@ -133,12 +143,18 @@ async fn test_collection_search_with_payload_and_vector() {
     }
 }
 
+// FIXME: dos not work
 #[tokio::test]
 async fn test_collection_loading() {
+    test_collection_loading_with_shards(10).await;
+    //test_collection_loading_with_shards(10).await;
+}
+
+async fn test_collection_loading_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
     {
-        let collection = simple_collection_fixture(collection_dir.path()).await;
+        let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             Batch {
                 ids: vec![0, 1, 2, 3, 4]
@@ -244,10 +260,16 @@ fn test_deserialization2() {
     let _read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&raw_bytes).unwrap();
 }
 
+// Request to find points sent to all shards but they might not have a particular id, so they will return an error
 #[tokio::test]
 async fn test_recommendation_api() {
+    test_recommendation_api_with_shards(1).await;
+    test_recommendation_api_with_shards(10).await;
+}
+
+async fn test_recommendation_api_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
-    let collection = simple_collection_fixture(collection_dir.path()).await;
+    let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
@@ -297,8 +319,13 @@ async fn test_recommendation_api() {
 
 #[tokio::test]
 async fn test_read_api() {
+    test_read_api_with_shards(1).await;
+    test_read_api_with_shards(10).await;
+}
+
+async fn test_read_api_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
-    let collection = simple_collection_fixture(collection_dir.path()).await;
+    let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         Batch {
@@ -345,9 +372,14 @@ async fn test_read_api() {
 
 #[tokio::test]
 async fn test_collection_delete_points_by_filter() {
+    test_collection_delete_points_by_filter_with_shards(1).await;
+    test_collection_delete_points_by_filter_with_shards(10).await;
+}
+
+async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
-    let collection = simple_collection_fixture(collection_dir.path()).await;
+    let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
