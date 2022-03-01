@@ -282,7 +282,7 @@ async fn test_recommendation_api() {
                 params: None,
                 top: 5,
                 with_payload: None,
-                with_vector: false
+                with_vector: false,
             },
             &segment_searcher,
             &Handle::current(),
