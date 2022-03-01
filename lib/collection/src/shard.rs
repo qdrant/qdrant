@@ -443,8 +443,8 @@ impl Shard {
                     has_id: reference_vectors_ids.iter().cloned().collect(),
                 })]),
             }),
-            with_payload: None,
-            with_vector: false,
+            with_payload: request.with_payload,
+            with_vector: request.with_vector,
             params: request.params,
             top: request.top,
         };
