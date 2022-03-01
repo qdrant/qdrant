@@ -7,32 +7,47 @@ option java_outer_classname = "QdrantProto";
 package qdrant;
 
 service Collections {
+  /*
+  Get detailed information about specified existing collection
+   */
   rpc Get (GetCollectionInfoRequest) returns (GetCollectionInfoResponse) {}
+  /*
+  Get list name of all existing collections
+   */
   rpc List (ListCollectionsRequest) returns (ListCollectionsResponse) {}
+  /*
+  Create new collection with given parameters
+   */
   rpc Create (CreateCollection) returns (CollectionOperationResponse) {}
+  /*
+  Update parameters of the existing collection
+   */
   rpc Update (UpdateCollection) returns (CollectionOperationResponse) {}
+  /*
+  Drop collection and all associated data
+   */
   rpc Delete (DeleteCollection) returns (CollectionOperationResponse) {}
 }
 
 message GetCollectionInfoRequest {
-  string name = 1;
+  string name = 1; // Name of the collection
 }
 
 message ListCollectionsRequest {
 }
 
 message CollectionDescription {
-  string name = 1;
+  string name = 1; // Name of the collection
 }
 
 message GetCollectionInfoResponse {
   CollectionInfo result = 1;
-  double time = 2;
+  double time = 2; // Time spent to process
 }
 
 message ListCollectionsResponse {
   repeated CollectionDescription collections = 1;
-  double time = 2;
+  double time = 2; // Time spent to process
 }
 
 enum Distance {
@@ -78,7 +93,7 @@ message OptimizersConfigDiff {
 }
 
 message CreateCollection {
-  string name = 1;
+  string name = 1; // Name of the collection
   uint64 vector_size = 2;
   Distance distance = 3;
   optional HnswConfigDiff hnsw_config = 4;
@@ -87,17 +102,17 @@ message CreateCollection {
 }
 
 message UpdateCollection {
-  string name = 1;
+  string name = 1; // Name of the collection
   optional OptimizersConfigDiff optimizers_config = 2;
 }
 
 message DeleteCollection {
-  string name = 1;
+  string name = 1; // Name of the collection
 }
 
 message CollectionOperationResponse {
   bool result = 1;
-  double time = 2;
+  double time = 2; // Time spent to process
 }
 
 message CollectionParams {
