@@ -2,7 +2,6 @@
 mod actix;
 pub mod common;
 mod settings;
-#[cfg(feature = "grpc")]
 mod tonic;
 
 use std::io::Error;
@@ -47,15 +46,17 @@ fn main() -> std::io::Result<()> {
             .unwrap();
         handles.push(handle);
     }
-    #[cfg(feature = "grpc")]
-    {
+
+    if let Some(grpc_port) = settings.service.grpc_port {
         let toc_arc = toc_arc.clone();
         let settings = settings.clone();
         let handle = thread::Builder::new()
             .name("grpc".to_string())
-            .spawn(move || tonic::init(toc_arc, settings))
+            .spawn(move || tonic::init(toc_arc, settings.service.host, grpc_port))
             .unwrap();
         handles.push(handle);
+    } else {
+        log::info!("gRPC endpoint disabled");
     }
 
     #[cfg(feature = "service_debug")]

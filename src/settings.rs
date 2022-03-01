@@ -7,7 +7,7 @@ use storage::types::StorageConfig;
 pub struct ServiceConfig {
     pub host: String,
     pub port: u16,
-    pub grpc_port: u16,
+    pub grpc_port: Option<u16>,
     pub max_request_size_mb: usize,
     pub max_workers: Option<usize>,
 }

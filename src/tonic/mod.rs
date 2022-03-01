@@ -2,7 +2,6 @@ mod api;
 pub mod qdrant;
 
 use crate::common::models::VersionInfo;
-use crate::settings::Settings;
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::points_api::PointsService;
 use qdrant::collections_server::CollectionsServer;
@@ -38,7 +37,7 @@ impl Qdrant for QdrantService {
     }
 }
 
-pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()> {
+pub fn init(toc: Arc<TableOfContent>, host: String, grpc_port: u16) -> std::io::Result<()> {
     let tonic_runtime = runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
@@ -50,16 +49,13 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
         .build()?;
     tonic_runtime
         .block_on(async {
-            let socket = SocketAddr::from((
-                settings.service.host.parse::<IpAddr>().unwrap(),
-                settings.service.grpc_port,
-            ));
+            let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), grpc_port));
 
             let service = QdrantService::default();
             let collections_service = CollectionsService::new(toc.clone());
             let points_service = PointsService::new(toc.clone());
 
-            log::info!("Qdrant gRPC listening on {}", settings.service.grpc_port);
+            log::info!("Qdrant gRPC listening on {}", grpc_port);
 
             Server::builder()
                 .add_service(QdrantServer::new(service))
