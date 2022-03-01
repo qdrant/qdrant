@@ -91,3 +91,23 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/search" 
       "vector": [0.2, 0.1, 0.9, 0.7],
       "top": 3
   }' | jq
+
+# recommend points
+curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/recommend" \
+  --fail -s \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+      "filter": {
+          "should": [
+              {
+                  "key": "city",
+                  "match": {
+                      "keyword": "London"
+                  }
+              }
+          ]
+      },
+      "negative": [ ],
+      "positive": [1, 2],
+      "top": 10
+  }' | jq

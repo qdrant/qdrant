@@ -17,7 +17,7 @@ use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot, Mutex, RwLock as TokioRw
 
 use segment::types::{
     Condition, Filter, HasIdCondition, PayloadKeyType, PayloadSchemaInfo, PointIdType, ScoredPoint,
-    SegmentType, VectorElementType, WithPayload,
+    SegmentType, VectorElementType, WithPayload, WithPayloadInterface,
 };
 
 use crate::collection_manager::collection_managers::CollectionSearcher;
@@ -443,8 +443,8 @@ impl Shard {
                     has_id: reference_vectors_ids.iter().cloned().collect(),
                 })]),
             }),
-            with_payload: None,
-            with_vector: false,
+            with_payload: Some(WithPayloadInterface::Bool(true)),
+            with_vector: true,
             params: request.params,
             top: request.top,
         };
