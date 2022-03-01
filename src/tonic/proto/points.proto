@@ -140,8 +140,9 @@ message UpdateResult {
 }
 
 enum UpdateStatus {
-  Acknowledged = 0;
-  Completed = 1;
+  UnknownUpdateStatus = 0;
+  Acknowledged = 1;
+  Completed = 2;
 }
 
 message ScoredPoint {

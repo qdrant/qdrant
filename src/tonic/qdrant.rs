@@ -1,5 +1,6 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetCollectionInfoRequest {
+    /// Name of the collection
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
 }
@@ -7,6 +8,7 @@ pub struct GetCollectionInfoRequest {
 pub struct ListCollectionsRequest {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionDescription {
+    /// Name of the collection
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
 }
@@ -14,6 +16,7 @@ pub struct CollectionDescription {
 pub struct GetCollectionInfoResponse {
     #[prost(message, optional, tag = "1")]
     pub result: ::core::option::Option<CollectionInfo>,
+    /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
 }
@@ -21,144 +24,229 @@ pub struct GetCollectionInfoResponse {
 pub struct ListCollectionsResponse {
     #[prost(message, repeated, tag = "1")]
     pub collections: ::prost::alloc::vec::Vec<CollectionDescription>,
+    /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OptimizerStatus {
+    #[prost(bool, tag = "1")]
+    pub ok: bool,
+    #[prost(string, tag = "2")]
+    pub error: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HnswConfigDiff {
+    ///
+    ///Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
     #[prost(uint64, optional, tag = "1")]
     pub m: ::core::option::Option<u64>,
+    ///
+    ///Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
     #[prost(uint64, optional, tag = "2")]
     pub ef_construct: ::core::option::Option<u64>,
+    ///
+    ///Minimal amount of points for additional payload-based indexing.
+    ///If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
+    ///in this case full-scan search should be preferred by query planner and additional indexing is not required.
     #[prost(uint64, optional, tag = "3")]
     pub full_scan_threshold: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WalConfigDiff {
+    /// Size of a single WAL block file
     #[prost(uint64, optional, tag = "1")]
     pub wal_capacity_mb: ::core::option::Option<u64>,
+    /// Number of segments to create in advance
     #[prost(uint64, optional, tag = "2")]
     pub wal_segments_ahead: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OptimizersConfigDiff {
+    ///
+    ///The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     #[prost(double, optional, tag = "1")]
     pub deleted_threshold: ::core::option::Option<f64>,
+    ///
+    ///The minimal number of vectors in a segment, required to perform segment optimization
     #[prost(uint64, optional, tag = "2")]
     pub vacuum_min_vector_number: ::core::option::Option<u64>,
+    ///
+    ///Target amount of segments optimizer will try to keep.
+    ///Real amount of segments may vary depending on multiple parameters:
+    ///
+    ///- Amount of stored points.
+    ///- Current write RPS.
+    ///
+    ///It is recommended to select default number of segments as a factor of the number of search threads,
+    ///so that each segment would be handled evenly by one of the threads.
     #[prost(uint64, optional, tag = "3")]
     pub default_segment_number: ::core::option::Option<u64>,
+    ///
+    ///Do not create segments larger this number of points.
+    ///Large segments might require disproportionately long indexation times,
+    ///therefore it makes sense to limit the size of segments.
+    ///
+    ///If indexation speed have more priority for your - make this parameter lower.
+    ///If search speed is more important - make this parameter higher.
     #[prost(uint64, optional, tag = "4")]
     pub max_segment_size: ::core::option::Option<u64>,
+    ///
+    ///Maximum number of vectors to store in-memory per segment.
+    ///Segments larger than this threshold will be stored as read-only memmaped file.
     #[prost(uint64, optional, tag = "5")]
     pub memmap_threshold: ::core::option::Option<u64>,
+    ///
+    ///Maximum number of vectors allowed for plain index.
+    ///Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
     #[prost(uint64, optional, tag = "6")]
     pub indexing_threshold: ::core::option::Option<u64>,
+    ///
+    ///Starting from this amount of vectors per-segment the engine will start building index for payload.
     #[prost(uint64, optional, tag = "7")]
     pub payload_indexing_threshold: ::core::option::Option<u64>,
+    ///
+    ///Interval between forced flushes.
     #[prost(uint64, optional, tag = "8")]
     pub flush_interval_sec: ::core::option::Option<u64>,
+    ///
+    ///Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used
     #[prost(uint64, optional, tag = "9")]
     pub max_optimization_threads: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateCollection {
+    /// Name of the collection
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
+    /// Size of the vectors
     #[prost(uint64, tag = "2")]
     pub vector_size: u64,
+    /// Distance function used for comparing vectors
     #[prost(enumeration = "Distance", tag = "3")]
     pub distance: i32,
+    /// Configuration of vector index
     #[prost(message, optional, tag = "4")]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
+    /// Configuration of the Write-Ahead-Log
     #[prost(message, optional, tag = "5")]
     pub wal_config: ::core::option::Option<WalConfigDiff>,
+    /// Configuration of the optimizers
     #[prost(message, optional, tag = "6")]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollection {
+    /// Name of the collection
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
+    /// New configuration parameters for the collection
     #[prost(message, optional, tag = "2")]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteCollection {
+    /// Name of the collection
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionOperationResponse {
+    /// if operation made changes
     #[prost(bool, tag = "1")]
     pub result: bool,
+    /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionParams {
+    /// Size of the vectors
     #[prost(uint64, tag = "1")]
     pub vector_size: u64,
+    /// Distance function used for comparing vectors
     #[prost(enumeration = "Distance", tag = "2")]
     pub distance: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionConfig {
+    /// Collection parameters
     #[prost(message, optional, tag = "1")]
     pub params: ::core::option::Option<CollectionParams>,
+    /// Configuration of vector index
     #[prost(message, optional, tag = "2")]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
+    /// Configuration of the optimizers
     #[prost(message, optional, tag = "3")]
     pub optimizer_config: ::core::option::Option<OptimizersConfigDiff>,
+    /// Configuration of the Write-Ahead-Log
     #[prost(message, optional, tag = "4")]
     pub wal_config: ::core::option::Option<WalConfigDiff>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadSchemaInfo {
+    /// Field data type
     #[prost(enumeration = "PayloadSchemaType", tag = "1")]
     pub data_type: i32,
+    /// If this field is indexed
     #[prost(bool, tag = "2")]
     pub indexed: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionInfo {
+    /// operating condition of the collection
     #[prost(enumeration = "CollectionStatus", tag = "1")]
     pub status: i32,
-    #[prost(uint64, tag = "2")]
-    pub vectors_count: u64,
+    /// status of collection optimizers
+    #[prost(message, optional, tag = "2")]
+    pub optimizer_status: ::core::option::Option<OptimizerStatus>,
+    /// number of vectors in the collection
     #[prost(uint64, tag = "3")]
-    pub segments_count: u64,
+    pub vectors_count: u64,
+    /// Number of independent segments
     #[prost(uint64, tag = "4")]
-    pub disk_data_size: u64,
+    pub segments_count: u64,
+    /// Used disk space
     #[prost(uint64, tag = "5")]
+    pub disk_data_size: u64,
+    /// Used RAM (not implemented)
+    #[prost(uint64, tag = "6")]
     pub ram_data_size: u64,
-    #[prost(message, optional, tag = "6")]
+    /// Configuration
+    #[prost(message, optional, tag = "7")]
     pub config: ::core::option::Option<CollectionConfig>,
-    #[prost(map = "string, message", tag = "7")]
+    /// Collection data types
+    #[prost(map = "string, message", tag = "8")]
     pub payload_schema:
         ::std::collections::HashMap<::prost::alloc::string::String, PayloadSchemaInfo>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Distance {
-    Cosine = 0,
-    Euclid = 1,
-    Dot = 2,
+    UnknownDistance = 0,
+    Cosine = 1,
+    Euclid = 2,
+    Dot = 3,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum CollectionStatus {
-    Green = 0,
-    Yellow = 1,
-    Red = 2,
+    UnknownCollectionStatus = 0,
+    /// All segments are ready
+    Green = 1,
+    /// Optimization in process
+    Yellow = 2,
+    /// Something went wrong
+    Red = 3,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum PayloadSchemaType {
-    Keyword = 0,
-    Integer = 1,
-    Float = 2,
-    Geo = 3,
+    UnknownType = 0,
+    Keyword = 1,
+    Integer = 2,
+    Float = 3,
+    Geo = 4,
 }
 #[doc = r" Generated client implementations."]
 pub mod collections_client {
@@ -220,6 +308,8 @@ pub mod collections_client {
             self.inner = self.inner.accept_gzip();
             self
         }
+        #[doc = ""]
+        #[doc = "Get detailed information about specified existing collection"]
         pub async fn get(
             &mut self,
             request: impl tonic::IntoRequest<super::GetCollectionInfoRequest>,
@@ -234,6 +324,8 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/Get");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = ""]
+        #[doc = "Get list name of all existing collections"]
         pub async fn list(
             &mut self,
             request: impl tonic::IntoRequest<super::ListCollectionsRequest>,
@@ -248,6 +340,8 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/List");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = ""]
+        #[doc = "Create new collection with given parameters"]
         pub async fn create(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateCollection>,
@@ -262,6 +356,8 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/Create");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = ""]
+        #[doc = "Update parameters of the existing collection"]
         pub async fn update(
             &mut self,
             request: impl tonic::IntoRequest<super::UpdateCollection>,
@@ -276,6 +372,8 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/Update");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = ""]
+        #[doc = "Drop collection and all associated data"]
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteCollection>,
@@ -299,22 +397,32 @@ pub mod collections_server {
     #[doc = "Generated trait containing gRPC methods that should be implemented for use with CollectionsServer."]
     #[async_trait]
     pub trait Collections: Send + Sync + 'static {
+        #[doc = ""]
+        #[doc = "Get detailed information about specified existing collection"]
         async fn get(
             &self,
             request: tonic::Request<super::GetCollectionInfoRequest>,
         ) -> Result<tonic::Response<super::GetCollectionInfoResponse>, tonic::Status>;
+        #[doc = ""]
+        #[doc = "Get list name of all existing collections"]
         async fn list(
             &self,
             request: tonic::Request<super::ListCollectionsRequest>,
         ) -> Result<tonic::Response<super::ListCollectionsResponse>, tonic::Status>;
+        #[doc = ""]
+        #[doc = "Create new collection with given parameters"]
         async fn create(
             &self,
             request: tonic::Request<super::CreateCollection>,
         ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status>;
+        #[doc = ""]
+        #[doc = "Update parameters of the existing collection"]
         async fn update(
             &self,
             request: tonic::Request<super::UpdateCollection>,
         ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status>;
+        #[doc = ""]
+        #[doc = "Drop collection and all associated data"]
         async fn delete(
             &self,
             request: tonic::Request<super::DeleteCollection>,
@@ -956,8 +1064,9 @@ pub struct GeoPoint {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum UpdateStatus {
-    Acknowledged = 0,
-    Completed = 1,
+    UnknownUpdateStatus = 0,
+    Acknowledged = 1,
+    Completed = 2,
 }
 #[doc = r" Generated client implementations."]
 pub mod points_client {

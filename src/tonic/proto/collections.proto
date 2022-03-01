@@ -51,59 +51,119 @@ message ListCollectionsResponse {
 }
 
 enum Distance {
-  Cosine = 0;
-  Euclid = 1;
-  Dot = 2;
+  UnknownDistance = 0;
+  Cosine = 1;
+  Euclid = 2;
+  Dot = 3;
 }
 
 enum CollectionStatus {
-  Green = 0;
-  Yellow = 1;
-  Red = 2;
+  UnknownCollectionStatus = 0;
+  Green = 1; // All segments are ready
+  Yellow = 2; // Optimization in process
+  Red = 3; // Something went wrong
 }
 
 enum PayloadSchemaType {
-  Keyword = 0;
-  Integer = 1;
-  Float = 2;
-  Geo = 3;
+  UnknownType = 0;
+  Keyword = 1;
+  Integer = 2;
+  Float = 3;
+  Geo = 4;
+}
+
+message OptimizerStatus {
+  bool ok = 1;
+  string error = 2;
 }
 
 message HnswConfigDiff {
+  /*
+  Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+   */
   optional uint64 m = 1;
+  /*
+  Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
+  */
   optional uint64 ef_construct = 2;
+  /*
+  Minimal amount of points for additional payload-based indexing.
+  If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
+  in this case full-scan search should be preferred by query planner and additional indexing is not required.
+  */
   optional uint64 full_scan_threshold = 3;
 }
 
 message WalConfigDiff {
-  optional uint64 wal_capacity_mb = 1;
-  optional uint64 wal_segments_ahead = 2;
+  optional uint64 wal_capacity_mb = 1; // Size of a single WAL block file
+  optional uint64 wal_segments_ahead = 2; // Number of segments to create in advance
 }
 
 message OptimizersConfigDiff {
+  /*
+  The minimal fraction of deleted vectors in a segment, required to perform segment optimization
+   */
   optional double deleted_threshold = 1;
+  /*
+  The minimal number of vectors in a segment, required to perform segment optimization
+   */
   optional uint64 vacuum_min_vector_number = 2;
+  /*
+  Target amount of segments optimizer will try to keep.
+  Real amount of segments may vary depending on multiple parameters:
+
+   - Amount of stored points.
+   - Current write RPS.
+
+  It is recommended to select default number of segments as a factor of the number of search threads,
+  so that each segment would be handled evenly by one of the threads.
+  */
   optional uint64 default_segment_number = 3;
+  /*
+  Do not create segments larger this number of points.
+  Large segments might require disproportionately long indexation times,
+  therefore it makes sense to limit the size of segments.
+
+  If indexation speed have more priority for your - make this parameter lower.
+  If search speed is more important - make this parameter higher.
+  */
   optional uint64 max_segment_size = 4;
+  /*
+  Maximum number of vectors to store in-memory per segment.
+  Segments larger than this threshold will be stored as read-only memmaped file.
+  */
   optional uint64 memmap_threshold = 5;
+  /*
+  Maximum number of vectors allowed for plain index.
+  Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
+  */
   optional uint64 indexing_threshold = 6;
+  /*
+  Starting from this amount of vectors per-segment the engine will start building index for payload.
+  */
   optional uint64 payload_indexing_threshold = 7;
+  /*
+  Interval between forced flushes.
+  */
   optional uint64 flush_interval_sec = 8;
+  /*
+  Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used
+  */
   optional uint64 max_optimization_threads = 9;
 }
 
 message CreateCollection {
   string name = 1; // Name of the collection
-  uint64 vector_size = 2;
-  Distance distance = 3;
-  optional HnswConfigDiff hnsw_config = 4;
-  optional WalConfigDiff wal_config = 5;
-  optional OptimizersConfigDiff optimizers_config = 6;
+  uint64 vector_size = 2; // Size of the vectors
+  Distance distance = 3; // Distance function used for comparing vectors
+  optional HnswConfigDiff hnsw_config = 4; // Configuration of vector index
+  optional WalConfigDiff wal_config = 5; // Configuration of the Write-Ahead-Log
+  optional OptimizersConfigDiff optimizers_config = 6; // Configuration of the optimizers
 }
 
 message UpdateCollection {
   string name = 1; // Name of the collection
-  optional OptimizersConfigDiff optimizers_config = 2;
+  optional OptimizersConfigDiff optimizers_config = 2; // New configuration parameters for the collection
 }
 
 message DeleteCollection {
@@ -111,33 +171,34 @@ message DeleteCollection {
 }
 
 message CollectionOperationResponse {
-  bool result = 1;
+  bool result = 1; // if operation made changes
   double time = 2; // Time spent to process
 }
 
 message CollectionParams {
-  uint64 vector_size = 1;
-  Distance distance = 2;
+  uint64 vector_size = 1; // Size of the vectors
+  Distance distance = 2; // Distance function used for comparing vectors
 }
 
 message CollectionConfig {
-  CollectionParams params = 1;
-  HnswConfigDiff hnsw_config = 2;
-  OptimizersConfigDiff optimizer_config = 3;
-  WalConfigDiff wal_config = 4;
+  CollectionParams params = 1; // Collection parameters
+  HnswConfigDiff hnsw_config = 2; // Configuration of vector index
+  OptimizersConfigDiff optimizer_config = 3; // Configuration of the optimizers
+  WalConfigDiff wal_config = 4; // Configuration of the Write-Ahead-Log
 }
 
 message PayloadSchemaInfo {
-  PayloadSchemaType data_type = 1;
-  bool indexed = 2;
+  PayloadSchemaType data_type = 1; // Field data type
+  bool indexed = 2; // If this field is indexed
 }
 
 message CollectionInfo {
-  CollectionStatus status = 1;
-  uint64 vectors_count = 2;
-  uint64 segments_count = 3;
-  uint64 disk_data_size = 4;
-  uint64 ram_data_size = 5;
-  CollectionConfig config = 6;
-  map<string, PayloadSchemaInfo> payload_schema = 7;
+  CollectionStatus status = 1; // operating condition of the collection
+  OptimizerStatus optimizer_status = 2; // status of collection optimizers
+  uint64 vectors_count = 3; // number of vectors in the collection
+  uint64 segments_count = 4; // Number of independent segments
+  uint64 disk_data_size = 5; // Used disk space
+  uint64 ram_data_size = 6; // Used RAM (not implemented)
+  CollectionConfig config = 7; // Configuration
+  map<string, PayloadSchemaInfo> payload_schema = 8; // Collection data types
 }

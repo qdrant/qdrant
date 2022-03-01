@@ -23,8 +23,6 @@ $docker_grpcurl -d '{
 
 $docker_grpcurl -d '{}' $QDRANT_HOST qdrant.Collections/List
 
-$docker_grpcurl -d '{ "name": "test_collection" }' $QDRANT_HOST qdrant.Collections/Get
-
 $docker_grpcurl -d '{
   "collection": "test_collection",
   "wait": true,
@@ -47,6 +45,8 @@ $docker_grpcurl -d '{
     {"id": { "num": 6 }, "vector": [0.35, 0.08, 0.11, 0.44]}
   ]
 }' $QDRANT_HOST qdrant.Points/Upsert
+
+$docker_grpcurl -d '{ "name": "test_collection" }' $QDRANT_HOST qdrant.Collections/Get
 
 $docker_grpcurl -d '{
   "collection": "test_collection",
