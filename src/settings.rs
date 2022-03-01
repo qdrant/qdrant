@@ -6,8 +6,8 @@ use storage::types::StorageConfig;
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServiceConfig {
     pub host: String,
-    pub port: u16,
-    pub grpc_port: Option<u16>,
+    pub rest_port: u16,
+    pub grpc_port: Option<u16>, // None means that gRPC is disabled
     pub max_request_size_mb: usize,
     pub max_workers: Option<usize>,
 }
