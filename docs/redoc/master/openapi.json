@@ -2278,7 +2278,7 @@
         ]
       }
     },
-    "/collections/{name}": {
+    "/collections/{collection_name}": {
       "delete": {
         "description": "Drop collection and all associated data",
         "operationId": "delete_collection",
@@ -2286,7 +2286,7 @@
           {
             "description": "Name of the collection to delete",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2353,7 +2353,7 @@
           {
             "description": "Name of the collection to retrieve",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2420,7 +2420,7 @@
           {
             "description": "Name of the collection to update",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2498,7 +2498,7 @@
           {
             "description": "Name of the collection to search in",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2584,7 +2584,7 @@
           {
             "description": "Name of the new collection",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2655,7 +2655,7 @@
         ]
       }
     },
-    "/collections/{name}/index": {
+    "/collections/{collection_name}/index": {
       "put": {
         "description": "Create index for field in collection",
         "operationId": "create_field_index",
@@ -2663,7 +2663,7 @@
           {
             "description": "Name of the collection",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2743,7 +2743,7 @@
         ]
       }
     },
-    "/collections/{name}/index/{field_name}": {
+    "/collections/{collection_name}/index/{field_name}": {
       "delete": {
         "description": "Delete field index for collection",
         "operationId": "delete_field_index",
@@ -2751,7 +2751,7 @@
           {
             "description": "Name of the collection",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2830,7 +2830,7 @@
         ]
       }
     },
-    "/collections/{name}/points": {
+    "/collections/{collection_name}/points": {
       "post": {
         "description": "Retrieve multiple points by specified IDs",
         "operationId": "get_points",
@@ -2838,7 +2838,7 @@
           {
             "description": "Name of the collection to retrieve from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2918,7 +2918,7 @@
           {
             "description": "Name of the collection to update from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2998,7 +2998,7 @@
         ]
       }
     },
-    "/collections/{name}/points/delete": {
+    "/collections/{collection_name}/points/delete": {
       "post": {
         "description": "Delete points",
         "operationId": "delete_points",
@@ -3006,7 +3006,7 @@
           {
             "description": "Name of the collection to delete from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -3086,7 +3086,7 @@
         ]
       }
     },
-    "/collections/{name}/points/payload": {
+    "/collections/{collection_name}/points/payload": {
       "post": {
         "description": "Set payload for points",
         "operationId": "set_payload",
@@ -3094,7 +3094,7 @@
           {
             "description": "Name of the collection to set from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -3174,7 +3174,7 @@
         ]
       }
     },
-    "/collections/{name}/points/payload/clear": {
+    "/collections/{collection_name}/points/payload/clear": {
       "post": {
         "description": "Remove all payload for specified points",
         "operationId": "clear_payload",
@@ -3182,7 +3182,7 @@
           {
             "description": "Name of the collection to clear payload from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -3262,7 +3262,7 @@
         ]
       }
     },
-    "/collections/{name}/points/payload/delete": {
+    "/collections/{collection_name}/points/payload/delete": {
       "post": {
         "description": "Delete specified key payload for points",
         "operationId": "delete_payload",
@@ -3270,7 +3270,7 @@
           {
             "description": "Name of the collection to delete from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -3350,7 +3350,7 @@
         ]
       }
     },
-    "/collections/{name}/points/recommend": {
+    "/collections/{collection_name}/points/recommend": {
       "post": {
         "description": "Look for the points which are closer to stored positive examples and at the same time further to negative examples.",
         "operationId": "recommend_points",
@@ -3358,7 +3358,7 @@
           {
             "description": "Name of the collection to search in",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -3432,7 +3432,7 @@
         ]
       }
     },
-    "/collections/{name}/points/scroll": {
+    "/collections/{collection_name}/points/scroll": {
       "post": {
         "description": "Scroll request - paginate over all points which matches given filtering condition",
         "operationId": "scroll_points",
@@ -3440,7 +3440,7 @@
           {
             "description": "Name of the collection to retrieve from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -3511,7 +3511,7 @@
         ]
       }
     },
-    "/collections/{name}/points/search": {
+    "/collections/{collection_name}/points/search": {
       "post": {
         "description": "Retrieve closest points based on vector similarity and given filtering conditions",
         "operationId": "search_points",
@@ -3519,7 +3519,7 @@
           {
             "description": "Name of the collection to search in",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -3593,7 +3593,7 @@
         ]
       }
     },
-    "/collections/{name}/points/{id}": {
+    "/collections/{collection_name}/points/{id}": {
       "get": {
         "description": "Retrieve full information of single point by id",
         "operationId": "get_point",
@@ -3601,7 +3601,7 @@
           {
             "description": "Name of the collection to retrieve from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"

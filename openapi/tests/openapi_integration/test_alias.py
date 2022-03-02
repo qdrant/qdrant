@@ -31,9 +31,9 @@ def test_alias_operations():
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{name}/points/search',
+        api='/collections/{collection_name}/points/search',
         method="POST",
-        path_params={'name': "test_alias"},
+        path_params={'collection_name': "test_alias"},
         body={
             "vector": [0.2, 0.1, 0.9, 0.7],
             "top": 3
