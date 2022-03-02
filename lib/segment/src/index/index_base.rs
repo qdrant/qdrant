@@ -1,7 +1,8 @@
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::types::{
-    Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType, SearchParams, VectorElementType,
+    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType, SearchParams,
+    VectorElementType,
 };
 use crate::vector_storage::ScoredPointOffset;
 use std::sync::atomic::AtomicBool;
@@ -26,7 +27,11 @@ pub trait PayloadIndex {
     fn indexed_fields(&self) -> Vec<PayloadKeyType>;
 
     /// Mark field as one which should be indexed
-    fn set_indexed(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()>;
+    fn set_indexed(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        payload_type: PayloadSchemaType,
+    ) -> OperationResult<()>;
 
     /// Remove index
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()>;

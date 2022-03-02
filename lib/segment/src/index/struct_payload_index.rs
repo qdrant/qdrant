@@ -18,7 +18,8 @@ use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
 use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
 use crate::types::{
-    Condition, FieldCondition, Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType,
+    Condition, FieldCondition, Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    PointOffsetType,
 };
 use crate::vector_storage::VectorStorageSS;
 
@@ -112,6 +113,7 @@ impl StructPayloadIndex {
     fn load_or_build_field_index(
         &self,
         field: PayloadKeyTypeRef,
+        payload_type: PayloadSchemaType,
     ) -> OperationResult<Vec<FieldIndex>> {
         let field_index_path = Self::get_field_index_path(&self.path, field);
         if field_index_path.exists() {
@@ -132,7 +134,7 @@ impl StructPayloadIndex {
                 field,
                 field_index_path.to_str().unwrap()
             );
-            let res = self.build_field_index(field)?;
+            let res = self.build_field_index(field, payload_type)?;
             self.save_field_index(field)?;
             Ok(res)
         }
@@ -140,8 +142,8 @@ impl StructPayloadIndex {
 
     fn load_all_fields(&mut self) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
-        for field in &self.config.indexed_fields {
-            let field_index = self.load_or_build_field_index(field)?;
+        for (field, payload_type) in &self.config.indexed_fields {
+            let field_index = self.load_or_build_field_index(field, payload_type.to_owned())?;
             field_indexes.insert(field.clone(), field_index);
         }
         self.field_indexes = field_indexes;
@@ -184,17 +186,14 @@ impl StructPayloadIndex {
         Ok(index)
     }
 
-    pub fn build_field_index(&self, field: PayloadKeyTypeRef) -> OperationResult<Vec<FieldIndex>> {
+    pub fn build_field_index(
+        &self,
+        field: PayloadKeyTypeRef,
+        field_type: PayloadSchemaType,
+    ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
 
-        let point_id = match payload_storage.iter_ids().next() {
-            Some(id) => id,
-            None => return Ok(vec![]),
-        };
-
-        let payload_value = payload_storage.payload(point_id);
-
-        let mut builders = index_selector(&payload_value.get_schema_type(field));
+        let mut builders = index_selector(&field_type);
 
         for point_id in payload_storage.iter_ids() {
             let point_payload = payload_storage.payload(point_id);
@@ -217,13 +216,12 @@ impl StructPayloadIndex {
         Ok(field_indexes)
     }
 
-    fn build_and_save(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        if !self.config.indexed_fields.iter().any(|x| x == field) {
-            self.config.indexed_fields.push(field.into());
-            self.save_config()?;
-        }
-
-        let field_indexes = self.build_field_index(field)?;
+    fn build_and_save(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        payload_type: PayloadSchemaType,
+    ) -> OperationResult<()> {
+        let field_indexes = self.build_field_index(field, payload_type)?;
         self.field_indexes.insert(field.into(), field_indexes);
 
         self.save_field_index(field)?;
@@ -238,26 +236,33 @@ impl StructPayloadIndex {
 
 impl PayloadIndex for StructPayloadIndex {
     fn indexed_fields(&self) -> Vec<PayloadKeyType> {
-        self.config.indexed_fields.clone()
+        self.config
+            .indexed_fields
+            .keys()
+            .map(|k| k.to_owned())
+            .collect_vec()
     }
 
-    fn set_indexed(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        if !self.config.indexed_fields.iter().any(|x| x == field) {
-            self.config.indexed_fields.push(field.into());
+    fn set_indexed(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        payload_type: PayloadSchemaType,
+    ) -> OperationResult<()> {
+        if self
+            .config
+            .indexed_fields
+            .insert(field.to_owned(), payload_type)
+            .is_none()
+        {
             self.save_config()?;
-            self.build_and_save(field)?;
+            self.build_and_save(field, payload_type)?;
         }
+
         Ok(())
     }
 
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        self.config.indexed_fields = self
-            .config
-            .indexed_fields
-            .iter()
-            .cloned()
-            .filter(|x| x != field)
-            .collect();
+        self.config.indexed_fields.remove(field);
         self.save_config()?;
         self.field_indexes.remove(field);
 

@@ -12,7 +12,8 @@ mod tests {
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload,
-        PayloadIndexType, Range, SearchParams, SegmentConfig, SeqNumberType, StorageType,
+        PayloadIndexType, PayloadSchemaType, Range, SearchParams, SegmentConfig, SeqNumberType,
+        StorageType,
     };
     use serde_json::json;
     use std::sync::atomic::AtomicBool;
@@ -96,7 +97,7 @@ mod tests {
 
         payload_index_ptr
             .borrow_mut()
-            .set_indexed(&int_key)
+            .set_indexed(&int_key, PayloadSchemaType::Integer)
             .unwrap();
         let borrowed_payload_index = payload_index_ptr.borrow();
         let blocks = borrowed_payload_index

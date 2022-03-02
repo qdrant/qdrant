@@ -6,9 +6,9 @@ use crate::index::{PayloadIndexSS, VectorIndexSS};
 use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
 use crate::spaces::tools::mertic_object;
 use crate::types::{
-    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PointIdType, PointOffsetType, ScoredPoint,
-    SearchParams, SegmentConfig, SegmentInfo, SegmentState, SegmentType, SeqNumberType,
-    VectorElementType, WithPayload,
+    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
+    PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState,
+    SegmentType, SeqNumberType, VectorElementType, WithPayload,
 };
 use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
@@ -571,7 +571,11 @@ impl SegmentEntry for Segment {
 
     fn create_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, None, |segment| {
-            segment.payload_index.borrow_mut().set_indexed(key)?;
+            //TODO(gvelo): add schema type
+            segment
+                .payload_index
+                .borrow_mut()
+                .set_indexed(key, PayloadSchemaType::Unknown)?;
             Ok(true)
         })
     }
