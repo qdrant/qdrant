@@ -2,49 +2,28 @@ use std::sync::Arc;
 
 use actix_web::rt::time::Instant;
 use actix_web::{get, post, web, Responder};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 
-use collection::operations::types::{Record, ScrollRequest, ScrollResult};
-use segment::types::{PointIdType, WithPayload, WithPayloadInterface};
+use collection::operations::types::{PointRequest, Record, ScrollRequest, ScrollResult};
+use segment::types::{PointIdType, WithPayloadInterface};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 
 use crate::actix::helpers::process_response;
-
-#[derive(Deserialize, Serialize, JsonSchema)]
-pub struct PointRequest {
-    pub ids: Vec<PointIdType>,
-    pub with_payload: Option<WithPayloadInterface>,
-    pub with_vector: Option<bool>,
-}
+use crate::common::points::do_get_points;
 
 async fn do_get_point(
     toc: &TableOfContent,
     collection_name: &str,
     point_id: PointIdType,
 ) -> Result<Option<Record>, StorageError> {
-    toc.retrieve(collection_name, &[point_id], &WithPayload::from(true), true)
+    let request = PointRequest {
+        ids: vec![point_id],
+        with_payload: Some(WithPayloadInterface::Bool(true)),
+        with_vector: true,
+    };
+    toc.retrieve(collection_name, request)
         .await
         .map(|points| points.into_iter().next())
-}
-
-async fn do_get_points(
-    toc: &TableOfContent,
-    collection_name: &str,
-    request: PointRequest,
-) -> Result<Vec<Record>, StorageError> {
-    let with_payload_interface = &request
-        .with_payload
-        .unwrap_or(WithPayloadInterface::Bool(true));
-    let with_payload = WithPayload::from(with_payload_interface);
-    toc.retrieve(
-        collection_name,
-        &request.ids,
-        &with_payload,
-        request.with_vector.unwrap_or(false),
-    )
-    .await
 }
 
 async fn scroll_get_points(

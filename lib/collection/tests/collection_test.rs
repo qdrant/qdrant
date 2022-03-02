@@ -14,12 +14,13 @@ use collection::{
     Collection,
 };
 use segment::types::{
-    Condition, HasIdCondition, Payload, PayloadKeyType, PointIdType, WithPayload,
+    Condition, HasIdCondition, Payload, PayloadKeyType, PayloadVariant, PointIdType,
     WithPayloadInterface,
 };
 
 use crate::common::simple_collection_fixture;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
+use collection::operations::types::PointRequest;
 
 mod common;
 
@@ -59,7 +60,7 @@ async fn test_collection_updater() {
     let search_request = SearchRequest {
         vector: vec![1.0, 1.0, 1.0, 1.0],
         with_payload: None,
-        with_vector: None,
+        with_vector: false,
         filter: None,
         params: None,
         top: 3,
@@ -110,7 +111,7 @@ async fn test_collection_search_with_payload_and_vector() {
     let search_request = SearchRequest {
         vector: vec![1.0, 0.0, 1.0, 1.0],
         with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: Some(true),
+        with_vector: true,
         filter: None,
         params: None,
         top: 3,
@@ -171,13 +172,13 @@ async fn test_collection_loading() {
 
     let loaded_collection = Collection::load("test".to_string(), collection_dir.path());
     let segment_searcher = SimpleCollectionSearcher::new();
+    let request = PointRequest {
+        ids: vec![1.into(), 2.into()],
+        with_payload: Some(WithPayloadInterface::Bool(true)),
+        with_vector: true,
+    };
     let retrieved = loaded_collection
-        .retrieve(
-            &[1.into(), 2.into()],
-            &WithPayload::from(true),
-            true,
-            &segment_searcher,
-        )
+        .retrieve(request, &segment_searcher)
         .await
         .unwrap();
 
@@ -275,6 +276,8 @@ async fn test_recommendation_api() {
                 filter: None,
                 params: None,
                 top: 5,
+                with_payload: None,
+                with_vector: false,
             },
             &segment_searcher,
             &Handle::current(),
@@ -324,7 +327,7 @@ async fn test_read_api() {
                 limit: Some(2),
                 filter: None,
                 with_payload: Some(WithPayloadInterface::Bool(true)),
-                with_vector: None,
+                with_vector: false,
             },
             &segment_searcher,
         )
@@ -397,7 +400,7 @@ async fn test_collection_delete_points_by_filter() {
                 limit: Some(10),
                 filter: None,
                 with_payload: Some(WithPayloadInterface::Bool(false)),
-                with_vector: None,
+                with_vector: false,
             },
             &segment_searcher,
         )

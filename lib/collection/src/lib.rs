@@ -2,19 +2,23 @@
 
 use std::{path::Path, sync::Arc};
 
+use crate::operations::types::PointRequest;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
+use hashring::HashRing;
 use operations::{
     config_diff::OptimizersConfigDiff,
     types::{
         CollectionError, CollectionInfo, CollectionResult, RecommendRequest, Record, ScrollRequest,
         ScrollResult, SearchRequest, UpdateResult,
     },
-    CollectionUpdateOperations,
+    CollectionUpdateOperations, SplitByShard, Validate,
 };
-use segment::types::{PointIdType, ScoredPoint, VectorElementType, WithPayload};
-use shard::Shard;
+use segment::types::{ScoredPoint, VectorElementType, WithPayload, WithPayloadInterface};
+use shard::{Shard, ShardId};
 use tokio::runtime::Handle;
+
+use crate::operations::OperationToShard;
 
 pub mod collection_manager;
 mod common;
@@ -33,6 +37,7 @@ type CollectionId = String;
 /// Collection's data is split into several shards.
 pub struct Collection {
     shard: Shard,
+    ring: HashRing<ShardId>,
 }
 
 impl Collection {
@@ -41,19 +46,29 @@ impl Collection {
         path: &Path,
         config: &CollectionConfig,
     ) -> Result<Self, CollectionError> {
+        let mut ring = HashRing::new();
+        ring.add(0);
         Ok(Self {
             shard: Shard::build(0, id, path, config)?,
+            ring,
         })
     }
 
     pub fn load(id: CollectionId, path: &Path) -> Self {
+        let mut ring = HashRing::new();
+        ring.add(0);
         Self {
             shard: Shard::load(0, id, path),
+            ring,
         }
     }
 
-    fn select_shard<T>(&self, _: &T) -> &Shard {
+    fn shard_by_id(&self, _id: ShardId) -> &Shard {
         &self.shard
+    }
+
+    fn all_shards(&self) -> Vec<&Shard> {
+        vec![&self.shard]
     }
 
     pub async fn update(
@@ -61,13 +76,30 @@ impl Collection {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        self.select_shard(&operation).update(operation, wait).await
+        operation.validate()?;
+        let by_shard = operation.split_by_shard(&self.ring);
+        let mut results = Vec::new();
+        match by_shard {
+            OperationToShard::ByShard(by_shard) => {
+                for (shard_id, operation) in by_shard {
+                    results.push(self.shard_by_id(shard_id).update(operation, wait).await)
+                }
+            }
+            OperationToShard::ToAll(operation) => {
+                for shard in self.all_shards() {
+                    results.push(shard.update(operation.clone(), wait).await)
+                }
+            }
+        }
+        // At least one result is always present.
+        // This is a stub to keep the current API as we have only 1 shard for now.
+        results.pop().unwrap()
     }
 
     pub async fn recommend_by(
         &self,
         request: RecommendRequest,
-        segment_searcher: &(dyn CollectionSearcher),
+        segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         self.shard
@@ -93,20 +125,30 @@ impl Collection {
     pub async fn scroll_by(
         &self,
         request: ScrollRequest,
-        segment_searcher: &(dyn CollectionSearcher),
+        segment_searcher: &(dyn CollectionSearcher + Sync),
     ) -> CollectionResult<ScrollResult> {
         self.shard.scroll_by(request, segment_searcher).await
     }
 
     pub async fn retrieve(
         &self,
-        points: &[PointIdType],
-        with_payload: &WithPayload,
-        with_vector: bool,
-        segment_searcher: &(dyn CollectionSearcher),
+        request: PointRequest,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
     ) -> CollectionResult<Vec<Record>> {
+        let with_payload_interface = request
+            .with_payload
+            .as_ref()
+            .unwrap_or(&WithPayloadInterface::Bool(false));
+        let with_payload = WithPayload::from(with_payload_interface);
+        let with_vector = request.with_vector;
+
         segment_searcher
-            .retrieve(self.shard.segments(), points, with_payload, with_vector)
+            .retrieve(
+                self.shard.segments(),
+                &request.ids,
+                &with_payload,
+                with_vector,
+            )
             .await
     }
 

@@ -9,12 +9,14 @@ package qdrant;
 service Points {
   rpc Upsert (UpsertPoints) returns (PointsOperationResponse) {}
   rpc Delete (DeletePoints) returns (PointsOperationResponse) {}
+  rpc Get (GetPoints) returns (GetResponse) {}
   rpc SetPayload (SetPayloadPoints) returns (PointsOperationResponse) {}
   rpc DeletePayload (DeletePayloadPoints) returns (PointsOperationResponse) {}
   rpc ClearPayload (ClearPayloadPoints) returns (PointsOperationResponse) {}
   rpc CreateFieldIndex (CreateFieldIndexCollection) returns (PointsOperationResponse) {}
   rpc DeleteFieldIndex (DeleteFieldIndexCollection) returns (PointsOperationResponse) {}
   rpc Search (SearchPoints) returns (SearchResponse) {}
+  rpc Scroll (ScrollPoints) returns (ScrollResponse) {}
 }
 
 // ---------------------------------------------
@@ -43,6 +45,13 @@ message DeletePoints {
   string collection = 1;
   optional bool wait = 2;
   PointsSelector points = 3;
+}
+
+message GetPoints {
+  string collection = 1;
+  repeated PointId ids = 2;
+  optional bool with_vector = 3;
+  WithPayloadSelector with_payload = 4;
 }
 
 message SetPayloadPoints {
@@ -107,6 +116,15 @@ message SearchPoints {
   SearchParams params = 7;
 }
 
+message ScrollPoints {
+  string collection = 1;
+  Filter filter = 2;
+  optional PointId offset = 3;
+  optional uint32 limit = 4;
+  optional bool with_vector = 5;
+  WithPayloadSelector with_payload = 6;
+}
+
 // ---------------------------------------------
 // ---------------- RPC Response ---------------
 // ---------------------------------------------
@@ -136,6 +154,23 @@ message ScoredPoint {
 
 message SearchResponse {
   repeated ScoredPoint result = 1;
+  double time = 2;
+}
+
+message ScrollResponse {
+  optional PointId next_page_offset = 1;
+  repeated RetrievedPoint result = 2;
+  double time = 3;
+}
+
+message RetrievedPoint {
+  PointId id = 1;
+  map<string, Payload> payload = 2;
+  repeated float vector = 3;
+}
+
+message GetResponse {
+  repeated RetrievedPoint result = 1;
   double time = 2;
 }
 

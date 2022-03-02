@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
 use collection::operations::types::{
-    CollectionInfo, RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
-    UpdateResult,
+    CollectionInfo, PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult,
+    SearchRequest, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
 use segment::types::ScoredPoint;
@@ -12,7 +12,6 @@ use storage::content_manager::storage_ops::{
     ChangeAliasesOperation, CreateCollection, StorageOperations, UpdateCollection,
 };
 
-use crate::actix::api::retrieve_api::PointRequest;
 use crate::common::models::CollectionsResponse;
 use crate::common::points::CreateFieldIndex;
 

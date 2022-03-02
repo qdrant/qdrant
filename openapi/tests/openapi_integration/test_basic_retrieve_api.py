@@ -82,3 +82,21 @@ def test_points_retrieve():
     )
     assert response.ok
     assert len(response.json()['result']) == 2
+
+
+def test_recommendation():
+    response = request_with_validation(
+        api='/collections/{name}/points/recommend',
+        method="POST",
+        path_params={'name': collection_name},
+        body={
+            "top": 3,
+            "negative": [],
+            "positive": [1],
+            "with_vector": False,
+            "with_payload": True
+        }
+    )
+    assert len(response.json()['result']) == 3
+    assert response.json()['result'][0]['payload'] is not None
+    assert response.ok

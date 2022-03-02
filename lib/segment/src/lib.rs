@@ -12,6 +12,7 @@ pub mod vector_storage;
 
 #[macro_use]
 extern crate num_derive;
+extern crate core;
 
 #[cfg(test)]
 mod tests {

@@ -608,8 +608,12 @@ pub enum Condition {
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum WithPayloadInterface {
+    /// If `true` - return all payload,
+    /// If `false` - do not return payload
     Bool(bool),
+    /// Specify which fields to return
     Fields(Vec<String>),
+    /// Specify included or excluded fields
     Selector(PayloadSelector),
 }
 impl From<bool> for WithPayload {
@@ -673,7 +677,9 @@ impl PayloadSelectorExclude {
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadSelector {
+    /// Include only this fields into response payload
     Include(PayloadSelectorInclude),
+    /// Exclude this fields from result payload. Keep all other fields.
     Exclude(PayloadSelectorExclude),
 }
 
