@@ -39,4 +39,4 @@ docker run --rm -v "${PWD}"/openapi:/spec redocly/openapi-cli lint openapi-merge
 
 docker run --rm -i simplealpine/yaml2json <./openapi/openapi-merged.yaml | jq > ./openapi/openapi-merged.json
 
-cp ./openapi/openapi-merged.json ./docs/redoc/openapi.json
+cp ./openapi/openapi-merged.json ./docs/redoc/master/openapi.json

@@ -101,15 +101,15 @@ pub struct UpdateResult {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ScrollRequest {
-    /// Start ID to read points from. Default: 0
+    /// Start ID to read points from.
     pub offset: Option<PointIdType>,
     /// Page size. Default: 10
     pub limit: Option<usize>,
     /// Look only for points which satisfies this conditions. If not provided - all points.
     pub filter: Option<Filter>,
-    /// Return point payload with the result. Default: True
+    /// Select which payload to return with the response. Default: All
     pub with_payload: Option<WithPayloadInterface>,
-    /// Return point vector with the result. Default: false
+    /// Whether to return the point vector with the result?
     #[serde(default)]
     pub with_vector: bool,
 }
@@ -150,9 +150,9 @@ pub struct SearchRequest {
     pub params: Option<SearchParams>,
     /// Max number of result to return
     pub top: usize,
-    /// Payload interface
+    /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
-    /// Return point vector with the result. Default: false
+    /// Whether to return the point vector with the result?
     #[serde(default)]
     pub with_vector: bool,
 }
@@ -162,9 +162,9 @@ pub struct SearchRequest {
 pub struct PointRequest {
     /// Look for points with ids
     pub ids: Vec<PointIdType>,
-    /// Payload interface
+    /// Select which payload to return with the response. Default: All
     pub with_payload: Option<WithPayloadInterface>,
-    /// Return point vector with the result. Default: false
+    /// Whether to return the point vector with the result?
     #[serde(default)]
     pub with_vector: bool,
 }
@@ -189,6 +189,11 @@ pub struct RecommendRequest {
     pub params: Option<SearchParams>,
     /// Max number of result to return
     pub top: usize,
+    /// Select which payload to return with the response. Default: None
+    pub with_payload: Option<WithPayloadInterface>,
+    /// Whether to return the point vector with the result?
+    #[serde(default)]
+    pub with_vector: bool,
 }
 
 #[derive(Error, Debug, Clone)]

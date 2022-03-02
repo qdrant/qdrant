@@ -1155,6 +1155,7 @@
         "oneOf": [
           {
             "additionalProperties": false,
+            "description": "Include only this fields into response payload",
             "properties": {
               "include": {
                 "$ref": "#/components/schemas/PayloadSelectorInclude"
@@ -1167,6 +1168,7 @@
           },
           {
             "additionalProperties": false,
+            "description": "Exclude this fields from result payload. Keep all other fields.",
             "properties": {
               "exclude": {
                 "$ref": "#/components/schemas/PayloadSelectorExclude"
@@ -1458,11 +1460,11 @@
                 "nullable": true
               }
             ],
-            "description": "Payload interface"
+            "description": "Select which payload to return with the response. Default: All"
           },
           "with_vector": {
             "default": false,
-            "description": "Return point vector with the result. Default: false",
+            "description": "Whether to return the point vector with the result?",
             "type": "boolean"
           }
         },
@@ -1608,6 +1610,22 @@
             "format": "uint",
             "minimum": 0,
             "type": "integer"
+          },
+          "with_payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithPayloadInterface"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Select which payload to return with the response. Default: None"
+          },
+          "with_vector": {
+            "default": false,
+            "description": "Whether to return the point vector with the result?",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1746,7 +1764,7 @@
                 "nullable": true
               }
             ],
-            "description": "Start ID to read points from. Default: 0"
+            "description": "Start ID to read points from."
           },
           "with_payload": {
             "anyOf": [
@@ -1757,11 +1775,11 @@
                 "nullable": true
               }
             ],
-            "description": "Return point payload with the result. Default: True"
+            "description": "Select which payload to return with the response. Default: All"
           },
           "with_vector": {
             "default": false,
-            "description": "Return point vector with the result. Default: false",
+            "description": "Whether to return the point vector with the result?",
             "type": "boolean"
           }
         },
@@ -1855,11 +1873,11 @@
                 "nullable": true
               }
             ],
-            "description": "Payload interface"
+            "description": "Select which payload to return with the response. Default: None"
           },
           "with_vector": {
             "default": false,
-            "description": "Return point vector with the result. Default: false",
+            "description": "Whether to return the point vector with the result?",
             "type": "boolean"
           }
         },
@@ -2052,9 +2070,11 @@
       "WithPayloadInterface": {
         "anyOf": [
           {
+            "description": "If `true` - return all payload, If `false` - do not return payload",
             "type": "boolean"
           },
           {
+            "description": "Specify which fields to return",
             "items": {
               "type": "string"
             },
