@@ -1151,35 +1151,15 @@
         ]
       },
       "PayloadSelector": {
-        "description": "Specifies how to treat payload selector",
-        "oneOf": [
+        "anyOf": [
           {
-            "additionalProperties": false,
-            "description": "Include only this fields into response payload",
-            "properties": {
-              "include": {
-                "$ref": "#/components/schemas/PayloadSelectorInclude"
-              }
-            },
-            "required": [
-              "include"
-            ],
-            "type": "object"
+            "$ref": "#/components/schemas/PayloadSelectorInclude"
           },
           {
-            "additionalProperties": false,
-            "description": "Exclude this fields from result payload. Keep all other fields.",
-            "properties": {
-              "exclude": {
-                "$ref": "#/components/schemas/PayloadSelectorExclude"
-              }
-            },
-            "required": [
-              "exclude"
-            ],
-            "type": "object"
+            "$ref": "#/components/schemas/PayloadSelectorExclude"
           }
-        ]
+        ],
+        "description": "Specifies how to treat payload selector"
       },
       "PayloadSelectorExclude": {
         "additionalProperties": false,
