@@ -109,7 +109,7 @@ pub struct ScrollRequest {
     pub filter: Option<Filter>,
     /// Select which payload to return with the response. Default: All
     pub with_payload: Option<WithPayloadInterface>,
-    /// Return point vector with the result?
+    /// Whether to return the point vector with the result?
     #[serde(default)]
     pub with_vector: bool,
 }
@@ -152,7 +152,7 @@ pub struct SearchRequest {
     pub top: usize,
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
-    /// Return point vector with the result
+    /// Whether to return the point vector with the result?
     #[serde(default)]
     pub with_vector: bool,
 }
@@ -164,7 +164,7 @@ pub struct PointRequest {
     pub ids: Vec<PointIdType>,
     /// Select which payload to return with the response. Default: All
     pub with_payload: Option<WithPayloadInterface>,
-    /// Return point vector with the result. Default: false
+    /// Whether to return the point vector with the result?
     #[serde(default)]
     pub with_vector: bool,
 }
@@ -191,7 +191,7 @@ pub struct RecommendRequest {
     pub top: usize,
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
-    /// Return point vector with the result
+    /// Whether to return the point vector with the result?
     #[serde(default)]
     pub with_vector: bool,
 }
