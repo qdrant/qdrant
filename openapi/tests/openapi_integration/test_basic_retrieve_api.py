@@ -84,6 +84,35 @@ def test_points_retrieve():
     assert len(response.json()['result']) == 2
 
 
+def test_exclude_payload():
+    response = request_with_validation(
+        api='/collections/{name}/points/search',
+        method="POST",
+        path_params={'name': collection_name},
+        body={
+            "vector": [0.2, 0.1, 0.9, 0.7],
+            "top": 5,
+            "filter": {
+                "should": [
+                    {
+                        "key": "city",
+                        "match": {
+                            "keyword": "London"
+                        }
+                    }
+                ]
+            },
+            "with_payload": {
+                "exclude": ["city"]
+            }
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']) > 0
+    for result in response.json()['result']:
+        assert 'city' not in result['payload']
+
+
 def test_recommendation():
     response = request_with_validation(
         api='/collections/{name}/points/recommend',

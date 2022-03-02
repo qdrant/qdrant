@@ -636,7 +636,7 @@ impl PayloadSelectorExclude {
 
 /// Specifies how to treat payload selector
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
-#[serde(deny_unknown_fields)]
+#[serde(untagged)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadSelector {
     /// Include only this fields into response payload
