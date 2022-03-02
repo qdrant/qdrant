@@ -4,7 +4,7 @@ log_level: DEBUG,sled=INFO
 
 service:
   host: 127.0.0.1
-  rest_port: 6333
+  http_port: 6333
   grpc_port: 6334
 
 
