@@ -1464,7 +1464,7 @@
           },
           "with_vector": {
             "default": false,
-            "description": "Return point vector with the result. Default: false",
+            "description": "Whether to return the point vector with the result?",
             "type": "boolean"
           }
         },
@@ -1624,7 +1624,7 @@
           },
           "with_vector": {
             "default": false,
-            "description": "Return point vector with the result",
+            "description": "Whether to return the point vector with the result?",
             "type": "boolean"
           }
         },
@@ -1779,7 +1779,7 @@
           },
           "with_vector": {
             "default": false,
-            "description": "Return point vector with the result?",
+            "description": "Whether to return the point vector with the result?",
             "type": "boolean"
           }
         },
@@ -1877,7 +1877,7 @@
           },
           "with_vector": {
             "default": false,
-            "description": "Return point vector with the result",
+            "description": "Whether to return the point vector with the result?",
             "type": "boolean"
           }
         },
