@@ -1,4 +1,5 @@
 mod api;
+#[allow(clippy::all)]
 pub mod qdrant;
 
 use crate::common::models::VersionInfo;

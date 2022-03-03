@@ -1008,8 +1008,10 @@ pub struct Match {
 pub mod r#match {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum MatchValue {
+        /// Match string keyword
         #[prost(string, tag = "1")]
         Keyword(::prost::alloc::string::String),
+        /// Match integer
         #[prost(int64, tag = "2")]
         Integer(i64),
     }
@@ -1027,13 +1029,16 @@ pub struct Range {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoBoundingBox {
+    /// north-west corner
     #[prost(message, optional, tag = "1")]
     pub top_left: ::core::option::Option<GeoPoint>,
+    /// south-east corner
     #[prost(message, optional, tag = "2")]
     pub bottom_right: ::core::option::Option<GeoPoint>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoRadius {
+    /// Center of the circle
     #[prost(message, optional, tag = "1")]
     pub center: ::core::option::Option<GeoPoint>,
     /// In meters
