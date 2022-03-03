@@ -12,7 +12,8 @@ use crate::tonic::qdrant::points_server::Points;
 use crate::tonic::qdrant::{
     ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
     DeletePayloadPoints, DeletePoints, GetPoints, GetResponse, PointsOperationResponse,
-    ScrollPoints, ScrollResponse, SearchPoints, SearchResponse, SetPayloadPoints, UpsertPoints,
+    RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse,
+    SetPayloadPoints, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsList};
@@ -342,6 +343,56 @@ impl Points for PointsService {
             next_page_offset: scrolled_points.next_page_offset.map(|n| n.into()),
             result: scrolled_points
                 .points
+                .into_iter()
+                .map(|point| point.into())
+                .collect(),
+            time: timing.elapsed().as_secs_f64(),
+        };
+
+        Ok(Response::new(response))
+    }
+
+    async fn recommend(
+        &self,
+        request: Request<RecommendPoints>,
+    ) -> Result<Response<RecommendResponse>, Status> {
+        let RecommendPoints {
+            collection_name,
+            positive,
+            negative,
+            filter,
+            top,
+            with_vector,
+            with_payload,
+            params,
+        } = request.into_inner();
+
+        let request = collection::operations::types::RecommendRequest {
+            positive: positive
+                .into_iter()
+                .map(|p| p.try_into())
+                .collect::<Result<_, _>>()?,
+            negative: negative
+                .into_iter()
+                .map(|p| p.try_into())
+                .collect::<Result<_, _>>()?,
+            filter: filter.map(|f| f.try_into()).transpose()?,
+            params: params.map(|p| p.into()),
+            top: top as usize,
+            with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
+            with_vector: with_vector.unwrap_or(false),
+        };
+
+        let timing = Instant::now();
+        let recommended_points = self
+            .toc
+            .as_ref()
+            .recommend(&collection_name, request)
+            .await
+            .map_err(error_to_status)?;
+
+        let response = RecommendResponse {
+            result: recommended_points
                 .into_iter()
                 .map(|point| point.into())
                 .collect(),
