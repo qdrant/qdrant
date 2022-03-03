@@ -216,7 +216,7 @@ message GetResponse {
 // ---------------------------------------------
 
 message Filter {
-  repeated Condition should = 1; // At least one of thous conditions should match
+  repeated Condition should = 1; // At least one of those conditions should match
   repeated Condition must = 2; // All conditions must match
   repeated Condition must_not = 3; // All conditions must NOT match
 }
