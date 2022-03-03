@@ -46,7 +46,7 @@ mod tests {
             .block_on(
                 toc.perform_collection_operation(StorageOperations::CreateCollection(
                     CreateCollectionOperation {
-                        name: "test".to_string(),
+                        collection_name: "test".to_string(),
                         create_collection: CreateCollection {
                             vector_size: 10,
                             distance: Distance::Cosine,

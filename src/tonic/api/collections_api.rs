@@ -8,9 +8,9 @@ use crate::tonic::qdrant::{
     CollectionConfig, CollectionDescription, CollectionInfo, CollectionOperationResponse,
     CollectionParams, CollectionStatus, CreateCollection, DeleteCollection, Distance,
     GetCollectionInfoRequest, GetCollectionInfoResponse, HnswConfigDiff, ListCollectionsRequest,
-    ListCollectionsResponse, OptimizersConfigDiff, UpdateCollection, WalConfigDiff,
+    ListCollectionsResponse, OptimizerStatus, OptimizersConfigDiff, PayloadSchemaInfo,
+    PayloadSchemaType, UpdateCollection, WalConfigDiff,
 };
-use num_traits::FromPrimitive;
 use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::Instant;
@@ -38,7 +38,7 @@ impl Collections for CollectionsService {
         request: Request<GetCollectionInfoRequest>,
     ) -> Result<Response<GetCollectionInfoResponse>, Status> {
         let timing = Instant::now();
-        let collection_name = request.into_inner().name;
+        let collection_name = request.into_inner().collection_name;
         let result = do_get_collection(&self.toc, &collection_name)
             .await
             .map_err(error_to_status)?;
@@ -130,20 +130,24 @@ impl TryFrom<CreateCollection> for storage::content_manager::storage_ops::Storag
     type Error = Status;
 
     fn try_from(value: CreateCollection) -> Result<Self, Self::Error> {
-        if let Some(distance) = FromPrimitive::from_i32(value.distance) {
-            Ok(Self::CreateCollection(CreateCollectionOperation {
-                name: value.name,
-                create_collection: StorageCreateCollection {
-                    vector_size: value.vector_size as usize,
-                    distance,
-                    hnsw_config: value.hnsw_config.map(|v| v.into()),
-                    wal_config: value.wal_config.map(|v| v.into()),
-                    optimizers_config: value.optimizers_config.map(|v| v.into()),
-                },
-            }))
-        } else {
-            Err(Status::failed_precondition("Bad value of distance field!"))
-        }
+        let internal_distance = match Distance::from_i32(value.distance) {
+            Some(Distance::Cosine) => segment::types::Distance::Cosine,
+            Some(Distance::Euclid) => segment::types::Distance::Euclid,
+            Some(Distance::Dot) => segment::types::Distance::Dot,
+            Some(_) => return Err(Status::failed_precondition("Unknown distance")),
+            _ => return Err(Status::failed_precondition("Bad value of distance field!")),
+        };
+
+        Ok(Self::CreateCollection(CreateCollectionOperation {
+            collection_name: value.collection_name,
+            create_collection: StorageCreateCollection {
+                vector_size: value.vector_size as usize,
+                distance: internal_distance,
+                hnsw_config: value.hnsw_config.map(|v| v.into()),
+                wal_config: value.wal_config.map(|v| v.into()),
+                optimizers_config: value.optimizers_config.map(|v| v.into()),
+            },
+        }))
     }
 }
 
@@ -186,9 +190,20 @@ impl From<(Instant, collection::operations::types::CollectionInfo)> for GetColle
     fn from(value: (Instant, collection::operations::types::CollectionInfo)) -> Self {
         let (timing, response) = value;
 
+        let collection::operations::types::CollectionInfo {
+            status,
+            optimizer_status,
+            vectors_count,
+            segments_count,
+            disk_data_size,
+            ram_data_size,
+            config,
+            payload_schema,
+        } = response;
+
         GetCollectionInfoResponse {
             result: Some(CollectionInfo {
-                status: match response.status {
+                status: match status {
                     collection::operations::types::CollectionStatus::Green => {
                         CollectionStatus::Green
                     }
@@ -198,14 +213,23 @@ impl From<(Instant, collection::operations::types::CollectionInfo)> for GetColle
                     collection::operations::types::CollectionStatus::Red => CollectionStatus::Red,
                 }
                 .into(),
-                vectors_count: response.vectors_count as u64,
-                segments_count: response.segments_count as u64,
-                disk_data_size: response.disk_data_size as u64,
-                ram_data_size: response.ram_data_size as u64,
+                optimizer_status: Some(match optimizer_status {
+                    collection::operations::types::OptimizersStatus::Ok => OptimizerStatus {
+                        ok: true,
+                        error: "".to_string(),
+                    },
+                    collection::operations::types::OptimizersStatus::Error(error) => {
+                        OptimizerStatus { ok: false, error }
+                    }
+                }),
+                vectors_count: vectors_count as u64,
+                segments_count: segments_count as u64,
+                disk_data_size: disk_data_size as u64,
+                ram_data_size: ram_data_size as u64,
                 config: Some(CollectionConfig {
                     params: Some(CollectionParams {
-                        vector_size: response.config.params.vector_size as u64,
-                        distance: match response.config.params.distance {
+                        vector_size: config.params.vector_size as u64,
+                        distance: match config.params.distance {
                             segment::types::Distance::Cosine => Distance::Cosine,
                             segment::types::Distance::Euclid => Distance::Euclid,
                             segment::types::Distance::Dot => Distance::Dot,
@@ -213,49 +237,55 @@ impl From<(Instant, collection::operations::types::CollectionInfo)> for GetColle
                         .into(),
                     }),
                     hnsw_config: Some(HnswConfigDiff {
-                        m: Some(response.config.hnsw_config.m as u64),
-                        ef_construct: Some(response.config.hnsw_config.ef_construct as u64),
-                        full_scan_threshold: Some(
-                            response.config.hnsw_config.full_scan_threshold as u64,
-                        ),
+                        m: Some(config.hnsw_config.m as u64),
+                        ef_construct: Some(config.hnsw_config.ef_construct as u64),
+                        full_scan_threshold: Some(config.hnsw_config.full_scan_threshold as u64),
                     }),
                     optimizer_config: Some(OptimizersConfigDiff {
-                        deleted_threshold: Some(response.config.optimizer_config.deleted_threshold),
+                        deleted_threshold: Some(config.optimizer_config.deleted_threshold),
                         vacuum_min_vector_number: Some(
-                            response.config.optimizer_config.vacuum_min_vector_number as u64,
+                            config.optimizer_config.vacuum_min_vector_number as u64,
                         ),
                         default_segment_number: Some(
-                            response.config.optimizer_config.default_segment_number as u64,
+                            config.optimizer_config.default_segment_number as u64,
                         ),
-                        max_segment_size: Some(
-                            response.config.optimizer_config.max_segment_size as u64,
-                        ),
-                        memmap_threshold: Some(
-                            response.config.optimizer_config.memmap_threshold as u64,
-                        ),
-                        indexing_threshold: Some(
-                            response.config.optimizer_config.indexing_threshold as u64,
-                        ),
+                        max_segment_size: Some(config.optimizer_config.max_segment_size as u64),
+                        memmap_threshold: Some(config.optimizer_config.memmap_threshold as u64),
+                        indexing_threshold: Some(config.optimizer_config.indexing_threshold as u64),
                         payload_indexing_threshold: Some(
-                            response.config.optimizer_config.payload_indexing_threshold as u64,
+                            config.optimizer_config.payload_indexing_threshold as u64,
                         ),
-                        flush_interval_sec: Some(
-                            response.config.optimizer_config.flush_interval_sec as u64,
-                        ),
+                        flush_interval_sec: Some(config.optimizer_config.flush_interval_sec as u64),
                         max_optimization_threads: Some(
-                            response.config.optimizer_config.max_optimization_threads as u64,
+                            config.optimizer_config.max_optimization_threads as u64,
                         ),
                     }),
                     wal_config: Some(WalConfigDiff {
-                        wal_capacity_mb: Some(response.config.wal_config.wal_capacity_mb as u64),
-                        wal_segments_ahead: Some(
-                            response.config.wal_config.wal_segments_ahead as u64,
-                        ),
+                        wal_capacity_mb: Some(config.wal_config.wal_capacity_mb as u64),
+                        wal_segments_ahead: Some(config.wal_config.wal_segments_ahead as u64),
                     }),
                 }),
-                payload_schema: Default::default(),
+                payload_schema: payload_schema
+                    .into_iter()
+                    .map(|(k, v)| (k, v.into()))
+                    .collect(),
             }),
             time: timing.elapsed().as_secs_f64(),
+        }
+    }
+}
+
+impl From<segment::types::PayloadSchemaInfo> for PayloadSchemaInfo {
+    fn from(schema: segment::types::PayloadSchemaInfo) -> Self {
+        PayloadSchemaInfo {
+            data_type: match schema.data_type {
+                segment::types::PayloadSchemaType::Keyword => PayloadSchemaType::Keyword,
+                segment::types::PayloadSchemaType::Integer => PayloadSchemaType::Integer,
+                segment::types::PayloadSchemaType::Float => PayloadSchemaType::Float,
+                segment::types::PayloadSchemaType::Geo => PayloadSchemaType::Geo,
+            }
+            .into(),
+            indexed: schema.indexed,
         }
     }
 }
@@ -273,7 +303,7 @@ impl From<(Instant, bool)> for CollectionOperationResponse {
 impl From<UpdateCollection> for storage::content_manager::storage_ops::StorageOperations {
     fn from(value: UpdateCollection) -> Self {
         Self::UpdateCollection(UpdateCollectionOperation {
-            name: value.name,
+            collection_name: value.collection_name,
             update_collection: StorageUpdateCollection {
                 optimizers_config: value.optimizers_config.map(|v| v.into()),
             },
@@ -283,6 +313,6 @@ impl From<UpdateCollection> for storage::content_manager::storage_ops::StorageOp
 
 impl From<DeleteCollection> for storage::content_manager::storage_ops::StorageOperations {
     fn from(value: DeleteCollection) -> Self {
-        Self::DeleteCollection(DeleteCollectionOperation(value.name))
+        Self::DeleteCollection(DeleteCollectionOperation(value.collection_name))
     }
 }
