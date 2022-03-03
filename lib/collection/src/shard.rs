@@ -34,7 +34,6 @@ use crate::optimizers_builder::build_optimizers;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 use crate::CollectionId;
-use futures::executor::block_on;
 use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::segment_constructor::load_segment;
 use std::fs::{read_dir, remove_dir_all};
@@ -56,7 +55,6 @@ pub struct Shard {
     update_sender: ArcSwap<UnboundedSender<UpdateSignal>>,
     path: PathBuf,
     schema_store: Arc<SchemaStorage>,
-    id: ShardId,
 }
 
 /// Shard holds information about segments and WAL.
@@ -113,11 +111,10 @@ impl Shard {
             update_sender: ArcSwap::from_pointee(update_sender),
             path: collection_path.to_owned(),
             schema_store,
-            id,
         }
     }
 
-    pub fn load(
+    pub async fn load(
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
@@ -184,7 +181,7 @@ impl Shard {
             schema_storage,
         );
 
-        block_on(collection.load_from_wal());
+        collection.load_from_wal().await;
 
         collection
     }
@@ -330,7 +327,7 @@ impl Shard {
         Ok(points)
     }
 
-    /// Collect overview information about the collection
+    /// Collect overview information about the shard
     pub async fn info(&self) -> CollectionResult<CollectionInfo> {
         let collection_config = self.config.read().await.clone();
         let segments = self.segments.read();
@@ -443,25 +440,18 @@ impl Shard {
         self.segments.read().flush_all().unwrap();
         bar.finish();
     }
-}
 
-impl Drop for Shard {
-    fn drop(&mut self) {
-        println!("Dropping shard {}", self.id);
+    pub async fn before_drop(&mut self) {
         // Finishes update tasks right before destructor stuck to do so with runtime
         self.update_sender.load().send(UpdateSignal::Stop).unwrap();
-        println!("Sent stop signal {}", self.id);
 
-        block_on(self.stop_flush_worker());
-        println!("Sent stop flush worker {}", self.id);
+        self.stop_flush_worker().await;
 
-        block_on(self.wait_update_workers_stop()).unwrap();
-        println!("Stopped update workers {}", self.id);
+        self.wait_update_workers_stop().await.unwrap();
 
         match self.runtime_handle.take() {
             None => {}
             Some(handle) => {
-                println!("Dropping runtime handle {}", self.id);
                 // The drop could be called from the tokio context, e.g. from perform_collection_operation method.
                 // Calling remove from there would lead to the following error in a new version of tokio:
                 // "Cannot drop a runtime in a context where blocking is not allowed. This happens when a runtime is dropped from within an asynchronous context."
@@ -475,7 +465,5 @@ impl Drop for Shard {
                 thread_handler.join().unwrap();
             }
         }
-
-        println!("Dropped shard {}", self.id)
     }
 }

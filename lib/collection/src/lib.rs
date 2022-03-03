@@ -1,6 +1,7 @@
 //! Crate, which implements all functions required for operations with a single collection
 
 use std::{
+    cmp::max,
     collections::HashMap,
     fs::create_dir_all,
     path::{Path, PathBuf},
@@ -50,6 +51,8 @@ type CollectionId = String;
 pub struct Collection {
     shards: HashMap<ShardId, Shard>,
     ring: HashRing<ShardId>,
+    /// Tracks whether `before_drop` fn has been called.
+    before_drop_called: bool,
 }
 
 impl Collection {
@@ -72,10 +75,14 @@ impl Collection {
             );
             ring.add(shard_id);
         }
-        Ok(Self { shards, ring })
+        Ok(Self {
+            shards,
+            ring,
+            before_drop_called: false,
+        })
     }
 
-    pub fn load(id: CollectionId, path: &Path) -> Self {
+    pub async fn load(id: CollectionId, path: &Path) -> Self {
         let config = CollectionConfig::load(path).unwrap_or_else(|err| {
             panic!(
                 "Can't read collection config due to {}\nat {}",
@@ -87,31 +94,39 @@ impl Collection {
         let mut shards = HashMap::new();
 
         // TODO: Migrate previous format to new one
-        if let Some(shard) = Self::try_load_legacy_one_shard(id.clone(), path, &config) {
+        if let Some(shard) = Self::try_load_legacy_one_shard(id.clone(), path, &config).await {
             log::warn!("Loading legacy collection storage as 1 shard.");
             shards.insert(0, shard);
             ring.add(0);
-            return Self { shards, ring };
+            return Self {
+                shards,
+                ring,
+                before_drop_called: false,
+            };
         }
 
         for shard_id in 0..config.params.shard_number {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
                 shard_id,
-                Shard::load(shard_id, id.clone(), &shard_path, &config),
+                Shard::load(shard_id, id.clone(), &shard_path, &config).await,
             );
             ring.add(shard_id);
         }
-        Self { shards, ring }
+        Self {
+            shards,
+            ring,
+            before_drop_called: false,
+        }
     }
 
-    fn try_load_legacy_one_shard(
+    async fn try_load_legacy_one_shard(
         id: CollectionId,
         collection_path: &Path,
         config: &CollectionConfig,
     ) -> Option<Shard> {
         if Shard::segments_path(collection_path).is_dir() {
-            Some(Shard::load(0, id, collection_path, config))
+            Some(Shard::load(0, id, collection_path, config).await)
         } else {
             None
         }
@@ -352,12 +367,31 @@ impl Collection {
     }
 
     pub async fn info(&self) -> CollectionResult<CollectionInfo> {
-        // TODO: get info from all shards - change API
-        self.shards
+        let mut info = self
+            .shards
             .get(&0)
             .expect("At least 1 shard expected")
             .info()
-            .await
+            .await?;
+        for shard in self.all_shards().skip(1) {
+            let mut shard_info = shard.info().await?;
+            info.status = max(info.status, shard_info.status);
+            info.optimizer_status = max(info.optimizer_status, shard_info.optimizer_status);
+            info.vectors_count += shard_info.vectors_count;
+            info.segments_count += shard_info.segments_count;
+            info.disk_data_size += shard_info.disk_data_size;
+            info.ram_data_size += shard_info.ram_data_size;
+            info.payload_schema
+                .extend(shard_info.payload_schema.drain());
+        }
+        Ok(info)
+    }
+
+    pub async fn before_drop(&mut self) {
+        for (_, mut shard) in self.shards.drain() {
+            shard.before_drop().await
+        }
+        self.before_drop_called = true
     }
 }
 
@@ -386,4 +420,18 @@ pub fn avg_vectors<'a>(
     }
 
     avg_vector
+}
+
+impl Drop for Collection {
+    fn drop(&mut self) {
+        if !self.before_drop_called {
+            // Panic is used to get fast feedback in unit and integration tests
+            // in cases where `before_drop` was not added.
+            if cfg!(test) {
+                panic!("Collection `before_drop` was not called.")
+            } else {
+                log::error!("Collection `before_drop` was not called.")
+            }
+        }
+    }
 }
