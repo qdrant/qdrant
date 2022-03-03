@@ -30,7 +30,7 @@ service Collections {
 }
 
 message GetCollectionInfoRequest {
-  string name = 1; // Name of the collection
+  string collection_name = 1; // Name of the collection
 }
 
 message ListCollectionsRequest {
@@ -153,7 +153,7 @@ message OptimizersConfigDiff {
 }
 
 message CreateCollection {
-  string name = 1; // Name of the collection
+  string collection_name = 1; // Name of the collection
   uint64 vector_size = 2; // Size of the vectors
   Distance distance = 3; // Distance function used for comparing vectors
   optional HnswConfigDiff hnsw_config = 4; // Configuration of vector index
@@ -162,12 +162,12 @@ message CreateCollection {
 }
 
 message UpdateCollection {
-  string name = 1; // Name of the collection
+  string collection_name = 1; // Name of the collection
   optional OptimizersConfigDiff optimizers_config = 2; // New configuration parameters for the collection
 }
 
 message DeleteCollection {
-  string name = 1; // Name of the collection
+  string collection_name = 1; // Name of the collection
 }
 
 message CollectionOperationResponse {

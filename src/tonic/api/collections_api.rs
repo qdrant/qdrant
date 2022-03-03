@@ -38,7 +38,7 @@ impl Collections for CollectionsService {
         request: Request<GetCollectionInfoRequest>,
     ) -> Result<Response<GetCollectionInfoResponse>, Status> {
         let timing = Instant::now();
-        let collection_name = request.into_inner().name;
+        let collection_name = request.into_inner().collection_name;
         let result = do_get_collection(&self.toc, &collection_name)
             .await
             .map_err(error_to_status)?;
@@ -139,7 +139,7 @@ impl TryFrom<CreateCollection> for storage::content_manager::storage_ops::Storag
         };
 
         Ok(Self::CreateCollection(CreateCollectionOperation {
-            name: value.name,
+            collection_name: value.collection_name,
             create_collection: StorageCreateCollection {
                 vector_size: value.vector_size as usize,
                 distance: internal_distance,
@@ -303,7 +303,7 @@ impl From<(Instant, bool)> for CollectionOperationResponse {
 impl From<UpdateCollection> for storage::content_manager::storage_ops::StorageOperations {
     fn from(value: UpdateCollection) -> Self {
         Self::UpdateCollection(UpdateCollectionOperation {
-            name: value.name,
+            collection_name: value.collection_name,
             update_collection: StorageUpdateCollection {
                 optimizers_config: value.optimizers_config.map(|v| v.into()),
             },
@@ -313,6 +313,6 @@ impl From<UpdateCollection> for storage::content_manager::storage_ops::StorageOp
 
 impl From<DeleteCollection> for storage::content_manager::storage_ops::StorageOperations {
     fn from(value: DeleteCollection) -> Self {
-        Self::DeleteCollection(DeleteCollectionOperation(value.name))
+        Self::DeleteCollection(DeleteCollectionOperation(value.collection_name))
     }
 }

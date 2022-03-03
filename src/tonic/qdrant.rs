@@ -2,7 +2,7 @@
 pub struct GetCollectionInfoRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
+    pub collection_name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListCollectionsRequest {}
@@ -118,7 +118,7 @@ pub struct OptimizersConfigDiff {
 pub struct CreateCollection {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
+    pub collection_name: ::prost::alloc::string::String,
     /// Size of the vectors
     #[prost(uint64, tag = "2")]
     pub vector_size: u64,
@@ -139,7 +139,7 @@ pub struct CreateCollection {
 pub struct UpdateCollection {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
+    pub collection_name: ::prost::alloc::string::String,
     /// New configuration parameters for the collection
     #[prost(message, optional, tag = "2")]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
@@ -148,7 +148,7 @@ pub struct UpdateCollection {
 pub struct DeleteCollection {
     /// Name of the collection
     #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
+    pub collection_name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionOperationResponse {
@@ -671,8 +671,10 @@ pub struct PointId {
 pub mod point_id {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum PointIdOptions {
+        /// Numerical ID of the point
         #[prost(uint64, tag = "1")]
         Num(u64),
+        /// UUID
         #[prost(string, tag = "2")]
         Uuid(::prost::alloc::string::String),
     }
@@ -683,8 +685,10 @@ pub mod point_id {
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpsertPoints {
+    /// name of the collection
     #[prost(string, tag = "1")]
-    pub collection: ::prost::alloc::string::String,
+    pub collection_name: ::prost::alloc::string::String,
+    /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
     pub wait: ::core::option::Option<bool>,
     #[prost(message, repeated, tag = "3")]
@@ -692,80 +696,106 @@ pub struct UpsertPoints {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePoints {
+    /// name of the collection
     #[prost(string, tag = "1")]
-    pub collection: ::prost::alloc::string::String,
+    pub collection_name: ::prost::alloc::string::String,
+    /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
     pub wait: ::core::option::Option<bool>,
+    /// Affected points
     #[prost(message, optional, tag = "3")]
     pub points: ::core::option::Option<PointsSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPoints {
+    /// name of the collection
     #[prost(string, tag = "1")]
-    pub collection: ::prost::alloc::string::String,
+    pub collection_name: ::prost::alloc::string::String,
+    /// List of points to retrieve
     #[prost(message, repeated, tag = "2")]
     pub ids: ::prost::alloc::vec::Vec<PointId>,
+    /// Return point vector with the result.
     #[prost(bool, optional, tag = "3")]
     pub with_vector: ::core::option::Option<bool>,
+    /// Options for specifying which payload to include or not
     #[prost(message, optional, tag = "4")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SetPayloadPoints {
+    /// name of the collection
     #[prost(string, tag = "1")]
-    pub collection: ::prost::alloc::string::String,
+    pub collection_name: ::prost::alloc::string::String,
+    /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
     pub wait: ::core::option::Option<bool>,
+    /// New payload values
     #[prost(map = "string, message", tag = "3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Payload>,
+    /// List of point to modify
     #[prost(message, repeated, tag = "4")]
     pub points: ::prost::alloc::vec::Vec<PointId>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePayloadPoints {
+    /// name of the collection
     #[prost(string, tag = "1")]
-    pub collection: ::prost::alloc::string::String,
+    pub collection_name: ::prost::alloc::string::String,
+    /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
     pub wait: ::core::option::Option<bool>,
+    /// List of keys to delete
     #[prost(string, repeated, tag = "3")]
     pub keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Affected points
     #[prost(message, repeated, tag = "4")]
     pub points: ::prost::alloc::vec::Vec<PointId>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClearPayloadPoints {
+    /// name of the collection
     #[prost(string, tag = "1")]
-    pub collection: ::prost::alloc::string::String,
+    pub collection_name: ::prost::alloc::string::String,
+    /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
     pub wait: ::core::option::Option<bool>,
+    /// Affected points
     #[prost(message, optional, tag = "3")]
     pub points: ::core::option::Option<PointsSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateFieldIndexCollection {
+    /// name of the collection
     #[prost(string, tag = "1")]
-    pub collection: ::prost::alloc::string::String,
+    pub collection_name: ::prost::alloc::string::String,
+    /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
     pub wait: ::core::option::Option<bool>,
+    /// Field name to index
     #[prost(string, tag = "3")]
     pub field_name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteFieldIndexCollection {
+    /// name of the collection
     #[prost(string, tag = "1")]
-    pub collection: ::prost::alloc::string::String,
+    pub collection_name: ::prost::alloc::string::String,
+    /// Wait until the changes have been applied?
     #[prost(bool, optional, tag = "2")]
     pub wait: ::core::option::Option<bool>,
+    /// Field name to delete
     #[prost(string, tag = "3")]
     pub field_name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadIncludeSelector {
+    /// List of payload keys to include into result
     #[prost(string, repeated, tag = "1")]
     pub include: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadExcludeSelector {
+    /// List of payload keys to exclude from the result
     #[prost(string, repeated, tag = "1")]
     pub exclude: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
@@ -778,6 +808,7 @@ pub struct WithPayloadSelector {
 pub mod with_payload_selector {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum SelectorOptions {
+        /// If `true` - return all payload, if `false` - none
         #[prost(bool, tag = "1")]
         Enable(bool),
         #[prost(message, tag = "2")]
@@ -788,38 +819,53 @@ pub mod with_payload_selector {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchParams {
+    ///
+    ///Params relevant to HNSW index. Size of the beam in a beam-search.
+    ///Larger the value - more accurate the result, more time required for search.
     #[prost(uint64, optional, tag = "1")]
     pub hnsw_ef: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchPoints {
+    /// name of the collection
     #[prost(string, tag = "1")]
-    pub collection: ::prost::alloc::string::String,
+    pub collection_name: ::prost::alloc::string::String,
+    /// vector
     #[prost(float, repeated, tag = "2")]
     pub vector: ::prost::alloc::vec::Vec<f32>,
+    /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "3")]
     pub filter: ::core::option::Option<Filter>,
+    /// Max number of result
     #[prost(uint64, tag = "4")]
     pub top: u64,
+    /// Return point vector with the result.
     #[prost(bool, optional, tag = "5")]
     pub with_vector: ::core::option::Option<bool>,
+    /// Options for specifying which payload to include or not
     #[prost(message, optional, tag = "6")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Search config
     #[prost(message, optional, tag = "7")]
     pub params: ::core::option::Option<SearchParams>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollPoints {
     #[prost(string, tag = "1")]
-    pub collection: ::prost::alloc::string::String,
+    pub collection_name: ::prost::alloc::string::String,
+    /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "2")]
     pub filter: ::core::option::Option<Filter>,
+    /// Start with this ID
     #[prost(message, optional, tag = "3")]
     pub offset: ::core::option::Option<PointId>,
+    /// Max number of result
     #[prost(uint32, optional, tag = "4")]
     pub limit: ::core::option::Option<u32>,
+    /// Return point vector with the result.
     #[prost(bool, optional, tag = "5")]
     pub with_vector: ::core::option::Option<bool>,
+    /// Options for specifying which payload to include or not
     #[prost(message, optional, tag = "6")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
 }
@@ -831,26 +877,34 @@ pub struct ScrollPoints {
 pub struct PointsOperationResponse {
     #[prost(message, optional, tag = "1")]
     pub result: ::core::option::Option<UpdateResult>,
+    /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateResult {
+    /// Number of operation
     #[prost(uint64, tag = "1")]
     pub operation_id: u64,
+    /// Operation status
     #[prost(enumeration = "UpdateStatus", tag = "2")]
     pub status: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScoredPoint {
+    /// Point id
     #[prost(message, optional, tag = "1")]
     pub id: ::core::option::Option<PointId>,
+    /// Payload
     #[prost(map = "string, message", tag = "2")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Payload>,
+    /// Similarity score
     #[prost(float, tag = "3")]
     pub score: f32,
+    /// Vector
     #[prost(float, repeated, tag = "4")]
     pub vector: ::prost::alloc::vec::Vec<f32>,
+    /// Last update operation applied to this point
     #[prost(uint64, tag = "5")]
     pub version: u64,
 }
@@ -858,15 +912,18 @@ pub struct ScoredPoint {
 pub struct SearchResponse {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
+    /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollResponse {
+    /// Use this offset for the next query
     #[prost(message, optional, tag = "1")]
     pub next_page_offset: ::core::option::Option<PointId>,
     #[prost(message, repeated, tag = "2")]
     pub result: ::prost::alloc::vec::Vec<RetrievedPoint>,
+    /// Time spent to process
     #[prost(double, tag = "3")]
     pub time: f64,
 }
@@ -883,6 +940,7 @@ pub struct RetrievedPoint {
 pub struct GetResponse {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<RetrievedPoint>,
+    /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
 }
@@ -892,10 +950,13 @@ pub struct GetResponse {
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Filter {
+    /// At least one of thous conditions should match
     #[prost(message, repeated, tag = "1")]
     pub should: ::prost::alloc::vec::Vec<Condition>,
+    /// All conditions must match
     #[prost(message, repeated, tag = "2")]
     pub must: ::prost::alloc::vec::Vec<Condition>,
+    /// All conditions must NOT match
     #[prost(message, repeated, tag = "3")]
     pub must_not: ::prost::alloc::vec::Vec<Condition>,
 }
@@ -925,12 +986,16 @@ pub struct HasIdCondition {
 pub struct FieldCondition {
     #[prost(string, tag = "1")]
     pub key: ::prost::alloc::string::String,
+    /// Check if point has field with a given value
     #[prost(message, optional, tag = "2")]
     pub r#match: ::core::option::Option<Match>,
+    /// Check if points value lies in a given range
     #[prost(message, optional, tag = "3")]
     pub range: ::core::option::Option<Range>,
+    /// Check if points geo location lies in a given area
     #[prost(message, optional, tag = "4")]
     pub geo_bounding_box: ::core::option::Option<GeoBoundingBox>,
+    /// Check if geo point is within a given radius
     #[prost(message, optional, tag = "5")]
     pub geo_radius: ::core::option::Option<GeoRadius>,
 }
@@ -971,6 +1036,7 @@ pub struct GeoBoundingBox {
 pub struct GeoRadius {
     #[prost(message, optional, tag = "1")]
     pub center: ::core::option::Option<GeoPoint>,
+    /// In meters
     #[prost(float, tag = "2")]
     pub radius: f32,
 }
@@ -1065,7 +1131,9 @@ pub struct GeoPoint {
 #[repr(i32)]
 pub enum UpdateStatus {
     UnknownUpdateStatus = 0,
+    /// Update is received, but not processed yet
     Acknowledged = 1,
+    /// Update is applied and ready for search
     Completed = 2,
 }
 #[doc = r" Generated client implementations."]
@@ -1128,6 +1196,8 @@ pub mod points_client {
             self.inner = self.inner.accept_gzip();
             self
         }
+        #[doc = ""]
+        #[doc = "Perform insert + updates on points. If point with given ID already exists - it will be overwritten."]
         pub async fn upsert(
             &mut self,
             request: impl tonic::IntoRequest<super::UpsertPoints>,
@@ -1142,6 +1212,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Upsert");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = ""]
+        #[doc = "Delete points"]
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeletePoints>,
@@ -1156,6 +1228,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Delete");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = ""]
+        #[doc = "Retrieve points"]
         pub async fn get(
             &mut self,
             request: impl tonic::IntoRequest<super::GetPoints>,
@@ -1170,6 +1244,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Get");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = ""]
+        #[doc = "Set payload for points"]
         pub async fn set_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::SetPayloadPoints>,
@@ -1184,6 +1260,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/SetPayload");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = ""]
+        #[doc = "Delete specified key payload for points"]
         pub async fn delete_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::DeletePayloadPoints>,
@@ -1198,6 +1276,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/DeletePayload");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = ""]
+        #[doc = "Remove all payload for specified points"]
         pub async fn clear_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::ClearPayloadPoints>,
@@ -1212,6 +1292,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/ClearPayload");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = ""]
+        #[doc = "Create index for field in collection"]
         pub async fn create_field_index(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateFieldIndexCollection>,
@@ -1226,6 +1308,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/CreateFieldIndex");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = ""]
+        #[doc = "Delete field index for collection"]
         pub async fn delete_field_index(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteFieldIndexCollection>,
@@ -1240,6 +1324,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/DeleteFieldIndex");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = ""]
+        #[doc = "Retrieve closest points based on vector similarity and given filtering conditions"]
         pub async fn search(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchPoints>,
@@ -1254,6 +1340,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Search");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = ""]
+        #[doc = "Iterate over all or filtered points points"]
         pub async fn scroll(
             &mut self,
             request: impl tonic::IntoRequest<super::ScrollPoints>,
@@ -1277,42 +1365,62 @@ pub mod points_server {
     #[doc = "Generated trait containing gRPC methods that should be implemented for use with PointsServer."]
     #[async_trait]
     pub trait Points: Send + Sync + 'static {
+        #[doc = ""]
+        #[doc = "Perform insert + updates on points. If point with given ID already exists - it will be overwritten."]
         async fn upsert(
             &self,
             request: tonic::Request<super::UpsertPoints>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        #[doc = ""]
+        #[doc = "Delete points"]
         async fn delete(
             &self,
             request: tonic::Request<super::DeletePoints>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        #[doc = ""]
+        #[doc = "Retrieve points"]
         async fn get(
             &self,
             request: tonic::Request<super::GetPoints>,
         ) -> Result<tonic::Response<super::GetResponse>, tonic::Status>;
+        #[doc = ""]
+        #[doc = "Set payload for points"]
         async fn set_payload(
             &self,
             request: tonic::Request<super::SetPayloadPoints>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        #[doc = ""]
+        #[doc = "Delete specified key payload for points"]
         async fn delete_payload(
             &self,
             request: tonic::Request<super::DeletePayloadPoints>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        #[doc = ""]
+        #[doc = "Remove all payload for specified points"]
         async fn clear_payload(
             &self,
             request: tonic::Request<super::ClearPayloadPoints>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        #[doc = ""]
+        #[doc = "Create index for field in collection"]
         async fn create_field_index(
             &self,
             request: tonic::Request<super::CreateFieldIndexCollection>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        #[doc = ""]
+        #[doc = "Delete field index for collection"]
         async fn delete_field_index(
             &self,
             request: tonic::Request<super::DeleteFieldIndexCollection>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        #[doc = ""]
+        #[doc = "Retrieve closest points based on vector similarity and given filtering conditions"]
         async fn search(
             &self,
             request: tonic::Request<super::SearchPoints>,
         ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status>;
+        #[doc = ""]
+        #[doc = "Iterate over all or filtered points points"]
         async fn scroll(
             &self,
             request: tonic::Request<super::ScrollPoints>,

@@ -298,11 +298,11 @@ impl TableOfContent {
     ) -> Result<bool, StorageError> {
         match operation {
             StorageOperations::CreateCollection(operation) => {
-                self.create_collection(&operation.name, operation.create_collection)
+                self.create_collection(&operation.collection_name, operation.create_collection)
                     .await
             }
             StorageOperations::UpdateCollection(operation) => {
-                self.update_collection(&operation.name, operation.update_collection)
+                self.update_collection(&operation.collection_name, operation.update_collection)
                     .await
             }
             StorageOperations::DeleteCollection(operation) => {
