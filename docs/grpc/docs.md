@@ -59,6 +59,8 @@
     - [PointsOperationResponse](#qdrant-PointsOperationResponse)
     - [PointsSelector](#qdrant-PointsSelector)
     - [Range](#qdrant-Range)
+    - [RecommendPoints](#qdrant-RecommendPoints)
+    - [RecommendResponse](#qdrant-RecommendResponse)
     - [RetrievedPoint](#qdrant-RetrievedPoint)
     - [RetrievedPoint.PayloadEntry](#qdrant-RetrievedPoint-PayloadEntry)
     - [ScoredPoint](#qdrant-ScoredPoint)
@@ -947,6 +949,44 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 
 
+<a name="qdrant-RecommendPoints"></a>
+
+### RecommendPoints
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | name of the collection |
+| positive | [PointId](#qdrant-PointId) | repeated | Look for vectors closest to those |
+| negative | [PointId](#qdrant-PointId) | repeated | Try to avoid vectors like this |
+| filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
+| top | [uint64](#uint64) |  | Max number of result |
+| with_vector | [bool](#bool) | optional | Return point vector with the result. |
+| with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
+| params | [SearchParams](#qdrant-SearchParams) |  | Search config |
+
+
+
+
+
+
+<a name="qdrant-RecommendResponse"></a>
+
+### RecommendResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [ScoredPoint](#qdrant-ScoredPoint) | repeated |  |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
 <a name="qdrant-RetrievedPoint"></a>
 
 ### RetrievedPoint
@@ -1224,6 +1264,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | DeleteFieldIndex | [DeleteFieldIndexCollection](#qdrant-DeleteFieldIndexCollection) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Delete field index for collection |
 | Search | [SearchPoints](#qdrant-SearchPoints) | [SearchResponse](#qdrant-SearchResponse) | Retrieve closest points based on vector similarity and given filtering conditions |
 | Scroll | [ScrollPoints](#qdrant-ScrollPoints) | [ScrollResponse](#qdrant-ScrollResponse) | Iterate over all or filtered points points |
+| Recommend | [RecommendPoints](#qdrant-RecommendPoints) | [RecommendResponse](#qdrant-RecommendResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples. |
 
  
 
