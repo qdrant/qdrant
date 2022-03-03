@@ -5,4 +5,5 @@ log_level: INFO
 service:
   host: 0.0.0.0
   http_port: 6333
-  grpc_port: 6334
+  # Uncomment to enable gRPC:
+  #grpc_port: 6334
