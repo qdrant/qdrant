@@ -47,6 +47,12 @@ service Points {
   Iterate over all or filtered points points
   */
   rpc Scroll (ScrollPoints) returns (ScrollResponse) {}
+  /*
+  Look for the points which are closer to stored positive examples and at the same time further to negative examples.
+   */
+  rpc Recommend (RecommendPoints) returns (RecommendResponse) {}
+
+
 }
 
 // ---------------------------------------------
@@ -161,6 +167,17 @@ message ScrollPoints {
   WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not
 }
 
+message RecommendPoints {
+  string collection_name = 1; // name of the collection
+  repeated PointId positive = 2; // Look for vectors closest to those
+  repeated PointId negative = 3; // Try to avoid vectors like this
+  Filter filter = 4; // Filter conditions - return only those points that satisfy the specified conditions
+  uint64 top = 5; // Max number of result
+  optional bool with_vector = 6; // Return point vector with the result.
+  WithPayloadSelector with_payload = 7; // Options for specifying which payload to include or not
+  SearchParams params = 8; // Search config
+}
+
 // ---------------------------------------------
 // ---------------- RPC Response ---------------
 // ---------------------------------------------
@@ -208,6 +225,11 @@ message RetrievedPoint {
 
 message GetResponse {
   repeated RetrievedPoint result = 1;
+  double time = 2; // Time spent to process
+}
+
+message RecommendResponse {
+  repeated ScoredPoint result = 1;
   double time = 2; // Time spent to process
 }
 

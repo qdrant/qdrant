@@ -869,6 +869,33 @@ pub struct ScrollPoints {
     #[prost(message, optional, tag = "6")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RecommendPoints {
+    /// name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Look for vectors closest to those
+    #[prost(message, repeated, tag = "2")]
+    pub positive: ::prost::alloc::vec::Vec<PointId>,
+    /// Try to avoid vectors like this
+    #[prost(message, repeated, tag = "3")]
+    pub negative: ::prost::alloc::vec::Vec<PointId>,
+    /// Filter conditions - return only those points that satisfy the specified conditions
+    #[prost(message, optional, tag = "4")]
+    pub filter: ::core::option::Option<Filter>,
+    /// Max number of result
+    #[prost(uint64, tag = "5")]
+    pub top: u64,
+    /// Return point vector with the result.
+    #[prost(bool, optional, tag = "6")]
+    pub with_vector: ::core::option::Option<bool>,
+    /// Options for specifying which payload to include or not
+    #[prost(message, optional, tag = "7")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Search config
+    #[prost(message, optional, tag = "8")]
+    pub params: ::core::option::Option<SearchParams>,
+}
 // ---------------------------------------------
 // ---------------- RPC Response ---------------
 // ---------------------------------------------
@@ -940,6 +967,14 @@ pub struct RetrievedPoint {
 pub struct GetResponse {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<RetrievedPoint>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RecommendResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
@@ -1361,6 +1396,22 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Scroll");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = ""]
+        #[doc = "Look for the points which are closer to stored positive examples and at the same time further to negative examples."]
+        pub async fn recommend(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RecommendPoints>,
+        ) -> Result<tonic::Response<super::RecommendResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Recommend");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 #[doc = r" Generated server implementations."]
@@ -1430,6 +1481,12 @@ pub mod points_server {
             &self,
             request: tonic::Request<super::ScrollPoints>,
         ) -> Result<tonic::Response<super::ScrollResponse>, tonic::Status>;
+        #[doc = ""]
+        #[doc = "Look for the points which are closer to stored positive examples and at the same time further to negative examples."]
+        async fn recommend(
+            &self,
+            request: tonic::Request<super::RecommendPoints>,
+        ) -> Result<tonic::Response<super::RecommendResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct PointsServer<T: Points> {
@@ -1774,6 +1831,37 @@ pub mod points_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = ScrollSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/Recommend" => {
+                    #[allow(non_camel_case_types)]
+                    struct RecommendSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::RecommendPoints> for RecommendSvc<T> {
+                        type Response = super::RecommendResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RecommendPoints>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).recommend(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = RecommendSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
                             accept_compression_encodings,

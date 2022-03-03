@@ -96,6 +96,14 @@ $docker_grpcurl -d '{
   "ids": [{ "num": 2 }, { "num": 3 }, { "num": 4 }]
 }' $QDRANT_HOST qdrant.Points/Get
 
+$docker_grpcurl -d '{
+  "collection_name": "test_collection",
+  "positive": [{ "num": 1 }],
+  "negative": [{ "num": 2 }]
+}' $QDRANT_HOST qdrant.Points/Recommend
+
+
+
 
 #SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')
 #[[ "$SAVED_VECTORS_COUNT" == "6" ]] || {
