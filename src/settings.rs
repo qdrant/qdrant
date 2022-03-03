@@ -37,7 +37,7 @@ impl Settings {
             .add_source(File::with_name("config/local").required(false))
             // Add in settings from the environment (with a prefix of APP)
             // Eg.. `QDRANT_DEBUG=1 ./target/app` would set the `debug` key
-            .add_source(Environment::with_prefix("QDRANT"))
+            .add_source(Environment::with_prefix("QDRANT").separator("__"))
             .build()?;
 
         // You can deserialize (and thus freeze) the entire configuration as
