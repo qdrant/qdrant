@@ -16,9 +16,9 @@ def setup():
 def test_payload_indexing_operations():
     # create payload
     response = request_with_validation(
-        api='/collections/{name}/points/payload',
+        api='/collections/{collection_name}/points/payload',
         method="POST",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
             "payload": {"test_payload": "keyword"},
@@ -28,18 +28,18 @@ def test_payload_indexing_operations():
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{name}',
+        api='/collections/{collection_name}',
         method="GET",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
     )
     assert response.ok
     assert not response.json()['result']['payload_schema']['test_payload']['indexed']
 
     # Create index
     response = request_with_validation(
-        api='/collections/{name}/index',
+        api='/collections/{collection_name}/index',
         method="PUT",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
             "field_name": "test_payload"
@@ -48,26 +48,26 @@ def test_payload_indexing_operations():
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{name}',
+        api='/collections/{collection_name}',
         method="GET",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
     )
     assert response.ok
     assert response.json()['result']['payload_schema']['test_payload']['indexed']
 
     # Delete index
     response = request_with_validation(
-        api='/collections/{name}/index/{field_name}',
+        api='/collections/{collection_name}/index/{field_name}',
         method="DELETE",
-        path_params={'name': collection_name, 'field_name': 'test_payload'},
+        path_params={'collection_name': collection_name, 'field_name': 'test_payload'},
         query_params={'wait': 'true'},
     )
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{name}',
+        api='/collections/{collection_name}',
         method="GET",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
     )
     assert response.ok
     assert not response.json()['result']['payload_schema']['test_payload']['indexed']

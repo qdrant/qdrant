@@ -16,9 +16,9 @@ def setup():
 def test_payload_operations():
     # create payload
     response = request_with_validation(
-        api='/collections/{name}/points/payload',
+        api='/collections/{collection_name}/points/payload',
         method="POST",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
             "payload": {"test_payload": "keyword"},
@@ -29,18 +29,18 @@ def test_payload_operations():
 
     # check payload
     response = request_with_validation(
-        api='/collections/{name}/points/{id}',
+        api='/collections/{collection_name}/points/{id}',
         method="GET",
-        path_params={'name': collection_name, 'id': 6},
+        path_params={'collection_name': collection_name, 'id': 6},
     )
     assert response.ok
     assert len(response.json()['result']['payload']) == 1
 
     # clean payload by filter
     response = request_with_validation(
-        api='/collections/{name}/points/payload/clear',
+        api='/collections/{collection_name}/points/payload/clear',
         method="POST",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
             "filter": {
@@ -54,18 +54,18 @@ def test_payload_operations():
 
     # check payload
     response = request_with_validation(
-        api='/collections/{name}/points/{id}',
+        api='/collections/{collection_name}/points/{id}',
         method="GET",
-        path_params={'name': collection_name, 'id': 6},
+        path_params={'collection_name': collection_name, 'id': 6},
     )
     assert response.ok
     assert len(response.json()['result']['payload']) == 0
 
     # create payload
     response = request_with_validation(
-        api='/collections/{name}/points/payload',
+        api='/collections/{collection_name}/points/payload',
         method="POST",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
             "payload": {"test_payload": "keyword"},
@@ -76,9 +76,9 @@ def test_payload_operations():
 
     # delete payload by id
     response = request_with_validation(
-        api='/collections/{name}/points/payload/delete',
+        api='/collections/{collection_name}/points/payload/delete',
         method="POST",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
             "keys": ["test_payload"],
@@ -89,9 +89,9 @@ def test_payload_operations():
 
     # check payload
     response = request_with_validation(
-        api='/collections/{name}/points/{id}',
+        api='/collections/{collection_name}/points/{id}',
         method="GET",
-        path_params={'name': collection_name, 'id': 6},
+        path_params={'collection_name': collection_name, 'id': 6},
     )
     assert response.ok
     assert len(response.json()['result']['payload']) == 0

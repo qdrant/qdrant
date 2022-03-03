@@ -15,9 +15,9 @@ def setup():
 
 def test_collection_update():
     response = request_with_validation(
-        api='/collections/{name}',
+        api='/collections/{collection_name}',
         method="PATCH",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         body={
             "optimizers_config": {
                 "default_segment_number": 6,
@@ -28,9 +28,9 @@ def test_collection_update():
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{name}/points',
+        api='/collections/{collection_name}/points',
         method="PUT",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
             "points": [
@@ -45,8 +45,8 @@ def test_collection_update():
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{name}/points/{id}',
+        api='/collections/{collection_name}/points/{id}',
         method="GET",
-        path_params={'name': collection_name, 'id': 7},
+        path_params={'collection_name': collection_name, 'id': 7},
     )
     assert response.ok

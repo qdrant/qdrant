@@ -16,9 +16,9 @@ def setup():
 def test_delete_points():
     # delete point by filter (has_id)
     response = request_with_validation(
-        api='/collections/{name}/points/delete',
+        api='/collections/{collection_name}/points/delete',
         method="POST",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
             "filter": {
@@ -32,17 +32,17 @@ def test_delete_points():
 
     # quantity check if the above point id was deleted
     response = request_with_validation(
-        api='/collections/{name}',
+        api='/collections/{collection_name}',
         method="GET",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
     )
     assert response.ok
     assert response.json()['result']['vectors_count'] == 5
 
     response = request_with_validation(
-        api='/collections/{name}/points/delete',
+        api='/collections/{collection_name}/points/delete',
         method="POST",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
             "points": [1, 2, 3, 4]
@@ -52,9 +52,9 @@ def test_delete_points():
 
     # quantity check if the above point id was deleted
     response = request_with_validation(
-        api='/collections/{name}',
+        api='/collections/{collection_name}',
         method="GET",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
     )
     assert response.ok
     assert response.json()['result']['vectors_count'] == 1

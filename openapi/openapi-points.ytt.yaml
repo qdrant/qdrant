@@ -1,7 +1,7 @@
 #@ load("openapi.lib.yml", "response", "reference", "type", "array")
 
 paths:
-  /collections/{name}:
+  /collections/{collection_name}:
     post:
       tags:
         - points
@@ -17,7 +17,7 @@ paths:
               $ref: "#/components/schemas/CollectionUpdateOperations"
 
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to search in
           required: true
@@ -31,7 +31,7 @@ paths:
             type: boolean
       responses: #@ response(reference("UpdateResult"))
 
-  /collections/{name}/points/{id}:
+  /collections/{collection_name}/points/{id}:
     get:
       tags:
         - points
@@ -39,7 +39,7 @@ paths:
       description: Retrieve full information of single point by id
       operationId: get_point
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to retrieve from
           required: true
@@ -53,7 +53,7 @@ paths:
             $ref: "#/components/schemas/ExtendedPointId"
       responses: #@ response(reference("Record"))
 
-  /collections/{name}/points:
+  /collections/{collection_name}/points:
     post:
       tags:
         - points
@@ -68,7 +68,7 @@ paths:
               $ref: "#/components/schemas/PointRequest"
 
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to retrieve from
           required: true
@@ -90,7 +90,7 @@ paths:
               $ref: "#/components/schemas/PointInsertOperations"
 
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to update from
           required: true
@@ -104,7 +104,7 @@ paths:
             type: boolean
       responses: #@ response(reference("UpdateResult"))
 
-  /collections/{name}/points/delete:
+  /collections/{collection_name}/points/delete:
     post:
       tags:
         - points
@@ -119,7 +119,7 @@ paths:
               $ref: "#/components/schemas/PointsSelector"
 
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to delete from
           required: true
@@ -133,7 +133,7 @@ paths:
             type: boolean
       responses: #@ response(reference("UpdateResult"))
 
-  /collections/{name}/points/payload:
+  /collections/{collection_name}/points/payload:
     post:
       tags:
         - points
@@ -148,7 +148,7 @@ paths:
               $ref: "#/components/schemas/SetPayload"
 
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to set from
           required: true
@@ -162,7 +162,7 @@ paths:
             type: boolean
       responses: #@ response(reference("UpdateResult"))
 
-  /collections/{name}/points/payload/delete:
+  /collections/{collection_name}/points/payload/delete:
     post:
       tags:
         - points
@@ -177,7 +177,7 @@ paths:
               $ref: "#/components/schemas/DeletePayload"
 
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to delete from
           required: true
@@ -191,7 +191,7 @@ paths:
             type: boolean
       responses: #@ response(reference("UpdateResult"))
 
-  /collections/{name}/points/payload/clear:
+  /collections/{collection_name}/points/payload/clear:
     post:
       tags:
         - points
@@ -206,7 +206,7 @@ paths:
               $ref: "#/components/schemas/PointsSelector"
 
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to clear payload from
           required: true

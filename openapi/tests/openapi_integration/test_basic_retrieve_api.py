@@ -15,16 +15,16 @@ def setup():
 
 def test_points_retrieve():
     response = request_with_validation(
-        api='/collections/{name}/points/{id}',
+        api='/collections/{collection_name}/points/{id}',
         method="GET",
-        path_params={'name': collection_name, 'id': 2},
+        path_params={'collection_name': collection_name, 'id': 2},
     )
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{name}/points',
+        api='/collections/{collection_name}/points',
         method="POST",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         body={
             "ids": [1, 2]
         }
@@ -33,17 +33,17 @@ def test_points_retrieve():
     assert len(response.json()['result']) == 2
 
     response = request_with_validation(
-        api='/collections/{name}',
+        api='/collections/{collection_name}',
         method="GET",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
     )
     assert response.ok
     assert response.json()['result']['vectors_count'] == 6
 
     response = request_with_validation(
-        api='/collections/{name}/points/search',
+        api='/collections/{collection_name}/points/search',
         method="POST",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         body={
             "vector": [0.2, 0.1, 0.9, 0.7],
             "top": 3
@@ -53,9 +53,9 @@ def test_points_retrieve():
     assert len(response.json()['result']) == 3
 
     response = request_with_validation(
-        api='/collections/{name}/points/search',
+        api='/collections/{collection_name}/points/search',
         method="POST",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         body={
             "filter": {
                 "should": [
@@ -75,9 +75,9 @@ def test_points_retrieve():
     assert len(response.json()['result']) == 2  # only 2 London records in collection
 
     response = request_with_validation(
-        api='/collections/{name}/points/scroll',
+        api='/collections/{collection_name}/points/scroll',
         method="POST",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         body={"offset": 2, "limit": 2, "with_vector": True}
     )
     assert response.ok
@@ -86,9 +86,9 @@ def test_points_retrieve():
 
 def test_exclude_payload():
     response = request_with_validation(
-        api='/collections/{name}/points/search',
+        api='/collections/{collection_name}/points/search',
         method="POST",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         body={
             "vector": [0.2, 0.1, 0.9, 0.7],
             "top": 5,
@@ -115,9 +115,9 @@ def test_exclude_payload():
 
 def test_recommendation():
     response = request_with_validation(
-        api='/collections/{name}/points/recommend',
+        api='/collections/{collection_name}/points/recommend',
         method="POST",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         body={
             "top": 3,
             "negative": [],
