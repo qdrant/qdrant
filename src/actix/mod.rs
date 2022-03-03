@@ -60,7 +60,7 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
         .workers(max_web_workers(&settings))
         .bind(format!(
             "{}:{}",
-            settings.service.host, settings.service.port
+            settings.service.host, settings.service.http_port
         ))?
         .run()
         .await

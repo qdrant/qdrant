@@ -7,6 +7,7 @@ set -ex
 cd "$(dirname "$0")/../"
 
 QDRANT_HOST='localhost:6333'
+export QDRANT__SERVICE__GRPC_PORT="6334"
 
 # Run in background
 $(./target/debug/qdrant) &
