@@ -2,9 +2,9 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 use parking_lot::RwLock;
 use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
 use segment::types::{
-    Condition, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PointIdType, ScoredPoint,
-    SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, VectorElementType,
-    WithPayload,
+    Condition, FieldDataType, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
+    VectorElementType, WithPayload,
 };
 use std::cmp::max;
 use std::collections::HashSet;
@@ -410,7 +410,12 @@ impl SegmentEntry for ProxySegment {
             .delete_field_index(op_num, key)
     }
 
-    fn create_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
+    fn create_field_index(
+        &mut self,
+        op_num: u64,
+        key: PayloadKeyTypeRef,
+        field_type: &Option<FieldDataType>,
+    ) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);
         }
@@ -419,7 +424,7 @@ impl SegmentEntry for ProxySegment {
         self.write_segment
             .get()
             .write()
-            .create_field_index(op_num, key)
+            .create_field_index(op_num, key, field_type)
     }
 
     fn get_indexed_fields(&self) -> Vec<PayloadKeyType> {

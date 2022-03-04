@@ -3,12 +3,14 @@ use crate::entry::entry_point::{
 };
 use crate::id_tracker::IdTrackerSS;
 use crate::index::{PayloadIndexSS, VectorIndexSS};
+use crate::payload_storage::schema_storage::SchemaStorage;
 use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
 use crate::spaces::tools::mertic_object;
 use crate::types::{
-    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
-    PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState,
-    SegmentType, SeqNumberType, VectorElementType, WithPayload,
+    FieldDataType, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo,
+    PayloadSchemaType, PayloadType, PointIdType, PointOffsetType, ScoredPoint, SearchParams,
+    SegmentConfig, SegmentInfo, SegmentState, SegmentType, SeqNumberType, VectorElementType,
+    WithPayload,
 };
 use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
@@ -49,6 +51,7 @@ pub struct Segment {
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
     pub error_status: Option<SegmentFailedState>,
+    pub schema_storage: Arc<SchemaStorage>,
 }
 
 impl Segment {
@@ -217,6 +220,39 @@ impl Segment {
     pub fn save_current_state(&self) -> OperationResult<()> {
         self.save_state(&self.get_state())
     }
+
+    fn infer_from_payload_data(&self, key: PayloadKeyTypeRef) -> Option<PayloadSchemaType> {
+        let payload_store = self.payload_storage.borrow();
+        match payload_store.iter_ids().next() {
+            Some(id) => {
+                let payload = payload_store.payload(id);
+                Some(payload.get_schema_type(key))
+            }
+            None => None,
+        }
+    }
+
+    fn check_schema(&self, payload: &Payload) -> OperationResult<()> {
+        for (field_name, schema) in self.schema_storage.as_map() {
+            match schema {
+                Some(payload_type) => match payload_type {
+                    PayloadSchemaType::Unknown => Ok(()),
+                    _ => payload.get_checked(field_name, &payload_type)?,
+                },
+                None => {
+                    let payload_type = payload.infer_type(field_name.into());
+                    self.schema_storage
+                        .update_schema_value(&field_name, payload_type)?;
+                    if payload_type != PayloadSchemaType::Unknown {
+                        self.payload_index
+                            .borrow_mut()
+                            .set_indexed(&field_name, PayloadSchemaType::Unknown)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// This is a basic implementation of `SegmentEntry`,
@@ -372,6 +408,8 @@ impl SegmentEntry for Segment {
         full_payload: &Payload,
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
+            self.check_schema(full_payload)?;
+
             let internal_id = segment.lookup_internal_id(point_id)?;
             segment
                 .payload_storage
@@ -388,6 +426,8 @@ impl SegmentEntry for Segment {
         payload: &Payload,
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
+            self.check_schema(payload)?;
+
             let internal_id = segment.lookup_internal_id(point_id)?;
             segment
                 .payload_storage
@@ -489,28 +529,29 @@ impl SegmentEntry for Segment {
     }
 
     fn info(&self) -> SegmentInfo {
-        // TODO(gvelo): build schema from indexed fields.
-
-        // let indexed_fields = self.payload_index.borrow().indexed_fields();
-
-        // let schema = self
-        //     .payload_storage
-        //     .borrow()
-        //     .schema()
-        //     .into_iter()
-        //     .map(|(key, data_type)| {
-        //         let is_indexed = indexed_fields.contains(&key);
-        //         (
-        //             key,
-        //             PayloadSchemaInfo {
-        //                 data_type,
-        //                 indexed: is_indexed,
-        //             },
-        //         )
-        //     })
-        //     .collect();
-
-        let schema = HashMap::new();
+        let schema = self
+            .schema_storage
+            .as_map()
+            .iter()
+            .map(|key, schema_type| {
+                let indexed = match schema_type {
+                    Some(payload_schema) => {
+                        if payload_schema == PayloadSchemaType::Unknown {
+                            false
+                        }
+                        true
+                    }
+                    None => false,
+                };
+                (
+                    key,
+                    PayloadSchemaInfo {
+                        data_type: schema_type,
+                        indexed: indexed,
+                    },
+                )
+            })
+            .collect();
 
         SegmentInfo {
             segment_type: self.segment_type,
@@ -564,20 +605,42 @@ impl SegmentEntry for Segment {
 
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, None, |segment| {
+            segment.schema_storage.remove(key);
             segment.payload_index.borrow_mut().drop_index(key)?;
             Ok(true)
         })
     }
 
-    fn create_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
-        self.handle_version_and_failure(op_num, None, |segment| {
-            //TODO(gvelo): add schema type
-            segment
-                .payload_index
-                .borrow_mut()
-                .set_indexed(key, PayloadSchemaType::Unknown)?;
-            Ok(true)
-        })
+    fn create_field_index(
+        &mut self,
+        op_num: u64,
+        key: PayloadKeyTypeRef,
+        field_type: &Option<FieldDataType>,
+    ) -> OperationResult<bool> {
+        let schema_type = match field_type {
+            Some(schema_type) => {
+                self.schema_storage
+                    .update_schema_value(key, Some(schema_type))?;
+                self.payload_index
+                    .borrow_mut()
+                    .set_indexed(key, PayloadSchemaType::Unknown)?;
+                Some(schema_type)
+            }
+            None => match self.infer_from_payload_data(key) {
+                None => None,
+                Some(schema_type) => {
+                    self.payload_index
+                        .borrow_mut()
+                        .set_indexed(key, PayloadSchemaType::Unknown)?;
+                    schema_type
+                }
+            },
+        };
+
+        self.schema_storage
+            .update_schema_value(key, &Some(schema_type))?;
+
+        Ok(true)
     }
 
     fn get_indexed_fields(&self) -> Vec<PayloadKeyType> {

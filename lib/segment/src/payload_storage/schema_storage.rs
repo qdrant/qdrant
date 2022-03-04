@@ -1,81 +1,107 @@
 use parking_lot::RwLock;
+use std::borrow::Borrow;
+use std::path::{Path, PathBuf};
 
+use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::{PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, TheMap};
 
+pub const SCHEMA_CONFIG_FILE: &str = "schema.json";
+
 /// a shared storage for schema data
 pub struct SchemaStorage {
-    schema: RwLock<TheMap<PayloadKeyType, PayloadSchemaType>>,
+    schema: RwLock<TheMap<PayloadKeyType, Option<PayloadSchemaType>>>,
+    path: PathBuf,
 }
 
 impl SchemaStorage {
-    pub fn new() -> Self {
-        let schema: TheMap<PayloadKeyType, PayloadSchemaType> = TheMap::new();
-        Self {
+    pub fn load(path: &Path) -> OperationResult<Self> {
+        let schema: TheMap<PayloadKeyType, Option<PayloadSchemaType>> = read_json(path)?;
+        Ok(Self {
             schema: RwLock::new(schema),
-        }
+            path: path.join(SCHEMA_CONFIG_FILE),
+        })
+    }
+
+    pub fn save(
+        path: &Path,
+        map: &TheMap<PayloadKeyType, PayloadSchemaType>,
+    ) -> OperationResult<()> {
+        atomic_save_json(path, map)
     }
 
     pub fn update_schema_value(
         &self,
         key: PayloadKeyTypeRef,
-        schema_type: PayloadSchemaType,
+        schema_type: &Option<PayloadSchemaType>,
     ) -> OperationResult<()> {
-        if schema_type == PayloadSchemaType::Unknown {
-            return Err(OperationError::ServiceError {
-                description: "unknown type".to_string(),
-            });
-        }
-
         let schema_read = self.schema.read();
 
         return match schema_read.get(key) {
             None => {
                 drop(schema_read);
-                let mut schema_write = self.schema.write();
-                match schema_write.get(key) {
-                    None => {
-                        schema_write.insert(key.to_owned(), schema_type);
-                        Ok(())
-                    }
-                    Some(current_schema_type) => {
-                        SchemaStorage::check_schema_type(key, &schema_type, current_schema_type)
-                    }
-                }
+                self.set(key, schema_type)
             }
-            Some(current_schema_type) => {
-                SchemaStorage::check_schema_type(key, &schema_type, current_schema_type)
+            Some(Some(current_schema_type)) => {
+                SchemaStorage::check_schema_type(key, schema_type, current_schema_type)
+            }
+            Some(None) => {
+                drop(schema_read);
+                self.set(key, schema_type)
             }
         };
     }
 
-    pub fn insert(&self, key: PayloadKeyType, value: PayloadSchemaType) {
-        let mut map = self.schema.write();
-        map.insert(key, value);
+    fn set(
+        &mut self,
+        key: PayloadKeyTypeRef,
+        schema_type: &Option<PayloadSchemaType>,
+    ) -> OperationResult<()> {
+        let mut schema_write = self.schema.write();
+
+        match schema_write.get(key) {
+            None => {
+                schema_write.insert(key.to_owned(), schema_type.to_owned());
+                SchemaStorage::save(self.path, schema_write)?;
+                Ok(())
+            }
+            Some(Some(current_schema_type)) => {
+                SchemaStorage::check_schema_type(key, schema_type, current_schema_type)
+            }
+            Some(None) => {
+                schema_write.insert(key.to_owned(), schema_type.to_owned());
+                SchemaStorage::save(self.path, schema_write)?;
+                Ok(())
+            }
+        };
+
+        Ok(())
     }
 
-    pub fn as_map(&self) -> TheMap<PayloadKeyType, PayloadSchemaType> {
+    pub fn as_map(&self) -> TheMap<PayloadKeyType, Option<PayloadSchemaType>> {
         self.schema.read().clone()
     }
 
     fn check_schema_type(
         key: PayloadKeyTypeRef,
-        value_schema_type: &PayloadSchemaType,
+        new_schema_type: &Option<PayloadSchemaType>,
         current_schema_type: &PayloadSchemaType,
     ) -> OperationResult<()> {
-        if current_schema_type == value_schema_type {
-            Ok(())
-        } else {
-            Err(OperationError::TypeError {
+        match new_schema_type {
+            None => Err(OperationError::TypeError {
                 field_name: key.to_owned(),
                 expected_type: format!("{:?}", current_schema_type),
-            })
+            }),
+            Some(schema_type) => {
+                if current_schema_type == schema_type {
+                    Ok(())
+                } else {
+                    Err(OperationError::TypeError {
+                        field_name: key.to_owned(),
+                        expected_type: format!("{:?}", current_schema_type),
+                    })
+                }
+            }
         }
-    }
-}
-
-impl Default for SchemaStorage {
-    fn default() -> Self {
-        Self::new()
     }
 }

@@ -50,7 +50,7 @@ fn create_segment(
 
     let payload_storage = sp(SimplePayloadStorage::open(
         &payload_storage_path,
-        schema_storage,
+        schema_storage.clone(),
     )?);
 
     let condition_checker = Arc::new(SimpleConditionChecker::new(
@@ -113,6 +113,7 @@ fn create_segment(
         segment_type,
         segment_config: config.clone(),
         error_status: None,
+        schema_storage,
     })
 }
 

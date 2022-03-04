@@ -1,6 +1,7 @@
 use crate::types::{
-    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PointIdType, ScoredPoint, SearchParams,
-    SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, VectorElementType, WithPayload,
+    FieldDataType, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
+    VectorElementType, WithPayload,
 };
 use atomicwrites::Error as AtomicIoError;
 use rocksdb::Error;
@@ -200,6 +201,7 @@ pub trait SegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
+        field_type: &Option<FieldDataType>,
     ) -> OperationResult<bool>;
 
     /// Get indexed fields

@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use parking_lot::{RwLock, RwLockWriteGuard};
 
 use segment::types::{
-    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType,
-    VectorElementType,
+    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
+    SeqNumberType, VectorElementType,
 };
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
@@ -13,7 +13,7 @@ use crate::operations::point_ops::{
     Batch, PointInsertOperations, PointOperations, PointsBatch, PointsList,
 };
 use crate::operations::types::{CollectionError, CollectionResult, VectorType};
-use crate::operations::FieldIndexOperations;
+use crate::operations::{FieldDataType, FieldIndexOperations};
 use itertools::Itertools;
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
 
@@ -128,9 +128,11 @@ pub(crate) fn create_field_index(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     field_name: PayloadKeyTypeRef,
+    field_type: &Option<FieldDataType>,
 ) -> CollectionResult<usize> {
-    let res = segments
-        .apply_segments(|write_segment| write_segment.create_field_index(op_num, field_name))?;
+    let res = segments.apply_segments(|write_segment| {
+        write_segment.create_field_index(op_num, field_name, field_type)
+    })?;
     Ok(res)
 }
 
@@ -292,9 +294,12 @@ pub(crate) fn process_field_index_operation(
     field_index_operation: &FieldIndexOperations,
 ) -> CollectionResult<usize> {
     match field_index_operation {
-        FieldIndexOperations::CreateIndex(field_name) => {
-            create_field_index(&segments.read(), op_num, field_name)
-        }
+        FieldIndexOperations::CreateIndex(index_data) => create_field_index(
+            &segments.read(),
+            op_num,
+            &index_data.field_name,
+            index_data.payload_type,
+        ),
         FieldIndexOperations::DeleteIndex(field_name) => {
             delete_field_index(&segments.read(), op_num, field_name)
         }

@@ -1,3 +1,4 @@
+use crate::entry::entry_point::{OperationError, OperationResult};
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -335,7 +336,7 @@ impl Payload {
         }
     }
 
-    pub fn get(&self, path: &str) -> Option<PayloadType> {
+    pub fn infer_type(&self, path: &str) -> Option<PayloadType> {
         get_payload(path, &self.0)
     }
 
@@ -349,6 +350,50 @@ impl Payload {
             },
             None => PayloadSchemaType::Unknown,
         }
+    }
+
+    pub fn get_checked(
+        &self,
+        path: &str,
+        schema_type: &PayloadSchemaType,
+    ) -> OperationResult<PayloadType> {
+        let payload_op = get_payload(path, &self.0);
+        match payload_op {
+            None => {
+                return Err(OperationError::TypeError {
+                    field_name: path.to_owned(),
+                    expected_type: format!("{:?}", schema_type),
+                })
+            }
+            Some(payload) => match schema_type {
+                PayloadSchemaType::Keyword => {
+                    if let PayloadType::Keyword(_) = payload {
+                        return Ok(payload);
+                    }
+                }
+                PayloadSchemaType::Integer => {
+                    if let PayloadType::Integer(_) = payload {
+                        return Ok(payload);
+                    }
+                }
+                PayloadSchemaType::Float => {
+                    if let PayloadType::Float(_) = payload {
+                        return Ok(payload);
+                    }
+                }
+                PayloadSchemaType::Geo => {
+                    if let PayloadType::Geo(_) = payload {
+                        return Ok(payload);
+                    }
+                }
+                PayloadSchemaType::Unknown => panic!("cannot check for Unknown type"),
+            },
+        };
+
+        return Err(OperationError::TypeError {
+            field_name: path.to_owned(),
+            expected_type: format!("{:?}", schema_type),
+        });
     }
 
     pub fn remove(&mut self, path: &str) -> Option<Value> {
@@ -478,6 +523,15 @@ pub enum JsonPayload {
     Geo(PayloadVariant<GeoPoint>),
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum FieldDataType {
+    Keyword,
+    Integer,
+    Float,
+    Geo,
+}
+
 /// All possible names of payload types
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -488,6 +542,20 @@ pub enum PayloadSchemaType {
     Float,
     Geo,
     Unknown,
+}
+
+impl From<&Option<FieldDataType>> for PayloadSchemaType {
+    fn from(field_type: &Option<FieldDataType>) -> Self {
+        match field_type {
+            None => PayloadSchemaType::Unknown,
+            Some(field_type) => match field_type {
+                FieldDataType::Keyword => PayloadSchemaType::Keyword,
+                FieldDataType::Integer => PayloadSchemaType::Integer,
+                FieldDataType::Float => PayloadSchemaType::Float,
+                FieldDataType::Geo => PayloadSchemaType::Geo,
+            },
+        }
+    }
 }
 
 /// Match by keyword
