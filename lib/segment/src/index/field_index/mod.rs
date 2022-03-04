@@ -3,7 +3,8 @@ use std::collections::HashSet;
 
 mod field_index_base;
 #[allow(dead_code)]
-pub mod geo_index;
+pub mod geo_hash;
+mod geo_index;
 pub mod index_selector;
 pub mod map_index;
 pub mod numeric_index;
