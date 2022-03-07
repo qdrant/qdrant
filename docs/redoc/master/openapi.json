@@ -161,6 +161,13 @@
           "distance": {
             "$ref": "#/components/schemas/Distance"
           },
+          "shard_number": {
+            "default": 1,
+            "description": "Number of shards the collection has",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
           "vector_size": {
             "description": "Size of a vectors used",
             "format": "uint",
