@@ -3,7 +3,8 @@
 use std::{
     cmp::max,
     collections::HashMap,
-    fs::create_dir_all,
+    fs::{create_dir_all, rename},
+    io,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -93,17 +94,8 @@ impl Collection {
         let mut ring = HashRing::new();
         let mut shards = HashMap::new();
 
-        // TODO: Migrate previous format to new one
-        if let Some(shard) = Self::try_load_legacy_one_shard(id.clone(), path, &config).await {
-            log::warn!("Loading legacy collection storage as 1 shard.");
-            shards.insert(0, shard);
-            ring.add(0);
-            return Self {
-                shards,
-                ring,
-                before_drop_called: false,
-            };
-        }
+        Self::try_migrate_legacy_one_shard(path)
+            .expect("Failed to migrate legacy collection format.");
 
         for shard_id in 0..config.params.shard_number {
             let shard_path = shard_path(path, shard_id);
@@ -120,16 +112,19 @@ impl Collection {
         }
     }
 
-    async fn try_load_legacy_one_shard(
-        id: CollectionId,
-        collection_path: &Path,
-        config: &CollectionConfig,
-    ) -> Option<Shard> {
+    fn try_migrate_legacy_one_shard(collection_path: &Path) -> io::Result<()> {
         if Shard::segments_path(collection_path).is_dir() {
-            Some(Shard::load(0, id, collection_path, config).await)
-        } else {
-            None
+            log::warn!("Migrating legacy collection storage to 1 shard.");
+            let shard_path = shard_path(collection_path, 0);
+            let new_segmnents_path = Shard::segments_path(&shard_path);
+            let new_wal_path = Shard::wal_path(&shard_path);
+            create_dir_all(&new_segmnents_path)?;
+            create_dir_all(&new_wal_path)?;
+            rename(Shard::segments_path(collection_path), &new_segmnents_path)?;
+            rename(Shard::wal_path(collection_path), &new_wal_path)?;
+            log::info!("Migration finished.");
         }
+        Ok(())
     }
 
     fn shard_by_id(&self, id: ShardId) -> &Shard {
