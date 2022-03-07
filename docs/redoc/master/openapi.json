@@ -304,6 +304,9 @@
       "CreateCollectionOperation": {
         "description": "Operation for creating new collection and (optionally) specify index params",
         "properties": {
+          "collection_name": {
+            "type": "string"
+          },
           "distance": {
             "$ref": "#/components/schemas/Distance"
           },
@@ -317,9 +320,6 @@
               }
             ],
             "description": "Custom params for HNSW index. If none - values from service configuration file are used."
-          },
-          "name": {
-            "type": "string"
           },
           "optimizers_config": {
             "anyOf": [
@@ -350,8 +350,8 @@
           }
         },
         "required": [
+          "collection_name",
           "distance",
-          "name",
           "vector_size"
         ],
         "type": "object"
@@ -1962,7 +1962,7 @@
       "UpdateCollectionOperation": {
         "description": "Operation for updating parameters of the existing collection",
         "properties": {
-          "name": {
+          "collection_name": {
             "type": "string"
           },
           "optimizers_config": {
@@ -1978,7 +1978,7 @@
           }
         },
         "required": [
-          "name"
+          "collection_name"
         ],
         "type": "object"
       },
