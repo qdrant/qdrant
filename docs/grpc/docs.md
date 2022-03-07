@@ -194,6 +194,7 @@
 | ----- | ---- | ----- | ----------- |
 | vector_size | [uint64](#uint64) |  | Size of the vectors |
 | distance | [Distance](#qdrant-Distance) |  | Distance function used for comparing vectors |
+| shard_number | [uint32](#uint32) |  | Number of shards in collection |
 
 
 
@@ -605,7 +606,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| should | [Condition](#qdrant-Condition) | repeated | At least one of thous conditions should match |
+| should | [Condition](#qdrant-Condition) | repeated | At least one of those conditions should match |
 | must | [Condition](#qdrant-Condition) | repeated | All conditions must match |
 | must_not | [Condition](#qdrant-Condition) | repeated | All conditions must NOT match |
 

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use sled::transaction::UnabortableTransactionError;
 use sled::{Config, Db};
 use tokio::runtime::Runtime;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard};
 
 use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::DiffConfig;
@@ -44,6 +44,7 @@ pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
     storage_config: StorageConfig,
     search_runtime: Runtime,
+    collection_management_runtime: Runtime,
     alias_persistence: Db,
     segment_searcher: Box<dyn CollectionSearcher + Sync + Send>,
 }
@@ -51,13 +52,14 @@ pub struct TableOfContent {
 impl TableOfContent {
     pub fn new(storage_config: &StorageConfig, search_runtime: Runtime) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
+        let collection_management_runtime = Runtime::new().unwrap();
 
         create_dir_all(&collections_path).expect("Can't create Collections directory");
 
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");
 
-        let mut collections: HashMap<String, Arc<Collection>> = Default::default();
+        let mut collections: HashMap<String, Collection> = Default::default();
 
         for entry in collection_paths {
             let collection_path = entry
@@ -70,9 +72,10 @@ impl TableOfContent {
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
 
-            let collection = Collection::load(collection_name.clone(), &collection_path);
+            let collection = collection_management_runtime
+                .block_on(Collection::load(collection_name.clone(), &collection_path));
 
-            collections.insert(collection_name, Arc::new(collection));
+            collections.insert(collection_name, collection);
         }
 
         let alias_path = Path::new(&storage_config.storage_path).join("aliases.sled");
@@ -89,6 +92,7 @@ impl TableOfContent {
             search_runtime,
             alias_persistence,
             segment_searcher: Box::new(SimpleCollectionSearcher::new()),
+            collection_management_runtime,
         }
     }
 
@@ -161,6 +165,7 @@ impl TableOfContent {
         let collection_params = CollectionParams {
             vector_size,
             distance,
+            shard_number: 1,
         };
         let wal_config = match wal_config_diff {
             None => self.storage_config.wal.clone(),
@@ -192,7 +197,7 @@ impl TableOfContent {
         write_collections
             .validate_collection_not_exists(collection_name)
             .await?;
-        write_collections.insert(collection_name.to_string(), Arc::new(collection));
+        write_collections.insert(collection_name.to_string(), collection);
         Ok(true)
     }
 
@@ -214,8 +219,8 @@ impl TableOfContent {
     }
 
     pub async fn delete_collection(&self, collection_name: &str) -> Result<bool, StorageError> {
-        if let Some(removed) = self.collections.write().await.remove(collection_name) {
-            tokio::task::spawn_blocking(move || drop(removed)).await?;
+        if let Some(mut removed) = self.collections.write().await.remove(collection_name) {
+            removed.before_drop().await;
             let path = self.get_collection_path(collection_name);
             remove_dir_all(path).map_err(|err| StorageError::ServiceError {
                 description: format!(
@@ -312,14 +317,16 @@ impl TableOfContent {
         }
     }
 
-    pub async fn get_collection(
-        &self,
+    pub async fn get_collection<'a>(
+        &'a self,
         collection_name: &str,
-    ) -> Result<Arc<Collection>, StorageError> {
+    ) -> Result<RwLockReadGuard<'a, Collection>, StorageError> {
         let read_collection = self.collections.read().await;
         let real_collection_name = self.resolve_name(collection_name).await?;
         // resolve_name already checked collection existence, unwrap is safe here
-        Ok(read_collection.get(&real_collection_name).unwrap().clone())
+        Ok(RwLockReadGuard::map(read_collection, |collection| {
+            collection.get(&real_collection_name).unwrap()
+        }))
     }
 
     /// Recommend points using positive and negative example from the request
@@ -449,5 +456,16 @@ impl TableOfContent {
             .update(operation, wait)
             .await
             .map_err(|err| err.into())
+    }
+}
+
+// `TableOfContent` should not be dropped from async context.
+impl Drop for TableOfContent {
+    fn drop(&mut self) {
+        self.collection_management_runtime.block_on(async {
+            for (_, mut collection) in self.collections.write().await.drain() {
+                collection.before_drop().await;
+            }
+        });
     }
 }

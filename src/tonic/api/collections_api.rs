@@ -235,6 +235,7 @@ impl From<(Instant, collection::operations::types::CollectionInfo)> for GetColle
                             segment::types::Distance::Dot => Distance::Dot,
                         }
                         .into(),
+                        shard_number: config.params.shard_number,
                     }),
                     hnsw_config: Some(HnswConfigDiff {
                         m: Some(config.hnsw_config.m as u64),

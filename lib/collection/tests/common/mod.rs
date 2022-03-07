@@ -17,7 +17,7 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
 };
 
 #[allow(dead_code)]
-pub async fn simple_collection_fixture(collection_path: &Path) -> Collection {
+pub fn simple_collection_fixture(collection_path: &Path, shard_number: u32) -> Collection {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
         wal_segments_ahead: 0,
@@ -26,6 +26,7 @@ pub async fn simple_collection_fixture(collection_path: &Path) -> Collection {
     let collection_params = CollectionParams {
         vector_size: 4,
         distance: Distance::Dot,
+        shard_number,
     };
 
     Collection::new(

@@ -178,6 +178,7 @@ message CollectionOperationResponse {
 message CollectionParams {
   uint64 vector_size = 1; // Size of the vectors
   Distance distance = 2; // Distance function used for comparing vectors
+  uint32 shard_number = 3; // Number of shards in collection
 }
 
 message CollectionConfig {

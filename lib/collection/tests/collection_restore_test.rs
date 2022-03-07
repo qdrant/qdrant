@@ -18,13 +18,19 @@ mod common;
 
 #[tokio::test]
 async fn test_collection_reloading() {
+    test_collection_reloading_with_shards(1).await;
+    test_collection_reloading_with_shards(10).await;
+}
+
+async fn test_collection_reloading_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
     {
-        let _collection = simple_collection_fixture(collection_dir.path()).await;
+        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number);
+        collection.before_drop().await;
     }
     for _i in 0..5 {
-        let collection = Collection::load("test".to_string(), collection_dir.path());
+        let mut collection = Collection::load("test".to_string(), collection_dir.path()).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
                 batch: Batch {
@@ -35,17 +41,24 @@ async fn test_collection_reloading() {
             })),
         );
         collection.update(insert_points, true).await.unwrap();
+        collection.before_drop().await;
     }
 
-    let collection = Collection::load("test".to_string(), collection_dir.path());
-    assert_eq!(collection.info().await.unwrap().vectors_count, 2)
+    let mut collection = Collection::load("test".to_string(), collection_dir.path()).await;
+    assert_eq!(collection.info().await.unwrap().vectors_count, 2);
+    collection.before_drop().await;
 }
 
 #[tokio::test]
 async fn test_collection_payload_reloading() {
+    test_collection_payload_reloading_with_shards(1).await;
+    test_collection_payload_reloading_with_shards(10).await;
+}
+
+async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
     {
-        let collection = simple_collection_fixture(collection_dir.path()).await;
+        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number);
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
                 batch: Batch {
@@ -59,9 +72,10 @@ async fn test_collection_payload_reloading() {
             })),
         );
         collection.update(insert_points, true).await.unwrap();
+        collection.before_drop().await;
     }
 
-    let collection = Collection::load("test".to_string(), collection_dir.path());
+    let mut collection = Collection::load("test".to_string(), collection_dir.path()).await;
 
     let searcher = SimpleCollectionSearcher::new();
     let res = collection
@@ -95,13 +109,19 @@ async fn test_collection_payload_reloading() {
         "res = {:#?}",
         res.points[0].payload.as_ref().unwrap().get("k")
     );
+    collection.before_drop().await;
 }
 
 #[tokio::test]
 async fn test_collection_payload_custom_payload() {
+    test_collection_payload_custom_payload_with_shards(1).await;
+    test_collection_payload_custom_payload_with_shards(10).await;
+}
+
+async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
     {
-        let collection = simple_collection_fixture(collection_dir.path()).await;
+        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number);
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
                 batch: Batch {
@@ -115,9 +135,10 @@ async fn test_collection_payload_custom_payload() {
             })),
         );
         collection.update(insert_points, true).await.unwrap();
+        collection.before_drop().await;
     }
 
-    let collection = Collection::load("test".to_string(), collection_dir.path());
+    let mut collection = Collection::load("test".to_string(), collection_dir.path()).await;
 
     let searcher = SimpleCollectionSearcher::new();
     // Test res with filter payload
@@ -190,4 +211,5 @@ async fn test_collection_payload_custom_payload() {
         PayloadType::Keyword(values) => assert_eq!(&vec!["v4".to_string()], values),
         _ => panic!("unexpected type"),
     }
+    collection.before_drop().await;
 }

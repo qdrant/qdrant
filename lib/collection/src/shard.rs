@@ -12,12 +12,12 @@ use segment::segment_constructor::simple_segment_constructor::build_simple_segme
 use std::cmp::max;
 use std::fs::create_dir_all;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::runtime::{self, Handle, Runtime};
+use tokio::runtime::{self, Runtime};
 use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot, Mutex, RwLock as TokioRwLock};
 
 use segment::types::{
-    Condition, Filter, HasIdCondition, PayloadKeyType, PayloadSchemaInfo, PointIdType, ScoredPoint,
-    SegmentType, VectorElementType, WithPayload,
+    ExtendedPointId, Filter, PayloadKeyType, PayloadSchemaInfo, SegmentType, WithPayload,
+    WithPayloadInterface,
 };
 
 use crate::collection_manager::collection_managers::CollectionSearcher;
@@ -26,15 +26,14 @@ use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CollectionStatus, OptimizersStatus,
-    RecommendRequest, ScrollRequest, ScrollResult, SearchRequest, UpdateResult, UpdateStatus,
+    CollectionError, CollectionInfo, CollectionResult, CollectionStatus, OptimizersStatus, Record,
+    UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 use crate::CollectionId;
-use futures::executor::block_on;
 use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::segment_constructor::load_segment;
 use std::fs::{read_dir, remove_dir_all};
@@ -115,18 +114,15 @@ impl Shard {
         }
     }
 
-    pub fn load(id: ShardId, collection_id: CollectionId, collection_path: &Path) -> Shard {
-        let wal_path = collection_path.join("wal");
-        let segments_path = collection_path.join("segments");
+    pub async fn load(
+        id: ShardId,
+        collection_id: CollectionId,
+        shard_path: &Path,
+        collection_config: &CollectionConfig,
+    ) -> Shard {
+        let wal_path = Self::wal_path(shard_path);
+        let segments_path = Self::segments_path(shard_path);
         let mut segment_holder = SegmentHolder::default();
-
-        let collection_config = CollectionConfig::load(collection_path).unwrap_or_else(|err| {
-            panic!(
-                "Can't read collection config due to {}\nat {}",
-                err,
-                collection_path.to_str().unwrap()
-            )
-        });
 
         let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(
             wal_path.to_str().unwrap(),
@@ -167,7 +163,7 @@ impl Shard {
         }
 
         let optimizers = build_optimizers(
-            collection_path,
+            shard_path,
             &collection_config.params,
             &collection_config.optimizer_config,
             &collection_config.hnsw_config,
@@ -178,35 +174,43 @@ impl Shard {
             id,
             collection_id,
             segment_holder,
-            collection_config,
+            collection_config.clone(),
             wal,
             optimizers,
-            collection_path,
+            shard_path,
             schema_storage,
         );
 
-        block_on(collection.load_from_wal());
+        collection.load_from_wal().await;
 
         collection
+    }
+
+    pub fn wal_path(shard_path: &Path) -> PathBuf {
+        shard_path.join("wal")
+    }
+
+    pub fn segments_path(shard_path: &Path) -> PathBuf {
+        shard_path.join("segments")
     }
 
     /// Creates new empty shard with given configuration, initializing all storages, optimizers and directories.
     pub fn build(
         id: ShardId,
         collection_id: CollectionId,
-        collection_path: &Path,
+        shard_path: &Path,
         config: &CollectionConfig,
     ) -> CollectionResult<Shard> {
-        let wal_path = collection_path.join("wal");
+        let wal_path = shard_path.join("wal");
 
         create_dir_all(&wal_path).map_err(|err| CollectionError::ServiceError {
-            error: format!("Can't create collection directory. Error: {}", err),
+            error: format!("Can't create shard wal directory. Error: {}", err),
         })?;
 
-        let segments_path = collection_path.join("segments");
+        let segments_path = shard_path.join("segments");
 
         create_dir_all(&segments_path).map_err(|err| CollectionError::ServiceError {
-            error: format!("Can't create collection directory. Error: {}", err),
+            error: format!("Can't create shard segments directory. Error: {}", err),
         })?;
 
         let mut segment_holder = SegmentHolder::default();
@@ -226,20 +230,11 @@ impl Shard {
         let wal: SerdeWal<CollectionUpdateOperations> =
             SerdeWal::new(wal_path.to_str().unwrap(), &(&config.wal_config).into())?;
 
-        let collection_config = CollectionConfig {
-            params: config.params.clone(),
-            hnsw_config: config.hnsw_config,
-            optimizer_config: config.optimizer_config.clone(),
-            wal_config: config.wal_config.clone(),
-        };
-
-        collection_config.save(collection_path)?;
-
         let optimizers = build_optimizers(
-            collection_path,
+            shard_path,
             &config.params,
             &config.optimizer_config,
-            &collection_config.hnsw_config,
+            &config.hnsw_config,
             schema_storage.clone(),
         );
 
@@ -247,10 +242,10 @@ impl Shard {
             id,
             collection_id,
             segment_holder,
-            collection_config,
+            config.clone(),
             wal,
             optimizers,
-            collection_path,
+            shard_path,
             schema_storage,
         );
 
@@ -305,53 +300,23 @@ impl Shard {
 
     pub async fn scroll_by(
         &self,
-        request: ScrollRequest,
         segment_searcher: &(dyn CollectionSearcher + Sync),
-    ) -> CollectionResult<ScrollResult> {
-        let default_request = ScrollRequest::default();
-
-        let offset = request.offset;
-        let limit = request
-            .limit
-            .unwrap_or_else(|| default_request.limit.unwrap());
-        let with_payload_interface = &request
-            .with_payload
-            .clone()
-            .unwrap_or_else(|| default_request.with_payload.clone().unwrap());
-        let with_vector = request.with_vector;
-
-        if limit == 0 {
-            return Err(CollectionError::BadRequest {
-                description: "Limit cannot be 0".to_string(),
-            });
-        }
-
-        // Retrieve 1 extra point to determine proper `next_page_offset`
-        let retrieve_limit = limit + 1;
-
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: bool,
+        filter: Option<&Filter>,
+    ) -> CollectionResult<Vec<Record>> {
         // ToDo: Make faster points selection with a set
         let segments = self.segments();
-        let mut point_ids = segments
+        let point_ids = segments
             .read()
             .iter()
-            .flat_map(|(_, segment)| {
-                segment
-                    .get()
-                    .read()
-                    .read_filtered(offset, retrieve_limit, request.filter.as_ref())
-            })
+            .flat_map(|(_, segment)| segment.get().read().read_filtered(offset, limit, filter))
             .sorted()
             .dedup()
-            .take(retrieve_limit)
+            .take(limit)
             .collect_vec();
-
-        let next_page_offset = if point_ids.len() < retrieve_limit {
-            // This was the last page
-            None
-        } else {
-            // remove extra point, it would be a first point of the next page
-            Some(point_ids.pop().unwrap())
-        };
 
         let with_payload = WithPayload::from(with_payload_interface);
         let mut points = segment_searcher
@@ -359,102 +324,10 @@ impl Shard {
             .await?;
         points.sort_by_key(|point| point.id);
 
-        Ok(ScrollResult {
-            points,
-            next_page_offset,
-        })
+        Ok(points)
     }
 
-    pub async fn recommend_by(
-        &self,
-        request: RecommendRequest,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
-        search_runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
-        let segments = self.segments();
-        if request.positive.is_empty() {
-            return Err(CollectionError::BadRequest {
-                description: "At least one positive vector ID required".to_owned(),
-            });
-        }
-
-        let reference_vectors_ids = request
-            .positive
-            .iter()
-            .chain(&request.negative)
-            .cloned()
-            .collect_vec();
-
-        let vectors = segment_searcher
-            .retrieve(
-                segments,
-                &reference_vectors_ids,
-                &WithPayload::from(true),
-                true,
-            )
-            .await?;
-        let vectors_map: HashMap<PointIdType, Vec<VectorElementType>> = vectors
-            .into_iter()
-            .map(|rec| (rec.id, rec.vector.unwrap()))
-            .collect();
-
-        for &point_id in &reference_vectors_ids {
-            if !vectors_map.contains_key(&point_id) {
-                return Err(CollectionError::NotFound {
-                    missed_point_id: point_id,
-                });
-            }
-        }
-
-        let avg_positive = crate::avg_vectors(
-            request
-                .positive
-                .iter()
-                .map(|vid| vectors_map.get(vid).unwrap()),
-        );
-
-        let search_vector = if request.negative.is_empty() {
-            avg_positive
-        } else {
-            let avg_negative = crate::avg_vectors(
-                request
-                    .negative
-                    .iter()
-                    .map(|vid| vectors_map.get(vid).unwrap()),
-            );
-
-            avg_positive
-                .iter()
-                .cloned()
-                .zip(avg_negative.iter().cloned())
-                .map(|(pos, neg)| pos + pos - neg)
-                .collect()
-        };
-
-        let search_request = SearchRequest {
-            vector: search_vector,
-            filter: Some(Filter {
-                should: None,
-                must: request
-                    .filter
-                    .clone()
-                    .map(|filter| vec![Condition::Filter(filter)]),
-                must_not: Some(vec![Condition::HasId(HasIdCondition {
-                    has_id: reference_vectors_ids.iter().cloned().collect(),
-                })]),
-            }),
-            with_payload: request.with_payload,
-            with_vector: request.with_vector,
-            params: request.params,
-            top: request.top,
-        };
-
-        segment_searcher
-            .search(segments, Arc::new(search_request), search_runtime_handle)
-            .await
-    }
-
-    /// Collect overview information about the collection
+    /// Collect overview information about the shard
     pub async fn info(&self) -> CollectionResult<CollectionInfo> {
         let collection_config = self.config.read().await.clone();
         let segments = self.segments.read();
@@ -567,15 +440,14 @@ impl Shard {
         self.segments.read().flush_all().unwrap();
         bar.finish();
     }
-}
 
-impl Drop for Shard {
-    fn drop(&mut self) {
+    pub async fn before_drop(&mut self) {
         // Finishes update tasks right before destructor stuck to do so with runtime
         self.update_sender.load().send(UpdateSignal::Stop).unwrap();
-        block_on(self.stop_flush_worker());
 
-        block_on(self.wait_update_workers_stop()).unwrap();
+        self.stop_flush_worker().await;
+
+        self.wait_update_workers_stop().await.unwrap();
 
         match self.runtime_handle.take() {
             None => {}

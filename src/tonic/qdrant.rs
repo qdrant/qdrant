@@ -167,6 +167,9 @@ pub struct CollectionParams {
     /// Distance function used for comparing vectors
     #[prost(enumeration = "Distance", tag = "2")]
     pub distance: i32,
+    /// Number of shards in collection
+    #[prost(uint32, tag = "3")]
+    pub shard_number: u32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionConfig {
@@ -985,7 +988,7 @@ pub struct RecommendResponse {
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Filter {
-    /// At least one of thous conditions should match
+    /// At least one of those conditions should match
     #[prost(message, repeated, tag = "1")]
     pub should: ::prost::alloc::vec::Vec<Condition>,
     /// All conditions must match
