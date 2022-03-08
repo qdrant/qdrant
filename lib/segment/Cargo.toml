@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dev-dependencies]
-pprof = { version = "0.6", features = ["flamegraph", "protobuf"] }
+pprof = { version = "0.7", features = ["flamegraph", "protobuf"] }
 tempdir = "0.3.7"
 criterion = "0.3"
 rmp-serde = "~1.0"
