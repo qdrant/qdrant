@@ -6,7 +6,7 @@ pub mod tools;
 pub mod simple_sse;
 
 #[cfg(target_arch = "x86_64")]
-pub mod simple_avx2;
+pub mod simple_avx;
 
 #[cfg(target_arch = "x86_64")]
 pub mod simple_avx512;

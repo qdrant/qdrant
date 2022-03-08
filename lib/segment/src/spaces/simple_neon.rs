@@ -90,7 +90,7 @@ mod tests {
             let cosine = cosine_preprocess(&v1);
             assert_eq!(cosine_simd, cosine);
         } else {
-            println!("avx2 test skipped");
+            println!("neon test skipped");
         }
     }
 }
