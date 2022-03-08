@@ -1,3 +1,5 @@
+#![feature(stdsimd)]
+
 mod common;
 pub mod entry;
 pub mod fixtures;
