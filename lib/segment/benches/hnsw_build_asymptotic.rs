@@ -2,7 +2,6 @@ mod prof;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
-use ndarray::Array1;
 use rand::{thread_rng, Rng};
 use segment::fixtures::index_fixtures::{
     random_vector, FakeConditionChecker, TestRawScorerProducer,
@@ -105,14 +104,6 @@ impl Metric for FakeMetric {
     }
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        v1[0] + v2[0]
-    }
-
-    fn blas_similarity(
-        &self,
-        v1: &Array1<VectorElementType>,
-        v2: &Array1<VectorElementType>,
-    ) -> ScoreType {
         v1[0] + v2[0]
     }
 

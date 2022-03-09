@@ -1,15 +1,13 @@
 use atomic_refcell::AtomicRefCell;
 use criterion::{criterion_group, criterion_main, Criterion};
-use ndarray::{Array, Array2};
 use rand::distributions::Standard;
 use rand::Rng;
 use std::sync::Arc;
 use tempdir::TempDir;
 
-use segment::spaces::tools::peek_top_scores_iterable;
-use segment::types::{Distance, PointOffsetType, VectorElementType};
+use segment::types::{Distance, VectorElementType};
 use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
-use segment::vector_storage::{ScoredPointOffset, VectorStorageSS};
+use segment::vector_storage::VectorStorageSS;
 
 const NUM_VECTORS: usize = 50000;
 const DIM: usize = 1000; // Larger dimensionality - greater the SIMD advantage
@@ -56,35 +54,5 @@ fn benchmark_naive(c: &mut Criterion) {
     });
 }
 
-fn benchmark_ndarray(c: &mut Criterion) {
-    let mut matrix = Array2::<f32>::zeros((NUM_VECTORS, DIM));
-
-    for i in 0..NUM_VECTORS {
-        let vector = Array::from(random_vector(DIM));
-        matrix.row_mut(i).assign(&vector);
-    }
-
-    eprintln!("matrix.shape() = {:#?}", matrix.shape());
-
-    c.bench_function("ndarray SIMD dot production", |b| {
-        b.iter(|| {
-            let vector = Array::from(random_vector(DIM));
-            let production_result = matrix.dot(&vector);
-
-            peek_top_scores_iterable(
-                production_result
-                    .iter()
-                    .cloned()
-                    .enumerate()
-                    .map(|(idx, score)| ScoredPointOffset {
-                        idx: idx as PointOffsetType,
-                        score,
-                    }),
-                10,
-            );
-        })
-    });
-}
-
-criterion_group!(benches, benchmark_ndarray, benchmark_naive);
+criterion_group!(benches, benchmark_naive);
 criterion_main!(benches);
