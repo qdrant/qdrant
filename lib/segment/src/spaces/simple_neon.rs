@@ -8,18 +8,19 @@ use std::arch::aarch64::*;
 pub unsafe fn euclid_similarity_neon(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     let n = v1.len();
     let m = n - (n % 4);
-    let mut res : f64 = 0.0;
+    let zeros: [f32; 4] = [ 0.0; 4 ];
+    let mut sum = vld1q_f32(&zeros[0]);
     for i in (0..m).step_by(4) {
         let a = vld1q_f32(&v1[i]);
         let b = vld1q_f32(&v2[i]);
-        let c = vsubq_f32(a, b);
-        let d = vmulq_f32(c, c);
-        res += vaddvq_f32(d) as f64;
+        let sub = vsubq_f32(a, b);
+        sum = vfmaq_f32(sum, sub, sub);
     }
+    let mut res = vaddvq_f32(sum);
     for i in m..n {
-        res += (v1[i] - v2[i]).powi(2) as f64;
+        res += (v1[i] - v2[i]).powi(2);
     }
-    -res.sqrt() as ScoreType
+    -res.sqrt()
 }
 
 #[cfg(all(
@@ -28,16 +29,17 @@ pub unsafe fn euclid_similarity_neon(v1: &[VectorElementType], v2: &[VectorEleme
 pub unsafe fn cosine_preprocess_neon(vector: &[VectorElementType]) -> Vec<VectorElementType> {
     let n = vector.len();
     let m = n - (n % 4);
-    let mut length : f64 = 0.0;
+    let zeros: [f32; 4] = [ 0.0; 4 ];
+    let mut sum = vld1q_f32(&zeros[0]);
     for i in (0..m).step_by(4) {
         let a = vld1q_f32(&vector[i]);
-        let b = vmulq_f32(a, a);
-        length += vaddvq_f32(b) as f64;
+        sum = vfmaq_f32(sum, a, a);
     }
+    let mut length = vaddvq_f32(sum);
     for v in vector.iter().take(n).skip(m) {
-        length += v.powi(2) as f64;
+        length += v.powi(2);
     }
-    let length = length.sqrt() as f32;
+    let length = length.sqrt();
     vector.iter().map(|x| x / length).collect()
 }
 
@@ -47,28 +49,29 @@ pub unsafe fn cosine_preprocess_neon(vector: &[VectorElementType]) -> Vec<Vector
 pub unsafe fn dot_similarity_neon(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     let n = v1.len();
     let m = n - (n % 4);
-    let mut res : f64 = 0.0;
+    let zeros: [f32; 4] = [ 0.0; 4 ];
+    let mut sum = vld1q_f32(&zeros[0]);
     for i in (0..m).step_by(4) {
         let a = vld1q_f32(&v1[i]);
         let b = vld1q_f32(&v2[i]);
-        let c = vmulq_f32(a, b);
-        res += vaddvq_f32(c) as f64;
+        sum = vfmaq_f32(sum, a, b);
     }
+    let mut res = vaddvq_f32(sum);
     for i in m..n {
-        res += (v1[i] * v2[i]) as f64;
+        res += v1[i] * v2[i];
     }
-    res as ScoreType
+    res
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::spaces::simple::*;
-
     #[cfg(target_feature = "neon")]
     #[test]
     fn test_spaces_neon() {
-        if is_x86_feature_detected!("neon") {
+        use super::*;
+        use crate::spaces::simple::*;
+
+        if std::arch::is_aarch64_feature_detected!("neon") {
             let v1: Vec<f32> = vec![
                 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
                 26., 27., 28., 29., 30., 31.,

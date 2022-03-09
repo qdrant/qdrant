@@ -56,7 +56,7 @@ impl Metric for EuclidMetric {
 
         #[cfg(target_arch = "aarch64")]
         {
-            if is_aarch64_feature_detected!("neon") {
+            if std::arch::is_aarch64_feature_detected!("neon") {
                 return unsafe { euclid_similarity_neon(v1, v2) };
             }
         }
@@ -105,7 +105,7 @@ impl Metric for DotProductMetric {
 
         #[cfg(target_arch = "aarch64")]
         {
-            if is_aarch64_feature_detected!("neon") {
+            if std::arch::is_aarch64_feature_detected!("neon") {
                 return unsafe { dot_similarity_neon(v1, v2) };
             }
         }
@@ -154,7 +154,7 @@ impl Metric for CosineMetric {
 
         #[cfg(target_arch = "aarch64")]
         {
-            if is_aarch64_feature_detected!("neon") {
+            if std::arch::is_aarch64_feature_detected!("neon") {
                 return unsafe { dot_similarity_neon(v1, v2) };
             }
         }
@@ -193,7 +193,7 @@ impl Metric for CosineMetric {
 
         #[cfg(target_arch = "aarch64")]
         {
-            if is_aarch64_feature_detected!("neon") {
+            if std::arch::is_aarch64_feature_detected!("neon") {
                 return Some(unsafe { cosine_preprocess_neon(vector) });
             }
         }
