@@ -1,9 +1,9 @@
 mod prof;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use segment::spaces::metric::Metric;
-use segment::spaces::simple::{EuclidMetric, DotProductMetric};
 use segment::fixtures::index_fixtures::random_vector;
+use segment::spaces::metric::Metric;
+use segment::spaces::simple::{DotProductMetric, EuclidMetric};
 
 fn euclid_metric(c: &mut Criterion) {
     let mut group = c.benchmark_group("euclid-metric-group");
