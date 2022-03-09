@@ -129,6 +129,7 @@ mod tests {
     use parking_lot::RwLock;
     use rand::Rng;
     use segment::types::{Distance, PayloadType};
+    use std::num::NonZeroU32;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     use tempdir::TempDir;
@@ -210,7 +211,7 @@ mod tests {
             CollectionParams {
                 vector_size: 4,
                 distance: Distance::Dot,
-                shard_number: 1,
+                shard_number: NonZeroU32::new(1).unwrap(),
             },
             Default::default(),
             Arc::new(SchemaStorage::new()),

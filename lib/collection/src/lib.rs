@@ -66,7 +66,7 @@ impl Collection {
         config.save(path)?;
         let mut ring = HashRing::new();
         let mut shards: HashMap<ShardId, Shard> = HashMap::new();
-        for shard_id in 0..config.params.shard_number {
+        for shard_id in 0..config.params.shard_number.get() {
             let shard_path = shard_path(path, shard_id);
             let shard = create_dir_all(&shard_path)
                 .map_err(|err| CollectionError::ServiceError {
@@ -108,7 +108,7 @@ impl Collection {
         Self::try_migrate_legacy_one_shard(path)
             .expect("Failed to migrate legacy collection format.");
 
-        for shard_id in 0..config.params.shard_number {
+        for shard_id in 0..config.params.shard_number.get() {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
                 shard_id,

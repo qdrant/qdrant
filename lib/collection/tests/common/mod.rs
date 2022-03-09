@@ -2,6 +2,7 @@ use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::optimizers_builder::OptimizersConfig;
 use collection::Collection;
 use segment::types::Distance;
+use std::num::NonZeroU32;
 use std::path::Path;
 
 /// Test collections for this upper bound of shards.
@@ -32,7 +33,7 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
     let collection_params = CollectionParams {
         vector_size: 4,
         distance: Distance::Dot,
-        shard_number,
+        shard_number: NonZeroU32::new(shard_number).expect("Shard number can not be zero"),
     };
 
     Collection::new(
