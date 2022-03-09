@@ -2255,7 +2255,9 @@ dependencies = [
  "nix",
  "once_cell",
  "parking_lot 0.12.0",
- "protobuf",
+ "prost",
+ "prost-build",
+ "prost-derive",
  "smallvec",
  "symbolic-demangle",
  "tempfile",
@@ -2353,12 +2355,6 @@ dependencies = [
  "bytes",
  "prost",
 ]
-
-[[package]]
-name = "protobuf"
-version = "2.27.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf7e6d18738ecd0902d30d1ad232c9125985a3422929b16c65517b38adc14f96"
 
 [[package]]
 name = "qdrant"
