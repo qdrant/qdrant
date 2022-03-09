@@ -3,15 +3,16 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Formatter;
+use std::str::FromStr;
+use uuid::Uuid;
 
-pub type PointIdType = u64;
-/// Type of point index across all segments
-pub type PointOffsetType = u32;
 /// Type of point index inside a segment
+pub type PointOffsetType = u32;
 pub type PayloadKeyType = String;
 pub type PayloadKeyTypeRef<'a> = &'a str;
 pub type SeqNumberType = u64;
-/// Sequential number of modification, applied to segemnt
+/// Sequential number of modification, applied to segment
 pub type ScoreType = f32;
 /// Type of vector matching score
 pub type TagType = u64;
@@ -21,6 +22,50 @@ pub type VectorElementType = f32;
 pub type FloatPayloadType = f64;
 /// Type of integer point payload
 pub type IntPayloadType = i64;
+
+/// Type, used for specifying point ID in user interface
+#[derive(
+    Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema,
+)]
+#[serde(untagged)]
+pub enum ExtendedPointId {
+    NumId(u64),
+    Uuid(Uuid),
+}
+
+impl std::fmt::Display for ExtendedPointId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExtendedPointId::NumId(idx) => write!(f, "{}", idx),
+            ExtendedPointId::Uuid(uuid) => write!(f, "{}", uuid),
+        }
+    }
+}
+
+impl From<u64> for ExtendedPointId {
+    fn from(idx: u64) -> Self {
+        ExtendedPointId::NumId(idx)
+    }
+}
+
+impl FromStr for ExtendedPointId {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let try_num: Result<u64, _> = s.parse();
+        if let Ok(num) = try_num {
+            return Ok(Self::NumId(num));
+        }
+        let try_uuid = Uuid::from_str(s);
+        if let Ok(uuid) = try_uuid {
+            return Ok(Self::Uuid(uuid));
+        }
+        Err(())
+    }
+}
+
+/// Type of point index across all segments
+pub type PointIdType = ExtendedPointId;
 
 /// Type of internal tags, build from payload
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, FromPrimitive)]
@@ -235,10 +280,45 @@ pub struct SegmentState {
 
 /// Geo point payload schema
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[serde(try_from = "GeoPointShadow")]
 pub struct GeoPoint {
     pub lon: f64,
     pub lat: f64,
+}
+
+#[derive(Deserialize)]
+struct GeoPointShadow {
+    pub lon: f64,
+    pub lat: f64,
+}
+
+pub struct GeoPointValidationError;
+
+// The error type has to implement Display
+impl std::fmt::Display for GeoPointValidationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "Wrong format of GeoPoint payload: expected `lat` within [-90;90] and `lon` within [-180;180]")
+    }
+}
+
+impl TryFrom<GeoPointShadow> for GeoPoint {
+    type Error = GeoPointValidationError;
+
+    fn try_from(value: GeoPointShadow) -> Result<Self, Self::Error> {
+        let max_lat = 90f64;
+        let min_lat = -90f64;
+        let max_lon = 180f64;
+        let min_lon = -180f64;
+
+        if !(min_lon..=max_lon).contains(&value.lon) || !(min_lat..=max_lat).contains(&value.lat) {
+            return Err(GeoPointValidationError);
+        }
+
+        Ok(Self {
+            lon: value.lon,
+            lat: value.lat,
+        })
+    }
 }
 
 /// All possible payload types
@@ -372,14 +452,41 @@ impl From<&PayloadInterface> for PayloadType {
     }
 }
 
-/// Match filter request
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+/// Match by keyword
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub struct Match {
+pub struct MatchKeyword {
     /// Keyword value to match
-    pub keyword: Option<String>,
+    pub keyword: String,
+}
+
+/// Match filter request
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchInteger {
     /// Integer value to match
-    pub integer: Option<IntPayloadType>,
+    pub integer: IntPayloadType,
+}
+
+/// Match filter request
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum Match {
+    Keyword(MatchKeyword),
+    Integer(MatchInteger),
+}
+
+impl From<String> for Match {
+    fn from(keyword: String) -> Self {
+        Self::Keyword(MatchKeyword { keyword })
+    }
+}
+
+impl From<IntPayloadType> for Match {
+    fn from(integer: IntPayloadType) -> Self {
+        Self::Integer(MatchInteger { integer })
+    }
 }
 
 /// Range filter request
@@ -399,7 +506,7 @@ pub struct Range {
 /// Geo filter request
 ///
 /// Matches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoBoundingBox {
     /// Coordinates of the top left point of the area rectangle
@@ -411,7 +518,7 @@ pub struct GeoBoundingBox {
 /// Geo filter request
 ///
 /// Matches coordinates inside the circle of `radius` and center with coordinates `center`
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoRadius {
     /// Coordinates of the top left point of the area rectangle
@@ -421,7 +528,7 @@ pub struct GeoRadius {
 }
 
 /// All possible payload filtering conditions
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct FieldCondition {
     pub key: PayloadKeyType,
@@ -436,7 +543,7 @@ pub struct FieldCondition {
 }
 
 /// ID-based filtering condition
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 pub struct HasIdCondition {
     pub has_id: HashSet<PointIdType>,
 }
@@ -447,7 +554,7 @@ impl From<HashSet<PointIdType>> for HasIdCondition {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum Condition {
     /// Check if field satisfies provided condition
@@ -463,8 +570,12 @@ pub enum Condition {
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum WithPayloadInterface {
+    /// If `true` - return all payload,
+    /// If `false` - do not return payload
     Bool(bool),
+    /// Specify which fields to return
     Fields(Vec<String>),
+    /// Specify included or excluded fields
     Selector(PayloadSelector),
 }
 impl From<bool> for WithPayload {
@@ -495,39 +606,76 @@ impl From<&WithPayloadInterface> for WithPayload {
     }
 }
 
-/// Specifies how to treat payload selector
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
-pub struct PayloadSelector {
-    /// Include return payload key type
+pub struct PayloadSelectorInclude {
+    /// Only include this payload keys
     pub include: Vec<PayloadKeyType>,
-    /// Post-exclude return payload key type
+}
+
+impl PayloadSelectorInclude {
+    pub fn new(include: Vec<PayloadKeyType>) -> Self {
+        Self { include }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
+pub struct PayloadSelectorExclude {
+    /// Exclude this fields from returning payload
     pub exclude: Vec<PayloadKeyType>,
+}
+
+impl PayloadSelectorExclude {
+    pub fn new(exclude: Vec<PayloadKeyType>) -> Self {
+        Self { exclude }
+    }
+}
+
+/// Specifies how to treat payload selector
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(untagged)]
+#[serde(rename_all = "snake_case")]
+pub enum PayloadSelector {
+    /// Include only this fields into response payload
+    Include(PayloadSelectorInclude),
+    /// Exclude this fields from result payload. Keep all other fields.
+    Exclude(PayloadSelectorExclude),
+}
+
+impl From<PayloadSelectorExclude> for WithPayloadInterface {
+    fn from(selector: PayloadSelectorExclude) -> Self {
+        WithPayloadInterface::Selector(PayloadSelector::Exclude(selector))
+    }
+}
+
+impl From<PayloadSelectorInclude> for WithPayloadInterface {
+    fn from(selector: PayloadSelectorInclude) -> Self {
+        WithPayloadInterface::Selector(PayloadSelector::Include(selector))
+    }
 }
 
 impl PayloadSelector {
     pub fn new_include(vecs_payload_key_type: Vec<PayloadKeyType>) -> Self {
-        PayloadSelector {
+        PayloadSelector::Include(PayloadSelectorInclude {
             include: vecs_payload_key_type,
-            exclude: Vec::new(),
-        }
+        })
     }
 
-    pub fn new_include_and_exclude(
-        include: Vec<PayloadKeyType>,
-        exclude: Vec<PayloadKeyType>,
-    ) -> Self {
-        PayloadSelector { include, exclude }
+    pub fn check(&self, key: &PayloadKeyType) -> bool {
+        match self {
+            PayloadSelector::Include(selector) => selector.include.contains(key),
+            PayloadSelector::Exclude(selector) => !selector.exclude.contains(key),
+        }
     }
 
     pub fn process(
         &self,
         x: TheMap<PayloadKeyType, PayloadType>,
     ) -> TheMap<PayloadKeyType, PayloadType> {
-        x.into_iter()
-            .filter(|(key, _)| self.include.contains(key) && !self.exclude.contains(key))
-            .collect()
+        x.into_iter().filter(|(key, _)| self.check(key)).collect()
     }
 }
 
@@ -540,7 +688,7 @@ pub struct WithPayload {
     /// Filter include and exclude payloads
     pub payload_selector: Option<PayloadSelector>,
 }
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct Filter {
@@ -599,7 +747,7 @@ mod tests {
                 assert_eq!(x[0].lat, 1.0);
                 assert_eq!(x[0].lon, 1.0);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
 
         let keyword_query_non_strict = r#"["Berlin", "Barcelona", "Moscow"]"#;
@@ -616,7 +764,7 @@ mod tests {
                 assert_eq!(x[1], "Barcelona");
                 assert_eq!(x[2], "Moscow");
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
 
         let keyword_query_strict =
@@ -634,7 +782,7 @@ mod tests {
                 assert_eq!(x[1], "Barcelona");
                 assert_eq!(x[2], "Moscow");
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
 
         let integer_query_non_strict = r#"[1, 2, 3]"#;
@@ -651,7 +799,7 @@ mod tests {
                 assert_eq!(x[1], 2);
                 assert_eq!(x[2], 3);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
 
         let integer_query_strict = r#"{"type": "integer", "value": [1, 2, 3]}"#;
@@ -668,7 +816,7 @@ mod tests {
                 assert_eq!(x[1], 2);
                 assert_eq!(x[2], 3);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
 
         let float_query_non_strict = r#"[1.0, 2.0, 3.0]"#;
@@ -685,7 +833,7 @@ mod tests {
                 assert_eq!(x[1], 2.0);
                 assert_eq!(x[2], 3.0);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
 
         let float_query_strict = r#"{"type": "float", "value": [1.0, 2.0, 3.0]}"#;
@@ -702,7 +850,7 @@ mod tests {
                 assert_eq!(x[1], 2.0);
                 assert_eq!(x[2], 3.0);
             }
-            _ => assert!(false),
+            _ => panic!(),
         }
     }
 
@@ -750,6 +898,39 @@ mod tests {
         eprintln!("payload = {:#?}", payload);
         eprintln!("de_record = {:#?}", de_record);
     }
+
+    // ToDo: Check serialization of UUID here later
+    // #[test]
+    // fn test_long_id_deserialization() {
+    //     let query1 = r#"
+    //     {
+    //         "has_id": [7730993719707444524137094407]
+    //     }"#;
+    //
+    //     let de_record: Condition = serde_json::from_str(query1).expect("deserialization ok");
+    //     eprintln!("de_record = {:#?}", de_record);
+    //
+    //     let query2 = HasIdCondition {
+    //         has_id: HashSet::from_iter(vec![7730993719707444524137094407].iter().cloned()),
+    //     };
+    //
+    //     let json = serde_json::to_string(&query2).expect("serialization ok");
+    //
+    //     eprintln!("json = {:#?}", json);
+    // }
+    //
+    // #[test]
+    // fn test_long_ids_serialization() {
+    //     let operation = Filter {
+    //         should: None,
+    //         must: Some(vec![Condition::HasId(HasIdCondition {
+    //             has_id: HashSet::from_iter(vec![7730993719707444524137094407].iter().cloned()),
+    //         })]),
+    //         must_not: None,
+    //     };
+    //     check_json_serialization(operation.clone());
+    //     check_cbor_serialization(operation);
+    // }
 
     #[test]
     fn test_rms_serialization() {
@@ -818,10 +999,7 @@ mod tests {
         let filter = Filter {
             must: Some(vec![Condition::Field(FieldCondition {
                 key: "hello".to_owned(),
-                r#match: Some(Match {
-                    keyword: Some("world".to_owned()),
-                    integer: None,
-                }),
+                r#match: Some("world".to_owned().into()),
                 range: None,
                 geo_bounding_box: None,
                 geo_radius: None,
@@ -890,11 +1068,38 @@ mod tests {
                 let must_not = &f.must_not;
                 match must_not {
                     Some(v) => assert_eq!(v.len(), 2),
-                    None => assert!(false, "Filter expected"),
+                    None => panic!("Filter expected"),
                 }
             }
-            _ => assert!(false, "Condition expected"),
+            _ => panic!("Condition expected"),
         }
+    }
+
+    #[test]
+    fn test_geo_validation() {
+        let query1 = r#"
+        {
+            "must": [
+                {
+                    "key": "geo_field",
+                    "geo_bounding_box": {
+                        "top_left": {
+                            "lon": 1113.410146,
+                            "lat": 52.519289
+                        },
+                        "bottom_right": {
+                            "lon": 13.432683,
+                            "lat": 52.505582
+                        }
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Result<Filter, _> = serde_json::from_str(query1);
+
+        assert!(filter.is_err());
     }
 }
 

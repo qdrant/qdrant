@@ -14,10 +14,13 @@ use super::simple_avx512::*;
 #[cfg(target_arch = "aarch64")]
 use super::simple_neon::*;
 
+#[derive(Clone)]
 pub struct DotProductMetric {}
 
+#[derive(Clone)]
 pub struct CosineMetric {}
 
+#[derive(Clone)]
 pub struct EuclidMetric {}
 
 impl Metric for EuclidMetric {

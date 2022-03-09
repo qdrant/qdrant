@@ -1,13 +1,14 @@
 #@ load("openapi.lib.yml", "response", "reference", "type", "array")
 
 paths:
-  /collections/{name}:
+  /collections/{collection_name}:
     post:
       tags:
         - points
       summary: Update points
       description: Perform point update operation (vectors, payloads, indexes) in collection
       operationId: update_points
+      deprecated: true
       requestBody:
         description: Collection update operations
         content:
@@ -16,7 +17,7 @@ paths:
               $ref: "#/components/schemas/CollectionUpdateOperations"
 
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to search in
           required: true
@@ -30,7 +31,7 @@ paths:
             type: boolean
       responses: #@ response(reference("UpdateResult"))
 
-  /collections/{name}/points/{id}:
+  /collections/{collection_name}/points/{id}:
     get:
       tags:
         - points
@@ -38,7 +39,7 @@ paths:
       description: Retrieve full information of single point by id
       operationId: get_point
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to retrieve from
           required: true
@@ -49,10 +50,10 @@ paths:
           description: Id of the point
           required: true
           schema:
-            type: integer
+            $ref: "#/components/schemas/ExtendedPointId"
       responses: #@ response(reference("Record"))
 
-  /collections/{name}/points:
+  /collections/{collection_name}/points:
     post:
       tags:
         - points
@@ -67,10 +68,154 @@ paths:
               $ref: "#/components/schemas/PointRequest"
 
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to retrieve from
           required: true
           schema:
             type: string
       responses: #@ response(array(reference("Record")))
+
+    put:
+      tags:
+        - points
+      summary: Upsert points
+      description: Perform insert + updates on points. If point with given ID already exists - it will be overwritten.
+      operationId: upsert_points
+      requestBody:
+        description: Operation to perform on points
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PointInsertOperations"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to update from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(reference("UpdateResult"))
+
+  /collections/{collection_name}/points/delete:
+    post:
+      tags:
+        - points
+      summary: Delete points
+      description: Delete points
+      operationId: delete_points
+      requestBody:
+        description: Operation to perform on points
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PointsSelector"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to delete from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(reference("UpdateResult"))
+
+  /collections/{collection_name}/points/payload:
+    post:
+      tags:
+        - points
+      summary: Set payload
+      description: Set payload for points
+      operationId: set_payload
+      requestBody:
+        description: Set payload on points
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetPayload"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to set from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(reference("UpdateResult"))
+
+  /collections/{collection_name}/points/payload/delete:
+    post:
+      tags:
+        - points
+      summary: Delete payload
+      description: Delete specified key payload for points
+      operationId: delete_payload
+      requestBody:
+        description: delete payload on points
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeletePayload"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to delete from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(reference("UpdateResult"))
+
+  /collections/{collection_name}/points/payload/clear:
+    post:
+      tags:
+        - points
+      summary: Clear payload
+      description: Remove all payload for specified points
+      operationId: clear_payload
+      requestBody:
+        description: clear payload on points
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PointsSelector"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to clear payload from
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(reference("UpdateResult"))

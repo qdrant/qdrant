@@ -95,7 +95,7 @@ pub struct CreateCollection {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateCollectionOperation {
-    pub name: String,
+    pub collection_name: String,
     #[serde(flatten)]
     pub create_collection: CreateCollection,
 }
@@ -113,7 +113,7 @@ pub struct UpdateCollection {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateCollectionOperation {
-    pub name: String,
+    pub collection_name: String,
     #[serde(flatten)]
     pub update_collection: UpdateCollection,
 }

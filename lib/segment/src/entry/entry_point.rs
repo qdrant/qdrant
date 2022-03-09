@@ -25,6 +25,16 @@ pub enum OperationError {
     },
     #[error("Service runtime error: {description}")]
     ServiceError { description: String },
+    #[error("Operation cancelled: {description}")]
+    Cancelled { description: String },
+}
+
+impl OperationError {
+    pub fn service_error(description: &str) -> OperationError {
+        OperationError::ServiceError {
+            description: description.to_string(),
+        }
+    }
 }
 
 /// Contains information regarding last operation error, which should be fixed before next operation could be processed
@@ -39,34 +49,28 @@ impl<E> From<AtomicIoError<E>> for OperationError {
     fn from(err: AtomicIoError<E>) -> Self {
         match err {
             AtomicIoError::Internal(io_err) => OperationError::from(io_err),
-            AtomicIoError::User(_user_err) => OperationError::ServiceError {
-                description: "Unknown atomic write error".to_owned(),
-            },
+            AtomicIoError::User(_user_err) => {
+                OperationError::service_error("Unknown atomic write error")
+            }
         }
     }
 }
 
 impl From<IoError> for OperationError {
     fn from(err: IoError) -> Self {
-        OperationError::ServiceError {
-            description: format!("{}", err),
-        }
+        OperationError::service_error(&format!("IO Error: {}", err))
     }
 }
 
 impl From<Error> for OperationError {
     fn from(err: Error) -> Self {
-        OperationError::ServiceError {
-            description: format!("persistence error: {}", err),
-        }
+        OperationError::service_error(&format!("persistence error: {}", err))
     }
 }
 
 impl From<serde_json::Error> for OperationError {
     fn from(err: serde_json::Error) -> Self {
-        OperationError::ServiceError {
-            description: format!("Json error: {}", err),
-        }
+        OperationError::service_error(&format!("Json error: {}", err))
     }
 }
 
@@ -162,7 +166,7 @@ pub trait SegmentEntry {
     /// Paginate over points which satisfies filtering condition starting with `offset` id including.
     fn read_filtered<'a>(
         &'a self,
-        offset: PointIdType,
+        offset: Option<PointIdType>,
         limit: usize,
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType>;
@@ -214,4 +218,11 @@ pub trait SegmentEntry {
 
     /// Checks if segment errored during last operations
     fn check_error(&self) -> Option<SegmentFailedState>;
+
+    /// Delete points by the given filter
+    fn delete_filtered<'a>(
+        &'a mut self,
+        op_num: SeqNumberType,
+        filter: &'a Filter,
+    ) -> OperationResult<usize>;
 }

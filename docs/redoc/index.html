@@ -18,11 +18,12 @@
             padding: 0;
         }
     </style>
+    <script src="./default_version.js"></script>
 
     <script>
         const url_string = window.location.href;
         const url = new URL(url_string);
-        const version = url.searchParams.get("v") || 'master';
+        const version = url.searchParams.get("v") || defaultApiVersion;
     </script>
 </head>
 <body>
@@ -38,6 +39,9 @@
         </button>
         <div class="dropdown-menu dropdown-menu-right">
             <a href="?v=master" class="dropdown-item" type="button">master</a>
+            <a href="?v=v0.6.0" class="dropdown-item" type="button">v0.6.0</a>
+            <a href="?v=v0.5.1" class="dropdown-item" type="button">v0.5.1</a>
+            <a href="?v=v0.5.0" class="dropdown-item" type="button">v0.5.0</a>
             <a href="?v=v0.4.2" class="dropdown-item" type="button">v0.4.2</a>
         </div>
     </div>

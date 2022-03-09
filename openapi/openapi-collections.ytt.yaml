@@ -25,7 +25,7 @@ paths:
               $ref: "#/components/schemas/StorageOperations"
       responses: #@ response(type("boolean"))
 
-  /collections/{name}:
+  /collections/{collection_name}:
     get:
       tags:
         - collections
@@ -33,7 +33,7 @@ paths:
       description: Get detailed information about specified existing collection
       operationId: get_collection
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to retrieve
           required: true
@@ -55,7 +55,7 @@ paths:
               $ref: "#/components/schemas/CreateCollection"
 
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the new collection
           required: true
@@ -66,7 +66,7 @@ paths:
     patch:
       tags:
         - collections
-      summary: Update collection paranmeters
+      summary: Update collection parameters
       description: Update parameters of the existing collection
       operationId: update_collection
       requestBody:
@@ -77,7 +77,7 @@ paths:
               $ref: "#/components/schemas/UpdateCollection"
 
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to update
           required: true
@@ -92,7 +92,7 @@ paths:
       description: Drop collection and all associated data
       operationId: delete_collection
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to delete
           required: true
@@ -114,3 +114,60 @@ paths:
               $ref: "#/components/schemas/ChangeAliasesOperation"
 
       responses: #@ response(type("boolean"))
+
+  /collections/{collection_name}/index:
+    put:
+      tags:
+        - collections
+      summary: Create index for field in collection
+      description: Create index for field in collection
+      operationId: create_field_index
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+      requestBody:
+        description: Field name
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFieldIndex"
+
+      responses: #@ response(reference("UpdateResult"))
+
+  /collections/{collection_name}/index/{field_name}:
+    delete:
+      tags:
+        - collections
+      summary: Delete index for field in collection
+      description: Delete field index for collection
+      operationId: delete_field_index
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+        - name: field_name
+          in: path
+          description: Name of the field where to delete the index
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+      responses: #@ response(reference("UpdateResult"))

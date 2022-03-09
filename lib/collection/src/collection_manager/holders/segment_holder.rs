@@ -11,6 +11,7 @@ use segment::segment::Segment;
 use segment::types::{PointIdType, SeqNumberType};
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
+use crate::operations::types::CollectionError;
 use std::ops::Mul;
 use std::time::Duration;
 
@@ -69,16 +70,15 @@ impl From<ProxySegment> for LockedSegment {
     }
 }
 
-unsafe impl Sync for LockedSegment {}
-
-unsafe impl Send for LockedSegment {}
-
 #[derive(Default)]
 pub struct SegmentHolder {
     segments: HashMap<SegmentId, LockedSegment>,
     /// Seq number of the first un-recovered operation.
     /// If there are no failed operation - None
     pub failed_operation: BTreeSet<SeqNumberType>,
+
+    /// Holds the first uncorrected error happened with optimizer
+    pub optimizer_errors: Option<CollectionError>,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
@@ -122,33 +122,38 @@ impl<'s> SegmentHolder {
         key
     }
 
-    pub fn remove(&mut self, remove_ids: &[SegmentId], drop_data: bool) -> OperationResult<()> {
+    pub fn remove(&mut self, remove_ids: &[SegmentId]) -> Vec<LockedSegment> {
+        let mut removed_segments = vec![];
         for remove_id in remove_ids {
             let removed_segment = self.segments.remove(remove_id);
-
-            if drop_data {
-                match removed_segment {
-                    None => {}
-                    Some(segment) => segment.drop_data()?,
-                }
+            if let Some(segment) = removed_segment {
+                removed_segments.push(segment);
             }
         }
-        Ok(())
+        removed_segments
     }
 
     /// Replace old segments with a new one
+    ///
+    /// # Arguments
+    ///
+    /// * `segment` - segment to insert
+    /// * `remove_ids` - ids of segments to replace
+    ///
+    /// # Result
+    ///
+    /// Pair of (id of newly inserted segment, Vector of replaced segments)
+    ///
     pub fn swap<T>(
         &mut self,
         segment: T,
         remove_ids: &[SegmentId],
-        drop_data: bool,
-    ) -> OperationResult<SegmentId>
+    ) -> (SegmentId, Vec<LockedSegment>)
     where
         T: Into<LockedSegment>,
     {
         let new_id = self.add(segment);
-        self.remove(remove_ids, drop_data)?;
-        Ok(new_id)
+        (new_id, self.remove(remove_ids))
     }
 
     pub fn get(&self, id: SegmentId) -> Option<&LockedSegment> {
@@ -236,9 +241,9 @@ impl<'s> SegmentHolder {
         F: FnMut(SegmentId, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
     {
         if segment_ids.is_empty() {
-            return Err(OperationError::ServiceError {
-                description: "No appendable segments exists, expected at least one".to_string(),
-            });
+            return Err(OperationError::service_error(
+                "No appendable segments exists, expected at least one",
+            ));
         }
 
         let mut entries: Vec<_> = Default::default();
@@ -366,6 +371,12 @@ impl<'s> SegmentHolder {
             Ok(max_persisted_version)
         }
     }
+
+    pub fn report_optimizer_error<E: Into<CollectionError>>(&mut self, error: E) {
+        if self.optimizer_errors.is_none() {
+            self.optimizer_errors = Some(error.into());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -378,6 +389,7 @@ mod tests {
     use crate::collection_manager::fixtures::{build_segment_1, build_segment_2};
 
     use super::*;
+    use segment::payload_storage::schema_storage::SchemaStorage;
     use std::{thread, time};
 
     #[test]
@@ -393,9 +405,14 @@ mod tests {
 
         assert_ne!(sid1, sid2);
 
-        let segment3 = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+        let segment3 =
+            build_simple_segment(dir.path(), 4, Distance::Dot, Arc::new(SchemaStorage::new()))
+                .unwrap();
 
-        let _sid3 = holder.swap(segment3, &[sid1, sid2], true).unwrap();
+        let (_sid3, replaced_segments) = holder.swap(segment3, &[sid1, sid2]);
+        replaced_segments
+            .into_iter()
+            .for_each(|s| s.drop_data().unwrap());
     }
 
     #[test]
@@ -449,11 +466,15 @@ mod tests {
 
         let mut processed_points: Vec<PointIdType> = vec![];
         holder
-            .apply_points_to_appendable(100, &[1, 2, 11, 12], |point_id, segment| {
-                processed_points.push(point_id);
-                assert!(segment.has_point(point_id));
-                Ok(true)
-            })
+            .apply_points_to_appendable(
+                100,
+                &[1.into(), 2.into(), 11.into(), 12.into()],
+                |point_id, segment| {
+                    processed_points.push(point_id);
+                    assert!(segment.has_point(point_id));
+                    Ok(true)
+                },
+            )
             .unwrap();
 
         assert_eq!(4, processed_points.len());
@@ -461,11 +482,11 @@ mod tests {
         let locked_segment_1 = holder.get(sid1).unwrap().get();
         let read_segment_1 = locked_segment_1.read();
 
-        assert!(read_segment_1.has_point(1));
-        assert!(read_segment_1.has_point(2));
+        assert!(read_segment_1.has_point(1.into()));
+        assert!(read_segment_1.has_point(2.into()));
 
         // Points moved on apply
-        assert!(read_segment_1.has_point(11));
-        assert!(read_segment_1.has_point(12));
+        assert!(read_segment_1.has_point(11.into()));
+        assert!(read_segment_1.has_point(12.into()));
     }
 }

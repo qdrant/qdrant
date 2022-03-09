@@ -22,8 +22,22 @@ storage:
     # The minimal number of vectors in a segment, required to perform segment optimization
     vacuum_min_vector_number: 1000
 
-    # If the number of segments exceeds this value, the optimizer will merge the smallest segments.
-    max_segment_number: 5
+    # Target amount of segments optimizer will try to keep.
+    # Real amount of segments may vary depending on multiple parameters:
+    #  - Amount of stored points
+    #  - Current write RPS
+    #
+    # It is recommended to select default number of segments as a factor of the number of search threads,
+    # so that each segment would be handled evenly by one of the threads
+    default_segment_number: 5
+
+    # Do not create segments larger this number of points.
+    # Large segments might require disproportionately long indexation times,
+    # therefore it makes sense to limit the size of segments.
+    #
+    # If indexation speed have more priority for your - make this parameter lower.
+    # If search speed is more important - make this parameter higher.
+    max_segment_size: 200000
 
     # Maximum number of vectors to store in-memory per segment.
     # Segments larger than this threshold will be stored as read-only memmaped file.
@@ -36,8 +50,8 @@ storage:
     # Starting from this amount of vectors per-segment the engine will start building index for payload.
     payload_indexing_threshold: 10000
 
-    # Minimum interval between forced flushes.
-    flush_interval_sec: 10
+    # Interval between forced flushes.
+    flush_interval_sec: 1
     
     # Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used
     max_optimization_threads: 0
@@ -58,11 +72,18 @@ service:
   # Maximum size of POST data in a single request in megabytes
   max_request_size_mb: 32
 
+  # Number of parallel workers used for serving the api. If 0 - equal to the number of available cores.
+  # If missing - Same as storage.max_search_threads
+  max_workers: 0
+
   # Host to bind the service on
   host: 0.0.0.0
 
   # HTTP port to bind the service on
-  port: 6333
+  http_port: 6333
 
-  # GRPC port to bind the service on
-  grpc_port: 6334
+  # gRPC port to bind the service on.
+  # If `null` - gRPC is disabed. Default: null
+  grpc_port: null
+  # Uncomment to enable gRPC:
+  # grpc_port: 6334

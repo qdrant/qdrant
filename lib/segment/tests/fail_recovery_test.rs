@@ -15,22 +15,20 @@ mod tests {
 
         let mut segment = empty_segment(dir.path());
 
-        segment.upsert_point(1, 1, &vec1).unwrap();
-        segment.upsert_point(1, 2, &vec1).unwrap();
+        segment.upsert_point(1, 1.into(), &vec1).unwrap();
+        segment.upsert_point(1, 2.into(), &vec1).unwrap();
 
         segment.error_status = Some(SegmentFailedState {
             version: 2,
-            point_id: Some(1),
-            error: OperationError::ServiceError {
-                description: "test error".to_string(),
-            },
+            point_id: Some(1.into()),
+            error: OperationError::service_error("test error"),
         });
 
         // op_num is greater than errored. Skip because not recovered yet
         let fail_res = segment.set_payload(
             3,
-            1,
-            &"color".to_string(),
+            1.into(),
+            "color",
             PayloadType::Keyword(vec!["red".to_string()]),
         );
         assert!(fail_res.is_err());
@@ -38,8 +36,8 @@ mod tests {
         // Also skip even with another point operation
         let fail_res = segment.set_payload(
             3,
-            2,
-            &"color".to_string(),
+            2.into(),
+            "color",
             PayloadType::Keyword(vec!["red".to_string()]),
         );
         assert!(fail_res.is_err());
@@ -47,8 +45,8 @@ mod tests {
         // Perform operation, but keep error status: operation is not fully recovered yet
         let ok_res = segment.set_payload(
             2,
-            2,
-            &"color".to_string(),
+            2.into(),
+            "color",
             PayloadType::Keyword(vec!["red".to_string()]),
         );
         assert!(ok_res.is_ok());
@@ -57,8 +55,8 @@ mod tests {
         // Perform operation anf recover the error - operation is fixed now
         let recover_res = segment.set_payload(
             2,
-            1,
-            &"color".to_string(),
+            1.into(),
+            "color",
             PayloadType::Keyword(vec!["red".to_string()]),
         );
 

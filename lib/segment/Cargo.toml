@@ -7,34 +7,33 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dev-dependencies]
-pprof = { version = "0.4", features = ["flamegraph"] }
+pprof = { version = "0.7", features = ["flamegraph", "prost-codec"] }
 tempdir = "0.3.7"
 criterion = "0.3"
-rmp-serde = "~0.14"
+rmp-serde = "~1.0"
 
 [dependencies]
 
-parking_lot = "0.11"
+parking_lot = "0.12"
 itertools = "0.10"
-rocksdb = { version = "0.17.0", default-features = false, features = [ "snappy" ] }
-uuid = { version = "0.8", features = ["v4"] }
+rocksdb = { version = "0.18.0", default-features = false, features = [ "snappy" ] }
+uuid = { version = "0.8", features = ["v4", "serde"] }
 bincode = "1.3"
 serde = { version = "~1.0", features = ["derive", "rc"] }
 serde_json = "~1.0"
-serde_cbor = "0.11.1"
-ordered-float = "1.0"
+serde_cbor = "0.11.2"
+ordered-float = "2.10"
 thiserror = "1.0"
-atomic_refcell = "0.1.6"
-atomicwrites = "0.2.5"
+atomic_refcell = "0.1.8"
+atomicwrites = "0.3.1"
 memmap = "0.7.0"
-schemars = "0.8.0"
+schemars = { version = "0.8.8", features = ["uuid"] }
 log = "0.4"
-env_logger = "0.7.1"
-geo = "0.17.0"
+geo = "0.19.0"
+geohash = "0.12.0"
 num-traits = "0.2.14"
 num-derive = "0.3.3"
 rand = "0.8"
-lru = "0.6.5"
 bit-vec = "0.6"
 seahash = "4.1.0"
 
@@ -51,5 +50,13 @@ name = "hnsw_search_graph"
 harness = false
 
 [[bench]]
+name = "hnsw_build_asymptotic"
+harness = false
+
+[[bench]]
 name = "serde_formats"
+harness = false
+
+[[bench]]
+name = "id_type_benchmark"
 harness = false

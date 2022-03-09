@@ -1,0 +1,1 @@
+const defaultApiVersion = 'v0.6.0';

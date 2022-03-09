@@ -1,4 +1,4 @@
-use collection::collection_builder::optimizers_builder::OptimizersConfig;
+use collection::optimizers_builder::OptimizersConfig;
 use storage::content_manager::toc::TableOfContent;
 use storage::types::{PerformanceConfig, StorageConfig};
 use tempdir::TempDir;
@@ -22,7 +22,8 @@ mod tests {
             optimizers: OptimizersConfig {
                 deleted_threshold: 0.5,
                 vacuum_min_vector_number: 100,
-                max_segment_number: 2,
+                default_segment_number: 2,
+                max_segment_size: 100_000,
                 memmap_threshold: 100,
                 indexing_threshold: 100,
                 payload_indexing_threshold: 100,
@@ -45,7 +46,7 @@ mod tests {
             .block_on(
                 toc.perform_collection_operation(StorageOperations::CreateCollection(
                     CreateCollectionOperation {
-                        name: "test".to_string(),
+                        collection_name: "test".to_string(),
                         create_collection: CreateCollection {
                             vector_size: 10,
                             distance: Distance::Cosine,

@@ -8,20 +8,24 @@ mod tests {
     use segment::index::hnsw_index::hnsw::HNSWIndex;
     use segment::index::struct_payload_index::StructPayloadIndex;
     use segment::index::{PayloadIndex, VectorIndex};
+    use segment::payload_storage::schema_storage::SchemaStorage;
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, PayloadIndexType,
-        PayloadKeyType, PayloadType, PointIdType, Range, SearchParams, SegmentConfig,
-        SeqNumberType, StorageType, TheMap,
+        PayloadKeyType, PayloadType, Range, SearchParams, SegmentConfig, SeqNumberType,
+        StorageType, TheMap,
     };
+    use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     use tempdir::TempDir;
 
     #[test]
     fn test_filterable_hnsw() {
+        let stopped = AtomicBool::new(false);
+
         let dim = 8;
         let m = 8;
-        let num_vectors: PointIdType = 5_000;
+        let num_vectors: u64 = 5_000;
         let ef = 32;
         let ef_construct = 16;
         let distance = Distance::Cosine;
@@ -44,8 +48,10 @@ mod tests {
 
         let int_key = "int".to_string();
 
-        let mut segment = build_segment(dir.path(), &config).unwrap();
-        for idx in 0..num_vectors {
+        let mut segment =
+            build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
+        for n in 0..num_vectors {
+            let idx = n.into();
             let vector = random_vector(&mut rnd, dim);
             let mut payload: TheMap<PayloadKeyType, PayloadType> = Default::default();
             payload.insert(
@@ -54,10 +60,10 @@ mod tests {
             );
 
             segment
-                .upsert_point(idx as SeqNumberType, idx, &vector)
+                .upsert_point(n as SeqNumberType, idx, &vector)
                 .unwrap();
             segment
-                .set_full_payload(idx as SeqNumberType, idx, payload.clone())
+                .set_full_payload(n as SeqNumberType, idx, payload.clone())
                 .unwrap();
         }
         // let opnum = num_vectors + 1;
@@ -88,7 +94,7 @@ mod tests {
         )
         .unwrap();
 
-        hnsw_index.build_index().unwrap();
+        hnsw_index.build_index(&stopped).unwrap();
 
         payload_index_ptr
             .borrow_mut()
@@ -107,7 +113,7 @@ mod tests {
 
         assert_eq!(blocks.len(), num_vectors as usize / indexing_threshold * 2);
 
-        hnsw_index.build_index().unwrap();
+        hnsw_index.build_index(&stopped).unwrap();
 
         let top = 3;
         let mut hits = 0;

@@ -8,7 +8,8 @@ use segment::fixtures::index_fixtures::{
 };
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
-use segment::types::{Distance, PointOffsetType};
+use segment::spaces::simple::CosineMetric;
+use segment::types::PointOffsetType;
 
 const NUM_VECTORS: usize = 100000;
 const DIM: usize = 64;
@@ -20,8 +21,8 @@ const USE_HEURISTIC: bool = true;
 
 fn hnsw_benchmark(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
-    let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, Distance::Cosine, &mut rng);
-    let mut group = c.benchmark_group("hnsw-index-build-group");
+    let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, CosineMetric {}, &mut rng);
+    let mut group = c.benchmark_group("hnsw-index-search-group");
     let mut rng = thread_rng();
     let fake_condition_checker = FakeConditionChecker {};
 
@@ -29,11 +30,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
     for idx in 0..(NUM_VECTORS as PointOffsetType) {
         let added_vector = vector_holder.vectors[idx as usize].to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector);
-        let scorer = FilteredScorer {
-            raw_scorer: &raw_scorer,
-            condition_checker: &fake_condition_checker,
-            filter: None,
-        };
+        let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
         let level = graph_layers.get_random_layer(&mut rng);
         graph_layers.link_new_point(idx, level, &scorer);
     }
@@ -43,11 +40,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
             let query = random_vector(&mut rng, DIM);
 
             let raw_scorer = vector_holder.get_raw_scorer(query);
-            let scorer = FilteredScorer {
-                raw_scorer: &raw_scorer,
-                condition_checker: &fake_condition_checker,
-                filter: None,
-            };
+            let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
 
             graph_layers.search(TOP, EF, &scorer);
         })
@@ -58,13 +51,9 @@ fn hnsw_benchmark(c: &mut Criterion) {
             let query = random_vector(&mut rng, DIM);
 
             let raw_scorer = vector_holder.get_raw_scorer(query);
-            let scorer = FilteredScorer {
-                raw_scorer: &raw_scorer,
-                condition_checker: &fake_condition_checker,
-                filter: None,
-            };
+            let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
 
-            let mut iter = (0..NUM_VECTORS as PointOffsetType).into_iter();
+            let mut iter = 0..NUM_VECTORS as PointOffsetType;
             let mut top_score = 0.;
             scorer.score_iterable_points(&mut iter, NUM_VECTORS, |score| {
                 if score.score > top_score {

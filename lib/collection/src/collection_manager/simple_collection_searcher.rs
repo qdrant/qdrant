@@ -95,11 +95,9 @@ impl CollectionSearcher for SimpleCollectionSearcher {
         let mut point_records: HashMap<PointIdType, Record> = Default::default();
 
         segments.read().read_points(points, |id, segment| {
-            let version = segment
-                .point_version(id)
-                .ok_or(OperationError::ServiceError {
-                    description: format!("No version for point {}", id),
-                })?;
+            let version = segment.point_version(id).ok_or_else(|| {
+                OperationError::service_error(&format!("No version for point {}", id))
+            })?;
             // If this point was not found yet or this segment have later version
             if !point_version.contains_key(&id) || point_version[&id] < version {
                 point_records.insert(
@@ -139,8 +137,7 @@ async fn search_in_segment(
         .as_ref()
         .unwrap_or(&WithPayloadInterface::Bool(false));
     let with_payload = WithPayload::from(with_payload_interface);
-
-    let with_vector = request.with_vector.unwrap_or(false);
+    let with_vector = request.with_vector;
 
     let res = segment.get().read().search(
         &request.vector,
@@ -175,7 +172,7 @@ mod tests {
         let req = Arc::new(SearchRequest {
             vector: query,
             with_payload: None,
-            with_vector: None,
+            with_vector: false,
             filter: None,
             params: None,
             top: 5,
@@ -190,8 +187,8 @@ mod tests {
 
         assert_eq!(result.len(), 5);
 
-        assert!(result[0].id == 3 || result[0].id == 11);
-        assert!(result[1].id == 3 || result[1].id == 11);
+        assert!(result[0].id == 3.into() || result[0].id == 11.into());
+        assert!(result[1].id == 3.into() || result[1].id == 11.into());
     }
 
     #[tokio::test]
@@ -202,7 +199,12 @@ mod tests {
         let searcher = SimpleCollectionSearcher::new();
 
         let records = searcher
-            .retrieve(&segment_holder, &[1, 2, 3], &WithPayload::from(true), true)
+            .retrieve(
+                &segment_holder,
+                &[1.into(), 2.into(), 3.into()],
+                &WithPayload::from(true),
+                true,
+            )
             .await
             .unwrap();
         assert_eq!(records.len(), 3);

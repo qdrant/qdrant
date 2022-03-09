@@ -7,18 +7,17 @@ use std::sync::Arc;
 use sled::transaction::UnabortableTransactionError;
 use sled::{Config, Db};
 use tokio::runtime::Runtime;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard};
 
-use collection::collection::Collection;
-use collection::collection_builder::build_collection;
-use collection::collection_builder::collection_loader::load_collection;
-use collection::config::CollectionParams;
+use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::types::{
-    RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
+    PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
+    UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
-use segment::types::{PointIdType, ScoredPoint, WithPayload};
+use collection::Collection;
+use segment::types::ScoredPoint;
 
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::errors::StorageError;
@@ -45,6 +44,7 @@ pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
     storage_config: StorageConfig,
     search_runtime: Runtime,
+    collection_management_runtime: Runtime,
     alias_persistence: Db,
     segment_searcher: Box<dyn CollectionSearcher + Sync + Send>,
 }
@@ -52,13 +52,14 @@ pub struct TableOfContent {
 impl TableOfContent {
     pub fn new(storage_config: &StorageConfig, search_runtime: Runtime) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
+        let collection_management_runtime = Runtime::new().unwrap();
 
         create_dir_all(&collections_path).expect("Can't create Collections directory");
 
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");
 
-        let mut collections: HashMap<String, Arc<Collection>> = Default::default();
+        let mut collections: HashMap<String, Collection> = Default::default();
 
         for entry in collection_paths {
             let collection_path = entry
@@ -71,9 +72,10 @@ impl TableOfContent {
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
 
-            let collection = load_collection(&collection_path);
+            let collection = collection_management_runtime
+                .block_on(Collection::load(collection_name.clone(), &collection_path));
 
-            collections.insert(collection_name, Arc::new(collection));
+            collections.insert(collection_name, collection);
         }
 
         let alias_path = Path::new(&storage_config.storage_path).join("aliases.sled");
@@ -90,6 +92,7 @@ impl TableOfContent {
             search_runtime,
             alias_persistence,
             segment_searcher: Box::new(SimpleCollectionSearcher::new()),
+            collection_management_runtime,
         }
     }
 
@@ -162,6 +165,7 @@ impl TableOfContent {
         let collection_params = CollectionParams {
             vector_size,
             distance,
+            shard_number: 1,
         };
         let wal_config = match wal_config_diff {
             None => self.storage_config.wal.clone(),
@@ -178,19 +182,22 @@ impl TableOfContent {
             Some(diff) => diff.update(&self.storage_config.hnsw_index)?,
         };
 
-        let collection = build_collection(
+        let collection = Collection::new(
+            collection_name.to_string(),
             Path::new(&collection_path),
-            &wal_config,
-            &collection_params,
-            &optimizers_config,
-            &hnsw_config,
+            &CollectionConfig {
+                wal_config,
+                params: collection_params,
+                optimizer_config: optimizers_config,
+                hnsw_config,
+            },
         )?;
 
         let mut write_collections = self.collections.write().await;
         write_collections
             .validate_collection_not_exists(collection_name)
             .await?;
-        write_collections.insert(collection_name.to_string(), Arc::new(collection));
+        write_collections.insert(collection_name.to_string(), collection);
         Ok(true)
     }
 
@@ -212,13 +219,8 @@ impl TableOfContent {
     }
 
     pub async fn delete_collection(&self, collection_name: &str) -> Result<bool, StorageError> {
-        if let Some(removed) = self.collections.write().await.remove(collection_name) {
-            removed.stop().await?;
-            {
-                // Wait for optimizer to finish.
-                // TODO: Enhance optimizer to shutdown faster
-                removed.wait_update_workers_stop().await?;
-            }
+        if let Some(mut removed) = self.collections.write().await.remove(collection_name) {
+            removed.before_drop().await;
             let path = self.get_collection_path(collection_name);
             remove_dir_all(path).map_err(|err| StorageError::ServiceError {
                 description: format!(
@@ -301,11 +303,11 @@ impl TableOfContent {
     ) -> Result<bool, StorageError> {
         match operation {
             StorageOperations::CreateCollection(operation) => {
-                self.create_collection(&operation.name, operation.create_collection)
+                self.create_collection(&operation.collection_name, operation.create_collection)
                     .await
             }
             StorageOperations::UpdateCollection(operation) => {
-                self.update_collection(&operation.name, operation.update_collection)
+                self.update_collection(&operation.collection_name, operation.update_collection)
                     .await
             }
             StorageOperations::DeleteCollection(operation) => {
@@ -315,14 +317,16 @@ impl TableOfContent {
         }
     }
 
-    pub async fn get_collection(
-        &self,
+    pub async fn get_collection<'a>(
+        &'a self,
         collection_name: &str,
-    ) -> Result<Arc<Collection>, StorageError> {
+    ) -> Result<RwLockReadGuard<'a, Collection>, StorageError> {
         let read_collection = self.collections.read().await;
         let real_collection_name = self.resolve_name(collection_name).await?;
         // resolve_name already checked collection existence, unwrap is safe here
-        Ok(read_collection.get(&real_collection_name).unwrap().clone())
+        Ok(RwLockReadGuard::map(read_collection, |collection| {
+            collection.get(&real_collection_name).unwrap()
+        }))
     }
 
     /// Recommend points using positive and negative example from the request
@@ -338,7 +342,7 @@ impl TableOfContent {
     pub async fn recommend(
         &self,
         collection_name: &str,
-        request: Arc<RecommendRequest>,
+        request: RecommendRequest,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
@@ -368,10 +372,10 @@ impl TableOfContent {
         request: SearchRequest,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        self.segment_searcher
+        collection
             .search(
-                collection.segments(),
-                Arc::new(request),
+                request,
+                self.segment_searcher.as_ref(),
                 self.search_runtime.handle(),
             )
             .await
@@ -383,9 +387,7 @@ impl TableOfContent {
     /// # Arguments
     ///
     /// * `collection_name` - select from this collection
-    /// * `points` - point IDs to select
-    /// * `with_payload` - include payload into response (if so, which keys)?
-    /// * `with_vector` - include vector into response?
+    /// * `request` - [`PointRequest`]
     ///
     /// # Result
     ///
@@ -393,13 +395,11 @@ impl TableOfContent {
     pub async fn retrieve(
         &self,
         collection_name: &str,
-        points: &[PointIdType],
-        with_payload: &WithPayload,
-        with_vector: bool,
+        request: PointRequest,
     ) -> Result<Vec<Record>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        self.segment_searcher
-            .retrieve(collection.segments(), points, with_payload, with_vector)
+        collection
+            .retrieve(request, self.segment_searcher.as_ref())
             .await
             .map_err(|err| err.into())
     }
@@ -456,5 +456,16 @@ impl TableOfContent {
             .update(operation, wait)
             .await
             .map_err(|err| err.into())
+    }
+}
+
+// `TableOfContent` should not be dropped from async context.
+impl Drop for TableOfContent {
+    fn drop(&mut self) {
+        self.collection_management_runtime.block_on(async {
+            for (_, mut collection) in self.collections.write().await.drain() {
+                collection.before_drop().await;
+            }
+        });
     }
 }

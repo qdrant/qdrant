@@ -12,7 +12,44 @@
           {
             "$ref": "#/components/schemas/RenameAliasOperation"
           }
-        ]
+        ],
+        "description": "Group of all the possible operations related to collection aliases"
+      },
+      "Batch": {
+        "properties": {
+          "ids": {
+            "items": {
+              "$ref": "#/components/schemas/ExtendedPointId"
+            },
+            "type": "array"
+          },
+          "payloads": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/PayloadInterface"
+              },
+              "nullable": true,
+              "type": "object"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "vectors": {
+            "items": {
+              "items": {
+                "format": "float",
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids",
+          "vectors"
+        ],
+        "type": "object"
       },
       "ChangeAliasesOperation": {
         "description": "Operation for performing changes of collection aliases. Alias changes are atomic, meaning that no collection modifications can happen between alias operations.",
@@ -64,7 +101,7 @@
         "type": "object"
       },
       "CollectionInfo": {
-        "description": "Current statistics and configuration of the collection.",
+        "description": "Current statistics and configuration of the collection",
         "properties": {
           "config": {
             "$ref": "#/components/schemas/CollectionConfig"
@@ -74,6 +111,9 @@
             "format": "uint",
             "minimum": 0,
             "type": "integer"
+          },
+          "optimizer_status": {
+            "$ref": "#/components/schemas/OptimizersStatus"
           },
           "payload_schema": {
             "additionalProperties": {
@@ -107,6 +147,7 @@
         "required": [
           "config",
           "disk_data_size",
+          "optimizer_status",
           "payload_schema",
           "ram_data_size",
           "segments_count",
@@ -119,6 +160,13 @@
         "properties": {
           "distance": {
             "$ref": "#/components/schemas/Distance"
+          },
+          "shard_number": {
+            "default": 1,
+            "description": "Number of shards the collection has",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
           },
           "vector_size": {
             "description": "Size of a vectors used",
@@ -134,6 +182,7 @@
         "type": "object"
       },
       "CollectionStatus": {
+        "description": "Current state of the collection",
         "enum": [
           "green",
           "yellow",
@@ -262,6 +311,9 @@
       "CreateCollectionOperation": {
         "description": "Operation for creating new collection and (optionally) specify index params",
         "properties": {
+          "collection_name": {
+            "type": "string"
+          },
           "distance": {
             "$ref": "#/components/schemas/Distance"
           },
@@ -275,9 +327,6 @@
               }
             ],
             "description": "Custom params for HNSW index. If none - values from service configuration file are used."
-          },
-          "name": {
-            "type": "string"
           },
           "optimizers_config": {
             "anyOf": [
@@ -308,9 +357,20 @@
           }
         },
         "required": [
+          "collection_name",
           "distance",
-          "name",
           "vector_size"
+        ],
+        "type": "object"
+      },
+      "CreateFieldIndex": {
+        "properties": {
+          "field_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field_name"
         ],
         "type": "object"
       },
@@ -341,6 +401,28 @@
       "DeleteCollectionOperation": {
         "description": "Operation for deleting collection with given name",
         "type": "string"
+      },
+      "DeletePayload": {
+        "properties": {
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "points": {
+            "description": "Deletes values from each point in this list",
+            "items": {
+              "$ref": "#/components/schemas/ExtendedPointId"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "keys",
+          "points"
+        ],
+        "type": "object"
       },
       "Distance": {
         "description": "Type of internal tags, build from payload Distance function types used to compare vectors",
@@ -374,7 +456,22 @@
         },
         "type": "object"
       },
+      "ExtendedPointId": {
+        "anyOf": [
+          {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "format": "uuid",
+            "type": "string"
+          }
+        ],
+        "description": "Type, used for specifying point ID in user interface"
+      },
       "FieldCondition": {
+        "description": "All possible payload filtering conditions",
         "properties": {
           "geo_bounding_box": {
             "anyOf": [
@@ -430,7 +527,7 @@
         "type": "object"
       },
       "FieldIndexOperations": {
-        "anyOf": [
+        "oneOf": [
           {
             "additionalProperties": false,
             "description": "Create index for payload field",
@@ -489,7 +586,19 @@
         },
         "type": "object"
       },
+      "FilterSelector": {
+        "properties": {
+          "filter": {
+            "$ref": "#/components/schemas/Filter"
+          }
+        },
+        "required": [
+          "filter"
+        ],
+        "type": "object"
+      },
       "GeoBoundingBox": {
+        "description": "Geo filter request\n\nMatches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges",
         "properties": {
           "bottom_right": {
             "$ref": "#/components/schemas/GeoPoint"
@@ -505,6 +614,7 @@
         "type": "object"
       },
       "GeoPoint": {
+        "description": "Geo point payload schema",
         "properties": {
           "lat": {
             "format": "double",
@@ -522,6 +632,7 @@
         "type": "object"
       },
       "GeoRadius": {
+        "description": "Geo filter request\n\nMatches coordinates inside the circle of `radius` and center with coordinates `center`",
         "properties": {
           "center": {
             "$ref": "#/components/schemas/GeoPoint"
@@ -539,12 +650,11 @@
         "type": "object"
       },
       "HasIdCondition": {
+        "description": "ID-based filtering condition",
         "properties": {
           "has_id": {
             "items": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
+              "$ref": "#/components/schemas/ExtendedPointId"
             },
             "type": "array",
             "uniqueItems": true
@@ -556,6 +666,7 @@
         "type": "object"
       },
       "HnswConfig": {
+        "description": "Config of HNSW index",
         "properties": {
           "ef_construct": {
             "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.",
@@ -610,23 +721,51 @@
         "type": "object"
       },
       "Match": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/MatchKeyword"
+          },
+          {
+            "$ref": "#/components/schemas/MatchInteger"
+          }
+        ],
+        "description": "Match filter request"
+      },
+      "MatchInteger": {
+        "description": "Match filter request",
         "properties": {
           "integer": {
             "description": "Integer value to match",
             "format": "int64",
-            "nullable": true,
             "type": "integer"
-          },
+          }
+        },
+        "required": [
+          "integer"
+        ],
+        "type": "object"
+      },
+      "MatchKeyword": {
+        "description": "Match by keyword",
+        "properties": {
           "keyword": {
             "description": "Keyword value to match",
-            "nullable": true,
             "type": "string"
           }
         },
+        "required": [
+          "keyword"
+        ],
         "type": "object"
       },
       "OptimizersConfig": {
         "properties": {
+          "default_segment_number": {
+            "description": "Target amount of segments optimizer will try to keep. Real amount of segments may vary depending on multiple parameters: - Amount of stored points - Current write RPS\n\nIt is recommended to select default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
           "deleted_threshold": {
             "description": "The minimal fraction of deleted vectors in a segment, required to perform segment optimization",
             "format": "double",
@@ -644,8 +783,14 @@
             "minimum": 0,
             "type": "integer"
           },
-          "max_segment_number": {
-            "description": "If the number of segments exceeds this value, the optimizer will merge the smallest segments.",
+          "max_optimization_threads": {
+            "description": "Maximum available threads for optimization workers",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_segment_size": {
+            "description": "Do not create segments larger this number of points. Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher.",
             "format": "uint",
             "minimum": 0,
             "type": "integer"
@@ -670,10 +815,12 @@
           }
         },
         "required": [
+          "default_segment_number",
           "deleted_threshold",
           "flush_interval_sec",
           "indexing_threshold",
-          "max_segment_number",
+          "max_optimization_threads",
+          "max_segment_size",
           "memmap_threshold",
           "payload_indexing_threshold",
           "vacuum_min_vector_number"
@@ -682,6 +829,13 @@
       },
       "OptimizersConfigDiff": {
         "properties": {
+          "default_segment_number": {
+            "description": "Target amount of segments optimizer will try to keep. Real amount of segments may vary depending on multiple parameters: - Amount of stored points - Current write RPS\n\nIt is recommended to select default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
           "deleted_threshold": {
             "description": "The minimal fraction of deleted vectors in a segment, required to perform segment optimization",
             "format": "double",
@@ -702,8 +856,15 @@
             "nullable": true,
             "type": "integer"
           },
-          "max_segment_number": {
-            "description": "If the number of segments exceeds this value, the optimizer will merge the smallest segments.",
+          "max_optimization_threads": {
+            "description": "Maximum available threads for optimization workers",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "max_segment_size": {
+            "description": "Do not create segments larger this number of points. Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher.",
             "format": "uint",
             "minimum": 0,
             "nullable": true,
@@ -733,6 +894,30 @@
         },
         "type": "object"
       },
+      "OptimizersStatus": {
+        "description": "Current state of the collection",
+        "oneOf": [
+          {
+            "enum": [
+              "ok"
+            ],
+            "type": "string"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Something wrong happened with optimizers",
+            "properties": {
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "PayloadInterface": {
         "anyOf": [
           {
@@ -747,10 +932,12 @@
           {
             "$ref": "#/components/schemas/PayloadInterfaceStrict"
           }
-        ]
+        ],
+        "description": "Structure for converting user-provided payload into internal structure representation\n\nUsed to allow user provide payload in more human-friendly format, and do not force explicit brackets, included constructions, e.t.c.\n\nExample:\n\n```json {..., \"payload\": {\"city\": \"Berlin\"}, ... } ```\n\nShould be captured by `KeywordShortcut`"
       },
       "PayloadInterfaceStrict": {
-        "anyOf": [
+        "description": "Fallback for `PayloadInterface` which is used if user explicitly specifies type of payload\n\nExample:\n\n```json {..., \"payload\": {\"city\": { \"type\": \"keyword\", \"value\": \"Berlin\" }}, ... } ```\n\nShould be captured by `Keyword(PayloadVariant<String>)`",
+        "oneOf": [
           {
             "properties": {
               "type": {
@@ -826,34 +1013,14 @@
         ]
       },
       "PayloadOps": {
-        "anyOf": [
+        "description": "Define operations description for point payloads manipulation",
+        "oneOf": [
           {
             "additionalProperties": false,
             "description": "Set payload value, overrides if it is already exists",
             "properties": {
               "set_payload": {
-                "properties": {
-                  "payload": {
-                    "additionalProperties": {
-                      "$ref": "#/components/schemas/PayloadInterface"
-                    },
-                    "type": "object"
-                  },
-                  "points": {
-                    "description": "Assigns payload to each point in this list",
-                    "items": {
-                      "format": "uint64",
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "type": "array"
-                  }
-                },
-                "required": [
-                  "payload",
-                  "points"
-                ],
-                "type": "object"
+                "$ref": "#/components/schemas/SetPayload"
               }
             },
             "required": [
@@ -866,28 +1033,7 @@
             "description": "Deletes specified payload values if they are assigned",
             "properties": {
               "delete_payload": {
-                "properties": {
-                  "keys": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "points": {
-                    "description": "Deletes values from each point in this list",
-                    "items": {
-                      "format": "uint64",
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "type": "array"
-                  }
-                },
-                "required": [
-                  "keys",
-                  "points"
-                ],
-                "type": "object"
+                "$ref": "#/components/schemas/DeletePayload"
               }
             },
             "required": [
@@ -903,9 +1049,7 @@
                 "properties": {
                   "points": {
                     "items": {
-                      "format": "uint64",
-                      "minimum": 0,
-                      "type": "integer"
+                      "$ref": "#/components/schemas/ExtendedPointId"
                     },
                     "type": "array"
                   }
@@ -920,11 +1064,24 @@
               "clear_payload"
             ],
             "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Clear all Payload values by given filter criteria.",
+            "properties": {
+              "clear_payload_by_filter": {
+                "$ref": "#/components/schemas/Filter"
+              }
+            },
+            "required": [
+              "clear_payload_by_filter"
+            ],
+            "type": "object"
           }
-        ],
-        "description": "Define operations description for point payloads manipulation"
+        ]
       },
       "PayloadSchemaInfo": {
+        "description": "Payload field type & index information",
         "properties": {
           "data_type": {
             "$ref": "#/components/schemas/PayloadSchemaType"
@@ -940,7 +1097,8 @@
         "type": "object"
       },
       "PayloadSchemaType": {
-        "anyOf": [
+        "description": "All possible names of payload types",
+        "oneOf": [
           {
             "properties": {
               "type": {
@@ -1000,17 +1158,21 @@
         ]
       },
       "PayloadSelector": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PayloadSelectorInclude"
+          },
+          {
+            "$ref": "#/components/schemas/PayloadSelectorExclude"
+          }
+        ],
+        "description": "Specifies how to treat payload selector"
+      },
+      "PayloadSelectorExclude": {
         "additionalProperties": false,
         "properties": {
           "exclude": {
-            "description": "Post-exclude return payload key type",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "include": {
-            "description": "Include return payload key type",
+            "description": "Exclude this fields from returning payload",
             "items": {
               "type": "string"
             },
@@ -1018,13 +1180,29 @@
           }
         },
         "required": [
-          "exclude",
+          "exclude"
+        ],
+        "type": "object"
+      },
+      "PayloadSelectorInclude": {
+        "additionalProperties": false,
+        "properties": {
+          "include": {
+            "description": "Only include this payload keys",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
           "include"
         ],
         "type": "object"
       },
       "PayloadType": {
-        "anyOf": [
+        "description": "All possible payload types",
+        "oneOf": [
           {
             "properties": {
               "type": {
@@ -1124,7 +1302,8 @@
           {
             "$ref": "#/components/schemas/GeoPoint"
           }
-        ]
+        ],
+        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
       },
       "PayloadVariant_for_String": {
         "anyOf": [
@@ -1137,7 +1316,8 @@
           {
             "type": "string"
           }
-        ]
+        ],
+        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
       },
       "PayloadVariant_for_double": {
         "anyOf": [
@@ -1152,7 +1332,8 @@
             "format": "double",
             "type": "number"
           }
-        ]
+        ],
+        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
       },
       "PayloadVariant_for_int64": {
         "anyOf": [
@@ -1167,78 +1348,35 @@
             "format": "int64",
             "type": "integer"
           }
-        ]
+        ],
+        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
+      },
+      "PointIdsList": {
+        "properties": {
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/ExtendedPointId"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "points"
+        ],
+        "type": "object"
       },
       "PointInsertOperations": {
         "anyOf": [
           {
-            "additionalProperties": false,
-            "description": "Inset points from a batch.",
-            "properties": {
-              "batch": {
-                "properties": {
-                  "ids": {
-                    "items": {
-                      "format": "uint64",
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "type": "array"
-                  },
-                  "payloads": {
-                    "items": {
-                      "additionalProperties": {
-                        "$ref": "#/components/schemas/PayloadInterface"
-                      },
-                      "nullable": true,
-                      "type": "object"
-                    },
-                    "nullable": true,
-                    "type": "array"
-                  },
-                  "vectors": {
-                    "items": {
-                      "items": {
-                        "format": "float",
-                        "type": "number"
-                      },
-                      "type": "array"
-                    },
-                    "type": "array"
-                  }
-                },
-                "required": [
-                  "ids",
-                  "vectors"
-                ],
-                "type": "object"
-              }
-            },
-            "required": [
-              "batch"
-            ],
-            "type": "object"
+            "$ref": "#/components/schemas/PointsBatch"
           },
           {
-            "additionalProperties": false,
-            "description": "Insert points from a list",
-            "properties": {
-              "points": {
-                "items": {
-                  "$ref": "#/components/schemas/PointStruct"
-                },
-                "type": "array"
-              }
-            },
-            "required": [
-              "points"
-            ],
-            "type": "object"
+            "$ref": "#/components/schemas/PointsList"
           }
         ]
       },
       "PointOperations": {
-        "anyOf": [
+        "oneOf": [
           {
             "additionalProperties": false,
             "description": "Insert or update points",
@@ -1260,9 +1398,7 @@
                 "properties": {
                   "ids": {
                     "items": {
-                      "format": "uint64",
-                      "minimum": 0,
-                      "type": "integer"
+                      "$ref": "#/components/schemas/ExtendedPointId"
                     },
                     "type": "array"
                   }
@@ -1277,16 +1413,28 @@
               "delete_points"
             ],
             "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Delete points by given filter criteria",
+            "properties": {
+              "delete_points_by_filter": {
+                "$ref": "#/components/schemas/Filter"
+              }
+            },
+            "required": [
+              "delete_points_by_filter"
+            ],
+            "type": "object"
           }
         ]
       },
       "PointRequest": {
         "properties": {
           "ids": {
+            "description": "Look for points with ids",
             "items": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
+              "$ref": "#/components/schemas/ExtendedPointId"
             },
             "type": "array"
           },
@@ -1298,7 +1446,13 @@
               {
                 "nullable": true
               }
-            ]
+            ],
+            "description": "Select which payload to return with the response. Default: All"
+          },
+          "with_vector": {
+            "default": false,
+            "description": "Whether to return the point vector with the result?",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1309,10 +1463,7 @@
       "PointStruct": {
         "properties": {
           "id": {
-            "description": "Point id",
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
+            "$ref": "#/components/schemas/ExtendedPointId"
           },
           "payload": {
             "additionalProperties": {
@@ -1337,7 +1488,43 @@
         ],
         "type": "object"
       },
+      "PointsBatch": {
+        "properties": {
+          "batch": {
+            "$ref": "#/components/schemas/Batch"
+          }
+        },
+        "required": [
+          "batch"
+        ],
+        "type": "object"
+      },
+      "PointsList": {
+        "properties": {
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/PointStruct"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "points"
+        ],
+        "type": "object"
+      },
+      "PointsSelector": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PointIdsList"
+          },
+          {
+            "$ref": "#/components/schemas/FilterSelector"
+          }
+        ]
+      },
       "Range": {
+        "description": "Range filter request",
         "properties": {
           "gt": {
             "description": "point.key > range.gt",
@@ -1367,7 +1554,7 @@
         "type": "object"
       },
       "RecommendRequest": {
-        "description": "Search request",
+        "description": "Recommendation request. Provides positive and negative examples of the vectors, which are already stored in the collection.\n\nService should look for the points which are closer to positive examples and at the same time further to negative examples. The concrete way of how to compare negative and positive distances is up to implementation in `segment` crate.",
         "properties": {
           "filter": {
             "anyOf": [
@@ -1383,9 +1570,7 @@
           "negative": {
             "description": "Try to avoid vectors like this",
             "items": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
+              "$ref": "#/components/schemas/ExtendedPointId"
             },
             "type": "array"
           },
@@ -1403,9 +1588,7 @@
           "positive": {
             "description": "Look for vectors closest to those",
             "items": {
-              "format": "uint64",
-              "minimum": 0,
-              "type": "integer"
+              "$ref": "#/components/schemas/ExtendedPointId"
             },
             "type": "array"
           },
@@ -1414,6 +1597,22 @@
             "format": "uint",
             "minimum": 0,
             "type": "integer"
+          },
+          "with_payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithPayloadInterface"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Select which payload to return with the response. Default: None"
+          },
+          "with_vector": {
+            "default": false,
+            "description": "Whether to return the point vector with the result?",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1427,10 +1626,7 @@
         "description": "Point data",
         "properties": {
           "id": {
-            "description": "Id of the point",
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
+            "$ref": "#/components/schemas/ExtendedPointId"
           },
           "payload": {
             "additionalProperties": {
@@ -1484,18 +1680,16 @@
         "type": "object"
       },
       "ScoredPoint": {
+        "description": "Search result",
         "properties": {
           "id": {
-            "description": "Point id",
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
+            "$ref": "#/components/schemas/ExtendedPointId"
           },
           "payload": {
             "additionalProperties": {
               "$ref": "#/components/schemas/PayloadType"
             },
-            "description": "Payload storage",
+            "description": "Payload - values assigned to the point",
             "nullable": true,
             "type": "object"
           },
@@ -1503,6 +1697,15 @@
             "description": "Points vector distance to the query vector",
             "format": "float",
             "type": "number"
+          },
+          "vector": {
+            "description": "Vector of the point",
+            "items": {
+              "format": "float",
+              "type": "number"
+            },
+            "nullable": true,
+            "type": "array"
           },
           "version": {
             "description": "Point version",
@@ -1540,11 +1743,15 @@
             "type": "integer"
           },
           "offset": {
-            "description": "Start ID to read points from. Default: 0",
-            "format": "uint64",
-            "minimum": 0,
-            "nullable": true,
-            "type": "integer"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtendedPointId"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Start ID to read points from."
           },
           "with_payload": {
             "anyOf": [
@@ -1555,25 +1762,29 @@
                 "nullable": true
               }
             ],
-            "description": "Return point payload with the result. Default: True"
+            "description": "Select which payload to return with the response. Default: All"
           },
           "with_vector": {
-            "description": "Return point vector with the result. Default: false",
-            "nullable": true,
+            "default": false,
+            "description": "Whether to return the point vector with the result?",
             "type": "boolean"
           }
         },
         "type": "object"
       },
       "ScrollResult": {
-        "description": "Result of the points read request. Contains",
+        "description": "Result of the points read request",
         "properties": {
           "next_page_offset": {
-            "description": "Offset which should be used to retrieve a next page result",
-            "format": "uint64",
-            "minimum": 0,
-            "nullable": true,
-            "type": "integer"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtendedPointId"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Offset which should be used to retrieve a next page result"
           },
           "points": {
             "description": "List of retrieved points",
@@ -1602,7 +1813,7 @@
         "type": "object"
       },
       "SearchRequest": {
-        "description": "Search request",
+        "description": "Search request. Holds all conditions and parameters for the search of most similar points by vector similarity given the filtering restrictions.",
         "properties": {
           "filter": {
             "anyOf": [
@@ -1649,7 +1860,12 @@
                 "nullable": true
               }
             ],
-            "description": "Payload interface"
+            "description": "Select which payload to return with the response. Default: None"
+          },
+          "with_vector": {
+            "default": false,
+            "description": "Whether to return the point vector with the result?",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1658,8 +1874,31 @@
         ],
         "type": "object"
       },
+      "SetPayload": {
+        "properties": {
+          "payload": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PayloadInterface"
+            },
+            "type": "object"
+          },
+          "points": {
+            "description": "Assigns payload to each point in this list",
+            "items": {
+              "$ref": "#/components/schemas/ExtendedPointId"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "payload",
+          "points"
+        ],
+        "type": "object"
+      },
       "StorageOperations": {
-        "anyOf": [
+        "description": "Enumeration of all possible collection update operations",
+        "oneOf": [
           {
             "additionalProperties": false,
             "properties": {
@@ -1708,8 +1947,7 @@
             ],
             "type": "object"
           }
-        ],
-        "description": "Enumeration of all possible collection update operations"
+        ]
       },
       "UpdateCollection": {
         "description": "Operation for updating parameters of the existing collection",
@@ -1731,7 +1969,7 @@
       "UpdateCollectionOperation": {
         "description": "Operation for updating parameters of the existing collection",
         "properties": {
-          "name": {
+          "collection_name": {
             "type": "string"
           },
           "optimizers_config": {
@@ -1747,7 +1985,7 @@
           }
         },
         "required": [
-          "name"
+          "collection_name"
         ],
         "type": "object"
       },
@@ -1819,9 +2057,11 @@
       "WithPayloadInterface": {
         "anyOf": [
           {
+            "description": "If `true` - return all payload, If `false` - do not return payload",
             "type": "boolean"
           },
           {
+            "description": "Specify which fields to return",
             "items": {
               "type": "string"
             },
@@ -1830,7 +2070,8 @@
           {
             "$ref": "#/components/schemas/PayloadSelector"
           }
-        ]
+        ],
+        "description": "Options for specifying which payload to include or not"
       }
     }
   },
@@ -1842,7 +2083,7 @@
     "contact": {
       "email": "andrey@vasnetsov.com"
     },
-    "description": "API description for Qdrant vector search engine.\n\nThis document describes CRUD and search operations on collections of points (vectors with payload).\n\nQdrant supports any combinations of `should`, `must` and `must_not` conditions, which makes it possible to use in applications when object could not be described solely by vector. It could be location features, availability flags, and other custom properties businesses should take into account.\n## Examples\nThis examples cover the most basic use-cases - collection creation and basic vector search.\n### Create collection\nFirst - let's create a collection with dot-production metric.\n```\ncurl -X PUT 'http://localhost:6333/collections/test_collection' \\\n  -H 'Content-Type: application/json' \\\n  --data-raw '{\n    \"vector_size\": 4,\n    \"distance\": \"Dot\"\n  }'\n\n```\nExpected response:\n```\n{\n    \"result\": true,\n    \"status\": \"ok\",\n    \"time\": 0.031095451\n}\n```\nWe can ensure that collection was created:\n```\ncurl 'http://localhost:6333/collections/test_collection'\n```\nExpected response:\n```\n{\n  \"result\": {\n    \"status\": \"green\",\n    \"vectors_count\": 0,\n    \"segments_count\": 5,\n    \"disk_data_size\": 0,\n    \"ram_data_size\": 0,\n    \"config\": {\n      \"params\": {\n        \"vector_size\": 4,\n        \"distance\": \"Dot\"\n      },\n      \"hnsw_config\": {\n        \"m\": 16,\n        \"ef_construct\": 100,\n        \"full_scan_threshold\": 10000\n      },\n      \"optimizer_config\": {\n        \"deleted_threshold\": 0.2,\n        \"vacuum_min_vector_number\": 1000,\n        \"max_segment_number\": 5,\n        \"memmap_threshold\": 50000,\n        \"indexing_threshold\": 20000,\n        \"payload_indexing_threshold\": 10000,\n        \"flush_interval_sec\": 1\n      },\n      \"wal_config\": {\n        \"wal_capacity_mb\": 32,\n        \"wal_segments_ahead\": 0\n      }\n    }\n  },\n  \"status\": \"ok\",\n  \"time\": 2.1199e-05\n}\n```\n\n### Add points\nLet's now add vectors with some payload:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection?wait=true' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n  \"upsert_points\": {\n    \"points\": [\n      {\"id\": 1, \"vector\": [0.05, 0.61, 0.76, 0.74], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Berlin\"}}},\n      {\"id\": 2, \"vector\": [0.19, 0.81, 0.75, 0.11], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}},\n      {\"id\": 3, \"vector\": [0.36, 0.55, 0.47, 0.94], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"Moscow\"] }}},\n      {\"id\": 4, \"vector\": [0.18, 0.01, 0.85, 0.80], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"London\", \"Moscow\"]}}},\n      {\"id\": 5, \"vector\": [0.24, 0.18, 0.22, 0.44], \"payload\": {\"count\": {\"type\": \"integer\", \"value\": [0]}}},\n      {\"id\": 6, \"vector\": [0.35, 0.08, 0.11, 0.44]}\n    ]\n  }\n}'\n```\nExpected response:\n```\n{\n    \"result\": {\n        \"operation_id\": 0,\n        \"status\": \"completed\"\n    },\n    \"status\": \"ok\",\n    \"time\": 0.000206061\n}\n```\n### Search with filtering\nLet's start with a basic request:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"vector\": [0.2,0.1,0.9,0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362, \"payload\": null, \"version\": 0 },\n        { \"id\": 1, \"score\": 1.273, \"payload\": null, \"version\": 0 },\n        { \"id\": 3, \"score\": 1.208, \"payload\": null, \"version\": 0 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000055785\n}\n```\nBut result is different if we add a filter:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"filter\": {\n        \"should\": [\n            {\n                \"key\": \"city\",\n                \"match\": {\n                    \"keyword\": \"London\"\n                }\n            }\n        ]\n    },\n    \"vector\": [0.2, 0.1, 0.9, 0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362, \"payload\": null, \"version\": 0 },\n        { \"id\": 2, \"score\": 0.871, \"payload\": null, \"version\": 0 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000093972\n}\n```\n",
+    "description": "API description for Qdrant vector search engine.\n\nThis document describes CRUD and search operations on collections of points (vectors with payload).\n\nQdrant supports any combinations of `should`, `must` and `must_not` conditions, which makes it possible to use in applications when object could not be described solely by vector. It could be location features, availability flags, and other custom properties businesses should take into account.\n## Examples\nThis examples cover the most basic use-cases - collection creation and basic vector search.\n### Create collection\nFirst - let's create a collection with dot-production metric.\n```\ncurl -X PUT 'http://localhost:6333/collections/test_collection' \\\n  -H 'Content-Type: application/json' \\\n  --data-raw '{\n    \"vector_size\": 4,\n    \"distance\": \"Dot\"\n  }'\n\n```\nExpected response:\n```\n{\n    \"result\": true,\n    \"status\": \"ok\",\n    \"time\": 0.031095451\n}\n```\nWe can ensure that collection was created:\n```\ncurl 'http://localhost:6333/collections/test_collection'\n```\nExpected response:\n```\n{\n  \"result\": {\n    \"status\": \"green\",\n    \"vectors_count\": 0,\n    \"segments_count\": 5,\n    \"disk_data_size\": 0,\n    \"ram_data_size\": 0,\n    \"config\": {\n      \"params\": {\n        \"vector_size\": 4,\n        \"distance\": \"Dot\"\n      },\n      \"hnsw_config\": {\n        \"m\": 16,\n        \"ef_construct\": 100,\n        \"full_scan_threshold\": 10000\n      },\n      \"optimizer_config\": {\n        \"deleted_threshold\": 0.2,\n        \"vacuum_min_vector_number\": 1000,\n        \"max_segment_number\": 5,\n        \"memmap_threshold\": 50000,\n        \"indexing_threshold\": 20000,\n        \"payload_indexing_threshold\": 10000,\n        \"flush_interval_sec\": 1\n      },\n      \"wal_config\": {\n        \"wal_capacity_mb\": 32,\n        \"wal_segments_ahead\": 0\n      }\n    }\n  },\n  \"status\": \"ok\",\n  \"time\": 2.1199e-05\n}\n```\n\n### Add points\nLet's now add vectors with some payload:\n```\ncurl -L -X PUT 'http://localhost:6333/collections/test_collection/points?wait=true' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n  \"points\": [\n    {\"id\": 1, \"vector\": [0.05, 0.61, 0.76, 0.74], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Berlin\"}}},\n    {\"id\": 2, \"vector\": [0.19, 0.81, 0.75, 0.11], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}},\n    {\"id\": 3, \"vector\": [0.36, 0.55, 0.47, 0.94], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"Moscow\"] }}},\n    {\"id\": 4, \"vector\": [0.18, 0.01, 0.85, 0.80], \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"London\", \"Moscow\"]}}},\n    {\"id\": 5, \"vector\": [0.24, 0.18, 0.22, 0.44], \"payload\": {\"count\": {\"type\": \"integer\", \"value\": [0]}}},\n    {\"id\": 6, \"vector\": [0.35, 0.08, 0.11, 0.44]}\n  ]\n}'\n```\nExpected response:\n```\n{\n    \"result\": {\n        \"operation_id\": 0,\n        \"status\": \"completed\"\n    },\n    \"status\": \"ok\",\n    \"time\": 0.000206061\n}\n```\n### Search with filtering\nLet's start with a basic request:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"vector\": [0.2,0.1,0.9,0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362, \"payload\": null, \"version\": 0 },\n        { \"id\": 1, \"score\": 1.273, \"payload\": null, \"version\": 0 },\n        { \"id\": 3, \"score\": 1.208, \"payload\": null, \"version\": 0 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000055785\n}\n```\nBut result is different if we add a filter:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"filter\": {\n        \"should\": [\n            {\n                \"key\": \"city\",\n                \"match\": {\n                    \"keyword\": \"London\"\n                }\n            }\n        ]\n    },\n    \"vector\": [0.2, 0.1, 0.9, 0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362, \"payload\": null, \"version\": 0 },\n        { \"id\": 2, \"score\": 0.871, \"payload\": null, \"version\": 0 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000093972\n}\n```\n",
     "license": {
       "name": "Apache 2.0",
       "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
@@ -1882,6 +2123,16 @@
               }
             },
             "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
           },
           "default": {
             "content": {
@@ -1940,6 +2191,16 @@
             },
             "description": "successful operation"
           },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -1997,6 +2258,16 @@
             },
             "description": "successful operation"
           },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2014,7 +2285,7 @@
         ]
       }
     },
-    "/collections/{name}": {
+    "/collections/{collection_name}": {
       "delete": {
         "description": "Drop collection and all associated data",
         "operationId": "delete_collection",
@@ -2022,7 +2293,7 @@
           {
             "description": "Name of the collection to delete",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2056,6 +2327,16 @@
             },
             "description": "successful operation"
           },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2079,7 +2360,7 @@
           {
             "description": "Name of the collection to retrieve",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2113,6 +2394,16 @@
             },
             "description": "successful operation"
           },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2136,7 +2427,7 @@
           {
             "description": "Name of the collection to update",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2180,6 +2471,16 @@
             },
             "description": "successful operation"
           },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2191,26 +2492,27 @@
             "description": "error"
           }
         },
-        "summary": "Update collection paranmeters",
+        "summary": "Update collection parameters",
         "tags": [
           "collections"
         ]
       },
       "post": {
+        "deprecated": true,
         "description": "Perform point update operation (vectors, payloads, indexes) in collection",
         "operationId": "update_points",
         "parameters": [
           {
             "description": "Name of the collection to search in",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
             }
           },
           {
-            "description": "Wait for changes to actually happen? Default: false",
+            "description": "If true, wait for changes to actually happen",
             "in": "query",
             "name": "wait",
             "required": false,
@@ -2256,6 +2558,16 @@
             },
             "description": "successful operation"
           },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2279,7 +2591,7 @@
           {
             "description": "Name of the new collection",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2323,6 +2635,16 @@
             },
             "description": "successful operation"
           },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2340,7 +2662,182 @@
         ]
       }
     },
-    "/collections/{name}/points": {
+    "/collections/{collection_name}/index": {
+      "put": {
+        "description": "Create index for field in collection",
+        "operationId": "create_field_index",
+        "parameters": [
+          {
+            "description": "Name of the collection",
+            "in": "path",
+            "name": "collection_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFieldIndex"
+              }
+            }
+          },
+          "description": "Field name"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Create index for field in collection",
+        "tags": [
+          "collections"
+        ]
+      }
+    },
+    "/collections/{collection_name}/index/{field_name}": {
+      "delete": {
+        "description": "Delete field index for collection",
+        "operationId": "delete_field_index",
+        "parameters": [
+          {
+            "description": "Name of the collection",
+            "in": "path",
+            "name": "collection_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Name of the field where to delete the index",
+            "in": "path",
+            "name": "field_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Delete index for field in collection",
+        "tags": [
+          "collections"
+        ]
+      }
+    },
+    "/collections/{collection_name}/points": {
       "post": {
         "description": "Retrieve multiple points by specified IDs",
         "operationId": "get_points",
@@ -2348,7 +2845,7 @@
           {
             "description": "Name of the collection to retrieve from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2395,6 +2892,16 @@
             },
             "description": "successful operation"
           },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2410,9 +2917,447 @@
         "tags": [
           "points"
         ]
+      },
+      "put": {
+        "description": "Perform insert + updates on points. If point with given ID already exists - it will be overwritten.",
+        "operationId": "upsert_points",
+        "parameters": [
+          {
+            "description": "Name of the collection to update from",
+            "in": "path",
+            "name": "collection_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PointInsertOperations"
+              }
+            }
+          },
+          "description": "Operation to perform on points"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Upsert points",
+        "tags": [
+          "points"
+        ]
       }
     },
-    "/collections/{name}/points/recommend": {
+    "/collections/{collection_name}/points/delete": {
+      "post": {
+        "description": "Delete points",
+        "operationId": "delete_points",
+        "parameters": [
+          {
+            "description": "Name of the collection to delete from",
+            "in": "path",
+            "name": "collection_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PointsSelector"
+              }
+            }
+          },
+          "description": "Operation to perform on points"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Delete points",
+        "tags": [
+          "points"
+        ]
+      }
+    },
+    "/collections/{collection_name}/points/payload": {
+      "post": {
+        "description": "Set payload for points",
+        "operationId": "set_payload",
+        "parameters": [
+          {
+            "description": "Name of the collection to set from",
+            "in": "path",
+            "name": "collection_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPayload"
+              }
+            }
+          },
+          "description": "Set payload on points"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Set payload",
+        "tags": [
+          "points"
+        ]
+      }
+    },
+    "/collections/{collection_name}/points/payload/clear": {
+      "post": {
+        "description": "Remove all payload for specified points",
+        "operationId": "clear_payload",
+        "parameters": [
+          {
+            "description": "Name of the collection to clear payload from",
+            "in": "path",
+            "name": "collection_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PointsSelector"
+              }
+            }
+          },
+          "description": "clear payload on points"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Clear payload",
+        "tags": [
+          "points"
+        ]
+      }
+    },
+    "/collections/{collection_name}/points/payload/delete": {
+      "post": {
+        "description": "Delete specified key payload for points",
+        "operationId": "delete_payload",
+        "parameters": [
+          {
+            "description": "Name of the collection to delete from",
+            "in": "path",
+            "name": "collection_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeletePayload"
+              }
+            }
+          },
+          "description": "delete payload on points"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Delete payload",
+        "tags": [
+          "points"
+        ]
+      }
+    },
+    "/collections/{collection_name}/points/recommend": {
       "post": {
         "description": "Look for the points which are closer to stored positive examples and at the same time further to negative examples.",
         "operationId": "recommend_points",
@@ -2420,7 +3365,7 @@
           {
             "description": "Name of the collection to search in",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2467,6 +3412,16 @@
             },
             "description": "successful operation"
           },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2484,7 +3439,7 @@
         ]
       }
     },
-    "/collections/{name}/points/scroll": {
+    "/collections/{collection_name}/points/scroll": {
       "post": {
         "description": "Scroll request - paginate over all points which matches given filtering condition",
         "operationId": "scroll_points",
@@ -2492,7 +3447,7 @@
           {
             "description": "Name of the collection to retrieve from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2536,6 +3491,16 @@
             },
             "description": "successful operation"
           },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2553,7 +3518,7 @@
         ]
       }
     },
-    "/collections/{name}/points/search": {
+    "/collections/{collection_name}/points/search": {
       "post": {
         "description": "Retrieve closest points based on vector similarity and given filtering conditions",
         "operationId": "search_points",
@@ -2561,7 +3526,7 @@
           {
             "description": "Name of the collection to search in",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2608,6 +3573,16 @@
             },
             "description": "successful operation"
           },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -2625,7 +3600,7 @@
         ]
       }
     },
-    "/collections/{name}/points/{id}": {
+    "/collections/{collection_name}/points/{id}": {
       "get": {
         "description": "Retrieve full information of single point by id",
         "operationId": "get_point",
@@ -2633,7 +3608,7 @@
           {
             "description": "Name of the collection to retrieve from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2645,7 +3620,7 @@
             "name": "id",
             "required": true,
             "schema": {
-              "type": "integer"
+              "$ref": "#/components/schemas/ExtendedPointId"
             }
           }
         ],
@@ -2675,6 +3650,16 @@
               }
             },
             "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
           },
           "default": {
             "content": {

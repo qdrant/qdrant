@@ -1,47 +1,44 @@
-use crate::entry::entry_point::OperationResult;
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::sample_estimation::sample_check_cardinality;
-use crate::index::{PayloadIndex, VectorIndex};
-use crate::payload_storage::ConditionChecker;
+use crate::index::{PayloadIndexSS, VectorIndex};
+use crate::payload_storage::ConditionCheckerSS;
 use crate::types::Condition::Field;
-use crate::types::{
-    FieldCondition, Filter, HnswConfig, PointOffsetType, SearchParams, VectorElementType,
-};
-use crate::vector_storage::{ScoredPointOffset, VectorStorage};
+use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VectorElementType};
+use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 use atomic_refcell::AtomicRefCell;
 use log::debug;
-use rand::prelude::ThreadRng;
+
 use rand::thread_rng;
 use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 const HNSW_USE_HEURISTIC: bool = true;
 
 pub struct HNSWIndex {
-    condition_checker: Arc<dyn ConditionChecker>,
-    vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
-    payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
+    condition_checker: Arc<ConditionCheckerSS>,
+    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
     config: HnswGraphConfig,
     path: PathBuf,
-    thread_rng: ThreadRng,
     graph: GraphLayers,
 }
 
 impl HNSWIndex {
     pub fn open(
         path: &Path,
-        condition_checker: Arc<dyn ConditionChecker>,
-        vector_storage: Arc<AtomicRefCell<dyn VectorStorage>>,
-        payload_index: Arc<AtomicRefCell<dyn PayloadIndex>>,
+        condition_checker: Arc<ConditionCheckerSS>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+        payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
         hnsw_config: HnswConfig,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
-        let rng = thread_rng();
 
         let config_path = HnswGraphConfig::get_config_path(path);
         let config = if config_path.exists() {
@@ -75,7 +72,6 @@ impl HNSWIndex {
             payload_index,
             config,
             path: path.to_owned(),
-            thread_rng: rng,
             graph,
         })
     }
@@ -94,12 +90,6 @@ impl HNSWIndex {
         self.save_config()?;
         self.save_graph()?;
         Ok(())
-    }
-
-    pub fn link_point(&mut self, point_id: PointOffsetType, points_scorer: &FilteredScorer) {
-        let point_level = self.graph.get_random_layer(&mut self.thread_rng);
-        self.graph
-            .link_new_point(point_id, point_level, points_scorer);
     }
 
     pub fn build_filtered_graph(
@@ -125,11 +115,8 @@ impl HNSWIndex {
             let vector = vector_storage.get_vector(block_point_id).unwrap();
             let raw_scorer = vector_storage.raw_scorer(vector);
             block_condition_checker.current_point = block_point_id;
-            let points_scorer = FilteredScorer {
-                raw_scorer: raw_scorer.as_ref(),
-                condition_checker: block_condition_checker,
-                filter: None,
-            };
+            let points_scorer =
+                FilteredScorer::new(raw_scorer.as_ref(), block_condition_checker, None);
 
             let level = self.graph.point_level(block_point_id);
             graph.link_new_point(block_point_id, level, &points_scorer);
@@ -153,11 +140,8 @@ impl HNSWIndex {
         let vector_storage = self.vector_storage.borrow();
         let raw_scorer = vector_storage.raw_scorer(vector.to_owned());
 
-        let points_scorer = FilteredScorer {
-            raw_scorer: raw_scorer.as_ref(),
-            condition_checker: &*self.condition_checker,
-            filter,
-        };
+        let points_scorer =
+            FilteredScorer::new(raw_scorer.as_ref(), &*self.condition_checker, filter);
 
         self.graph.search(top, ef, &points_scorer)
     }
@@ -215,7 +199,7 @@ impl VectorIndex for HNSWIndex {
         }
     }
 
-    fn build_index(&mut self) -> OperationResult<()> {
+    fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
         // Build main index graph
         let vector_storage = self.vector_storage.borrow();
         let mut rng = thread_rng();
@@ -233,13 +217,15 @@ impl VectorIndex for HNSWIndex {
         );
 
         for vector_id in vector_storage.iter_ids() {
+            if stopped.load(Ordering::Relaxed) {
+                return Err(OperationError::Cancelled {
+                    description: "Cancelled by external thread".to_string(),
+                });
+            }
             let vector = vector_storage.get_vector(vector_id).unwrap();
             let raw_scorer = vector_storage.raw_scorer(vector);
-            let points_scorer = FilteredScorer {
-                raw_scorer: raw_scorer.as_ref(),
-                condition_checker: &*self.condition_checker,
-                filter: None,
-            };
+            let points_scorer =
+                FilteredScorer::new(raw_scorer.as_ref(), &*self.condition_checker, None);
 
             let level = self.graph.get_random_layer(&mut rng);
             self.graph.link_new_point(vector_id, level, &points_scorer);
@@ -259,6 +245,11 @@ impl VectorIndex for HNSWIndex {
             for payload_block in
                 payload_index.payload_blocks(&field, self.config.indexing_threshold)
             {
+                if stopped.load(Ordering::Relaxed) {
+                    return Err(OperationError::Cancelled {
+                        description: "Cancelled by external thread".to_string(),
+                    });
+                }
                 // ToDo: re-use graph layer for same payload
                 let mut additional_graph = GraphLayers::new_with_params(
                     self.vector_storage.borrow().total_vector_count(),

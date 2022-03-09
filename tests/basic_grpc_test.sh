@@ -3,46 +3,106 @@
 
 set -ex
 
+# Ensure current path is project root
+cd "$(dirname "$0")/../"
+
 QDRANT_HOST='localhost:6334'
 
-docker_grpcurl="docker run --rm -it --network=host -v ${PWD}/src/tonic/proto:/proto fullstorydev/grpcurl -plaintext -import-path /proto -proto qdrant.proto"
+docker_grpcurl="docker run --rm --network=host -v ${PWD}/src/tonic/proto:/proto fullstorydev/grpcurl -plaintext -import-path /proto -proto qdrant.proto"
 
 $docker_grpcurl -d '{
-   "name": "test_collection"
+   "collection_name": "test_collection"
 }' $QDRANT_HOST qdrant.Collections/Delete
 
 
 $docker_grpcurl -d '{
-   "name": "test_collection",
+   "collection_name": "test_collection",
    "vector_size": 4,
    "distance": "Dot"
 }' $QDRANT_HOST qdrant.Collections/Create
 
-$docker_grpcurl -d '{}' $QDRANT_HOST qdrant.Collections/Get
-
-# ToDo: Add get collection info request
+$docker_grpcurl -d '{}' $QDRANT_HOST qdrant.Collections/List
 
 $docker_grpcurl -d '{
-  "collection": "test_collection",
+  "collection_name": "test_collection",
   "wait": true,
   "points": [
     {
-      "id": 1,
+      "id": { "num": 1 },
       "vector": [0.05, 0.61, 0.76, 0.74],
       "payload": {
-        "city": { "keyword": { "value": ["Berlin"] }},
-        "country": { "keyword": { "value": ["Germany"] }},
-        "population": { "integer": { "value": [1000000] }},
-        "square": { "float": { "value": [12.5] }},
-        "coords": { "geo": { "value": [{ "lat": 1.0, "lon": 2.0 }]}}
+        "city": { "keyword": { "values": ["Berlin"] }},
+        "country": { "keyword": { "values": ["Germany"] }},
+        "population": { "integer": { "values": [1000000] }},
+        "square": { "float": { "values": [12.5] }},
+        "coords": { "geo": { "values": [{ "lat": 1.0, "lon": 2.0 }]}}
       }
     },
-    {"id": 2, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"square": {"float": { "value": [10, 11]}}}},
-    {"id": 3, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"count": {"integer": {"value": [0]}}}},
-    {"id": 4, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"coords": {"geo": {"value": [{ "lat": 1.0, "lon": 2.0}, { "lat": 3.0, "lon": 4.0}]}}}},
-    {"id": 5, "vector": [0.35, 0.08, 0.11, 0.44]}
+    {"id": { "num": 2 }, "vector": [0.19, 0.81, 0.75, 0.11], "payload": {"city": {"keyword": { "values": ["Berlin", "London"] }}}},
+    {"id": { "num": 3 }, "vector": [0.36, 0.55, 0.47, 0.94], "payload": {"city": {"keyword": { "values": ["Berlin", "Moscow"] }}}},
+    {"id": { "num": 4 }, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"city": {"keyword": { "values": ["London", "Moscow"] }}}},
+    {"id": { "num": 5 }, "vector": [0.24, 0.18, 0.22, 0.44], "payload": {"count": { "integer": { "values": [0] }}}},
+    {"id": { "num": 6 }, "vector": [0.35, 0.08, 0.11, 0.44]}
   ]
 }' $QDRANT_HOST qdrant.Points/Upsert
+
+$docker_grpcurl -d '{ "collection_name": "test_collection" }' $QDRANT_HOST qdrant.Collections/Get
+
+$docker_grpcurl -d '{
+  "collection_name": "test_collection",
+  "vector": [0.2,0.1,0.9,0.7],
+  "top": 3
+}' $QDRANT_HOST qdrant.Points/Search
+
+$docker_grpcurl -d '{
+  "collection_name": "test_collection",
+  "filter": {
+    "should": [
+      {
+        "field": {
+          "key": "city",
+          "match": {
+            "keyword": "London"
+          }
+        }
+      }
+    ]
+  },
+  "vector": [0.2,0.1,0.9,0.7],
+  "top": 3
+}' $QDRANT_HOST qdrant.Points/Search
+
+$docker_grpcurl -d '{
+  "collection_name": "test_collection",
+  "limit": 2,
+  "with_vector": true,
+  "filter": {
+    "should": [
+      {
+        "field": {
+          "key": "city",
+          "match": {
+            "keyword": "London"
+          }
+        }
+      }
+    ]
+  }
+}' $QDRANT_HOST qdrant.Points/Scroll
+
+$docker_grpcurl -d '{
+  "collection_name": "test_collection",
+  "with_vector": true,
+  "ids": [{ "num": 2 }, { "num": 3 }, { "num": 4 }]
+}' $QDRANT_HOST qdrant.Points/Get
+
+$docker_grpcurl -d '{
+  "collection_name": "test_collection",
+  "positive": [{ "num": 1 }],
+  "negative": [{ "num": 2 }]
+}' $QDRANT_HOST qdrant.Points/Recommend
+
+
 
 
 #SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')
@@ -78,10 +138,6 @@ $docker_grpcurl -d '{
 #  }' | jq
 #
 #
-#curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/scroll" \
-#  --fail -s \
-#  -H 'Content-Type: application/json' \
-#  --data-raw '{ "offset": 2, "limit": 2, "with_vector": true }' | jq
 #
 #curl -L -X POST "http://$QDRANT_HOST/collections" \
 #  --fail -s \

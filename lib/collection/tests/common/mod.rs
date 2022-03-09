@@ -1,14 +1,14 @@
-use collection::collection::Collection;
-use collection::collection_builder::build_collection;
-use collection::collection_builder::optimizers_builder::OptimizersConfig;
-use collection::config::{CollectionParams, WalConfig};
+use collection::config::{CollectionConfig, CollectionParams, WalConfig};
+use collection::optimizers_builder::OptimizersConfig;
+use collection::Collection;
 use segment::types::Distance;
 use std::path::Path;
 
 pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
     vacuum_min_vector_number: 1000,
-    max_segment_number: 5,
+    default_segment_number: 5,
+    max_segment_size: 100_000,
     memmap_threshold: 100_000,
     indexing_threshold: 50_000,
     payload_indexing_threshold: 20_000,
@@ -17,7 +17,7 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
 };
 
 #[allow(dead_code)]
-pub async fn simple_collection_fixture(collection_path: &Path) -> Collection {
+pub fn simple_collection_fixture(collection_path: &Path, shard_number: u32) -> Collection {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
         wal_segments_ahead: 0,
@@ -26,14 +26,18 @@ pub async fn simple_collection_fixture(collection_path: &Path) -> Collection {
     let collection_params = CollectionParams {
         vector_size: 4,
         distance: Distance::Dot,
+        shard_number,
     };
 
-    build_collection(
+    Collection::new(
+        "test".to_string(),
         collection_path,
-        &wal_config,
-        &collection_params,
-        &TEST_OPTIMIZERS_CONFIG,
-        &Default::default(),
+        &CollectionConfig {
+            params: collection_params,
+            optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
+            wal_config,
+            hnsw_config: Default::default(),
+        },
     )
     .unwrap()
 }

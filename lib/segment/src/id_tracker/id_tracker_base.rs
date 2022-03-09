@@ -42,9 +42,11 @@ pub trait IdTracker {
     /// Iterate starting from a given ID
     fn iter_from(
         &self,
-        external_id: PointIdType,
+        external_id: Option<PointIdType>,
     ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_>;
 
     /// Force persistence of current tracker state.
     fn flush(&self) -> OperationResult<()>;
 }
+
+pub type IdTrackerSS = dyn IdTracker + Sync + Send;

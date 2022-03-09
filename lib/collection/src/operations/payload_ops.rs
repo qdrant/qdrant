@@ -1,27 +1,74 @@
+use hashring::HashRing;
 use schemars::JsonSchema;
-use segment::types::{PayloadInterface, PayloadKeyType, PointIdType};
+use segment::types::{Filter, PayloadInterface, PayloadKeyType, PointIdType};
 use serde;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::shard::ShardId;
+
+use super::{split_iter_by_shard, OperationToShard, SplitByShard};
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+pub struct SetPayload {
+    pub payload: HashMap<PayloadKeyType, PayloadInterface>,
+    /// Assigns payload to each point in this list
+    pub points: Vec<PointIdType>, // ToDo: replace with point selector
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+pub struct DeletePayload {
+    pub keys: Vec<PayloadKeyType>,
+    /// Deletes values from each point in this list
+    pub points: Vec<PointIdType>, // ToDo: replace with point selector
+}
+
 /// Define operations description for point payloads manipulation
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadOps {
     /// Set payload value, overrides if it is already exists
-    SetPayload {
-        payload: HashMap<PayloadKeyType, PayloadInterface>,
-        /// Assigns payload to each point in this list
-        points: Vec<PointIdType>,
-    },
+    SetPayload(SetPayload),
     /// Deletes specified payload values if they are assigned
-    DeletePayload {
-        keys: Vec<PayloadKeyType>,
-        /// Deletes values from each point in this list
-        points: Vec<PointIdType>,
-    },
+    DeletePayload(DeletePayload),
     /// Drops all Payload values associated with given points.
     ClearPayload { points: Vec<PointIdType> },
+    /// Clear all Payload values by given filter criteria.
+    ClearPayloadByFilter(Filter),
+}
+
+impl SplitByShard for PayloadOps {
+    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
+        match self {
+            PayloadOps::SetPayload(operation) => {
+                operation.split_by_shard(ring).map(PayloadOps::SetPayload)
+            }
+            PayloadOps::DeletePayload(operation) => operation
+                .split_by_shard(ring)
+                .map(PayloadOps::DeletePayload),
+            PayloadOps::ClearPayload { points } => split_iter_by_shard(points, |id| *id, ring)
+                .map(|points| PayloadOps::ClearPayload { points }),
+            operation @ PayloadOps::ClearPayloadByFilter(_) => OperationToShard::to_all(operation),
+        }
+    }
+}
+
+impl SplitByShard for DeletePayload {
+    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
+        split_iter_by_shard(self.points, |id| *id, ring).map(|points| DeletePayload {
+            points,
+            keys: self.keys.clone(),
+        })
+    }
+}
+
+impl SplitByShard for SetPayload {
+    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
+        split_iter_by_shard(self.points, |id| *id, ring).map(|points| SetPayload {
+            points,
+            payload: self.payload.clone(),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -46,7 +93,8 @@ mod tests {
         let operation: PayloadOps = serde_json::from_str(query1).unwrap();
 
         match operation {
-            PayloadOps::SetPayload { payload, points: _ } => {
+            PayloadOps::SetPayload(set_payload) => {
+                let payload = &set_payload.payload;
                 assert_eq!(payload.len(), 2);
 
                 assert!(payload.contains_key("key1"));
@@ -56,10 +104,10 @@ mod tests {
 
                 match payload1 {
                     PayloadType::Keyword(x) => assert_eq!(x, ["hello".to_owned()]),
-                    _ => assert!(false, "Wrong payload type"),
+                    _ => panic!("Wrong payload type"),
                 }
             }
-            _ => assert!(false, "Wrong operation"),
+            _ => panic!("Wrong operation"),
         }
     }
 }

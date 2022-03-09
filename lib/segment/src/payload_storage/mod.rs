@@ -4,3 +4,4 @@ pub mod query_checker;
 pub mod simple_payload_storage;
 
 pub use payload_storage_base::*;
+pub mod schema_storage;

@@ -12,7 +12,7 @@ pub async fn do_get_collection(
     Ok(collection.info().await?)
 }
 
-pub async fn do_get_collections(toc: &TableOfContent) -> CollectionsResponse {
+pub async fn do_list_collections(toc: &TableOfContent) -> CollectionsResponse {
     let collections = toc
         .all_collections()
         .await

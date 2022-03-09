@@ -3,13 +3,15 @@ use std::collections::{HashMap, HashSet};
 use parking_lot::{RwLock, RwLockWriteGuard};
 
 use segment::types::{
-    PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType,
+    Filter, PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType,
     VectorElementType,
 };
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
-use crate::operations::point_ops::{PointInsertOperations, PointOperations};
+use crate::operations::point_ops::{
+    Batch, PointInsertOperations, PointOperations, PointsBatch, PointsList,
+};
 use crate::operations::types::{CollectionError, CollectionResult, VectorType};
 use crate::operations::FieldIndexOperations;
 use itertools::Itertools;
@@ -102,6 +104,29 @@ pub(crate) fn clear_payload(
     Ok(updated_points.len())
 }
 
+/// Clear Payloads from all segments matching the given filter
+pub(crate) fn clear_payload_by_filter(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    filter: &Filter,
+) -> CollectionResult<usize> {
+    let mut points_to_clear: Vec<PointIdType> = Vec::new();
+
+    segments.apply_segments(|s| {
+        let points = s.read_filtered(None, usize::MAX, Some(filter));
+        points_to_clear.extend_from_slice(points.as_slice());
+        Ok(true)
+    })?;
+
+    let updated_points = segments.apply_points_to_appendable(
+        op_num,
+        points_to_clear.as_slice(),
+        |id, write_segment| write_segment.clear_payload(op_num, id),
+    )?;
+
+    Ok(updated_points.len())
+}
+
 pub(crate) fn create_field_index(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -148,31 +173,6 @@ pub(crate) fn upsert_points(
     vectors: &[VectorType],
     payloads: &Option<Vec<Option<HashMap<PayloadKeyType, PayloadInterface>>>>,
 ) -> CollectionResult<usize> {
-    if ids.len() != vectors.len() {
-        return Err(CollectionError::BadInput {
-            description: format!(
-                "Amount of ids ({}) and vectors ({}) does not match",
-                ids.len(),
-                vectors.len()
-            ),
-        });
-    }
-
-    match payloads {
-        None => {}
-        Some(payload_vector) => {
-            if payload_vector.len() != ids.len() {
-                return Err(CollectionError::BadInput {
-                    description: format!(
-                        "Amount of ids ({}) and payloads ({}) does not match",
-                        ids.len(),
-                        payload_vector.len()
-                    ),
-                });
-            }
-        }
-    }
-
     let vectors_map: HashMap<PointIdType, &VectorType> = ids.iter().cloned().zip(vectors).collect();
     let payloads_map: HashMap<PointIdType, &HashMap<PayloadKeyType, PayloadInterface>> =
         match payloads {
@@ -240,13 +240,16 @@ pub(crate) fn process_point_operation(
         PointOperations::DeletePoints { ids, .. } => delete_points(&segments.read(), op_num, &ids),
         PointOperations::UpsertPoints(operation) => {
             let (ids, vectors, payloads) = match operation {
-                PointInsertOperations::BatchPoints {
-                    ids,
-                    vectors,
-                    payloads,
-                    ..
-                } => (ids, vectors, payloads),
-                PointInsertOperations::PointsList(points) => {
+                PointInsertOperations::PointsBatch(PointsBatch {
+                    batch:
+                        Batch {
+                            ids,
+                            vectors,
+                            payloads,
+                            ..
+                        },
+                }) => (ids, vectors, payloads),
+                PointInsertOperations::PointsList(PointsList { points }) => {
                     let mut ids = vec![];
                     let mut vectors = vec![];
                     let mut payloads = vec![];
@@ -261,6 +264,9 @@ pub(crate) fn process_point_operation(
             let res = upsert_points(segments, op_num, &ids, &vectors, &payloads)?;
             Ok(res)
         }
+        PointOperations::DeletePointsByFilter(filter) => {
+            delete_points_by_filter(&segments.read(), op_num, &filter)
+        }
     }
 }
 
@@ -270,13 +276,16 @@ pub(crate) fn process_payload_operation(
     payload_operation: &PayloadOps,
 ) -> CollectionResult<usize> {
     match payload_operation {
-        PayloadOps::SetPayload {
-            payload, points, ..
-        } => set_payload(&segments.read(), op_num, payload, points),
-        PayloadOps::DeletePayload { keys, points, .. } => {
-            delete_payload(&segments.read(), op_num, points, keys)
+        PayloadOps::SetPayload(sp) => {
+            set_payload(&segments.read(), op_num, &sp.payload, &sp.points)
+        }
+        PayloadOps::DeletePayload(dp) => {
+            delete_payload(&segments.read(), op_num, &dp.points, &dp.keys)
         }
         PayloadOps::ClearPayload { points, .. } => clear_payload(&segments.read(), op_num, points),
+        PayloadOps::ClearPayloadByFilter(filter) => {
+            clear_payload_by_filter(&segments.read(), op_num, filter)
+        }
     }
 }
 
@@ -293,4 +302,18 @@ pub(crate) fn process_field_index_operation(
             delete_field_index(&segments.read(), op_num, field_name)
         }
     }
+}
+
+/// Deletes points from all segments matching the given filter
+pub(crate) fn delete_points_by_filter(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    filter: &Filter,
+) -> CollectionResult<usize> {
+    let mut deleted = 0;
+    segments.apply_segments(|s| {
+        deleted += s.delete_filtered(op_num, filter)?;
+        Ok(true)
+    })?;
+    Ok(deleted)
 }

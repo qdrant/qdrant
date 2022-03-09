@@ -18,21 +18,22 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
 
     let temp_segment: LockedSegment = empty_segment(path).into();
 
-    let optimizing_segment = write_segments.get(sid).unwrap();
+    let optimizing_segment = write_segments.get(sid).unwrap().clone();
 
     let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
     let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
     let proxy_created_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
 
     let proxy = ProxySegment::new(
-        optimizing_segment.clone(),
-        temp_segment.clone(),
-        proxy_deleted_points.clone(),
-        proxy_deleted_indexes.clone(),
-        proxy_created_indexes.clone(),
+        optimizing_segment,
+        temp_segment,
+        proxy_deleted_points,
+        proxy_deleted_indexes,
+        proxy_created_indexes,
     );
 
-    write_segments.swap(proxy, &[sid], false).unwrap()
+    let (new_id, _replaced_segments) = write_segments.swap(proxy, &[sid]);
+    new_id
 }
 
 #[test]
@@ -54,20 +55,20 @@ fn test_update_proxy_segments() {
     let vectors = vec![vec![0.0, 0.0, 0.0, 0.0], vec![0.0, 0.0, 0.0, 0.0]];
 
     for i in 1..10 {
-        let ids = vec![100 * i + 1, 100 * i + 2];
+        let ids = vec![(100 * i + 1).into(), (100 * i + 2).into()];
         upsert_points(&segments, 1000 + i, &ids, &vectors, &None).unwrap();
     }
 
     let all_ids = segments
         .read()
         .iter()
-        .flat_map(|(_id, segment)| segment.get().read().read_filtered(0, 100, None))
+        .flat_map(|(_id, segment)| segment.get().read().read_filtered(None, 100, None))
         .sorted()
         .collect_vec();
 
     for i in 1..10 {
         let idx = 100 * i + 1;
-        assert!(all_ids.contains(&idx), "Not found {}", idx)
+        assert!(all_ids.contains(&idx.into()), "Not found {}", idx)
     }
 }
 
@@ -88,10 +89,10 @@ fn test_move_points_to_copy_on_write() {
     let proxy_id = wrap_proxy(segments.clone(), sid1, dir.path());
 
     let vectors = vec![vec![0.0, 0.0, 0.0, 0.0], vec![0.0, 0.0, 0.0, 0.0]];
-    upsert_points(&segments, 1001, &[1, 2], &vectors, &None).unwrap();
+    upsert_points(&segments, 1001, &[1.into(), 2.into()], &vectors, &None).unwrap();
 
     let vectors = vec![vec![0.0, 0.0, 0.0, 0.0], vec![0.0, 0.0, 0.0, 0.0]];
-    upsert_points(&segments, 1002, &[2, 3], &vectors, &None).unwrap();
+    upsert_points(&segments, 1002, &[2.into(), 3.into()], &vectors, &None).unwrap();
 
     let segments_write = segments.write();
 

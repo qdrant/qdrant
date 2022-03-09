@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
 use crate::types::{
-    FieldCondition, IntPayloadType, Match, PayloadKeyType, PayloadType, PointOffsetType,
+    FieldCondition, IntPayloadType, Match, MatchInteger, MatchKeyword, PayloadKeyType, PayloadType,
+    PointOffsetType,
 };
 
 /// HashMap-based type of index
@@ -58,24 +59,23 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
         &self,
         condition: &FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        condition.r#match.as_ref().and_then(|match_condition| {
-            match_condition
-                .keyword
-                .as_ref()
-                .map(|keyword| self.get_iterator(keyword))
-        })
+        match &condition.r#match {
+            Some(Match::Keyword(MatchKeyword { keyword })) => Some(self.get_iterator(keyword)),
+            _ => None,
+        }
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
-        condition.r#match.as_ref().and_then(|match_condition| {
-            match_condition.keyword.as_ref().map(|keyword| {
+        match &condition.r#match {
+            Some(Match::Keyword(MatchKeyword { keyword })) => {
                 let mut estimation = self.match_cardinality(keyword);
                 estimation
                     .primary_clauses
                     .push(PrimaryCondition::Condition(condition.clone()));
-                estimation
-            })
-        })
+                Some(estimation)
+            }
+            _ => None,
+        }
     }
 
     fn payload_blocks(
@@ -90,10 +90,7 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
             .map(move |(value, point_ids)| PayloadBlockCondition {
                 condition: FieldCondition {
                     key: key.clone(),
-                    r#match: Some(Match {
-                        keyword: Some(value.to_owned()),
-                        integer: None,
-                    }),
+                    r#match: Some(value.to_owned().into()),
                     range: None,
                     geo_bounding_box: None,
                     geo_radius: None,
@@ -109,24 +106,23 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
         &self,
         condition: &FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        condition.r#match.as_ref().and_then(|match_condition| {
-            match_condition
-                .integer
-                .as_ref()
-                .map(|int| self.get_iterator(int))
-        })
+        match &condition.r#match {
+            Some(Match::Integer(MatchInteger { integer })) => Some(self.get_iterator(integer)),
+            _ => None,
+        }
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
-        condition.r#match.as_ref().and_then(|match_condition| {
-            match_condition.integer.as_ref().map(|number| {
-                let mut estimation = self.match_cardinality(number);
+        match &condition.r#match {
+            Some(Match::Integer(MatchInteger { integer })) => {
+                let mut estimation = self.match_cardinality(integer);
                 estimation
                     .primary_clauses
                     .push(PrimaryCondition::Condition(condition.clone()));
-                estimation
-            })
-        })
+                Some(estimation)
+            }
+            _ => None,
+        }
     }
 
     fn payload_blocks(
@@ -141,10 +137,7 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
             .map(move |(value, point_ids)| PayloadBlockCondition {
                 condition: FieldCondition {
                     key: key.clone(),
-                    r#match: Some(Match {
-                        keyword: None,
-                        integer: Some(*value),
-                    }),
+                    r#match: Some((*value).into()),
                     range: None,
                     geo_bounding_box: None,
                     geo_radius: None,

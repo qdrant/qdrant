@@ -1,8 +1,8 @@
 mod api;
+#[allow(clippy::all)]
 pub mod qdrant;
 
 use crate::common::models::VersionInfo;
-use crate::settings::Settings;
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::points_api::PointsService;
 use qdrant::collections_server::CollectionsServer;
@@ -10,6 +10,7 @@ use qdrant::points_server::PointsServer;
 use qdrant::qdrant_server::{Qdrant, QdrantServer};
 use qdrant::{HealthCheckReply, HealthCheckRequest};
 use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use storage::content_manager::toc::TableOfContent;
 use tokio::{runtime, signal};
@@ -37,23 +38,25 @@ impl Qdrant for QdrantService {
     }
 }
 
-pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()> {
+pub fn init(toc: Arc<TableOfContent>, host: String, grpc_port: u16) -> std::io::Result<()> {
     let tonic_runtime = runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
+        .thread_name_fn(|| {
+            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+            format!("tonic-{}", id)
+        })
         .build()?;
     tonic_runtime
         .block_on(async {
-            let socket = SocketAddr::from((
-                settings.service.host.parse::<IpAddr>().unwrap(),
-                settings.service.grpc_port,
-            ));
+            let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), grpc_port));
 
             let service = QdrantService::default();
             let collections_service = CollectionsService::new(toc.clone());
             let points_service = PointsService::new(toc.clone());
 
-            log::info!("Qdrant gRPC listening on {}", settings.service.grpc_port);
+            log::info!("Qdrant gRPC listening on {}", grpc_port);
 
             Server::builder()
                 .add_service(QdrantServer::new(service))

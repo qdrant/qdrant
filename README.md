@@ -8,10 +8,11 @@
 
 
 <p align=center>
-    <a href="https://github.com/qdrant/qdrant/actions/workflows/rust.yml"><img src="https://github.com/qdrant/qdrant/workflows/Tests/badge.svg"></a>
-    <a href="https://qdrant.github.io/qdrant/redoc/index.html"><img src="https://img.shields.io/badge/Docs-OpenAPI%203.0-success"></a>
-    <a href="https://github.com/qdrant/qdrant/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-success"></a>
-    <a href="https://t.me/joinchat/sIuUArGQRp9kMTUy"><img src="https://img.shields.io/badge/Telegram-Qdrant-blue.svg?logo=telegram" alt="Telegram"></a>
+    <a href="https://github.com/qdrant/qdrant/actions/workflows/rust.yml"><img src="https://github.com/qdrant/qdrant/workflows/Tests/badge.svg" alt="Tests status"></a>
+    <a href="https://qdrant.github.io/qdrant/redoc/index.html"><img src="https://img.shields.io/badge/Docs-OpenAPI%203.0-success" alt="OpenAPI Docs"></a>
+    <a href="https://github.com/qdrant/qdrant/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-success" alt="Apache 2.0 License"></a>
+    <a href="https://discord.gg/tdtYvXjC4h"><img src="https://img.shields.io/badge/Discord-Qdrant-5865F2.svg?logo=discord" alt="Discord"></a>
+    <a href="./docs/roadmap/README.md"><img src="https://img.shields.io/badge/Roadmap-v1.0-bc1439.svg" alt="Roadmap v1.0"></a>
 </p>
 
 Qdrant (read: _quadrant_ ) is a vector similarity search engine.
@@ -100,7 +101,7 @@ So you can [play with it online!](https://categories.qdrant.tech/)
 Online OpenAPI 3.0 documentation is available [here](https://qdrant.github.io/qdrant/redoc/index.html).
 OpenAPI makes it easy to generate a client for virtually any framework or programing language.
 
-You can also download raw OpenAPI [definitions](openapi/openapi-merged.yaml).
+You can also download raw OpenAPI [definitions](docs/redoc/master/openapi.json).
 
 ## Features
 
@@ -140,13 +141,13 @@ Qdrant does not rely on any external database or orchestration controller, which
 Build your own from source
 
 ```bash
-docker build . --tag=generall/qdrant
+docker build . --tag=qdrant/qdrant
 ```
 
-Or use latest pre-built image from [DockerHub](https://hub.docker.com/r/generall/qdrant)
+Or use latest pre-built image from [DockerHub](https://hub.docker.com/r/qdrant/qdrant)
 
 ```bash
-docker pull generall/qdrant
+docker pull qdrant/qdrant
 ```
 
 To run container use command:
@@ -155,7 +156,7 @@ To run container use command:
 docker run -p 6333:6333 \
     -v $(pwd)/path/to/data:/qdrant/storage \
     -v $(pwd)/path/to/custom_config.yaml:/qdrant/config/production.yaml \
-    generall/qdrant
+    qdrant/qdrant
 ```
 
 * `/qdrant/storage` - is a place where Qdrant persists all your data. 
@@ -170,10 +171,11 @@ Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/)
 * The [Documentation](https://qdrant.tech/documentation/)
 * Use the [OpenAPI specification](https://qdrant.github.io/qdrant/redoc/index.html) as a reference
 * Follow our [Step-by-Step Tutorial](https://blog.qdrant.tech/neural-search-tutorial-3f034ab13adc) to create your first neural network project with Qdrant
+* Check out our further plans in [v1.0 Roadmap](./docs/roadmap/README.md)
 
 ## Contacts
 
-* Join our [Telegram group](https://t.me/joinchat/sIuUArGQRp9kMTUy)
+* Join our [Discord channel](https://discord.gg/tdtYvXjC4h)
 * Follow us on [Twitter](https://twitter.com/qdrant_engine)
 * Subscribe to our [Newsletters](https://tech.us1.list-manage.com/subscribe/post?u=69617d79374ac6280dd2230b2&amp;id=acb2b876fc)
 * Write us an email [info@qdrant.tech](mailto:info@qdrant.tech)
@@ -208,6 +210,9 @@ Thanks to the people who contributed to Qdrant:
   <tr>
     <td align="center"><a href="https://github.com/daniilsunyaev"><img src="https://avatars.githubusercontent.com/u/3955599?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Daniil</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=daniilsunyaev" title="Code">💻</a></td>
     <td align="center"><a href="http://homeonrails.com"><img src="https://avatars.githubusercontent.com/u/1282182?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Anton Kaliaev</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=melekes" title="Code">💻</a></td>
+    <td align="center"><a href="https://soundcloud.com/norom"><img src="https://avatars.githubusercontent.com/u/7762532?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Andre Julius</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=NotNorom" title="Code">💻</a></td>
+    <td align="center"><a href="https://github.com/prok20"><img src="https://avatars.githubusercontent.com/u/20628026?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Prokudin Alexander</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=prok20" title="Code">💻</a></td>
+    <td align="center"><a href="https://github.com/elbart"><img src="https://avatars.githubusercontent.com/u/48974?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Tim Eggert</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=elbart" title="Code">💻</a></td>
   </tr>
 </table>
 
