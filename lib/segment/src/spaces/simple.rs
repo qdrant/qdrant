@@ -29,19 +29,14 @@ impl Metric for EuclidMetric {
     }
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        #[cfg(all(
-            target_arch = "x86_64",
-            target_feature = "avx512f"))]
+        #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
         {
             if is_x86_feature_detected!("avx512f") {
                 return unsafe { euclid_similarity_avx512f(v1, v2) };
             }
         }
 
-        #[cfg(all(
-            target_arch = "x86_64",
-            target_feature = "fma",
-            target_feature = "avx"))]
+        #[cfg(all(target_arch = "x86_64", target_feature = "fma", target_feature = "avx"))]
         {
             if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
                 return unsafe { euclid_similarity_avx(v1, v2) };
@@ -50,7 +45,8 @@ impl Metric for EuclidMetric {
 
         #[cfg(all(
             any(target_arch = "x86", target_arch = "x86_64"),
-            target_feature = "sse"))]
+            target_feature = "sse"
+        ))]
         {
             if is_x86_feature_detected!("sse") {
                 return unsafe { euclid_similarity_sse(v1, v2) };
@@ -78,19 +74,14 @@ impl Metric for DotProductMetric {
     }
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        #[cfg(all(
-            target_arch = "x86_64",
-            target_feature = "avx512f"))]
+        #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
         {
             if is_x86_feature_detected!("avx512f") {
                 return unsafe { dot_similarity_avx512f(v1, v2) };
             }
         }
 
-        #[cfg(all(
-            target_arch = "x86_64",
-            target_feature = "fma",
-            target_feature = "avx"))]
+        #[cfg(all(target_arch = "x86_64", target_feature = "fma", target_feature = "avx"))]
         {
             if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
                 return unsafe { dot_similarity_avx(v1, v2) };
@@ -99,7 +90,8 @@ impl Metric for DotProductMetric {
 
         #[cfg(all(
             any(target_arch = "x86", target_arch = "x86_64"),
-            target_feature = "sse"))]
+            target_feature = "sse"
+        ))]
         {
             if is_x86_feature_detected!("sse") {
                 return unsafe { dot_similarity_sse(v1, v2) };
@@ -127,19 +119,14 @@ impl Metric for CosineMetric {
     }
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        #[cfg(all(
-            target_arch = "x86_64",
-            target_feature = "avx512f"))]
+        #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
         {
             if is_x86_feature_detected!("avx512f") {
                 return unsafe { dot_similarity_avx512f(v1, v2) };
             }
         }
 
-        #[cfg(all(
-            target_arch = "x86_64",
-            target_feature = "fma",
-            target_feature = "avx"))]
+        #[cfg(all(target_arch = "x86_64", target_feature = "fma", target_feature = "avx"))]
         {
             if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
                 return unsafe { dot_similarity_avx(v1, v2) };
@@ -148,7 +135,8 @@ impl Metric for CosineMetric {
 
         #[cfg(all(
             any(target_arch = "x86", target_arch = "x86_64"),
-            target_feature = "sse"))]
+            target_feature = "sse"
+        ))]
         {
             if is_x86_feature_detected!("sse") {
                 return unsafe { dot_similarity_sse(v1, v2) };
@@ -166,19 +154,14 @@ impl Metric for CosineMetric {
     }
 
     fn preprocess(&self, vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
-        #[cfg(all(
-            target_arch = "x86_64",
-            target_feature = "avx512f"))]
+        #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
         {
             if is_x86_feature_detected!("avx512f") {
                 return Some(unsafe { cosine_preprocess_avx512f(vector) });
             }
         }
 
-        #[cfg(all(
-            target_arch = "x86_64",
-            target_feature = "fma",
-            target_feature = "avx"))]
+        #[cfg(all(target_arch = "x86_64", target_feature = "fma", target_feature = "avx"))]
         {
             if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
                 return Some(unsafe { cosine_preprocess_avx(vector) });
@@ -187,7 +170,8 @@ impl Metric for CosineMetric {
 
         #[cfg(all(
             any(target_arch = "x86", target_arch = "x86_64"),
-            target_feature = "sse"))]
+            target_feature = "sse"
+        ))]
         {
             if is_x86_feature_detected!("sse") {
                 return Some(unsafe { cosine_preprocess_sse(vector) });

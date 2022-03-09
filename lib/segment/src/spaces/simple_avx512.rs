@@ -2,10 +2,11 @@ use crate::types::{ScoreType, VectorElementType};
 
 use std::arch::x86_64::*;
 
-#[cfg(all(
-    target_arch = "x86_64",
-    target_feature = "avx512f"))]
-pub unsafe fn euclid_similarity_avx512f(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+#[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
+pub unsafe fn euclid_similarity_avx512f(
+    v1: &[VectorElementType],
+    v2: &[VectorElementType],
+) -> ScoreType {
     let n = v1.len();
     let m = n - (n % 16);
     let mut sum512: __m512 = _mm512_setzero_ps();
@@ -20,9 +21,7 @@ pub unsafe fn euclid_similarity_avx512f(v1: &[VectorElementType], v2: &[VectorEl
     -res.sqrt()
 }
 
-#[cfg(all(
-    target_arch = "x86_64",
-    target_feature = "avx512f"))]
+#[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
 pub unsafe fn cosine_preprocess_avx512f(vector: &[VectorElementType]) -> Vec<VectorElementType> {
     let n = vector.len();
     let m = n - (n % 16);
@@ -42,10 +41,11 @@ pub unsafe fn cosine_preprocess_avx512f(vector: &[VectorElementType]) -> Vec<Vec
     vector.iter().map(|x| x / length).collect()
 }
 
-#[cfg(all(
-    target_arch = "x86_64",
-    target_feature = "avx512f"))]
-pub unsafe fn dot_similarity_avx512f(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+#[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
+pub unsafe fn dot_similarity_avx512f(
+    v1: &[VectorElementType],
+    v2: &[VectorElementType],
+) -> ScoreType {
     let n = v1.len();
     let m = n - (n % 16);
     let mut sum512: __m512 = _mm512_setzero_ps();

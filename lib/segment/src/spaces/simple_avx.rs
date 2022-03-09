@@ -12,7 +12,10 @@ unsafe fn hsum256_ps_avx(x: __m256) -> f32 {
 
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
-pub unsafe fn euclid_similarity_avx(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+pub unsafe fn euclid_similarity_avx(
+    v1: &[VectorElementType],
+    v2: &[VectorElementType],
+) -> ScoreType {
     let n = v1.len();
     let m = n - (n % 8);
     let mut sum256: __m256 = _mm256_setzero_ps();
