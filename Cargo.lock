@@ -204,17 +204,6 @@ checksum = "739f4a8db6605981345c5654f3a85b056ce52f37a39d34da03f25bf2151ea16e"
 
 [[package]]
 name = "ahash"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "796540673305a66d127804eef19ad696f1f204b8c1025aaca4958c17eab32877"
-dependencies = [
- "getrandom",
- "once_cell",
- "version_check",
-]
-
-[[package]]
-name = "ahash"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43bb833f0bf979d8475d38fbf09ed3b8a55e1885fe93ad3f93239fc6a4f17b98"
@@ -1505,14 +1494,14 @@ dependencies = [
 
 [[package]]
 name = "inferno"
-version = "0.10.6"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c3cbcc228d2ad2e99328c2b19f38d80ec387ca6a29f778e40e32ca9f25448c3"
+checksum = "26143de514661e4241e71840e4f82029b5d8b55e57b25be63b5126869794df57"
 dependencies = [
- "ahash 0.6.3",
+ "ahash 0.7.4",
  "atty",
  "indexmap",
- "itoa 0.4.7",
+ "itoa 1.0.1",
  "lazy_static 1.4.0",
  "log 0.4.14",
  "num-format",
@@ -1987,9 +1976,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.7.2"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af8b08b04175473088b46763e51ee54da5f9a164bc162f615b91bc179dbf15a3"
+checksum = "87f3e037eac156d1775da914196f0f37741a274155e34a0b7e427c35d2a2ecb9"
 
 [[package]]
 name = "oorandom"
@@ -2253,19 +2242,19 @@ dependencies = [
 
 [[package]]
 name = "pprof"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55f35f865aa964be21fcde114cbd1cfbd9bf8a471460ed965b0f84f96c711401"
+checksum = "c090facb9ab04a4fb15fe27f8861059f195dd0847e6f1042016244e129eddeb2"
 dependencies = [
  "backtrace",
  "cfg-if",
  "findshlibs",
  "inferno",
- "lazy_static 1.4.0",
  "libc",
  "log 0.4.14",
  "nix",
- "parking_lot 0.11.2",
+ "once_cell",
+ "parking_lot 0.12.0",
  "prost",
  "prost-build",
  "prost-derive",
@@ -2398,9 +2387,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.20.0"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26aab6b48e2590e4a64d1ed808749ba06257882b461d01ca71baeb747074a6dd"
+checksum = "8533f14c8382aaad0d592c812ac3b826162128b65662331e1127b45c3d18536b"
 dependencies = [
  "memchr 2.4.0",
 ]
