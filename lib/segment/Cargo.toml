@@ -65,6 +65,10 @@ harness = false
 name = "id_type_benchmark"
 harness = false
 
+[[bench]]
+name = "spaces_metrics"
+harness = false
+
 [patch.crates-io]
 # Env flag OPENBLAS_DYNAMIC_ARCH is implemented in this custom fork
 # Which allows to build openblas with dynamic CPU architecture selection
