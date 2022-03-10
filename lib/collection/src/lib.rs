@@ -57,23 +57,29 @@ pub struct Collection {
 }
 
 impl Collection {
-    pub fn new(
+    pub async fn new(
         id: CollectionId,
         path: &Path,
         config: &CollectionConfig,
     ) -> Result<Self, CollectionError> {
         config.save(path)?;
         let mut ring = HashRing::new();
-        let mut shards = HashMap::new();
+        let mut shards: HashMap<ShardId, Shard> = HashMap::new();
         for shard_id in 0..config.params.shard_number {
             let shard_path = shard_path(path, shard_id);
             create_dir_all(&shard_path).map_err(|err| CollectionError::ServiceError {
                 error: format!("Can't create shard {shard_id} directory. Error: {}", err),
             })?;
-            shards.insert(
-                shard_id,
-                Shard::build(shard_id, id.clone(), &shard_path, config)?,
-            );
+            let shard = match Shard::build(shard_id, id.clone(), &shard_path, config) {
+                Ok(shard) => shard,
+                Err(err) => {
+                    for (_, mut shard) in shards.drain() {
+                        shard.before_drop().await
+                    }
+                    return Err(err);
+                }
+            };
+            shards.insert(shard_id, shard);
             ring.add(shard_id);
         }
         Ok(Self {
@@ -362,13 +368,13 @@ impl Collection {
     }
 
     pub async fn info(&self) -> CollectionResult<CollectionInfo> {
-        let mut info = self
-            .shards
-            .get(&0)
+        let mut shards = self.all_shards();
+        let mut info = shards
+            .next()
             .expect("At least 1 shard expected")
             .info()
             .await?;
-        for shard in self.all_shards().skip(1) {
+        for shard in shards {
             let mut shard_info = shard.info().await?;
             info.status = max(info.status, shard_info.status);
             info.optimizer_status = max(info.optimizer_status, shard_info.optimizer_status);

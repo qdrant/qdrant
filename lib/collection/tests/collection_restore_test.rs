@@ -12,21 +12,21 @@ use collection::{
 };
 use segment::types::{PayloadSelectorExclude, PayloadType, WithPayloadInterface};
 
-use crate::common::simple_collection_fixture;
+use crate::common::{simple_collection_fixture, N_SHARDS};
 
 mod common;
 
 #[tokio::test]
 async fn test_collection_reloading() {
     test_collection_reloading_with_shards(1).await;
-    test_collection_reloading_with_shards(10).await;
+    test_collection_reloading_with_shards(N_SHARDS).await;
 }
 
 async fn test_collection_reloading_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
     {
-        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number);
+        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
         collection.before_drop().await;
     }
     for _i in 0..5 {
@@ -52,13 +52,13 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
 #[tokio::test]
 async fn test_collection_payload_reloading() {
     test_collection_payload_reloading_with_shards(1).await;
-    test_collection_payload_reloading_with_shards(10).await;
+    test_collection_payload_reloading_with_shards(N_SHARDS).await;
 }
 
 async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
     {
-        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number);
+        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
                 batch: Batch {
@@ -115,13 +115,13 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
 #[tokio::test]
 async fn test_collection_payload_custom_payload() {
     test_collection_payload_custom_payload_with_shards(1).await;
-    test_collection_payload_custom_payload_with_shards(10).await;
+    test_collection_payload_custom_payload_with_shards(N_SHARDS).await;
 }
 
 async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
     {
-        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number);
+        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
                 batch: Batch {
