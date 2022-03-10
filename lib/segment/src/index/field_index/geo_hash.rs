@@ -63,6 +63,23 @@ pub fn encode_max_precision(lon: f64, lat: f64) -> Result<String, GeohashError> 
     encode((lon, lat).into(), GEOHASH_MAX_LENGTH)
 }
 
+pub fn geo_hash_to_box(geo_hash: &GeoHash) -> GeoBoundingBox {
+    let rectangle = decode_bbox(geo_hash).unwrap();
+    let top_left = GeoPoint {
+        lat: rectangle.max().x,
+        lon: rectangle.min().y,
+    };
+    let bottom_right = GeoPoint {
+        lat: rectangle.min().x,
+        lon: rectangle.max().y,
+    };
+
+    GeoBoundingBox {
+        top_left,
+        bottom_right,
+    }
+}
+
 #[derive(Debug)]
 struct GeohashBoundingBox {
     north_west: String,
@@ -604,5 +621,22 @@ mod tests {
             "dr5ruj4477kd",
         ];
         assert_eq!(geo_hashes, expected)
+    }
+
+    #[test]
+    fn turn_geo_hash_to_box() {
+        let geo_box = geo_hash_to_box(&"dr5ruj4477kd".to_string());
+        // dr5ruj4477k9
+        let expected_top_left = GeoPoint {
+            lon: 40.76517451554537,
+            lat: -74.00101382285357,
+        };
+        // dr5ruj4477k6
+        let expected_bottom_right = GeoPoint {
+            lon: 40.76517468318343,
+            lat: -74.00101415812969,
+        };
+        assert_eq!(geo_box.top_left, expected_top_left);
+        assert_eq!(geo_box.bottom_right, expected_bottom_right);
     }
 }

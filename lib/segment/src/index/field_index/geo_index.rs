@@ -1,5 +1,6 @@
 use crate::index::field_index::geo_hash::{
-    circle_hashes, decompose_geo_hash, encode_max_precision, rectangle_hashes, GeoHash,
+    circle_hashes, decompose_geo_hash, encode_max_precision, geo_hash_to_box, rectangle_hashes,
+    GeoHash,
 };
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
@@ -236,12 +237,12 @@ impl PayloadFieldIndex for PersistedGeoMapIndex {
             .points_map
             .iter()
             .filter(move |(_geo_hash, point_ids)| point_ids.len() > threshold)
-            .map(move |(_geo_hash, point_ids)| PayloadBlockCondition {
+            .map(move |(geo_hash, point_ids)| PayloadBlockCondition {
                 condition: FieldCondition {
                     key: key.clone(),
                     r#match: None,
                     range: None,
-                    geo_bounding_box: None, // TODO turn geohash into a filtering geo_bounding_box
+                    geo_bounding_box: Some(geo_hash_to_box(geo_hash)),
                     geo_radius: None,
                 },
                 cardinality: point_ids.len(),
