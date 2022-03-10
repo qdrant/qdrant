@@ -5,15 +5,15 @@ use segment::types::Distance;
 use std::path::Path;
 
 /// Test collections for this upper bound of shards.
-/// Testing with 10+ shards is problematic due to `number of open files problem`
+/// Testing with more shards is problematic due to `number of open files problem`
 /// See https://github.com/qdrant/qdrant/issues/379
 #[allow(dead_code)]
-pub const N_SHARDS: u32 = 5;
+pub const N_SHARDS: u32 = 3;
 
 pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
     vacuum_min_vector_number: 1000,
-    default_segment_number: 5,
+    default_segment_number: 2,
     max_segment_size: 100_000,
     memmap_threshold: 100_000,
     indexing_threshold: 50_000,
