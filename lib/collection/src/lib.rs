@@ -68,10 +68,12 @@ impl Collection {
         let mut shards: HashMap<ShardId, Shard> = HashMap::new();
         for shard_id in 0..config.params.shard_number {
             let shard_path = shard_path(path, shard_id);
-            create_dir_all(&shard_path).map_err(|err| CollectionError::ServiceError {
-                error: format!("Can't create shard {shard_id} directory. Error: {}", err),
-            })?;
-            let shard = match Shard::build(shard_id, id.clone(), &shard_path, config) {
+            let shard = create_dir_all(&shard_path)
+                .map_err(|err| CollectionError::ServiceError {
+                    error: format!("Can't create shard {shard_id} directory. Error: {}", err),
+                })
+                .and_then(|()| Shard::build(shard_id, id.clone(), &shard_path, config));
+            let shard = match shard {
                 Ok(shard) => shard,
                 Err(err) => {
                     let futures: FuturesUnordered<_> = shards
