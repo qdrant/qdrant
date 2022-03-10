@@ -12,6 +12,7 @@ use std::{
 use crate::operations::types::PointRequest;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
+use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
 use hashring::HashRing;
 use itertools::Itertools;
 use operations::{
@@ -73,9 +74,11 @@ impl Collection {
             let shard = match Shard::build(shard_id, id.clone(), &shard_path, config) {
                 Ok(shard) => shard,
                 Err(err) => {
-                    for (_, mut shard) in shards.drain() {
-                        shard.before_drop().await
-                    }
+                    let futures: FuturesUnordered<_> = shards
+                        .iter_mut()
+                        .map(|(_, shard)| shard.before_drop())
+                        .collect();
+                    futures.collect::<Vec<()>>().await;
                     return Err(err);
                 }
             };
@@ -389,9 +392,12 @@ impl Collection {
     }
 
     pub async fn before_drop(&mut self) {
-        for (_, mut shard) in self.shards.drain() {
-            shard.before_drop().await
-        }
+        let futures: FuturesUnordered<_> = self
+            .shards
+            .iter_mut()
+            .map(|(_, shard)| shard.before_drop())
+            .collect();
+        futures.collect::<Vec<()>>().await;
         self.before_drop_called = true
     }
 }
