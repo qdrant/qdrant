@@ -25,10 +25,8 @@ fn compute_cardinality_per_region(
         let points_count = points.len();
         let geo_hashes = decompose_geo_hash(geo_hash);
         geo_hashes.into_iter().for_each(|g| {
-            match cardinalities.get(&g) {
-                None => cardinalities.insert(g, points_count),
-                Some(&count) => cardinalities.insert(g, count + points_count),
-            };
+            let count_for_g = cardinalities.entry(g).or_insert(0);
+            *count_for_g += points_count;
         });
     });
     cardinalities
@@ -148,15 +146,10 @@ impl PersistedGeoMapIndex {
     fn add_many(&mut self, idx: PointOffsetType, values: &[GeoPoint]) {
         for geo_point in values {
             let geo_hash = encode_max_precision(geo_point.lon, geo_point.lat).unwrap();
-            let vec = match self.points_map.get_mut(&geo_hash) {
-                None => {
-                    let new_vec = vec![];
-                    self.points_map.insert(geo_hash.clone(), new_vec);
-                    self.points_map.get_mut(&geo_hash).unwrap()
-                }
-                Some(vec) => vec,
-            };
-            vec.push(idx);
+            self.points_map
+                .entry(geo_hash)
+                .or_insert_with(Vec::new)
+                .push(idx);
         }
     }
 
