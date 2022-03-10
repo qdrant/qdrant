@@ -7,7 +7,7 @@ use crate::index::field_index::{
 };
 use crate::types::{FieldCondition, GeoPoint, PayloadKeyType, PayloadType, PointOffsetType};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::mem;
 
 /// Max number of sub-regions computed for an input geo query
@@ -18,7 +18,7 @@ const GEO_QUERY_MAX_REGION: usize = 12;
 const GEO_MAX_BUCKET_SIZE: usize = 10_000;
 
 fn compute_cardinality_per_region(
-    points_map: &HashMap<GeoHash, Vec<PointOffsetType>>,
+    points_map: &BTreeMap<GeoHash, Vec<PointOffsetType>>,
 ) -> BTreeMap<GeoHash, usize> {
     let mut cardinalities: BTreeMap<GeoHash, usize> = BTreeMap::new();
     points_map.iter().for_each(|(geo_hash, points)| {
@@ -34,46 +34,65 @@ fn compute_cardinality_per_region(
     cardinalities
 }
 
-// FIXME
 fn group_points_per_region(
     cardinality_info: &BTreeMap<GeoHash, usize>,
-    points_map: &HashMap<GeoHash, Vec<PointOffsetType>>,
+    points_map: &BTreeMap<GeoHash, Vec<PointOffsetType>>,
     max_bucket_size: usize,
-) -> HashMap<GeoHash, Vec<PointOffsetType>> {
-    let mut top_regions: HashSet<char> = HashSet::new();
-    cardinality_info.keys().for_each(|geo_hash| {
-        let first_char = geo_hash.chars().next().unwrap();
-        top_regions.insert(first_char);
-    });
-    let mut res = HashMap::new();
-    println!("max_bucket {} top {:?}", max_bucket_size, &top_regions);
-    top_regions.into_iter().for_each(|top| {
+) -> BTreeMap<GeoHash, Vec<PointOffsetType>> {
+    let top_regions: HashSet<(&String, &usize)> = cardinality_info
+        .iter()
+        .filter(|(geo_hash, _count)| geo_hash.len() == 1)
+        .collect();
+    let mut groups = BTreeMap::new();
+    top_regions.into_iter().for_each(|(top, top_count)| {
         // find cutoff point in cardinality for each top region
-        let cutoff = cardinality_info
-            .iter()
-            .rev()
-            .find(|&(geo_hash, count)| {
-                let first_char = geo_hash.chars().next().unwrap();
-                //println!("hash {} count {}", geo_hash, count);
-                first_char == top && count > &max_bucket_size
-            })
-            .map(|(k, _)| k.clone());
-        //println!("cutoff {:?}", &cutoff);
-        let prefix = cutoff.unwrap_or_else(|| top.to_string());
-        points_map
-            .iter()
-            .filter(|(k, _points)| k.starts_with(&prefix))
-            .for_each(|(k, points)| {
-                res.entry(k.clone()).or_insert_with(Vec::new).extend(points);
-            });
+        let cutoff = if top_count < &max_bucket_size {
+            // no need for a cutoff points
+            None
+        } else {
+            // the top region contains too many elements, find the cutoff points
+            cardinality_info
+                .iter()
+                .rev() // start from the highest precision region
+                .filter(|&(geo_hash, _count)| geo_hash.starts_with(top)) // filter tiles from top region
+                .filter(|&(geo_hash, _count)| geo_hash.len() < 12) // filter out leave regions
+                .take_while(|&(_geo_hash, count)| count <= &max_bucket_size) // take while under limit
+                .map(|(k, _)| k.clone())
+                .next()
+        };
+        match cutoff {
+            None => {
+                points_map
+                    .iter()
+                    .filter(|(k, _points)| k.starts_with(top))
+                    .for_each(|(k, points)| {
+                        groups
+                            .entry(k.clone())
+                            .or_insert_with(Vec::new)
+                            .extend(points);
+                    });
+            }
+            Some(cut) => {
+                points_map
+                    .iter()
+                    .filter(|(k, _points)| k.starts_with(&cut))
+                    .for_each(|(_k, points)| {
+                        // aggregate points into the cutoff entry
+                        groups
+                            .entry(cut.clone())
+                            .or_insert_with(Vec::new)
+                            .extend(points);
+                    });
+            }
+        }
     });
-    res
+    groups
 }
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct PersistedGeoMapIndex {
     cardinality_map: BTreeMap<GeoHash, usize>,
-    points_map: HashMap<GeoHash, Vec<PointOffsetType>>,
+    points_map: BTreeMap<GeoHash, Vec<PointOffsetType>>,
 }
 
 impl PersistedGeoMapIndex {
@@ -89,7 +108,6 @@ impl PersistedGeoMapIndex {
             // fallback to decreasing precision within the map if not found
             decompose_geo_hash(geo_hash).into_iter().for_each(|g| {
                 all_possible_regions.insert(g);
-                ()
             })
         });
 
@@ -110,7 +128,7 @@ impl PersistedGeoMapIndex {
                 let sum_region_count: usize = sub_regions
                     .iter()
                     .filter(|r| r.len() == p)
-                    .filter_map(|g| self.cardinality_map.get(g.clone()))
+                    .filter_map(|g| self.cardinality_map.get(*g))
                     .sum();
                 if sum_region_count != 0 {
                     values_count += sum_region_count;
@@ -264,7 +282,7 @@ mod tests {
 
     #[test]
     fn cardinality_per_region() {
-        let input = HashMap::from([
+        let input = BTreeMap::from([
             ("dr5ruj4477kd".to_string(), vec![1, 2, 3]),
             ("dr5ruj4477ku".to_string(), vec![4, 5, 6]),
         ]);
@@ -313,7 +331,7 @@ mod tests {
                         within_condition += 1;
                     }
                 }
-                _ => {}
+                _ => panic!(),
             }
             index.add(idx, &geo_points)
         }
@@ -330,19 +348,36 @@ mod tests {
 
     #[test]
     fn group_per_region() {
-        let input = HashMap::from([
-            ("dr5ruj4477kd".to_string(), vec![1, 2, 3]),
-            ("dr5ruj4477ku".to_string(), vec![4, 5, 6, 7]),
-            ("u33dc1v0xupz".to_string(), vec![8, 9, 10, 11]),
+        let input = BTreeMap::from([
+            ("dr5ruj4477kb".to_string(), vec![10]),
+            ("dr5ruj4477kc".to_string(), vec![11]),
+            ("dr5ruj4477kd".to_string(), vec![12]),
+            ("dr5ruj4477ke".to_string(), vec![13]),
+            ("dr5ruj4477kf".to_string(), vec![14]),
+            ("dr5ruj4477kg".to_string(), vec![15]),
+            ("dr5ruj4477kh".to_string(), vec![16]),
+            ("dr5ruj4477ki".to_string(), vec![17]),
+            ("dr5ruj4477kj".to_string(), vec![18]),
+            ("dr5ruj4477kk".to_string(), vec![19]),
+            ("dr5ruj4477km".to_string(), vec![20]),
+            ("u33dc1v0xupz".to_string(), vec![42]),
         ]);
         let cardinality = compute_cardinality_per_region(&input);
 
-        // max bucket size not reached
-        let groups = group_points_per_region(&cardinality, &input, 5);
+        // max bucket size not reached, use the highest precision
+        let groups = group_points_per_region(&cardinality, &input, 12);
         assert_eq!(groups, input);
 
-        // max bucket size reached
-        let groups = group_points_per_region(&cardinality, &input, 4);
-        assert_ne!(groups, input);
+        // max bucket size reached - aggregate points in lower precision
+        let groups = group_points_per_region(&cardinality, &input, 11);
+        // aggregates points into "dr5ruj4477k" region
+        let expected = BTreeMap::from([
+            (
+                "dr5ruj4477k".to_string(),
+                vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+            ),
+            ("u33dc1v0xupz".to_string(), vec![42]),
+        ]);
+        assert_eq!(groups, expected);
     }
 }
