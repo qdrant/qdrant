@@ -55,6 +55,7 @@ pub struct Shard {
     update_sender: ArcSwap<UnboundedSender<UpdateSignal>>,
     path: PathBuf,
     schema_store: Arc<SchemaStorage>,
+    before_drop_called: bool,
 }
 
 /// Shard holds information about segments and WAL.
@@ -111,6 +112,7 @@ impl Shard {
             update_sender: ArcSwap::from_pointee(update_sender),
             path: collection_path.to_owned(),
             schema_store,
+            before_drop_called: false,
         }
     }
 
@@ -463,6 +465,22 @@ impl Shard {
                     .spawn(move || drop(handle))
                     .unwrap();
                 thread_handler.join().unwrap();
+            }
+        }
+
+        self.before_drop_called = true;
+    }
+}
+
+impl Drop for Shard {
+    fn drop(&mut self) {
+        if !self.before_drop_called {
+            // Panic is used to get fast feedback in unit and integration tests
+            // in cases where `before_drop` was not added.
+            if cfg!(test) {
+                panic!("Collection `before_drop` was not called.")
+            } else {
+                log::error!("Collection `before_drop` was not called.")
             }
         }
     }

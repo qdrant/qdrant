@@ -191,7 +191,8 @@ impl TableOfContent {
                 optimizer_config: optimizers_config,
                 hnsw_config,
             },
-        )?;
+        )
+        .await?;
 
         let mut write_collections = self.collections.write().await;
         write_collections
