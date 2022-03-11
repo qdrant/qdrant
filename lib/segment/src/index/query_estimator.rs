@@ -38,7 +38,7 @@ fn combine_must_estimations(
     CardinalityEstimation {
         primary_clauses: clauses,
         min: min_estimation,
-        exp: exp_estimation,
+        exp: exp_estimation.max(min_estimation),
         max: max_estimation,
     }
 }
