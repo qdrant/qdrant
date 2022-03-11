@@ -5,6 +5,7 @@ use crate::types::{
     VectorElementType,
 };
 use crate::vector_storage::ScoredPointOffset;
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 /// Trait for vector searching
@@ -24,7 +25,7 @@ pub trait VectorIndex {
 
 pub trait PayloadIndex {
     /// Get indexed fields
-    fn indexed_fields(&self) -> Vec<PayloadKeyType>;
+    fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType>;
 
     /// Mark field as one which should be indexed
     fn set_indexed(

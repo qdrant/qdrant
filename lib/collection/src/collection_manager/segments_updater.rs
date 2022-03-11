@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use parking_lot::{RwLock, RwLockWriteGuard};
 
 use segment::types::{
-    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
-    SeqNumberType, VectorElementType,
+    FieldDataType, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType,
+    VectorElementType,
 };
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
@@ -13,7 +13,7 @@ use crate::operations::point_ops::{
     Batch, PointInsertOperations, PointOperations, PointsBatch, PointsList,
 };
 use crate::operations::types::{CollectionError, CollectionResult, VectorType};
-use crate::operations::{FieldDataType, FieldIndexOperations};
+use crate::operations::FieldIndexOperations;
 use itertools::Itertools;
 use segment::entry::entry_point::{OperationResult, SegmentEntry};
 
@@ -298,7 +298,7 @@ pub(crate) fn process_field_index_operation(
             &segments.read(),
             op_num,
             &index_data.field_name,
-            index_data.payload_type,
+            &index_data.field_type,
         ),
         FieldIndexOperations::DeleteIndex(field_name) => {
             delete_field_index(&segments.read(), op_num, field_name)

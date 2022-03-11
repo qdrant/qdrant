@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -12,7 +12,8 @@ use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
-    HnswConfig, Indexes, PayloadIndexType, PayloadKeyType, PointIdType, SegmentConfig, StorageType,
+    HnswConfig, Indexes, PayloadIndexType, PayloadKeyType, PayloadSchemaType, PointIdType,
+    SegmentConfig, StorageType,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -229,7 +230,7 @@ pub trait SegmentOptimizer {
         optimizing_segments: &[LockedSegment],
         proxy_deleted_points: Arc<RwLock<HashSet<PointIdType>>>,
         proxy_deleted_indexes: Arc<RwLock<HashSet<PayloadKeyType>>>,
-        proxy_created_indexes: Arc<RwLock<HashSet<PayloadKeyType>>>,
+        proxy_created_indexes: Arc<RwLock<HashMap<PayloadKeyType, PayloadSchemaType>>>,
         stopped: &AtomicBool,
     ) -> CollectionResult<Segment> {
         let mut segment_builder = self.optimized_segment_builder(optimizing_segments)?;
@@ -249,8 +250,10 @@ pub trait SegmentOptimizer {
         for field in proxy_deleted_indexes.read().iter() {
             segment_builder.indexed_fields.remove(field);
         }
-        for field in proxy_created_indexes.read().iter().cloned() {
-            segment_builder.indexed_fields.insert(field);
+        for (field, schema_type) in proxy_created_indexes.read().iter() {
+            segment_builder
+                .indexed_fields
+                .insert(field.to_owned(), schema_type.to_owned());
         }
 
         let mut optimized_segment: Segment = segment_builder.build(stopped)?;
@@ -270,15 +273,19 @@ pub trait SegmentOptimizer {
         }
 
         let deleted_indexes = proxy_deleted_indexes.read().iter().cloned().collect_vec();
-        let create_indexes = proxy_created_indexes.read().iter().cloned().collect_vec();
+        let create_indexes = proxy_created_indexes.read().clone();
 
         for delete_field_name in &deleted_indexes {
             optimized_segment.delete_field_index(optimized_segment.version(), delete_field_name)?;
             self.check_cancellation(stopped)?;
         }
 
-        for create_field_name in &create_indexes {
-            optimized_segment.create_field_index(optimized_segment.version(), create_field_name)?;
+        for (create_field_name, schema_type) in &create_indexes {
+            optimized_segment.create_field_index(
+                optimized_segment.version(),
+                create_field_name,
+                &Some(schema_type.into()),
+            )?;
             self.check_cancellation(stopped)?;
         }
 
@@ -337,15 +344,18 @@ pub trait SegmentOptimizer {
 
         let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
         let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let proxy_created_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+        let proxy_created_indexes = Arc::new(RwLock::new(HashMap::<
+            PayloadKeyType,
+            PayloadSchemaType,
+        >::new()));
 
         let proxies = optimizing_segments.iter().map(|sg| {
             ProxySegment::new(
                 sg.clone(),
                 tmp_segment.clone(),
                 proxy_deleted_points.clone(),
-                proxy_deleted_indexes.clone(),
                 proxy_created_indexes.clone(),
+                proxy_deleted_indexes.clone(),
             )
         });
 
@@ -406,9 +416,12 @@ pub trait SegmentOptimizer {
                     .delete_field_index(optimized_segment.version(), deleted_field_name)?;
             }
 
-            for created_field_name in proxy_created_indexes.read().iter() {
-                optimized_segment
-                    .create_field_index(optimized_segment.version(), created_field_name)?;
+            for (created_field_name, schema_type) in proxy_created_indexes.read().iter() {
+                optimized_segment.create_field_index(
+                    optimized_segment.version(),
+                    created_field_name,
+                    &Some(schema_type.into()),
+                )?;
             }
 
             let (_, proxies) = write_segments.swap(optimized_segment, &proxy_ids);

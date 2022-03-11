@@ -5,12 +5,12 @@ use crate::types::{
     VectorElementType,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
+use std::collections::HashMap;
 
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
 use atomic_refcell::AtomicRefCell;
-use itertools::Itertools;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -66,12 +66,8 @@ impl PlainPayloadIndex {
 }
 
 impl PayloadIndex for PlainPayloadIndex {
-    fn indexed_fields(&self) -> Vec<PayloadKeyType> {
-        self.config
-            .indexed_fields
-            .keys()
-            .map(|k| k.to_owned())
-            .collect_vec()
+    fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType> {
+        self.config.indexed_fields.clone()
     }
 
     fn set_indexed(

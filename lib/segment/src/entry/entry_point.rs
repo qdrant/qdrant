@@ -5,6 +5,7 @@ use crate::types::{
 };
 use atomicwrites::Error as AtomicIoError;
 use rocksdb::Error;
+use std::collections::HashMap;
 use std::io::Error as IoError;
 use std::result;
 use thiserror::Error;
@@ -205,7 +206,7 @@ pub trait SegmentEntry {
     ) -> OperationResult<bool>;
 
     /// Get indexed fields
-    fn get_indexed_fields(&self) -> Vec<PayloadKeyType>;
+    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType>;
 
     /// Checks if segment errored during last operations
     fn check_error(&self) -> Option<SegmentFailedState>;

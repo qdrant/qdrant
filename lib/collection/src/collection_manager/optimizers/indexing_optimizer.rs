@@ -145,15 +145,18 @@ impl SegmentOptimizer for IndexingOptimizer {
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Borrow;
     use std::ops::Deref;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
+    use segment::payload_storage::PayloadStorageSS;
+    use serde_json::json;
     use tempdir::TempDir;
 
-    use segment::types::StorageType;
+    use segment::types::{FieldDataType, Payload, PayloadSchemaType, StorageType};
 
     use crate::collection_manager::fixtures::random_segment;
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
@@ -163,7 +166,7 @@ mod tests {
     use crate::operations::point_ops::{
         Batch, PointInsertOperations, PointOperations, PointsBatch,
     };
-    use crate::operations::FieldIndexOperations;
+    use crate::operations::{CreateIndex, FieldIndexOperations};
 
     use super::*;
 
@@ -232,7 +235,10 @@ mod tests {
         process_field_index_operation(
             locked_holder.deref(),
             opnum.next().unwrap(),
-            &FieldIndexOperations::CreateIndex(payload_field.clone()),
+            &FieldIndexOperations::CreateIndex(CreateIndex {
+                field_name: payload_field.to_owned(),
+                field_type: Some(FieldDataType::Integer),
+            }),
         )
         .unwrap();
 
@@ -301,18 +307,18 @@ mod tests {
             "Testing that new segments are persisted and old data is removed"
         );
 
-        for _info in &infos {
-            // TODO(gvelo): build schema from indexed fields.
-            // assert!(
-            //     info.schema.contains_key(&payload_field),
-            //     "Testing that payload is not lost"
-            // );
-            // assert!(
-            //     info.schema[&payload_field].indexed,
-            //     "Testing that payload index is not lost"
-            // );
+        for info in &infos {
+            assert!(
+                info.schema.contains_key(&payload_field),
+                "Testing that payload is not lost"
+            );
+            assert!(
+                info.schema[&payload_field].indexed,
+                "Testing that payload index is not lost"
+            );
         }
 
+        let point_payload: Payload = json!({"number":10000i64}).into();
         let insert_point_ops =
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
                 batch: Batch {
@@ -322,7 +328,11 @@ mod tests {
                         vec![1.0, 0.0, 0.5, 0.5],
                         vec![1.0, 0.0, 0.5, 1.0],
                     ],
-                    payloads: None,
+                    payloads: Some(vec![
+                        Some(point_payload.clone()),
+                        Some(point_payload.clone()),
+                        Some(point_payload.clone()),
+                    ]),
                 },
             }));
 

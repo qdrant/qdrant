@@ -3,9 +3,9 @@ use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
 use crate::payload_storage::schema_storage::SchemaStorage;
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
-use crate::types::{PayloadKeyType, SegmentConfig};
+use crate::types::{PayloadKeyType, PayloadSchemaType, SegmentConfig};
 use core::cmp;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,7 +16,7 @@ pub struct SegmentBuilder {
     pub segment: Option<Segment>,
     pub destination_path: PathBuf,
     pub temp_path: PathBuf,
-    pub indexed_fields: HashSet<PayloadKeyType>,
+    pub indexed_fields: HashMap<PayloadKeyType, PayloadSchemaType>,
     pub schema_store: Arc<SchemaStorage>,
 }
 
@@ -113,8 +113,8 @@ impl SegmentBuilder {
                     }
                 }
 
-                for field in other.payload_index.borrow().indexed_fields() {
-                    self.indexed_fields.insert(field);
+                for (field, payload_schema) in other.payload_index.borrow().indexed_fields() {
+                    self.indexed_fields.insert(field, payload_schema);
                 }
 
                 Ok(true)
@@ -129,8 +129,12 @@ impl SegmentBuilder {
             })?;
             self.segment = None;
 
-            for field in &self.indexed_fields {
-                segment.create_field_index(segment.version(), field)?;
+            for (field, payload_schema) in &self.indexed_fields {
+                segment.create_field_index(
+                    segment.version(),
+                    field,
+                    &Some(payload_schema.into()),
+                )?;
                 if stopped.load(Ordering::Relaxed) {
                     return Err(OperationError::Cancelled {
                         description: "Cancelled by external thread".to_string(),

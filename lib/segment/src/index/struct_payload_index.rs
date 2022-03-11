@@ -194,7 +194,6 @@ impl StructPayloadIndex {
         let payload_storage = self.payload.borrow();
 
         let mut builders = index_selector(&field_type);
-
         for point_id in payload_storage.iter_ids() {
             let point_payload = payload_storage.payload(point_id);
             let field_value = point_payload.get_checked(field, &field_type)?;
@@ -230,12 +229,8 @@ impl StructPayloadIndex {
 }
 
 impl PayloadIndex for StructPayloadIndex {
-    fn indexed_fields(&self) -> Vec<PayloadKeyType> {
-        self.config
-            .indexed_fields
-            .keys()
-            .map(|k| k.to_owned())
-            .collect_vec()
+    fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType> {
+        self.config.indexed_fields.clone()
     }
 
     fn set_indexed(

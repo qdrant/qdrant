@@ -8,8 +8,8 @@ mod tests {
     use segment::payload_storage::schema_storage::SchemaStorage;
     use segment::segment_constructor::build_segment;
     use segment::types::{
-        Condition, Distance, FieldCondition, Filter, Indexes, Payload, PayloadIndexType, Range,
-        SegmentConfig, StorageType, WithPayload,
+        Condition, Distance, FieldCondition, FieldDataType, Filter, Indexes, Payload,
+        PayloadIndexType, Range, SegmentConfig, StorageType, WithPayload,
     };
     use serde_json::json;
     use std::sync::Arc;
@@ -56,8 +56,12 @@ mod tests {
             opnum += 1;
         }
 
-        struct_segment.create_field_index(opnum, &str_key).unwrap();
-        struct_segment.create_field_index(opnum, &int_key).unwrap();
+        struct_segment
+            .create_field_index(opnum, &str_key, &Some(FieldDataType::Keyword))
+            .unwrap();
+        struct_segment
+            .create_field_index(opnum, &int_key, &Some(FieldDataType::Integer))
+            .unwrap();
 
         let filter = Filter::new_must(Condition::Field(FieldCondition {
             key: int_key.to_owned(),
@@ -146,8 +150,12 @@ mod tests {
             opnum += 1;
         }
 
-        struct_segment.create_field_index(opnum, &str_key).unwrap();
-        struct_segment.create_field_index(opnum, &int_key).unwrap();
+        struct_segment
+            .create_field_index(opnum, &str_key, &Some(FieldDataType::Keyword))
+            .unwrap();
+        struct_segment
+            .create_field_index(opnum, &int_key, &Some(FieldDataType::Integer))
+            .unwrap();
 
         let attempts = 100;
         for _i in 0..attempts {

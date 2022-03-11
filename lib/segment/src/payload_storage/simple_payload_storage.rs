@@ -70,8 +70,6 @@ impl SimplePayloadStorage {
 
 impl PayloadStorage for SimplePayloadStorage {
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
-        //self.payload
-
         match self.payload.get_mut(&point_id) {
             Some(point_payload) => point_payload.merge(payload),
             None => {

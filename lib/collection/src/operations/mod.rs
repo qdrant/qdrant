@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use hashring::HashRing;
 use schemars::JsonSchema;
-use segment::types::{ExtendedPointId, FieldDataType, PayloadSchemaType};
+use segment::types::{ExtendedPointId, FieldDataType};
 use serde::{Deserialize, Serialize};
 
 use crate::shard::ShardId;

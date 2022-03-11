@@ -238,7 +238,7 @@ impl VectorIndex for HNSWIndex {
 
         let payload_index = self.payload_index.borrow();
 
-        for field in payload_index.indexed_fields() {
+        for (field, _) in payload_index.indexed_fields() {
             debug!("building additional index for field {}", &field);
 
             // ToDo: Think about using connectivity threshold (based on 1/m0) instead of `indexing_threshold`

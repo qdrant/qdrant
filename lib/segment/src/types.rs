@@ -340,6 +340,10 @@ impl Payload {
         get_payload(path, &self.0)
     }
 
+    pub fn get(&self, path: &str) -> Option<PayloadType> {
+        get_payload(path, &self.0)
+    }
+
     pub fn get_schema_type(&self, path: &str) -> PayloadSchemaType {
         match self.get(path) {
             Some(payload) => match payload {
@@ -389,7 +393,7 @@ impl Payload {
                 PayloadSchemaType::Unknown => panic!("cannot check for Unknown type"),
             },
         };
-
+        println!("=== DEFAULT ===");
         return Err(OperationError::TypeError {
             field_name: path.to_owned(),
             expected_type: format!("{:?}", schema_type),
@@ -532,6 +536,20 @@ pub enum FieldDataType {
     Geo,
 }
 
+impl From<&PayloadSchemaType> for FieldDataType {
+    fn from(field_type: &PayloadSchemaType) -> Self {
+        match field_type {
+            PayloadSchemaType::Keyword => FieldDataType::Keyword,
+            PayloadSchemaType::Integer => FieldDataType::Integer,
+            PayloadSchemaType::Float => FieldDataType::Float,
+            PayloadSchemaType::Geo => FieldDataType::Geo,
+            PayloadSchemaType::Unknown => {
+                panic!("cannot convert from {:?} ", field_type)
+            }
+        }
+    }
+}
+
 /// All possible names of payload types
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -544,16 +562,13 @@ pub enum PayloadSchemaType {
     Unknown,
 }
 
-impl From<&Option<FieldDataType>> for PayloadSchemaType {
-    fn from(field_type: &Option<FieldDataType>) -> Self {
+impl From<&FieldDataType> for PayloadSchemaType {
+    fn from(field_type: &FieldDataType) -> Self {
         match field_type {
-            None => PayloadSchemaType::Unknown,
-            Some(field_type) => match field_type {
-                FieldDataType::Keyword => PayloadSchemaType::Keyword,
-                FieldDataType::Integer => PayloadSchemaType::Integer,
-                FieldDataType::Float => PayloadSchemaType::Float,
-                FieldDataType::Geo => PayloadSchemaType::Geo,
-            },
+            FieldDataType::Keyword => PayloadSchemaType::Keyword,
+            FieldDataType::Integer => PayloadSchemaType::Integer,
+            FieldDataType::Float => PayloadSchemaType::Float,
+            FieldDataType::Geo => PayloadSchemaType::Geo,
         }
     }
 }
