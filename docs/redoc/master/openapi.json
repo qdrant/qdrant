@@ -165,7 +165,7 @@
             "default": 1,
             "description": "Number of shards the collection has",
             "format": "uint32",
-            "minimum": 0,
+            "minimum": 1,
             "type": "integer"
           },
           "vector_size": {
@@ -285,6 +285,13 @@
             ],
             "description": "Custom params for Optimizers.  If none - values from service configuration file are used."
           },
+          "shard_number": {
+            "default": 1,
+            "description": "Number of shards in collection. Default is 1, minimum is 1.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
           "vector_size": {
             "format": "uint",
             "minimum": 0,
@@ -338,6 +345,13 @@
               }
             ],
             "description": "Custom params for Optimizers.  If none - values from service configuration file are used."
+          },
+          "shard_number": {
+            "default": 1,
+            "description": "Number of shards in collection. Default is 1, minimum is 1.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
           },
           "vector_size": {
             "format": "uint",

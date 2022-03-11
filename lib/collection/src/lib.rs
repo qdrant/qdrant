@@ -66,7 +66,7 @@ impl Collection {
         config.save(path)?;
         let mut ring = HashRing::new();
         let mut shards: HashMap<ShardId, Shard> = HashMap::new();
-        for shard_id in 0..config.params.shard_number {
+        for shard_id in 0..config.params.shard_number.get() {
             let shard_path = shard_path(path, shard_id);
             let shard = create_dir_all(&shard_path)
                 .map_err(|err| CollectionError::ServiceError {
@@ -108,7 +108,7 @@ impl Collection {
         Self::try_migrate_legacy_one_shard(path)
             .expect("Failed to migrate legacy collection format.");
 
-        for shard_id in 0..config.params.shard_number {
+        for shard_id in 0..config.params.shard_number.get() {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
                 shard_id,
@@ -168,9 +168,29 @@ impl Collection {
                 }
             }
         }
-        // At least one result is always present.
-        // This is a stub to keep the current API as we have only 1 shard for now.
-        results.pop().unwrap()
+        let with_error = results
+            .iter()
+            .filter(|result| matches!(result, Err(_)))
+            .count();
+
+        if with_error > 0 {
+            let err = results
+                .into_iter()
+                .find(|result| matches!(result, Err(_)))
+                .unwrap();
+            if with_error < self.shards.len() {
+                err.map_err(|err| CollectionError::InconsistentFailure {
+                    shards_total: self.shards.len() as u32,
+                    shards_failed: with_error as u32,
+                    first_err: format!("{err}"),
+                })
+            } else {
+                err
+            }
+        } else {
+            // At least one result is always present.
+            results.pop().unwrap()
+        }
     }
 
     pub async fn recommend_by(

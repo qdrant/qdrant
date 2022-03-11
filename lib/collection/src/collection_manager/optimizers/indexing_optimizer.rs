@@ -145,6 +145,7 @@ impl SegmentOptimizer for IndexingOptimizer {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
     use std::ops::Deref;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
@@ -207,7 +208,7 @@ mod tests {
             CollectionParams {
                 vector_size: segment_config.vector_size,
                 distance: segment_config.distance,
-                shard_number: 1,
+                shard_number: NonZeroU32::new(1).unwrap(),
             },
             Default::default(),
             Arc::new(SchemaStorage::new()),

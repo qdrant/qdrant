@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 use std::sync::Arc;
@@ -149,6 +150,7 @@ impl TableOfContent {
         let CreateCollection {
             vector_size,
             distance,
+            shard_number,
             hnsw_config: hnsw_config_diff,
             wal_config: wal_config_diff,
             optimizers_config: optimizers_config_diff,
@@ -165,7 +167,9 @@ impl TableOfContent {
         let collection_params = CollectionParams {
             vector_size,
             distance,
-            shard_number: 1,
+            shard_number: NonZeroU32::new(shard_number).ok_or(StorageError::BadInput {
+                description: "`shard_number` cannot be 0".to_string(),
+            })?,
         };
         let wal_config = match wal_config_diff {
             None => self.storage_config.wal.clone(),

@@ -146,6 +146,9 @@ impl TryFrom<CreateCollection> for storage::content_manager::storage_ops::Storag
                 hnsw_config: value.hnsw_config.map(|v| v.into()),
                 wal_config: value.wal_config.map(|v| v.into()),
                 optimizers_config: value.optimizers_config.map(|v| v.into()),
+                shard_number: value
+                    .shard_number
+                    .unwrap_or_else(storage::content_manager::storage_ops::default_shard_number),
             },
         }))
     }
@@ -235,7 +238,7 @@ impl From<(Instant, collection::operations::types::CollectionInfo)> for GetColle
                             segment::types::Distance::Dot => Distance::Dot,
                         }
                         .into(),
-                        shard_number: config.params.shard_number,
+                        shard_number: config.params.shard_number.get(),
                     }),
                     hnsw_config: Some(HnswConfigDiff {
                         m: Some(config.hnsw_config.m as u64),

@@ -83,12 +83,19 @@ impl From<RenameAlias> for AliasOperations {
 pub struct CreateCollection {
     pub vector_size: usize,
     pub distance: Distance,
+    /// Number of shards in collection. Default is 1, minimum is 1.
+    #[serde(default = "default_shard_number")]
+    pub shard_number: u32,
     /// Custom params for HNSW index. If none - values from service configuration file are used.
     pub hnsw_config: Option<HnswConfigDiff>,
     /// Custom params for WAL. If none - values from service configuration file are used.
     pub wal_config: Option<WalConfigDiff>,
     /// Custom params for Optimizers.  If none - values from service configuration file are used.
     pub optimizers_config: Option<OptimizersConfigDiff>,
+}
+
+pub const fn default_shard_number() -> u32 {
+    1
 }
 
 /// Operation for creating new collection and (optionally) specify index params
