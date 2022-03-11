@@ -360,14 +360,12 @@ mod tests {
     }
     #[test]
     fn test_combine_must_estimations() {
-        let estimations = vec![
-            CardinalityEstimation {
-                primary_clauses: vec![],
-                min: 12,
-                exp: 12,
-                max: 12
-            }
-        ];
+        let estimations = vec![CardinalityEstimation {
+            primary_clauses: vec![],
+            min: 12,
+            exp: 12,
+            max: 12,
+        }];
 
         let res = combine_must_estimations(&estimations, 10_000);
         eprintln!("res = {:#?}", res);
