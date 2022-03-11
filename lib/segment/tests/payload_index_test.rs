@@ -1,16 +1,18 @@
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
+    use rand::Rng;
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{
         random_filter, random_geo_payload, random_int_payload, random_keyword_payload,
-        random_vector,
+        random_vector, LAT_RANGE, LON_RANGE,
     };
     use segment::payload_storage::schema_storage::SchemaStorage;
     use segment::segment_constructor::build_segment;
     use segment::types::{
-        Condition, Distance, FieldCondition, Filter, Indexes, PayloadIndexType, PayloadKeyType,
-        PayloadType, Range, SegmentConfig, StorageType, TheMap, WithPayload,
+        Condition, Distance, FieldCondition, Filter, GeoPoint, GeoRadius, Indexes,
+        PayloadIndexType, PayloadKeyType, PayloadType, Range, SegmentConfig, StorageType, TheMap,
+        WithPayload,
     };
     use std::sync::Arc;
     use tempdir::TempDir;
@@ -218,7 +220,7 @@ mod tests {
         let str_key = "kvd".to_string();
         let geo_key = "geo".to_string();
 
-        let num_points = 1000;
+        let num_points = 10000;
         let num_geo_values = 1;
 
         let mut opnum = 0;
@@ -251,8 +253,28 @@ mod tests {
         let attempts = 100;
         for _i in 0..attempts {
             let query_vector = random_vector(&mut rnd, dim);
-            // TODO generate geo filter instead
-            let query_filter = random_filter(&mut rnd);
+            let r_meters = rnd.gen_range(1.0..10000.0);
+            let geo_radius = GeoRadius {
+                center: GeoPoint {
+                    lon: rnd.gen_range(LON_RANGE),
+                    lat: rnd.gen_range(LAT_RANGE),
+                },
+                radius: r_meters,
+            };
+
+            let condition = Condition::Field(FieldCondition {
+                key: geo_key.clone(),
+                r#match: None,
+                range: None,
+                geo_bounding_box: None,
+                geo_radius: Some(geo_radius),
+            });
+
+            let query_filter = Filter {
+                should: None,
+                must: Some(vec![condition]),
+                must_not: None,
+            };
 
             let plain_result = plain_segment
                 .search(
@@ -264,6 +286,16 @@ mod tests {
                     None,
                 )
                 .unwrap();
+
+            let estimation = plain_segment
+                .payload_index
+                .borrow()
+                .estimate_cardinality(&query_filter);
+
+            assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
+            assert!(estimation.exp <= estimation.max, "{:#?}", estimation);
+            assert!(estimation.max <= num_points as usize, "{:#?}", estimation);
+
             let struct_result = struct_segment
                 .search(
                     &query_vector,
