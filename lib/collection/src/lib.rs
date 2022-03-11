@@ -168,9 +168,30 @@ impl Collection {
                 }
             }
         }
-        // At least one result is always present.
-        // This is a stub to keep the current API as we have only 1 shard for now.
-        results.pop().unwrap()
+        let with_error = results
+            .iter()
+            .filter(|result| matches!(result, Err(_)))
+            .count();
+
+        if with_error > 0 {
+            let err = results
+                .into_iter()
+                .find(|result| matches!(result, Err(_)))
+                .unwrap()
+                .unwrap_err();
+            if with_error < self.shards.len() {
+                Err(CollectionError::InconsistentFailure {
+                    shards_total: self.shards.len() as u32,
+                    shards_failed: with_error as u32,
+                    first_err: format!("{err}"),
+                })
+            } else {
+                Err(err)
+            }
+        } else {
+            // At least one result is always present.
+            Ok(results.pop().unwrap().unwrap())
+        }
     }
 
     pub async fn recommend_by(

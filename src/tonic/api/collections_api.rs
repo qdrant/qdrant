@@ -146,7 +146,9 @@ impl TryFrom<CreateCollection> for storage::content_manager::storage_ops::Storag
                 hnsw_config: value.hnsw_config.map(|v| v.into()),
                 wal_config: value.wal_config.map(|v| v.into()),
                 optimizers_config: value.optimizers_config.map(|v| v.into()),
-                shard_number: todo!(),
+                shard_number: value
+                    .shard_number
+                    .unwrap_or(storage::content_manager::storage_ops::default_shard_number()),
             },
         }))
     }

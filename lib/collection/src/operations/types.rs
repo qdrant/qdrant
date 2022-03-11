@@ -16,8 +16,7 @@ use segment::types::{
     SeqNumberType, TheMap, VectorElementType, WithPayloadInterface,
 };
 
-use crate::config::CollectionConfig;
-use crate::wal::WalError;
+use crate::{config::CollectionConfig, wal::WalError};
 use std::collections::HashMap;
 
 /// Type of vector in API
@@ -209,6 +208,14 @@ pub enum CollectionError {
     BadRequest { description: String },
     #[error("Operation Cancelled: {description}")]
     Cancelled { description: String },
+    #[error(
+        "{shards_failed} out of {shards_total} shards failed to apply operation. First error captured: {first_err}"
+    )]
+    InconsistentFailure {
+        shards_total: u32,
+        shards_failed: u32,
+        first_err: String,
+    },
 }
 
 impl From<OperationError> for CollectionError {

@@ -93,7 +93,7 @@ pub struct CreateCollection {
     pub optimizers_config: Option<OptimizersConfigDiff>,
 }
 
-const fn default_shard_number() -> u32 {
+pub const fn default_shard_number() -> u32 {
     1
 }
 

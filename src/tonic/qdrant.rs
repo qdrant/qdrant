@@ -134,6 +134,9 @@ pub struct CreateCollection {
     /// Configuration of the optimizers
     #[prost(message, optional, tag = "6")]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
+    /// Number of shards in the collection, default = 1
+    #[prost(uint32, optional, tag = "7")]
+    pub shard_number: ::core::option::Option<u32>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollection {
