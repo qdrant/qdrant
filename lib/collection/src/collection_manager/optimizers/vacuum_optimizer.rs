@@ -210,6 +210,7 @@ mod tests {
             CollectionParams {
                 vector_size: 4,
                 distance: Distance::Dot,
+                shard_number: 1,
             },
             Default::default(),
             Arc::new(SchemaStorage::new()),

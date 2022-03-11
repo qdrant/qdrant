@@ -7,16 +7,52 @@ option java_outer_classname = "QdrantProto";
 package qdrant;
 
 service Points {
+  /*
+  Perform insert + updates on points. If point with given ID already exists - it will be overwritten.
+   */
   rpc Upsert (UpsertPoints) returns (PointsOperationResponse) {}
+  /*
+  Delete points
+   */
   rpc Delete (DeletePoints) returns (PointsOperationResponse) {}
+  /*
+  Retrieve points
+   */
   rpc Get (GetPoints) returns (GetResponse) {}
+  /*
+  Set payload for points
+   */
   rpc SetPayload (SetPayloadPoints) returns (PointsOperationResponse) {}
+  /*
+  Delete specified key payload for points
+   */
   rpc DeletePayload (DeletePayloadPoints) returns (PointsOperationResponse) {}
+  /*
+  Remove all payload for specified points
+   */
   rpc ClearPayload (ClearPayloadPoints) returns (PointsOperationResponse) {}
+  /*
+  Create index for field in collection
+   */
   rpc CreateFieldIndex (CreateFieldIndexCollection) returns (PointsOperationResponse) {}
+  /*
+  Delete field index for collection
+   */
   rpc DeleteFieldIndex (DeleteFieldIndexCollection) returns (PointsOperationResponse) {}
+  /*
+  Retrieve closest points based on vector similarity and given filtering conditions
+   */
   rpc Search (SearchPoints) returns (SearchResponse) {}
+  /*
+  Iterate over all or filtered points points
+  */
   rpc Scroll (ScrollPoints) returns (ScrollResponse) {}
+  /*
+  Look for the points which are closer to stored positive examples and at the same time further to negative examples.
+   */
+  rpc Recommend (RecommendPoints) returns (RecommendResponse) {}
+
+
 }
 
 // ---------------------------------------------
@@ -25,8 +61,8 @@ service Points {
 
 message PointId {
   oneof point_id_options {
-    uint64 num = 1;
-    string uuid = 2;
+    uint64 num = 1; // Numerical ID of the point
+    string uuid = 2; // UUID
   }
 }
 
@@ -36,93 +72,110 @@ message PointId {
 // ---------------------------------------------
 
 message UpsertPoints {
-  string collection = 1;
-  optional bool wait = 2;
+  string collection_name = 1; // name of the collection
+  optional bool wait = 2; // Wait until the changes have been applied?
   repeated PointStruct points = 3;
 }
 
 message DeletePoints {
-  string collection = 1;
-  optional bool wait = 2;
-  PointsSelector points = 3;
+  string collection_name = 1; // name of the collection
+  optional bool wait = 2; // Wait until the changes have been applied?
+  PointsSelector points = 3; // Affected points
 }
 
 message GetPoints {
-  string collection = 1;
-  repeated PointId ids = 2;
-  optional bool with_vector = 3;
-  WithPayloadSelector with_payload = 4;
+  string collection_name = 1; // name of the collection
+  repeated PointId ids = 2; // List of points to retrieve
+  optional bool with_vector = 3; // Return point vector with the result.
+  WithPayloadSelector with_payload = 4; // Options for specifying which payload to include or not
 }
 
 message SetPayloadPoints {
-  string collection = 1;
-  optional bool wait = 2;
-  map<string, Payload> payload = 3;
-  repeated PointId points = 4;
+  string collection_name = 1; // name of the collection
+  optional bool wait = 2; // Wait until the changes have been applied?
+  map<string, Payload> payload = 3; // New payload values
+  repeated PointId points = 4; // List of point to modify
 }
 
 message DeletePayloadPoints {
-  string collection = 1;
-  optional bool wait = 2;
-  repeated string keys = 3;
-  repeated PointId points = 4;
+  string collection_name = 1; // name of the collection
+  optional bool wait = 2; // Wait until the changes have been applied?
+  repeated string keys = 3; // List of keys to delete
+  repeated PointId points = 4; // Affected points
 }
 
 message ClearPayloadPoints {
-  string collection = 1;
-  optional bool wait = 2;
-  PointsSelector points = 3;
+  string collection_name = 1; // name of the collection
+  optional bool wait = 2; // Wait until the changes have been applied?
+  PointsSelector points = 3; // Affected points
 }
 
 message CreateFieldIndexCollection {
-  string collection = 1;
-  optional bool wait = 2;
-  string field_name = 3;
+  string collection_name = 1; // name of the collection
+  optional bool wait = 2; // Wait until the changes have been applied?
+  string field_name = 3; // Field name to index
 }
 
 message DeleteFieldIndexCollection {
-  string collection = 1;
-  optional bool wait = 2;
-  string field_name = 3;
+  string collection_name = 1; // name of the collection
+  optional bool wait = 2; // Wait until the changes have been applied?
+  string field_name = 3; // Field name to delete
 }
 
 message PayloadIncludeSelector {
-  repeated string include = 1;
+  repeated string include = 1; // List of payload keys to include into result
 }
 
 message PayloadExcludeSelector {
-  repeated string exclude = 1;
+  repeated string exclude = 1; // List of payload keys to exclude from the result
 }
 
 message WithPayloadSelector {
   oneof selector_options {
-    bool enable = 1;
+    bool enable = 1; // If `true` - return all payload, if `false` - none
     PayloadIncludeSelector include = 2;
     PayloadExcludeSelector exclude = 3;
   }
 }
 
 message SearchParams {
+  /*
+  Params relevant to HNSW index. Size of the beam in a beam-search.
+  Larger the value - more accurate the result, more time required for search.
+   */
   optional uint64 hnsw_ef = 1;
+
+
 }
 
 message SearchPoints {
-  string collection = 1;
-  repeated float vector = 2;
-  Filter filter = 3;
-  uint64 top = 4;
-  optional bool with_vector = 5;
-  WithPayloadSelector with_payload = 6;
-  SearchParams params = 7;
+  string collection_name = 1; // name of the collection
+  repeated float vector = 2; // vector
+  Filter filter = 3; // Filter conditions - return only those points that satisfy the specified conditions
+  uint64 top = 4; // Max number of result
+  optional bool with_vector = 5; // Return point vector with the result.
+  WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not
+  SearchParams params = 7; // Search config
 }
 
 message ScrollPoints {
-  string collection = 1;
-  Filter filter = 2;
-  optional PointId offset = 3;
-  optional uint32 limit = 4;
-  optional bool with_vector = 5;
-  WithPayloadSelector with_payload = 6;
+  string collection_name = 1;
+  Filter filter = 2; // Filter conditions - return only those points that satisfy the specified conditions
+  optional PointId offset = 3; // Start with this ID
+  optional uint32 limit = 4; // Max number of result
+  optional bool with_vector = 5; // Return point vector with the result.
+  WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not
+}
+
+message RecommendPoints {
+  string collection_name = 1; // name of the collection
+  repeated PointId positive = 2; // Look for vectors closest to those
+  repeated PointId negative = 3; // Try to avoid vectors like this
+  Filter filter = 4; // Filter conditions - return only those points that satisfy the specified conditions
+  uint64 top = 5; // Max number of result
+  optional bool with_vector = 6; // Return point vector with the result.
+  WithPayloadSelector with_payload = 7; // Options for specifying which payload to include or not
+  SearchParams params = 8; // Search config
 }
 
 // ---------------------------------------------
@@ -131,36 +184,37 @@ message ScrollPoints {
 
 message PointsOperationResponse {
   UpdateResult result = 1;
-  double time = 2;
+  double time = 2; // Time spent to process
 }
 
 message UpdateResult {
-  uint64 operation_id = 1;
-  UpdateStatus status = 2;
+  uint64 operation_id = 1; // Number of operation
+  UpdateStatus status = 2; // Operation status
 }
 
 enum UpdateStatus {
-  Acknowledged = 0;
-  Completed = 1;
+  UnknownUpdateStatus = 0;
+  Acknowledged = 1; // Update is received, but not processed yet
+  Completed = 2; // Update is applied and ready for search
 }
 
 message ScoredPoint {
-  PointId id = 1;
-  map<string, Payload> payload = 2;
-  float score = 3;
-  repeated float vector = 4;
-  uint64 version = 5;
+  PointId id = 1; // Point id
+  map<string, Payload> payload = 2; // Payload
+  float score = 3; // Similarity score
+  repeated float vector = 4; // Vector
+  uint64 version = 5; // Last update operation applied to this point
 }
 
 message SearchResponse {
   repeated ScoredPoint result = 1;
-  double time = 2;
+  double time = 2; // Time spent to process
 }
 
 message ScrollResponse {
-  optional PointId next_page_offset = 1;
+  optional PointId next_page_offset = 1; // Use this offset for the next query
   repeated RetrievedPoint result = 2;
-  double time = 3;
+  double time = 3; // Time spent to process
 }
 
 message RetrievedPoint {
@@ -171,7 +225,12 @@ message RetrievedPoint {
 
 message GetResponse {
   repeated RetrievedPoint result = 1;
-  double time = 2;
+  double time = 2; // Time spent to process
+}
+
+message RecommendResponse {
+  repeated ScoredPoint result = 1;
+  double time = 2; // Time spent to process
 }
 
 // ---------------------------------------------
@@ -179,9 +238,9 @@ message GetResponse {
 // ---------------------------------------------
 
 message Filter {
-  repeated Condition should = 1;
-  repeated Condition must = 2;
-  repeated Condition must_not = 3;
+  repeated Condition should = 1; // At least one of those conditions should match
+  repeated Condition must = 2; // All conditions must match
+  repeated Condition must_not = 3; // All conditions must NOT match
 }
 
 message Condition {
@@ -198,16 +257,16 @@ message HasIdCondition {
 
 message FieldCondition {
   string key = 1;
-  Match match = 2;
-  Range range = 3;
-  GeoBoundingBox geo_bounding_box = 4;
-  GeoRadius geo_radius = 5;
+  Match match = 2; // Check if point has field with a given value
+  Range range = 3; // Check if points value lies in a given range
+  GeoBoundingBox geo_bounding_box = 4; // Check if points geo location lies in a given area
+  GeoRadius geo_radius = 5; // Check if geo point is within a given radius
 }
 
 message Match {
   oneof match_value {
-    string keyword = 1;
-    int64 integer = 2;
+    string keyword = 1; // Match string keyword
+    int64 integer = 2; // Match integer
   }
 }
 
@@ -219,13 +278,13 @@ message Range {
 }
 
 message GeoBoundingBox {
-  GeoPoint top_left = 1;
-  GeoPoint bottom_right = 2;
+  GeoPoint top_left = 1; // north-west corner
+  GeoPoint bottom_right = 2; // south-east corner
 }
 
 message GeoRadius {
-  GeoPoint center = 1;
-  float radius = 2;
+  GeoPoint center = 1; // Center of the circle
+  float radius = 2; // In meters
 }
 
 // ---------------------------------------------

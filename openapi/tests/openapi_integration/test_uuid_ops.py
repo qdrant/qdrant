@@ -15,9 +15,9 @@ def setup():
 
 def test_uuid_operations():
     response = request_with_validation(
-        api='/collections/{name}/points',
+        api='/collections/{collection_name}/points',
         method="PUT",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
             "points": [
@@ -37,8 +37,8 @@ def test_uuid_operations():
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{name}/points/{id}',
+        api='/collections/{collection_name}/points/{id}',
         method="GET",
-        path_params={'name': collection_name, 'id': "b524a3c4-c568-4383-8019-c9ca08243d6a"},
+        path_params={'collection_name': collection_name, 'id': "b524a3c4-c568-4383-8019-c9ca08243d6a"},
     )
     assert response.ok

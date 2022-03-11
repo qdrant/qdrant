@@ -3,25 +3,25 @@ from openapi_integration.helpers.helpers import request_with_validation
 
 def drop_collection(collection_name='test_collection'):
     response = request_with_validation(
-        api='/collections/{name}',
+        api='/collections/{collection_name}',
         method="DELETE",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
     )
     assert response.ok
 
 
 def basic_collection_setup(collection_name='test_collection'):
     response = request_with_validation(
-        api='/collections/{name}',
+        api='/collections/{collection_name}',
         method="DELETE",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
     )
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{name}',
+        api='/collections/{collection_name}',
         method="PUT",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         body={
             "vector_size": 4,
             "distance": "Dot"
@@ -30,16 +30,16 @@ def basic_collection_setup(collection_name='test_collection'):
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{name}',
+        api='/collections/{collection_name}',
         method="GET",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
     )
     assert response.ok
 
     response = request_with_validation(
-        api='/collections/{name}/points',
+        api='/collections/{collection_name}/points',
         method="PUT",
-        path_params={'name': collection_name},
+        path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
             "points": [

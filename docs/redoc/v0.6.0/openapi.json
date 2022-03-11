@@ -161,13 +161,6 @@
           "distance": {
             "$ref": "#/components/schemas/Distance"
           },
-          "shard_number": {
-            "default": 1,
-            "description": "Number of shards the collection has",
-            "format": "uint32",
-            "minimum": 0,
-            "type": "integer"
-          },
           "vector_size": {
             "description": "Size of a vectors used",
             "format": "uint",
@@ -311,9 +304,6 @@
       "CreateCollectionOperation": {
         "description": "Operation for creating new collection and (optionally) specify index params",
         "properties": {
-          "collection_name": {
-            "type": "string"
-          },
           "distance": {
             "$ref": "#/components/schemas/Distance"
           },
@@ -327,6 +317,9 @@
               }
             ],
             "description": "Custom params for HNSW index. If none - values from service configuration file are used."
+          },
+          "name": {
+            "type": "string"
           },
           "optimizers_config": {
             "anyOf": [
@@ -357,8 +350,8 @@
           }
         },
         "required": [
-          "collection_name",
           "distance",
+          "name",
           "vector_size"
         ],
         "type": "object"
@@ -1969,7 +1962,7 @@
       "UpdateCollectionOperation": {
         "description": "Operation for updating parameters of the existing collection",
         "properties": {
-          "collection_name": {
+          "name": {
             "type": "string"
           },
           "optimizers_config": {
@@ -1985,7 +1978,7 @@
           }
         },
         "required": [
-          "collection_name"
+          "name"
         ],
         "type": "object"
       },
@@ -2089,7 +2082,7 @@
       "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
     },
     "title": "Qdrant API",
-    "version": "master"
+    "version": "v0.6.0"
   },
   "openapi": "3.0.1",
   "paths": {

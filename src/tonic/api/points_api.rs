@@ -12,7 +12,8 @@ use crate::tonic::qdrant::points_server::Points;
 use crate::tonic::qdrant::{
     ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
     DeletePayloadPoints, DeletePoints, GetPoints, GetResponse, PointsOperationResponse,
-    ScrollPoints, ScrollResponse, SearchPoints, SearchResponse, SetPayloadPoints, UpsertPoints,
+    RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse,
+    SetPayloadPoints, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsList};
@@ -40,7 +41,7 @@ impl Points for PointsService {
         request: Request<UpsertPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let UpsertPoints {
-            collection,
+            collection_name,
             wait,
             points,
         } = request.into_inner();
@@ -57,7 +58,7 @@ impl Points for PointsService {
         let timing = Instant::now();
         let result = do_update_points(
             self.toc.as_ref(),
-            &collection,
+            &collection_name,
             operation,
             wait.unwrap_or(false),
         )
@@ -73,7 +74,7 @@ impl Points for PointsService {
         request: Request<DeletePoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let DeletePoints {
-            collection,
+            collection_name,
             wait,
             points,
         } = request.into_inner();
@@ -86,7 +87,7 @@ impl Points for PointsService {
         let timing = Instant::now();
         let result = do_delete_points(
             self.toc.as_ref(),
-            &collection,
+            &collection_name,
             points_selector,
             wait.unwrap_or(false),
         )
@@ -99,7 +100,7 @@ impl Points for PointsService {
 
     async fn get(&self, request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
         let GetPoints {
-            collection,
+            collection_name,
             ids,
             with_vector,
             with_payload,
@@ -116,7 +117,7 @@ impl Points for PointsService {
 
         let timing = Instant::now();
 
-        let records = do_get_points(self.toc.as_ref(), &collection, point_request)
+        let records = do_get_points(self.toc.as_ref(), &collection_name, point_request)
             .await
             .map_err(error_to_status)?;
 
@@ -133,7 +134,7 @@ impl Points for PointsService {
         request: Request<SetPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let SetPayloadPoints {
-            collection,
+            collection_name,
             wait,
             payload,
             points,
@@ -150,7 +151,7 @@ impl Points for PointsService {
         let timing = Instant::now();
         let result = do_set_payload(
             self.toc.as_ref(),
-            &collection,
+            &collection_name,
             operation,
             wait.unwrap_or(false),
         )
@@ -166,7 +167,7 @@ impl Points for PointsService {
         request: Request<DeletePayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let DeletePayloadPoints {
-            collection,
+            collection_name,
             wait,
             keys,
             points,
@@ -183,7 +184,7 @@ impl Points for PointsService {
         let timing = Instant::now();
         let result = do_delete_payload(
             self.toc.as_ref(),
-            &collection,
+            &collection_name,
             operation,
             wait.unwrap_or(false),
         )
@@ -199,7 +200,7 @@ impl Points for PointsService {
         request: Request<ClearPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let ClearPayloadPoints {
-            collection,
+            collection_name,
             wait,
             points,
         } = request.into_inner();
@@ -212,7 +213,7 @@ impl Points for PointsService {
         let timing = Instant::now();
         let result = do_clear_payload(
             self.toc.as_ref(),
-            &collection,
+            &collection_name,
             points_selector,
             wait.unwrap_or(false),
         )
@@ -228,7 +229,7 @@ impl Points for PointsService {
         request: Request<CreateFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let CreateFieldIndexCollection {
-            collection,
+            collection_name,
             wait,
             field_name,
         } = request.into_inner();
@@ -238,7 +239,7 @@ impl Points for PointsService {
         let timing = Instant::now();
         let result = do_create_index(
             self.toc.as_ref(),
-            &collection,
+            &collection_name,
             operation,
             wait.unwrap_or(false),
         )
@@ -254,7 +255,7 @@ impl Points for PointsService {
         request: Request<DeleteFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let DeleteFieldIndexCollection {
-            collection,
+            collection_name,
             wait,
             field_name,
         } = request.into_inner();
@@ -262,7 +263,7 @@ impl Points for PointsService {
         let timing = Instant::now();
         let result = do_delete_index(
             self.toc.as_ref(),
-            &collection,
+            &collection_name,
             field_name,
             wait.unwrap_or(false),
         )
@@ -278,7 +279,7 @@ impl Points for PointsService {
         request: Request<SearchPoints>,
     ) -> Result<Response<SearchResponse>, Status> {
         let SearchPoints {
-            collection,
+            collection_name,
             vector,
             filter,
             top,
@@ -297,7 +298,7 @@ impl Points for PointsService {
         };
 
         let timing = Instant::now();
-        let scored_points = do_search_points(self.toc.as_ref(), &collection, search_request)
+        let scored_points = do_search_points(self.toc.as_ref(), &collection_name, search_request)
             .await
             .map_err(error_to_status)?;
 
@@ -317,7 +318,7 @@ impl Points for PointsService {
         request: Request<ScrollPoints>,
     ) -> Result<Response<ScrollResponse>, Status> {
         let ScrollPoints {
-            collection,
+            collection_name,
             filter,
             offset,
             limit,
@@ -334,7 +335,7 @@ impl Points for PointsService {
         };
 
         let timing = Instant::now();
-        let scrolled_points = do_scroll_points(self.toc.as_ref(), &collection, scroll_request)
+        let scrolled_points = do_scroll_points(self.toc.as_ref(), &collection_name, scroll_request)
             .await
             .map_err(error_to_status)?;
 
@@ -342,6 +343,56 @@ impl Points for PointsService {
             next_page_offset: scrolled_points.next_page_offset.map(|n| n.into()),
             result: scrolled_points
                 .points
+                .into_iter()
+                .map(|point| point.into())
+                .collect(),
+            time: timing.elapsed().as_secs_f64(),
+        };
+
+        Ok(Response::new(response))
+    }
+
+    async fn recommend(
+        &self,
+        request: Request<RecommendPoints>,
+    ) -> Result<Response<RecommendResponse>, Status> {
+        let RecommendPoints {
+            collection_name,
+            positive,
+            negative,
+            filter,
+            top,
+            with_vector,
+            with_payload,
+            params,
+        } = request.into_inner();
+
+        let request = collection::operations::types::RecommendRequest {
+            positive: positive
+                .into_iter()
+                .map(|p| p.try_into())
+                .collect::<Result<_, _>>()?,
+            negative: negative
+                .into_iter()
+                .map(|p| p.try_into())
+                .collect::<Result<_, _>>()?,
+            filter: filter.map(|f| f.try_into()).transpose()?,
+            params: params.map(|p| p.into()),
+            top: top as usize,
+            with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
+            with_vector: with_vector.unwrap_or(false),
+        };
+
+        let timing = Instant::now();
+        let recommended_points = self
+            .toc
+            .as_ref()
+            .recommend(&collection_name, request)
+            .await
+            .map_err(error_to_status)?;
+
+        let response = RecommendResponse {
+            result: recommended_points
                 .into_iter()
                 .map(|point| point.into())
                 .collect(),

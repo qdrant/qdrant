@@ -221,7 +221,7 @@ tags:
 
 paths:
 
-  /collections/{name}/points/scroll:
+  /collections/{collection_name}/points/scroll:
     post:
       tags:
         - points
@@ -236,7 +236,7 @@ paths:
               $ref: "#/components/schemas/ScrollRequest"
 
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to retrieve from
           required: true
@@ -244,7 +244,7 @@ paths:
             type: string
       responses: #@ response(reference("ScrollResult"))
 
-  /collections/{name}/points/search:
+  /collections/{collection_name}/points/search:
     post:
       tags:
         - points
@@ -259,7 +259,7 @@ paths:
               $ref: "#/components/schemas/SearchRequest"
 
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to search in
           required: true
@@ -267,7 +267,7 @@ paths:
             type: string
       responses: #@ response(array(reference("ScoredPoint")))
 
-  /collections/{name}/points/recommend:
+  /collections/{collection_name}/points/recommend:
     post:
       tags:
         - points
@@ -282,7 +282,7 @@ paths:
               $ref: "#/components/schemas/RecommendRequest"
 
       parameters:
-        - name: name
+        - name: collection_name
           in: path
           description: Name of the collection to search in
           required: true
