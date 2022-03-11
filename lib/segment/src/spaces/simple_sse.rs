@@ -6,7 +6,6 @@ use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "sse")]
 unsafe fn hsum128_ps_sse(x: __m128) -> f32 {
     let x64: __m128 = _mm_add_ps(x, _mm_movehl_ps(x, x));
@@ -14,7 +13,6 @@ unsafe fn hsum128_ps_sse(x: __m128) -> f32 {
     _mm_cvtss_f32(x32)
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "sse")]
 pub unsafe fn euclid_similarity_sse(
     v1: &[VectorElementType],
@@ -35,7 +33,6 @@ pub unsafe fn euclid_similarity_sse(
     -res.sqrt()
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "sse")]
 pub unsafe fn cosine_preprocess_sse(vector: &[VectorElementType]) -> Vec<VectorElementType> {
     let n = vector.len();
@@ -54,7 +51,6 @@ pub unsafe fn cosine_preprocess_sse(vector: &[VectorElementType]) -> Vec<VectorE
     vector.iter().map(|x| x / length).collect()
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "sse")]
 pub unsafe fn dot_similarity_sse(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     let n = v1.len();
@@ -75,12 +71,12 @@ pub unsafe fn dot_similarity_sse(v1: &[VectorElementType], v2: &[VectorElementTy
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::spaces::simple::*;
-
     #[cfg(target_feature = "sse")]
     #[test]
     fn test_spaces_sse() {
+        use super::*;
+        use crate::spaces::simple::*;
+
         if is_x86_feature_detected!("sse") {
             let v1: Vec<f32> = vec![
                 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,

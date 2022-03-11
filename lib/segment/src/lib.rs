@@ -1,4 +1,4 @@
-#![feature(stdsimd)]
+#![cfg_attr(target_feature = "avx512f", feature(stdsimd))]
 
 mod common;
 pub mod entry;

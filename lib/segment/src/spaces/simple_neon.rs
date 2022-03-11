@@ -2,7 +2,7 @@ use crate::types::{ScoreType, VectorElementType};
 
 use std::arch::aarch64::*;
 
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[cfg(target_feature = "neon")]
 pub unsafe fn euclid_similarity_neon(
     v1: &[VectorElementType],
     v2: &[VectorElementType],
@@ -24,7 +24,7 @@ pub unsafe fn euclid_similarity_neon(
     -res.sqrt()
 }
 
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[cfg(target_feature = "neon")]
 pub unsafe fn cosine_preprocess_neon(vector: &[VectorElementType]) -> Vec<VectorElementType> {
     let n = vector.len();
     let m = n - (n % 4);
@@ -42,7 +42,7 @@ pub unsafe fn cosine_preprocess_neon(vector: &[VectorElementType]) -> Vec<Vector
     vector.iter().map(|x| x / length).collect()
 }
 
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[cfg(target_feature = "neon")]
 pub unsafe fn dot_similarity_neon(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     let n = v1.len();
     let m = n - (n % 4);

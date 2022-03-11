@@ -1,8 +1,10 @@
+#[cfg(target_feature = "avx512f")]
 use crate::types::{ScoreType, VectorElementType};
 
+#[cfg(target_feature = "avx512f")]
 use std::arch::x86_64::*;
 
-#[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
+#[cfg(target_feature = "avx512f")]
 pub unsafe fn euclid_similarity_avx512f(
     v1: &[VectorElementType],
     v2: &[VectorElementType],
@@ -21,7 +23,7 @@ pub unsafe fn euclid_similarity_avx512f(
     -res.sqrt()
 }
 
-#[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
+#[cfg(target_feature = "avx512f")]
 pub unsafe fn cosine_preprocess_avx512f(vector: &[VectorElementType]) -> Vec<VectorElementType> {
     let n = vector.len();
     let m = n - (n % 16);
@@ -41,7 +43,7 @@ pub unsafe fn cosine_preprocess_avx512f(vector: &[VectorElementType]) -> Vec<Vec
     vector.iter().map(|x| x / length).collect()
 }
 
-#[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
+#[cfg(target_feature = "avx512f")]
 pub unsafe fn dot_similarity_avx512f(
     v1: &[VectorElementType],
     v2: &[VectorElementType],
@@ -61,12 +63,12 @@ pub unsafe fn dot_similarity_avx512f(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::spaces::simple::*;
-
     #[cfg(target_feature = "avx512f")]
     #[test]
     fn test_spaces_avx512() {
+        use super::*;
+        use crate::spaces::simple::*;
+
         if is_x86_feature_detected!("avx512f") {
             let v1: Vec<f32> = vec![
                 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,

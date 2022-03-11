@@ -3,6 +3,7 @@ use crate::types::{ScoreType, VectorElementType};
 use std::arch::x86_64::*;
 
 #[target_feature(enable = "avx")]
+#[target_feature(enable = "fma")]
 unsafe fn hsum256_ps_avx(x: __m256) -> f32 {
     let x128: __m128 = _mm_add_ps(_mm256_extractf128_ps(x, 1), _mm256_castps256_ps128(x));
     let x64: __m128 = _mm_add_ps(x128, _mm_movehl_ps(x128, x128));
@@ -69,12 +70,12 @@ pub unsafe fn dot_similarity_avx(v1: &[VectorElementType], v2: &[VectorElementTy
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::spaces::simple::*;
-
     #[cfg(all(target_feature = "avx", target_feature = "fma"))]
     #[test]
     fn test_spaces_avx() {
+        use super::*;
+        use crate::spaces::simple::*;
+
         if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
             let v1: Vec<f32> = vec![
                 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
