@@ -148,7 +148,7 @@ impl TryFrom<CreateCollection> for storage::content_manager::storage_ops::Storag
                 optimizers_config: value.optimizers_config.map(|v| v.into()),
                 shard_number: value
                     .shard_number
-                    .unwrap_or(storage::content_manager::storage_ops::default_shard_number()),
+                    .unwrap_or_else(storage::content_manager::storage_ops::default_shard_number),
             },
         }))
     }

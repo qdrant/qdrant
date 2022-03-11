@@ -177,20 +177,19 @@ impl Collection {
             let err = results
                 .into_iter()
                 .find(|result| matches!(result, Err(_)))
-                .unwrap()
-                .unwrap_err();
+                .unwrap();
             if with_error < self.shards.len() {
-                Err(CollectionError::InconsistentFailure {
+                err.map_err(|err| CollectionError::InconsistentFailure {
                     shards_total: self.shards.len() as u32,
                     shards_failed: with_error as u32,
                     first_err: format!("{err}"),
                 })
             } else {
-                Err(err)
+                err
             }
         } else {
             // At least one result is always present.
-            Ok(results.pop().unwrap().unwrap())
+            results.pop().unwrap()
         }
     }
 
