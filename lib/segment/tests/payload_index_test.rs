@@ -221,7 +221,7 @@ mod tests {
         let geo_key = "geo".to_string();
 
         let num_points = 10000;
-        let num_geo_values = 1;
+        let num_geo_values = 2;
 
         let mut opnum = 0;
         for idx in 0..num_points {
