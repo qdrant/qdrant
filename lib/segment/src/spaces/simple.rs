@@ -30,13 +30,7 @@ pub struct EuclidMetric {}
 #[inline]
 fn blas_dot(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     unsafe {
-        return cblas_sys::cblas_sdot(
-            v1.len() as i32,
-            v1.as_ptr(),
-            1,
-            v2.as_ptr(),
-            1,
-        );
+        cblas_sys::cblas_sdot(v1.len() as i32, v1.as_ptr(), 1, v2.as_ptr(), 1)
     }
 }
 

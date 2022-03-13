@@ -2,12 +2,15 @@ pub mod metric;
 pub mod simple;
 pub mod tools;
 
+#[allow(clippy::missing_safety_doc)]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub mod simple_sse;
 
+#[allow(clippy::missing_safety_doc)]
 #[cfg(target_arch = "x86_64")]
 pub mod simple_avx;
 
+#[allow(clippy::missing_safety_doc)]
 #[cfg(target_arch = "x86_64")]
 pub mod simple_avx512;
 
