@@ -1,3 +1,7 @@
+extern crate openblas_src;
+
+use cblas_sys;
+
 use crate::types::{Distance, ScoreType, VectorElementType};
 
 use super::metric::Metric;
@@ -22,6 +26,19 @@ pub struct CosineMetric {}
 
 #[derive(Clone)]
 pub struct EuclidMetric {}
+
+#[inline]
+fn blas_dot(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+    unsafe {
+        return cblas_sys::cblas_sdot(
+            v1.len() as i32,
+            v1.as_ptr(),
+            1,
+            v2.as_ptr(),
+            1,
+        );
+    }
+}
 
 impl Metric for EuclidMetric {
     fn distance(&self) -> Distance {
@@ -71,35 +88,7 @@ impl Metric for DotProductMetric {
     }
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-        {
-            if is_x86_feature_detected!("avx512f") {
-                return unsafe { dot_similarity_avx512f(v1, v2) };
-            }
-        }
-
-        #[cfg(target_arch = "x86_64")]
-        {
-            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
-                return unsafe { dot_similarity_avx(v1, v2) };
-            }
-        }
-
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            if is_x86_feature_detected!("sse") {
-                return unsafe { dot_similarity_sse(v1, v2) };
-            }
-        }
-
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        {
-            if std::arch::is_aarch64_feature_detected!("neon") {
-                return unsafe { dot_similarity_neon(v1, v2) };
-            }
-        }
-
-        dot_similarity(v1, v2)
+        blas_dot(v1, v2)
     }
 
     fn preprocess(&self, _vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
@@ -113,35 +102,7 @@ impl Metric for CosineMetric {
     }
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-        {
-            if is_x86_feature_detected!("avx512f") {
-                return unsafe { dot_similarity_avx512f(v1, v2) };
-            }
-        }
-
-        #[cfg(target_arch = "x86_64")]
-        {
-            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
-                return unsafe { dot_similarity_avx(v1, v2) };
-            }
-        }
-
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            if is_x86_feature_detected!("sse") {
-                return unsafe { dot_similarity_sse(v1, v2) };
-            }
-        }
-
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        {
-            if std::arch::is_aarch64_feature_detected!("neon") {
-                return unsafe { dot_similarity_neon(v1, v2) };
-            }
-        }
-
-        dot_similarity(v1, v2)
+        blas_dot(v1, v2)
     }
 
     fn preprocess(&self, vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {

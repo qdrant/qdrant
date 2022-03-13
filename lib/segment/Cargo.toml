@@ -37,6 +37,9 @@ rand = "0.8"
 bit-vec = "0.6"
 seahash = "4.1.0"
 
+cblas-sys = { version = "0.1.4", default-features = false }
+openblas-src = { version = "0.10", default-features = false, features = ["cblas", "static"] }
+
 [[bench]]
 name = "vector_search"
 harness = false
@@ -60,3 +63,6 @@ harness = false
 [[bench]]
 name = "id_type_benchmark"
 harness = false
+
+[patch.crates-io]
+openblas-src = { git = "https://github.com/qdrant/openblas-src.git" }

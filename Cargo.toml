@@ -63,3 +63,6 @@ bench = false
 
 [workspace]
 members = ["lib/*"]
+
+[patch.crates-io]
+openblas-src = { git = "https://github.com/qdrant/openblas-src.git" }
