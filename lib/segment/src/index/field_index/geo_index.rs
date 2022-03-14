@@ -91,6 +91,8 @@ fn group_points_per_region(
 pub struct PersistedGeoMapIndex {
     cardinality_map: BTreeMap<GeoHash, usize>,
     points_map: BTreeMap<GeoHash, Vec<PointOffsetType>>,
+    points_count: usize,
+    payload_count: usize,
 }
 
 impl PersistedGeoMapIndex {
@@ -135,11 +137,21 @@ impl PersistedGeoMapIndex {
             }
         });
 
+        let total_points_count = self.points_count;
+        let min = if total_points_count == self.payload_count {
+            values_count
+        } else {
+            // between 0 and 1 (there is at least one payload per point)
+            let payload_per_point = total_points_count as f64 / self.payload_count as f64;
+            values_count.saturating_sub((values_count as f64 * payload_per_point) as usize)
+        };
+        // don't overflow max number of points
+        let expected_count = total_points_count.min(values_count);
         CardinalityEstimation {
             primary_clauses: vec![],
-            min: values_count,
-            exp: values_count,
-            max: values_count,
+            min,
+            exp: expected_count,
+            max: expected_count,
         }
     }
 
@@ -151,6 +163,8 @@ impl PersistedGeoMapIndex {
                 .or_insert_with(Vec::new)
                 .push(idx);
         }
+        self.payload_count += values.len();
+        self.points_count += 1;
     }
 
     fn get_iterator(&self, values: &[GeoHash]) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
@@ -174,6 +188,8 @@ impl PayloadFieldIndexBuilder for PersistedGeoMapIndex {
 
     fn build(&mut self) -> FieldIndex {
         let all_ingested_points = mem::take(&mut self.points_map);
+        let payload_count = mem::take(&mut self.payload_count);
+        let points_count = mem::take(&mut self.points_count);
 
         // build more efficient representation to support queries per region
         let cardinality_map = compute_cardinality_per_region(&all_ingested_points);
@@ -183,6 +199,8 @@ impl PayloadFieldIndexBuilder for PersistedGeoMapIndex {
         FieldIndex::GeoIndex(PersistedGeoMapIndex {
             cardinality_map,
             points_map,
+            payload_count,
+            points_count,
         })
     }
 }
@@ -263,6 +281,21 @@ mod tests {
         lon: -73.991516,
     };
 
+    const BERLIN: GeoPoint = GeoPoint {
+        lat: 52.52437,
+        lon: 13.41053,
+    };
+
+    const POTSDAM: GeoPoint = GeoPoint {
+        lat: 52.390569,
+        lon: 13.064473,
+    };
+
+    const TOKYO: GeoPoint = GeoPoint {
+        lat: 35.689487,
+        lon: 139.691706,
+    };
+
     fn condition_for_geo_radius(key: String, geo_radius: GeoRadius) -> FieldCondition {
         FieldCondition {
             key,
@@ -311,8 +344,8 @@ mod tests {
         };
         let nyc_point = Point::new(NYC.lon, NYC.lat);
 
-        let num_points = 10000;
-        let num_geo_values = 1;
+        let num_points = 10000_usize;
+        let num_geo_values = 2;
         let mut within_condition = 0;
 
         for idx in 0..num_points {
@@ -326,8 +359,10 @@ mod tests {
                 }
                 _ => panic!(),
             }
-            index.add(idx, &geo_points)
+            index.add(idx as u32, &geo_points)
         }
+        assert_eq!(index.points_count, num_points);
+        assert_eq!(index.payload_count, num_points * num_geo_values);
 
         let field_index = index.build();
         let field_condition = condition_for_geo_radius("test".to_string(), geo_radius);
@@ -337,6 +372,74 @@ mod tests {
         assert!(card.min >= within_condition);
         assert!(card.max >= within_condition);
         assert!(card.exp >= within_condition);
+    }
+
+    #[test]
+    fn match_cardinality_point_with_multi_far_geo_payload() {
+        let mut index = PersistedGeoMapIndex::default();
+
+        let r_meters = 100.0;
+
+        let geo_points = PayloadType::Geo(vec![NYC, BERLIN]);
+        index.add(1, &geo_points);
+        let field_index = index.build();
+
+        // around NYC
+        let nyc_geo_radius = GeoRadius {
+            center: NYC,
+            radius: r_meters,
+        };
+        let field_condition = condition_for_geo_radius("test".to_string(), nyc_geo_radius);
+        let card = field_index.estimate_cardinality(&field_condition);
+        let card = card.unwrap();
+        assert_eq!(card.min, 1);
+        assert_eq!(card.max, 1);
+        assert_eq!(card.exp, 1);
+
+        // around BERLIN
+        let berlin_geo_radius = GeoRadius {
+            center: BERLIN,
+            radius: r_meters,
+        };
+        let field_condition = condition_for_geo_radius("test".to_string(), berlin_geo_radius);
+        let card = field_index.estimate_cardinality(&field_condition);
+        let card = card.unwrap();
+        assert_eq!(card.min, 1);
+        assert_eq!(card.max, 1);
+        assert_eq!(card.exp, 1);
+
+        // around TOKYO
+        let tokyo_geo_radius = GeoRadius {
+            center: TOKYO,
+            radius: r_meters,
+        };
+        let field_condition = condition_for_geo_radius("test".to_string(), tokyo_geo_radius);
+        let card = field_index.estimate_cardinality(&field_condition);
+        let card = card.unwrap();
+        // no points found
+        assert_eq!(card.min, 0);
+        assert_eq!(card.max, 0);
+        assert_eq!(card.exp, 0);
+    }
+
+    #[test]
+    fn match_cardinality_point_with_multi_close_geo_payload() {
+        let mut index = PersistedGeoMapIndex::default();
+        let geo_points = PayloadType::Geo(vec![BERLIN, POTSDAM]);
+        index.add(1, &geo_points);
+        let field_index = index.build();
+
+        let berlin_geo_radius = GeoRadius {
+            center: BERLIN,
+            radius: 50_000.0, // Berlin <-> Potsdam is 27 km
+        };
+        let field_condition = condition_for_geo_radius("test".to_string(), berlin_geo_radius);
+        let card = field_index.estimate_cardinality(&field_condition);
+        let card = card.unwrap();
+        // handle properly that a single point matches via two different geo payloads
+        assert_eq!(card.min, 1);
+        assert_eq!(card.max, 1);
+        assert_eq!(card.exp, 1);
     }
 
     #[test]
