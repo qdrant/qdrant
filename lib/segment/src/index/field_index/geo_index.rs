@@ -24,9 +24,8 @@ fn compute_cardinality_per_region(
     let mut cardinalities: BTreeMap<GeoHash, usize> = BTreeMap::new();
     points_map.iter().for_each(|(geo_hash, points)| {
         let points_count = points.len();
-        let geo_hashes = decompose_geo_hash(geo_hash);
-        geo_hashes.into_iter().for_each(|g| {
-            let count_for_g = cardinalities.entry(g).or_insert(0);
+        decompose_geo_hash(geo_hash).for_each(|g| {
+            let count_for_g = cardinalities.entry(g.to_string()).or_insert(0);
             *count_for_g += points_count;
         });
     });
@@ -105,7 +104,7 @@ impl PersistedGeoMapIndex {
         let mut all_possible_regions = HashSet::new();
         values.iter().for_each(|geo_hash| {
             // fallback to decreasing precision within the map if not found
-            decompose_geo_hash(geo_hash).into_iter().for_each(|g| {
+            decompose_geo_hash(geo_hash).for_each(|g| {
                 all_possible_regions.insert(g);
             })
         });
@@ -127,7 +126,7 @@ impl PersistedGeoMapIndex {
                 let sum_region_count: usize = sub_regions
                     .iter()
                     .filter(|r| r.len() == p)
-                    .filter_map(|g| self.cardinality_map.get(*g))
+                    .filter_map(|g| self.cardinality_map.get(&g.to_string()))
                     .sum();
                 if sum_region_count != 0 {
                     values_count += sum_region_count;

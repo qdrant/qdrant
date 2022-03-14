@@ -266,14 +266,11 @@ fn minimum_bounding_rectangle_for_circle(circle: &GeoRadius) -> GeoBoundingBox {
     }
 }
 
-pub fn decompose_geo_hash(geo_hash: &GeoHash) -> Vec<GeoHash> {
-    let mut geo_hashes: Vec<GeoHash> = Vec::new();
-    let mut current: String = String::new();
-    geo_hash.chars().for_each(|c| {
-        current.push(c);
-        geo_hashes.push(current.clone())
-    });
-    geo_hashes
+pub fn decompose_geo_hash(geo_hash: &GeoHash) -> impl Iterator<Item = &str> {
+    geo_hash
+        .chars()
+        .enumerate()
+        .map(|(i, _)| &geo_hash[..i + 1])
 }
 
 #[cfg(test)]
@@ -605,7 +602,7 @@ mod tests {
     #[test]
     fn decompose_geo_hashes() {
         let geo_hash = "dr5ruj4477kd".to_string();
-        let geo_hashes = decompose_geo_hash(&geo_hash);
+        let geo_hashes: Vec<_> = decompose_geo_hash(&geo_hash).collect();
         let expected = vec![
             "d",
             "dr",
