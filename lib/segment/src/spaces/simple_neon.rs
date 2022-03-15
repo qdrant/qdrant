@@ -47,19 +47,29 @@ pub unsafe fn cosine_preprocess_neon(vector: &[VectorElementType]) -> Vec<Vector
 #[cfg(target_feature = "neon")]
 pub unsafe fn dot_similarity_neon(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     let n = v1.len();
-    let m = n - (n % 4);
-    let zeros: [f32; 4] = [0.0; 4];
-    let mut sum = vld1q_f32(&zeros[0]);
-    for i in (0..m).step_by(4) {
-        let a = vld1q_f32(&v1[i]);
-        let b = vld1q_f32(&v2[i]);
-        sum = vfmaq_f32(sum, a, b);
+    let m = n - (n % 16);
+    let mut ptr1: *const f32 = v1.as_ptr();
+    let mut ptr2: *const f32 = v2.as_ptr();
+    let mut sum1 = vdupq_n_f32(0.);
+    let mut sum2 = vdupq_n_f32(0.);
+    let mut sum3 = vdupq_n_f32(0.);
+    let mut sum4 = vdupq_n_f32(0.);
+
+    let mut i: usize = 0;
+    while i < m {
+        sum1 = vfmaq_f32(sum1, vld1q_f32(ptr1), vld1q_f32(ptr2));
+        sum2 = vfmaq_f32(sum2, vld1q_f32(ptr1.add(4)), vld1q_f32(ptr2.add(4)));
+        sum3 = vfmaq_f32(sum3, vld1q_f32(ptr1.add(8)), vld1q_f32(ptr2.add(8)));
+        sum4 = vfmaq_f32(sum4, vld1q_f32(ptr1.add(12)), vld1q_f32(ptr2.add(12)));
+        ptr1 = ptr1.add(16);
+        ptr2 = ptr2.add(16);
+        i += 16;
     }
-    let mut res = vaddvq_f32(sum);
-    for i in m..n {
-        res += v1[i] * v2[i];
+    let mut result = vaddvq_f32(sum1) + vaddvq_f32(sum2) + vaddvq_f32(sum3) + vaddvq_f32(sum4);
+    for i in 0..n - m {
+        result += (*ptr1.add(i)) * (*ptr2.add(i));
     }
-    res
+    result
 }
 
 #[cfg(test)]
