@@ -34,6 +34,8 @@ use shard::{LocalShard, ShardId};
 use tokio::runtime::Handle;
 
 use crate::operations::OperationToShard;
+use crate::Shard::Local;
+use crate::shard::Shard;
 
 pub mod collection_manager;
 mod common;
@@ -51,7 +53,7 @@ pub type CollectionId = String;
 
 /// Collection's data is split into several shards.
 pub struct Collection {
-    shards: HashMap<ShardId, LocalShard>,
+    shards: HashMap<ShardId, Shard>,
     ring: HashRing<ShardId>,
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
@@ -65,7 +67,7 @@ impl Collection {
     ) -> Result<Self, CollectionError> {
         config.save(path)?;
         let mut ring = HashRing::new();
-        let mut shards: HashMap<ShardId, LocalShard> = HashMap::new();
+        let mut shards: HashMap<ShardId, Shard> = HashMap::new();
         for shard_id in 0..config.params.shard_number.get() {
             let shard_path = shard_path(path, shard_id);
             let shard = create_dir_all(&shard_path)
@@ -84,7 +86,7 @@ impl Collection {
                     return Err(err);
                 }
             };
-            shards.insert(shard_id, shard);
+            shards.insert(shard_id, Local(shard));
             ring.add(shard_id);
         }
         Ok(Self {
@@ -112,7 +114,7 @@ impl Collection {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
                 shard_id,
-                LocalShard::load(shard_id, id.clone(), &shard_path, &config).await,
+                Local(LocalShard::load(shard_id, id.clone(), &shard_path, &config).await),
             );
             ring.add(shard_id);
         }
@@ -138,13 +140,13 @@ impl Collection {
         Ok(())
     }
 
-    fn shard_by_id(&self, id: ShardId) -> &LocalShard {
+    fn shard_by_id(&self, id: ShardId) -> &Shard {
         self.shards
             .get(&id)
             .expect("Shard is guaranteed to be added when id is added to the ring.")
     }
 
-    fn all_shards(&self) -> impl Iterator<Item = &LocalShard> {
+    fn all_shards(&self) -> impl Iterator<Item = &Shard> {
         self.shards.values()
     }
 
