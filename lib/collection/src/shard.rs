@@ -45,7 +45,7 @@ pub type ShardId = u32;
 /// Shard is an entity that can be moved between peers and contains some part of one collections data.
 ///
 /// Holds all object, required for collection functioning
-pub struct Shard {
+pub struct LocalShard {
     segments: Arc<RwLock<SegmentHolder>>,
     // TODO: Move config into Raft global state
     config: Arc<TokioRwLock<CollectionConfig>>,
@@ -59,7 +59,7 @@ pub struct Shard {
 }
 
 /// Shard holds information about segments and WAL.
-impl Shard {
+impl LocalShard {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: ShardId,
@@ -121,7 +121,7 @@ impl Shard {
         collection_id: CollectionId,
         shard_path: &Path,
         collection_config: &CollectionConfig,
-    ) -> Shard {
+    ) -> LocalShard {
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
         let mut segment_holder = SegmentHolder::default();
@@ -172,7 +172,7 @@ impl Shard {
             schema_storage.clone(),
         );
 
-        let collection = Shard::new(
+        let collection = LocalShard::new(
             id,
             collection_id,
             segment_holder,
@@ -202,7 +202,7 @@ impl Shard {
         collection_id: CollectionId,
         shard_path: &Path,
         config: &CollectionConfig,
-    ) -> CollectionResult<Shard> {
+    ) -> CollectionResult<LocalShard> {
         let wal_path = shard_path.join("wal");
 
         create_dir_all(&wal_path).map_err(|err| CollectionError::ServiceError {
@@ -240,7 +240,7 @@ impl Shard {
             schema_storage.clone(),
         );
 
-        let collection = Shard::new(
+        let collection = LocalShard::new(
             id,
             collection_id,
             segment_holder,
@@ -472,7 +472,7 @@ impl Shard {
     }
 }
 
-impl Drop for Shard {
+impl Drop for LocalShard {
     fn drop(&mut self) {
         if !self.before_drop_called {
             // Panic is used to get fast feedback in unit and integration tests

@@ -30,7 +30,7 @@ use segment::{
         WithPayload, WithPayloadInterface,
     },
 };
-use shard::{Shard, ShardId};
+use shard::{LocalShard, ShardId};
 use tokio::runtime::Handle;
 
 use crate::operations::OperationToShard;
@@ -51,7 +51,7 @@ pub type CollectionId = String;
 
 /// Collection's data is split into several shards.
 pub struct Collection {
-    shards: HashMap<ShardId, Shard>,
+    shards: HashMap<ShardId, LocalShard>,
     ring: HashRing<ShardId>,
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
@@ -65,14 +65,14 @@ impl Collection {
     ) -> Result<Self, CollectionError> {
         config.save(path)?;
         let mut ring = HashRing::new();
-        let mut shards: HashMap<ShardId, Shard> = HashMap::new();
+        let mut shards: HashMap<ShardId, LocalShard> = HashMap::new();
         for shard_id in 0..config.params.shard_number.get() {
             let shard_path = shard_path(path, shard_id);
             let shard = create_dir_all(&shard_path)
                 .map_err(|err| CollectionError::ServiceError {
                     error: format!("Can't create shard {shard_id} directory. Error: {}", err),
                 })
-                .and_then(|()| Shard::build(shard_id, id.clone(), &shard_path, config));
+                .and_then(|()| LocalShard::build(shard_id, id.clone(), &shard_path, config));
             let shard = match shard {
                 Ok(shard) => shard,
                 Err(err) => {
@@ -112,7 +112,7 @@ impl Collection {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
                 shard_id,
-                Shard::load(shard_id, id.clone(), &shard_path, &config).await,
+                LocalShard::load(shard_id, id.clone(), &shard_path, &config).await,
             );
             ring.add(shard_id);
         }
@@ -124,27 +124,27 @@ impl Collection {
     }
 
     fn try_migrate_legacy_one_shard(collection_path: &Path) -> io::Result<()> {
-        if Shard::segments_path(collection_path).is_dir() {
+        if LocalShard::segments_path(collection_path).is_dir() {
             log::warn!("Migrating legacy collection storage to 1 shard.");
             let shard_path = shard_path(collection_path, 0);
-            let new_segmnents_path = Shard::segments_path(&shard_path);
-            let new_wal_path = Shard::wal_path(&shard_path);
+            let new_segmnents_path = LocalShard::segments_path(&shard_path);
+            let new_wal_path = LocalShard::wal_path(&shard_path);
             create_dir_all(&new_segmnents_path)?;
             create_dir_all(&new_wal_path)?;
-            rename(Shard::segments_path(collection_path), &new_segmnents_path)?;
-            rename(Shard::wal_path(collection_path), &new_wal_path)?;
+            rename(LocalShard::segments_path(collection_path), &new_segmnents_path)?;
+            rename(LocalShard::wal_path(collection_path), &new_wal_path)?;
             log::info!("Migration finished.");
         }
         Ok(())
     }
 
-    fn shard_by_id(&self, id: ShardId) -> &Shard {
+    fn shard_by_id(&self, id: ShardId) -> &LocalShard {
         self.shards
             .get(&id)
             .expect("Shard is guaranteed to be added when id is added to the ring.")
     }
 
-    fn all_shards(&self) -> impl Iterator<Item = &Shard> {
+    fn all_shards(&self) -> impl Iterator<Item = &LocalShard> {
         self.shards.values()
     }
 
