@@ -40,9 +40,30 @@ use std::fs::{read_dir, remove_dir_all};
 
 pub type ShardId = u32;
 
+pub type PeerId = u32;
+
 /// Shard
 ///
-/// Shard is an entity that can be moved between peers and contains some part of one collections data.
+/// A shard can either be local or remote
+///
+enum Shard {
+    Local(LocalShard),
+    Remote(RemoteShard)
+}
+
+/// RemoteShard
+///
+/// Remote Shard is a representation of a shard that is located on a remote peer.
+///
+pub struct RemoteShard {
+    id: ShardId,
+    collection_id: CollectionId,
+    peer_id: PeerId,
+}
+
+/// LocalShard
+///
+/// LocalShard is an entity that can be moved between peers and contains some part of one collections data.
 ///
 /// Holds all object, required for collection functioning
 pub struct LocalShard {
