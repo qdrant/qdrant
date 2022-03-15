@@ -1,31 +1,102 @@
 use crate::tonic::qdrant::condition::ConditionOneOf;
-use crate::tonic::qdrant::payload::PayloadOneOf;
-use crate::tonic::qdrant::payload::PayloadOneOf::{Float, Geo, Integer, Keyword};
 use crate::tonic::qdrant::point_id::PointIdOptions;
 use crate::tonic::qdrant::points_selector::PointsSelectorOneOf;
 use crate::tonic::qdrant::r#match::MatchValue;
 use crate::tonic::qdrant::with_payload_selector::SelectorOptions;
 use crate::tonic::qdrant::{
-    Condition, FieldCondition, Filter, FloatPayload, GeoBoundingBox, GeoPayload, GeoPoint,
-    GeoRadius, HasIdCondition, IntegerPayload, KeywordPayload, Match, Payload, PointId,
-    PointStruct, PointsOperationResponse, PointsSelector, Range, RetrievedPoint, ScoredPoint,
-    SearchParams, UpdateResult, WithPayloadSelector,
+    Condition, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, Match,
+    PointId, PointStruct, PointsOperationResponse, PointsSelector, Range, RetrievedPoint,
+    ScoredPoint, SearchParams, UpdateResult, WithPayloadSelector,
 };
 use collection::operations::point_ops::PointIdsList;
+use prost_types::value::Kind;
+use prost_types::ListValue;
 use segment::types::{
-    PayloadInterface, PayloadInterfaceStrict, PayloadKeyType, PayloadSelectorExclude,
-    PayloadSelectorInclude, PayloadType, PayloadVariant, PointIdType, TheMap, WithPayloadInterface,
+    Payload, PayloadSelectorExclude, PayloadSelectorInclude, PointIdType, WithPayloadInterface,
 };
+use serde_json::{Map, Number, Value};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 use tonic::Status;
 use uuid::Uuid;
 
-fn payload_to_proto(payload: TheMap<PayloadKeyType, PayloadType>) -> HashMap<String, Payload> {
+pub fn payload_to_proto(payload: &Payload) -> HashMap<String, prost_types::Value> {
     payload
-        .into_iter()
-        .map(|(key, value)| (key, value.into()))
+        .iter()
+        .map(|(k, v)| (k.to_owned(), json_to_proto(v)))
         .collect()
+}
+
+fn json_to_proto(json_value: &Value) -> prost_types::Value {
+    match json_value {
+        Value::Null => prost_types::Value {
+            kind: Some(Kind::NullValue(0)),
+        },
+        Value::Bool(v) => prost_types::Value {
+            kind: Some(Kind::BoolValue(v.to_owned())),
+        },
+        Value::Number(n) => prost_types::Value {
+            kind: Some(Kind::NumberValue(n.as_f64().unwrap())),
+        },
+        Value::String(s) => prost_types::Value {
+            kind: Some(Kind::StringValue(s.to_owned())),
+        },
+        Value::Array(v) => {
+            let list = v.iter().map(json_to_proto).collect();
+            prost_types::Value {
+                kind: Some(Kind::ListValue(ListValue { values: list })),
+            }
+        }
+        Value::Object(m) => {
+            let map = m
+                .iter()
+                .map(|(k, v)| (k.to_owned(), json_to_proto(v)))
+                .collect();
+            prost_types::Value {
+                kind: Some(Kind::StructValue(prost_types::Struct { fields: map })),
+            }
+        }
+    }
+}
+
+pub fn proto_to_payloas(proto: &HashMap<String, prost_types::Value>) -> Result<Payload, Status> {
+    let mut map: Map<String, Value> = Map::new();
+    for (k, v) in proto.iter() {
+        map.insert(k.to_owned(), proto_to_json(v)?);
+    }
+    Ok(map.into())
+}
+
+fn proto_to_json(proto: &prost_types::Value) -> Result<Value, Status> {
+    match &proto.kind {
+        None => Ok(Value::default()),
+        Some(kind) => match kind {
+            Kind::NullValue(_) => Ok(Value::Null),
+            Kind::NumberValue(n) => {
+                let v = match Number::from_f64(*n) {
+                    Some(f) => f,
+                    None => return Err(Status::invalid_argument("cannot convert to json number")),
+                };
+                Ok(Value::Number(v))
+            }
+            Kind::StringValue(s) => Ok(Value::String(s.to_owned())),
+            Kind::BoolValue(b) => Ok(Value::Bool(b.to_owned())),
+            Kind::StructValue(s) => {
+                let mut map = Map::new();
+                for (k, v) in s.fields.iter() {
+                    map.insert(k.to_owned(), proto_to_json(v)?);
+                }
+                Ok(Value::Object(map))
+            }
+            Kind::ListValue(l) => {
+                let mut list = Vec::new();
+                for v in l.values.iter() {
+                    list.push(proto_to_json(v)?);
+                }
+                Ok(Value::Array(list))
+            }
+        },
+    }
 }
 
 impl From<segment::types::GeoPoint> for GeoPoint {
@@ -33,21 +104,6 @@ impl From<segment::types::GeoPoint> for GeoPoint {
         Self {
             lon: geo.lon,
             lat: geo.lat,
-        }
-    }
-}
-
-impl From<PayloadType> for Payload {
-    fn from(payload: PayloadType) -> Self {
-        Self {
-            payload_one_of: Some(match payload {
-                PayloadType::Keyword(values) => PayloadOneOf::Keyword(KeywordPayload { values }),
-                PayloadType::Integer(values) => PayloadOneOf::Integer(IntegerPayload { values }),
-                PayloadType::Float(values) => PayloadOneOf::Float(FloatPayload { values }),
-                PayloadType::Geo(values) => PayloadOneOf::Geo(GeoPayload {
-                    values: values.into_iter().map(|g| g.into()).collect(),
-                }),
-            }),
         }
     }
 }
@@ -90,7 +146,11 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
     fn from(point: segment::types::ScoredPoint) -> Self {
         Self {
             id: Some(point.id.into()),
-            payload: point.payload.map(payload_to_proto).unwrap_or_default(),
+            payload: point
+                .payload
+                .as_ref()
+                .map(payload_to_proto)
+                .unwrap_or_default(),
             score: point.score,
             vector: point.vector.unwrap_or_default(),
             version: point.version,
@@ -102,7 +162,11 @@ impl From<collection::operations::types::Record> for RetrievedPoint {
     fn from(record: collection::operations::types::Record) -> Self {
         Self {
             id: Some(record.id.into()),
-            payload: record.payload.map(payload_to_proto).unwrap_or_default(),
+            payload: record
+                .payload
+                .as_ref()
+                .map(payload_to_proto)
+                .unwrap_or_default(),
             vector: record.vector.unwrap_or_default(),
         }
     }
@@ -136,7 +200,7 @@ impl TryFrom<PointStruct> for collection::operations::point_ops::PointStruct {
             payload,
         } = value;
 
-        let converted_payload = payload_to_interface(payload)?;
+        let converted_payload = proto_to_payloas(&payload)?;
 
         Ok(Self {
             id: id
@@ -146,23 +210,6 @@ impl TryFrom<PointStruct> for collection::operations::point_ops::PointStruct {
             payload: Some(converted_payload),
         })
     }
-}
-
-pub fn payload_to_interface(
-    payload: HashMap<String, Payload>,
-) -> Result<HashMap<PayloadKeyType, PayloadInterface>, Status> {
-    let mut converted_payload = HashMap::new();
-    for (key, payload_value) in payload.into_iter() {
-        let value = match payload_value.payload_one_of {
-            Some(Keyword(k)) => k.into(),
-            Some(Integer(i)) => i.into(),
-            Some(Float(f)) => f.into(),
-            Some(Geo(g)) => g.into(),
-            None => return Err(Status::invalid_argument("Unknown payload type")),
-        };
-        converted_payload.insert(key, value);
-    }
-    Ok(converted_payload)
 }
 
 impl TryFrom<PointsSelector> for collection::operations::point_ops::PointsSelector {
@@ -271,38 +318,6 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             geo_bounding_box,
             geo_radius,
         })
-    }
-}
-
-impl From<KeywordPayload> for PayloadInterface {
-    fn from(value: KeywordPayload) -> Self {
-        PayloadInterface::Payload(PayloadInterfaceStrict::Keyword(PayloadVariant::List(
-            value.values,
-        )))
-    }
-}
-
-impl From<IntegerPayload> for PayloadInterface {
-    fn from(value: IntegerPayload) -> Self {
-        PayloadInterface::Payload(PayloadInterfaceStrict::Integer(PayloadVariant::List(
-            value.values,
-        )))
-    }
-}
-
-impl From<FloatPayload> for PayloadInterface {
-    fn from(value: FloatPayload) -> Self {
-        PayloadInterface::Payload(PayloadInterfaceStrict::Float(PayloadVariant::List(
-            value.values,
-        )))
-    }
-}
-
-impl From<GeoPayload> for PayloadInterface {
-    fn from(value: GeoPayload) -> Self {
-        let variant =
-            PayloadVariant::List(value.values.into_iter().map(|point| point.into()).collect());
-        PayloadInterface::Payload(PayloadInterfaceStrict::Geo(variant))
     }
 }
 

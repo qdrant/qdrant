@@ -2381,6 +2381,7 @@ dependencies = [
  "num_cpus",
  "parking_lot 0.12.0",
  "prost",
+ "prost-types",
  "rand 0.8.5",
  "rusty-hook",
  "schemars",

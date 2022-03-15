@@ -284,6 +284,7 @@ impl From<segment::types::PayloadSchemaInfo> for PayloadSchemaInfo {
                 segment::types::PayloadSchemaType::Integer => PayloadSchemaType::Integer,
                 segment::types::PayloadSchemaType::Float => PayloadSchemaType::Float,
                 segment::types::PayloadSchemaType::Geo => PayloadSchemaType::Geo,
+                segment::types::PayloadSchemaType::Unknown => PayloadSchemaType::UnknownType,
             }
             .into(),
             indexed: schema.indexed,
