@@ -168,9 +168,9 @@ mod tests {
             let dot = dot_similarity(&v1, &v2);
             assert_eq!(dot_simd, dot);
 
-//            let cosine_simd = unsafe { cosine_preprocess_sse(&v1) };
-//            let cosine = cosine_preprocess(&v1);
-//            assert_eq!(cosine_simd, cosine);
+            let cosine_simd = unsafe { cosine_preprocess_sse(&v1) };
+            let cosine = cosine_preprocess(&v1);
+            assert_eq!(cosine_simd, cosine);
         } else {
             println!("sse test skipped");
         }
