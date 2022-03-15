@@ -18,36 +18,82 @@ pub unsafe fn euclid_similarity_avx(
     v2: &[VectorElementType],
 ) -> ScoreType {
     let n = v1.len();
-    let m = n - (n % 8);
-    let mut sum256: __m256 = _mm256_setzero_ps();
-    for i in (0..m).step_by(8) {
-        let sub256: __m256 = _mm256_sub_ps(_mm256_loadu_ps(&v1[i]), _mm256_loadu_ps(&v2[i]));
-        sum256 = _mm256_fmadd_ps(sub256, sub256, sum256);
+    let m = n - (n % 32);
+    let mut ptr1: *const f32 = v1.as_ptr();
+    let mut ptr2: *const f32 = v2.as_ptr();
+    let mut sum256_1: __m256 = _mm256_setzero_ps();
+    let mut sum256_2: __m256 = _mm256_setzero_ps();
+    let mut sum256_3: __m256 = _mm256_setzero_ps();
+    let mut sum256_4: __m256 = _mm256_setzero_ps();
+    let mut i: usize = 0;
+    while i < m {
+        let sub256_1: __m256 =
+            _mm256_sub_ps(_mm256_loadu_ps(ptr1.add(0)), _mm256_loadu_ps(ptr2.add(0)));
+        sum256_1 = _mm256_fmadd_ps(sub256_1, sub256_1, sum256_1);
+
+        let sub256_2: __m256 =
+            _mm256_sub_ps(_mm256_loadu_ps(ptr1.add(8)), _mm256_loadu_ps(ptr2.add(8)));
+        sum256_2 = _mm256_fmadd_ps(sub256_2, sub256_2, sum256_2);
+
+        let sub256_3: __m256 =
+            _mm256_sub_ps(_mm256_loadu_ps(ptr1.add(16)), _mm256_loadu_ps(ptr2.add(16)));
+        sum256_3 = _mm256_fmadd_ps(sub256_3, sub256_3, sum256_3);
+
+        let sub256_4: __m256 =
+            _mm256_sub_ps(_mm256_loadu_ps(ptr1.add(24)), _mm256_loadu_ps(ptr2.add(24)));
+        sum256_4 = _mm256_fmadd_ps(sub256_4, sub256_4, sum256_4);
+
+        ptr1 = ptr1.add(32);
+        ptr2 = ptr2.add(32);
+        i += 32;
     }
-    let mut res = hsum256_ps_avx(sum256);
-    for i in m..n {
-        res += (v1[i] - v2[i]).powi(2);
+
+    let mut result = hsum256_ps_avx(sum256_1)
+        + hsum256_ps_avx(sum256_2)
+        + hsum256_ps_avx(sum256_3)
+        + hsum256_ps_avx(sum256_4);
+    for i in 0..n - m {
+        result += (*ptr1.add(i) - *ptr2.add(i)).powi(2);
     }
-    -res.sqrt()
+    -result.sqrt()
 }
 
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
 pub unsafe fn cosine_preprocess_avx(vector: &[VectorElementType]) -> Vec<VectorElementType> {
     let n = vector.len();
-    let m = n - (n % 8);
-    let mut sum256: __m256 = _mm256_setzero_ps();
-    for i in (0..m).step_by(8) {
-        sum256 = _mm256_fmadd_ps(
-            _mm256_loadu_ps(&vector[i]),
-            _mm256_loadu_ps(&vector[i]),
-            sum256,
-        );
+    let m = n - (n % 32);
+    let mut ptr: *const f32 = vector.as_ptr();
+    let mut sum256_1: __m256 = _mm256_setzero_ps();
+    let mut sum256_2: __m256 = _mm256_setzero_ps();
+    let mut sum256_3: __m256 = _mm256_setzero_ps();
+    let mut sum256_4: __m256 = _mm256_setzero_ps();
+    let mut i: usize = 0;
+    while i < m {
+        let m256_1 = _mm256_loadu_ps(ptr);
+        sum256_1 = _mm256_fmadd_ps(m256_1, m256_1, sum256_1);
+
+        let m256_2 = _mm256_loadu_ps(ptr.add(8));
+        sum256_2 = _mm256_fmadd_ps(m256_2, m256_2, sum256_2);
+
+        let m256_3 = _mm256_loadu_ps(ptr.add(16));
+        sum256_3 = _mm256_fmadd_ps(m256_3, m256_3, sum256_3);
+
+        let m256_4 = _mm256_loadu_ps(ptr.add(24));
+        sum256_4 = _mm256_fmadd_ps(m256_4, m256_4, sum256_4);
+
+        ptr = ptr.add(32);
+        i += 32;
     }
-    let mut length = hsum256_ps_avx(sum256);
-    for v in vector.iter().take(n).skip(m) {
-        length += v.powi(2);
+
+    let mut length = hsum256_ps_avx(sum256_1)
+        + hsum256_ps_avx(sum256_2)
+        + hsum256_ps_avx(sum256_3)
+        + hsum256_ps_avx(sum256_4);
+    for i in 0..n - m {
+        length += (*ptr.add(i)).powi(2);
     }
+
     length = length.sqrt();
     vector.iter().map(|x| x / length).collect()
 }
@@ -56,21 +102,50 @@ pub unsafe fn cosine_preprocess_avx(vector: &[VectorElementType]) -> Vec<VectorE
 #[target_feature(enable = "fma")]
 pub unsafe fn dot_similarity_avx(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     let n = v1.len();
-    let m = n - (n % 8);
-    let mut sum256: __m256 = _mm256_setzero_ps();
-    for i in (0..m).step_by(8) {
-        sum256 = _mm256_fmadd_ps(_mm256_loadu_ps(&v1[i]), _mm256_loadu_ps(&v2[i]), sum256);
+    let m = n - (n % 32);
+    let mut ptr1: *const f32 = v1.as_ptr();
+    let mut ptr2: *const f32 = v2.as_ptr();
+    let mut sum256_1: __m256 = _mm256_setzero_ps();
+    let mut sum256_2: __m256 = _mm256_setzero_ps();
+    let mut sum256_3: __m256 = _mm256_setzero_ps();
+    let mut sum256_4: __m256 = _mm256_setzero_ps();
+    let mut i: usize = 0;
+    while i < m {
+        sum256_1 = _mm256_fmadd_ps(_mm256_loadu_ps(ptr1), _mm256_loadu_ps(ptr2), sum256_1);
+        sum256_2 = _mm256_fmadd_ps(
+            _mm256_loadu_ps(ptr1.add(8)),
+            _mm256_loadu_ps(ptr2.add(8)),
+            sum256_2,
+        );
+        sum256_3 = _mm256_fmadd_ps(
+            _mm256_loadu_ps(ptr1.add(16)),
+            _mm256_loadu_ps(ptr2.add(16)),
+            sum256_3,
+        );
+        sum256_4 = _mm256_fmadd_ps(
+            _mm256_loadu_ps(ptr1.add(24)),
+            _mm256_loadu_ps(ptr2.add(24)),
+            sum256_4,
+        );
+
+        ptr1 = ptr1.add(32);
+        ptr2 = ptr2.add(32);
+        i += 32;
     }
-    let mut res = hsum256_ps_avx(sum256);
-    for i in m..n {
-        res += v1[i] * v2[i];
+
+    let mut result = hsum256_ps_avx(sum256_1)
+        + hsum256_ps_avx(sum256_2)
+        + hsum256_ps_avx(sum256_3)
+        + hsum256_ps_avx(sum256_4);
+
+    for i in 0..n - m {
+        result += (*ptr1.add(i)) * (*ptr2.add(i));
     }
-    res
+    result
 }
 
 #[cfg(test)]
 mod tests {
-    #[cfg(all(target_feature = "avx", target_feature = "fma"))]
     #[test]
     fn test_spaces_avx() {
         use super::*;
@@ -79,10 +154,16 @@ mod tests {
         if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
             let v1: Vec<f32> = vec![
                 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
                 26., 27., 28., 29., 30., 31.,
             ];
             let v2: Vec<f32> = vec![
                 40., 41., 42., 43., 44., 45., 46., 47., 48., 49., 50., 51., 52., 53., 54., 55.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
+                10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
                 56., 57., 58., 59., 60., 61.,
             ];
 
