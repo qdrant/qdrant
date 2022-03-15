@@ -159,6 +159,7 @@ message CreateCollection {
   optional HnswConfigDiff hnsw_config = 4; // Configuration of vector index
   optional WalConfigDiff wal_config = 5; // Configuration of the Write-Ahead-Log
   optional OptimizersConfigDiff optimizers_config = 6; // Configuration of the optimizers
+  optional uint32 shard_number = 7; // Number of shards in the collection, default = 1
 }
 
 message UpdateCollection {

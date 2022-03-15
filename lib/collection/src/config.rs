@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::{Read, Write};
+use std::num::NonZeroU32;
 use std::path::Path;
 
 use atomicwrites::AtomicFile;
@@ -50,11 +51,11 @@ pub struct CollectionParams {
     pub distance: Distance,
     /// Number of shards the collection has
     #[serde(default = "default_shard_number")]
-    pub shard_number: u32,
+    pub shard_number: NonZeroU32,
 }
 
-fn default_shard_number() -> u32 {
-    1
+fn default_shard_number() -> NonZeroU32 {
+    NonZeroU32::new(1).unwrap()
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
