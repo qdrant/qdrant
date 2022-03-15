@@ -30,12 +30,12 @@ use segment::{
         WithPayload, WithPayloadInterface,
     },
 };
-use shard::{LocalShard, ShardId};
 use tokio::runtime::Handle;
 
 use crate::operations::OperationToShard;
+use crate::shard::local_shard::LocalShard;
+use crate::shard::{Shard, ShardId};
 use crate::Shard::Local;
-use crate::shard::Shard;
 
 pub mod collection_manager;
 mod common;
@@ -133,7 +133,10 @@ impl Collection {
             let new_wal_path = LocalShard::wal_path(&shard_path);
             create_dir_all(&new_segmnents_path)?;
             create_dir_all(&new_wal_path)?;
-            rename(LocalShard::segments_path(collection_path), &new_segmnents_path)?;
+            rename(
+                LocalShard::segments_path(collection_path),
+                &new_segmnents_path,
+            )?;
             rename(LocalShard::wal_path(collection_path), &new_wal_path)?;
             log::info!("Migration finished.");
         }

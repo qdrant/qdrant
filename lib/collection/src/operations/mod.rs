@@ -5,12 +5,11 @@ pub mod types;
 
 use std::collections::HashMap;
 
+use crate::ShardId;
 use hashring::HashRing;
 use schemars::JsonSchema;
 use segment::types::ExtendedPointId;
 use serde::{Deserialize, Serialize};
-
-use crate::shard::ShardId;
 
 use self::types::CollectionResult;
 
