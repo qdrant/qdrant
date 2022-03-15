@@ -11,6 +11,7 @@ doctest = false
 default = [ "web" ]
 web = ["actix-web"]
 service_debug = ["parking_lot", "parking_lot/deadlock_detection"]
+consensus = ["raft", "slog", "slog-stdlog"]
 
 
 [dev-dependencies]
@@ -41,6 +42,10 @@ actix-web = { version = "4.0.1", optional = true }
 tonic = "0.6.2"
 num-traits = "0.2.14"
 prost = "0.9"
+
+raft = { version = "0.6.0", features = ["prost-codec"], default-features = false, optional = true }
+slog =  { version = "2.7.0", optional = true }
+slog-stdlog = { version = "4.1.0", optional = true }
 
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
