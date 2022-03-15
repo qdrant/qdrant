@@ -2,7 +2,7 @@ mod prof;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
-use segment::types::{Payload, PayloadVariant};
+use segment::types::Payload;
 use serde_json::json;
 
 fn serde_formats_bench(c: &mut Criterion) {

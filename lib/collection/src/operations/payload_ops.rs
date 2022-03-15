@@ -94,7 +94,7 @@ mod tests {
 
         match operation {
             PayloadOps::SetPayload(set_payload) => {
-                let payload: Payload = set_payload.payload.into();
+                let payload: Payload = set_payload.payload;
                 assert_eq!(payload.len(), 3);
 
                 assert!(payload.contains_key("key1"));

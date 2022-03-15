@@ -57,10 +57,10 @@ mod tests {
         }
 
         struct_segment
-            .create_field_index(opnum, &str_key, &Some(FieldDataType::Keyword))
+            .create_field_index(opnum, str_key, &Some(FieldDataType::Keyword))
             .unwrap();
         struct_segment
-            .create_field_index(opnum, &int_key, &Some(FieldDataType::Integer))
+            .create_field_index(opnum, int_key, &Some(FieldDataType::Integer))
             .unwrap();
 
         let filter = Filter::new_must(Condition::Field(FieldCondition {
@@ -151,10 +151,10 @@ mod tests {
         }
 
         struct_segment
-            .create_field_index(opnum, &str_key, &Some(FieldDataType::Keyword))
+            .create_field_index(opnum, str_key, &Some(FieldDataType::Keyword))
             .unwrap();
         struct_segment
-            .create_field_index(opnum, &int_key, &Some(FieldDataType::Integer))
+            .create_field_index(opnum, int_key, &Some(FieldDataType::Integer))
             .unwrap();
 
         let attempts = 100;

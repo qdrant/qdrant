@@ -97,11 +97,11 @@ mod tests {
 
         payload_index_ptr
             .borrow_mut()
-            .set_indexed(&int_key, PayloadSchemaType::Integer)
+            .set_indexed(int_key, PayloadSchemaType::Integer)
             .unwrap();
         let borrowed_payload_index = payload_index_ptr.borrow();
         let blocks = borrowed_payload_index
-            .payload_blocks(&int_key, indexing_threshold)
+            .payload_blocks(int_key, indexing_threshold)
             .collect_vec();
         for block in blocks.iter() {
             assert!(

@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use tempdir::TempDir;
 use tokio::runtime::Handle;
@@ -13,10 +13,7 @@ use collection::{
     },
     Collection,
 };
-use segment::types::{
-    Condition, HasIdCondition, Payload, PayloadKeyType, PayloadVariant, PointIdType,
-    WithPayloadInterface,
-};
+use segment::types::{Condition, HasIdCondition, Payload, PointIdType, WithPayloadInterface};
 
 use crate::common::{simple_collection_fixture, N_SHARDS};
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;

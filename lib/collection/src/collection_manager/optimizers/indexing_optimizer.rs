@@ -145,7 +145,6 @@ impl SegmentOptimizer for IndexingOptimizer {
 
 #[cfg(test)]
 mod tests {
-    use std::borrow::Borrow;
     use std::num::NonZeroU32;
     use std::ops::Deref;
     use std::sync::atomic::AtomicBool;
@@ -153,11 +152,10 @@ mod tests {
 
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
-    use segment::payload_storage::PayloadStorageSS;
     use serde_json::json;
     use tempdir::TempDir;
 
-    use segment::types::{FieldDataType, Payload, PayloadSchemaType, StorageType};
+    use segment::types::{FieldDataType, Payload, StorageType};
 
     use crate::collection_manager::fixtures::random_segment;
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
@@ -333,7 +331,7 @@ mod tests {
                     payloads: Some(vec![
                         Some(point_payload.clone()),
                         Some(point_payload.clone()),
-                        Some(point_payload.clone()),
+                        Some(point_payload),
                     ]),
                 },
             }));
