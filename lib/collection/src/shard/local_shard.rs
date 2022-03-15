@@ -284,11 +284,8 @@ impl LocalShard {
         self.segments.read().flush_all().unwrap();
         bar.finish();
     }
-}
 
-#[async_trait]
-impl ShardOperation for LocalShard {
-    async fn before_drop(&mut self) {
+    pub async fn before_drop(&mut self) {
         // Finishes update tasks right before destructor stuck to do so with runtime
         self.update_sender.load().send(UpdateSignal::Stop).unwrap();
 
@@ -315,7 +312,10 @@ impl ShardOperation for LocalShard {
 
         self.before_drop_called = true;
     }
+}
 
+#[async_trait]
+impl ShardOperation for &LocalShard {
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.

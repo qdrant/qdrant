@@ -10,6 +10,7 @@ use crate::{
 use async_trait::async_trait;
 use parking_lot::RwLock;
 use segment::types::{ExtendedPointId, Filter, WithPayloadInterface};
+use std::sync::Arc;
 
 pub type ShardId = u32;
 
@@ -26,10 +27,10 @@ pub enum Shard {
 }
 
 impl Shard {
-    pub fn get(self) -> Box<dyn ShardOperation> {
+    pub fn get(&self) -> Arc<dyn ShardOperation + Sync + Send + '_> {
         match self {
-            Shard::Local(local_shard) => Box::new(local_shard),
-            Shard::Remote(remote_shard) => Box::new(remote_shard),
+            Shard::Local(local_shard) => Arc::new(local_shard),
+            Shard::Remote(remote_shard) => Arc::new(remote_shard),
         }
     }
 
@@ -39,77 +40,10 @@ impl Shard {
             Shard::Remote(_) => (),
         }
     }
-
-    pub async fn update(
-        &self,
-        operation: CollectionUpdateOperations,
-        wait: bool,
-    ) -> CollectionResult<UpdateResult> {
-        match self {
-            Shard::Local(local_shard) => local_shard.update(operation, wait).await,
-            Shard::Remote(_) => todo!(),
-        }
-    }
-
-    pub fn segments(&self) -> &RwLock<SegmentHolder> {
-        match self {
-            Shard::Local(local_shard) => local_shard.segments(),
-            Shard::Remote(_) => todo!(),
-        }
-    }
-
-    pub async fn scroll_by(
-        &self,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
-        offset: Option<ExtendedPointId>,
-        limit: usize,
-        with_payload_interface: &WithPayloadInterface,
-        with_vector: bool,
-        filter: Option<&Filter>,
-    ) -> CollectionResult<Vec<Record>> {
-        match self {
-            Shard::Local(local_shard) => {
-                local_shard
-                    .scroll_by(
-                        segment_searcher,
-                        offset,
-                        limit,
-                        with_payload_interface,
-                        with_vector,
-                        filter,
-                    )
-                    .await
-            }
-            Shard::Remote(_) => todo!(),
-        }
-    }
-
-    pub async fn update_optimizer_params(
-        &self,
-        optimizer_config_diff: OptimizersConfigDiff,
-    ) -> CollectionResult<()> {
-        match self {
-            Shard::Local(local_shard) => {
-                local_shard
-                    .update_optimizer_params(optimizer_config_diff)
-                    .await
-            }
-            Shard::Remote(_) => todo!(),
-        }
-    }
-
-    pub async fn info(&self) -> CollectionResult<CollectionInfo> {
-        match self {
-            Shard::Local(local_shard) => local_shard.info().await,
-            Shard::Remote(_) => todo!(),
-        }
-    }
 }
 
 #[async_trait]
 pub trait ShardOperation {
-    async fn before_drop(&mut self);
-
     async fn update(
         &self,
         operation: CollectionUpdateOperations,

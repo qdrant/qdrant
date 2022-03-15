@@ -21,11 +21,7 @@ pub struct RemoteShard {
 
 #[async_trait]
 #[allow(unused_variables)]
-impl ShardOperation for RemoteShard {
-    async fn before_drop(&mut self) {
-        todo!()
-    }
-
+impl ShardOperation for &RemoteShard {
     async fn update(
         &self,
         operation: CollectionUpdateOperations,

@@ -164,12 +164,17 @@ impl Collection {
         match by_shard {
             OperationToShard::ByShard(by_shard) => {
                 for (shard_id, operation) in by_shard {
-                    results.push(self.shard_by_id(shard_id).update(operation, wait).await)
+                    results.push(
+                        self.shard_by_id(shard_id)
+                            .get()
+                            .update(operation, wait)
+                            .await,
+                    )
                 }
             }
             OperationToShard::ToAll(operation) => {
                 for shard in self.all_shards() {
-                    results.push(shard.update(operation.clone(), wait).await)
+                    results.push(shard.get().update(operation.clone(), wait).await)
                 }
             }
         }
@@ -297,7 +302,11 @@ impl Collection {
         let request = Arc::new(request);
         for shard in self.all_shards() {
             let mut shard_points = segment_searcher
-                .search(shard.segments(), request.clone(), search_runtime_handle)
+                .search(
+                    shard.get().segments(),
+                    request.clone(),
+                    search_runtime_handle,
+                )
                 .await?;
             points.append(&mut shard_points);
         }
@@ -333,6 +342,7 @@ impl Collection {
         let mut points = Vec::new();
         for shard in self.all_shards() {
             let mut shard_points = shard
+                .get()
                 .scroll_by(
                     segment_searcher,
                     offset,
@@ -374,7 +384,12 @@ impl Collection {
         let mut points = Vec::new();
         for shard in self.all_shards() {
             let mut shard_points = segment_searcher
-                .retrieve(shard.segments(), &request.ids, &with_payload, with_vector)
+                .retrieve(
+                    shard.get().segments(),
+                    &request.ids,
+                    &with_payload,
+                    with_vector,
+                )
                 .await?;
             points.append(&mut shard_points);
         }
@@ -391,6 +406,7 @@ impl Collection {
     ) -> CollectionResult<()> {
         for shard in self.all_shards() {
             shard
+                .get()
                 .update_optimizer_params(optimizer_config_diff.clone())
                 .await?;
         }
@@ -402,10 +418,11 @@ impl Collection {
         let mut info = shards
             .next()
             .expect("At least 1 shard expected")
+            .get()
             .info()
             .await?;
         for shard in shards {
-            let mut shard_info = shard.info().await?;
+            let mut shard_info = shard.get().info().await?;
             info.status = max(info.status, shard_info.status);
             info.optimizer_status = max(info.optimizer_status, shard_info.optimizer_status);
             info.vectors_count += shard_info.vectors_count;
