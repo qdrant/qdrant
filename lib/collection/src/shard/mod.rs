@@ -7,6 +7,7 @@ use crate::{
     CollectionInfo, CollectionResult, CollectionSearcher, CollectionUpdateOperations, LocalShard,
     OptimizersConfigDiff, Record, UpdateResult,
 };
+use async_trait::async_trait;
 use parking_lot::RwLock;
 use segment::types::{ExtendedPointId, Filter, WithPayloadInterface};
 
@@ -25,6 +26,13 @@ pub enum Shard {
 }
 
 impl Shard {
+    pub fn get(self) -> Box<dyn ShardOperation> {
+        match self {
+            Shard::Local(local_shard) => Box::new(local_shard),
+            Shard::Remote(remote_shard) => Box::new(remote_shard),
+        }
+    }
+
     pub async fn before_drop(&mut self) {
         match self {
             Shard::Local(local_shard) => local_shard.before_drop().await,
@@ -96,4 +104,34 @@ impl Shard {
             Shard::Remote(_) => todo!(),
         }
     }
+}
+
+#[async_trait]
+pub trait ShardOperation {
+    async fn before_drop(&mut self);
+
+    async fn update(
+        &self,
+        operation: CollectionUpdateOperations,
+        wait: bool,
+    ) -> CollectionResult<UpdateResult>;
+
+    fn segments(&self) -> &RwLock<SegmentHolder>;
+
+    async fn scroll_by(
+        &self,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: bool,
+        filter: Option<&Filter>,
+    ) -> CollectionResult<Vec<Record>>;
+
+    async fn update_optimizer_params(
+        &self,
+        optimizer_config_diff: OptimizersConfigDiff,
+    ) -> CollectionResult<()>;
+
+    async fn info(&self) -> CollectionResult<CollectionInfo>;
 }

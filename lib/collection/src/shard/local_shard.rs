@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 
+use async_trait::async_trait;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -31,6 +32,7 @@ use crate::operations::types::{
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
+use crate::shard::ShardOperation;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 use crate::{CollectionId, ShardId};
@@ -252,14 +254,72 @@ impl LocalShard {
         Ok(collection)
     }
 
-    pub fn segments(&self) -> &RwLock<SegmentHolder> {
-        self.segments.deref()
+    pub async fn stop_flush_worker(&self) {
+        let mut update_handler = self.update_handler.lock().await;
+        update_handler.stop_flush_worker()
+    }
+
+    pub async fn wait_update_workers_stop(&self) -> CollectionResult<()> {
+        let mut update_handler = self.update_handler.lock().await;
+        update_handler.wait_workers_stops().await
+    }
+
+    /// Loads latest collection operations from WAL
+    pub async fn load_from_wal(&self) {
+        let wal = self.wal.lock().await;
+        let bar = ProgressBar::new(wal.len());
+        bar.set_message("Recovering collection");
+        let segments = self.segments();
+        // ToDo: Start from minimal applied version
+        for (op_num, update) in wal.read_all() {
+            // Panic only in case of internal error. If wrong formatting - skip
+            if let Err(CollectionError::ServiceError { error }) =
+                CollectionUpdater::update(segments, op_num, update)
+            {
+                panic!("Can't apply WAL operation: {}", error)
+            }
+            bar.inc(1);
+        }
+
+        self.segments.read().flush_all().unwrap();
+        bar.finish();
+    }
+}
+
+#[async_trait]
+impl ShardOperation for LocalShard {
+    async fn before_drop(&mut self) {
+        // Finishes update tasks right before destructor stuck to do so with runtime
+        self.update_sender.load().send(UpdateSignal::Stop).unwrap();
+
+        self.stop_flush_worker().await;
+
+        self.wait_update_workers_stop().await.unwrap();
+
+        match self.runtime_handle.take() {
+            None => {}
+            Some(handle) => {
+                // The drop could be called from the tokio context, e.g. from perform_collection_operation method.
+                // Calling remove from there would lead to the following error in a new version of tokio:
+                // "Cannot drop a runtime in a context where blocking is not allowed. This happens when a runtime is dropped from within an asynchronous context."
+                // So the workaround for move out the runtime handler and drop it in the separate thread.
+                // The proper solution is to reconsider the collection to be an owner of the runtime
+
+                let thread_handler = thread::Builder::new()
+                    .name("collection_drop".to_string())
+                    .spawn(move || drop(handle))
+                    .unwrap();
+                thread_handler.join().unwrap();
+            }
+        }
+
+        self.before_drop_called = true;
     }
 
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
-    pub async fn update(
+    async fn update(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
@@ -298,7 +358,11 @@ impl LocalShard {
         }
     }
 
-    pub async fn scroll_by(
+    fn segments(&self) -> &RwLock<SegmentHolder> {
+        self.segments.deref()
+    }
+
+    async fn scroll_by(
         &self,
         segment_searcher: &(dyn CollectionSearcher + Sync),
         offset: Option<ExtendedPointId>,
@@ -327,8 +391,47 @@ impl LocalShard {
         Ok(points)
     }
 
+    /// Updates shard optimization params:
+    /// - Saves new params on disk
+    /// - Stops existing optimization loop
+    /// - Runs new optimizers with new params
+    async fn update_optimizer_params(
+        &self,
+        optimizer_config_diff: OptimizersConfigDiff,
+    ) -> CollectionResult<()> {
+        log::debug!("Updating optimizer params");
+        {
+            let mut config = self.config.write().await;
+            config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
+            config.save(&self.path)?;
+        }
+        let config = self.config.read().await;
+        let mut update_handler = self.update_handler.lock().await;
+
+        let (update_sender, update_receiver) = mpsc::unbounded_channel();
+        // makes sure that the Stop signal is the last one in this channel
+        let old_sender = self.update_sender.swap(Arc::new(update_sender));
+        old_sender.send(UpdateSignal::Stop)?;
+        update_handler.stop_flush_worker();
+
+        update_handler.wait_workers_stops().await?;
+        let new_optimizers = build_optimizers(
+            &self.path,
+            &config.params,
+            &config.optimizer_config,
+            &config.hnsw_config,
+            self.schema_store.clone(),
+        );
+        update_handler.optimizers = new_optimizers;
+        update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
+        update_handler.run_workers(update_receiver);
+        self.update_sender.load().send(UpdateSignal::Nop)?;
+
+        Ok(())
+    }
+
     /// Collect overview information about the shard
-    pub async fn info(&self) -> CollectionResult<CollectionInfo> {
+    async fn info(&self) -> CollectionResult<CollectionInfo> {
         let collection_config = self.config.read().await.clone();
         let segments = self.segments.read();
         let mut vectors_count = 0;
@@ -369,104 +472,6 @@ impl LocalShard {
             config: collection_config,
             payload_schema: schema,
         })
-    }
-
-    /// Updates shard optimization params:
-    /// - Saves new params on disk
-    /// - Stops existing optimization loop
-    /// - Runs new optimizers with new params
-    pub async fn update_optimizer_params(
-        &self,
-        optimizer_config_diff: OptimizersConfigDiff,
-    ) -> CollectionResult<()> {
-        log::debug!("Updating optimizer params");
-        {
-            let mut config = self.config.write().await;
-            config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
-            config.save(&self.path)?;
-        }
-        let config = self.config.read().await;
-        let mut update_handler = self.update_handler.lock().await;
-
-        let (update_sender, update_receiver) = mpsc::unbounded_channel();
-        // makes sure that the Stop signal is the last one in this channel
-        let old_sender = self.update_sender.swap(Arc::new(update_sender));
-        old_sender.send(UpdateSignal::Stop)?;
-        update_handler.stop_flush_worker();
-
-        update_handler.wait_workers_stops().await?;
-        let new_optimizers = build_optimizers(
-            &self.path,
-            &config.params,
-            &config.optimizer_config,
-            &config.hnsw_config,
-            self.schema_store.clone(),
-        );
-        update_handler.optimizers = new_optimizers;
-        update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
-        update_handler.run_workers(update_receiver);
-        self.update_sender.load().send(UpdateSignal::Nop)?;
-
-        Ok(())
-    }
-
-    pub async fn stop_flush_worker(&self) {
-        let mut update_handler = self.update_handler.lock().await;
-        update_handler.stop_flush_worker()
-    }
-
-    pub async fn wait_update_workers_stop(&self) -> CollectionResult<()> {
-        let mut update_handler = self.update_handler.lock().await;
-        update_handler.wait_workers_stops().await
-    }
-
-    /// Loads latest collection operations from WAL
-    pub async fn load_from_wal(&self) {
-        let wal = self.wal.lock().await;
-        let bar = ProgressBar::new(wal.len());
-        bar.set_message("Recovering collection");
-        let segments = self.segments();
-        // ToDo: Start from minimal applied version
-        for (op_num, update) in wal.read_all() {
-            // Panic only in case of internal error. If wrong formatting - skip
-            if let Err(CollectionError::ServiceError { error }) =
-                CollectionUpdater::update(segments, op_num, update)
-            {
-                panic!("Can't apply WAL operation: {}", error)
-            }
-            bar.inc(1);
-        }
-
-        self.segments.read().flush_all().unwrap();
-        bar.finish();
-    }
-
-    pub async fn before_drop(&mut self) {
-        // Finishes update tasks right before destructor stuck to do so with runtime
-        self.update_sender.load().send(UpdateSignal::Stop).unwrap();
-
-        self.stop_flush_worker().await;
-
-        self.wait_update_workers_stop().await.unwrap();
-
-        match self.runtime_handle.take() {
-            None => {}
-            Some(handle) => {
-                // The drop could be called from the tokio context, e.g. from perform_collection_operation method.
-                // Calling remove from there would lead to the following error in a new version of tokio:
-                // "Cannot drop a runtime in a context where blocking is not allowed. This happens when a runtime is dropped from within an asynchronous context."
-                // So the workaround for move out the runtime handler and drop it in the separate thread.
-                // The proper solution is to reconsider the collection to be an owner of the runtime
-
-                let thread_handler = thread::Builder::new()
-                    .name("collection_drop".to_string())
-                    .spawn(move || drop(handle))
-                    .unwrap();
-                thread_handler.join().unwrap();
-            }
-        }
-
-        self.before_drop_called = true;
     }
 }
 
