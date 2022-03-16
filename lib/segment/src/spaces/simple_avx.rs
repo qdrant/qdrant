@@ -13,7 +13,7 @@ unsafe fn hsum256_ps_avx(x: __m256) -> f32 {
 
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
-pub unsafe fn euclid_similarity_avx(
+pub(crate) unsafe fn euclid_similarity_avx(
     v1: &[VectorElementType],
     v2: &[VectorElementType],
 ) -> ScoreType {
@@ -60,7 +60,7 @@ pub unsafe fn euclid_similarity_avx(
 
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
-pub unsafe fn cosine_preprocess_avx(vector: &[VectorElementType]) -> Vec<VectorElementType> {
+pub(crate) unsafe fn cosine_preprocess_avx(vector: &[VectorElementType]) -> Vec<VectorElementType> {
     let n = vector.len();
     let m = n - (n % 32);
     let mut ptr: *const f32 = vector.as_ptr();
@@ -100,7 +100,10 @@ pub unsafe fn cosine_preprocess_avx(vector: &[VectorElementType]) -> Vec<VectorE
 
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
-pub unsafe fn dot_similarity_avx(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+pub(crate) unsafe fn dot_similarity_avx(
+    v1: &[VectorElementType],
+    v2: &[VectorElementType],
+) -> ScoreType {
     let n = v1.len();
     let m = n - (n % 32);
     let mut ptr1: *const f32 = v1.as_ptr();
