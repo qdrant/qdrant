@@ -8,9 +8,6 @@ use super::simple_sse::*;
 #[cfg(target_arch = "x86_64")]
 use super::simple_avx::*;
 
-#[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-use super::simple_avx512::*;
-
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use super::simple_neon::*;
 
@@ -29,13 +26,6 @@ impl Metric for EuclidMetric {
     }
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-        {
-            if is_x86_feature_detected!("avx512f") {
-                return unsafe { euclid_similarity_avx512f(v1, v2) };
-            }
-        }
-
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
@@ -71,13 +61,6 @@ impl Metric for DotProductMetric {
     }
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-        {
-            if is_x86_feature_detected!("avx512f") {
-                return unsafe { dot_similarity_avx512f(v1, v2) };
-            }
-        }
-
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
@@ -113,13 +96,6 @@ impl Metric for CosineMetric {
     }
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-        {
-            if is_x86_feature_detected!("avx512f") {
-                return unsafe { dot_similarity_avx512f(v1, v2) };
-            }
-        }
-
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
@@ -145,13 +121,6 @@ impl Metric for CosineMetric {
     }
 
     fn preprocess(&self, vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
-        #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-        {
-            if is_x86_feature_detected!("avx512f") {
-                return Some(unsafe { cosine_preprocess_avx512f(vector) });
-            }
-        }
-
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
