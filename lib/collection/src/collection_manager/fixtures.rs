@@ -1,3 +1,4 @@
+use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -137,7 +138,7 @@ pub(crate) fn get_merge_optimizer(
         CollectionParams {
             vector_size: 4,
             distance: Distance::Dot,
-            shard_number: 1,
+            shard_number: NonZeroU32::new(1).unwrap(),
         },
         Default::default(),
         Arc::new(SchemaStorage::new()),
@@ -159,7 +160,7 @@ pub(crate) fn get_indexing_optimizer(
         CollectionParams {
             vector_size: 4,
             distance: Distance::Dot,
-            shard_number: 1,
+            shard_number: NonZeroU32::new(1).unwrap(),
         },
         Default::default(),
         Arc::new(SchemaStorage::new()),

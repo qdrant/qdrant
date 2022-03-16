@@ -53,6 +53,7 @@ mod tests {
                             hnsw_config: None,
                             wal_config: None,
                             optimizers_config: None,
+                            shard_number: 1,
                         },
                     },
                 )),

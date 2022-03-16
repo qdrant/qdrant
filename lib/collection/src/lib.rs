@@ -12,6 +12,7 @@ use std::{
 use crate::operations::types::PointRequest;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
+use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
 use hashring::HashRing;
 use itertools::Itertools;
 use operations::{
@@ -57,23 +58,33 @@ pub struct Collection {
 }
 
 impl Collection {
-    pub fn new(
+    pub async fn new(
         id: CollectionId,
         path: &Path,
         config: &CollectionConfig,
     ) -> Result<Self, CollectionError> {
         config.save(path)?;
         let mut ring = HashRing::new();
-        let mut shards = HashMap::new();
-        for shard_id in 0..config.params.shard_number {
+        let mut shards: HashMap<ShardId, Shard> = HashMap::new();
+        for shard_id in 0..config.params.shard_number.get() {
             let shard_path = shard_path(path, shard_id);
-            create_dir_all(&shard_path).map_err(|err| CollectionError::ServiceError {
-                error: format!("Can't create shard {shard_id} directory. Error: {}", err),
-            })?;
-            shards.insert(
-                shard_id,
-                Shard::build(shard_id, id.clone(), &shard_path, config)?,
-            );
+            let shard = create_dir_all(&shard_path)
+                .map_err(|err| CollectionError::ServiceError {
+                    error: format!("Can't create shard {shard_id} directory. Error: {}", err),
+                })
+                .and_then(|()| Shard::build(shard_id, id.clone(), &shard_path, config));
+            let shard = match shard {
+                Ok(shard) => shard,
+                Err(err) => {
+                    let futures: FuturesUnordered<_> = shards
+                        .iter_mut()
+                        .map(|(_, shard)| shard.before_drop())
+                        .collect();
+                    futures.collect::<Vec<()>>().await;
+                    return Err(err);
+                }
+            };
+            shards.insert(shard_id, shard);
             ring.add(shard_id);
         }
         Ok(Self {
@@ -97,7 +108,7 @@ impl Collection {
         Self::try_migrate_legacy_one_shard(path)
             .expect("Failed to migrate legacy collection format.");
 
-        for shard_id in 0..config.params.shard_number {
+        for shard_id in 0..config.params.shard_number.get() {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
                 shard_id,
@@ -157,9 +168,29 @@ impl Collection {
                 }
             }
         }
-        // At least one result is always present.
-        // This is a stub to keep the current API as we have only 1 shard for now.
-        results.pop().unwrap()
+        let with_error = results
+            .iter()
+            .filter(|result| matches!(result, Err(_)))
+            .count();
+
+        if with_error > 0 {
+            let err = results
+                .into_iter()
+                .find(|result| matches!(result, Err(_)))
+                .unwrap();
+            if with_error < self.shards.len() {
+                err.map_err(|err| CollectionError::InconsistentFailure {
+                    shards_total: self.shards.len() as u32,
+                    shards_failed: with_error as u32,
+                    first_err: format!("{err}"),
+                })
+            } else {
+                err
+            }
+        } else {
+            // At least one result is always present.
+            results.pop().unwrap()
+        }
     }
 
     pub async fn recommend_by(
@@ -362,13 +393,13 @@ impl Collection {
     }
 
     pub async fn info(&self) -> CollectionResult<CollectionInfo> {
-        let mut info = self
-            .shards
-            .get(&0)
+        let mut shards = self.all_shards();
+        let mut info = shards
+            .next()
             .expect("At least 1 shard expected")
             .info()
             .await?;
-        for shard in self.all_shards().skip(1) {
+        for shard in shards {
             let mut shard_info = shard.info().await?;
             info.status = max(info.status, shard_info.status);
             info.optimizer_status = max(info.optimizer_status, shard_info.optimizer_status);
@@ -383,9 +414,12 @@ impl Collection {
     }
 
     pub async fn before_drop(&mut self) {
-        for (_, mut shard) in self.shards.drain() {
-            shard.before_drop().await
-        }
+        let futures: FuturesUnordered<_> = self
+            .shards
+            .iter_mut()
+            .map(|(_, shard)| shard.before_drop())
+            .collect();
+        futures.collect::<Vec<()>>().await;
         self.before_drop_called = true
     }
 }
