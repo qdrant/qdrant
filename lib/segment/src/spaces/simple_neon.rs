@@ -10,33 +10,67 @@ pub unsafe fn euclid_similarity_neon(
     v2: &[VectorElementType],
 ) -> ScoreType {
     let n = v1.len();
-    let m = n - (n % 4);
-    let zeros: [f32; 4] = [0.0; 4];
-    let mut sum = vld1q_f32(&zeros[0]);
-    for i in (0..m).step_by(4) {
-        let a = vld1q_f32(&v1[i]);
-        let b = vld1q_f32(&v2[i]);
-        let sub = vsubq_f32(a, b);
-        sum = vfmaq_f32(sum, sub, sub);
+    let m = n - (n % 16);
+    let mut ptr1: *const f32 = v1.as_ptr();
+    let mut ptr2: *const f32 = v2.as_ptr();
+    let mut sum1 = vdupq_n_f32(0.);
+    let mut sum2 = vdupq_n_f32(0.);
+    let mut sum3 = vdupq_n_f32(0.);
+    let mut sum4 = vdupq_n_f32(0.);
+
+    let mut i: usize = 0;
+    while i < m {
+        let sub1 = vsubq_f32(vld1q_f32(ptr1), vld1q_f32(ptr2));
+        sum1 = vfmaq_f32(sum1, sub1, sub1);
+
+        let sub2 = vsubq_f32(vld1q_f32(ptr1.add(4)), vld1q_f32(ptr2.add(4)));
+        sum2 = vfmaq_f32(sum2, sub2, sub2);
+
+        let sub3 = vsubq_f32(vld1q_f32(ptr1.add(8)), vld1q_f32(ptr2.add(8)));
+        sum3 = vfmaq_f32(sum3, sub3, sub3);
+
+        let sub4 = vsubq_f32(vld1q_f32(ptr1.add(12)), vld1q_f32(ptr2.add(12)));
+        sum4 = vfmaq_f32(sum4, sub4, sub4);
+
+        ptr1 = ptr1.add(16);
+        ptr2 = ptr2.add(16);
+        i += 16;
     }
-    let mut res = vaddvq_f32(sum);
-    for i in m..n {
-        res += (v1[i] - v2[i]).powi(2);
+    let mut result = vaddvq_f32(sum1) + vaddvq_f32(sum2) + vaddvq_f32(sum3) + vaddvq_f32(sum4);
+    for i in 0..n - m {
+        result += (*ptr1.add(i) - *ptr2.add(i)).powi(2);
     }
-    -res.sqrt()
+    -result.sqrt()
 }
 
 #[cfg(target_feature = "neon")]
 pub unsafe fn cosine_preprocess_neon(vector: &[VectorElementType]) -> Vec<VectorElementType> {
     let n = vector.len();
-    let m = n - (n % 4);
-    let zeros: [f32; 4] = [0.0; 4];
-    let mut sum = vld1q_f32(&zeros[0]);
-    for i in (0..m).step_by(4) {
-        let a = vld1q_f32(&vector[i]);
-        sum = vfmaq_f32(sum, a, a);
+    let m = n - (n % 16);
+    let mut ptr: *const f32 = vector.as_ptr();
+    let mut sum1 = vdupq_n_f32(0.);
+    let mut sum2 = vdupq_n_f32(0.);
+    let mut sum3 = vdupq_n_f32(0.);
+    let mut sum4 = vdupq_n_f32(0.);
+
+    let mut i: usize = 0;
+    while i < m {
+        let d1 = vld1q_f32(ptr);
+        sum1 = vfmaq_f32(sum1, d1, d1);
+
+        let d2 = vld1q_f32(ptr.add(4));
+        sum2 = vfmaq_f32(sum2, d2, d2);
+
+        let d3 = vld1q_f32(ptr.add(8));
+        sum3 = vfmaq_f32(sum3, d3, d3);
+
+        let d4 = vld1q_f32(ptr.add(12));
+        sum4 = vfmaq_f32(sum4, d4, d4);
+
+        ptr = ptr.add(16);
+        i += 16;
     }
-    let mut length = vaddvq_f32(sum);
+    let mut length = vaddvq_f32(sum1) + vaddvq_f32(sum2) + vaddvq_f32(sum3) + vaddvq_f32(sum4);
     for v in vector.iter().take(n).skip(m) {
         length += v.powi(2);
     }
