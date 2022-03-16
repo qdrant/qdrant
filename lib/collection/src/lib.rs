@@ -301,12 +301,9 @@ impl Collection {
         let mut points = Vec::new();
         let request = Arc::new(request);
         for shard in self.all_shards() {
-            let mut shard_points = segment_searcher
-                .search(
-                    shard.get().segments(),
-                    request.clone(),
-                    search_runtime_handle,
-                )
+            let mut shard_points = shard
+                .get()
+                .search(request.clone(), segment_searcher, search_runtime_handle)
                 .await?;
             points.append(&mut shard_points);
         }
@@ -380,13 +377,14 @@ impl Collection {
             .unwrap_or(&WithPayloadInterface::Bool(false));
         let with_payload = WithPayload::from(with_payload_interface);
         let with_vector = request.with_vector;
-
+        let request = Arc::new(request);
         let mut points = Vec::new();
         for shard in self.all_shards() {
-            let mut shard_points = segment_searcher
+            let mut shard_points = shard
+                .get()
                 .retrieve(
-                    shard.get().segments(),
-                    &request.ids,
+                    request.clone(),
+                    segment_searcher,
                     &with_payload,
                     with_vector,
                 )

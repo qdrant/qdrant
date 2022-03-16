@@ -13,12 +13,12 @@ use segment::segment_constructor::simple_segment_constructor::build_simple_segme
 use std::cmp::max;
 use std::fs::create_dir_all;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::runtime::{self, Runtime};
+use tokio::runtime::{self, Handle, Runtime};
 use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot, Mutex, RwLock as TokioRwLock};
 
 use segment::types::{
-    ExtendedPointId, Filter, PayloadKeyType, PayloadSchemaInfo, SegmentType, WithPayload,
-    WithPayloadInterface,
+    ExtendedPointId, Filter, PayloadKeyType, PayloadSchemaInfo, ScoredPoint, SegmentType,
+    WithPayload, WithPayloadInterface,
 };
 
 use crate::collection_manager::collection_managers::CollectionSearcher;
@@ -35,7 +35,7 @@ use crate::optimizers_builder::build_optimizers;
 use crate::shard::ShardOperation;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
-use crate::{CollectionId, ShardId};
+use crate::{CollectionId, PointRequest, SearchRequest, ShardId};
 use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::segment_constructor::load_segment;
 use std::fs::{read_dir, remove_dir_all};
@@ -472,6 +472,29 @@ impl ShardOperation for &LocalShard {
             config: collection_config,
             payload_schema: schema,
         })
+    }
+
+    async fn search(
+        &self,
+        request: Arc<SearchRequest>,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        segment_searcher
+            .search(self.segments(), request.clone(), search_runtime_handle)
+            .await
+    }
+
+    async fn retrieve(
+        &self,
+        request: Arc<PointRequest>,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        with_payload: &WithPayload,
+        with_vector: bool,
+    ) -> CollectionResult<Vec<Record>> {
+        segment_searcher
+            .retrieve(self.segments(), &request.ids, with_payload, with_vector)
+            .await
     }
 }
 

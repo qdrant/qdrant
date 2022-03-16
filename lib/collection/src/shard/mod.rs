@@ -5,12 +5,13 @@ use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::shard::remote_shard::RemoteShard;
 use crate::{
     CollectionInfo, CollectionResult, CollectionSearcher, CollectionUpdateOperations, LocalShard,
-    OptimizersConfigDiff, Record, UpdateResult,
+    OptimizersConfigDiff, PointRequest, Record, SearchRequest, UpdateResult,
 };
 use async_trait::async_trait;
 use parking_lot::RwLock;
-use segment::types::{ExtendedPointId, Filter, WithPayloadInterface};
+use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
 use std::sync::Arc;
+use tokio::runtime::Handle;
 
 pub type ShardId = u32;
 
@@ -68,4 +69,19 @@ pub trait ShardOperation {
     ) -> CollectionResult<()>;
 
     async fn info(&self) -> CollectionResult<CollectionInfo>;
+
+    async fn search(
+        &self,
+        request: Arc<SearchRequest>,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<ScoredPoint>>;
+
+    async fn retrieve(
+        &self,
+        request: Arc<PointRequest>,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        with_payload: &WithPayload,
+        with_vector: bool,
+    ) -> CollectionResult<Vec<Record>>;
 }

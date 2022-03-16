@@ -2,11 +2,13 @@ use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::shard::{PeerId, ShardId, ShardOperation};
 use crate::{
     CollectionId, CollectionInfo, CollectionResult, CollectionSearcher, CollectionUpdateOperations,
-    OptimizersConfigDiff, Record, UpdateResult,
+    OptimizersConfigDiff, PointRequest, Record, SearchRequest, UpdateResult,
 };
 use async_trait::async_trait;
 use parking_lot::RwLock;
-use segment::types::{ExtendedPointId, Filter, WithPayloadInterface};
+use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
+use std::sync::Arc;
+use tokio::runtime::Handle;
 
 /// RemoteShard
 ///
@@ -54,6 +56,25 @@ impl ShardOperation for &RemoteShard {
     }
 
     async fn info(&self) -> CollectionResult<CollectionInfo> {
+        todo!()
+    }
+
+    async fn search(
+        &self,
+        request: Arc<SearchRequest>,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        todo!()
+    }
+
+    async fn retrieve(
+        &self,
+        request: Arc<PointRequest>,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        with_payload: &WithPayload,
+        with_vector: bool,
+    ) -> CollectionResult<Vec<Record>> {
         todo!()
     }
 }
