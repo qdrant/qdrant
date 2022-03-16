@@ -725,7 +725,7 @@ mod tests {
         for (idx, vec) in vector_holder.vectors.iter().enumerate() {
             reference_top.push(ScoredPointOffset {
                 idx: idx as PointOffsetType,
-                score: vector_holder.metric.similarity(&vec, &processed_query),
+                score: vector_holder.metric.similarity(vec, &processed_query),
             });
         }
 
