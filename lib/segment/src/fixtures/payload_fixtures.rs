@@ -59,7 +59,7 @@ pub fn random_int_payload(rnd_gen: &mut ThreadRng, num_values: usize) -> Payload
     )
 }
 
-pub fn random_geo_payload(rnd_gen: &mut ThreadRng, num_values: usize) -> PayloadType {
+pub fn random_geo_payload<R: Rng + ?Sized>(rnd_gen: &mut R, num_values: usize) -> PayloadType {
     PayloadType::Geo(
         (0..num_values)
             .map(|_| GeoPoint {

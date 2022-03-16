@@ -1,7 +1,7 @@
 //! Contains functions for interpreting filter queries and defining if given points pass the conditions
 
 use crate::types::{
-    GeoBoundingBox, GeoRadius, Match, MatchInteger, MatchKeyword, PayloadType, Range,
+    GeoBoundingBox, GeoPoint, GeoRadius, Match, MatchInteger, MatchKeyword, PayloadType, Range,
 };
 use geo::algorithm::haversine_distance::HaversineDistance;
 use geo::Point;
@@ -42,30 +42,44 @@ pub fn match_range(payload: &PayloadType, num_range: &Range) -> bool {
     }
 }
 
+pub fn check_geo_points_within_bbox(
+    geo_points: &[GeoPoint],
+    geo_bounding_box: &GeoBoundingBox,
+) -> bool {
+    geo_points.iter().any(|geo_point| {
+        (geo_bounding_box.top_left.lon < geo_point.lon)
+            && (geo_point.lon < geo_bounding_box.bottom_right.lon)
+            && (geo_bounding_box.bottom_right.lat < geo_point.lat)
+            && (geo_point.lat < geo_bounding_box.top_left.lat)
+    })
+}
+
 pub fn match_geo(payload: &PayloadType, geo_bounding_box: &GeoBoundingBox) -> bool {
-    return match payload {
-        PayloadType::Geo(geo_points) => geo_points.iter().any(|geo_point| {
-            (geo_bounding_box.top_left.lon < geo_point.lon)
-                && (geo_point.lon < geo_bounding_box.bottom_right.lon)
-                && (geo_bounding_box.bottom_right.lat < geo_point.lat)
-                && (geo_point.lat < geo_bounding_box.top_left.lat)
-        }),
+    match payload {
+        PayloadType::Geo(geo_points) => check_geo_points_within_bbox(geo_points, geo_bounding_box),
         _ => false,
-    };
+    }
+}
+
+pub fn check_geo_points_within_radius(
+    geo_points: &[GeoPoint],
+    geo_radius_query: &GeoRadius,
+) -> bool {
+    let query_center = Point::new(geo_radius_query.center.lon, geo_radius_query.center.lat);
+
+    geo_points.iter().any(|geo_point| {
+        query_center.haversine_distance(&Point::new(geo_point.lon, geo_point.lat))
+            < geo_radius_query.radius
+    })
 }
 
 pub fn match_geo_radius(payload: &PayloadType, geo_radius_query: &GeoRadius) -> bool {
-    return match payload {
+    match payload {
         PayloadType::Geo(geo_points) => {
-            let query_center = Point::new(geo_radius_query.center.lon, geo_radius_query.center.lat);
-
-            geo_points.iter().any(|geo_point| {
-                query_center.haversine_distance(&Point::new(geo_point.lon, geo_point.lat))
-                    < geo_radius_query.radius
-            })
+            check_geo_points_within_radius(geo_points, geo_radius_query)
         }
         _ => false,
-    };
+    }
 }
 
 #[cfg(test)]

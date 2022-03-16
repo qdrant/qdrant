@@ -8,6 +8,7 @@ mod geo_index;
 pub mod index_selector;
 pub mod map_index;
 pub mod numeric_index;
+mod stat_tools;
 
 pub use field_index_base::*;
 
@@ -29,7 +30,7 @@ pub struct CardinalityEstimation {
     pub primary_clauses: Vec<PrimaryCondition>,
     /// Minimal possible matched points in best case for a query
     pub min: usize,
-    /// Expected number of matched points for a query
+    /// Expected number of matched points for a query, assuming even random distribution if stored data
     pub exp: usize,
     /// The largest possible number of matched points in a worst case for a query
     pub max: usize,

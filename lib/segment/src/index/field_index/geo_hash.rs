@@ -23,6 +23,20 @@ impl From<GeoPoint> for Coordinate<f64> {
     }
 }
 
+pub fn common_hash_prefix(geo_hashes: &[GeoHash]) -> GeoHash {
+    let first = &geo_hashes[0];
+    let mut prefix: usize = first.len();
+    for geo_hash in geo_hashes.iter().skip(1) {
+        for i in 0..prefix {
+            if first.as_bytes()[i] != geo_hash.as_bytes()[i] {
+                prefix = i;
+                break;
+            }
+        }
+    }
+    first[0..prefix].to_string()
+}
+
 /// Fix longitude for spherical overflow
 /// lon: 181.0 -> -179.0
 fn sphere_lon(lon: f64) -> f64 {
@@ -49,7 +63,7 @@ fn sphere_lat(lat: f64) -> f64 {
 }
 
 /// Get neighbour geohash even from the other side of coordinates
-fn sphere_neighbor(hash_str: &str, direction: Direction) -> Result<String, GeohashError> {
+fn sphere_neighbor(hash_str: &str, direction: Direction) -> Result<GeoHash, GeohashError> {
     let (coord, lon_err, lat_err) = decode(hash_str)?;
     let (dlat, dlng) = direction.to_tuple();
     let lon = sphere_lon(coord.x + 2f64 * lon_err.abs() * dlng);
@@ -59,19 +73,19 @@ fn sphere_neighbor(hash_str: &str, direction: Direction) -> Result<String, Geoha
     encode(neighbor_coord, hash_str.len())
 }
 
-pub fn encode_max_precision(lon: f64, lat: f64) -> Result<String, GeohashError> {
+pub fn encode_max_precision(lon: f64, lat: f64) -> Result<GeoHash, GeohashError> {
     encode((lon, lat).into(), GEOHASH_MAX_LENGTH)
 }
 
 pub fn geo_hash_to_box(geo_hash: &GeoHash) -> GeoBoundingBox {
     let rectangle = decode_bbox(geo_hash).unwrap();
     let top_left = GeoPoint {
-        lat: rectangle.max().x,
-        lon: rectangle.min().y,
+        lat: rectangle.max().y,
+        lon: rectangle.min().x,
     };
     let bottom_right = GeoPoint {
-        lat: rectangle.min().x,
-        lon: rectangle.max().y,
+        lat: rectangle.min().y,
+        lon: rectangle.max().x,
     };
 
     GeoBoundingBox {
@@ -82,10 +96,10 @@ pub fn geo_hash_to_box(geo_hash: &GeoHash) -> GeoBoundingBox {
 
 #[derive(Debug)]
 struct GeohashBoundingBox {
-    north_west: String,
-    south_west: String,
-    south_east: String,
-    north_east: String,
+    north_west: GeoHash,
+    south_west: GeoHash,
+    south_east: GeoHash,
+    north_east: GeoHash,
 }
 
 impl GeohashBoundingBox {
@@ -102,7 +116,7 @@ impl GeohashBoundingBox {
     /// * Some(list of geo-hashes covering the region
     ///
     fn geohash_regions(&self, precision: usize, max_regions: usize) -> Option<Vec<GeoHash>> {
-        let mut seen: Vec<String> = Vec::new();
+        let mut seen: Vec<GeoHash> = Vec::new();
 
         let mut from_row = self.north_west[..precision].to_owned();
         let mut to_row = self.north_east[..precision].to_owned();
@@ -276,6 +290,7 @@ pub fn decompose_geo_hash(geo_hash: &GeoHash) -> impl Iterator<Item = &str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::payload_storage::condition_checker::check_geo_points_within_bbox;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
@@ -623,17 +638,35 @@ mod tests {
     #[test]
     fn turn_geo_hash_to_box() {
         let geo_box = geo_hash_to_box(&"dr5ruj4477kd".to_string());
-        // dr5ruj4477k9
-        let expected_top_left = GeoPoint {
-            lon: 40.76517451554537,
-            lat: -74.00101382285357,
+        let center = GeoPoint {
+            lat: 40.76517460,
+            lon: -74.00101399,
         };
-        // dr5ruj4477k6
-        let expected_bottom_right = GeoPoint {
-            lon: 40.76517468318343,
-            lat: -74.00101415812969,
-        };
-        assert_eq!(geo_box.top_left, expected_top_left);
-        assert_eq!(geo_box.bottom_right, expected_bottom_right);
+        assert!(check_geo_points_within_bbox(&[center], &geo_box));
+    }
+
+    #[test]
+    fn common_prefix() {
+        let geo_hashes = vec![
+            "abcd123".to_string(),
+            "abcd2233".to_string(),
+            "abcd3213".to_string(),
+            "abcd533".to_string(),
+        ];
+
+        let common_prefix = common_hash_prefix(&geo_hashes);
+
+        assert_eq!(common_prefix, "abcd".to_string());
+
+        let geo_hashes = vec![
+            "abcd123".to_string(),
+            "bbcd2233".to_string(),
+            "cbcd3213".to_string(),
+            "dbcd533".to_string(),
+        ];
+
+        let common_prefix = common_hash_prefix(&geo_hashes);
+
+        assert_eq!(common_prefix, "".to_string());
     }
 }

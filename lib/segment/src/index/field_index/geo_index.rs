@@ -1,13 +1,19 @@
 use crate::index::field_index::geo_hash::{
-    circle_hashes, decompose_geo_hash, encode_max_precision, geo_hash_to_box, rectangle_hashes,
+    circle_hashes, common_hash_prefix, encode_max_precision, geo_hash_to_box, rectangle_hashes,
     GeoHash,
 };
+use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
     PayloadFieldIndexBuilder, PrimaryCondition,
 };
+use crate::payload_storage::condition_checker::{
+    check_geo_points_within_bbox, check_geo_points_within_radius,
+};
 use crate::types::{FieldCondition, GeoPoint, PayloadKeyType, PayloadType, PointOffsetType};
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use std::cmp::{max, min};
 use std::collections::{BTreeMap, HashSet};
 use std::mem;
 
@@ -15,166 +21,224 @@ use std::mem;
 // TODO discuss value, should it be dynamically computed?
 const GEO_QUERY_MAX_REGION: usize = 12;
 
-// Max number of points per geo_hash in the index to keep lookup fast
-const GEO_MAX_BUCKET_SIZE: usize = 10_000;
-
-fn compute_cardinality_per_region(
-    points_map: &BTreeMap<GeoHash, Vec<PointOffsetType>>,
-) -> BTreeMap<GeoHash, usize> {
-    let mut cardinalities: BTreeMap<GeoHash, usize> = BTreeMap::new();
-    points_map.iter().for_each(|(geo_hash, points)| {
-        let points_count = points.len();
-        decompose_geo_hash(geo_hash).for_each(|g| {
-            let count_for_g = cardinalities.entry(g.to_string()).or_insert(0);
-            *count_for_g += points_count;
-        });
-    });
-    cardinalities
-}
-
-fn group_points_per_region(
-    cardinality_info: &BTreeMap<GeoHash, usize>,
-    points_map: &BTreeMap<GeoHash, Vec<PointOffsetType>>,
-    max_bucket_size: usize,
-) -> BTreeMap<GeoHash, Vec<PointOffsetType>> {
-    let top_regions: HashSet<(&String, &usize)> = cardinality_info
-        .iter()
-        .filter(|(geo_hash, _count)| geo_hash.len() == 1)
-        .collect();
-    let mut groups = BTreeMap::new();
-    top_regions.into_iter().for_each(|(top, top_count)| {
-        // find cutoff point in cardinality for each top region
-        let cutoff = if top_count < &max_bucket_size {
-            // no need for a cutoff points
-            None
-        } else {
-            // the top region contains too many elements, find the cutoff points
-            cardinality_info
-                .iter()
-                .rev() // start from the highest precision region
-                .filter(|&(geo_hash, _count)| geo_hash.starts_with(top)) // filter tiles from top region
-                .filter(|&(geo_hash, _count)| geo_hash.len() < 12) // filter out leave regions
-                .take_while(|&(_geo_hash, count)| count <= &max_bucket_size) // take while under limit
-                .map(|(k, _)| k.clone())
-                .next()
-        };
-        match cutoff {
-            None => {
-                points_map
-                    .iter()
-                    .filter(|(k, _points)| k.starts_with(top))
-                    .for_each(|(k, points)| {
-                        groups
-                            .entry(k.clone())
-                            .or_insert_with(Vec::new)
-                            .extend(points);
-                    });
-            }
-            Some(cut) => {
-                points_map
-                    .iter()
-                    .filter(|(k, _points)| k.starts_with(&cut))
-                    .for_each(|(_k, points)| {
-                        // aggregate points into the cutoff entry
-                        groups
-                            .entry(cut.clone())
-                            .or_insert_with(Vec::new)
-                            .extend(points);
-                    });
-            }
-        }
-    });
-    groups
-}
-
 #[derive(Serialize, Deserialize, Default)]
 pub struct PersistedGeoMapIndex {
-    cardinality_map: BTreeMap<GeoHash, usize>,
-    points_map: BTreeMap<GeoHash, Vec<PointOffsetType>>,
+    /**
+    {
+        "d": 10,
+        "dr": 10,
+        "dr5": 4,
+        "dr5r": 3,
+        "dr5ru": 1,
+        "dr5rr": 2,
+        ...
+    }
+     */
+    points_per_hash: BTreeMap<GeoHash, usize>,
+    values_per_hash: BTreeMap<GeoHash, usize>,
+    /**
+    {
+        "dr5ru": {1},
+        "dr5rr": {2, 3},
+        ...
+    }
+     */
+    points_map: BTreeMap<GeoHash, HashSet<PointOffsetType>>,
+    point_to_values: Vec<Vec<GeoPoint>>,
     points_count: usize,
-    payload_count: usize,
+    values_count: usize,
+    max_values_per_point: usize,
 }
 
 impl PersistedGeoMapIndex {
     pub fn match_cardinality(&self, values: &[GeoHash]) -> CardinalityEstimation {
-        let mut top_regions: HashSet<char> = HashSet::new();
-        values.iter().for_each(|geo_hash| {
-            let first_char = geo_hash.chars().next().unwrap();
-            top_regions.insert(first_char);
-        });
+        let common_hash = common_hash_prefix(values);
 
-        let mut all_possible_regions = HashSet::new();
-        values.iter().for_each(|geo_hash| {
-            // fallback to decreasing precision within the map if not found
-            decompose_geo_hash(geo_hash).for_each(|g| {
-                all_possible_regions.insert(g);
-            })
-        });
+        let total_points = self.points_per_hash.get(&common_hash).copied().unwrap_or(0);
+        let total_values = self.values_per_hash.get(&common_hash).copied().unwrap_or(0);
 
-        let mut values_count = 0;
+        let (sum, maximum_per_hash) = values
+            .iter()
+            .map(|region| self.points_per_hash.get(region).cloned().unwrap_or(0))
+            .fold((0, 0), |(sum, maximum), count| {
+                (sum + count, max(maximum, count))
+            });
 
-        // finds the appropriate precision to use to estimate each regions
-        top_regions.into_iter().for_each(|t| {
-            let sub_regions: Vec<_> = all_possible_regions
-                .iter()
-                .filter(|r| r.starts_with(t))
-                .collect();
-            let highest_precision = sub_regions
-                .iter()
-                .max_by(|a, b| a.len().cmp(&b.len()))
-                .unwrap()
-                .len();
-            for p in (0..=highest_precision).rev() {
-                let sum_region_count: usize = sub_regions
-                    .iter()
-                    .filter(|r| r.len() == p)
-                    .filter_map(|g| self.cardinality_map.get(&g.to_string()))
-                    .sum();
-                if sum_region_count != 0 {
-                    values_count += sum_region_count;
-                    break;
-                }
-            }
-        });
+        // Assume all selected points have `max_values_per_point` value hits.
+        // Therefore number of points can't be less than `total_hits / max_values_per_point`
+        let min_hits_by_value_groups = sum / self.max_values_per_point;
 
-        let total_points_count = self.points_count;
-        let min = if total_points_count == self.payload_count {
-            values_count
-        } else {
-            // between 0 and 1 (there is at least one payload per point)
-            let payload_per_point = total_points_count as f64 / self.payload_count as f64;
-            values_count.saturating_sub((values_count as f64 * payload_per_point) as usize)
-        };
-        // don't overflow max number of points
-        let expected_count = total_points_count.min(values_count);
+        // Assume that we have selected all possible duplications of the points
+        let point_duplications = total_values - total_points;
+        let possible_non_duplicated = sum.saturating_sub(point_duplications);
+
+        let estimation_min = max(
+            max(min_hits_by_value_groups, possible_non_duplicated),
+            maximum_per_hash,
+        );
+        let estimation_max = min(sum, total_points);
+
+        // estimate_multi_value_selection_cardinality might overflow at some corner cases
+        // so it is better to limit its value with min and max
+        let estimation_exp =
+            estimate_multi_value_selection_cardinality(total_points, total_values, sum).round()
+                as usize;
+
         CardinalityEstimation {
             primary_clauses: vec![],
-            min,
-            exp: expected_count,
-            max: expected_count,
+            min: estimation_min,
+            exp: min(estimation_max, max(estimation_min, estimation_exp)),
+            max: estimation_max,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn remove_point(&mut self, idx: PointOffsetType) {
+        if self.point_to_values.len() <= idx as usize {
+            return; // Already removed or never actually existed
+        }
+        let removed_points = std::mem::take(&mut self.point_to_values[idx as usize]);
+        let mut seen_hashes: HashSet<&str> = Default::default();
+        let mut geo_hashes = vec![];
+
+        for removed_point in removed_points {
+            let removed_geo_hash: GeoHash =
+                encode_max_precision(removed_point.lon, removed_point.lat).unwrap();
+            geo_hashes.push(removed_geo_hash);
+        }
+
+        for removed_geo_hash in &geo_hashes {
+            let hash_points = self.points_map.get_mut(removed_geo_hash);
+            let is_last = match hash_points {
+                None => false,
+                Some(points_set) => {
+                    points_set.remove(&idx);
+                    points_set.is_empty()
+                }
+            };
+            if is_last {
+                self.points_map.remove(removed_geo_hash);
+            }
+
+            for i in 0..=removed_geo_hash.len() {
+                let sub_geo_hash = &removed_geo_hash[0..i];
+                if let Some(count) = self.values_per_hash.get_mut(sub_geo_hash) {
+                    *count -= 1;
+                }
+                if !seen_hashes.contains(sub_geo_hash) {
+                    if let Some(count) = self.points_per_hash.get_mut(sub_geo_hash) {
+                        *count -= 1;
+                    }
+                    seen_hashes.insert(sub_geo_hash);
+                }
+            }
         }
     }
 
     fn add_many(&mut self, idx: PointOffsetType, values: &[GeoPoint]) {
-        for geo_point in values {
-            let geo_hash = encode_max_precision(geo_point.lon, geo_point.lat).unwrap();
-            self.points_map
-                .entry(geo_hash)
-                .or_insert_with(Vec::new)
-                .push(idx);
+        if self.point_to_values.len() <= idx as usize {
+            // That's a smart reallocation
+            self.point_to_values.resize(idx as usize + 1, vec![]);
         }
-        self.payload_count += values.len();
+        self.point_to_values[idx as usize] = values.to_vec();
+
+        let mut seen_hashes: HashSet<&str> = Default::default();
+        let mut geo_hashes = vec![];
+
+        for added_point in values {
+            let added_geo_hash: GeoHash =
+                encode_max_precision(added_point.lon, added_point.lat).unwrap();
+            geo_hashes.push(added_geo_hash);
+        }
+
+        for geo_hash in &geo_hashes {
+            self.points_map
+                .entry(geo_hash.to_owned())
+                .or_insert_with(HashSet::new)
+                .insert(idx);
+
+            for i in 0..=geo_hash.len() {
+                let sub_geo_hash = &geo_hash[0..i];
+                match self.values_per_hash.get_mut(sub_geo_hash) {
+                    None => {
+                        self.values_per_hash.insert(sub_geo_hash.to_string(), 1);
+                    }
+                    Some(count) => {
+                        *count += 1;
+                    }
+                };
+                if !seen_hashes.contains(sub_geo_hash) {
+                    match self.points_per_hash.get_mut(sub_geo_hash) {
+                        None => {
+                            self.points_per_hash.insert(sub_geo_hash.to_string(), 1);
+                        }
+                        Some(count) => {
+                            *count += 1;
+                        }
+                    }
+                    seen_hashes.insert(sub_geo_hash);
+                }
+            }
+        }
+
+        self.values_count += values.len();
         self.points_count += 1;
+        self.max_values_per_point = self.max_values_per_point.max(values.len());
     }
 
-    fn get_iterator(&self, values: &[GeoHash]) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        let mut res: Vec<PointOffsetType> = vec![];
-        values.iter().for_each(|geo_hash| {
-            if let Some(vec) = self.points_map.get(geo_hash) {
-                res.extend(vec)
+    fn get_stored_sub_regions(
+        &self,
+        geo: &GeoHash,
+    ) -> Box<dyn Iterator<Item = (&GeoHash, &HashSet<PointOffsetType>)> + '_> {
+        let geo_clone = geo.to_string();
+        Box::new(
+            self.points_map
+                .range(geo.to_string()..)
+                .take_while(move |(p, _h)| p.starts_with(&geo_clone)),
+        )
+    }
+
+    fn get_iterator(&self, values: Vec<GeoHash>) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        Box::new(
+            values
+                .into_iter()
+                .flat_map(|top_geo_hash| {
+                    self.get_stored_sub_regions(&top_geo_hash)
+                        .flat_map(|(_geohash, points)| points.iter().copied())
+                })
+                .unique(),
+        )
+    }
+
+    /// Get iterator over smallest geo-hash regions larger than `threshold` points
+    fn get_large_hashes(
+        &self,
+        threshold: usize,
+    ) -> Box<dyn Iterator<Item = (&GeoHash, usize)> + '_> {
+        let mut large_regions = self
+            .points_per_hash
+            .iter()
+            .filter(|(hash, size)| **size > threshold && !hash.is_empty())
+            .collect_vec();
+
+        // smallest regions first
+        large_regions.sort();
+        large_regions.reverse();
+
+        let mut edge_region = vec![];
+
+        let mut current_region = "";
+
+        for (region, size) in large_regions.into_iter() {
+            if current_region.starts_with(region) {
+                continue;
+            } else {
+                current_region = region;
+                edge_region.push((region, *size));
             }
-        });
-        Box::new(res.into_iter())
+        }
+
+        Box::new(edge_region.into_iter())
     }
 }
 
@@ -187,20 +251,32 @@ impl PayloadFieldIndexBuilder for PersistedGeoMapIndex {
     }
 
     fn build(&mut self) -> FieldIndex {
-        let all_ingested_points = mem::take(&mut self.points_map);
-        let payload_count = mem::take(&mut self.payload_count);
-        let points_count = mem::take(&mut self.points_count);
+        /*
+        points_map contains full hashes:
+        {
+            "dr5ruj4477ku": [1,2,3],
+            "dr5ruj4477kk": [1,2,4],
+            "dr5ruj4477k7": [1,2,5],
+            ...
+        }
+         */
+        let points_map = mem::take(&mut self.points_map);
+        let point_to_values = mem::take(&mut self.point_to_values);
+        let points_per_hash = mem::take(&mut self.points_per_hash);
+        let values_per_hash = mem::take(&mut self.values_per_hash);
 
-        // build more efficient representation to support queries per region
-        let cardinality_map = compute_cardinality_per_region(&all_ingested_points);
-        let points_map =
-            group_points_per_region(&cardinality_map, &all_ingested_points, GEO_MAX_BUCKET_SIZE);
+        let values_count = self.values_count;
+        let points_count = self.points_count;
+        let max_values_per_point = self.max_values_per_point;
 
         FieldIndex::GeoIndex(PersistedGeoMapIndex {
-            cardinality_map,
+            points_per_hash,
+            values_per_hash,
             points_map,
-            payload_count,
+            point_to_values,
+            values_count,
             points_count,
+            max_values_per_point,
         })
     }
 }
@@ -212,12 +288,24 @@ impl PayloadFieldIndex for PersistedGeoMapIndex {
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
             let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION);
-            return Some(self.get_iterator(&geo_hashes));
+            let geo_condition_copy = geo_bounding_box.clone();
+            return Some(Box::new(self.get_iterator(geo_hashes).filter(
+                move |point| {
+                    let geo_points = self.point_to_values.get(*point as usize).unwrap();
+                    check_geo_points_within_bbox(geo_points, &geo_condition_copy)
+                },
+            )));
         }
 
         if let Some(geo_radius) = &condition.geo_radius {
             let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION);
-            return Some(self.get_iterator(&geo_hashes));
+            let geo_condition_copy = geo_radius.clone();
+            return Some(Box::new(self.get_iterator(geo_hashes).filter(
+                move |point| {
+                    let geo_points = self.point_to_values.get(*point as usize).unwrap();
+                    check_geo_points_within_radius(geo_points, &geo_condition_copy)
+                },
+            )));
         }
 
         None
@@ -250,21 +338,19 @@ impl PayloadFieldIndex for PersistedGeoMapIndex {
         threshold: usize,
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
-        let iter = self
-            .points_map
-            .iter()
-            .filter(move |(_geo_hash, point_ids)| point_ids.len() > threshold)
-            .map(move |(geo_hash, point_ids)| PayloadBlockCondition {
-                condition: FieldCondition {
-                    key: key.clone(),
-                    r#match: None,
-                    range: None,
-                    geo_bounding_box: Some(geo_hash_to_box(geo_hash)),
-                    geo_radius: None,
-                },
-                cardinality: point_ids.len(),
-            });
-        Box::new(iter)
+        Box::new(
+            self.get_large_hashes(threshold)
+                .map(move |(geo_hash, size)| PayloadBlockCondition {
+                    condition: FieldCondition {
+                        key: key.clone(),
+                        r#match: None,
+                        range: None,
+                        geo_bounding_box: Some(geo_hash_to_box(geo_hash)),
+                        geo_radius: None,
+                    },
+                    cardinality: size,
+                }),
+        )
     }
 }
 
@@ -273,8 +359,9 @@ mod tests {
     use super::*;
     use crate::fixtures::payload_fixtures::random_geo_payload;
     use crate::types::GeoRadius;
-    use geo::algorithm::haversine_distance::HaversineDistance;
-    use geo::Point;
+    use itertools::Itertools;
+    use rand::prelude::StdRng;
+    use rand::SeedableRng;
 
     const NYC: GeoPoint = GeoPoint {
         lat: 40.75798,
@@ -306,72 +393,114 @@ mod tests {
         }
     }
 
-    #[test]
-    fn cardinality_per_region() {
-        let input = BTreeMap::from([
-            ("dr5ruj4477kd".to_string(), vec![1, 2, 3]),
-            ("dr5ruj4477ku".to_string(), vec![4, 5, 6]),
-        ]);
-        let cardinality = compute_cardinality_per_region(&input);
-        let expected = BTreeMap::from([
-            ("d".to_string(), 6),
-            ("dr".to_string(), 6),
-            ("dr5".to_string(), 6),
-            ("dr5r".to_string(), 6),
-            ("dr5ru".to_string(), 6),
-            ("dr5ruj".to_string(), 6),
-            ("dr5ruj4".to_string(), 6),
-            ("dr5ruj44".to_string(), 6),
-            ("dr5ruj447".to_string(), 6),
-            ("dr5ruj4477".to_string(), 6),
-            ("dr5ruj4477k".to_string(), 6),
-            ("dr5ruj4477kd".to_string(), 3),
-            ("dr5ruj4477ku".to_string(), 3),
-        ]);
+    fn build_random_index(num_points: usize, num_geo_values: usize) -> FieldIndex {
+        let mut rnd = StdRng::seed_from_u64(42);
+        let mut index = PersistedGeoMapIndex::default();
 
-        assert_eq!(cardinality, expected)
+        for idx in 0..num_points {
+            let geo_points = random_geo_payload(&mut rnd, num_geo_values);
+            index.add(idx as u32, &geo_points)
+        }
+        assert_eq!(index.points_count, num_points);
+        assert_eq!(index.values_count, num_points * num_geo_values);
+
+        index.build()
     }
 
     #[test]
     fn match_cardinality() {
-        let mut rnd = rand::thread_rng();
-        let mut index = PersistedGeoMapIndex::default();
-
         let r_meters = 500_000.0;
         let geo_radius = GeoRadius {
             center: NYC,
             radius: r_meters,
         };
-        let nyc_point = Point::new(NYC.lon, NYC.lat);
 
-        let num_points = 10000_usize;
-        let num_geo_values = 2;
-        let mut within_condition = 0;
+        let field_index = build_random_index(500, 20);
 
-        for idx in 0..num_points {
-            let geo_points = random_geo_payload(&mut rnd, num_geo_values);
-            match &geo_points {
-                PayloadType::Geo(points) => {
-                    let p = Point::new(points[0].lon, points[0].lat);
-                    if p.haversine_distance(&nyc_point) < r_meters {
-                        within_condition += 1;
-                    }
-                }
-                _ => panic!(),
+        let nyc_hashes = circle_hashes(&geo_radius, GEO_QUERY_MAX_REGION);
+
+        let real_cardinality = match &field_index {
+            FieldIndex::GeoIndex(geo_index) => {
+                let exact_points_for_hashes = geo_index.get_iterator(nyc_hashes).collect_vec();
+                exact_points_for_hashes.len()
             }
-            index.add(idx as u32, &geo_points)
-        }
-        assert_eq!(index.points_count, num_points);
-        assert_eq!(index.payload_count, num_points * num_geo_values);
+            _ => panic!("Wrong index created"),
+        };
 
-        let field_index = index.build();
         let field_condition = condition_for_geo_radius("test".to_string(), geo_radius);
-
         let card = field_index.estimate_cardinality(&field_condition);
         let card = card.unwrap();
-        assert!(card.min >= within_condition);
-        assert!(card.max >= within_condition);
-        assert!(card.exp >= within_condition);
+
+        eprintln!("real_cardinality = {:#?}", real_cardinality);
+        eprintln!("card = {:#?}", card);
+
+        assert!(card.min <= real_cardinality);
+        assert!(card.max >= real_cardinality);
+
+        assert!(card.exp >= card.min);
+        assert!(card.exp <= card.max);
+    }
+
+    #[test]
+    fn geo_indexed_filtering() {
+        let r_meters = 500_000.0;
+        let geo_radius = GeoRadius {
+            center: NYC,
+            radius: r_meters,
+        };
+
+        let field_index = build_random_index(1000, 5);
+
+        let mut matched_points = match &field_index {
+            FieldIndex::GeoIndex(geo_index) => geo_index
+                .point_to_values
+                .iter()
+                .enumerate()
+                .filter(|(_idx, geo_points)| {
+                    check_geo_points_within_radius(geo_points, &geo_radius)
+                })
+                .map(|(idx, _geo_points)| idx as PointOffsetType)
+                .collect_vec(),
+            _ => panic!("wrong index"),
+        };
+
+        assert!(!matched_points.is_empty());
+
+        let field_condition = condition_for_geo_radius("test".to_string(), geo_radius);
+
+        let mut indexed_matched_points =
+            field_index.filter(&field_condition).unwrap().collect_vec();
+
+        matched_points.sort_unstable();
+        indexed_matched_points.sort_unstable();
+
+        assert_eq!(matched_points, indexed_matched_points);
+    }
+
+    #[test]
+    fn test_payload_blocks() {
+        let field_index = build_random_index(1000, 5);
+        match &field_index {
+            FieldIndex::GeoIndex(geo_index) => {
+                let top_level_points = geo_index.points_per_hash.get("").unwrap();
+                assert_eq!(*top_level_points, 1_000);
+                let block_hashes = geo_index.get_large_hashes(100).collect_vec();
+                assert!(!block_hashes.is_empty());
+                for (geohash, size) in block_hashes {
+                    assert_eq!(geohash.len(), 1);
+                    assert!(size > 100);
+                    assert!(size < 1000);
+                }
+            }
+            _ => panic!("wrong index"),
+        };
+        let blocks = field_index
+            .payload_blocks(100, "test".to_string())
+            .collect_vec();
+        blocks.iter().for_each(|block| {
+            let block_points = field_index.filter(&block.condition).unwrap().collect_vec();
+            assert_eq!(block_points.len(), block.cardinality);
+        });
     }
 
     #[test]
@@ -440,40 +569,5 @@ mod tests {
         assert_eq!(card.min, 1);
         assert_eq!(card.max, 1);
         assert_eq!(card.exp, 1);
-    }
-
-    #[test]
-    fn group_per_region() {
-        let input = BTreeMap::from([
-            ("dr5ruj4477kb".to_string(), vec![10]),
-            ("dr5ruj4477kc".to_string(), vec![11]),
-            ("dr5ruj4477kd".to_string(), vec![12]),
-            ("dr5ruj4477ke".to_string(), vec![13]),
-            ("dr5ruj4477kf".to_string(), vec![14]),
-            ("dr5ruj4477kg".to_string(), vec![15]),
-            ("dr5ruj4477kh".to_string(), vec![16]),
-            ("dr5ruj4477ki".to_string(), vec![17]),
-            ("dr5ruj4477kj".to_string(), vec![18]),
-            ("dr5ruj4477kk".to_string(), vec![19]),
-            ("dr5ruj4477km".to_string(), vec![20]),
-            ("u33dc1v0xupz".to_string(), vec![42]),
-        ]);
-        let cardinality = compute_cardinality_per_region(&input);
-
-        // max bucket size not reached, use the highest precision
-        let groups = group_points_per_region(&cardinality, &input, 12);
-        assert_eq!(groups, input);
-
-        // max bucket size reached - aggregate points in lower precision
-        let groups = group_points_per_region(&cardinality, &input, 11);
-        // aggregates points into "dr5ruj4477k" region
-        let expected = BTreeMap::from([
-            (
-                "dr5ruj4477k".to_string(),
-                vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
-            ),
-            ("u33dc1v0xupz".to_string(), vec![42]),
-        ]);
-        assert_eq!(groups, expected);
     }
 }
