@@ -8,17 +8,12 @@ let upsert_url = `${host}/collections/${collection_name}/points`;
 let vector_length = 128;
 let vectors_per_batch = 32;
 
-var create_collection_payload = JSON.stringify({
-    "create_collection": {
-        "name": collection_name,
+var create_collection_payload = JSON.stringify(
+    {
         "vector_size": vector_length,
         "distance": "Cosine"
     }
-});
-
-var delete_collection_payload = JSON.stringify({
-    "delete_collection": collection_name
-});
+);
 
 var params = {
     headers: {
@@ -97,14 +92,14 @@ function generate_point() {
 }
 
 export function setup() {
-    var url = `${host}/collections`;
+    var url = `${host}/collections/${collection_name}`;
 
-    let res_delete = http.post(url, delete_collection_payload, params);
+    let res_delete = http.del(url, params);
     check(res_delete, {
         'delete_collection_payload is status 200': (r) => r.status === 200,
     });
-    let res_crete = http.post(url, create_collection_payload, params);
-    check(res_crete, {
+    let res_create = http.put(url, create_collection_payload, params);
+    check(res_create, {
         'create_collection_payload is status 200': (r) => r.status === 200,
     });
 }
