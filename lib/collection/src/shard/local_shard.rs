@@ -116,6 +116,10 @@ impl LocalShard {
         }
     }
 
+    fn segments(&self) -> &RwLock<SegmentHolder> {
+        self.segments.deref()
+    }
+
     pub async fn load(
         id: ShardId,
         collection_id: CollectionId,
@@ -356,10 +360,6 @@ impl ShardOperation for &LocalShard {
                 status: UpdateStatus::Acknowledged,
             })
         }
-    }
-
-    fn segments(&self) -> &RwLock<SegmentHolder> {
-        self.segments.deref()
     }
 
     async fn scroll_by(

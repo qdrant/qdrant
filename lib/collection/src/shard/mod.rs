@@ -1,14 +1,12 @@
 pub mod local_shard;
 pub mod remote_shard;
 
-use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::shard::remote_shard::RemoteShard;
 use crate::{
     CollectionInfo, CollectionResult, CollectionSearcher, CollectionUpdateOperations, LocalShard,
     OptimizersConfigDiff, PointRequest, Record, SearchRequest, UpdateResult,
 };
 use async_trait::async_trait;
-use parking_lot::RwLock;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
 use std::sync::Arc;
 use tokio::runtime::Handle;
@@ -50,8 +48,6 @@ pub trait ShardOperation {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult>;
-
-    fn segments(&self) -> &RwLock<SegmentHolder>;
 
     async fn scroll_by(
         &self,
