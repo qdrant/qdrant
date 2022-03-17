@@ -209,7 +209,7 @@ pub enum CollectionError {
     #[error("Operation Cancelled: {description}")]
     Cancelled { description: String },
     #[error(
-        "{shards_failed} out of {shards_total} shards failed to apply operation. First error captured: {first_err}"
+    "{shards_failed} out of {shards_total} shards failed to apply operation. First error captured: {first_err}"
     )]
     InconsistentFailure {
         shards_total: u32,
@@ -232,6 +232,9 @@ impl From<OperationError> for CollectionError {
                 description: format!("{}", err),
             },
             OperationError::Cancelled { description } => Self::Cancelled { description },
+            OperationError::TypeInferenceError { .. } => Self::BadInput {
+                description: format!("{}", err),
+            }
         }
     }
 }

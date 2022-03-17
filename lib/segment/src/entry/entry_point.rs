@@ -25,6 +25,12 @@ pub enum OperationError {
         field_name: PayloadKeyType,
         expected_type: String,
     },
+    #[error("Unable to infer type for the field '{field_name}'. Please specify `field_type`")]
+    TypeInferenceError {
+        field_name: PayloadKeyType
+    },
+    /// Service Error prevents further update of the collection until it is fixed.
+    /// Should only be used for hardware, data corruption, IO, or other unexpected internal errors.
     #[error("Service runtime error: {description}")]
     ServiceError { description: String },
     #[error("Operation cancelled: {description}")]
