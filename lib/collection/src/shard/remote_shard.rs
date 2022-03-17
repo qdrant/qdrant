@@ -16,7 +16,7 @@ use tokio::runtime::Handle;
 pub struct RemoteShard {
     id: ShardId,
     collection_id: CollectionId,
-    peer_id: PeerId,
+    pub peer_id: PeerId,
 }
 
 #[async_trait]

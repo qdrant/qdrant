@@ -10,6 +10,7 @@ use std::{
 };
 
 use crate::operations::types::PointRequest;
+use crate::operations::OperationToShard;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
@@ -30,12 +31,9 @@ use segment::{
         WithPayload, WithPayloadInterface,
     },
 };
+use serde::{Deserialize, Serialize};
+use shard::{local_shard::LocalShard, Shard, ShardId};
 use tokio::runtime::Handle;
-
-use crate::operations::OperationToShard;
-use crate::shard::local_shard::LocalShard;
-use crate::shard::{Shard, ShardId};
-use crate::Shard::Local;
 
 pub mod collection_manager;
 mod common;
@@ -51,10 +49,19 @@ mod tests;
 
 pub type CollectionId = String;
 
+pub type PeerId = u32;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct State {
+    pub config: CollectionConfig,
+    pub shard_to_peer: HashMap<ShardId, PeerId>,
+}
+
 /// Collection's data is split into several shards.
 pub struct Collection {
     shards: HashMap<ShardId, Shard>,
     ring: HashRing<ShardId>,
+    config: CollectionConfig,
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
 }
@@ -86,12 +93,13 @@ impl Collection {
                     return Err(err);
                 }
             };
-            shards.insert(shard_id, Local(shard));
+            shards.insert(shard_id, Shard::Local(shard));
             ring.add(shard_id);
         }
         Ok(Self {
             shards,
             ring,
+            config: config.clone(),
             before_drop_called: false,
         })
     }
@@ -114,13 +122,14 @@ impl Collection {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
                 shard_id,
-                Local(LocalShard::load(shard_id, id.clone(), &shard_path, &config).await),
+                Shard::Local(LocalShard::load(shard_id, id.clone(), &shard_path, &config).await),
             );
             ring.add(shard_id);
         }
         Self {
             shards,
             ring,
+            config,
             before_drop_called: false,
         }
     }
@@ -441,6 +450,17 @@ impl Collection {
             .collect();
         futures.collect::<Vec<()>>().await;
         self.before_drop_called = true
+    }
+
+    pub fn state(&self, this_peer_id: PeerId) -> State {
+        State {
+            config: self.config.clone(),
+            shard_to_peer: self
+                .shards
+                .iter()
+                .map(|(shard_id, shard)| (*shard_id, shard.peer_id(this_peer_id)))
+                .collect(),
+        }
     }
 }
 

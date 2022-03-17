@@ -4,7 +4,7 @@ pub mod remote_shard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::{
     CollectionInfo, CollectionResult, CollectionSearcher, CollectionUpdateOperations, LocalShard,
-    OptimizersConfigDiff, PointRequest, Record, SearchRequest, UpdateResult,
+    OptimizersConfigDiff, PeerId, PointRequest, Record, SearchRequest, UpdateResult,
 };
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
@@ -12,8 +12,6 @@ use std::sync::Arc;
 use tokio::runtime::Handle;
 
 pub type ShardId = u32;
-
-pub type PeerId = u32;
 
 /// Shard
 ///
@@ -37,6 +35,13 @@ impl Shard {
         match self {
             Shard::Local(local_shard) => local_shard.before_drop().await,
             Shard::Remote(_) => (),
+        }
+    }
+
+    pub fn peer_id(&self, this_peer_id: PeerId) -> PeerId {
+        match self {
+            Shard::Local(_) => this_peer_id,
+            Shard::Remote(remote) => remote.peer_id,
         }
     }
 }

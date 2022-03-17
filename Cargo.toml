@@ -11,7 +11,7 @@ doctest = false
 default = [ "web" ]
 web = ["actix-web"]
 service_debug = ["parking_lot", "parking_lot/deadlock_detection"]
-consensus = ["raft", "slog", "slog-stdlog"]
+consensus = ["raft", "slog", "slog-stdlog", "storage/consensus"]
 
 
 [dev-dependencies]

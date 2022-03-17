@@ -3,8 +3,8 @@ use crate::common::collections::*;
 use actix_web::rt::time::Instant;
 use actix_web::{delete, get, patch, post, put, web, Responder};
 use std::sync::Arc;
-use storage::content_manager::storage_ops::{
-    ChangeAliasesOperation, CreateCollection, StorageOperations, UpdateCollection,
+use storage::content_manager::collection_meta_ops::{
+    ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, UpdateCollection,
 };
 use storage::content_manager::toc::TableOfContent;
 
@@ -30,7 +30,7 @@ async fn get_collection(
 #[post("/collections")]
 async fn update_collections(
     toc: web::Data<Arc<TableOfContent>>,
-    operation: web::Json<StorageOperations>,
+    operation: web::Json<CollectionMetaOperations>,
 ) -> impl Responder {
     let timing = Instant::now();
     let response = toc.perform_collection_operation(operation.0).await;

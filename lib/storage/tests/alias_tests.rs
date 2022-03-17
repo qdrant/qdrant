@@ -8,9 +8,9 @@ use tokio::runtime::Runtime;
 mod tests {
     use super::*;
     use segment::types::Distance;
-    use storage::content_manager::storage_ops::{
-        ChangeAliasesOperation, CreateAlias, CreateCollection, CreateCollectionOperation,
-        DeleteAlias, RenameAlias, StorageOperations,
+    use storage::content_manager::collection_meta_ops::{
+        ChangeAliasesOperation, CollectionMetaOperations, CreateAlias, CreateCollection,
+        CreateCollectionOperation, DeleteAlias, RenameAlias,
     };
 
     #[test]
@@ -44,7 +44,7 @@ mod tests {
 
         handle
             .block_on(
-                toc.perform_collection_operation(StorageOperations::CreateCollection(
+                toc.perform_collection_operation(CollectionMetaOperations::CreateCollection(
                     CreateCollectionOperation {
                         collection_name: "test".to_string(),
                         create_collection: CreateCollection {
@@ -62,7 +62,7 @@ mod tests {
 
         handle
             .block_on(
-                toc.perform_collection_operation(StorageOperations::ChangeAliases(
+                toc.perform_collection_operation(CollectionMetaOperations::ChangeAliases(
                     ChangeAliasesOperation {
                         actions: vec![CreateAlias {
                             collection_name: "test".to_string(),
@@ -76,7 +76,7 @@ mod tests {
 
         handle
             .block_on(
-                toc.perform_collection_operation(StorageOperations::ChangeAliases(
+                toc.perform_collection_operation(CollectionMetaOperations::ChangeAliases(
                     ChangeAliasesOperation {
                         actions: vec![
                             CreateAlias {

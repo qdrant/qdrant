@@ -4,6 +4,9 @@ version = "0.2.0"
 authors = ["Andrey Vasnetsov <vasnetsov93@gmail.com>"]
 edition = "2021"
 
+[features]
+consensus = ["raft", "prost", "serde_cbor"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dev-dependencies]
 tempdir = "0.3.7"
@@ -21,6 +24,9 @@ schemars = { version = "0.8.8", features = ["uuid"] }
 itertools = "0.10"
 async-trait = "0.1.52"
 
+raft = { version = "0.6.0", features = ["prost-codec"], default-features = false, optional = true }
+prost = { version = "0.7", optional = true }
+serde_cbor = { version = "0.11.2", optional = true }
 
 segment = {path = "../segment"}
 collection = {path = "../collection"}
