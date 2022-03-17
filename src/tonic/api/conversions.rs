@@ -20,38 +20,35 @@ use std::time::Instant;
 use tonic::Status;
 use uuid::Uuid;
 
-pub fn payload_to_proto(payload: &Payload) -> HashMap<String, prost_types::Value> {
+pub fn payload_to_proto(payload: Payload) -> HashMap<String, prost_types::Value> {
     payload
-        .iter()
-        .map(|(k, v)| (k.to_owned(), json_to_proto(v)))
+        .into_iter()
+        .map(|(k, v)| (k, json_to_proto(v)))
         .collect()
 }
 
-fn json_to_proto(json_value: &Value) -> prost_types::Value {
+fn json_to_proto(json_value: Value) -> prost_types::Value {
     match json_value {
         Value::Null => prost_types::Value {
             kind: Some(Kind::NullValue(0)),
         },
         Value::Bool(v) => prost_types::Value {
-            kind: Some(Kind::BoolValue(v.to_owned())),
+            kind: Some(Kind::BoolValue(v)),
         },
         Value::Number(n) => prost_types::Value {
             kind: Some(Kind::NumberValue(n.as_f64().unwrap())),
         },
         Value::String(s) => prost_types::Value {
-            kind: Some(Kind::StringValue(s.to_owned())),
+            kind: Some(Kind::StringValue(s)),
         },
         Value::Array(v) => {
-            let list = v.iter().map(json_to_proto).collect();
+            let list = v.into_iter().map(json_to_proto).collect();
             prost_types::Value {
                 kind: Some(Kind::ListValue(ListValue { values: list })),
             }
         }
         Value::Object(m) => {
-            let map = m
-                .iter()
-                .map(|(k, v)| (k.to_owned(), json_to_proto(v)))
-                .collect();
+            let map = m.into_iter().map(|(k, v)| (k, json_to_proto(v))).collect();
             prost_types::Value {
                 kind: Some(Kind::StructValue(prost_types::Struct { fields: map })),
             }
@@ -59,38 +56,38 @@ fn json_to_proto(json_value: &Value) -> prost_types::Value {
     }
 }
 
-pub fn proto_to_payloas(proto: &HashMap<String, prost_types::Value>) -> Result<Payload, Status> {
+pub fn proto_to_payloads(proto: HashMap<String, prost_types::Value>) -> Result<Payload, Status> {
     let mut map: Map<String, Value> = Map::new();
-    for (k, v) in proto.iter() {
-        map.insert(k.to_owned(), proto_to_json(v)?);
+    for (k, v) in proto.into_iter() {
+        map.insert(k, proto_to_json(v)?);
     }
     Ok(map.into())
 }
 
-fn proto_to_json(proto: &prost_types::Value) -> Result<Value, Status> {
-    match &proto.kind {
+fn proto_to_json(proto: prost_types::Value) -> Result<Value, Status> {
+    match proto.kind {
         None => Ok(Value::default()),
         Some(kind) => match kind {
             Kind::NullValue(_) => Ok(Value::Null),
             Kind::NumberValue(n) => {
-                let v = match Number::from_f64(*n) {
+                let v = match Number::from_f64(n) {
                     Some(f) => f,
                     None => return Err(Status::invalid_argument("cannot convert to json number")),
                 };
                 Ok(Value::Number(v))
             }
-            Kind::StringValue(s) => Ok(Value::String(s.to_owned())),
-            Kind::BoolValue(b) => Ok(Value::Bool(b.to_owned())),
+            Kind::StringValue(s) => Ok(Value::String(s)),
+            Kind::BoolValue(b) => Ok(Value::Bool(b)),
             Kind::StructValue(s) => {
                 let mut map = Map::new();
-                for (k, v) in s.fields.iter() {
-                    map.insert(k.to_owned(), proto_to_json(v)?);
+                for (k, v) in s.fields.into_iter() {
+                    map.insert(k, proto_to_json(v)?);
                 }
                 Ok(Value::Object(map))
             }
             Kind::ListValue(l) => {
                 let mut list = Vec::new();
-                for v in l.values.iter() {
+                for v in l.values.into_iter() {
                     list.push(proto_to_json(v)?);
                 }
                 Ok(Value::Array(list))
@@ -146,11 +143,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
     fn from(point: segment::types::ScoredPoint) -> Self {
         Self {
             id: Some(point.id.into()),
-            payload: point
-                .payload
-                .as_ref()
-                .map(payload_to_proto)
-                .unwrap_or_default(),
+            payload: point.payload.map(payload_to_proto).unwrap_or_default(),
             score: point.score,
             vector: point.vector.unwrap_or_default(),
             version: point.version,
@@ -162,11 +155,7 @@ impl From<collection::operations::types::Record> for RetrievedPoint {
     fn from(record: collection::operations::types::Record) -> Self {
         Self {
             id: Some(record.id.into()),
-            payload: record
-                .payload
-                .as_ref()
-                .map(payload_to_proto)
-                .unwrap_or_default(),
+            payload: record.payload.map(payload_to_proto).unwrap_or_default(),
             vector: record.vector.unwrap_or_default(),
         }
     }
@@ -200,7 +189,7 @@ impl TryFrom<PointStruct> for collection::operations::point_ops::PointStruct {
             payload,
         } = value;
 
-        let converted_payload = proto_to_payloas(&payload)?;
+        let converted_payload = proto_to_payloads(payload)?;
 
         Ok(Self {
             id: id

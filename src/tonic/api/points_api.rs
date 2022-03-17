@@ -8,7 +8,7 @@ use crate::common::points::{
 use crate::tonic::api::common::error_to_status;
 use crate::tonic::qdrant::points_server::Points;
 
-use crate::tonic::api::conversions::proto_to_payloas;
+use crate::tonic::api::conversions::proto_to_payloads;
 use crate::tonic::qdrant::{
     ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
     DeletePayloadPoints, DeletePoints, FieldType, GetPoints, GetResponse, PointsOperationResponse,
@@ -142,7 +142,7 @@ impl Points for PointsService {
         } = request.into_inner();
 
         let operation = collection::operations::payload_ops::SetPayload {
-            payload: proto_to_payloas(&payload)?,
+            payload: proto_to_payloads(payload)?,
             points: points
                 .into_iter()
                 .map(|p| p.try_into())
