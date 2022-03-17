@@ -25,11 +25,14 @@
           },
           "payloads": {
             "items": {
-              "additionalProperties": {
-                "$ref": "#/components/schemas/PayloadInterface"
-              },
-              "nullable": true,
-              "type": "object"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Payload"
+                },
+                {
+                  "nullable": true
+                }
+              ]
             },
             "nullable": true,
             "type": "array"
@@ -381,6 +384,37 @@
         "properties": {
           "field_name": {
             "type": "string"
+          },
+          "field_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldDataType"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        },
+        "required": [
+          "field_name"
+        ],
+        "type": "object"
+      },
+      "CreateIndex": {
+        "properties": {
+          "field_name": {
+            "type": "string"
+          },
+          "field_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldDataType"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         },
         "required": [
@@ -540,6 +574,15 @@
         ],
         "type": "object"
       },
+      "FieldDataType": {
+        "enum": [
+          "keyword",
+          "integer",
+          "float",
+          "geo"
+        ],
+        "type": "string"
+      },
       "FieldIndexOperations": {
         "oneOf": [
           {
@@ -547,7 +590,7 @@
             "description": "Create index for payload field",
             "properties": {
               "create_index": {
-                "type": "string"
+                "$ref": "#/components/schemas/CreateIndex"
               }
             },
             "required": [
@@ -932,99 +975,9 @@
           }
         ]
       },
-      "PayloadInterface": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/PayloadVariant_for_String"
-          },
-          {
-            "$ref": "#/components/schemas/PayloadVariant_for_int64"
-          },
-          {
-            "$ref": "#/components/schemas/PayloadVariant_for_double"
-          },
-          {
-            "$ref": "#/components/schemas/PayloadInterfaceStrict"
-          }
-        ],
-        "description": "Structure for converting user-provided payload into internal structure representation\n\nUsed to allow user provide payload in more human-friendly format, and do not force explicit brackets, included constructions, e.t.c.\n\nExample:\n\n```json {..., \"payload\": {\"city\": \"Berlin\"}, ... } ```\n\nShould be captured by `KeywordShortcut`"
-      },
-      "PayloadInterfaceStrict": {
-        "description": "Fallback for `PayloadInterface` which is used if user explicitly specifies type of payload\n\nExample:\n\n```json {..., \"payload\": {\"city\": { \"type\": \"keyword\", \"value\": \"Berlin\" }}, ... } ```\n\nShould be captured by `Keyword(PayloadVariant<String>)`",
-        "oneOf": [
-          {
-            "properties": {
-              "type": {
-                "enum": [
-                  "keyword"
-                ],
-                "type": "string"
-              },
-              "value": {
-                "$ref": "#/components/schemas/PayloadVariant_for_String"
-              }
-            },
-            "required": [
-              "type",
-              "value"
-            ],
-            "type": "object"
-          },
-          {
-            "properties": {
-              "type": {
-                "enum": [
-                  "integer"
-                ],
-                "type": "string"
-              },
-              "value": {
-                "$ref": "#/components/schemas/PayloadVariant_for_int64"
-              }
-            },
-            "required": [
-              "type",
-              "value"
-            ],
-            "type": "object"
-          },
-          {
-            "properties": {
-              "type": {
-                "enum": [
-                  "float"
-                ],
-                "type": "string"
-              },
-              "value": {
-                "$ref": "#/components/schemas/PayloadVariant_for_double"
-              }
-            },
-            "required": [
-              "type",
-              "value"
-            ],
-            "type": "object"
-          },
-          {
-            "properties": {
-              "type": {
-                "enum": [
-                  "geo"
-                ],
-                "type": "string"
-              },
-              "value": {
-                "$ref": "#/components/schemas/PayloadVariant_for_GeoPoint"
-              }
-            },
-            "required": [
-              "type",
-              "value"
-            ],
-            "type": "object"
-          }
-        ]
+      "Payload": {
+        "additionalProperties": true,
+        "type": "object"
       },
       "PayloadOps": {
         "description": "Define operations description for point payloads manipulation",
@@ -1168,6 +1121,20 @@
               "type"
             ],
             "type": "object"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "unknown"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
           }
         ]
       },
@@ -1213,157 +1180,6 @@
           "include"
         ],
         "type": "object"
-      },
-      "PayloadType": {
-        "description": "All possible payload types",
-        "oneOf": [
-          {
-            "properties": {
-              "type": {
-                "enum": [
-                  "keyword"
-                ],
-                "type": "string"
-              },
-              "value": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              }
-            },
-            "required": [
-              "type",
-              "value"
-            ],
-            "type": "object"
-          },
-          {
-            "properties": {
-              "type": {
-                "enum": [
-                  "integer"
-                ],
-                "type": "string"
-              },
-              "value": {
-                "items": {
-                  "format": "int64",
-                  "type": "integer"
-                },
-                "type": "array"
-              }
-            },
-            "required": [
-              "type",
-              "value"
-            ],
-            "type": "object"
-          },
-          {
-            "properties": {
-              "type": {
-                "enum": [
-                  "float"
-                ],
-                "type": "string"
-              },
-              "value": {
-                "items": {
-                  "format": "double",
-                  "type": "number"
-                },
-                "type": "array"
-              }
-            },
-            "required": [
-              "type",
-              "value"
-            ],
-            "type": "object"
-          },
-          {
-            "properties": {
-              "type": {
-                "enum": [
-                  "geo"
-                ],
-                "type": "string"
-              },
-              "value": {
-                "items": {
-                  "$ref": "#/components/schemas/GeoPoint"
-                },
-                "type": "array"
-              }
-            },
-            "required": [
-              "type",
-              "value"
-            ],
-            "type": "object"
-          }
-        ]
-      },
-      "PayloadVariant_for_GeoPoint": {
-        "anyOf": [
-          {
-            "items": {
-              "$ref": "#/components/schemas/GeoPoint"
-            },
-            "type": "array"
-          },
-          {
-            "$ref": "#/components/schemas/GeoPoint"
-          }
-        ],
-        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
-      },
-      "PayloadVariant_for_String": {
-        "anyOf": [
-          {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          {
-            "type": "string"
-          }
-        ],
-        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
-      },
-      "PayloadVariant_for_double": {
-        "anyOf": [
-          {
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "type": "array"
-          },
-          {
-            "format": "double",
-            "type": "number"
-          }
-        ],
-        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
-      },
-      "PayloadVariant_for_int64": {
-        "anyOf": [
-          {
-            "items": {
-              "format": "int64",
-              "type": "integer"
-            },
-            "type": "array"
-          },
-          {
-            "format": "int64",
-            "type": "integer"
-          }
-        ],
-        "description": "Payload interface structure which ensures that user is allowed to pass payload in both - array and single element forms.\n\nExample:\n\nBoth versions should work: ```json {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": [\"Berlin\", \"London\"] }}}, {..., \"payload\": {\"city\": {\"type\": \"keyword\", \"value\": \"Moscow\" }}}, ```"
       },
       "PointIdsList": {
         "properties": {
@@ -1480,12 +1296,15 @@
             "$ref": "#/components/schemas/ExtendedPointId"
           },
           "payload": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/PayloadInterface"
-            },
-            "description": "Payload values (optional)",
-            "nullable": true,
-            "type": "object"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Payload"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Payload values (optional)"
           },
           "vector": {
             "description": "Vector",
@@ -1643,12 +1462,15 @@
             "$ref": "#/components/schemas/ExtendedPointId"
           },
           "payload": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/PayloadType"
-            },
-            "description": "Payload - values assigned to the point",
-            "nullable": true,
-            "type": "object"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Payload"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Payload - values assigned to the point"
           },
           "vector": {
             "description": "Vector of the point",
@@ -1700,12 +1522,15 @@
             "$ref": "#/components/schemas/ExtendedPointId"
           },
           "payload": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/PayloadType"
-            },
-            "description": "Payload - values assigned to the point",
-            "nullable": true,
-            "type": "object"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Payload"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Payload - values assigned to the point"
           },
           "score": {
             "description": "Points vector distance to the query vector",
@@ -1891,10 +1716,7 @@
       "SetPayload": {
         "properties": {
           "payload": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/PayloadInterface"
-            },
-            "type": "object"
+            "$ref": "#/components/schemas/Payload"
           },
           "points": {
             "description": "Assigns payload to each point in this list",
