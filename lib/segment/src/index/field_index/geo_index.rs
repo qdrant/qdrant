@@ -222,8 +222,7 @@ impl PersistedGeoMapIndex {
             .collect_vec();
 
         // smallest regions first
-        large_regions.sort();
-        large_regions.reverse();
+        large_regions.sort_by(|a, b| b.cmp(a));
 
         let mut edge_region = vec![];
 
