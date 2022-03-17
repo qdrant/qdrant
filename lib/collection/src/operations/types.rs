@@ -234,7 +234,7 @@ impl From<OperationError> for CollectionError {
             OperationError::Cancelled { description } => Self::Cancelled { description },
             OperationError::TypeInferenceError { .. } => Self::BadInput {
                 description: format!("{}", err),
-            }
+            },
         }
     }
 }
