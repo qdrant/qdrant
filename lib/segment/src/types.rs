@@ -340,6 +340,10 @@ impl Payload {
         get_payload(path, &self.0)
     }
 
+    pub fn get_value(&self, path: &str) -> Option<&Value> {
+        get_value(path, &self.0)
+    }
+
     pub fn get(&self, path: &str) -> Option<PayloadType> {
         get_payload(path, &self.0)
     }

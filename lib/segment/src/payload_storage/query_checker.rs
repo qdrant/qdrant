@@ -3,9 +3,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 
 use crate::id_tracker::IdTrackerSS;
-use crate::payload_storage::condition_checker::{
-    match_geo, match_geo_radius, match_payload, match_range,
-};
+use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::ConditionChecker;
 use crate::types::{Condition, Filter, Payload, PointOffsetType};
@@ -97,29 +95,29 @@ impl ConditionChecker for SimpleConditionChecker {
         let checker = |condition: &Condition| {
             match condition {
                 Condition::Field(field_condition) => {
-                    payload.get(&field_condition.key).map_or(false, |p| {
+                    payload.get_value(&field_condition.key).map_or(false, |p| {
                         let mut res = false;
                         // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
                         res = res
                             || field_condition
                                 .r#match
                                 .as_ref()
-                                .map_or(false, |condition| match_payload(&p, condition));
+                                .map_or(false, |condition| condition.check(&p));
                         res = res
                             || field_condition
                                 .range
                                 .as_ref()
-                                .map_or(false, |condition| match_range(&p, condition));
+                                .map_or(false, |condition| condition.check(&p));
                         res = res
                             || field_condition
                                 .geo_radius
                                 .as_ref()
-                                .map_or(false, |condition| match_geo_radius(&p, condition));
+                                .map_or(false, |condition| condition.check(&p));
                         res = res
                             || field_condition
                                 .geo_bounding_box
                                 .as_ref()
-                                .map_or(false, |condition| match_geo(&p, condition));
+                                .map_or(false, |condition| condition.check(&p));
                         res
                     })
                 }
