@@ -44,6 +44,19 @@ def test_uuid_operations():
     )
     assert response.ok
 
+    # Create index
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "price",
+            "field_type": "float"
+        }
+    )
+    assert response.ok
+
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",

@@ -33,7 +33,6 @@ def test_payload_indexing_operations():
         path_params={'collection_name': collection_name},
     )
     assert response.ok
-    assert not response.json()['result']['payload_schema']['test_payload']['indexed']
 
     # Create index
     response = request_with_validation(
@@ -42,7 +41,8 @@ def test_payload_indexing_operations():
         path_params={'collection_name': collection_name},
         query_params={'wait': 'true'},
         body={
-            "field_name": "test_payload"
+            "field_name": "test_payload",
+            "field_type": "keyword"
         }
     )
     assert response.ok
@@ -70,5 +70,5 @@ def test_payload_indexing_operations():
         path_params={'collection_name': collection_name},
     )
     assert response.ok
-    assert not response.json()['result']['payload_schema']['test_payload']['indexed']
+    assert len(response.json()['result']['payload_schema']) == 0
 
