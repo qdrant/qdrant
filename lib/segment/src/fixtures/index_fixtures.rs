@@ -4,7 +4,6 @@ use crate::types::{Filter, PointOffsetType, VectorElementType};
 use crate::vector_storage::simple_vector_storage::SimpleRawScorer;
 use bit_vec::BitVec;
 use itertools::Itertools;
-use ndarray::{Array, Array1};
 use rand::Rng;
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
@@ -20,7 +19,7 @@ impl ConditionChecker for FakeConditionChecker {
 }
 
 pub struct TestRawScorerProducer<TMetric: Metric> {
-    pub vectors: Vec<Array1<VectorElementType>>,
+    pub vectors: Vec<Vec<VectorElementType>>,
     pub deleted: BitVec,
     pub metric: TMetric,
 }
@@ -41,7 +40,7 @@ where
             .collect_vec();
 
         TestRawScorerProducer {
-            vectors: vectors.into_iter().map(Array::from).collect(),
+            vectors,
             deleted: BitVec::from_elem(num_vectors, false),
             metric,
         }
@@ -49,7 +48,7 @@ where
 
     pub fn get_raw_scorer(&self, query: Vec<VectorElementType>) -> SimpleRawScorer<TMetric> {
         SimpleRawScorer {
-            query: Array::from(self.metric.preprocess(&query).unwrap_or(query)),
+            query: self.metric.preprocess(&query).unwrap_or(query),
             metric: &self.metric,
             vectors: &self.vectors,
             deleted: &self.deleted,

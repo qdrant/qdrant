@@ -14,10 +14,6 @@ rmp-serde = "~1.0"
 
 [dependencies]
 
-ndarray = { version = "0.15", features = ["blas"] }
-blas-src = { version = "0.8", default-features = false, features = ["openblas"] }
-openblas-src = { version = "0.10", default-features = false, features = ["cblas", "static"] }
-
 parking_lot = "0.12"
 itertools = "0.10"
 rocksdb = { version = "0.18.0", default-features = false, features = [ "snappy" ] }
@@ -64,8 +60,3 @@ harness = false
 [[bench]]
 name = "id_type_benchmark"
 harness = false
-
-[patch.crates-io]
-# Env flag OPENBLAS_DYNAMIC_ARCH is implemented in this custom fork
-# Which allows to build openblas with dynamic CPU architecture selection
-openblas-src = { git = "https://github.com/qdrant/openblas-src.git" }
