@@ -1,9 +1,15 @@
 #[cfg(feature = "web")]
 mod actix;
 pub mod common;
+#[cfg(feature = "consensus")]
+mod consensus;
 mod settings;
 mod tonic;
 
+#[cfg(feature = "consensus")]
+use consensus::Consensus;
+#[cfg(feature = "consensus")]
+use slog::Drain;
 use std::io::Error;
 use std::sync::Arc;
 use std::thread;
@@ -17,6 +23,18 @@ fn main() -> std::io::Result<()> {
     let settings = Settings::new().expect("Can't read config.");
     std::env::set_var("RUST_LOG", &settings.log_level);
     env_logger::init();
+
+    #[cfg(feature = "consensus")]
+    {
+        // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
+        // logs from it to `log` crate
+        let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
+
+        let (mut consensus, _message_sender) = Consensus::new(&slog_logger);
+        thread::Builder::new()
+            .name("raft".to_string())
+            .spawn(move || consensus.start())?;
+    }
 
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it

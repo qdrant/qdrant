@@ -47,7 +47,7 @@ mod wal;
 #[cfg(test)]
 mod tests;
 
-type CollectionId = String;
+pub type CollectionId = String;
 
 /// Collection's data is split into several shards.
 pub struct Collection {
