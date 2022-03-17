@@ -11,7 +11,7 @@ pub trait ValueChecker {
     fn check(&self, payload: &Value) -> bool {
         match payload {
             Value::Array(values) => values.iter().any(|x| self.check_match(x)),
-            _ => self.check_match(payload)
+            _ => self.check_match(payload),
         }
     }
 }
@@ -28,10 +28,7 @@ impl ValueChecker for MatchKeyword {
 impl ValueChecker for MatchInteger {
     fn check_match(&self, payload: &Value) -> bool {
         match payload {
-            Value::Number(num) => num
-                .as_i64()
-                .map(|x| x == self.integer)
-                .unwrap_or(false),
+            Value::Number(num) => num.as_i64().map(|x| x == self.integer).unwrap_or(false),
             _ => false,
         }
     }
@@ -41,7 +38,7 @@ impl ValueChecker for Match {
     fn check_match(&self, payload: &Value) -> bool {
         match self {
             Match::Keyword(match_keyword) => match_keyword.check_match(payload),
-            Match::Integer(match_integer) => match_integer.check_match(payload)
+            Match::Integer(match_integer) => match_integer.check_match(payload),
         }
     }
 }
@@ -49,13 +46,15 @@ impl ValueChecker for Match {
 impl ValueChecker for Range {
     fn check_match(&self, payload: &Value) -> bool {
         match payload {
-            Value::Number(num) => num.as_f64()
-                .map(|number|
+            Value::Number(num) => num
+                .as_f64()
+                .map(|number| {
                     self.lt.map_or(true, |x| number < x)
                         && self.gt.map_or(true, |x| number > x)
                         && self.lte.map_or(true, |x| number <= x)
                         && self.gte.map_or(true, |x| number >= x)
-                ).unwrap_or(false),
+                })
+                .unwrap_or(false),
             _ => false,
         }
     }
@@ -99,12 +98,11 @@ impl ValueChecker for GeoRadius {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
     use super::*;
     use crate::types::GeoPoint;
+    use serde_json::json;
 
     #[test]
     fn test_geo_matching() {
@@ -118,7 +116,6 @@ mod tests {
                 "lon": 37.62137960067377,
             }
         ]);
-
 
         let near_berlin_query = GeoRadius {
             center: GeoPoint {
