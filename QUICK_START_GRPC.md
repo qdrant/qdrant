@@ -106,16 +106,16 @@ grpcurl -plaintext -import-path ./src/tonic/proto -proto qdrant.proto -d '{
       "id": 1,
       "vector": [0.05, 0.61, 0.76, 0.74],
       "payload": {
-        "city": { "keyword": { "values": ["Berlin"] }},
-        "country": { "keyword": { "values": ["Germany"] }},
-        "population": { "integer": { "values": [1000000] }},
-        "square": { "float": { "values": [12.5] }},
-        "coords": { "geo": { "values": [{ "lat": 1.0, "lon": 2.0 }]}}
+        "city": "Berlin",
+        "country": "Germany",
+        "population": 1000000,
+        "square": 12.5,
+        "coords": { "lat": 1.0, "lon": 2.0 }
       }
     },
-    {"id": 2, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"square": {"float": { "values": [10, 11]}}}},
-    {"id": 3, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"count": {"integer": {"values": [0]}}}},
-    {"id": 4, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"coords": {"geo": {"values": [{ "lat": 1.0, "lon": 2.0}, { "lat": 3.0, "lon": 4.0}]}}}},
+    {"id": 2, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"square": [10, 11] }},
+    {"id": 3, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"count": [0] }},
+    {"id": 4, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"coords": [{ "lat": 1.0, "lon": 2.0}, { "lat": 3.0, "lon": 4.0}]}},
     {"id": 5, "vector": [0.35, 0.08, 0.11, 0.44]}
   ]
 }' \
