@@ -20,7 +20,7 @@ jobs:
       with:
         profile: minimal
         toolchain: stable
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - uses: Swatinem/rust-cache@v1
     - name: Install dependencies
       run: sudo apt-get install clang
@@ -30,6 +30,6 @@ jobs:
 #   build:
 #     runs-on: ubuntu-latest
 #     steps:
-#     - uses: actions/checkout@v2
+#     - uses: actions/checkout@v3
 #     - name: Build
 #       run: docker build . --tag=qdrant
