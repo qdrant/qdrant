@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 
+use async_trait::async_trait;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -12,12 +13,12 @@ use segment::segment_constructor::simple_segment_constructor::build_simple_segme
 use std::cmp::max;
 use std::fs::create_dir_all;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::runtime::{self, Runtime};
+use tokio::runtime::{self, Handle, Runtime};
 use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot, Mutex, RwLock as TokioRwLock};
 
 use segment::types::{
-    ExtendedPointId, Filter, PayloadKeyType, PayloadSchemaInfo, SegmentType, WithPayload,
-    WithPayloadInterface,
+    ExtendedPointId, Filter, PayloadKeyType, PayloadSchemaInfo, ScoredPoint, SegmentType,
+    WithPayload, WithPayloadInterface,
 };
 
 use crate::collection_manager::collection_managers::CollectionSearcher;
@@ -31,21 +32,20 @@ use crate::operations::types::{
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
+use crate::shard::ShardOperation;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
-use crate::CollectionId;
+use crate::{CollectionId, PointRequest, SearchRequest, ShardId};
 use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::segment_constructor::load_segment;
 use std::fs::{read_dir, remove_dir_all};
 
-pub type ShardId = u32;
-
-/// Shard
+/// LocalShard
 ///
-/// Shard is an entity that can be moved between peers and contains some part of one collections data.
+/// LocalShard is an entity that can be moved between peers and contains some part of one collections data.
 ///
 /// Holds all object, required for collection functioning
-pub struct Shard {
+pub struct LocalShard {
     segments: Arc<RwLock<SegmentHolder>>,
     // TODO: Move config into Raft global state
     config: Arc<TokioRwLock<CollectionConfig>>,
@@ -59,7 +59,7 @@ pub struct Shard {
 }
 
 /// Shard holds information about segments and WAL.
-impl Shard {
+impl LocalShard {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: ShardId,
@@ -116,12 +116,16 @@ impl Shard {
         }
     }
 
+    fn segments(&self) -> &RwLock<SegmentHolder> {
+        self.segments.deref()
+    }
+
     pub async fn load(
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
         collection_config: &CollectionConfig,
-    ) -> Shard {
+    ) -> LocalShard {
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
         let mut segment_holder = SegmentHolder::default();
@@ -172,7 +176,7 @@ impl Shard {
             schema_storage.clone(),
         );
 
-        let collection = Shard::new(
+        let collection = LocalShard::new(
             id,
             collection_id,
             segment_holder,
@@ -202,7 +206,7 @@ impl Shard {
         collection_id: CollectionId,
         shard_path: &Path,
         config: &CollectionConfig,
-    ) -> CollectionResult<Shard> {
+    ) -> CollectionResult<LocalShard> {
         let wal_path = shard_path.join("wal");
 
         create_dir_all(&wal_path).map_err(|err| CollectionError::ServiceError {
@@ -240,7 +244,7 @@ impl Shard {
             schema_storage.clone(),
         );
 
-        let collection = Shard::new(
+        let collection = LocalShard::new(
             id,
             collection_id,
             segment_holder,
@@ -252,164 +256,6 @@ impl Shard {
         );
 
         Ok(collection)
-    }
-
-    pub fn segments(&self) -> &RwLock<SegmentHolder> {
-        self.segments.deref()
-    }
-
-    /// Imply interior mutability.
-    /// Performs update operation on this collection asynchronously.
-    /// Explicitly waits for result to be updated.
-    pub async fn update(
-        &self,
-        operation: CollectionUpdateOperations,
-        wait: bool,
-    ) -> CollectionResult<UpdateResult> {
-        let (callback_sender, callback_receiver) = if wait {
-            let (tx, rx) = oneshot::channel();
-            (Some(tx), Some(rx))
-        } else {
-            (None, None)
-        };
-
-        let operation_id = {
-            let mut wal_lock = self.wal.lock().await;
-            let operation_id = wal_lock.write(&operation)?;
-            self.update_sender
-                .load()
-                .send(UpdateSignal::Operation(OperationData {
-                    op_num: operation_id,
-                    operation,
-                    sender: callback_sender,
-                }))?;
-            operation_id
-        };
-
-        if let Some(receiver) = callback_receiver {
-            let _res = receiver.await??;
-            Ok(UpdateResult {
-                operation_id,
-                status: UpdateStatus::Completed,
-            })
-        } else {
-            Ok(UpdateResult {
-                operation_id,
-                status: UpdateStatus::Acknowledged,
-            })
-        }
-    }
-
-    pub async fn scroll_by(
-        &self,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
-        offset: Option<ExtendedPointId>,
-        limit: usize,
-        with_payload_interface: &WithPayloadInterface,
-        with_vector: bool,
-        filter: Option<&Filter>,
-    ) -> CollectionResult<Vec<Record>> {
-        // ToDo: Make faster points selection with a set
-        let segments = self.segments();
-        let point_ids = segments
-            .read()
-            .iter()
-            .flat_map(|(_, segment)| segment.get().read().read_filtered(offset, limit, filter))
-            .sorted()
-            .dedup()
-            .take(limit)
-            .collect_vec();
-
-        let with_payload = WithPayload::from(with_payload_interface);
-        let mut points = segment_searcher
-            .retrieve(segments, &point_ids, &with_payload, with_vector)
-            .await?;
-        points.sort_by_key(|point| point.id);
-
-        Ok(points)
-    }
-
-    /// Collect overview information about the shard
-    pub async fn info(&self) -> CollectionResult<CollectionInfo> {
-        let collection_config = self.config.read().await.clone();
-        let segments = self.segments.read();
-        let mut vectors_count = 0;
-        let mut segments_count = 0;
-        let mut ram_size = 0;
-        let mut disk_size = 0;
-        let mut status = CollectionStatus::Green;
-        let mut schema: HashMap<PayloadKeyType, PayloadSchemaInfo> = Default::default();
-        for (_idx, segment) in segments.iter() {
-            segments_count += 1;
-            let segment_info = segment.get().read().info();
-            if segment_info.segment_type == SegmentType::Special {
-                status = CollectionStatus::Yellow;
-            }
-            vectors_count += segment_info.num_vectors;
-            disk_size += segment_info.disk_usage_bytes;
-            ram_size += segment_info.ram_usage_bytes;
-            for (key, val) in segment_info.schema {
-                schema.insert(key, val);
-            }
-        }
-        if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
-            status = CollectionStatus::Red;
-        }
-
-        let optimizer_status = match &segments.optimizer_errors {
-            None => OptimizersStatus::Ok,
-            Some(error) => OptimizersStatus::Error(error.to_string()),
-        };
-
-        Ok(CollectionInfo {
-            status,
-            optimizer_status,
-            vectors_count,
-            segments_count,
-            disk_data_size: disk_size,
-            ram_data_size: ram_size,
-            config: collection_config,
-            payload_schema: schema,
-        })
-    }
-
-    /// Updates shard optimization params:
-    /// - Saves new params on disk
-    /// - Stops existing optimization loop
-    /// - Runs new optimizers with new params
-    pub async fn update_optimizer_params(
-        &self,
-        optimizer_config_diff: OptimizersConfigDiff,
-    ) -> CollectionResult<()> {
-        log::debug!("Updating optimizer params");
-        {
-            let mut config = self.config.write().await;
-            config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
-            config.save(&self.path)?;
-        }
-        let config = self.config.read().await;
-        let mut update_handler = self.update_handler.lock().await;
-
-        let (update_sender, update_receiver) = mpsc::unbounded_channel();
-        // makes sure that the Stop signal is the last one in this channel
-        let old_sender = self.update_sender.swap(Arc::new(update_sender));
-        old_sender.send(UpdateSignal::Stop)?;
-        update_handler.stop_flush_worker();
-
-        update_handler.wait_workers_stops().await?;
-        let new_optimizers = build_optimizers(
-            &self.path,
-            &config.params,
-            &config.optimizer_config,
-            &config.hnsw_config,
-            self.schema_store.clone(),
-        );
-        update_handler.optimizers = new_optimizers;
-        update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
-        update_handler.run_workers(update_receiver);
-        self.update_sender.load().send(UpdateSignal::Nop)?;
-
-        Ok(())
     }
 
     pub async fn stop_flush_worker(&self) {
@@ -472,7 +318,187 @@ impl Shard {
     }
 }
 
-impl Drop for Shard {
+#[async_trait]
+impl ShardOperation for &LocalShard {
+    /// Imply interior mutability.
+    /// Performs update operation on this collection asynchronously.
+    /// Explicitly waits for result to be updated.
+    async fn update(
+        &self,
+        operation: CollectionUpdateOperations,
+        wait: bool,
+    ) -> CollectionResult<UpdateResult> {
+        let (callback_sender, callback_receiver) = if wait {
+            let (tx, rx) = oneshot::channel();
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
+
+        let operation_id = {
+            let mut wal_lock = self.wal.lock().await;
+            let operation_id = wal_lock.write(&operation)?;
+            self.update_sender
+                .load()
+                .send(UpdateSignal::Operation(OperationData {
+                    op_num: operation_id,
+                    operation,
+                    sender: callback_sender,
+                }))?;
+            operation_id
+        };
+
+        if let Some(receiver) = callback_receiver {
+            let _res = receiver.await??;
+            Ok(UpdateResult {
+                operation_id,
+                status: UpdateStatus::Completed,
+            })
+        } else {
+            Ok(UpdateResult {
+                operation_id,
+                status: UpdateStatus::Acknowledged,
+            })
+        }
+    }
+
+    async fn scroll_by(
+        &self,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: bool,
+        filter: Option<&Filter>,
+    ) -> CollectionResult<Vec<Record>> {
+        // ToDo: Make faster points selection with a set
+        let segments = self.segments();
+        let point_ids = segments
+            .read()
+            .iter()
+            .flat_map(|(_, segment)| segment.get().read().read_filtered(offset, limit, filter))
+            .sorted()
+            .dedup()
+            .take(limit)
+            .collect_vec();
+
+        let with_payload = WithPayload::from(with_payload_interface);
+        let mut points = segment_searcher
+            .retrieve(segments, &point_ids, &with_payload, with_vector)
+            .await?;
+        points.sort_by_key(|point| point.id);
+
+        Ok(points)
+    }
+
+    /// Updates shard optimization params:
+    /// - Saves new params on disk
+    /// - Stops existing optimization loop
+    /// - Runs new optimizers with new params
+    async fn update_optimizer_params(
+        &self,
+        optimizer_config_diff: OptimizersConfigDiff,
+    ) -> CollectionResult<()> {
+        log::debug!("Updating optimizer params");
+        {
+            let mut config = self.config.write().await;
+            config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
+            config.save(&self.path)?;
+        }
+        let config = self.config.read().await;
+        let mut update_handler = self.update_handler.lock().await;
+
+        let (update_sender, update_receiver) = mpsc::unbounded_channel();
+        // makes sure that the Stop signal is the last one in this channel
+        let old_sender = self.update_sender.swap(Arc::new(update_sender));
+        old_sender.send(UpdateSignal::Stop)?;
+        update_handler.stop_flush_worker();
+
+        update_handler.wait_workers_stops().await?;
+        let new_optimizers = build_optimizers(
+            &self.path,
+            &config.params,
+            &config.optimizer_config,
+            &config.hnsw_config,
+            self.schema_store.clone(),
+        );
+        update_handler.optimizers = new_optimizers;
+        update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
+        update_handler.run_workers(update_receiver);
+        self.update_sender.load().send(UpdateSignal::Nop)?;
+
+        Ok(())
+    }
+
+    /// Collect overview information about the shard
+    async fn info(&self) -> CollectionResult<CollectionInfo> {
+        let collection_config = self.config.read().await.clone();
+        let segments = self.segments.read();
+        let mut vectors_count = 0;
+        let mut segments_count = 0;
+        let mut ram_size = 0;
+        let mut disk_size = 0;
+        let mut status = CollectionStatus::Green;
+        let mut schema: HashMap<PayloadKeyType, PayloadSchemaInfo> = Default::default();
+        for (_idx, segment) in segments.iter() {
+            segments_count += 1;
+            let segment_info = segment.get().read().info();
+            if segment_info.segment_type == SegmentType::Special {
+                status = CollectionStatus::Yellow;
+            }
+            vectors_count += segment_info.num_vectors;
+            disk_size += segment_info.disk_usage_bytes;
+            ram_size += segment_info.ram_usage_bytes;
+            for (key, val) in segment_info.schema {
+                schema.insert(key, val);
+            }
+        }
+        if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
+            status = CollectionStatus::Red;
+        }
+
+        let optimizer_status = match &segments.optimizer_errors {
+            None => OptimizersStatus::Ok,
+            Some(error) => OptimizersStatus::Error(error.to_string()),
+        };
+
+        Ok(CollectionInfo {
+            status,
+            optimizer_status,
+            vectors_count,
+            segments_count,
+            disk_data_size: disk_size,
+            ram_data_size: ram_size,
+            config: collection_config,
+            payload_schema: schema,
+        })
+    }
+
+    async fn search(
+        &self,
+        request: Arc<SearchRequest>,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        segment_searcher
+            .search(self.segments(), request.clone(), search_runtime_handle)
+            .await
+    }
+
+    async fn retrieve(
+        &self,
+        request: Arc<PointRequest>,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        with_payload: &WithPayload,
+        with_vector: bool,
+    ) -> CollectionResult<Vec<Record>> {
+        segment_searcher
+            .retrieve(self.segments(), &request.ids, with_payload, with_vector)
+            .await
+    }
+}
+
+impl Drop for LocalShard {
     fn drop(&mut self) {
         if !self.before_drop_called {
             // Panic is used to get fast feedback in unit and integration tests

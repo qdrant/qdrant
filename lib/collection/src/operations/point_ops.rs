@@ -1,4 +1,5 @@
-use crate::{operations::types::VectorType, shard::ShardId};
+use crate::operations::types::VectorType;
+use crate::ShardId;
 use hashring::HashRing;
 use schemars::JsonSchema;
 use segment::types::{Filter, PayloadInterface, PayloadKeyType, PointIdType};
