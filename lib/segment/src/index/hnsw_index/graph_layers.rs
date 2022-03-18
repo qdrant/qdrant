@@ -493,7 +493,6 @@ mod tests {
     use crate::types::VectorElementType;
     use crate::vector_storage::RawScorer;
     use itertools::Itertools;
-    use ndarray::Array;
     use rand::rngs::StdRng;
     use rand::seq::SliceRandom;
     use rand::SeedableRng;
@@ -718,17 +717,15 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
-        let processed_query = Array::from(
-            vector_holder
-                .metric
-                .preprocess(&query)
-                .unwrap_or_else(|| query.clone()),
-        );
+        let processed_query = vector_holder
+            .metric
+            .preprocess(&query)
+            .unwrap_or_else(|| query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for (idx, vec) in vector_holder.vectors.iter().enumerate() {
             reference_top.push(ScoredPointOffset {
                 idx: idx as PointOffsetType,
-                score: vector_holder.metric.blas_similarity(vec, &processed_query),
+                score: vector_holder.metric.similarity(vec, &processed_query),
             });
         }
 
