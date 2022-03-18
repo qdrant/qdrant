@@ -9,7 +9,7 @@ WORKDIR ./qdrant
 # Build actual target here
 RUN cargo build --release --bin qdrant
 
-FROM debian:bullseye-slim
+FROM debian:11-slim
 ARG APP=/qdrant
 
 RUN apt-get update \
