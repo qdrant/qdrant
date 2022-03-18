@@ -102,22 +102,22 @@ impl ConditionChecker for SimpleConditionChecker {
                             || field_condition
                                 .r#match
                                 .as_ref()
-                                .map_or(false, |condition| condition.check(&p));
+                                .map_or(false, |condition| condition.check(p));
                         res = res
                             || field_condition
                                 .range
                                 .as_ref()
-                                .map_or(false, |condition| condition.check(&p));
+                                .map_or(false, |condition| condition.check(p));
                         res = res
                             || field_condition
                                 .geo_radius
                                 .as_ref()
-                                .map_or(false, |condition| condition.check(&p));
+                                .map_or(false, |condition| condition.check(p));
                         res = res
                             || field_condition
                                 .geo_bounding_box
                                 .as_ref()
-                                .map_or(false, |condition| condition.check(&p));
+                                .map_or(false, |condition| condition.check(p));
                         res
                     })
                 }
