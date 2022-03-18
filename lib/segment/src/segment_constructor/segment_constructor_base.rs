@@ -1,4 +1,3 @@
-
 extern crate profiler_proc_macro;
 use profiler_proc_macro::trace;
 

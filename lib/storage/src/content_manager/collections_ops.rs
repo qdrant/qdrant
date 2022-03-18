@@ -33,7 +33,6 @@ pub trait Checker {
 
 #[async_trait]
 impl Checker for Collections {
-
     async fn is_collection_exists(&self, collection_name: &str) -> bool {
         self.contains_key(collection_name)
     }

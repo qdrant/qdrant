@@ -1,6 +1,6 @@
+extern crate profiler_proc_macro;
 extern crate serde_cbor;
 extern crate wal;
-extern crate profiler_proc_macro;
 use profiler_proc_macro::trace;
 
 use std::marker::PhantomData;

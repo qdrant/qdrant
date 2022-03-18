@@ -1,5 +1,4 @@
 extern crate profiler_proc_macro;
-use profiler_proc_macro::trace;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
@@ -8,6 +7,7 @@ use crate::collection_manager::optimizers::segment_optimizer::{
 };
 use crate::config::CollectionParams;
 use itertools::Itertools;
+use profiler_proc_macro::trace;
 use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::types::{HnswConfig, SegmentType};
 use std::collections::HashSet;

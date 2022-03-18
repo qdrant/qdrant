@@ -1,11 +1,11 @@
 extern crate profiler_proc_macro;
-use profiler_proc_macro::trace;
 use crate::index::{PayloadIndex, PayloadIndexSS, VectorIndex};
 use crate::payload_storage::ConditionCheckerSS;
 use crate::types::{
     Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType, SearchParams, VectorElementType,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
+use profiler_proc_macro::trace;
 
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};

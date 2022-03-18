@@ -1,5 +1,4 @@
 extern crate profiler_proc_macro;
-use profiler_proc_macro::trace;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
@@ -13,6 +12,7 @@ use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VectorEleme
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 use atomic_refcell::AtomicRefCell;
 use log::debug;
+use profiler_proc_macro::trace;
 
 use rand::thread_rng;
 use std::cmp::max;
