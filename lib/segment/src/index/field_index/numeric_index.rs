@@ -217,10 +217,9 @@ impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
 
 impl PayloadFieldIndexBuilder for PersistedNumericIndex<FloatPayloadType> {
     fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
-        match value {
-            PayloadType::Float(number) => self.add_many(id, number),
-            _ => panic!("Unexpected payload type: {:?}", value),
-        }
+        if let PayloadType::Float(number) = value {
+            self.add_many(id, number);
+        };
     }
 
     fn build(&mut self) -> FieldIndex {
@@ -235,10 +234,9 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<FloatPayloadType> {
 
 impl PayloadFieldIndexBuilder for PersistedNumericIndex<IntPayloadType> {
     fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
-        match value {
-            PayloadType::Integer(number) => self.add_many(id, number),
-            _ => panic!("Unexpected payload type: {:?}", value),
-        }
+        if let PayloadType::Integer(number) = value {
+            self.add_many(id, number);
+        };
     }
 
     fn build(&mut self) -> FieldIndex {
