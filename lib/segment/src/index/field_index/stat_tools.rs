@@ -23,6 +23,7 @@ pub fn estimate_multi_value_selection_cardinality(
     selected_values_count: usize,
 ) -> f64 {
     // Value >= 1.0
+    assert!(total_values >= total_points);
     let values_per_point = total_values as f64 / total_points as f64;
     // Probability to select each unique value
     let prob_select = 1. - prob_not_select(total_values, values_per_point, selected_values_count);
@@ -44,7 +45,7 @@ fn approx_fact_log(n: f64) -> f64 {
 ///     $\prod_{i=0}^{N-1} \frac{total - avg - i}{total - i}$
 /// , where `N` - number of selected points
 ///
-/// Prove:
+/// Proof:
 ///
 /// $$
 /// \prod_{i=0}^{N-1} \frac{total - avg - i}{total - i}
