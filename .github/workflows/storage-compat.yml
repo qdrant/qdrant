@@ -24,7 +24,7 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v1
       - name: Run storage compatibility test
         run: |
