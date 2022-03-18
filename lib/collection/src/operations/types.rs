@@ -16,15 +16,14 @@ use segment::types::{
     SeqNumberType, TheMap, VectorElementType, WithPayloadInterface,
 };
 
-use crate::config::CollectionConfig;
-use crate::wal::WalError;
+use crate::{config::CollectionConfig, wal::WalError};
 use std::collections::HashMap;
 
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
 
 /// Current state of the collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionStatus {
     /// Collection if completely ready for requests
@@ -34,6 +33,16 @@ pub enum CollectionStatus {
     /// Something is not OK:
     /// - some operations failed and was not recovered
     Red,
+}
+
+/// Current state of the collection
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum OptimizersStatus {
+    /// Optimizers are reporting as expected
+    Ok,
+    /// Something wrong happened with optimizers
+    Error(String),
 }
 
 /// Point data
@@ -53,6 +62,8 @@ pub struct Record {
 pub struct CollectionInfo {
     /// Status of the collection
     pub status: CollectionStatus,
+    /// Status of optimizers
+    pub optimizer_status: OptimizersStatus,
     /// Number of vectors in collection
     pub vectors_count: usize,
     /// Number of segments in collection
@@ -89,16 +100,17 @@ pub struct UpdateResult {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ScrollRequest {
-    /// Start ID to read points from. Default: 0
+    /// Start ID to read points from.
     pub offset: Option<PointIdType>,
     /// Page size. Default: 10
     pub limit: Option<usize>,
     /// Look only for points which satisfies this conditions. If not provided - all points.
     pub filter: Option<Filter>,
-    /// Return point payload with the result. Default: True
+    /// Select which payload to return with the response. Default: All
     pub with_payload: Option<WithPayloadInterface>,
-    /// Return point vector with the result. Default: false
-    pub with_vector: Option<bool>,
+    /// Whether to return the point vector with the result?
+    #[serde(default)]
+    pub with_vector: bool,
 }
 
 impl Default for ScrollRequest {
@@ -108,7 +120,7 @@ impl Default for ScrollRequest {
             limit: Some(10),
             filter: None,
             with_payload: Some(WithPayloadInterface::Bool(true)),
-            with_vector: Some(false),
+            with_vector: false,
         }
     }
 }
@@ -137,10 +149,23 @@ pub struct SearchRequest {
     pub params: Option<SearchParams>,
     /// Max number of result to return
     pub top: usize,
-    /// Payload interface
+    /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
-    /// Return point vector with the result. Default: false
-    pub with_vector: Option<bool>,
+    /// Whether to return the point vector with the result?
+    #[serde(default)]
+    pub with_vector: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct PointRequest {
+    /// Look for points with ids
+    pub ids: Vec<PointIdType>,
+    /// Select which payload to return with the response. Default: All
+    pub with_payload: Option<WithPayloadInterface>,
+    /// Whether to return the point vector with the result?
+    #[serde(default)]
+    pub with_vector: bool,
 }
 
 /// Recommendation request.
@@ -163,6 +188,11 @@ pub struct RecommendRequest {
     pub params: Option<SearchParams>,
     /// Max number of result to return
     pub top: usize,
+    /// Select which payload to return with the response. Default: None
+    pub with_payload: Option<WithPayloadInterface>,
+    /// Whether to return the point vector with the result?
+    #[serde(default)]
+    pub with_vector: bool,
 }
 
 #[derive(Error, Debug, Clone)]
@@ -178,6 +208,14 @@ pub enum CollectionError {
     BadRequest { description: String },
     #[error("Operation Cancelled: {description}")]
     Cancelled { description: String },
+    #[error(
+        "{shards_failed} out of {shards_total} shards failed to apply operation. First error captured: {first_err}"
+    )]
+    InconsistentFailure {
+        shards_total: u32,
+        shards_failed: u32,
+        first_err: String,
+    },
 }
 
 impl From<OperationError> for CollectionError {

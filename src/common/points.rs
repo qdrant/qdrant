@@ -1,8 +1,11 @@
 use collection::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsSelector};
-use collection::operations::types::UpdateResult;
+use collection::operations::types::{
+    PointRequest, Record, ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
+};
 use collection::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use schemars::JsonSchema;
+use segment::types::ScoredPoint;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -121,4 +124,28 @@ pub async fn do_delete_index(
     );
     toc.update(collection_name, collection_operation, wait)
         .await
+}
+
+pub async fn do_search_points(
+    toc: &TableOfContent,
+    collection_name: &str,
+    request: SearchRequest,
+) -> Result<Vec<ScoredPoint>, StorageError> {
+    toc.search(collection_name, request).await
+}
+
+pub async fn do_get_points(
+    toc: &TableOfContent,
+    collection_name: &str,
+    request: PointRequest,
+) -> Result<Vec<Record>, StorageError> {
+    toc.retrieve(collection_name, request).await
+}
+
+pub async fn do_scroll_points(
+    toc: &TableOfContent,
+    collection_name: &str,
+    request: ScrollRequest,
+) -> Result<ScrollResult, StorageError> {
+    toc.scroll(collection_name, request).await
 }

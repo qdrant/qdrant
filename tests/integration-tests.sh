@@ -7,9 +7,8 @@ set -ex
 cd "$(dirname "$0")/../"
 
 QDRANT_HOST='localhost:6333'
+export QDRANT__SERVICE__GRPC_PORT="6334"
 
-# Build
-$(cargo build --features grpc)
 # Run in background
 $(./target/debug/qdrant) &
 
@@ -26,6 +25,8 @@ until $(curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collec
 done
 
 echo "server ready to serve traffic"
+
+./tests/openapi_integration_test.sh
 
 ./tests/basic_api_test.sh
 

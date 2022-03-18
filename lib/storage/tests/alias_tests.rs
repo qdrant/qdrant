@@ -1,4 +1,4 @@
-use collection::collection_builder::optimizers_builder::OptimizersConfig;
+use collection::optimizers_builder::OptimizersConfig;
 use storage::content_manager::toc::TableOfContent;
 use storage::types::{PerformanceConfig, StorageConfig};
 use tempdir::TempDir;
@@ -46,13 +46,14 @@ mod tests {
             .block_on(
                 toc.perform_collection_operation(StorageOperations::CreateCollection(
                     CreateCollectionOperation {
-                        name: "test".to_string(),
+                        collection_name: "test".to_string(),
                         create_collection: CreateCollection {
                             vector_size: 10,
                             distance: Distance::Cosine,
                             hnsw_config: None,
                             wal_config: None,
                             optimizers_config: None,
+                            shard_number: 1,
                         },
                     },
                 )),

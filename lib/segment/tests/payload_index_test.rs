@@ -5,11 +5,13 @@ mod tests {
     use segment::fixtures::payload_fixtures::{
         random_filter, random_int_payload, random_keyword_payload, random_vector,
     };
+    use segment::payload_storage::schema_storage::SchemaStorage;
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, Indexes, PayloadIndexType, PayloadKeyType,
         PayloadType, Range, SegmentConfig, StorageType, TheMap, WithPayload,
     };
+    use std::sync::Arc;
     use tempdir::TempDir;
 
     #[test]
@@ -31,7 +33,8 @@ mod tests {
         let int_key = "int".to_string();
 
         let num_points = 10000;
-        let mut struct_segment = build_segment(dir1.path(), &config).unwrap();
+        let mut struct_segment =
+            build_segment(dir1.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
 
         let mut opnum = 0;
         for n in 0..num_points {
@@ -103,9 +106,11 @@ mod tests {
             distance: Distance::Dot,
         };
 
-        let mut plain_segment = build_segment(dir1.path(), &config).unwrap();
+        let mut plain_segment =
+            build_segment(dir1.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
         config.payload_index = Some(PayloadIndexType::Struct);
-        let mut struct_segment = build_segment(dir2.path(), &config).unwrap();
+        let mut struct_segment =
+            build_segment(dir2.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
 
         let str_key = "kvd".to_string();
         let int_key = "int".to_string();

@@ -1,10 +1,9 @@
-FROM rust:1.58.1 as builder
+FROM rust:1.59 as builder
 
 COPY . ./qdrant
 WORKDIR ./qdrant
 
-ENV OPENBLAS_DYNAMIC_ARCH="1"
-RUN apt-get update ; apt-get install -y clang libopenblas-dev libgfortran-10-dev gfortran
+RUN apt-get update ; apt-get install -y clang
 
 # Build actual target here
 RUN cargo build --release --bin qdrant
@@ -20,8 +19,7 @@ EXPOSE 6333
 EXPOSE 6334
 
 ENV TZ=Etc/UTC \
-    RUN_MODE=production \
-    OPENBLAS_NUM_THREADS=1
+    RUN_MODE=production
 
 RUN mkdir -p ${APP}
 

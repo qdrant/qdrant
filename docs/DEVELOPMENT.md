@@ -67,11 +67,11 @@ This means changes to the API must be followed by changes to the specification.
 Here is a quick step-by-step guide:
 
 1. code endpoints and model in Rust
-2. update integration tests `/tests/basic_api_test.sh`
-3. change specs in `/openapi/*ytt.yaml`
-4. add new schema definitions to `src/schema_generator.rs`
-5. run `/tools/generate_openapi_models.sh` to generate specs
-6. move newly created openapi.json `cp docs/redoc/openapi.json docs/redoc/master/openapi.json`
+2. change specs in `/openapi/*ytt.yaml`
+3. add new schema definitions to `src/schema_generator.rs`
+4. run `/tools/generate_openapi_models.sh` to generate specs
+5. move newly created openapi.json `cp docs/redoc/openapi.json docs/redoc/master/openapi.json`
+6. update integration tests `openapi/tests/openapi_integration`
 7. expose file by starting an HTTP server, for instance `python -m http.server`, in `/docs/redoc`
 8. validate specs by browsing redoc on `http://localhost:8000/?v=master`
 9. validate `openapi-merged.yaml` using [swagger editor](https://editor.swagger.io/)
@@ -84,9 +84,9 @@ Our protocol buffers are defined in `src/tonic/proto/*.proto`
 
 1. define request and response types using protocol buffers (use [oneOf](https://developers.google.com/protocol-buffers/docs/proto3#oneof) for enums payloads)
 2. specify RPC methods inside the service definition using protocol buffers
-3. `cargo build --features grpc` will generate the struct definitions and a service trait
+3. `cargo build` will generate the struct definitions and a service trait
 4. implement the service trait in Rust
-5. start server `cargo run --bin qdrant --features grpc`
+5. start server `cargo run --bin qdrant`
 6. run integration test `./tests/basic_grpc_test.sh`
 
 Here is a good [tonic tutorial](https://github.com/hyperium/tonic/blob/master/examples/routeguide-tutorial.md#defining-the-service) for reference.

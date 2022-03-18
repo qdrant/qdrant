@@ -112,6 +112,9 @@
             "minimum": 0,
             "type": "integer"
           },
+          "optimizer_status": {
+            "$ref": "#/components/schemas/OptimizersStatus"
+          },
           "payload_schema": {
             "additionalProperties": {
               "$ref": "#/components/schemas/PayloadSchemaInfo"
@@ -144,6 +147,7 @@
         "required": [
           "config",
           "disk_data_size",
+          "optimizer_status",
           "payload_schema",
           "ram_data_size",
           "segments_count",
@@ -156,6 +160,13 @@
         "properties": {
           "distance": {
             "$ref": "#/components/schemas/Distance"
+          },
+          "shard_number": {
+            "default": 1,
+            "description": "Number of shards the collection has",
+            "format": "uint32",
+            "minimum": 1,
+            "type": "integer"
           },
           "vector_size": {
             "description": "Size of a vectors used",
@@ -274,6 +285,13 @@
             ],
             "description": "Custom params for Optimizers.  If none - values from service configuration file are used."
           },
+          "shard_number": {
+            "default": 1,
+            "description": "Number of shards in collection. Default is 1, minimum is 1.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
           "vector_size": {
             "format": "uint",
             "minimum": 0,
@@ -300,6 +318,9 @@
       "CreateCollectionOperation": {
         "description": "Operation for creating new collection and (optionally) specify index params",
         "properties": {
+          "collection_name": {
+            "type": "string"
+          },
           "distance": {
             "$ref": "#/components/schemas/Distance"
           },
@@ -314,9 +335,6 @@
             ],
             "description": "Custom params for HNSW index. If none - values from service configuration file are used."
           },
-          "name": {
-            "type": "string"
-          },
           "optimizers_config": {
             "anyOf": [
               {
@@ -327,6 +345,13 @@
               }
             ],
             "description": "Custom params for Optimizers.  If none - values from service configuration file are used."
+          },
+          "shard_number": {
+            "default": 1,
+            "description": "Number of shards in collection. Default is 1, minimum is 1.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
           },
           "vector_size": {
             "format": "uint",
@@ -346,8 +371,8 @@
           }
         },
         "required": [
+          "collection_name",
           "distance",
-          "name",
           "vector_size"
         ],
         "type": "object"
@@ -710,20 +735,41 @@
         "type": "object"
       },
       "Match": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/MatchKeyword"
+          },
+          {
+            "$ref": "#/components/schemas/MatchInteger"
+          }
+        ],
+        "description": "Match filter request"
+      },
+      "MatchInteger": {
         "description": "Match filter request",
         "properties": {
           "integer": {
             "description": "Integer value to match",
             "format": "int64",
-            "nullable": true,
             "type": "integer"
-          },
+          }
+        },
+        "required": [
+          "integer"
+        ],
+        "type": "object"
+      },
+      "MatchKeyword": {
+        "description": "Match by keyword",
+        "properties": {
           "keyword": {
             "description": "Keyword value to match",
-            "nullable": true,
             "type": "string"
           }
         },
+        "required": [
+          "keyword"
+        ],
         "type": "object"
       },
       "OptimizersConfig": {
@@ -861,6 +907,30 @@
           }
         },
         "type": "object"
+      },
+      "OptimizersStatus": {
+        "description": "Current state of the collection",
+        "oneOf": [
+          {
+            "enum": [
+              "ok"
+            ],
+            "type": "string"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Something wrong happened with optimizers",
+            "properties": {
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "PayloadInterface": {
         "anyOf": [
@@ -1102,18 +1172,21 @@
         ]
       },
       "PayloadSelector": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PayloadSelectorInclude"
+          },
+          {
+            "$ref": "#/components/schemas/PayloadSelectorExclude"
+          }
+        ],
+        "description": "Specifies how to treat payload selector"
+      },
+      "PayloadSelectorExclude": {
         "additionalProperties": false,
-        "description": "Specifies how to treat payload selector",
         "properties": {
           "exclude": {
-            "description": "Post-exclude return payload key type",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "include": {
-            "description": "Include return payload key type",
+            "description": "Exclude this fields from returning payload",
             "items": {
               "type": "string"
             },
@@ -1121,7 +1194,22 @@
           }
         },
         "required": [
-          "exclude",
+          "exclude"
+        ],
+        "type": "object"
+      },
+      "PayloadSelectorInclude": {
+        "additionalProperties": false,
+        "properties": {
+          "include": {
+            "description": "Only include this payload keys",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
           "include"
         ],
         "type": "object"
@@ -1358,6 +1446,7 @@
       "PointRequest": {
         "properties": {
           "ids": {
+            "description": "Look for points with ids",
             "items": {
               "$ref": "#/components/schemas/ExtendedPointId"
             },
@@ -1371,10 +1460,12 @@
               {
                 "nullable": true
               }
-            ]
+            ],
+            "description": "Select which payload to return with the response. Default: All"
           },
           "with_vector": {
-            "nullable": true,
+            "default": false,
+            "description": "Whether to return the point vector with the result?",
             "type": "boolean"
           }
         },
@@ -1520,6 +1611,22 @@
             "format": "uint",
             "minimum": 0,
             "type": "integer"
+          },
+          "with_payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithPayloadInterface"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Select which payload to return with the response. Default: None"
+          },
+          "with_vector": {
+            "default": false,
+            "description": "Whether to return the point vector with the result?",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1658,7 +1765,7 @@
                 "nullable": true
               }
             ],
-            "description": "Start ID to read points from. Default: 0"
+            "description": "Start ID to read points from."
           },
           "with_payload": {
             "anyOf": [
@@ -1669,11 +1776,11 @@
                 "nullable": true
               }
             ],
-            "description": "Return point payload with the result. Default: True"
+            "description": "Select which payload to return with the response. Default: All"
           },
           "with_vector": {
-            "description": "Return point vector with the result. Default: false",
-            "nullable": true,
+            "default": false,
+            "description": "Whether to return the point vector with the result?",
             "type": "boolean"
           }
         },
@@ -1767,11 +1874,11 @@
                 "nullable": true
               }
             ],
-            "description": "Payload interface"
+            "description": "Select which payload to return with the response. Default: None"
           },
           "with_vector": {
-            "description": "Return point vector with the result. Default: false",
-            "nullable": true,
+            "default": false,
+            "description": "Whether to return the point vector with the result?",
             "type": "boolean"
           }
         },
@@ -1876,7 +1983,7 @@
       "UpdateCollectionOperation": {
         "description": "Operation for updating parameters of the existing collection",
         "properties": {
-          "name": {
+          "collection_name": {
             "type": "string"
           },
           "optimizers_config": {
@@ -1892,7 +1999,7 @@
           }
         },
         "required": [
-          "name"
+          "collection_name"
         ],
         "type": "object"
       },
@@ -1964,9 +2071,11 @@
       "WithPayloadInterface": {
         "anyOf": [
           {
+            "description": "If `true` - return all payload, If `false` - do not return payload",
             "type": "boolean"
           },
           {
+            "description": "Specify which fields to return",
             "items": {
               "type": "string"
             },
@@ -2029,7 +2138,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2096,7 +2205,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2163,7 +2272,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2185,6 +2294,383 @@
           }
         },
         "summary": "Update aliases of the collections",
+        "tags": [
+          "collections"
+        ]
+      }
+    },
+    "/collections/{collection_name}": {
+      "delete": {
+        "description": "Drop collection and all associated data",
+        "operationId": "delete_collection",
+        "parameters": [
+          {
+            "description": "Name of the collection to delete",
+            "in": "path",
+            "name": "collection_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Delete collection",
+        "tags": [
+          "collections"
+        ]
+      },
+      "get": {
+        "description": "Get detailed information about specified existing collection",
+        "operationId": "get_collection",
+        "parameters": [
+          {
+            "description": "Name of the collection to retrieve",
+            "in": "path",
+            "name": "collection_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/CollectionInfo"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Collection info",
+        "tags": [
+          "collections"
+        ]
+      },
+      "patch": {
+        "description": "Update parameters of the existing collection",
+        "operationId": "update_collection",
+        "parameters": [
+          {
+            "description": "Name of the collection to update",
+            "in": "path",
+            "name": "collection_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCollection"
+              }
+            }
+          },
+          "description": "New parameters"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Update collection parameters",
+        "tags": [
+          "collections"
+        ]
+      },
+      "post": {
+        "deprecated": true,
+        "description": "Perform point update operation (vectors, payloads, indexes) in collection",
+        "operationId": "update_points",
+        "parameters": [
+          {
+            "description": "Name of the collection to search in",
+            "in": "path",
+            "name": "collection_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "If true, wait for changes to actually happen",
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionUpdateOperations"
+              }
+            }
+          },
+          "description": "Collection update operations"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/UpdateResult"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Update points",
+        "tags": [
+          "points"
+        ]
+      },
+      "put": {
+        "description": "Create new collection with given parameters",
+        "operationId": "create_collection",
+        "parameters": [
+          {
+            "description": "Name of the new collection",
+            "in": "path",
+            "name": "collection_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCollection"
+              }
+            }
+          },
+          "description": "Parameters of a new collection"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Create collection",
         "tags": [
           "collections"
         ]
@@ -2251,7 +2737,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2338,7 +2824,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2365,384 +2851,7 @@
         ]
       }
     },
-    "/collections/{name}": {
-      "delete": {
-        "description": "Drop collection and all associated data",
-        "operationId": "delete_collection",
-        "parameters": [
-          {
-            "description": "Name of the collection to delete",
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "type": "boolean"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "4xx": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Delete collection",
-        "tags": [
-          "collections"
-        ]
-      },
-      "get": {
-        "description": "Get detailed information about specified existing collection",
-        "operationId": "get_collection",
-        "parameters": [
-          {
-            "description": "Name of the collection to retrieve",
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "$ref": "#/components/schemas/CollectionInfo"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "4xx": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Collection info",
-        "tags": [
-          "collections"
-        ]
-      },
-      "patch": {
-        "description": "Update parameters of the existing collection",
-        "operationId": "update_collection",
-        "parameters": [
-          {
-            "description": "Name of the collection to update",
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateCollection"
-              }
-            }
-          },
-          "description": "New parameters"
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "type": "boolean"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "4xx": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Update collection parameters",
-        "tags": [
-          "collections"
-        ]
-      },
-      "post": {
-        "deprecated": true,
-        "description": "Perform point update operation (vectors, payloads, indexes) in collection",
-        "operationId": "update_points",
-        "parameters": [
-          {
-            "description": "Name of the collection to search in",
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "If true, wait for changes to actually happen",
-            "in": "query",
-            "name": "wait",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CollectionUpdateOperations"
-              }
-            }
-          },
-          "description": "Collection update operations"
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "$ref": "#/components/schemas/UpdateResult"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "4xx": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Update points",
-        "tags": [
-          "points"
-        ]
-      },
-      "put": {
-        "description": "Create new collection with given parameters",
-        "operationId": "create_collection",
-        "parameters": [
-          {
-            "description": "Name of the new collection",
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateCollection"
-              }
-            }
-          },
-          "description": "Parameters of a new collection"
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "type": "boolean"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "4xx": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Create collection",
-        "tags": [
-          "collections"
-        ]
-      }
-    },
-    "/collections/{name}/points": {
+    "/collections/{collection_name}/points": {
       "post": {
         "description": "Retrieve multiple points by specified IDs",
         "operationId": "get_points",
@@ -2750,7 +2859,7 @@
           {
             "description": "Name of the collection to retrieve from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2797,7 +2906,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2830,7 +2939,7 @@
           {
             "description": "Name of the collection to update from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2883,7 +2992,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2910,7 +3019,7 @@
         ]
       }
     },
-    "/collections/{name}/points/delete": {
+    "/collections/{collection_name}/points/delete": {
       "post": {
         "description": "Delete points",
         "operationId": "delete_points",
@@ -2918,7 +3027,7 @@
           {
             "description": "Name of the collection to delete from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -2971,7 +3080,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2998,7 +3107,7 @@
         ]
       }
     },
-    "/collections/{name}/points/payload": {
+    "/collections/{collection_name}/points/payload": {
       "post": {
         "description": "Set payload for points",
         "operationId": "set_payload",
@@ -3006,7 +3115,7 @@
           {
             "description": "Name of the collection to set from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -3059,7 +3168,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3086,7 +3195,7 @@
         ]
       }
     },
-    "/collections/{name}/points/payload/clear": {
+    "/collections/{collection_name}/points/payload/clear": {
       "post": {
         "description": "Remove all payload for specified points",
         "operationId": "clear_payload",
@@ -3094,7 +3203,7 @@
           {
             "description": "Name of the collection to clear payload from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -3147,7 +3256,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3174,7 +3283,7 @@
         ]
       }
     },
-    "/collections/{name}/points/payload/delete": {
+    "/collections/{collection_name}/points/payload/delete": {
       "post": {
         "description": "Delete specified key payload for points",
         "operationId": "delete_payload",
@@ -3182,7 +3291,7 @@
           {
             "description": "Name of the collection to delete from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -3235,7 +3344,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3262,7 +3371,7 @@
         ]
       }
     },
-    "/collections/{name}/points/recommend": {
+    "/collections/{collection_name}/points/recommend": {
       "post": {
         "description": "Look for the points which are closer to stored positive examples and at the same time further to negative examples.",
         "operationId": "recommend_points",
@@ -3270,7 +3379,7 @@
           {
             "description": "Name of the collection to search in",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -3317,7 +3426,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3344,7 +3453,7 @@
         ]
       }
     },
-    "/collections/{name}/points/scroll": {
+    "/collections/{collection_name}/points/scroll": {
       "post": {
         "description": "Scroll request - paginate over all points which matches given filtering condition",
         "operationId": "scroll_points",
@@ -3352,7 +3461,7 @@
           {
             "description": "Name of the collection to retrieve from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -3396,7 +3505,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3423,7 +3532,7 @@
         ]
       }
     },
-    "/collections/{name}/points/search": {
+    "/collections/{collection_name}/points/search": {
       "post": {
         "description": "Retrieve closest points based on vector similarity and given filtering conditions",
         "operationId": "search_points",
@@ -3431,7 +3540,7 @@
           {
             "description": "Name of the collection to search in",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -3478,7 +3587,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3505,7 +3614,7 @@
         ]
       }
     },
-    "/collections/{name}/points/{id}": {
+    "/collections/{collection_name}/points/{id}": {
       "get": {
         "description": "Retrieve full information of single point by id",
         "operationId": "get_point",
@@ -3513,7 +3622,7 @@
           {
             "description": "Name of the collection to retrieve from",
             "in": "path",
-            "name": "name",
+            "name": "collection_name",
             "required": true,
             "schema": {
               "type": "string"
@@ -3556,7 +3665,7 @@
             },
             "description": "successful operation"
           },
-          "4xx": {
+          "4XX": {
             "content": {
               "application/json": {
                 "schema": {

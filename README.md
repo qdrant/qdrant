@@ -122,7 +122,7 @@ For example, if the search space limited by filters is small, it is more efficie
 
 ### SIMD Hardware Acceleration
 
-With the `BLAS` library, Qdrant can take advantage of modern CPU architectures. 
+Qdrant can take advantage of modern CPU x86-x64 architectures. 
 It allows you to search even faster on modern hardware.
 
 ### Write-ahead logging

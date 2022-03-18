@@ -95,9 +95,10 @@ impl Segment {
             // Failed operations should not be skipped,
             // fail if newer operation is attempted before proper recovery
             if *failed_version < op_num {
-                return Err(OperationError::ServiceError {
-                    description: format!("Not recovered from previous error: {}", error),
-                });
+                return Err(OperationError::service_error(&format!(
+                    "Not recovered from previous error: {}",
+                    error
+                )));
             } // else: Re-try operation
         }
 
@@ -268,24 +269,18 @@ impl SegmentEntry for Segment {
             .iter()
             .map(|&scored_point_offset| {
                 let point_offset = scored_point_offset.idx;
-                let point_id =
-                    id_tracker
-                        .external_id(point_offset)
-                        .ok_or(OperationError::ServiceError {
-                            description: format!(
-                                "Corrupter id_tracker, no external value for {}",
-                                scored_point_offset.idx
-                            ),
-                        })?;
-                let point_version =
-                    id_tracker
-                        .version(point_id)
-                        .ok_or(OperationError::ServiceError {
-                            description: format!(
-                                "Corrupter id_tracker, no version for point {}",
-                                point_id
-                            ),
-                        })?;
+                let point_id = id_tracker.external_id(point_offset).ok_or_else(|| {
+                    OperationError::service_error(&format!(
+                        "Corrupter id_tracker, no external value for {}",
+                        scored_point_offset.idx
+                    ))
+                })?;
+                let point_version = id_tracker.version(point_id).ok_or_else(|| {
+                    OperationError::service_error(&format!(
+                        "Corrupter id_tracker, no version for point {}",
+                        point_id
+                    ))
+                })?;
                 let payload = if with_payload.enable {
                     let initial_payload = self.payload_by_offset(point_offset)?;
                     let processed_payload = if let Some(i) = &with_payload.payload_selector {
@@ -599,7 +594,13 @@ impl SegmentEntry for Segment {
         let mut deleted_path = self.current_path.clone();
         deleted_path.set_extension("deleted");
         rename(&self.current_path, &deleted_path)?;
-        Ok(remove_dir_all(&deleted_path)?)
+        remove_dir_all(&deleted_path).map_err(|err| {
+            OperationError::service_error(&format!(
+                "Can't remove segment data at {}, error: {}",
+                deleted_path.to_str().unwrap_or_default(),
+                err
+            ))
+        })
     }
 
     #[trace]
@@ -644,6 +645,7 @@ impl SegmentEntry for Segment {
 mod tests {
     use super::*;
     use crate::entry::entry_point::SegmentEntry;
+    use crate::payload_storage::schema_storage::SchemaStorage;
     use crate::segment_constructor::build_segment;
     use crate::types::{Distance, Indexes, PayloadIndexType, SegmentConfig, StorageType};
     use tempdir::TempDir;
@@ -669,13 +671,14 @@ mod tests {
             distance: Distance::Dot,
         };
 
-        let mut segment = build_segment(dir.path(), &config).unwrap();
+        let mut segment =
+            build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
         segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
 
-        let result1 = segment.set_full_payload_with_json(0, 0.into(), &data1.to_string());
+        let result1 = segment.set_full_payload_with_json(0, 0.into(), data1);
         assert!(result1.is_err());
 
-        let result2 = segment.set_full_payload_with_json(0, 0.into(), &data2.to_string());
+        let result2 = segment.set_full_payload_with_json(0, 0.into(), data2);
         assert!(result2.is_err());
     }
 
@@ -701,10 +704,11 @@ mod tests {
             distance: Distance::Dot,
         };
 
-        let mut segment = build_segment(dir.path(), &config).unwrap();
+        let mut segment =
+            build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
         segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
         segment
-            .set_full_payload_with_json(0, 0.into(), &data.to_string())
+            .set_full_payload_with_json(0, 0.into(), data)
             .unwrap();
 
         let filter_valid_str = r#"

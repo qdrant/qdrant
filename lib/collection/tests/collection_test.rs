@@ -1,31 +1,39 @@
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use tempdir::TempDir;
 use tokio::runtime::Handle;
 
-use collection::collection_builder::collection_loader::load_collection;
-use collection::operations::payload_ops::{PayloadOps, SetPayload};
-use collection::operations::point_ops::{Batch, PointOperations, PointStruct};
-use collection::operations::types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus};
-use collection::operations::CollectionUpdateOperations;
+use collection::{
+    operations::{
+        payload_ops::{PayloadOps, SetPayload},
+        point_ops::{Batch, PointOperations, PointStruct},
+        types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus},
+        CollectionUpdateOperations,
+    },
+    Collection,
+};
 use segment::types::{
     Condition, HasIdCondition, PayloadInterface, PayloadKeyType, PayloadVariant, PointIdType,
-    WithPayload, WithPayloadInterface,
+    WithPayloadInterface,
 };
 
-use crate::common::simple_collection_fixture;
-use collection::collection_manager::collection_managers::CollectionSearcher;
+use crate::common::{simple_collection_fixture, N_SHARDS};
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
+use collection::operations::types::PointRequest;
 
 mod common;
 
 #[tokio::test]
 async fn test_collection_updater() {
+    test_collection_updater_with_shards(1).await;
+    test_collection_updater_with_shards(N_SHARDS).await;
+}
+
+async fn test_collection_updater_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
-    let collection = simple_collection_fixture(collection_dir.path()).await;
+    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
@@ -57,19 +65,15 @@ async fn test_collection_updater() {
     let search_request = SearchRequest {
         vector: vec![1.0, 1.0, 1.0, 1.0],
         with_payload: None,
-        with_vector: None,
+        with_vector: false,
         filter: None,
         params: None,
         top: 3,
     };
 
     let segment_searcher = SimpleCollectionSearcher::new();
-    let search_res = segment_searcher
-        .search(
-            collection.segments(),
-            Arc::new(search_request),
-            &Handle::current(),
-        )
+    let search_res = collection
+        .search(search_request, &segment_searcher, &Handle::current())
         .await;
 
     match search_res {
@@ -80,13 +84,19 @@ async fn test_collection_updater() {
         }
         Err(err) => panic!("search failed: {:?}", err),
     }
+    collection.before_drop().await;
 }
 
 #[tokio::test]
 async fn test_collection_search_with_payload_and_vector() {
+    test_collection_search_with_payload_and_vector_with_shards(1).await;
+    test_collection_search_with_payload_and_vector_with_shards(N_SHARDS).await;
+}
+
+async fn test_collection_search_with_payload_and_vector_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
-    let collection = simple_collection_fixture(collection_dir.path()).await;
+    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
@@ -112,19 +122,15 @@ async fn test_collection_search_with_payload_and_vector() {
     let search_request = SearchRequest {
         vector: vec![1.0, 0.0, 1.0, 1.0],
         with_payload: Some(WithPayloadInterface::Bool(true)),
-        with_vector: Some(true),
+        with_vector: true,
         filter: None,
         params: None,
         top: 3,
     };
 
     let segment_searcher = SimpleCollectionSearcher::new();
-    let search_res = segment_searcher
-        .search(
-            collection.segments(),
-            Arc::new(search_request),
-            &Handle::current(),
-        )
+    let search_res = collection
+        .search(search_request, &segment_searcher, &Handle::current())
         .await;
 
     match search_res {
@@ -136,14 +142,21 @@ async fn test_collection_search_with_payload_and_vector() {
         }
         Err(err) => panic!("search failed: {:?}", err),
     }
+    collection.before_drop().await;
 }
 
+// FIXME: dos not work
 #[tokio::test]
 async fn test_collection_loading() {
+    test_collection_loading_with_shards(1).await;
+    test_collection_loading_with_shards(N_SHARDS).await;
+}
+
+async fn test_collection_loading_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
     {
-        let collection = simple_collection_fixture(collection_dir.path()).await;
+        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             Batch {
                 ids: vec![0, 1, 2, 3, 4]
@@ -178,17 +191,18 @@ async fn test_collection_loading() {
             }));
 
         collection.update(assign_payload, true).await.unwrap();
+        collection.before_drop().await;
     }
 
-    let loaded_collection = load_collection(collection_dir.path());
+    let mut loaded_collection = Collection::load("test".to_string(), collection_dir.path()).await;
     let segment_searcher = SimpleCollectionSearcher::new();
-    let retrieved = segment_searcher
-        .retrieve(
-            loaded_collection.segments(),
-            &[1.into(), 2.into()],
-            &WithPayload::from(true),
-            true,
-        )
+    let request = PointRequest {
+        ids: vec![1.into(), 2.into()],
+        with_payload: Some(WithPayloadInterface::Bool(true)),
+        with_vector: true,
+    };
+    let retrieved = loaded_collection
+        .retrieve(request, &segment_searcher)
         .await
         .unwrap();
 
@@ -201,6 +215,8 @@ async fn test_collection_loading() {
             assert_eq!(non_empty_payload.len(), 1)
         }
     }
+    println!("Function end");
+    loaded_collection.before_drop().await;
 }
 
 #[test]
@@ -249,10 +265,16 @@ fn test_deserialization2() {
     let _read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&raw_bytes).unwrap();
 }
 
+// Request to find points sent to all shards but they might not have a particular id, so they will return an error
 #[tokio::test]
 async fn test_recommendation_api() {
+    test_recommendation_api_with_shards(1).await;
+    test_recommendation_api_with_shards(N_SHARDS).await;
+}
+
+async fn test_recommendation_api_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
-    let collection = simple_collection_fixture(collection_dir.path()).await;
+    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
@@ -280,13 +302,15 @@ async fn test_recommendation_api() {
     let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection
         .recommend_by(
-            Arc::new(RecommendRequest {
+            RecommendRequest {
                 positive: vec![0.into()],
                 negative: vec![8.into()],
                 filter: None,
                 params: None,
                 top: 5,
-            }),
+                with_payload: None,
+                with_vector: false,
+            },
             &segment_searcher,
             &Handle::current(),
         )
@@ -296,12 +320,18 @@ async fn test_recommendation_api() {
     let top1 = &result[0];
 
     assert!(top1.id == 5.into() || top1.id == 6.into());
+    collection.before_drop().await;
 }
 
 #[tokio::test]
 async fn test_read_api() {
+    test_read_api_with_shards(1).await;
+    test_read_api_with_shards(N_SHARDS).await;
+}
+
+async fn test_read_api_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
-    let collection = simple_collection_fixture(collection_dir.path()).await;
+    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         Batch {
@@ -335,7 +365,7 @@ async fn test_read_api() {
                 limit: Some(2),
                 filter: None,
                 with_payload: Some(WithPayloadInterface::Bool(true)),
-                with_vector: None,
+                with_vector: false,
             },
             &segment_searcher,
         )
@@ -344,13 +374,19 @@ async fn test_read_api() {
 
     assert_eq!(result.next_page_offset, Some(2.into()));
     assert_eq!(result.points.len(), 2);
+    collection.before_drop().await;
 }
 
 #[tokio::test]
 async fn test_collection_delete_points_by_filter() {
+    test_collection_delete_points_by_filter_with_shards(1).await;
+    test_collection_delete_points_by_filter_with_shards(N_SHARDS).await;
+}
+
+async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
-    let collection = simple_collection_fixture(collection_dir.path()).await;
+    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
@@ -408,7 +444,7 @@ async fn test_collection_delete_points_by_filter() {
                 limit: Some(10),
                 filter: None,
                 with_payload: Some(WithPayloadInterface::Bool(false)),
-                with_vector: None,
+                with_vector: false,
             },
             &segment_searcher,
         )
@@ -420,4 +456,5 @@ async fn test_collection_delete_points_by_filter() {
     assert_eq!(result.points.get(0).unwrap().id, 1.into());
     assert_eq!(result.points.get(1).unwrap().id, 2.into());
     assert_eq!(result.points.get(2).unwrap().id, 4.into());
+    collection.before_drop().await;
 }

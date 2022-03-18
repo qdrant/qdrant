@@ -40,8 +40,8 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 ---
 
 * :electric_plug: Integration & Interfaces
-  * [ ] gPRC version of each REST API endpoint
-  * [ ] Split REST Endpoints for better documentation and client generation
+  * [x] gPRC version of each REST API endpoint
+  * [x] Split REST Endpoints for better documentation and client generation
 
 ---
 
@@ -60,6 +60,6 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 * :racing_car: Performance improvements
   * [ ] Indexing of geo-payload
   * [ ] On the fly payload index
-  * [ ] Multiprocessing segment optimization
+  * [x] Multiprocessing segment optimization
   * [ ] Fine-tuned HNSW index configuration
   

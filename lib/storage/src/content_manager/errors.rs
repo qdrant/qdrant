@@ -23,14 +23,17 @@ impl From<CollectionError> for StorageError {
         match err {
             CollectionError::BadInput { description } => StorageError::BadInput { description },
             err @ CollectionError::NotFound { .. } => StorageError::NotFound {
-                description: format!("{}", err),
+                description: format!("{err}"),
             },
             CollectionError::ServiceError { error } => {
                 StorageError::ServiceError { description: error }
             }
             CollectionError::BadRequest { description } => StorageError::BadRequest { description },
             CollectionError::Cancelled { description } => StorageError::ServiceError {
-                description: format!("Operation cancelled: {}", description),
+                description: format!("Operation cancelled: {description}"),
+            },
+            err @ CollectionError::InconsistentFailure { .. } => StorageError::ServiceError {
+                description: format!("{err}"),
             },
         }
     }

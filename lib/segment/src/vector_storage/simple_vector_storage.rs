@@ -18,7 +18,6 @@ use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use atomic_refcell::AtomicRefCell;
 use bit_vec::BitVec;
-use ndarray::{Array, Array1};
 use std::mem::size_of;
 use std::sync::Arc;
 
@@ -29,7 +28,7 @@ const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 pub struct SimpleVectorStorage<TMetric: Metric> {
     dim: usize,
     metric: TMetric,
-    vectors: Vec<Array1<VectorElementType>>,
+    vectors: Vec<Vec<VectorElementType>>,
     deleted: BitVec,
     deleted_count: usize,
     store: DB,
@@ -42,9 +41,9 @@ struct StoredRecord {
 }
 
 pub struct SimpleRawScorer<'a, TMetric: Metric> {
-    pub query: Array1<VectorElementType>,
+    pub query: Vec<VectorElementType>,
     pub metric: &'a TMetric,
-    pub vectors: &'a Vec<Array1<VectorElementType>>,
+    pub vectors: &'a Vec<Vec<VectorElementType>>,
     pub deleted: &'a BitVec,
 }
 
@@ -63,7 +62,7 @@ where
                 let other_vector = self.vectors.get(point as usize).unwrap();
                 ScoredPointOffset {
                     idx: point,
-                    score: self.metric.blas_similarity(&self.query, other_vector),
+                    score: self.metric.similarity(&self.query, other_vector),
                 }
             });
         Box::new(res_iter)
@@ -77,14 +76,14 @@ where
     #[trace]
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
         let other_vector = &self.vectors[point as usize];
-        self.metric.blas_similarity(&self.query, other_vector)
+        self.metric.similarity(&self.query, other_vector)
     }
 
     #[trace]
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let vector_a = &self.vectors[point_a as usize];
         let vector_b = &self.vectors[point_b as usize];
-        self.metric.blas_similarity(vector_a, vector_b)
+        self.metric.similarity(vector_a, vector_b)
     }
 }
 
@@ -94,7 +93,7 @@ pub fn open_simple_vector_storage(
     dim: usize,
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageSS>>> {
-    let mut vectors: Vec<Array1<VectorElementType>> = vec![];
+    let mut vectors: Vec<Vec<VectorElementType>> = vec![];
     let mut deleted = BitVec::new();
     let mut deleted_count = 0;
 
@@ -112,14 +111,14 @@ pub fn open_simple_vector_storage(
         }
 
         if vectors.len() <= (point_id as usize) {
-            vectors.resize((point_id + 1) as usize, Array::zeros(dim));
+            vectors.resize((point_id + 1) as usize, vec![0 as f32; dim]);
         }
         while deleted.len() <= (point_id as usize) {
             deleted.push(false);
         }
 
         deleted.set(point_id as usize, stored_record.deleted);
-        vectors[point_id as usize].assign(&Array::from(stored_record.vector));
+        vectors[point_id as usize] = stored_record.vector;
     }
 
     debug!("Segment vectors: {}", vectors.len());
@@ -209,7 +208,7 @@ where
     #[trace]
     fn put_vector(&mut self, vector: Vec<VectorElementType>) -> OperationResult<PointOffsetType> {
         assert_eq!(self.dim, vector.len());
-        self.vectors.push(Array::from(vector));
+        self.vectors.push(vector);
         self.deleted.push(false);
         let new_id = (self.vectors.len() - 1) as PointOffsetType;
         self.update_stored(new_id)?;
@@ -222,7 +221,7 @@ where
         key: PointOffsetType,
         vector: Vec<VectorElementType>,
     ) -> OperationResult<PointOffsetType> {
-        self.vectors[key as usize].assign(&Array::from(vector));
+        self.vectors[key as usize] = vector;
         self.update_stored(key)?;
         Ok(key)
     }
@@ -234,7 +233,7 @@ where
             let other_vector = other.get_vector(id).unwrap();
             // Do not perform preprocessing - vectors should be already processed
             self.deleted.push(false);
-            self.vectors.push(Array::from(other_vector));
+            self.vectors.push(other_vector);
             let new_id = (self.vectors.len() - 1) as PointOffsetType;
             self.update_stored(new_id)?;
         }
@@ -275,7 +274,7 @@ where
     #[trace]
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
         Box::new(SimpleRawScorer {
-            query: Array::from(self.metric.preprocess(&vector).unwrap_or(vector)),
+            query: self.metric.preprocess(&vector).unwrap_or(vector),
             metric: &self.metric,
             vectors: &self.vectors,
             deleted: &self.deleted,
@@ -299,20 +298,17 @@ where
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector = Array::from(
-            self.metric
-                .preprocess(vector)
-                .unwrap_or_else(|| vector.to_owned()),
-        );
+        let preprocessed_vector = self
+            .metric
+            .preprocess(vector)
+            .unwrap_or_else(|| vector.to_owned());
         let scores = points
             .filter(|point| !self.deleted[*point as usize])
             .map(|point| {
                 let other_vector = self.vectors.get(point as usize).unwrap();
                 ScoredPointOffset {
                     idx: point,
-                    score: self
-                        .metric
-                        .blas_similarity(&preprocessed_vector, other_vector),
+                    score: self.metric.similarity(&preprocessed_vector, other_vector),
                 }
             });
         peek_top_scores_iterable(scores, top)
@@ -320,11 +316,10 @@ where
 
     #[trace]
     fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector = Array::from(
-            self.metric
-                .preprocess(vector)
-                .unwrap_or_else(|| vector.to_owned()),
-        );
+        let preprocessed_vector = self
+            .metric
+            .preprocess(vector)
+            .unwrap_or_else(|| vector.to_owned());
         let scores = self
             .vectors
             .iter()
@@ -332,9 +327,7 @@ where
             .filter(|(point, _)| !self.deleted[*point])
             .map(|(point, other_vector)| ScoredPointOffset {
                 idx: point as PointOffsetType,
-                score: self
-                    .metric
-                    .blas_similarity(&preprocessed_vector, other_vector),
+                score: self.metric.similarity(&preprocessed_vector, other_vector),
             });
         peek_top_scores_iterable(scores, top)
     }

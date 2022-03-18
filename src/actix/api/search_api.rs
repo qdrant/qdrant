@@ -1,29 +1,15 @@
-extern crate profiler_proc_macro;
-use profiler_proc_macro::trace;
-
 use std::sync::Arc;
 
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 
 use collection::operations::types::SearchRequest;
-use segment::types::ScoredPoint;
-use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 
 use crate::actix::helpers::process_response;
-
-#[trace]
-async fn do_search_points(
-    toc: &TableOfContent,
-    collection_name: &str,
-    request: SearchRequest,
-) -> Result<Vec<ScoredPoint>, StorageError> {
-    toc.search(collection_name, request).await
-}
+use crate::common::points::do_search_points;
 
 #[post("/collections/{name}/points/search")]
-#[trace]
 pub async fn search_points(
     toc: web::Data<Arc<TableOfContent>>,
     path: web::Path<String>,

@@ -3,6 +3,7 @@ use profiler_proc_macro::trace;
 
 use std::fs::File;
 use std::io::{Read, Write};
+use std::num::NonZeroU32;
 use std::path::Path;
 
 use atomicwrites::AtomicFile;
@@ -13,8 +14,8 @@ use wal::WalOptions;
 
 use segment::types::{Distance, HnswConfig};
 
-use crate::collection_builder::optimizers_builder::OptimizersConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::optimizers_builder::OptimizersConfig;
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 
@@ -51,6 +52,13 @@ pub struct CollectionParams {
     pub vector_size: usize,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
+    /// Number of shards the collection has
+    #[serde(default = "default_shard_number")]
+    pub shard_number: NonZeroU32,
+}
+
+fn default_shard_number() -> NonZeroU32 {
+    NonZeroU32::new(1).unwrap()
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]

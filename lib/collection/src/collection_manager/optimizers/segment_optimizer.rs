@@ -1,25 +1,29 @@
 extern crate profiler_proc_macro;
 use profiler_proc_macro::trace;
 
-use crate::collection_manager::holders::proxy_segment::ProxySegment;
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentId,
-};
-use crate::config::CollectionParams;
-use crate::operations::types::{CollectionError, CollectionResult};
+use std::collections::HashSet;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use itertools::Itertools;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+
 use segment::entry::entry_point::SegmentEntry;
+use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
     HnswConfig, Indexes, PayloadIndexType, PayloadKeyType, PointIdType, SegmentConfig, StorageType,
 };
-use std::collections::HashSet;
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+
+use crate::collection_manager::holders::proxy_segment::ProxySegment;
+use crate::collection_manager::holders::segment_holder::{
+    LockedSegment, LockedSegmentHolder, SegmentId,
+};
+use crate::config::CollectionParams;
+use crate::operations::types::{CollectionError, CollectionResult};
 
 #[derive(Debug, Clone)]
 pub struct OptimizerThresholds {
@@ -59,6 +63,8 @@ pub trait SegmentOptimizer {
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId>;
 
+    fn schema_store(&self) -> Arc<SchemaStorage>;
+
     /// Build temp segment
     #[trace]
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {
@@ -74,6 +80,7 @@ pub trait SegmentOptimizer {
             self.collection_path(),
             config.vector_size,
             config.distance,
+            self.schema_store(),
         )?))
     }
 
@@ -127,6 +134,7 @@ pub trait SegmentOptimizer {
             self.collection_path(),
             self.temp_path(),
             &optimized_config,
+            self.schema_store(),
         )?)
     }
 
@@ -147,7 +155,7 @@ pub trait SegmentOptimizer {
         &self,
         segments: &LockedSegmentHolder,
         proxy_ids: &[SegmentId],
-    ) -> CollectionResult<Vec<SegmentId>> {
+    ) -> Vec<SegmentId> {
         let mut segments_lock = segments.write();
         let mut restored_segment_ids = vec![];
         for &proxy_id in proxy_ids {
@@ -160,16 +168,14 @@ pub trait SegmentOptimizer {
                     }
                     LockedSegment::Proxy(proxy_segment) => {
                         let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
-                        restored_segment_ids.push(segments_lock.swap(
-                            wrapped_segment,
-                            &[proxy_id],
-                            false,
-                        )?);
+                        let (restored_id, _proxies) =
+                            segments_lock.swap(wrapped_segment, &[proxy_id]);
+                        restored_segment_ids.push(restored_id);
                     }
                 }
             }
         }
-        Ok(restored_segment_ids)
+        restored_segment_ids
     }
 
     /// Checks if optimization cancellation is requested.
@@ -201,13 +207,12 @@ pub trait SegmentOptimizer {
         segments: &LockedSegmentHolder,
         proxy_ids: &[SegmentId],
         temp_segment: &LockedSegment,
-    ) -> CollectionResult<()> {
-        self.unwrap_proxy(segments, proxy_ids)?;
+    ) {
+        self.unwrap_proxy(segments, proxy_ids);
         if temp_segment.get().read().vectors_count() > 0 {
             let mut write_segments = segments.write();
             write_segments.add_locked(temp_segment.clone());
         }
-        Ok(())
     }
 
     /// Function to wrap slow part of optimization. Performs proxy rollback in case of cancellation.
@@ -356,7 +361,7 @@ pub trait SegmentOptimizer {
 
             proxies
                 .zip(ids.iter().cloned())
-                .map(|(proxy, idx)| write_segments.swap(proxy, &[idx], false).unwrap())
+                .map(|(proxy, idx)| write_segments.swap(proxy, &[idx]).0)
                 .collect()
         };
 
@@ -371,7 +376,7 @@ pub trait SegmentOptimizer {
             Ok(segment) => segment,
             Err(error) => {
                 if matches!(error, CollectionError::Cancelled { .. }) {
-                    self.handle_cancellation(&segments, &proxy_ids, &tmp_segment)?;
+                    self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
                 }
                 return Err(error);
             }
@@ -412,7 +417,7 @@ pub trait SegmentOptimizer {
                     .create_field_index(optimized_segment.version(), created_field_name)?;
             }
 
-            write_segments.swap(optimized_segment, &proxy_ids, true)?;
+            let (_, proxies) = write_segments.swap(optimized_segment, &proxy_ids);
 
             let has_appendable_segments = write_segments.random_appendable_segment().is_some();
 
@@ -421,6 +426,12 @@ pub trait SegmentOptimizer {
                 write_segments.add_locked(tmp_segment);
             } else {
                 tmp_segment.drop_data()?;
+            }
+
+            // Only remove data after we ensure the consistency of the collection.
+            // If remove fails - we will till have operational collection with reported error.
+            for proxy in proxies {
+                proxy.drop_data()?;
             }
         }
         Ok(true)
