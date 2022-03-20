@@ -36,7 +36,7 @@ pub trait ValueIndexer<T> {
         match payload {
             Value::Array(values) => self.add_many(
                 id,
-                values.iter().map(|x| self.get_value(x)).flatten().collect(),
+                values.iter().flat_map(|x| self.get_value(x)).collect(),
             ),
             _ => {
                 if let Some(x) = self.get_value(payload) {
