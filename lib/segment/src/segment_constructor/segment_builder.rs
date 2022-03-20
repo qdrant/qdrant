@@ -1,6 +1,5 @@
 use crate::common::error_logging::LogError;
 use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
-use crate::payload_storage::schema_storage::SchemaStorage;
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{PayloadKeyType, PayloadSchemaType, SegmentConfig};
@@ -9,7 +8,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 /// Structure for constructing segment out of several other segments
 pub struct SegmentBuilder {
@@ -17,7 +15,6 @@ pub struct SegmentBuilder {
     pub destination_path: PathBuf,
     pub temp_path: PathBuf,
     pub indexed_fields: HashMap<PayloadKeyType, PayloadSchemaType>,
-    pub schema_store: Arc<SchemaStorage>,
 }
 
 impl SegmentBuilder {
@@ -25,9 +22,8 @@ impl SegmentBuilder {
         segment_path: &Path,
         temp_dir: &Path,
         segment_config: &SegmentConfig,
-        schema_store: Arc<SchemaStorage>,
     ) -> OperationResult<Self> {
-        let segment = build_segment(temp_dir, segment_config, schema_store.clone())?;
+        let segment = build_segment(temp_dir, segment_config)?;
         let temp_path = segment.current_path.clone();
 
         let destination_path = segment_path.join(temp_path.file_name().unwrap());
@@ -37,7 +33,6 @@ impl SegmentBuilder {
             destination_path,
             temp_path,
             indexed_fields: Default::default(),
-            schema_store,
         })
     }
 
@@ -130,11 +125,7 @@ impl SegmentBuilder {
             self.segment = None;
 
             for (field, payload_schema) in &self.indexed_fields {
-                segment.create_field_index(
-                    segment.version(),
-                    field,
-                    &Some(payload_schema.into()),
-                )?;
+                segment.create_field_index(segment.version(), field, &Some(*payload_schema))?;
                 if stopped.load(Ordering::Relaxed) {
                     return Err(OperationError::Cancelled {
                         description: "Cancelled by external thread".to_string(),
@@ -152,6 +143,6 @@ impl SegmentBuilder {
         fs::rename(&self.temp_path, &self.destination_path)
             .describe("Moving segment data after optimization")?;
 
-        load_segment(&self.destination_path, self.schema_store.clone())
+        load_segment(&self.destination_path)
     }
 }

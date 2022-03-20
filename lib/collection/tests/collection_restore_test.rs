@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use serde_json::Value;
 use tempdir::TempDir;
 
 use collection::{
@@ -10,7 +11,7 @@ use collection::{
     },
     Collection,
 };
-use segment::types::{PayloadSelectorExclude, PayloadType, WithPayloadInterface};
+use segment::types::{PayloadSelectorExclude, WithPayloadInterface};
 
 use crate::common::{simple_collection_fixture, N_SHARDS};
 
@@ -95,16 +96,16 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
         .payload
         .as_ref()
         .expect("has payload")
-        .get("k")
+        .get_value("k")
         .expect("has value")
     {
-        PayloadType::Keyword(values) => assert_eq!(vec!["v1".to_string()], values),
+        Value::String(value) => assert_eq!("v1", value),
         _ => panic!("unexpected type"),
     }
 
     eprintln!(
         "res = {:#?}",
-        res.points[0].payload.as_ref().unwrap().get("k")
+        res.points[0].payload.as_ref().unwrap().get_value("k")
     );
     collection.before_drop().await;
 }
@@ -162,10 +163,10 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         .payload
         .as_ref()
         .expect("has payload")
-        .get("k2")
+        .get_value("k2")
         .expect("has value")
     {
-        PayloadType::Keyword(values) => assert_eq!(vec!["v3".to_string()], values),
+        Value::String(value) => assert_eq!("v3", value),
         _ => panic!("unexpected type"),
     }
 
@@ -202,10 +203,10 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         .payload
         .as_ref()
         .expect("has payload")
-        .get("k3")
+        .get_value("k3")
         .expect("has value")
     {
-        PayloadType::Keyword(values) => assert_eq!(vec!["v4".to_string()], values),
+        Value::String(value) => assert_eq!("v4", value),
         _ => panic!("unexpected type"),
     }
     collection.before_drop().await;

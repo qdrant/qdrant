@@ -5,7 +5,7 @@ use collection::operations::types::{
 };
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use schemars::JsonSchema;
-use segment::types::{FieldDataType, ScoredPoint};
+use segment::types::{PayloadSchemaType, ScoredPoint};
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -13,7 +13,7 @@ use storage::content_manager::toc::TableOfContent;
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CreateFieldIndex {
     pub field_name: String,
-    pub field_type: Option<FieldDataType>,
+    pub field_type: Option<PayloadSchemaType>,
 }
 
 // Deprecated

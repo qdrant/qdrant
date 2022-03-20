@@ -3,14 +3,17 @@ use crate::index::field_index::geo_hash::{
     GeoHash,
 };
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
-use crate::index::field_index::{CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexBuilder, PrimaryCondition, ValueIndexer};
+use crate::index::field_index::{
+    CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
+    PayloadFieldIndexBuilder, PrimaryCondition, ValueIndexer,
+};
 use crate::types::{FieldCondition, GeoPoint, PayloadKeyType, PointOffsetType};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, HashSet};
 use std::mem;
-use serde_json::Value;
 
 /// Max number of sub-regions computed for an input geo query
 // TODO discuss value, should it be dynamically computed?
@@ -184,7 +187,7 @@ impl PersistedGeoMapIndex {
     fn get_stored_sub_regions(
         &self,
         geo: &GeoHash,
-    ) -> Box<dyn Iterator<Item=(&GeoHash, &HashSet<PointOffsetType>)> + '_> {
+    ) -> Box<dyn Iterator<Item = (&GeoHash, &HashSet<PointOffsetType>)> + '_> {
         let geo_clone = geo.to_string();
         Box::new(
             self.points_map
@@ -193,7 +196,7 @@ impl PersistedGeoMapIndex {
         )
     }
 
-    fn get_iterator(&self, values: Vec<GeoHash>) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+    fn get_iterator(&self, values: Vec<GeoHash>) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         Box::new(
             values
                 .into_iter()
@@ -209,7 +212,7 @@ impl PersistedGeoMapIndex {
     fn get_large_hashes(
         &self,
         threshold: usize,
-    ) -> Box<dyn Iterator<Item=(&GeoHash, usize)> + '_> {
+    ) -> Box<dyn Iterator<Item = (&GeoHash, usize)> + '_> {
         let mut large_regions = self
             .points_per_hash
             .iter()
@@ -297,15 +300,17 @@ impl PayloadFieldIndex for PersistedGeoMapIndex {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
             let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION);
             let geo_condition_copy = geo_bounding_box.clone();
             return Some(Box::new(self.get_iterator(geo_hashes).filter(
                 move |point| {
-                    self.point_to_values.get(*point as usize)
+                    self.point_to_values
+                        .get(*point as usize)
                         .unwrap()
-                        .iter().any(|point| geo_condition_copy.check_point(point.lon, point.lat))
+                        .iter()
+                        .any(|point| geo_condition_copy.check_point(point.lon, point.lat))
                 },
             )));
         }
@@ -315,9 +320,11 @@ impl PayloadFieldIndex for PersistedGeoMapIndex {
             let geo_condition_copy = geo_radius.clone();
             return Some(Box::new(self.get_iterator(geo_hashes).filter(
                 move |point| {
-                    self.point_to_values.get(*point as usize)
+                    self.point_to_values
+                        .get(*point as usize)
                         .unwrap()
-                        .iter().any(|point| geo_condition_copy.check_point(point.lon, point.lat))
+                        .iter()
+                        .any(|point| geo_condition_copy.check_point(point.lon, point.lat))
                 },
             )));
         }
@@ -351,7 +358,7 @@ impl PayloadFieldIndex for PersistedGeoMapIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         Box::new(
             self.get_large_hashes(threshold)
                 .map(move |(geo_hash, size)| PayloadBlockCondition {
@@ -472,7 +479,9 @@ mod tests {
                 .iter()
                 .enumerate()
                 .filter(|(_idx, geo_points)| {
-                    geo_points.iter().any(|geo_point| geo_radius.check_point(geo_point.lon, geo_point.lat))
+                    geo_points
+                        .iter()
+                        .any(|geo_point| geo_radius.check_point(geo_point.lon, geo_point.lat))
                 })
                 .map(|(idx, _geo_points)| idx as PointOffsetType)
                 .collect_vec(),

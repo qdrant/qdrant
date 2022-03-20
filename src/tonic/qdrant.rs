@@ -194,9 +194,6 @@ pub struct PayloadSchemaInfo {
     /// Field data type
     #[prost(enumeration = "PayloadSchemaType", tag = "1")]
     pub data_type: i32,
-    /// If this field is indexed
-    #[prost(bool, tag = "2")]
-    pub indexed: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionInfo {

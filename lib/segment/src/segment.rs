@@ -4,10 +4,13 @@ use crate::entry::entry_point::{
 };
 use crate::id_tracker::IdTrackerSS;
 use crate::index::{PayloadIndexSS, VectorIndexSS};
-use crate::payload_storage::schema_storage::SchemaStorage;
 use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
 use crate::spaces::tools::mertic_object;
-use crate::types::{FieldDataType, Filter, infer_value_type, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo, PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState, SegmentType, SeqNumberType, VectorElementType, WithPayload};
+use crate::types::{
+    infer_value_type, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
+    PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig,
+    SegmentInfo, SegmentState, SegmentType, SeqNumberType, VectorElementType, WithPayload,
+};
 use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
 use atomicwrites::{AllowOverwrite, AtomicFile};
@@ -47,7 +50,6 @@ pub struct Segment {
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
     pub error_status: Option<SegmentFailedState>,
-    pub schema_storage: Arc<SchemaStorage>,
 }
 
 impl Segment {
@@ -229,22 +231,6 @@ impl Segment {
             None => None,
         }
     }
-
-    fn check_schema(&self, payload: &Payload) -> OperationResult<()> {
-        for (field_name, payload_type) in self.schema_storage.as_map() {
-            match payload_type {
-                PayloadSchemaType::Unknown => {}
-                _ => {
-                    let r = payload.get_checked(&field_name, &payload_type);
-                    match r {
-                        Ok(_) => {}
-                        Err(err) => return OperationResult::Err(err),
-                    }
-                }
-            };
-        }
-        Ok(())
-    }
 }
 
 /// This is a basic implementation of `SegmentEntry`,
@@ -400,8 +386,6 @@ impl SegmentEntry for Segment {
         full_payload: &Payload,
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
-            segment.check_schema(full_payload)?;
-
             let internal_id = segment.lookup_internal_id(point_id)?;
             segment
                 .payload_storage
@@ -418,8 +402,6 @@ impl SegmentEntry for Segment {
         payload: &Payload,
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
-            segment.check_schema(payload)?;
-
             let internal_id = segment.lookup_internal_id(point_id)?;
             segment
                 .payload_storage
@@ -522,16 +504,15 @@ impl SegmentEntry for Segment {
 
     fn info(&self) -> SegmentInfo {
         let schema = self
-            .schema_storage
-            .as_map()
-            .iter()
-            .map(|(key, schema_type)| {
-                let indexed = !matches!(schema_type, PayloadSchemaType::Unknown);
+            .payload_index
+            .borrow()
+            .indexed_fields()
+            .into_iter()
+            .map(|(key, index_schema)| {
                 (
-                    key.to_owned(),
-                    PayloadSchemaInfo {
-                        data_type: schema_type.to_owned(),
-                        indexed,
+                    key,
+                    PayloadIndexInfo {
+                        data_type: index_schema,
                     },
                 )
             })
@@ -544,7 +525,7 @@ impl SegmentEntry for Segment {
             ram_usage_bytes: 0,  // ToDo: Implement
             disk_usage_bytes: 0, // ToDo: Implement
             is_appendable: self.appendable_flag,
-            schema,
+            index_schema: schema,
         }
     }
 
@@ -589,7 +570,6 @@ impl SegmentEntry for Segment {
 
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, None, |segment| {
-            segment.schema_storage.remove(key);
             segment.payload_index.borrow_mut().drop_index(key)?;
             Ok(true)
         })
@@ -599,17 +579,14 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: u64,
         key: PayloadKeyTypeRef,
-        field_type: &Option<FieldDataType>,
+        field_type: &Option<PayloadSchemaType>,
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, None, |segment| match field_type {
             Some(schema_type) => {
                 segment
-                    .schema_storage
-                    .update_schema_value(key, schema_type.into())?;
-                segment
                     .payload_index
                     .borrow_mut()
-                    .set_indexed(key, schema_type.into())?;
+                    .set_indexed(key, *schema_type)?;
                 Ok(true)
             }
             None => match segment.infer_from_payload_data(key) {
@@ -617,9 +594,6 @@ impl SegmentEntry for Segment {
                     description: "cannot infer field data type".to_string(),
                 }),
                 Some(schema_type) => {
-                    segment
-                        .schema_storage
-                        .update_schema_value(key, schema_type)?;
                     segment
                         .payload_index
                         .borrow_mut()
@@ -656,7 +630,6 @@ impl SegmentEntry for Segment {
 mod tests {
     use super::*;
     use crate::entry::entry_point::SegmentEntry;
-    use crate::payload_storage::schema_storage::SchemaStorage;
     use crate::segment_constructor::build_segment;
     use crate::types::{Distance, Indexes, PayloadIndexType, SegmentConfig, StorageType};
     use tempdir::TempDir;
@@ -717,8 +690,7 @@ mod tests {
             distance: Distance::Dot,
         };
 
-        let mut segment =
-            build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
+        let mut segment = build_segment(dir.path(), &config).unwrap();
         segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();

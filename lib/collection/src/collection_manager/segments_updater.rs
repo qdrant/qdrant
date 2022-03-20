@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use parking_lot::{RwLock, RwLockWriteGuard};
 
 use segment::types::{
-    FieldDataType, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PointIdType, SeqNumberType,
-    VectorElementType,
+    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
+    SeqNumberType, VectorElementType,
 };
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
@@ -128,7 +128,7 @@ pub(crate) fn create_field_index(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     field_name: PayloadKeyTypeRef,
-    field_type: &Option<FieldDataType>,
+    field_type: &Option<PayloadSchemaType>,
 ) -> CollectionResult<usize> {
     let res = segments.apply_segments(|write_segment| {
         write_segment.create_field_index(op_num, field_name, field_type)

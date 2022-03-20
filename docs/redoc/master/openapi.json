@@ -120,7 +120,7 @@
           },
           "payload_schema": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/PayloadSchemaInfo"
+              "$ref": "#/components/schemas/PayloadIndexInfo"
             },
             "description": "Types of stored payload",
             "type": "object"
@@ -388,7 +388,7 @@
           "field_type": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/FieldDataType"
+                "$ref": "#/components/schemas/PayloadSchemaType"
               },
               {
                 "nullable": true
@@ -409,7 +409,7 @@
           "field_type": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/FieldDataType"
+                "$ref": "#/components/schemas/PayloadSchemaType"
               },
               {
                 "nullable": true
@@ -573,15 +573,6 @@
           "key"
         ],
         "type": "object"
-      },
-      "FieldDataType": {
-        "enum": [
-          "keyword",
-          "integer",
-          "float",
-          "geo"
-        ],
-        "type": "string"
       },
       "FieldIndexOperations": {
         "oneOf": [
@@ -979,6 +970,18 @@
         "additionalProperties": true,
         "type": "object"
       },
+      "PayloadIndexInfo": {
+        "description": "Payload field type & index information",
+        "properties": {
+          "data_type": {
+            "$ref": "#/components/schemas/PayloadSchemaType"
+          }
+        },
+        "required": [
+          "data_type"
+        ],
+        "type": "object"
+      },
       "PayloadOps": {
         "description": "Define operations description for point payloads manipulation",
         "oneOf": [
@@ -1047,96 +1050,15 @@
           }
         ]
       },
-      "PayloadSchemaInfo": {
-        "description": "Payload field type & index information",
-        "properties": {
-          "data_type": {
-            "$ref": "#/components/schemas/PayloadSchemaType"
-          },
-          "indexed": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "data_type",
-          "indexed"
-        ],
-        "type": "object"
-      },
       "PayloadSchemaType": {
         "description": "All possible names of payload types",
-        "oneOf": [
-          {
-            "properties": {
-              "type": {
-                "enum": [
-                  "keyword"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "type"
-            ],
-            "type": "object"
-          },
-          {
-            "properties": {
-              "type": {
-                "enum": [
-                  "integer"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "type"
-            ],
-            "type": "object"
-          },
-          {
-            "properties": {
-              "type": {
-                "enum": [
-                  "float"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "type"
-            ],
-            "type": "object"
-          },
-          {
-            "properties": {
-              "type": {
-                "enum": [
-                  "geo"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "type"
-            ],
-            "type": "object"
-          },
-          {
-            "properties": {
-              "type": {
-                "enum": [
-                  "unknown"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "type"
-            ],
-            "type": "object"
-          }
-        ]
+        "enum": [
+          "keyword",
+          "integer",
+          "float",
+          "geo"
+        ],
+        "type": "string"
       },
       "PayloadSelector": {
         "anyOf": [

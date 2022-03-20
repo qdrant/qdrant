@@ -53,7 +53,7 @@ def test_payload_indexing_operations():
         path_params={'collection_name': collection_name},
     )
     assert response.ok
-    assert response.json()['result']['payload_schema']['test_payload']['indexed']
+    assert response.json()['result']['payload_schema']['test_payload']['data_type'] == "keyword"
 
     # Delete index
     response = request_with_validation(

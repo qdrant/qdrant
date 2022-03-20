@@ -3,8 +3,8 @@ use itertools::Itertools;
 use rand::prelude::ThreadRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
-use std::ops::Range;
 use serde_json::{json, Value};
+use std::ops::Range;
 
 const ADJECTIVE: &[&str] = &[
     "jobless",
@@ -57,10 +57,12 @@ pub fn random_int_payload(rnd_gen: &mut ThreadRng, num_values: usize) -> Vec<i64
 
 pub fn random_geo_payload<R: Rng + ?Sized>(rnd_gen: &mut R, num_values: usize) -> Vec<Value> {
     (0..num_values)
-        .map(|_| json!( {
-            "lon": rnd_gen.gen_range(LON_RANGE),
-            "lat": rnd_gen.gen_range(LAT_RANGE),
-        }))
+        .map(|_| {
+            json!( {
+                "lon": rnd_gen.gen_range(LON_RANGE),
+                "lat": rnd_gen.gen_range(LAT_RANGE),
+            })
+        })
         .collect_vec()
 }
 

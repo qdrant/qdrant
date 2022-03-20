@@ -12,7 +12,7 @@ use tokio::{
 
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Filter, Payload, PayloadKeyType, PayloadSchemaInfo, PointIdType, SearchParams, SeqNumberType,
+    Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, SearchParams, SeqNumberType,
     VectorElementType, WithPayloadInterface,
 };
 
@@ -75,7 +75,7 @@ pub struct CollectionInfo {
     /// Collection settings
     pub config: CollectionConfig,
     /// Types of stored payload
-    pub payload_schema: HashMap<PayloadKeyType, PayloadSchemaInfo>,
+    pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]

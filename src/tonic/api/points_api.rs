@@ -19,7 +19,7 @@ use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsList};
 use collection::operations::types::{PointRequest, ScrollRequest, SearchRequest};
 use collection::operations::CollectionUpdateOperations;
-use segment::types::FieldDataType;
+use segment::types::PayloadSchemaType;
 use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Instant;
@@ -241,10 +241,10 @@ impl Points for PointsService {
             Some(f) => match FieldType::from_i32(f) {
                 None => return Err(Status::invalid_argument("cannot convert field_type")),
                 Some(v) => match v {
-                    FieldType::Keyword => Some(FieldDataType::Keyword),
-                    FieldType::Integer => Some(FieldDataType::Integer),
-                    FieldType::Float => Some(FieldDataType::Float),
-                    FieldType::Geo => Some(FieldDataType::Geo),
+                    FieldType::Keyword => Some(PayloadSchemaType::Keyword),
+                    FieldType::Integer => Some(PayloadSchemaType::Integer),
+                    FieldType::Float => Some(PayloadSchemaType::Float),
+                    FieldType::Geo => Some(PayloadSchemaType::Geo),
                 },
             },
         };

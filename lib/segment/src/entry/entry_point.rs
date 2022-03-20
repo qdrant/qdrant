@@ -1,6 +1,6 @@
 use crate::types::{
-    FieldDataType, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
+    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
     VectorElementType, WithPayload,
 };
 use atomicwrites::Error as AtomicIoError;
@@ -206,7 +206,7 @@ pub trait SegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
-        field_type: &Option<FieldDataType>,
+        field_type: &Option<PayloadSchemaType>,
     ) -> OperationResult<bool>;
 
     /// Get indexed fields

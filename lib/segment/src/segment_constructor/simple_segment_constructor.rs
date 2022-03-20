@@ -3,10 +3,8 @@ use crate::segment::Segment;
 use crate::types::{Distance, Indexes, SegmentConfig};
 
 use crate::entry::entry_point::OperationResult;
-use crate::payload_storage::schema_storage::SchemaStorage;
 use crate::segment_constructor::build_segment;
 use std::path::Path;
-use std::sync::Arc;
 
 /// Build new segment with plain index in given directory
 ///
@@ -18,7 +16,6 @@ pub fn build_simple_segment(
     path: &Path,
     dim: usize,
     distance: Distance,
-    schema_store: Arc<SchemaStorage>,
 ) -> OperationResult<Segment> {
     build_segment(
         path,
@@ -29,7 +26,6 @@ pub fn build_simple_segment(
             distance,
             storage_type: Default::default(),
         },
-        schema_store,
     )
 }
 
@@ -43,22 +39,14 @@ mod tests {
     #[test]
     fn test_create_simple_segment() {
         let dir = TempDir::new("segment_dir").unwrap();
-        let segment = build_simple_segment(
-            dir.path(),
-            100,
-            Distance::Dot,
-            Arc::new(SchemaStorage::new()),
-        )
-        .unwrap();
+        let segment = build_simple_segment(dir.path(), 100, Distance::Dot).unwrap();
         eprintln!(" = {:?}", segment.version());
     }
 
     #[test]
     fn test_add_and_search() {
         let dir = TempDir::new("segment_dir").unwrap();
-        let mut segment =
-            build_simple_segment(dir.path(), 4, Distance::Dot, Arc::new(SchemaStorage::new()))
-                .unwrap();
+        let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
 
         let wrong_vec = vec![1.0, 1.0, 1.0];
 

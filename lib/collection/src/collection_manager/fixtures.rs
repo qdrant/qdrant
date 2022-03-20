@@ -1,13 +1,11 @@
 use std::num::NonZeroU32;
 use std::path::Path;
-use std::sync::Arc;
 
 use parking_lot::RwLock;
 use rand::Rng;
 use serde_json::json;
 
 use segment::entry::entry_point::SegmentEntry;
-use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{Distance, Payload, PointIdType, SeqNumberType};
@@ -19,12 +17,11 @@ use crate::collection_manager::optimizers::segment_optimizer::OptimizerThreshold
 use crate::config::CollectionParams;
 
 pub fn empty_segment(path: &Path) -> Segment {
-    build_simple_segment(path, 4, Distance::Dot, Arc::new(SchemaStorage::new())).unwrap()
+    build_simple_segment(path, 4, Distance::Dot).unwrap()
 }
 
 pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: usize) -> Segment {
-    let mut segment =
-        build_simple_segment(path, dim, Distance::Dot, Arc::new(SchemaStorage::new())).unwrap();
+    let mut segment = build_simple_segment(path, dim, Distance::Dot).unwrap();
     let mut rnd = rand::thread_rng();
     let payload_key = "number";
     for _ in 0..num_vectors {
@@ -127,7 +124,6 @@ pub(crate) fn get_merge_optimizer(
             shard_number: NonZeroU32::new(1).unwrap(),
         },
         Default::default(),
-        Arc::new(SchemaStorage::new()),
     )
 }
 
@@ -149,6 +145,5 @@ pub(crate) fn get_indexing_optimizer(
             shard_number: NonZeroU32::new(1).unwrap(),
         },
         Default::default(),
-        Arc::new(SchemaStorage::new()),
     )
 }

@@ -1,13 +1,11 @@
 use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
 
 use rocksdb::{IteratorMode, Options, DB};
 use serde_json::Value;
 
 use crate::entry::entry_point::OperationResult;
-use crate::payload_storage::schema_storage::SchemaStorage;
 use crate::payload_storage::PayloadStorage;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
@@ -22,7 +20,7 @@ pub struct SimplePayloadStorage {
 }
 
 impl SimplePayloadStorage {
-    pub fn open(path: &Path, _: Arc<SchemaStorage>) -> OperationResult<Self> {
+    pub fn open(path: &Path) -> OperationResult<Self> {
         let mut options: Options = Options::default();
         options.set_write_buffer_size(DB_CACHE_SIZE);
         options.create_if_missing(true);
@@ -141,8 +139,7 @@ mod tests {
     #[test]
     fn test_wipe() {
         let dir = TempDir::new("storage_dir").unwrap();
-        let mut storage =
-            SimplePayloadStorage::open(dir.path(), Arc::new(SchemaStorage::new())).unwrap();
+        let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
         storage.assign(100, &payload).unwrap();
         storage.wipe().unwrap();
@@ -180,8 +177,7 @@ mod tests {
 
         let payload: Payload = serde_json::from_str(data).unwrap();
         let dir = TempDir::new("storage_dir").unwrap();
-        let mut storage =
-            SimplePayloadStorage::open(dir.path(), Arc::new(SchemaStorage::new())).unwrap();
+        let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
         storage.assign(100, &payload).unwrap();
         let pload = storage.payload(100);
         assert_eq!(pload, payload);

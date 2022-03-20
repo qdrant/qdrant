@@ -73,7 +73,8 @@ impl SplitByShard for SetPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use segment::types::{Payload, PayloadType};
+    use segment::types::Payload;
+    use serde_json::Value;
 
     #[test]
     fn test_serialization() {
@@ -99,16 +100,16 @@ mod tests {
 
                 assert!(payload.contains_key("key1"));
 
-                let payload_type = payload.get("key1").expect("No key key1");
+                let payload_type = payload.get_value("key1").expect("No key key1");
 
                 match payload_type {
-                    PayloadType::Keyword(x) => assert_eq!(x, ["hello".to_owned()]),
+                    Value::String(x) => assert_eq!(x, "hello"),
                     _ => panic!("Wrong payload type"),
                 }
 
-                let payload_type_json = payload.get("key3");
+                let payload_type_json = payload.get_value("key3");
 
-                assert!(matches!(payload_type_json, None))
+                assert!(matches!(payload_type_json, Some(Value::Object(_))))
             }
             _ => panic!("Wrong operation"),
         }

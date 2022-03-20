@@ -7,7 +7,6 @@ use itertools::Itertools;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 
 use segment::entry::entry_point::SegmentEntry;
-use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -61,8 +60,6 @@ pub trait SegmentOptimizer {
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId>;
 
-    fn schema_store(&self) -> Arc<SchemaStorage>;
-
     /// Build temp segment
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {
         let collection_params = self.collection_params();
@@ -77,7 +74,6 @@ pub trait SegmentOptimizer {
             self.collection_path(),
             config.vector_size,
             config.distance,
-            self.schema_store(),
         )?))
     }
 
@@ -130,7 +126,6 @@ pub trait SegmentOptimizer {
             self.collection_path(),
             self.temp_path(),
             &optimized_config,
-            self.schema_store(),
         )?)
     }
 
@@ -284,7 +279,7 @@ pub trait SegmentOptimizer {
             optimized_segment.create_field_index(
                 optimized_segment.version(),
                 create_field_name,
-                &Some(schema_type.into()),
+                &Some(*schema_type),
             )?;
             self.check_cancellation(stopped)?;
         }
@@ -420,7 +415,7 @@ pub trait SegmentOptimizer {
                 optimized_segment.create_field_index(
                     optimized_segment.version(),
                     created_field_name,
-                    &Some(schema_type.into()),
+                    &Some(*schema_type),
                 )?;
             }
 

@@ -1,8 +1,6 @@
 //! Contains functions for interpreting filter queries and defining if given points pass the conditions
 
-use crate::types::{
-    GeoBoundingBox, GeoRadius, Match, MatchInteger, MatchKeyword, Range,
-};
+use crate::types::{GeoBoundingBox, GeoRadius, Match, MatchInteger, MatchKeyword, Range};
 use serde_json::Value;
 
 pub trait ValueChecker {
@@ -85,7 +83,7 @@ impl ValueChecker for GeoRadius {
                 let lat_op = obj.get("lat").and_then(|x| x.as_f64());
 
                 if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
-                    return self.check_point(lon, lat)
+                    return self.check_point(lon, lat);
                 }
                 false
             }

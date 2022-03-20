@@ -7,10 +7,12 @@ use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
-use crate::index::field_index::{CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexBuilder, PrimaryCondition, ValueIndexer};
+use crate::index::field_index::{
+    CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
+    PayloadFieldIndexBuilder, PrimaryCondition, ValueIndexer,
+};
 use crate::types::{
-    FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType,
-    Range,
+    FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType, Range,
 };
 use itertools::Itertools;
 use serde_json::Value;
@@ -135,7 +137,7 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
             total_values as usize,
             values_count as usize,
         )
-            .round() as usize;
+        .round() as usize;
 
         CardinalityEstimation {
             primary_clauses: vec![],
@@ -145,7 +147,7 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
         }
     }
 
-    fn add_many_to_list(&mut self, id: PointOffsetType, values: impl IntoIterator<Item=N>) {
+    fn add_many_to_list(&mut self, id: PointOffsetType, values: impl IntoIterator<Item = N>) {
         let mut total_values = 0;
         for value in values {
             self.elements.push(Element { id, value });
@@ -155,7 +157,7 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
         self.max_values_per_point = self.max_values_per_point.max(total_values);
     }
 
-    fn condition_iter(&self, range: &Range) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+    fn condition_iter(&self, range: &Range) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let (lower_index, upper_index) = self.search_range(range);
         Box::new(
             (&self.elements[lower_index..upper_index])
@@ -170,7 +172,7 @@ impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         condition
             .range
             .as_ref()
@@ -191,7 +193,7 @@ impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         // Creates half-overlapped ranges of points.
         let num_elements = self.elements.len();
         let value_per_point = num_elements as f64 / self.points_count as f64;

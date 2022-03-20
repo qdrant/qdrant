@@ -7,11 +7,12 @@ mod tests {
         random_filter, random_geo_payload, random_int_payload, random_keyword_payload,
         random_vector, LAT_RANGE, LON_RANGE,
     };
-    use segment::payload_storage::schema_storage::SchemaStorage;
     use segment::segment_constructor::build_segment;
-    use segment::types::{Condition, Distance, FieldCondition, FieldDataType, Filter, GeoPoint, GeoRadius, Indexes, Payload, PayloadIndexType, Range, SegmentConfig, StorageType, WithPayload};
+    use segment::types::{
+        Condition, Distance, FieldCondition, Filter, GeoPoint, GeoRadius, Indexes, Payload,
+        PayloadIndexType, PayloadSchemaType, Range, SegmentConfig, StorageType, WithPayload,
+    };
     use serde_json::{json, Map, Value};
-    use std::sync::Arc;
     use tempdir::TempDir;
 
     #[test]
@@ -33,8 +34,7 @@ mod tests {
         let int_key = "int";
 
         let num_points = 10000;
-        let mut struct_segment =
-            build_segment(dir1.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
+        let mut struct_segment = build_segment(dir1.path(), &config).unwrap();
 
         let mut opnum = 0;
         for n in 0..num_points {
@@ -56,10 +56,10 @@ mod tests {
         }
 
         struct_segment
-            .create_field_index(opnum, str_key, &Some(FieldDataType::Keyword))
+            .create_field_index(opnum, str_key, &Some(PayloadSchemaType::Keyword))
             .unwrap();
         struct_segment
-            .create_field_index(opnum, int_key, &Some(FieldDataType::Integer))
+            .create_field_index(opnum, int_key, &Some(PayloadSchemaType::Integer))
             .unwrap();
 
         let filter = Filter::new_must(Condition::Field(FieldCondition {
@@ -113,11 +113,9 @@ mod tests {
             distance: Distance::Dot,
         };
 
-        let mut plain_segment =
-            build_segment(dir1.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
+        let mut plain_segment = build_segment(dir1.path(), &config).unwrap();
         config.payload_index = Some(PayloadIndexType::Struct);
-        let mut struct_segment =
-            build_segment(dir2.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
+        let mut struct_segment = build_segment(dir2.path(), &config).unwrap();
 
         let str_key = "kvd";
         let int_key = "int";
@@ -150,10 +148,10 @@ mod tests {
         }
 
         struct_segment
-            .create_field_index(opnum, str_key, &Some(FieldDataType::Keyword))
+            .create_field_index(opnum, str_key, &Some(PayloadSchemaType::Keyword))
             .unwrap();
         struct_segment
-            .create_field_index(opnum, int_key, &Some(FieldDataType::Integer))
+            .create_field_index(opnum, int_key, &Some(PayloadSchemaType::Integer))
             .unwrap();
 
         let attempts = 100;
@@ -219,11 +217,9 @@ mod tests {
             distance: Distance::Dot,
         };
 
-        let mut plain_segment =
-            build_segment(dir1.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
+        let mut plain_segment = build_segment(dir1.path(), &config).unwrap();
         config.payload_index = Some(PayloadIndexType::Struct);
-        let mut struct_segment =
-            build_segment(dir2.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
+        let mut struct_segment = build_segment(dir2.path(), &config).unwrap();
 
         let str_key = "kvd".to_string();
         let geo_key = "geo".to_string();
@@ -236,13 +232,13 @@ mod tests {
             let point_id = idx.into();
             let vector = random_vector(&mut rnd, dim);
             let mut payload: Map<String, Value> = Default::default();
-            payload.insert(str_key.clone(), Value::String(random_keyword_payload(&mut rnd)));
+            payload.insert(
+                str_key.clone(),
+                Value::String(random_keyword_payload(&mut rnd)),
+            );
             let geo_payload = random_geo_payload(&mut rnd, num_geo_values);
 
-            payload.insert(
-                geo_key.clone(),
-                Value::Array(geo_payload),
-            );
+            payload.insert(geo_key.clone(), Value::Array(geo_payload));
 
             plain_segment.upsert_point(idx, point_id, &vector).unwrap();
             struct_segment.upsert_point(idx, point_id, &vector).unwrap();
@@ -259,8 +255,12 @@ mod tests {
             opnum += 1;
         }
 
-        struct_segment.create_field_index(opnum, &str_key, &None).unwrap();
-        struct_segment.create_field_index(opnum, &geo_key, &None).unwrap();
+        struct_segment
+            .create_field_index(opnum, &str_key, &None)
+            .unwrap();
+        struct_segment
+            .create_field_index(opnum, &geo_key, &None)
+            .unwrap();
 
         let attempts = 100;
         for _i in 0..attempts {
