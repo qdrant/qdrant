@@ -1,572 +1,572 @@
-use crate::types::{GeoBoundingBox, GeoPoint, GeoRadius};
-use geo::algorithm::haversine_distance::HaversineDistance;
-use geo::{Coordinate, Point};
-use geohash::{decode, decode_bbox, encode, Direction, GeohashError};
+use crate::index::field_index::geo_hash::{
+    circle_hashes, common_hash_prefix, encode_max_precision, geo_hash_to_box, rectangle_hashes,
+    GeoHash,
+};
+use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
+use crate::index::field_index::{
+    CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
+    PayloadFieldIndexBuilder, PrimaryCondition,
+};
+use crate::payload_storage::condition_checker::{
+    check_geo_points_within_bbox, check_geo_points_within_radius,
+};
+use crate::types::{FieldCondition, GeoPoint, PayloadKeyType, PayloadType, PointOffsetType};
 use itertools::Itertools;
-use std::ops::Range;
+use serde::{Deserialize, Serialize};
+use std::cmp::{max, min};
+use std::collections::{BTreeMap, HashSet};
+use std::mem;
 
-type GeoHash = String;
+/// Max number of sub-regions computed for an input geo query
+// TODO discuss value, should it be dynamically computed?
+const GEO_QUERY_MAX_REGION: usize = 12;
 
-/// Max size of geo-hash used for indexing. size=12 is about 6cm2
-const GEOHASH_MAX_LENGTH: usize = 12;
+#[derive(Serialize, Deserialize, Default)]
+pub struct PersistedGeoMapIndex {
+    /**
+    {
+        "d": 10,
+        "dr": 10,
+        "dr5": 4,
+        "dr5r": 3,
+        "dr5ru": 1,
+        "dr5rr": 2,
+        ...
+    }
+     */
+    points_per_hash: BTreeMap<GeoHash, usize>,
+    values_per_hash: BTreeMap<GeoHash, usize>,
+    /**
+    {
+        "dr5ru": {1},
+        "dr5rr": {2, 3},
+        ...
+    }
+     */
+    points_map: BTreeMap<GeoHash, HashSet<PointOffsetType>>,
+    point_to_values: Vec<Vec<GeoPoint>>,
+    points_count: usize,
+    values_count: usize,
+    max_values_per_point: usize,
+}
 
-const LON_RANGE: Range<f64> = -180.0..180.0;
-const LAT_RANGE: Range<f64> = -90.0..90.0;
-const COORD_EPS: f64 = 1e-12;
+impl PersistedGeoMapIndex {
+    pub fn match_cardinality(&self, values: &[GeoHash]) -> CardinalityEstimation {
+        let common_hash = common_hash_prefix(values);
 
-impl From<GeoPoint> for Coordinate<f64> {
-    fn from(point: GeoPoint) -> Self {
-        Self {
-            x: point.lat,
-            y: point.lon,
+        let total_points = self.points_per_hash.get(&common_hash).copied().unwrap_or(0);
+        let total_values = self.values_per_hash.get(&common_hash).copied().unwrap_or(0);
+
+        let (sum, maximum_per_hash) = values
+            .iter()
+            .map(|region| self.points_per_hash.get(region).cloned().unwrap_or(0))
+            .fold((0, 0), |(sum, maximum), count| {
+                (sum + count, max(maximum, count))
+            });
+
+        // Assume all selected points have `max_values_per_point` value hits.
+        // Therefore number of points can't be less than `total_hits / max_values_per_point`
+        let min_hits_by_value_groups = sum / self.max_values_per_point;
+
+        // Assume that we have selected all possible duplications of the points
+        let point_duplications = total_values - total_points;
+        let possible_non_duplicated = sum.saturating_sub(point_duplications);
+
+        let estimation_min = max(
+            max(min_hits_by_value_groups, possible_non_duplicated),
+            maximum_per_hash,
+        );
+        let estimation_max = min(sum, total_points);
+
+        // estimate_multi_value_selection_cardinality might overflow at some corner cases
+        // so it is better to limit its value with min and max
+        let estimation_exp =
+            estimate_multi_value_selection_cardinality(total_points, total_values, sum).round()
+                as usize;
+
+        CardinalityEstimation {
+            primary_clauses: vec![],
+            min: estimation_min,
+            exp: min(estimation_max, max(estimation_min, estimation_exp)),
+            max: estimation_max,
         }
     }
-}
 
-/// Fix longitude for spherical overflow
-/// lon: 181.0 -> -179.0
-fn sphere_lon(lon: f64) -> f64 {
-    let mut res_lon = lon;
-    if res_lon > LON_RANGE.end {
-        res_lon = LON_RANGE.start + res_lon - LON_RANGE.end;
-    }
-    if res_lon < LON_RANGE.start {
-        res_lon = LON_RANGE.end + res_lon - LON_RANGE.start;
-    }
-    res_lon
-}
+    #[allow(dead_code)]
+    fn remove_point(&mut self, idx: PointOffsetType) {
+        if self.point_to_values.len() <= idx as usize {
+            return; // Already removed or never actually existed
+        }
+        let removed_points = std::mem::take(&mut self.point_to_values[idx as usize]);
+        let mut seen_hashes: HashSet<&str> = Default::default();
+        let mut geo_hashes = vec![];
 
-/// Fix latitude for spherical overflow
-fn sphere_lat(lat: f64) -> f64 {
-    let mut res_lat = lat;
-    if res_lat > LAT_RANGE.end {
-        res_lat = LAT_RANGE.end - COORD_EPS;
-    }
-    if res_lat < LAT_RANGE.start {
-        res_lat = LAT_RANGE.start + COORD_EPS;
-    }
-    res_lat
-}
+        for removed_point in removed_points {
+            let removed_geo_hash: GeoHash =
+                encode_max_precision(removed_point.lon, removed_point.lat).unwrap();
+            geo_hashes.push(removed_geo_hash);
+        }
 
-/// Get neighbour geohash even from the other side of coordinates
-fn sphere_neighbor(hash_str: &str, direction: Direction) -> Result<String, GeohashError> {
-    let (coord, lon_err, lat_err) = decode(hash_str)?;
-    let (dlat, dlng) = direction.to_tuple();
-    let lon = sphere_lon(coord.x + 2f64 * lon_err.abs() * dlng);
-    let lat = sphere_lat(coord.y + 2f64 * lat_err.abs() * dlat);
-
-    let neighbor_coord = Coordinate { x: lon, y: lat };
-    encode(neighbor_coord, hash_str.len())
-}
-
-#[derive(Debug)]
-struct GeohashBoundingBox {
-    north_west: String,
-    south_west: String,
-    south_east: String,
-    north_east: String,
-}
-
-impl GeohashBoundingBox {
-    /// Calculate geo-hashes covering the rectangular region with given precision
-    ///
-    /// # Arguments
-    ///
-    /// * `precision` - precision of cover
-    /// * `max_regions` - stop early if maximal amount of regions exceeded
-    ///
-    /// # Result
-    ///
-    /// * None - if there are more regions than a limit
-    /// * Some(list of geo-hashes covering the region
-    ///
-    fn geohash_regions(&self, precision: usize, max_regions: usize) -> Option<Vec<GeoHash>> {
-        let mut seen: Vec<String> = Vec::new();
-
-        let mut from_row = self.north_west[..precision].to_owned();
-        let mut to_row = self.north_east[..precision].to_owned();
-
-        let to_column = self.south_west[..precision].to_owned();
-
-        loop {
-            let mut current = from_row.clone();
-            loop {
-                seen.push(current.clone());
-
-                if seen.len() > max_regions {
-                    return None;
+        for removed_geo_hash in &geo_hashes {
+            let hash_points = self.points_map.get_mut(removed_geo_hash);
+            let is_last = match hash_points {
+                None => false,
+                Some(points_set) => {
+                    points_set.remove(&idx);
+                    points_set.is_empty()
                 }
+            };
+            if is_last {
+                self.points_map.remove(removed_geo_hash);
+            }
 
-                if current == to_row {
-                    break;
+            for i in 0..=removed_geo_hash.len() {
+                let sub_geo_hash = &removed_geo_hash[0..i];
+                if let Some(count) = self.values_per_hash.get_mut(sub_geo_hash) {
+                    *count -= 1;
                 }
-                current = sphere_neighbor(&current, Direction::E).unwrap();
+                if !seen_hashes.contains(sub_geo_hash) {
+                    if let Some(count) = self.points_per_hash.get_mut(sub_geo_hash) {
+                        *count -= 1;
+                    }
+                    seen_hashes.insert(sub_geo_hash);
+                }
             }
-            if from_row == to_column {
-                break;
-            }
-
-            from_row = sphere_neighbor(&from_row, Direction::S).unwrap();
-            to_row = sphere_neighbor(&to_row, Direction::S).unwrap();
-        }
-
-        Some(seen)
-    }
-}
-
-impl From<GeoBoundingBox> for GeohashBoundingBox {
-    fn from(bounding_box: GeoBoundingBox) -> Self {
-        let GeoPoint {
-            lat: max_lat,
-            lon: min_lon,
-        } = bounding_box.top_left;
-        let GeoPoint {
-            lat: min_lat,
-            lon: max_lon,
-        } = bounding_box.bottom_right;
-
-        // Unwrap is acceptable, as data should be validated before
-        let north_west = encode((min_lon, max_lat).into(), GEOHASH_MAX_LENGTH).unwrap();
-        let south_west = encode((min_lon, min_lat).into(), GEOHASH_MAX_LENGTH).unwrap();
-        let south_east = encode((max_lon, min_lat).into(), GEOHASH_MAX_LENGTH).unwrap();
-        let north_east = encode((max_lon, max_lat).into(), GEOHASH_MAX_LENGTH).unwrap();
-
-        Self {
-            north_west,
-            south_west,
-            south_east,
-            north_east,
         }
     }
-}
 
-/// Check if geohash tile intersects the circle
-fn check_intersection(geohash: &str, circle: &GeoRadius) -> bool {
-    let precision = geohash.len();
-    if precision == 0 {
-        return true;
+    fn add_many(&mut self, idx: PointOffsetType, values: &[GeoPoint]) {
+        if self.point_to_values.len() <= idx as usize {
+            // That's a smart reallocation
+            self.point_to_values.resize(idx as usize + 1, vec![]);
+        }
+        self.point_to_values[idx as usize] = values.to_vec();
+
+        let mut seen_hashes: HashSet<&str> = Default::default();
+        let mut geo_hashes = vec![];
+
+        for added_point in values {
+            let added_geo_hash: GeoHash =
+                encode_max_precision(added_point.lon, added_point.lat).unwrap();
+            geo_hashes.push(added_geo_hash);
+        }
+
+        for geo_hash in &geo_hashes {
+            self.points_map
+                .entry(geo_hash.to_owned())
+                .or_insert_with(HashSet::new)
+                .insert(idx);
+
+            for i in 0..=geo_hash.len() {
+                let sub_geo_hash = &geo_hash[0..i];
+                match self.values_per_hash.get_mut(sub_geo_hash) {
+                    None => {
+                        self.values_per_hash.insert(sub_geo_hash.to_string(), 1);
+                    }
+                    Some(count) => {
+                        *count += 1;
+                    }
+                };
+                if !seen_hashes.contains(sub_geo_hash) {
+                    match self.points_per_hash.get_mut(sub_geo_hash) {
+                        None => {
+                            self.points_per_hash.insert(sub_geo_hash.to_string(), 1);
+                        }
+                        Some(count) => {
+                            *count += 1;
+                        }
+                    }
+                    seen_hashes.insert(sub_geo_hash);
+                }
+            }
+        }
+
+        self.values_count += values.len();
+        self.points_count += 1;
+        self.max_values_per_point = self.max_values_per_point.max(values.len());
     }
-    let rect = decode_bbox(geohash).unwrap();
-    let c0 = rect.min();
-    let c1 = rect.max();
 
-    let bbox_center = Point::new((c0.x + c1.x) / 2f64, (c0.y + c1.y) / 2f64);
-    let half_diagonal = bbox_center.haversine_distance(&Point(c0));
+    fn get_stored_sub_regions(
+        &self,
+        geo: &GeoHash,
+    ) -> Box<dyn Iterator<Item = (&GeoHash, &HashSet<PointOffsetType>)> + '_> {
+        let geo_clone = geo.to_string();
+        Box::new(
+            self.points_map
+                .range(geo.to_string()..)
+                .take_while(move |(p, _h)| p.starts_with(&geo_clone)),
+        )
+    }
 
-    half_diagonal + circle.radius
-        > bbox_center.haversine_distance(&Point::new(circle.center.lon, circle.center.lat))
-}
-
-/// Return as-high-as-possible with maximum of `max_regions`
-/// number of geo-hash guaranteed to contain the whole circle.
-fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> Vec<GeoHash> {
-    assert_ne!(max_regions, 0, "max_regions cannot be equal to zero");
-    let geo_bounding_box = minimum_bounding_rectangle_for_circle(circle);
-    let full_geohash_bounding_box: GeohashBoundingBox = geo_bounding_box.into();
-
-    (0..=GEOHASH_MAX_LENGTH)
-        .map(|precision| {
-            full_geohash_bounding_box
-                .geohash_regions(precision, max_regions)
-                .map(|hashes| {
-                    hashes
-                        .into_iter()
-                        .filter(|hash| check_intersection(hash, circle))
-                        .collect_vec()
+    fn get_iterator(&self, values: Vec<GeoHash>) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        Box::new(
+            values
+                .into_iter()
+                .flat_map(|top_geo_hash| {
+                    self.get_stored_sub_regions(&top_geo_hash)
+                        .flat_map(|(_geohash, points)| points.iter().copied())
                 })
+                .unique(),
+        )
+    }
+
+    /// Get iterator over smallest geo-hash regions larger than `threshold` points
+    fn get_large_hashes(
+        &self,
+        threshold: usize,
+    ) -> Box<dyn Iterator<Item = (&GeoHash, usize)> + '_> {
+        let mut large_regions = self
+            .points_per_hash
+            .iter()
+            .filter(|(hash, size)| **size > threshold && !hash.is_empty())
+            .collect_vec();
+
+        // smallest regions first
+        large_regions.sort_by(|a, b| b.cmp(a));
+
+        let mut edge_region = vec![];
+
+        let mut current_region = "";
+
+        for (region, size) in large_regions.into_iter() {
+            if current_region.starts_with(region) {
+                continue;
+            } else {
+                current_region = region;
+                edge_region.push((region, *size));
+            }
+        }
+
+        Box::new(edge_region.into_iter())
+    }
+}
+
+impl PayloadFieldIndexBuilder for PersistedGeoMapIndex {
+    fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
+        match value {
+            PayloadType::Geo(geo_points) => self.add_many(id, geo_points),
+            _ => panic!("Unexpected payload type: {:?}", value),
+        }
+    }
+
+    fn build(&mut self) -> FieldIndex {
+        /*
+        points_map contains full hashes:
+        {
+            "dr5ruj4477ku": [1,2,3],
+            "dr5ruj4477kk": [1,2,4],
+            "dr5ruj4477k7": [1,2,5],
+            ...
+        }
+         */
+        let points_map = mem::take(&mut self.points_map);
+        let point_to_values = mem::take(&mut self.point_to_values);
+        let points_per_hash = mem::take(&mut self.points_per_hash);
+        let values_per_hash = mem::take(&mut self.values_per_hash);
+
+        let values_count = self.values_count;
+        let points_count = self.points_count;
+        let max_values_per_point = self.max_values_per_point;
+
+        FieldIndex::GeoIndex(PersistedGeoMapIndex {
+            points_per_hash,
+            values_per_hash,
+            points_map,
+            point_to_values,
+            values_count,
+            points_count,
+            max_values_per_point,
         })
-        .take_while(|hashes| hashes.is_some())
-        .last()
-        .expect("no hash coverage for any precision")
-        .expect("geo-hash coverage is empty")
+    }
 }
 
-/// Return as-high-as-possible with maximum of `max_regions`
-/// number of geo-hash guaranteed to contain the whole rectangle.
-fn rectangle_hashes(rectangle: &GeoBoundingBox, max_regions: usize) -> Vec<GeoHash> {
-    assert_ne!(max_regions, 0, "max_regions cannot be equal to zero");
-    let full_geohash_bounding_box: GeohashBoundingBox = rectangle.clone().into();
-
-    (0..=GEOHASH_MAX_LENGTH)
-        .map(|precision| full_geohash_bounding_box.geohash_regions(precision, max_regions))
-        .take_while(|hashes| hashes.is_some())
-        .last()
-        .expect("no hash coverage for any precision")
-        .expect("geo-hash coverage is empty")
-}
-
-/// A globally-average value is usually considered to be 6,371 kilometres (3,959 mi) with a 0.3% variability (±10 km).
-/// https://en.wikipedia.org/wiki/Earth_radius.
-const EARTH_RADIUS_METERS: f64 = 6371.0 * 1000.;
-
-/// Returns the GeoBoundingBox that defines the MBR
-/// http://janmatuschek.de/LatitudeLongitudeBoundingCoordinates#Longitude
-fn minimum_bounding_rectangle_for_circle(circle: &GeoRadius) -> GeoBoundingBox {
-    // circle.radius is in meter
-    let angular_radius: f64 = circle.radius / EARTH_RADIUS_METERS;
-
-    let angular_lat = circle.center.lat.to_radians();
-    let mut min_lat = (angular_lat - angular_radius).to_degrees();
-    let mut max_lat = (angular_lat + angular_radius).to_degrees();
-
-    let (min_lon, max_lon) = if LAT_RANGE.start < min_lat && max_lat < LAT_RANGE.end {
-        // Poles are not within the query, default scenario
-        let angular_lon = circle.center.lon.to_radians();
-        let delta_lon = (angular_radius.sin() / angular_lat.cos()).asin();
-
-        let min_lon = (angular_lon - delta_lon).to_degrees();
-        let max_lon = (angular_lon + delta_lon).to_degrees();
-
-        (min_lon, max_lon)
-    } else {
-        // poles are within circle - use whole cup
-        if LAT_RANGE.start > min_lat {
-            min_lat = LAT_RANGE.start + COORD_EPS;
-        }
-        if max_lat > LAT_RANGE.end {
-            max_lat = LAT_RANGE.end - COORD_EPS;
+impl PayloadFieldIndex for PersistedGeoMapIndex {
+    fn filter(
+        &self,
+        condition: &FieldCondition,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+        if let Some(geo_bounding_box) = &condition.geo_bounding_box {
+            let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION);
+            let geo_condition_copy = geo_bounding_box.clone();
+            return Some(Box::new(self.get_iterator(geo_hashes).filter(
+                move |point| {
+                    let geo_points = self.point_to_values.get(*point as usize).unwrap();
+                    check_geo_points_within_bbox(geo_points, &geo_condition_copy)
+                },
+            )));
         }
 
-        (LON_RANGE.start + COORD_EPS, LON_RANGE.end - COORD_EPS)
-    };
+        if let Some(geo_radius) = &condition.geo_radius {
+            let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION);
+            let geo_condition_copy = geo_radius.clone();
+            return Some(Box::new(self.get_iterator(geo_hashes).filter(
+                move |point| {
+                    let geo_points = self.point_to_values.get(*point as usize).unwrap();
+                    check_geo_points_within_radius(geo_points, &geo_condition_copy)
+                },
+            )));
+        }
 
-    let top_left = GeoPoint {
-        lat: max_lat,
-        lon: sphere_lon(min_lon),
-    };
-    let bottom_right = GeoPoint {
-        lat: min_lat,
-        lon: sphere_lon(max_lon),
-    };
+        None
+    }
 
-    GeoBoundingBox {
-        top_left,
-        bottom_right,
+    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+        if let Some(geo_bounding_box) = &condition.geo_bounding_box {
+            let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION);
+            let mut estimation = self.match_cardinality(&geo_hashes);
+            estimation
+                .primary_clauses
+                .push(PrimaryCondition::Condition(condition.clone()));
+            return Some(estimation);
+        }
+
+        if let Some(geo_radius) = &condition.geo_radius {
+            let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION);
+            let mut estimation = self.match_cardinality(&geo_hashes);
+            estimation
+                .primary_clauses
+                .push(PrimaryCondition::Condition(condition.clone()));
+            return Some(estimation);
+        }
+
+        None
+    }
+
+    fn payload_blocks(
+        &self,
+        threshold: usize,
+        key: PayloadKeyType,
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+        Box::new(
+            self.get_large_hashes(threshold)
+                .map(move |(geo_hash, size)| PayloadBlockCondition {
+                    condition: FieldCondition {
+                        key: key.clone(),
+                        r#match: None,
+                        range: None,
+                        geo_bounding_box: Some(geo_hash_to_box(geo_hash)),
+                        geo_radius: None,
+                    },
+                    cardinality: size,
+                }),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
-
-    const BERLIN: GeoPoint = GeoPoint {
-        lat: 52.52437,
-        lon: 13.41053,
-    };
+    use crate::fixtures::payload_fixtures::random_geo_payload;
+    use crate::types::GeoRadius;
+    use itertools::Itertools;
+    use rand::prelude::StdRng;
+    use rand::SeedableRng;
 
     const NYC: GeoPoint = GeoPoint {
         lat: 40.75798,
         lon: -73.991516,
     };
 
-    #[test]
-    fn geohash_encode_longitude_first() {
-        let center_hash = encode((NYC.lon, NYC.lat).into(), GEOHASH_MAX_LENGTH).unwrap();
-        assert_eq!(center_hash, "dr5ru7c02wnv");
-        let center_hash = encode((NYC.lon, NYC.lat).into(), 6).unwrap();
-        assert_eq!(center_hash, "dr5ru7");
-        let center_hash = encode((BERLIN.lon, BERLIN.lat).into(), GEOHASH_MAX_LENGTH).unwrap();
-        assert_eq!(center_hash, "u33dc1v0xupz");
-        let center_hash = encode((BERLIN.lon, BERLIN.lat).into(), 6).unwrap();
-        assert_eq!(center_hash, "u33dc1");
+    const BERLIN: GeoPoint = GeoPoint {
+        lat: 52.52437,
+        lon: 13.41053,
+    };
+
+    const POTSDAM: GeoPoint = GeoPoint {
+        lat: 52.390569,
+        lon: 13.064473,
+    };
+
+    const TOKYO: GeoPoint = GeoPoint {
+        lat: 35.689487,
+        lon: 139.691706,
+    };
+
+    fn condition_for_geo_radius(key: String, geo_radius: GeoRadius) -> FieldCondition {
+        FieldCondition {
+            key,
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: Some(geo_radius),
+        }
     }
 
-    #[test]
-    fn rectangle_geo_hash_nyc() {
-        // data from https://www.titanwolf.org/Network/q/a98ba365-14c5-48f4-8839-86a0962e0ab9/y
-        let near_nyc_circle = GeoRadius {
-            center: NYC,
-            radius: 800.0,
-        };
-
-        let bounding_box = minimum_bounding_rectangle_for_circle(&near_nyc_circle);
-        let rectangle: GeohashBoundingBox = bounding_box.into();
-        assert_eq!(rectangle.north_west, "dr5ruj4477kd");
-        assert_eq!(rectangle.south_west, "dr5ru46ne2ux");
-        assert_eq!(rectangle.south_east, "dr5ru6ryw0cp");
-        assert_eq!(rectangle.north_east, "dr5rumpfq534");
-    }
-
-    #[test]
-    fn top_level_rectangle_geo_area() {
-        let rect = GeohashBoundingBox {
-            north_west: "u".to_string(),
-            south_west: "s".to_string(),
-            south_east: "t".to_string(),
-            north_east: "v".to_string(),
-        };
-        let mut geo_area = rect.geohash_regions(1, 100).unwrap();
-        let mut expected = vec!["u", "s", "v", "t"];
-
-        geo_area.sort_unstable();
-        expected.sort_unstable();
-        assert_eq!(geo_area, expected);
-    }
-
-    #[test]
-    fn nyc_rectangle_geo_area_high_precision() {
-        let rect = GeohashBoundingBox {
-            north_west: "dr5ruj4477kd".to_string(),
-            south_west: "dr5ru46ne2ux".to_string(),
-            south_east: "dr5ru6ryw0cp".to_string(),
-            north_east: "dr5rumpfq534".to_string(),
-        };
-
-        // calling `rect.geohash_regions()` is too expensive
-        assert!(rect.geohash_regions(12, 100).is_none());
-    }
-
-    #[test]
-    fn nyc_rectangle_geo_area_medium_precision() {
-        let rect = GeohashBoundingBox {
-            north_west: "dr5ruj4".to_string(),
-            south_west: "dr5ru46".to_string(),
-            south_east: "dr5ru6r".to_string(),
-            north_east: "dr5rump".to_string(),
-        };
-
-        let geo_area = rect.geohash_regions(7, 1000).unwrap();
-        assert_eq!(14 * 12, geo_area.len());
-    }
-
-    #[test]
-    fn nyc_rectangle_geo_area_low_precision() {
-        let rect = GeohashBoundingBox {
-            north_west: "dr5ruj".to_string(),
-            south_west: "dr5ru4".to_string(),
-            south_east: "dr5ru6".to_string(),
-            north_east: "dr5rum".to_string(),
-        };
-
-        let mut geo_area = rect.geohash_regions(6, 100).unwrap();
-        let mut expected = vec![
-            "dr5ru4", "dr5ru5", "dr5ru6", "dr5ru7", "dr5ruh", "dr5ruj", "dr5rum", "dr5ruk",
-        ];
-
-        expected.sort_unstable();
-        geo_area.sort_unstable();
-        assert_eq!(geo_area, expected);
-    }
-
-    #[test]
-    fn rectangle_hashes_nyc() {
-        // conversion to lon/lat http://geohash.co/
-        // "dr5ruj4477kd"
-        let top_left = GeoPoint {
-            lon: -74.00101399,
-            lat: 40.76517460,
-        };
-
-        // "dr5ru6ryw0cp"
-        let bottom_right = GeoPoint {
-            lon: -73.98201792,
-            lat: 40.75078539,
-        };
-
-        let near_nyc_rectangle = GeoBoundingBox {
-            top_left,
-            bottom_right,
-        };
-
-        let nyc_hashes = rectangle_hashes(&near_nyc_rectangle, 200);
-        assert_eq!(nyc_hashes.len(), 168);
-        assert!(nyc_hashes.iter().all(|h| h.len() == 7)); // geohash precision
-
-        let mut nyc_hashes = rectangle_hashes(&near_nyc_rectangle, 10);
-        nyc_hashes.sort_unstable();
-        let mut expected = vec![
-            "dr5ruj", "dr5ruh", "dr5ru5", "dr5ru4", "dr5rum", "dr5ruk", "dr5ru7", "dr5ru6",
-        ];
-        expected.sort_unstable();
-
-        assert_eq!(nyc_hashes, expected);
-
-        // Graphical proof using https://www.movable-type.co.uk/scripts/geohash.html
-
-        // dr5rgy dr5run dr5ruq dr5ruw
-        // dr5rgv dr5ruj dr5rum dr5rut
-        // dr5rgu dr5ruh dr5ruk dr5rus
-        // dr5rgg dr5ru5 dr5ru7 dr5rue
-        // dr5rgf dr5ru4 dr5ru6 dr5rud
-        // dr5rgc dr5ru1 dr5ru3 dr5ru9
-
-        // XXXXXX XXXXXX XXXXXX XXXXXX
-        // XXXXXX dr5ruj dr5rum XXXXXX
-        // XXXXXX dr5ruh dr5ruk XXXXXX
-        // XXXXXX dr5ru5 dr5ru7 XXXXXX
-        // XXXXXX dr5ru4 Xr5ru6 XXXXXX
-        // XXXXXX XXXXXX XXXXXX XXXXXX
-
-        // falls back to finest region that encompasses the whole area
-        let nyc_hashes = rectangle_hashes(&near_nyc_rectangle, 7);
-        assert_eq!(nyc_hashes, ["dr5ru"]);
-    }
-
-    #[test]
-    fn random_circles() {
+    fn build_random_index(num_points: usize, num_geo_values: usize) -> FieldIndex {
         let mut rnd = StdRng::seed_from_u64(42);
-        for _ in 0..1000 {
-            let r_meters = rnd.gen_range(1.0..10000.0);
-            let query = GeoRadius {
-                center: GeoPoint {
-                    lon: rnd.gen_range(LON_RANGE),
-                    lat: rnd.gen_range(LAT_RANGE),
-                },
-                radius: r_meters,
-            };
-            let max_hashes = rnd.gen_range(1..32);
-            let hashes = circle_hashes(&query, max_hashes);
-            assert!(hashes.len() <= max_hashes);
+        let mut index = PersistedGeoMapIndex::default();
+
+        for idx in 0..num_points {
+            let geo_points = random_geo_payload(&mut rnd, num_geo_values);
+            index.add(idx as u32, &geo_points)
         }
+        assert_eq!(index.points_count, num_points);
+        assert_eq!(index.values_count, num_points * num_geo_values);
+
+        index.build()
     }
 
     #[test]
-    fn test_lon_threshold() {
-        let query = GeoRadius {
-            center: GeoPoint {
-                lon: 179.987181,
-                lat: 44.9811609411936,
-            },
-            radius: 100000.,
-        };
-
-        let max_hashes = 10;
-        let hashes = circle_hashes(&query, max_hashes);
-        assert_eq!(hashes, vec!["zbp", "b00", "xzz", "8pb"]);
-    }
-
-    #[test]
-    fn wide_circle_meridian() {
-        let query = GeoRadius {
-            center: GeoPoint {
-                lon: -17.81718188959701,
-                lat: 89.9811609411936,
-            },
-            radius: 9199.481636468849,
-        };
-
-        let max_hashes = 10;
-        let hashes = circle_hashes(&query, max_hashes);
-        assert!(hashes.len() <= max_hashes);
-        assert_eq!(hashes, ["b", "c", "f", "g", "u", "v", "y", "z"]);
-    }
-
-    #[test]
-    fn tight_circle_meridian() {
-        let query = GeoRadius {
-            center: GeoPoint {
-                lon: -17.81718188959701,
-                lat: 89.9811609411936,
-            },
-            radius: 1000.0,
-        };
-
-        let max_hashes = 10;
-        let hashes = circle_hashes(&query, max_hashes);
-        assert!(hashes.len() <= max_hashes);
-        assert_eq!(hashes, ["fz", "gp", "gr", "gx", "gz", "up"]);
-    }
-
-    #[test]
-    fn wide_circle_south_pole() {
-        let query = GeoRadius {
-            center: GeoPoint {
-                lon: 155.85591760141335,
-                lat: -74.19418872656166,
-            },
-            radius: 7133.775526733084,
-        };
-        let max_hashes = 10;
-        let hashes = circle_hashes(&query, max_hashes);
-        assert!(hashes.len() <= max_hashes);
-        assert_eq!(hashes, ["p6yd", "p6yf", "p6y9", "p6yc"]);
-    }
-
-    #[test]
-    fn tight_circle_south_pole() {
-        let query = GeoRadius {
-            center: GeoPoint {
-                lon: 155.85591760141335,
-                lat: -74.19418872656166,
-            },
-            radius: 1000.0,
-        };
-        let max_hashes = 10;
-        let hashes = circle_hashes(&query, max_hashes);
-        assert!(hashes.len() <= max_hashes);
-        assert_eq!(hashes, ["p6ycc", "p6ycf", "p6ycg"]);
-    }
-
-    #[test]
-    fn circle_hashes_nyc() {
-        let near_nyc_circle = GeoRadius {
+    fn match_cardinality() {
+        let r_meters = 500_000.0;
+        let geo_radius = GeoRadius {
             center: NYC,
-            radius: 800.0,
+            radius: r_meters,
         };
 
-        let nyc_hashes = circle_hashes(&near_nyc_circle, 200);
-        assert!(nyc_hashes.iter().all(|h| h.len() == 7)); // geohash precision
+        let field_index = build_random_index(500, 20);
 
-        let mut nyc_hashes = circle_hashes(&near_nyc_circle, 10);
-        nyc_hashes.sort_unstable();
-        let mut expected = [
-            "dr5ruj", "dr5ruh", "dr5ru5", "dr5ru4", "dr5rum", "dr5ruk", "dr5ru7", "dr5ru6",
-        ];
-        expected.sort_unstable();
-        assert_eq!(nyc_hashes, expected);
+        let nyc_hashes = circle_hashes(&geo_radius, GEO_QUERY_MAX_REGION);
 
-        // falls back to finest region that encompasses the whole area
-        let nyc_hashes = circle_hashes(&near_nyc_circle, 7);
-        assert_eq!(nyc_hashes, ["dr5ru"]);
-    }
-
-    #[test]
-    fn go_north() {
-        let mut geohash = sphere_neighbor("ww8p", Direction::N).unwrap();
-        for _ in 0..1000 {
-            geohash = sphere_neighbor(&geohash, Direction::N).unwrap();
-        }
-    }
-
-    #[test]
-    fn go_west() {
-        let starting_hash = "ww8";
-        let mut geohash = sphere_neighbor(starting_hash, Direction::W).unwrap();
-        let mut is_earth_round = false;
-        for _ in 0..1000 {
-            geohash = sphere_neighbor(&geohash, Direction::W).unwrap();
-            if geohash == starting_hash {
-                is_earth_round = true;
+        let real_cardinality = match &field_index {
+            FieldIndex::GeoIndex(geo_index) => {
+                let exact_points_for_hashes = geo_index.get_iterator(nyc_hashes).collect_vec();
+                exact_points_for_hashes.len()
             }
-        }
-        assert!(is_earth_round)
+            _ => panic!("Wrong index created"),
+        };
+
+        let field_condition = condition_for_geo_radius("test".to_string(), geo_radius);
+        let card = field_index.estimate_cardinality(&field_condition);
+        let card = card.unwrap();
+
+        eprintln!("real_cardinality = {:#?}", real_cardinality);
+        eprintln!("card = {:#?}", card);
+
+        assert!(card.min <= real_cardinality);
+        assert!(card.max >= real_cardinality);
+
+        assert!(card.exp >= card.min);
+        assert!(card.exp <= card.max);
     }
 
     #[test]
-    fn sphere_neighbor_corner_cases() {
-        assert_eq!(&sphere_neighbor("z", Direction::NE).unwrap(), "b");
-        assert_eq!(&sphere_neighbor("zz", Direction::NE).unwrap(), "bp");
-        assert_eq!(&sphere_neighbor("0", Direction::SW).unwrap(), "p");
-        assert_eq!(&sphere_neighbor("00", Direction::SW).unwrap(), "pb");
+    fn geo_indexed_filtering() {
+        let r_meters = 500_000.0;
+        let geo_radius = GeoRadius {
+            center: NYC,
+            radius: r_meters,
+        };
 
-        assert_eq!(&sphere_neighbor("8", Direction::W).unwrap(), "x");
-        assert_eq!(&sphere_neighbor("8h", Direction::W).unwrap(), "xu");
-        assert_eq!(&sphere_neighbor("r", Direction::E).unwrap(), "2");
-        assert_eq!(&sphere_neighbor("ru", Direction::E).unwrap(), "2h");
+        let field_index = build_random_index(1000, 5);
 
-        assert_eq!(
-            sphere_neighbor("ww8p1r4t8", Direction::SE).unwrap(),
-            geohash::neighbor("ww8p1r4t8", Direction::SE).unwrap()
-        );
+        let mut matched_points = match &field_index {
+            FieldIndex::GeoIndex(geo_index) => geo_index
+                .point_to_values
+                .iter()
+                .enumerate()
+                .filter(|(_idx, geo_points)| {
+                    check_geo_points_within_radius(geo_points, &geo_radius)
+                })
+                .map(|(idx, _geo_points)| idx as PointOffsetType)
+                .collect_vec(),
+            _ => panic!("wrong index"),
+        };
+
+        assert!(!matched_points.is_empty());
+
+        let field_condition = condition_for_geo_radius("test".to_string(), geo_radius);
+
+        let mut indexed_matched_points =
+            field_index.filter(&field_condition).unwrap().collect_vec();
+
+        matched_points.sort_unstable();
+        indexed_matched_points.sort_unstable();
+
+        assert_eq!(matched_points, indexed_matched_points);
     }
 
     #[test]
-    fn long_overflow_distance() {
-        let dist = Point::new(-179.999, 66.0).haversine_distance(&Point::new(179.999, 66.0));
-        eprintln!("dist` = {:#?}", dist);
-        let dist = Point::new(0.99, 90.).haversine_distance(&Point::new(0.99, -90.0));
-        eprintln!("dist` = {:#?}", dist);
+    fn test_payload_blocks() {
+        let field_index = build_random_index(1000, 5);
+        match &field_index {
+            FieldIndex::GeoIndex(geo_index) => {
+                let top_level_points = geo_index.points_per_hash.get("").unwrap();
+                assert_eq!(*top_level_points, 1_000);
+                let block_hashes = geo_index.get_large_hashes(100).collect_vec();
+                assert!(!block_hashes.is_empty());
+                for (geohash, size) in block_hashes {
+                    assert_eq!(geohash.len(), 1);
+                    assert!(size > 100);
+                    assert!(size < 1000);
+                }
+            }
+            _ => panic!("wrong index"),
+        };
+        let blocks = field_index
+            .payload_blocks(100, "test".to_string())
+            .collect_vec();
+        blocks.iter().for_each(|block| {
+            let block_points = field_index.filter(&block.condition).unwrap().collect_vec();
+            assert_eq!(block_points.len(), block.cardinality);
+        });
+    }
+
+    #[test]
+    fn match_cardinality_point_with_multi_far_geo_payload() {
+        let mut index = PersistedGeoMapIndex::default();
+
+        let r_meters = 100.0;
+
+        let geo_points = PayloadType::Geo(vec![NYC, BERLIN]);
+        index.add(1, &geo_points);
+        let field_index = index.build();
+
+        // around NYC
+        let nyc_geo_radius = GeoRadius {
+            center: NYC,
+            radius: r_meters,
+        };
+        let field_condition = condition_for_geo_radius("test".to_string(), nyc_geo_radius);
+        let card = field_index.estimate_cardinality(&field_condition);
+        let card = card.unwrap();
+        assert_eq!(card.min, 1);
+        assert_eq!(card.max, 1);
+        assert_eq!(card.exp, 1);
+
+        // around BERLIN
+        let berlin_geo_radius = GeoRadius {
+            center: BERLIN,
+            radius: r_meters,
+        };
+        let field_condition = condition_for_geo_radius("test".to_string(), berlin_geo_radius);
+        let card = field_index.estimate_cardinality(&field_condition);
+        let card = card.unwrap();
+        assert_eq!(card.min, 1);
+        assert_eq!(card.max, 1);
+        assert_eq!(card.exp, 1);
+
+        // around TOKYO
+        let tokyo_geo_radius = GeoRadius {
+            center: TOKYO,
+            radius: r_meters,
+        };
+        let field_condition = condition_for_geo_radius("test".to_string(), tokyo_geo_radius);
+        let card = field_index.estimate_cardinality(&field_condition);
+        let card = card.unwrap();
+        // no points found
+        assert_eq!(card.min, 0);
+        assert_eq!(card.max, 0);
+        assert_eq!(card.exp, 0);
+    }
+
+    #[test]
+    fn match_cardinality_point_with_multi_close_geo_payload() {
+        let mut index = PersistedGeoMapIndex::default();
+        let geo_points = PayloadType::Geo(vec![BERLIN, POTSDAM]);
+        index.add(1, &geo_points);
+        let field_index = index.build();
+
+        let berlin_geo_radius = GeoRadius {
+            center: BERLIN,
+            radius: 50_000.0, // Berlin <-> Potsdam is 27 km
+        };
+        let field_condition = condition_for_geo_radius("test".to_string(), berlin_geo_radius);
+        let card = field_index.estimate_cardinality(&field_condition);
+        let card = card.unwrap();
+        // handle properly that a single point matches via two different geo payloads
+        assert_eq!(card.min, 1);
+        assert_eq!(card.max, 1);
+        assert_eq!(card.exp, 1);
     }
 }

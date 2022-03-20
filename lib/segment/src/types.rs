@@ -401,6 +401,7 @@ pub enum PayloadInterface {
     KeywordShortcut(PayloadVariant<String>),
     IntShortcut(PayloadVariant<i64>),
     FloatShortcut(PayloadVariant<f64>),
+    GeoShortcut(PayloadVariant<GeoPoint>),
     Payload(PayloadInterfaceStrict),
 }
 
@@ -448,6 +449,7 @@ impl From<&PayloadInterface> for PayloadType {
             PayloadInterface::KeywordShortcut(x) => PayloadType::Keyword(x.to_list()),
             PayloadInterface::FloatShortcut(x) => PayloadType::Float(x.to_list()),
             PayloadInterface::IntShortcut(x) => PayloadType::Integer(x.to_list()),
+            PayloadInterface::GeoShortcut(x) => PayloadType::Geo(x.to_list()),
         }
     }
 }
@@ -983,6 +985,11 @@ mod tests {
             "val".to_string(),
             "val2".to_string(),
         ]));
+        check_cbor_serialization(payload.clone());
+        check_json_serialization(payload);
+
+        let payload =
+            PayloadInterface::GeoShortcut(PayloadVariant::Value(GeoPoint { lon: 0.0, lat: 0.0 }));
         check_cbor_serialization(payload.clone());
         check_json_serialization(payload);
     }

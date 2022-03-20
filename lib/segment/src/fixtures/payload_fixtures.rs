@@ -1,5 +1,6 @@
 use crate::types::{
-    Condition, FieldCondition, Filter, PayloadType, Range as RangeCondition, VectorElementType,
+    Condition, FieldCondition, Filter, GeoPoint, PayloadType, Range as RangeCondition,
+    VectorElementType,
 };
 use itertools::Itertools;
 use rand::prelude::ThreadRng;
@@ -37,6 +38,8 @@ const NOUN: &[&str] = &[
 ];
 
 const INT_RANGE: Range<i64> = 0..500;
+pub const LON_RANGE: Range<f64> = -180.0..180.0;
+pub const LAT_RANGE: Range<f64> = -90.0..90.0;
 
 pub fn random_keyword(rnd_gen: &mut ThreadRng) -> String {
     let random_adj = ADJECTIVE.choose(rnd_gen).unwrap();
@@ -52,6 +55,17 @@ pub fn random_int_payload(rnd_gen: &mut ThreadRng, num_values: usize) -> Payload
     PayloadType::Integer(
         (0..num_values)
             .map(|_| rnd_gen.gen_range(INT_RANGE))
+            .collect_vec(),
+    )
+}
+
+pub fn random_geo_payload<R: Rng + ?Sized>(rnd_gen: &mut R, num_values: usize) -> PayloadType {
+    PayloadType::Geo(
+        (0..num_values)
+            .map(|_| GeoPoint {
+                lon: rnd_gen.gen_range(LON_RANGE),
+                lat: rnd_gen.gen_range(LAT_RANGE),
+            })
             .collect_vec(),
     )
 }
