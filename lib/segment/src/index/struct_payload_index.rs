@@ -199,7 +199,7 @@ impl StructPayloadIndex {
             let field_value_opt = point_payload.get_value(field);
             if let Some(field_value) = field_value_opt {
                 for builder in &mut builders {
-                    builder.add(point_id, &field_value);
+                    builder.add(point_id, field_value);
                 }
             }
         }

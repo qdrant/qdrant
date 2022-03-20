@@ -226,7 +226,7 @@ impl Segment {
             Some(id) => {
                 let payload = payload_store.payload(id);
                 let field_value = payload.get_value(key);
-                field_value.and_then(|value| infer_value_type(value))
+                field_value.and_then(infer_value_type)
             }
             None => None,
         }

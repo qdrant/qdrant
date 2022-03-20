@@ -29,7 +29,7 @@ pub type IntPayloadType = i64;
 
 /// Type, used for specifying point ID in user interface
 #[derive(
-    Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema,
+Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema,
 )]
 #[serde(untagged)]
 pub enum ExtendedPointId {
@@ -461,12 +461,10 @@ pub fn value_type(value: &Value) -> Option<PayloadSchemaType> {
         Value::Number(num) => {
             if num.is_i64() {
                 Some(PayloadSchemaType::Integer)
+            } else if num.is_f64() {
+                Some(PayloadSchemaType::Float)
             } else {
-                if num.is_f64() {
-                    Some(PayloadSchemaType::Float)
-                } else {
-                    None
-                }
+                None
             }
         }
         Value::String(_) => Some(PayloadSchemaType::Keyword),
