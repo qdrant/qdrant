@@ -29,7 +29,7 @@ pub type IntPayloadType = i64;
 
 /// Type, used for specifying point ID in user interface
 #[derive(
-Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema,
+    Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema,
 )]
 #[serde(untagged)]
 pub enum ExtendedPointId {
