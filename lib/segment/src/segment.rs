@@ -7,11 +7,7 @@ use crate::index::{PayloadIndexSS, VectorIndexSS};
 use crate::payload_storage::schema_storage::SchemaStorage;
 use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
 use crate::spaces::tools::mertic_object;
-use crate::types::{
-    FieldDataType, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo,
-    PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig,
-    SegmentInfo, SegmentState, SegmentType, SeqNumberType, VectorElementType, WithPayload,
-};
+use crate::types::{FieldDataType, Filter, infer_value_type, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo, PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState, SegmentType, SeqNumberType, VectorElementType, WithPayload};
 use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
 use atomicwrites::{AllowOverwrite, AtomicFile};
@@ -227,7 +223,8 @@ impl Segment {
         match id {
             Some(id) => {
                 let payload = payload_store.payload(id);
-                Some(payload.get_schema_type(key))
+                let field_value = payload.get_value(key);
+                field_value.and_then(|value| infer_value_type(value))
             }
             None => None,
         }

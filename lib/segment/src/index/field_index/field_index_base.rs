@@ -3,16 +3,17 @@ use crate::index::field_index::map_index::PersistedMapIndex;
 use crate::index::field_index::numeric_index::PersistedNumericIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::types::{
-    FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PayloadType, PointOffsetType,
+    FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 pub trait PayloadFieldIndex {
     /// Get iterator over points fitting given `condition`
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>>;
+    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>>;
 
     /// Return estimation of points amount which satisfy given condition
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation>;
@@ -23,11 +24,29 @@ pub trait PayloadFieldIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
+    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_>;
+}
+
+pub trait ValueIndexer<T> {
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<T>);
+
+    fn get_value(&self, value: &Value) -> Option<T>;
+
+    fn add_point(&mut self, id: PointOffsetType, payload: &Value) {
+        match payload {
+            Value::Array(values) => self
+                .add_many(id, values.iter().map(|x| self.get_value(x)).flatten().collect()),
+            _ => {
+                if let Some(x) = self.get_value(payload) {
+                    self.add_many(id, vec![x])
+                }
+            },
+        }
+    }
 }
 
 pub trait PayloadFieldIndexBuilder {
-    fn add(&mut self, id: PointOffsetType, value: &PayloadType);
+    fn add(&mut self, id: PointOffsetType, value: &Value);
 
     fn build(&mut self) -> FieldIndex;
 }
@@ -61,7 +80,7 @@ impl PayloadFieldIndex for FieldIndex {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
         self.get_payload_field_index().filter(condition)
     }
 
@@ -74,7 +93,7 @@ impl PayloadFieldIndex for FieldIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
         self.get_payload_field_index()
             .payload_blocks(threshold, key)
     }

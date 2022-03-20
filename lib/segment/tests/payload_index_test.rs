@@ -237,10 +237,7 @@ mod tests {
             let vector = random_vector(&mut rnd, dim);
             let mut payload: Map<String, Value> = Default::default();
             payload.insert(str_key.clone(), Value::String(random_keyword_payload(&mut rnd)));
-            let geo_payload = random_geo_payload(&mut rnd, num_geo_values)
-                .into_iter()
-                .map(|geo| json!({"lon": geo.lon, "lat": geo.lat}))
-                .collect_vec();
+            let geo_payload = random_geo_payload(&mut rnd, num_geo_values);
 
             payload.insert(
                 geo_key.clone(),

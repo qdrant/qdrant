@@ -9,6 +9,7 @@ use std::fmt::Formatter;
 use std::str::FromStr;
 use geo::Point;
 use geo::prelude::HaversineDistance;
+use itertools::Itertools;
 use uuid::Uuid;
 
 /// Type of point index inside a segment
@@ -29,7 +30,7 @@ pub type IntPayloadType = i64;
 
 /// Type, used for specifying point ID in user interface
 #[derive(
-    Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema,
+Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema,
 )]
 #[serde(untagged)]
 pub enum ExtendedPointId {
@@ -350,18 +351,6 @@ impl Payload {
         get_payload(path, &self.0)
     }
 
-    pub fn get_schema_type(&self, path: &str) -> PayloadSchemaType {
-        match self.get(path) {
-            Some(payload) => match payload {
-                PayloadType::Keyword(_) => PayloadSchemaType::Keyword,
-                PayloadType::Integer(_) => PayloadSchemaType::Integer,
-                PayloadType::Float(_) => PayloadSchemaType::Float,
-                PayloadType::Geo(_) => PayloadSchemaType::Geo,
-            },
-            None => PayloadSchemaType::Unknown,
-        }
-    }
-
     pub fn get_checked(
         &self,
         path: &str,
@@ -373,7 +362,7 @@ impl Payload {
                 return Err(OperationError::TypeError {
                     field_name: path.to_owned(),
                     expected_type: format!("{:?}", schema_type),
-                })
+                });
             }
             Some(payload) => match schema_type {
                 PayloadSchemaType::Keyword => {
@@ -560,7 +549,7 @@ impl From<&PayloadSchemaType> for FieldDataType {
 }
 
 /// All possible names of payload types
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "value")]
 pub enum PayloadSchemaType {
@@ -570,6 +559,51 @@ pub enum PayloadSchemaType {
     Geo,
     Unknown,
 }
+
+
+pub fn value_type(value: &Value) -> Option<PayloadSchemaType> {
+    match value {
+        Value::Null => None,
+        Value::Bool(_) => None,
+        Value::Number(num) => {
+            if num.is_i64() {
+                Some(PayloadSchemaType::Integer)
+            } else {
+                if num.is_f64() {
+                    Some(PayloadSchemaType::Float)
+                } else {
+                    None
+                }
+            }
+        }
+        Value::String(_) => Some(PayloadSchemaType::Keyword),
+        Value::Array(_) => None,
+        Value::Object(obj) => {
+            let lon_op = obj.get("lon").and_then(|x| x.as_f64());
+            let lat_op = obj.get("lat").and_then(|x| x.as_f64());
+
+            if let (Some(_), Some(_)) = (lon_op, lat_op) {
+                return Some(PayloadSchemaType::Geo);
+            }
+            None
+        }
+    }
+}
+
+pub fn infer_value_type(value: &Value) -> Option<PayloadSchemaType> {
+    match value {
+        Value::Array(array) => {
+            let possible_types = array.iter().map(value_type).unique().collect_vec();
+            if possible_types.len() != 1 {
+                None // There is an ambiguity or empty array
+            } else {
+                possible_types.into_iter().next().unwrap()
+            }
+        },
+        _ => value_type(value)
+    }
+}
+
 
 impl From<&FieldDataType> for PayloadSchemaType {
     fn from(field_type: &FieldDataType) -> Self {
@@ -724,6 +758,7 @@ pub enum WithPayloadInterface {
     /// Specify included or excluded fields
     Selector(PayloadSelector),
 }
+
 impl From<bool> for WithPayload {
     fn from(x: bool) -> Self {
         WithPayload {
@@ -834,6 +869,7 @@ pub struct WithPayload {
     /// Filter include and exclude payloads
     pub payload_selector: Option<PayloadSelector>,
 }
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
@@ -1154,7 +1190,7 @@ mod tests {
             payload.get("key_geo1").unwrap(),
             PayloadType::Geo(vec![GeoPoint {
                 lat: 52.519134783833024,
-                lon: 13.372463822170474
+                lon: 13.372463822170474,
             }])
         );
         assert_eq!(
@@ -1162,11 +1198,11 @@ mod tests {
             PayloadType::Geo(vec![
                 GeoPoint {
                     lat: 52.519134783833024,
-                    lon: 13.372463822170474
+                    lon: 13.372463822170474,
                 },
                 GeoPoint {
                     lat: 52.52966189901996,
-                    lon: 13.357482978515312
+                    lon: 13.357482978515312,
                 },
             ])
         );

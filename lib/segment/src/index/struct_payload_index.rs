@@ -196,9 +196,11 @@ impl StructPayloadIndex {
         let mut builders = index_selector(&field_type);
         for point_id in payload_storage.iter_ids() {
             let point_payload = payload_storage.payload(point_id);
-            let field_value = point_payload.get_checked(field, &field_type)?;
-            for builder in &mut builders {
-                builder.add(point_id, &field_value);
+            let field_value_opt = point_payload.get_value(field);
+            if let Some(field_value) = field_value_opt {
+                for builder in &mut builders {
+                    builder.add(point_id, &field_value);
+                }
             }
         }
 

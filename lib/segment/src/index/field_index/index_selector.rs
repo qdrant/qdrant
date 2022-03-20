@@ -18,6 +18,6 @@ pub fn index_selector(payload_type: &PayloadSchemaType) -> Vec<Box<dyn PayloadFi
             )]
         }
         PayloadSchemaType::Geo => vec![Box::new(PersistedGeoMapIndex::default())],
-        PayloadSchemaType::Unknown => vec![],
+        PayloadSchemaType::Unknown => vec![]
     }
 }
