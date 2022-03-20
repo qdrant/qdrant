@@ -626,7 +626,7 @@ impl SegmentEntry for Segment {
                     segment
                         .payload_index
                         .borrow_mut()
-                        .set_indexed(key, PayloadSchemaType::Unknown)?;
+                        .set_indexed(key, schema_type)?;
                     Ok(true)
                 }
             },

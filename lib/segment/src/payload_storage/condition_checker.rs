@@ -1,8 +1,8 @@
 //! Contains functions for interpreting filter queries and defining if given points pass the conditions
 
-use crate::types::{GeoBoundingBox, GeoRadius, Match, MatchInteger, MatchKeyword, Range};
-use geo::algorithm::haversine_distance::HaversineDistance;
-use geo::Point;
+use crate::types::{
+    GeoBoundingBox, GeoRadius, Match, MatchInteger, MatchKeyword, Range,
+};
 use serde_json::Value;
 
 pub trait ValueChecker {
@@ -68,10 +68,7 @@ impl ValueChecker for GeoBoundingBox {
                 let lat_op = obj.get("lat").and_then(|x| x.as_f64());
 
                 if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
-                    return (self.top_left.lon < lon)
-                        && (lon < self.bottom_right.lon)
-                        && (self.bottom_right.lat < lat)
-                        && (lat < self.top_left.lat);
+                    return self.check_point(lon, lat);
                 }
                 false
             }
@@ -88,8 +85,7 @@ impl ValueChecker for GeoRadius {
                 let lat_op = obj.get("lat").and_then(|x| x.as_f64());
 
                 if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
-                    let query_center = Point::new(self.center.lon, self.center.lat);
-                    return query_center.haversine_distance(&Point::new(lon, lat)) < self.radius;
+                    return self.check_point(lon, lat)
                 }
                 false
             }

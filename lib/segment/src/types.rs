@@ -7,6 +7,8 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Formatter;
 use std::str::FromStr;
+use geo::Point;
+use geo::prelude::HaversineDistance;
 use uuid::Uuid;
 
 /// Type of point index inside a segment
@@ -643,6 +645,15 @@ pub struct GeoBoundingBox {
     pub bottom_right: GeoPoint,
 }
 
+impl GeoBoundingBox {
+    pub fn check_point(&self, lon: f64, lat: f64) -> bool {
+        (self.top_left.lon < lon)
+            && (lon < self.bottom_right.lon)
+            && (self.bottom_right.lat < lat)
+            && (lat < self.top_left.lat)
+    }
+}
+
 /// Geo filter request
 ///
 /// Matches coordinates inside the circle of `radius` and center with coordinates `center`
@@ -653,6 +664,13 @@ pub struct GeoRadius {
     pub center: GeoPoint,
     /// Radius of the area in meters
     pub radius: f64,
+}
+
+impl GeoRadius {
+    pub fn check_point(&self, lon: f64, lat: f64) -> bool {
+        let query_center = Point::new(self.center.lon, self.center.lat);
+        query_center.haversine_distance(&Point::new(lon, lat)) < self.radius
+    }
 }
 
 /// All possible payload filtering conditions
@@ -955,63 +973,6 @@ mod tests {
     //     };
     //     check_json_serialization(operation.clone());
     //     check_cbor_serialization(operation);
-    // }
-
-    // `PayloadInterfaceStrict` not longer used in payload structs
-    //
-    // #[test]
-    // fn test_rms_serialization() {
-    //     let payload = PayloadInterface::Payload(PayloadInterfaceStrict::Keyword(
-    //         PayloadVariant::Value("val".to_string()),
-    //     ));
-    //     check_cbor_serialization(payload.clone());
-    //     check_json_serialization(payload);
-    //
-    //     let payload = PayloadVariant::Value("val".to_string());
-    //     check_cbor_serialization(payload.clone());
-    //     check_json_serialization(payload);
-    //
-    //     let payload = PayloadVariant::Value(1.22);
-    //     check_cbor_serialization(payload.clone());
-    //     check_json_serialization(payload);
-    //
-    //     let payload = PayloadVariant::Value(1.);
-    //     check_cbor_serialization(payload.clone());
-    //     check_json_serialization(payload);
-    //
-    //     let payload = PayloadVariant::Value(1);
-    //     check_cbor_serialization(payload.clone());
-    //     check_json_serialization(payload);
-    //
-    //     let payload = PayloadVariant::List(vec!["val".to_string(), "val2".to_string()]);
-    //     check_cbor_serialization(payload.clone());
-    //     check_json_serialization(payload);
-    //
-    //     let payload =
-    //         PayloadInterface::Payload(PayloadInterfaceStrict::Integer(PayloadVariant::List(vec![
-    //             1, 2,
-    //         ])));
-    //     check_cbor_serialization(payload.clone());
-    //     check_json_serialization(payload);
-    //
-    //     let payload = PayloadVariant::List(vec![1, 2]);
-    //     check_cbor_serialization(payload.clone());
-    //     check_json_serialization(payload);
-    //
-    //     let payload = PayloadInterface::IntShortcut(PayloadVariant::List(vec![1, 2]));
-    //     check_cbor_serialization(payload.clone());
-    //     check_json_serialization(payload);
-    //
-    //     let payload = PayloadInterface::KeywordShortcut(PayloadVariant::Value("val".to_string()));
-    //     check_cbor_serialization(payload.clone());
-    //     check_json_serialization(payload);
-    //
-    //     let payload = PayloadInterface::KeywordShortcut(PayloadVariant::List(vec![
-    //         "val".to_string(),
-    //         "val2".to_string(),
-    //     ]));
-    //     check_cbor_serialization(payload.clone());
-    //     check_json_serialization(payload);
     // }
 
     #[test]

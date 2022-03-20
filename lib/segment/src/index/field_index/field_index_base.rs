@@ -1,3 +1,4 @@
+use crate::index::field_index::geo_index::PersistedGeoMapIndex;
 use crate::index::field_index::map_index::PersistedMapIndex;
 use crate::index::field_index::numeric_index::PersistedNumericIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
@@ -41,6 +42,7 @@ pub enum FieldIndex {
     IntMapIndex(PersistedMapIndex<IntPayloadType>),
     KeywordIndex(PersistedMapIndex<String>),
     FloatIndex(PersistedNumericIndex<FloatPayloadType>),
+    GeoIndex(PersistedGeoMapIndex),
 }
 
 impl FieldIndex {
@@ -50,6 +52,7 @@ impl FieldIndex {
             FieldIndex::IntMapIndex(payload_field_index) => payload_field_index,
             FieldIndex::KeywordIndex(payload_field_index) => payload_field_index,
             FieldIndex::FloatIndex(payload_field_index) => payload_field_index,
+            FieldIndex::GeoIndex(payload_field_index) => payload_field_index,
         }
     }
 }
