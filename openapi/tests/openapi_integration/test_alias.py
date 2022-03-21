@@ -33,6 +33,18 @@ def test_alias_operations():
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": [0.2, 0.1, 0.9, 0.7],
+            "top": 3
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']) == 3
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
         path_params={'collection_name': "test_alias"},
         body={
             "vector": [0.2, 0.1, 0.9, 0.7],
@@ -41,3 +53,29 @@ def test_alias_operations():
     )
     assert response.ok
     assert len(response.json()['result']) == 3
+
+    response = request_with_validation(
+        api='/collections/aliases',
+        method="POST",
+        body={
+            "actions": [
+                {
+                    "delete_alias": {
+                        "alias_name": "test_alias"
+                    }
+                }
+            ]
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': "test_alias"},
+        body={
+            "vector": [0.2, 0.1, 0.9, 0.7],
+            "top": 3
+        }
+    )
+    assert response.status_code == 404
