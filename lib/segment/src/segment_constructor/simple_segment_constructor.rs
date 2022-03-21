@@ -3,10 +3,8 @@ use crate::segment::Segment;
 use crate::types::{Distance, Indexes, SegmentConfig};
 
 use crate::entry::entry_point::OperationResult;
-use crate::payload_storage::schema_storage::SchemaStorage;
 use crate::segment_constructor::build_segment;
 use std::path::Path;
-use std::sync::Arc;
 
 /// Build new segment with plain index in given directory
 ///
@@ -18,7 +16,6 @@ pub fn build_simple_segment(
     path: &Path,
     dim: usize,
     distance: Distance,
-    schema_store: Arc<SchemaStorage>,
 ) -> OperationResult<Segment> {
     build_segment(
         path,
@@ -29,7 +26,6 @@ pub fn build_simple_segment(
             distance,
             storage_type: Default::default(),
         },
-        schema_store,
     )
 }
 
@@ -37,28 +33,20 @@ pub fn build_simple_segment(
 mod tests {
     use super::*;
     use crate::entry::entry_point::{OperationError, SegmentEntry};
-    use crate::types::PayloadType;
+    use serde_json::json;
     use tempdir::TempDir;
 
     #[test]
     fn test_create_simple_segment() {
         let dir = TempDir::new("segment_dir").unwrap();
-        let segment = build_simple_segment(
-            dir.path(),
-            100,
-            Distance::Dot,
-            Arc::new(SchemaStorage::new()),
-        )
-        .unwrap();
+        let segment = build_simple_segment(dir.path(), 100, Distance::Dot).unwrap();
         eprintln!(" = {:?}", segment.version());
     }
 
     #[test]
     fn test_add_and_search() {
         let dir = TempDir::new("segment_dir").unwrap();
-        let mut segment =
-            build_simple_segment(dir.path(), 4, Distance::Dot, Arc::new(SchemaStorage::new()))
-                .unwrap();
+        let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
 
         let wrong_vec = vec![1.0, 1.0, 1.0];
 
@@ -80,14 +68,11 @@ mod tests {
         segment.upsert_point(2, 4.into(), &vec4).unwrap();
         segment.upsert_point(2, 5.into(), &vec5).unwrap();
 
-        let payload_key = "color".to_string();
-
         segment
             .set_payload(
                 3,
                 1.into(),
-                &payload_key,
-                PayloadType::Keyword(vec!["red".to_owned(), "green".to_owned()]),
+                &json!({ "color": vec!["red".to_owned(), "green".to_owned()] }).into(),
             )
             .unwrap();
 
@@ -95,8 +80,7 @@ mod tests {
             .set_payload(
                 3,
                 2.into(),
-                &payload_key,
-                PayloadType::Keyword(vec!["red".to_owned(), "blue".to_owned()]),
+                &json!({ "color": vec!["red".to_owned(), "blue".to_owned()] }).into(),
             )
             .unwrap();
 
@@ -104,8 +88,7 @@ mod tests {
             .set_payload(
                 3,
                 3.into(),
-                &payload_key,
-                PayloadType::Keyword(vec!["red".to_owned(), "yellow".to_owned()]),
+                &json!({ "color": vec!["red".to_owned(), "yellow".to_owned()] }).into(),
             )
             .unwrap();
 
@@ -113,8 +96,7 @@ mod tests {
             .set_payload(
                 3,
                 4.into(),
-                &payload_key,
-                PayloadType::Keyword(vec!["red".to_owned(), "green".to_owned()]),
+                &json!({ "color": vec!["red".to_owned(), "green".to_owned()] }).into(),
             )
             .unwrap();
 

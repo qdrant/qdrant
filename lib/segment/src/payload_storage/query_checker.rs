@@ -1,12 +1,12 @@
+use std::sync::Arc;
+
+use atomic_refcell::AtomicRefCell;
+
 use crate::id_tracker::IdTrackerSS;
-use crate::payload_storage::condition_checker::{
-    match_geo, match_geo_radius, match_payload, match_range,
-};
+use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::ConditionChecker;
-use crate::types::{Condition, Filter, PayloadKeyType, PayloadType, PointOffsetType, TheMap};
-use atomic_refcell::AtomicRefCell;
-use std::sync::Arc;
+use crate::types::{Condition, Filter, Payload, PointOffsetType};
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool
 where
@@ -82,42 +82,42 @@ impl SimpleConditionChecker {
 
 impl ConditionChecker for SimpleConditionChecker {
     fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
-        let empty_map: TheMap<PayloadKeyType, PayloadType> = TheMap::new();
+        let empty_payload: Payload = Default::default();
 
         let payload_storage_guard = self.payload_storage.borrow();
         let payload_ptr = payload_storage_guard.payload_ptr(point_id);
 
         let payload = match payload_ptr {
-            None => &empty_map,
+            None => &empty_payload,
             Some(x) => x,
         };
 
         let checker = |condition: &Condition| {
             match condition {
                 Condition::Field(field_condition) => {
-                    payload.get(&field_condition.key).map_or(false, |p| {
+                    payload.get_value(&field_condition.key).map_or(false, |p| {
                         let mut res = false;
                         // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
                         res = res
                             || field_condition
                                 .r#match
                                 .as_ref()
-                                .map_or(false, |condition| match_payload(p, condition));
+                                .map_or(false, |condition| condition.check(p));
                         res = res
                             || field_condition
                                 .range
                                 .as_ref()
-                                .map_or(false, |condition| match_range(p, condition));
+                                .map_or(false, |condition| condition.check(p));
                         res = res
                             || field_condition
                                 .geo_radius
                                 .as_ref()
-                                .map_or(false, |condition| match_geo_radius(p, condition));
+                                .map_or(false, |condition| condition.check(p));
                         res = res
                             || field_condition
                                 .geo_bounding_box
                                 .as_ref()
-                                .map_or(false, |condition| match_geo(p, condition));
+                                .map_or(false, |condition| condition.check(p));
                         res
                     })
                 }
@@ -138,51 +138,46 @@ impl ConditionChecker for SimpleConditionChecker {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::collections::HashSet;
+
+    use serde_json::json;
+    use tempdir::TempDir;
+
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTracker;
-    use crate::payload_storage::schema_storage::SchemaStorage;
     use crate::payload_storage::PayloadStorage;
     use crate::types::GeoPoint;
-    use crate::types::{FieldCondition, GeoBoundingBox, PayloadType, Range};
-    use std::collections::HashSet;
-    use tempdir::TempDir;
+    use crate::types::{FieldCondition, GeoBoundingBox, Range};
+
+    use super::*;
 
     #[test]
     fn test_condition_checker() {
         let dir = TempDir::new("payload_dir").unwrap();
         let dir_id_tracker = TempDir::new("id_tracker_dir").unwrap();
 
-        let payload: TheMap<PayloadKeyType, PayloadType> = [
-            (
-                "location".to_owned(),
-                PayloadType::Geo(vec![GeoPoint {
-                    lon: 13.404954,
-                    lat: 52.520008,
-                }]),
-            ),
-            ("price".to_owned(), PayloadType::Float(vec![499.90])),
-            ("amount".to_owned(), PayloadType::Integer(vec![10])),
-            ("rating".to_owned(), PayloadType::Integer(vec![3, 7, 9, 9])),
-            (
-                "color".to_owned(),
-                PayloadType::Keyword(vec!["red".to_owned()]),
-            ),
-            ("has_delivery".to_owned(), PayloadType::Integer(vec![1])),
-        ]
-        .iter()
-        .cloned()
-        .collect();
+        let payload: Payload = json!(
+            {
+                "location":{
+                    "lon": 13.404954,
+                    "lat": 52.520008,
+            },
+            "price":499.90,
+            "amount":10,
+            "rating":vec![3, 7, 9, 9],
+            "color":"red",
+            "has_delivery":1,
+        })
+        .into();
 
-        let mut payload_storage =
-            SimplePayloadStorage::open(dir.path(), Arc::new(SchemaStorage::new())).unwrap();
+        let mut payload_storage = SimplePayloadStorage::open(dir.path()).unwrap();
         let mut id_tracker = SimpleIdTracker::open(dir_id_tracker.path()).unwrap();
 
         id_tracker.set_link(0.into(), 0).unwrap();
         id_tracker.set_link(1.into(), 1).unwrap();
         id_tracker.set_link(2.into(), 2).unwrap();
         id_tracker.set_link(10.into(), 10).unwrap();
-        payload_storage.assign_all(0, payload).unwrap();
+        payload_storage.assign_all(0, &payload).unwrap();
 
         let payload_checker = SimpleConditionChecker::new(
             Arc::new(AtomicRefCell::new(payload_storage)),

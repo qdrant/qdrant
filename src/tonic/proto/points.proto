@@ -6,6 +6,8 @@ option java_outer_classname = "QdrantProto";
 
 package qdrant;
 
+import "google/protobuf/struct.proto";
+
 service Points {
   /*
   Perform insert + updates on points. If point with given ID already exists - it will be overwritten.
@@ -93,7 +95,7 @@ message GetPoints {
 message SetPayloadPoints {
   string collection_name = 1; // name of the collection
   optional bool wait = 2; // Wait until the changes have been applied?
-  map<string, Payload> payload = 3; // New payload values
+  map<string, google.protobuf.Value> payload = 3; // New payload values
   repeated PointId points = 4; // List of point to modify
 }
 
@@ -110,10 +112,18 @@ message ClearPayloadPoints {
   PointsSelector points = 3; // Affected points
 }
 
+enum FieldType {
+  FieldTypeKeyword = 0;
+  FieldTypeInteger = 1;
+  FieldTypeFloat = 2;
+  FieldTypeGeo = 3;
+}
+
 message CreateFieldIndexCollection {
   string collection_name = 1; // name of the collection
   optional bool wait = 2; // Wait until the changes have been applied?
   string field_name = 3; // Field name to index
+  optional FieldType field_type = 4; // Field type.
 }
 
 message DeleteFieldIndexCollection {
@@ -200,7 +210,7 @@ enum UpdateStatus {
 
 message ScoredPoint {
   PointId id = 1; // Point id
-  map<string, Payload> payload = 2; // Payload
+  map<string, google.protobuf.Value> payload = 2; // Payload
   float score = 3; // Similarity score
   repeated float vector = 4; // Vector
   uint64 version = 5; // Last update operation applied to this point
@@ -219,7 +229,7 @@ message ScrollResponse {
 
 message RetrievedPoint {
   PointId id = 1;
-  map<string, Payload> payload = 2;
+  map<string, google.protobuf.Value> payload = 2;
   repeated float vector = 3;
 }
 
@@ -310,38 +320,9 @@ message PointsIdsList {
 message PointStruct {
   PointId id = 1;
   repeated float vector = 2;
-  map<string, Payload> payload = 3;
+  map<string, google.protobuf.Value> payload = 3;
 }
 
-
-// ---------------------------------------------
-// ------------------ Payload ------------------
-// ---------------------------------------------
-
-message Payload {
-  oneof payload_one_of {
-    KeywordPayload keyword = 1;
-    IntegerPayload integer = 2;
-    FloatPayload float = 3;
-    GeoPayload geo = 4;
-  }
-}
-
-message KeywordPayload {
-  repeated string values = 1;
-}
-
-message IntegerPayload {
-  repeated int64 values = 1;
-}
-
-message FloatPayload {
-  repeated double values = 1;
-}
-
-message GeoPayload {
-  repeated GeoPoint values = 1;
-}
 
 message GeoPoint {
   double lon = 1;

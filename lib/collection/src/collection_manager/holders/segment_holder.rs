@@ -314,7 +314,7 @@ impl<'s> SegmentHolder {
                         let payload = write_segment.payload(point_id)?;
 
                         appendable_write_segment.upsert_point(op_num, point_id, &vector)?;
-                        appendable_write_segment.set_full_payload(op_num, point_id, payload)?;
+                        appendable_write_segment.set_full_payload(op_num, point_id, &payload)?;
 
                         write_segment.delete_point(op_num, point_id)?;
 
@@ -389,7 +389,6 @@ mod tests {
     use crate::collection_manager::fixtures::{build_segment_1, build_segment_2};
 
     use super::*;
-    use segment::payload_storage::schema_storage::SchemaStorage;
     use std::{thread, time};
 
     #[test]
@@ -405,9 +404,7 @@ mod tests {
 
         assert_ne!(sid1, sid2);
 
-        let segment3 =
-            build_simple_segment(dir.path(), 4, Distance::Dot, Arc::new(SchemaStorage::new()))
-                .unwrap();
+        let segment3 = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
 
         let (_sid3, replaced_segments) = holder.swap(segment3, &[sid1, sid2]);
         replaced_segments

@@ -3,11 +3,14 @@ use std::hash::Hash;
 use std::{iter, mem};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
+use crate::index::field_index::{
+    CardinalityEstimation, PayloadBlockCondition, PrimaryCondition, ValueIndexer,
+};
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
 use crate::types::{
-    FieldCondition, IntPayloadType, Match, MatchInteger, MatchKeyword, PayloadKeyType, PayloadType,
+    FieldCondition, IntPayloadType, Match, MatchInteger, MatchKeyword, PayloadKeyType,
     PointOffsetType,
 };
 
@@ -32,17 +35,10 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
         }
     }
 
-    fn add_many(&mut self, idx: PointOffsetType, values: &[N]) {
+    fn add_many_to_map(&mut self, idx: PointOffsetType, values: impl IntoIterator<Item = N>) {
         for value in values {
-            let vec = match self.map.get_mut(value) {
-                None => {
-                    let new_vec = vec![];
-                    self.map.insert(value.clone(), new_vec);
-                    self.map.get_mut(value).unwrap()
-                }
-                Some(vec) => vec,
-            };
-            vec.push(idx);
+            let entry = self.map.entry(value).or_default();
+            entry.push(idx);
         }
     }
 
@@ -148,32 +144,50 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
     }
 }
 
-impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
-    fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
-        match value {
-            PayloadType::Keyword(keywords) => self.add_many(id, keywords),
-            _ => panic!("Unexpected payload type: {:?}", value),
+impl ValueIndexer<String> for PersistedMapIndex<String> {
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<String>) {
+        self.add_many_to_map(id, values);
+    }
+
+    fn get_value(&self, value: &Value) -> Option<String> {
+        if let Value::String(keyword) = value {
+            return Some(keyword.to_owned());
         }
+        None
+    }
+}
+
+impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
+    fn add(&mut self, id: PointOffsetType, value: &Value) {
+        self.add_point(id, value)
     }
 
     fn build(&mut self) -> FieldIndex {
         let data = mem::take(&mut self.map);
-
         FieldIndex::KeywordIndex(PersistedMapIndex { map: data })
     }
 }
 
-impl PayloadFieldIndexBuilder for PersistedMapIndex<IntPayloadType> {
-    fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
-        match value {
-            PayloadType::Integer(numbers) => self.add_many(id, numbers),
-            _ => panic!("Unexpected payload type: {:?}", value),
+impl ValueIndexer<IntPayloadType> for PersistedMapIndex<IntPayloadType> {
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<IntPayloadType>) {
+        self.add_many_to_map(id, values);
+    }
+
+    fn get_value(&self, value: &Value) -> Option<IntPayloadType> {
+        if let Value::Number(num) = value {
+            return num.as_i64();
         }
+        None
+    }
+}
+
+impl PayloadFieldIndexBuilder for PersistedMapIndex<IntPayloadType> {
+    fn add(&mut self, id: PointOffsetType, value: &Value) {
+        self.add_point(id, value)
     }
 
     fn build(&mut self) -> FieldIndex {
         let data = mem::take(&mut self.map);
-
         FieldIndex::IntMapIndex(PersistedMapIndex { map: data })
     }
 }

@@ -38,18 +38,13 @@
     - [DeletePoints](#qdrant-DeletePoints)
     - [FieldCondition](#qdrant-FieldCondition)
     - [Filter](#qdrant-Filter)
-    - [FloatPayload](#qdrant-FloatPayload)
     - [GeoBoundingBox](#qdrant-GeoBoundingBox)
-    - [GeoPayload](#qdrant-GeoPayload)
     - [GeoPoint](#qdrant-GeoPoint)
     - [GeoRadius](#qdrant-GeoRadius)
     - [GetPoints](#qdrant-GetPoints)
     - [GetResponse](#qdrant-GetResponse)
     - [HasIdCondition](#qdrant-HasIdCondition)
-    - [IntegerPayload](#qdrant-IntegerPayload)
-    - [KeywordPayload](#qdrant-KeywordPayload)
     - [Match](#qdrant-Match)
-    - [Payload](#qdrant-Payload)
     - [PayloadExcludeSelector](#qdrant-PayloadExcludeSelector)
     - [PayloadIncludeSelector](#qdrant-PayloadIncludeSelector)
     - [PointId](#qdrant-PointId)
@@ -76,6 +71,7 @@
     - [UpsertPoints](#qdrant-UpsertPoints)
     - [WithPayloadSelector](#qdrant-WithPayloadSelector)
   
+    - [FieldType](#qdrant-FieldType)
     - [UpdateStatus](#qdrant-UpdateStatus)
   
     - [Points](#qdrant-Points)
@@ -522,6 +518,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | field_name | [string](#string) |  | Field name to index |
+| field_type | [FieldType](#qdrant-FieldType) | optional | Field type. |
 
 
 
@@ -616,21 +613,6 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 
 
-<a name="qdrant-FloatPayload"></a>
-
-### FloatPayload
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| values | [double](#double) | repeated |  |
-
-
-
-
-
-
 <a name="qdrant-GeoBoundingBox"></a>
 
 ### GeoBoundingBox
@@ -641,21 +623,6 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | ----- | ---- | ----- | ----------- |
 | top_left | [GeoPoint](#qdrant-GeoPoint) |  | north-west corner |
 | bottom_right | [GeoPoint](#qdrant-GeoPoint) |  | south-east corner |
-
-
-
-
-
-
-<a name="qdrant-GeoPayload"></a>
-
-### GeoPayload
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| values | [GeoPoint](#qdrant-GeoPoint) | repeated |  |
 
 
 
@@ -743,36 +710,6 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 
 
-<a name="qdrant-IntegerPayload"></a>
-
-### IntegerPayload
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| values | [int64](#int64) | repeated |  |
-
-
-
-
-
-
-<a name="qdrant-KeywordPayload"></a>
-
-### KeywordPayload
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| values | [string](#string) | repeated |  |
-
-
-
-
-
-
 <a name="qdrant-Match"></a>
 
 ### Match
@@ -783,24 +720,6 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | ----- | ---- | ----- | ----------- |
 | keyword | [string](#string) |  | Match string keyword |
 | integer | [int64](#int64) |  | Match integer |
-
-
-
-
-
-
-<a name="qdrant-Payload"></a>
-
-### Payload
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| keyword | [KeywordPayload](#qdrant-KeywordPayload) |  |  |
-| integer | [IntegerPayload](#qdrant-IntegerPayload) |  |  |
-| float | [FloatPayload](#qdrant-FloatPayload) |  |  |
-| geo | [GeoPayload](#qdrant-GeoPayload) |  |  |
 
 
 
@@ -879,7 +798,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
-| value | [Payload](#qdrant-Payload) |  |  |
+| value | [google.protobuf.Value](#google-protobuf-Value) |  |  |
 
 
 
@@ -1015,7 +934,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
-| value | [Payload](#qdrant-Payload) |  |  |
+| value | [google.protobuf.Value](#google-protobuf-Value) |  |  |
 
 
 
@@ -1050,7 +969,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
-| value | [Payload](#qdrant-Payload) |  |  |
+| value | [google.protobuf.Value](#google-protobuf-Value) |  |  |
 
 
 
@@ -1173,7 +1092,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
-| value | [Payload](#qdrant-Payload) |  |  |
+| value | [google.protobuf.Value](#google-protobuf-Value) |  |  |
 
 
 
@@ -1230,6 +1149,20 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 
  
+
+
+<a name="qdrant-FieldType"></a>
+
+### FieldType
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| FieldTypeKeyword | 0 |  |
+| FieldTypeInteger | 1 |  |
+| FieldTypeFloat | 2 |  |
+| FieldTypeGeo | 3 |  |
+
 
 
 <a name="qdrant-UpdateStatus"></a>

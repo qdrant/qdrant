@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use tempdir::TempDir;
 use tokio::runtime::Handle;
@@ -13,10 +13,7 @@ use collection::{
     },
     Collection,
 };
-use segment::types::{
-    Condition, HasIdCondition, PayloadInterface, PayloadKeyType, PayloadVariant, PointIdType,
-    WithPayloadInterface,
-};
+use segment::types::{Condition, HasIdCondition, Payload, PointIdType, WithPayloadInterface};
 
 use crate::common::{simple_collection_fixture, N_SHARDS};
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
@@ -177,12 +174,7 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
 
         collection.update(insert_points, true).await.unwrap();
 
-        let mut payload: HashMap<PayloadKeyType, PayloadInterface> = Default::default();
-
-        payload.insert(
-            "color".to_string(),
-            PayloadInterface::KeywordShortcut(PayloadVariant::Value("red".to_string())),
-        );
+        let payload: Payload = serde_json::from_str(r#"{"color":"red"}"#).unwrap();
 
         let assign_payload =
             CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayload {

@@ -1,103 +1,37 @@
 use crate::entry::entry_point::OperationResult;
-use crate::types::{
-    Filter, PayloadInterface, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PayloadType,
-    PointOffsetType, TheMap,
-};
-use serde_json::value::Value;
+use crate::types::{Filter, Payload, PayloadKeyTypeRef, PointOffsetType};
+use serde_json::Value;
 
 /// Trait for payload data storage. Should allow filter checks
 pub trait PayloadStorage {
-    fn assign_all_with_value(
-        &mut self,
-        point_id: PointOffsetType,
-        payload: TheMap<PayloadKeyType, serde_json::value::Value>,
-    ) -> OperationResult<()> {
-        fn _extract_payloads<'a, I>(
-            _payload: I,
-            prefix_key: Option<PayloadKeyType>,
-        ) -> Vec<(PayloadKeyType, PayloadType)>
-        where
-            I: IntoIterator<Item = (&'a PayloadKeyType, &'a serde_json::value::Value)>,
-        {
-            fn _fn(
-                prefix: &Option<PayloadKeyType>,
-                k: PayloadKeyTypeRef,
-                v: &Value,
-            ) -> Vec<(PayloadKeyType, PayloadType)> {
-                let key = match &prefix {
-                    None => k.to_string(),
-                    Some(_k) => (_k.to_owned() + "__" + k),
-                };
-
-                let opt_payload_interface: Result<PayloadInterface, _> =
-                    serde_json::from_value(v.to_owned());
-                match opt_payload_interface {
-                    Ok(payload_interface) => vec![(key, PayloadType::from(&payload_interface))],
-                    _ => match v {
-                        Value::Object(x) => _extract_payloads(x, Some(key)),
-                        _ => vec![],
-                    },
-                }
-            }
-            _payload
-                .into_iter()
-                .flat_map(|(k, value)| _fn(&prefix_key, k, value))
-                .collect()
-        }
-        self.drop(point_id)?;
-        let inner_payloads = _extract_payloads(&payload, None);
-        for (key, value) in &inner_payloads {
-            self.assign(point_id, key, value.to_owned())?;
-        }
-        Ok(())
-    }
-
     /// Assign same payload to each given point
-    fn assign_all(
-        &mut self,
-        point_id: PointOffsetType,
-        payload: TheMap<PayloadKeyType, PayloadType>,
-    ) -> OperationResult<()> {
+    fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         self.drop(point_id)?;
-        for (key, value) in payload {
-            self.assign(point_id, &key, value)?;
-        }
-
+        self.assign(point_id, payload)?;
         Ok(())
     }
 
     /// Assign payload to a concrete point with a concrete payload value
-    fn assign(
-        &mut self,
-        point_id: PointOffsetType,
-        key: PayloadKeyTypeRef,
-        payload: PayloadType,
-    ) -> OperationResult<()>;
+    fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
 
     /// Get payload for point
-    fn payload(&self, point_id: PointOffsetType) -> TheMap<PayloadKeyType, PayloadType>;
+    fn payload(&self, point_id: PointOffsetType) -> Payload;
 
     /// Delete payload by key
     fn delete(
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
-    ) -> OperationResult<Option<PayloadType>>;
+    ) -> OperationResult<Option<Value>>;
 
     /// Drop all payload of the point
-    fn drop(
-        &mut self,
-        point_id: PointOffsetType,
-    ) -> OperationResult<Option<TheMap<PayloadKeyType, PayloadType>>>;
+    fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;
 
     /// Completely drop payload. Pufff!
     fn wipe(&mut self) -> OperationResult<()>;
 
     /// Force persistence of current storage state.
     fn flush(&self) -> OperationResult<()>;
-
-    /// Get payload schema, automatically generated from payload
-    fn schema(&self) -> TheMap<PayloadKeyType, PayloadSchemaType>;
 
     /// Iterate all point ids with payload
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;

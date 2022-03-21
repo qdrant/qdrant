@@ -12,8 +12,8 @@ use tokio::{
 
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Filter, PayloadKeyType, PayloadSchemaInfo, PayloadType, PointIdType, SearchParams,
-    SeqNumberType, TheMap, VectorElementType, WithPayloadInterface,
+    Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, SearchParams, SeqNumberType,
+    VectorElementType, WithPayloadInterface,
 };
 
 use crate::{config::CollectionConfig, wal::WalError};
@@ -52,7 +52,7 @@ pub struct Record {
     /// Id of the point
     pub id: PointIdType,
     /// Payload - values assigned to the point
-    pub payload: Option<TheMap<PayloadKeyType, PayloadType>>,
+    pub payload: Option<Payload>,
     /// Vector of the point
     pub vector: Option<Vec<VectorElementType>>,
 }
@@ -75,7 +75,7 @@ pub struct CollectionInfo {
     /// Collection settings
     pub config: CollectionConfig,
     /// Types of stored payload
-    pub payload_schema: HashMap<PayloadKeyType, PayloadSchemaInfo>,
+    pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
@@ -209,7 +209,7 @@ pub enum CollectionError {
     #[error("Operation Cancelled: {description}")]
     Cancelled { description: String },
     #[error(
-        "{shards_failed} out of {shards_total} shards failed to apply operation. First error captured: {first_err}"
+    "{shards_failed} out of {shards_total} shards failed to apply operation. First error captured: {first_err}"
     )]
     InconsistentFailure {
         shards_total: u32,
@@ -232,6 +232,9 @@ impl From<OperationError> for CollectionError {
                 description: format!("{}", err),
             },
             OperationError::Cancelled { description } => Self::Cancelled { description },
+            OperationError::TypeInferenceError { .. } => Self::BadInput {
+                description: format!("{}", err),
+            },
         }
     }
 }

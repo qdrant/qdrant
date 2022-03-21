@@ -1,13 +1,12 @@
 use segment::entry::entry_point::SegmentEntry;
-use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, PayloadType};
+use segment::types::Distance;
+use serde_json::json;
 use std::path::Path;
-use std::sync::Arc;
 
 pub fn empty_segment(path: &Path) -> Segment {
-    build_simple_segment(path, 4, Distance::Dot, Arc::new(SchemaStorage::new())).unwrap()
+    build_simple_segment(path, 4, Distance::Dot).unwrap()
 }
 
 #[allow(dead_code)]
@@ -26,27 +25,17 @@ pub fn build_segment_1(path: &Path) -> Segment {
     segment1.upsert_point(4, 4.into(), &vec4).unwrap();
     segment1.upsert_point(5, 5.into(), &vec5).unwrap();
 
-    let payload_key = "color".to_owned();
+    let payload_key = "color";
 
-    let payload_option1 = PayloadType::Keyword(vec!["red".to_owned()]);
-    let payload_option2 = PayloadType::Keyword(vec!["red".to_owned(), "blue".to_owned()]);
-    let payload_option3 = PayloadType::Keyword(vec!["blue".to_owned()]);
+    let payload_option1 = json!({ payload_key: vec!["red".to_owned()] }).into();
+    let payload_option2 = json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
+    let payload_option3 = json!({ payload_key: vec!["blue".to_owned()] }).into();
 
-    segment1
-        .set_payload(6, 1.into(), &payload_key, payload_option1.clone())
-        .unwrap();
-    segment1
-        .set_payload(6, 2.into(), &payload_key, payload_option1)
-        .unwrap();
-    segment1
-        .set_payload(6, 3.into(), &payload_key, payload_option3)
-        .unwrap();
-    segment1
-        .set_payload(6, 4.into(), &payload_key, payload_option2.clone())
-        .unwrap();
-    segment1
-        .set_payload(6, 5.into(), &payload_key, payload_option2)
-        .unwrap();
+    segment1.set_payload(6, 1.into(), &payload_option1).unwrap();
+    segment1.set_payload(6, 2.into(), &payload_option1).unwrap();
+    segment1.set_payload(6, 3.into(), &payload_option3).unwrap();
+    segment1.set_payload(6, 4.into(), &payload_option2).unwrap();
+    segment1.set_payload(6, 5.into(), &payload_option2).unwrap();
 
     segment1
 }
@@ -67,26 +56,26 @@ pub fn build_segment_2(path: &Path) -> Segment {
     segment2.upsert_point(14, 14.into(), &vec4).unwrap();
     segment2.upsert_point(15, 15.into(), &vec5).unwrap();
 
-    let payload_key = "color".to_owned();
+    let payload_key = "color";
 
-    let payload_option1 = PayloadType::Keyword(vec!["red".to_owned()]);
-    let payload_option2 = PayloadType::Keyword(vec!["red".to_owned(), "blue".to_owned()]);
-    let payload_option3 = PayloadType::Keyword(vec!["blue".to_owned()]);
+    let payload_option1 = json!({ payload_key: vec!["red".to_owned()] }).into();
+    let payload_option2 = json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
+    let payload_option3 = json!({ payload_key: vec!["blue".to_owned()] }).into();
 
     segment2
-        .set_payload(16, 11.into(), &payload_key, payload_option1.clone())
+        .set_payload(16, 11.into(), &payload_option1)
         .unwrap();
     segment2
-        .set_payload(16, 12.into(), &payload_key, payload_option1)
+        .set_payload(16, 12.into(), &payload_option1)
         .unwrap();
     segment2
-        .set_payload(16, 13.into(), &payload_key, payload_option3)
+        .set_payload(16, 13.into(), &payload_option3)
         .unwrap();
     segment2
-        .set_payload(16, 14.into(), &payload_key, payload_option2.clone())
+        .set_payload(16, 14.into(), &payload_option2)
         .unwrap();
     segment2
-        .set_payload(16, 15.into(), &payload_key, payload_option2)
+        .set_payload(16, 15.into(), &payload_option2)
         .unwrap();
 
     segment2

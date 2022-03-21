@@ -17,7 +17,7 @@ use tokio::runtime::{self, Handle, Runtime};
 use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot, Mutex, RwLock as TokioRwLock};
 
 use segment::types::{
-    ExtendedPointId, Filter, PayloadKeyType, PayloadSchemaInfo, ScoredPoint, SegmentType,
+    ExtendedPointId, Filter, PayloadIndexInfo, PayloadKeyType, ScoredPoint, SegmentType,
     WithPayload, WithPayloadInterface,
 };
 
@@ -36,7 +36,6 @@ use crate::shard::ShardOperation;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 use crate::{CollectionId, PointRequest, SearchRequest, ShardId};
-use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::segment_constructor::load_segment;
 use std::fs::{read_dir, remove_dir_all};
 
@@ -54,7 +53,6 @@ pub struct LocalShard {
     runtime_handle: Option<Runtime>,
     update_sender: ArcSwap<UnboundedSender<UpdateSignal>>,
     path: PathBuf,
-    schema_store: Arc<SchemaStorage>,
     before_drop_called: bool,
 }
 
@@ -69,7 +67,6 @@ impl LocalShard {
         wal: SerdeWal<CollectionUpdateOperations>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         collection_path: &Path,
-        schema_store: Arc<SchemaStorage>,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
 
@@ -111,7 +108,6 @@ impl LocalShard {
             runtime_handle: Some(optimize_runtime),
             update_sender: ArcSwap::from_pointee(update_sender),
             path: collection_path.to_owned(),
-            schema_store,
             before_drop_called: false,
         }
     }
@@ -136,8 +132,6 @@ impl LocalShard {
         )
         .expect("Can't read WAL");
 
-        let schema_storage = Arc::new(SchemaStorage::new());
-
         let segment_dirs = read_dir(&segments_path).unwrap_or_else(|err| {
             panic!(
                 "Can't read segments directory due to {}\nat {}",
@@ -157,7 +151,7 @@ impl LocalShard {
                 });
                 continue;
             }
-            let segment = match load_segment(&segments_path, schema_storage.clone()) {
+            let segment = match load_segment(&segments_path) {
                 Ok(x) => x,
                 Err(err) => panic!(
                     "Can't load segments from {}, error: {}",
@@ -173,7 +167,6 @@ impl LocalShard {
             &collection_config.params,
             &collection_config.optimizer_config,
             &collection_config.hnsw_config,
-            schema_storage.clone(),
         );
 
         let collection = LocalShard::new(
@@ -184,7 +177,6 @@ impl LocalShard {
             wal,
             optimizers,
             shard_path,
-            schema_storage,
         );
 
         collection.load_from_wal().await;
@@ -221,14 +213,11 @@ impl LocalShard {
 
         let mut segment_holder = SegmentHolder::default();
 
-        let schema_storage = Arc::new(SchemaStorage::new());
-
         for _sid in 0..config.optimizer_config.default_segment_number {
             let segment = build_simple_segment(
                 &segments_path,
                 config.params.vector_size,
                 config.params.distance,
-                schema_storage.clone(),
             )?;
             segment_holder.add(segment);
         }
@@ -241,7 +230,6 @@ impl LocalShard {
             &config.params,
             &config.optimizer_config,
             &config.hnsw_config,
-            schema_storage.clone(),
         );
 
         let collection = LocalShard::new(
@@ -252,7 +240,6 @@ impl LocalShard {
             wal,
             optimizers,
             shard_path,
-            schema_storage,
         );
 
         Ok(collection)
@@ -420,7 +407,6 @@ impl ShardOperation for &LocalShard {
             &config.params,
             &config.optimizer_config,
             &config.hnsw_config,
-            self.schema_store.clone(),
         );
         update_handler.optimizers = new_optimizers;
         update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
@@ -439,7 +425,7 @@ impl ShardOperation for &LocalShard {
         let mut ram_size = 0;
         let mut disk_size = 0;
         let mut status = CollectionStatus::Green;
-        let mut schema: HashMap<PayloadKeyType, PayloadSchemaInfo> = Default::default();
+        let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
         for (_idx, segment) in segments.iter() {
             segments_count += 1;
             let segment_info = segment.get().read().info();
@@ -449,7 +435,7 @@ impl ShardOperation for &LocalShard {
             vectors_count += segment_info.num_vectors;
             disk_size += segment_info.disk_usage_bytes;
             ram_size += segment_info.ram_usage_bytes;
-            for (key, val) in segment_info.schema {
+            for (key, val) in segment_info.index_schema {
                 schema.insert(key, val);
             }
         }

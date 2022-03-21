@@ -1542,6 +1542,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "json-patch"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f995a3c8f2bc3dd52a18a583e90f9ec109c047fa1603a853e46bcda14d2e279d"
+dependencies = [
+ "serde",
+ "serde_json",
+ "treediff",
+]
+
+[[package]]
 name = "json5"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2361,6 +2372,7 @@ dependencies = [
  "num_cpus",
  "parking_lot 0.12.0",
  "prost 0.9.0",
+ "prost-types 0.9.0",
  "raft",
  "rand 0.8.5",
  "rusty-hook",
@@ -2768,6 +2780,7 @@ dependencies = [
  "geo",
  "geohash",
  "itertools 0.10.3",
+ "json-patch",
  "log 0.4.14",
  "memmap 0.7.0",
  "num-derive",
@@ -3420,6 +3433,15 @@ checksum = "97d095ae15e245a057c8e8451bab9b3ee1e1f68e9ba2b4fbc18d0ac5237835f2"
 dependencies = [
  "pin-project",
  "tracing",
+]
+
+[[package]]
+name = "treediff"
+version = "3.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "761e8d5ad7ce14bb82b7e61ccc0ca961005a275a060b9644a2431aa11553c2ff"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

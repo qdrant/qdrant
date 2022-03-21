@@ -279,8 +279,8 @@ impl From<(Instant, collection::operations::types::CollectionInfo)> for GetColle
     }
 }
 
-impl From<segment::types::PayloadSchemaInfo> for PayloadSchemaInfo {
-    fn from(schema: segment::types::PayloadSchemaInfo) -> Self {
+impl From<segment::types::PayloadIndexInfo> for PayloadSchemaInfo {
+    fn from(schema: segment::types::PayloadIndexInfo) -> Self {
         PayloadSchemaInfo {
             data_type: match schema.data_type {
                 segment::types::PayloadSchemaType::Keyword => PayloadSchemaType::Keyword,
@@ -289,7 +289,6 @@ impl From<segment::types::PayloadSchemaInfo> for PayloadSchemaInfo {
                 segment::types::PayloadSchemaType::Geo => PayloadSchemaType::Geo,
             }
             .into(),
-            indexed: schema.indexed,
         }
     }
 }

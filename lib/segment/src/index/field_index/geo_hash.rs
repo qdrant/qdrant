@@ -290,7 +290,6 @@ pub fn decompose_geo_hash(geo_hash: &GeoHash) -> impl Iterator<Item = &str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::payload_storage::condition_checker::check_geo_points_within_bbox;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
@@ -642,7 +641,7 @@ mod tests {
             lat: 40.76517460,
             lon: -74.00101399,
         };
-        assert!(check_geo_points_within_bbox(&[center], &geo_box));
+        assert!(geo_box.check_point(center.lon, center.lat));
     }
 
     #[test]

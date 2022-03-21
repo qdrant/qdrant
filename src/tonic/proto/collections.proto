@@ -191,7 +191,6 @@ message CollectionConfig {
 
 message PayloadSchemaInfo {
   PayloadSchemaType data_type = 1; // Field data type
-  bool indexed = 2; // If this field is indexed
 }
 
 message CollectionInfo {

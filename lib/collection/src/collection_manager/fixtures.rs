@@ -1,15 +1,14 @@
 use std::num::NonZeroU32;
 use std::path::Path;
-use std::sync::Arc;
 
 use parking_lot::RwLock;
 use rand::Rng;
+use serde_json::json;
 
 use segment::entry::entry_point::SegmentEntry;
-use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, PayloadType, PointIdType, SeqNumberType};
+use segment::types::{Distance, Payload, PointIdType, SeqNumberType};
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
@@ -18,29 +17,22 @@ use crate::collection_manager::optimizers::segment_optimizer::OptimizerThreshold
 use crate::config::CollectionParams;
 
 pub fn empty_segment(path: &Path) -> Segment {
-    build_simple_segment(path, 4, Distance::Dot, Arc::new(SchemaStorage::new())).unwrap()
+    build_simple_segment(path, 4, Distance::Dot).unwrap()
 }
 
 pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: usize) -> Segment {
-    let mut segment =
-        build_simple_segment(path, dim, Distance::Dot, Arc::new(SchemaStorage::new())).unwrap();
+    let mut segment = build_simple_segment(path, dim, Distance::Dot).unwrap();
     let mut rnd = rand::thread_rng();
-    let payload_key = "number".to_owned();
+    let payload_key = "number";
     for _ in 0..num_vectors {
         let random_vector: Vec<_> = (0..dim).map(|_| rnd.gen_range(0.0..1.0)).collect();
         let point_id: PointIdType = rnd.gen_range(1..100_000_000).into();
         let payload_value = rnd.gen_range(1..1_000);
+        let payload: Payload = json!({ payload_key: vec![payload_value] }).into();
         segment
             .upsert_point(opnum, point_id, &random_vector)
             .unwrap();
-        segment
-            .set_payload(
-                opnum,
-                point_id,
-                &payload_key,
-                PayloadType::Integer(vec![payload_value]),
-            )
-            .unwrap();
+        segment.set_payload(opnum, point_id, &payload).unwrap();
     }
     segment
 }
@@ -60,27 +52,18 @@ pub fn build_segment_1(path: &Path) -> Segment {
     segment1.upsert_point(4, 4.into(), &vec4).unwrap();
     segment1.upsert_point(5, 5.into(), &vec5).unwrap();
 
-    let payload_key = "color".to_owned();
+    let payload_key = "color";
 
-    let payload_option1 = PayloadType::Keyword(vec!["red".to_owned()]);
-    let payload_option2 = PayloadType::Keyword(vec!["red".to_owned(), "blue".to_owned()]);
-    let payload_option3 = PayloadType::Keyword(vec!["blue".to_owned()]);
+    let payload_option1: Payload = json!({ payload_key: vec!["red".to_owned()] }).into();
+    let payload_option2: Payload =
+        json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
+    let payload_option3: Payload = json!({ payload_key: vec!["blue".to_owned()] }).into();
 
-    segment1
-        .set_payload(6, 1.into(), &payload_key, payload_option1.clone())
-        .unwrap();
-    segment1
-        .set_payload(6, 2.into(), &payload_key, payload_option1)
-        .unwrap();
-    segment1
-        .set_payload(6, 3.into(), &payload_key, payload_option3)
-        .unwrap();
-    segment1
-        .set_payload(6, 4.into(), &payload_key, payload_option2.clone())
-        .unwrap();
-    segment1
-        .set_payload(6, 5.into(), &payload_key, payload_option2)
-        .unwrap();
+    segment1.set_payload(6, 1.into(), &payload_option1).unwrap();
+    segment1.set_payload(6, 2.into(), &payload_option1).unwrap();
+    segment1.set_payload(6, 3.into(), &payload_option3).unwrap();
+    segment1.set_payload(6, 4.into(), &payload_option2).unwrap();
+    segment1.set_payload(6, 5.into(), &payload_option2).unwrap();
 
     segment1
 }
@@ -141,7 +124,6 @@ pub(crate) fn get_merge_optimizer(
             shard_number: NonZeroU32::new(1).unwrap(),
         },
         Default::default(),
-        Arc::new(SchemaStorage::new()),
     )
 }
 
@@ -163,6 +145,5 @@ pub(crate) fn get_indexing_optimizer(
             shard_number: NonZeroU32::new(1).unwrap(),
         },
         Default::default(),
-        Arc::new(SchemaStorage::new()),
     )
 }

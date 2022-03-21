@@ -1,9 +1,11 @@
 use crate::index::{PayloadIndex, PayloadIndexSS, VectorIndex};
 use crate::payload_storage::ConditionCheckerSS;
 use crate::types::{
-    Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType, SearchParams, VectorElementType,
+    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType, SearchParams,
+    VectorElementType,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
+use std::collections::HashMap;
 
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
@@ -64,26 +66,29 @@ impl PlainPayloadIndex {
 }
 
 impl PayloadIndex for PlainPayloadIndex {
-    fn indexed_fields(&self) -> Vec<PayloadKeyType> {
+    fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType> {
         self.config.indexed_fields.clone()
     }
 
-    fn set_indexed(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        if !self.config.indexed_fields.iter().any(|x| x == field) {
-            self.config.indexed_fields.push(field.into());
+    fn set_indexed(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        payload_type: PayloadSchemaType,
+    ) -> OperationResult<()> {
+        if self
+            .config
+            .indexed_fields
+            .insert(field.to_owned(), payload_type)
+            .is_none()
+        {
             return self.save_config();
         }
+
         Ok(())
     }
 
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        self.config.indexed_fields = self
-            .config
-            .indexed_fields
-            .iter()
-            .cloned()
-            .filter(|x| x != field)
-            .collect();
+        self.config.indexed_fields.remove(field);
         self.save_config()
     }
 

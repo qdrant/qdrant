@@ -1,9 +1,8 @@
 use hashring::HashRing;
 use schemars::JsonSchema;
-use segment::types::{Filter, PayloadInterface, PayloadKeyType, PointIdType};
+use segment::types::{Filter, Payload, PayloadKeyType, PointIdType};
 use serde;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 use crate::ShardId;
 
@@ -11,7 +10,7 @@ use super::{split_iter_by_shard, OperationToShard, SplitByShard};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct SetPayload {
-    pub payload: HashMap<PayloadKeyType, PayloadInterface>,
+    pub payload: Payload,
     /// Assigns payload to each point in this list
     pub points: Vec<PointIdType>, // ToDo: replace with point selector
 }
@@ -74,7 +73,8 @@ impl SplitByShard for SetPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use segment::types::PayloadType;
+    use segment::types::Payload;
+    use serde_json::Value;
 
     #[test]
     fn test_serialization() {
@@ -83,8 +83,9 @@ mod tests {
             "set_payload": {
                 "points": [1, 2, 3],
                 "payload": {
-                    "key1": {"type": "keyword", "value": "hello"},
-                    "key2": {"type": "integer", "value": [1,2,3,4]}
+                    "key1":  "hello" ,
+                    "key2": [1,2,3,4],
+                    "key3": {"json": {"key1":"value1"} }
                 }
             }
         }
@@ -94,18 +95,21 @@ mod tests {
 
         match operation {
             PayloadOps::SetPayload(set_payload) => {
-                let payload = &set_payload.payload;
-                assert_eq!(payload.len(), 2);
+                let payload: Payload = set_payload.payload;
+                assert_eq!(payload.len(), 3);
 
                 assert!(payload.contains_key("key1"));
 
-                let payload_interface = payload.get("key1").expect("No key key1");
-                let payload1 = payload_interface.into();
+                let payload_type = payload.get_value("key1").expect("No key key1");
 
-                match payload1 {
-                    PayloadType::Keyword(x) => assert_eq!(x, ["hello".to_owned()]),
+                match payload_type {
+                    Value::String(x) => assert_eq!(x, "hello"),
                     _ => panic!("Wrong payload type"),
                 }
+
+                let payload_type_json = payload.get_value("key3");
+
+                assert!(matches!(payload_type_json, Some(Value::Object(_))))
             }
             _ => panic!("Wrong operation"),
         }

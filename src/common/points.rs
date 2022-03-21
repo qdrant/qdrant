@@ -3,9 +3,9 @@ use collection::operations::point_ops::{PointInsertOperations, PointOperations, 
 use collection::operations::types::{
     PointRequest, Record, ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
 };
-use collection::operations::{CollectionUpdateOperations, FieldIndexOperations};
+use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use schemars::JsonSchema;
-use segment::types::ScoredPoint;
+use segment::types::{PayloadSchemaType, ScoredPoint};
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -13,6 +13,7 @@ use storage::content_manager::toc::TableOfContent;
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CreateFieldIndex {
     pub field_name: String,
+    pub field_type: Option<PayloadSchemaType>,
 }
 
 // Deprecated
@@ -107,7 +108,10 @@ pub async fn do_create_index(
     wait: bool,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
-        FieldIndexOperations::CreateIndex(operation.field_name),
+        FieldIndexOperations::CreateIndex(CreateIndex {
+            field_name: operation.field_name,
+            field_type: operation.field_type,
+        }),
     );
     toc.update(collection_name, collection_operation, wait)
         .await

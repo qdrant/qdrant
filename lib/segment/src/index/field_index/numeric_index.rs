@@ -7,13 +7,15 @@ use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
-use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
-use crate::index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
+use crate::index::field_index::{
+    CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
+    PayloadFieldIndexBuilder, PrimaryCondition, ValueIndexer,
+};
 use crate::types::{
-    FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PayloadType, PointOffsetType,
-    Range,
+    FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType, Range,
 };
 use itertools::Itertools;
+use serde_json::Value;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Element<N> {
@@ -145,12 +147,14 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
         }
     }
 
-    fn add_many(&mut self, id: PointOffsetType, values: &[N]) {
-        for value in values.iter().cloned() {
+    fn add_many_to_list(&mut self, id: PointOffsetType, values: impl IntoIterator<Item = N>) {
+        let mut total_values = 0;
+        for value in values {
             self.elements.push(Element { id, value });
+            total_values += 1;
         }
         self.points_count += 1;
-        self.max_values_per_point = self.max_values_per_point.max(values.len());
+        self.max_values_per_point = self.max_values_per_point.max(total_values);
     }
 
     fn condition_iter(&self, range: &Range) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
@@ -233,12 +237,22 @@ impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
     }
 }
 
-impl PayloadFieldIndexBuilder for PersistedNumericIndex<FloatPayloadType> {
-    fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
-        match value {
-            PayloadType::Float(number) => self.add_many(id, number),
-            _ => panic!("Unexpected payload type: {:?}", value),
+impl ValueIndexer<FloatPayloadType> for PersistedNumericIndex<FloatPayloadType> {
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<FloatPayloadType>) {
+        self.add_many_to_list(id, values)
+    }
+
+    fn get_value(&self, value: &Value) -> Option<FloatPayloadType> {
+        if let Value::Number(num) = value {
+            return num.as_f64();
         }
+        None
+    }
+}
+
+impl PayloadFieldIndexBuilder for PersistedNumericIndex<FloatPayloadType> {
+    fn add(&mut self, id: PointOffsetType, value: &Value) {
+        self.add_point(id, value)
     }
 
     fn build(&mut self) -> FieldIndex {
@@ -252,12 +266,22 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<FloatPayloadType> {
     }
 }
 
-impl PayloadFieldIndexBuilder for PersistedNumericIndex<IntPayloadType> {
-    fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
-        match value {
-            PayloadType::Integer(number) => self.add_many(id, number),
-            _ => panic!("Unexpected payload type: {:?}", value),
+impl ValueIndexer<IntPayloadType> for PersistedNumericIndex<IntPayloadType> {
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<IntPayloadType>) {
+        self.add_many_to_list(id, values)
+    }
+
+    fn get_value(&self, value: &Value) -> Option<IntPayloadType> {
+        if let Value::Number(num) = value {
+            return num.as_i64();
         }
+        None
+    }
+}
+
+impl PayloadFieldIndexBuilder for PersistedNumericIndex<IntPayloadType> {
+    fn add(&mut self, id: PointOffsetType, value: &Value) {
+        self.add_point(id, value)
     }
 
     fn build(&mut self) -> FieldIndex {

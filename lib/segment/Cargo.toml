@@ -36,6 +36,7 @@ num-derive = "0.3.3"
 rand = "0.8"
 bit-vec = "0.6"
 seahash = "4.1.0"
+json-patch = "0.2.6"
 
 [[bench]]
 name = "vector_search"

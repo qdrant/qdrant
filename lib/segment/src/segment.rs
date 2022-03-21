@@ -1,3 +1,4 @@
+use crate::entry::entry_point::OperationError::ServiceError;
 use crate::entry::entry_point::{
     get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };
@@ -6,13 +7,14 @@ use crate::index::{PayloadIndexSS, VectorIndexSS};
 use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
 use crate::spaces::tools::mertic_object;
 use crate::types::{
-    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaInfo, PayloadType, PointIdType,
-    PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState,
-    SegmentType, SeqNumberType, TheMap, VectorElementType, WithPayload,
+    infer_value_type, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
+    PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig,
+    SegmentInfo, SegmentState, SegmentType, SeqNumberType, VectorElementType, WithPayload,
 };
 use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
 use atomicwrites::{AllowOverwrite, AtomicFile};
+use std::collections::HashMap;
 use std::fs::{remove_dir_all, rename};
 use std::io::Write;
 use std::path::PathBuf;
@@ -65,7 +67,7 @@ impl Segment {
             let mut payload_storage = self.payload_storage.borrow_mut();
             let payload = payload_storage.drop(old_internal_id)?;
             if let Some(payload) = payload {
-                payload_storage.assign_all(new_internal_index, payload)?;
+                payload_storage.assign(new_internal_index, &payload)?;
             }
         }
 
@@ -209,15 +211,25 @@ impl Segment {
 
     /// Retrieve payload by internal ID
     #[inline]
-    fn payload_by_offset(
-        &self,
-        point_offset: PointOffsetType,
-    ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
+    fn payload_by_offset(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
         Ok(self.payload_storage.borrow().payload(point_offset))
     }
 
     pub fn save_current_state(&self) -> OperationResult<()> {
         self.save_state(&self.get_state())
+    }
+
+    fn infer_from_payload_data(&self, key: PayloadKeyTypeRef) -> Option<PayloadSchemaType> {
+        let payload_store = self.payload_storage.borrow();
+        let id = payload_store.iter_ids().next();
+        match id {
+            Some(id) => {
+                let payload = payload_store.payload(id);
+                let field_value = payload.get_value(key);
+                field_value.and_then(infer_value_type)
+            }
+            None => None,
+        }
     }
 }
 
@@ -371,7 +383,7 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        full_payload: TheMap<PayloadKeyType, PayloadType>,
+        full_payload: &Payload,
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
@@ -383,37 +395,18 @@ impl SegmentEntry for Segment {
         })
     }
 
-    fn set_full_payload_with_json(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        full_payload: &str,
-    ) -> OperationResult<bool> {
-        self.handle_version_and_failure(op_num, Some(point_id), |segment| {
-            let internal_id = segment.lookup_internal_id(point_id)?;
-            let payload: TheMap<PayloadKeyType, serde_json::value::Value> =
-                serde_json::from_str(full_payload)?;
-            segment
-                .payload_storage
-                .borrow_mut()
-                .assign_all_with_value(internal_id, payload)?;
-            Ok(true)
-        })
-    }
-
     fn set_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        key: PayloadKeyTypeRef,
-        payload: PayloadType,
+        payload: &Payload,
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
             segment
                 .payload_storage
                 .borrow_mut()
-                .assign(internal_id, key, payload)?;
+                .assign(internal_id, payload)?;
             Ok(true)
         })
     }
@@ -451,10 +444,7 @@ impl SegmentEntry for Segment {
         self.vector_by_offset(internal_id)
     }
 
-    fn payload(
-        &self,
-        point_id: PointIdType,
-    ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
+    fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
         let internal_id = self.lookup_internal_id(point_id)?;
         self.payload_by_offset(internal_id)
     }
@@ -513,19 +503,16 @@ impl SegmentEntry for Segment {
     }
 
     fn info(&self) -> SegmentInfo {
-        let indexed_fields = self.payload_index.borrow().indexed_fields();
         let schema = self
-            .payload_storage
+            .payload_index
             .borrow()
-            .schema()
+            .indexed_fields()
             .into_iter()
-            .map(|(key, data_type)| {
-                let is_indexed = indexed_fields.contains(&key);
+            .map(|(key, index_schema)| {
                 (
                     key,
-                    PayloadSchemaInfo {
-                        data_type,
-                        indexed: is_indexed,
+                    PayloadIndexInfo {
+                        data_type: index_schema,
                     },
                 )
             })
@@ -538,7 +525,7 @@ impl SegmentEntry for Segment {
             ram_usage_bytes: 0,  // ToDo: Implement
             disk_usage_bytes: 0, // ToDo: Implement
             is_appendable: self.appendable_flag,
-            schema,
+            index_schema: schema,
         }
     }
 
@@ -588,14 +575,36 @@ impl SegmentEntry for Segment {
         })
     }
 
-    fn create_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
-        self.handle_version_and_failure(op_num, None, |segment| {
-            segment.payload_index.borrow_mut().set_indexed(key)?;
-            Ok(true)
+    fn create_field_index(
+        &mut self,
+        op_num: u64,
+        key: PayloadKeyTypeRef,
+        field_type: &Option<PayloadSchemaType>,
+    ) -> OperationResult<bool> {
+        self.handle_version_and_failure(op_num, None, |segment| match field_type {
+            Some(schema_type) => {
+                segment
+                    .payload_index
+                    .borrow_mut()
+                    .set_indexed(key, *schema_type)?;
+                Ok(true)
+            }
+            None => match segment.infer_from_payload_data(key) {
+                None => Err(ServiceError {
+                    description: "cannot infer field data type".to_string(),
+                }),
+                Some(schema_type) => {
+                    segment
+                        .payload_index
+                        .borrow_mut()
+                        .set_indexed(key, schema_type)?;
+                    Ok(true)
+                }
+            },
         })
     }
 
-    fn get_indexed_fields(&self) -> Vec<PayloadKeyType> {
+    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType> {
         self.payload_index.borrow().indexed_fields()
     }
 
@@ -621,42 +630,43 @@ impl SegmentEntry for Segment {
 mod tests {
     use super::*;
     use crate::entry::entry_point::SegmentEntry;
-    use crate::payload_storage::schema_storage::SchemaStorage;
     use crate::segment_constructor::build_segment;
     use crate::types::{Distance, Indexes, PayloadIndexType, SegmentConfig, StorageType};
     use tempdir::TempDir;
 
-    #[test]
-    fn test_set_invalid_payload_from_json() {
-        let data1 = r#"
-        {
-            "invalid_data"
-        }"#;
-        let data2 = r#"
-        {
-            "array": [1, "hello"],
-        }"#;
-
-        let dir = TempDir::new("payload_dir").unwrap();
-        let dim = 2;
-        let config = SegmentConfig {
-            vector_size: dim,
-            index: Indexes::Plain {},
-            payload_index: Some(PayloadIndexType::Plain),
-            storage_type: StorageType::InMemory,
-            distance: Distance::Dot,
-        };
-
-        let mut segment =
-            build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
-        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
-
-        let result1 = segment.set_full_payload_with_json(0, 0.into(), data1);
-        assert!(result1.is_err());
-
-        let result2 = segment.set_full_payload_with_json(0, 0.into(), data2);
-        assert!(result2.is_err());
-    }
+    // no longer valid since users are now allowed to store arbitrary json objects.
+    // TODO(gvelo): add tests for invalid payload types on indexed fields.
+    // #[test]
+    // fn test_set_invalid_payload_from_json() {
+    //     let data1 = r#"
+    //     {
+    //         "invalid_data"
+    //     }"#;
+    //     let data2 = r#"
+    //     {
+    //         "array": [1, "hello"],
+    //     }"#;
+    //
+    //     let dir = TempDir::new("payload_dir").unwrap();
+    //     let dim = 2;
+    //     let config = SegmentConfig {
+    //         vector_size: dim,
+    //         index: Indexes::Plain {},
+    //         payload_index: Some(PayloadIndexType::Plain),
+    //         storage_type: StorageType::InMemory,
+    //         distance: Distance::Dot,
+    //     };
+    //
+    //     let mut segment =
+    //         build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
+    //     segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
+    //
+    //     let result1 = segment.set_full_payload_with_json(0, 0.into(), &data1.to_string());
+    //     assert!(result1.is_err());
+    //
+    //     let result2 = segment.set_full_payload_with_json(0, 0.into(), &data2.to_string());
+    //     assert!(result2.is_err());
+    // }
 
     #[test]
     fn test_from_filter_attributes() {
@@ -680,18 +690,18 @@ mod tests {
             distance: Distance::Dot,
         };
 
-        let mut segment =
-            build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
+        let mut segment = build_segment(dir.path(), &config).unwrap();
         segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
-        segment
-            .set_full_payload_with_json(0, 0.into(), data)
-            .unwrap();
+
+        let payload: Payload = serde_json::from_str(data).unwrap();
+
+        segment.set_full_payload(0, 0.into(), &payload).unwrap();
 
         let filter_valid_str = r#"
         {
             "must": [
                 {
-                    "key": "metadata__height",
+                    "key": "metadata.height",
                     "match": {
                         "integer": 50
                     }
@@ -704,7 +714,7 @@ mod tests {
         {
             "must": [
                 {
-                    "key": "metadata__height",
+                    "key": "metadata.height",
                     "match": {
                         "integer": 60
                     }

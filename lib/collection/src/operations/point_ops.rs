@@ -2,7 +2,7 @@ use crate::operations::types::VectorType;
 use crate::ShardId;
 use hashring::HashRing;
 use schemars::JsonSchema;
-use segment::types::{Filter, PayloadInterface, PayloadKeyType, PointIdType};
+use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -20,7 +20,7 @@ pub struct PointStruct {
     /// Vector
     pub vector: VectorType,
     /// Payload values (optional)
-    pub payload: Option<HashMap<PayloadKeyType, PayloadInterface>>,
+    pub payload: Option<Payload>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone)]
@@ -28,7 +28,7 @@ pub struct PointStruct {
 pub struct Batch {
     pub ids: Vec<PointIdType>,
     pub vectors: Vec<VectorType>,
-    pub payloads: Option<Vec<Option<HashMap<PayloadKeyType, PayloadInterface>>>>,
+    pub payloads: Option<Vec<Option<Payload>>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone)]

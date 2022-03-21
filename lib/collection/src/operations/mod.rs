@@ -8,16 +8,23 @@ use std::collections::HashMap;
 use crate::ShardId;
 use hashring::HashRing;
 use schemars::JsonSchema;
-use segment::types::ExtendedPointId;
+use segment::types::{ExtendedPointId, PayloadSchemaType};
 use serde::{Deserialize, Serialize};
 
 use self::types::CollectionResult;
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct CreateIndex {
+    pub field_name: String,
+    pub field_type: Option<PayloadSchemaType>,
+}
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum FieldIndexOperations {
     /// Create index for payload field
-    CreateIndex(String),
+    CreateIndex(CreateIndex),
     /// Delete index for the field
     DeleteIndex(String),
 }

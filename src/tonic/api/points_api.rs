@@ -6,12 +6,12 @@ use crate::common::points::{
     CreateFieldIndex,
 };
 use crate::tonic::api::common::error_to_status;
-use crate::tonic::api::conversions::*;
 use crate::tonic::qdrant::points_server::Points;
 
+use crate::tonic::api::conversions::proto_to_payloads;
 use crate::tonic::qdrant::{
     ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
-    DeletePayloadPoints, DeletePoints, GetPoints, GetResponse, PointsOperationResponse,
+    DeletePayloadPoints, DeletePoints, FieldType, GetPoints, GetResponse, PointsOperationResponse,
     RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse,
     SetPayloadPoints, UpsertPoints,
 };
@@ -19,6 +19,7 @@ use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsList};
 use collection::operations::types::{PointRequest, ScrollRequest, SearchRequest};
 use collection::operations::CollectionUpdateOperations;
+use segment::types::PayloadSchemaType;
 use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Instant;
@@ -141,7 +142,7 @@ impl Points for PointsService {
         } = request.into_inner();
 
         let operation = collection::operations::payload_ops::SetPayload {
-            payload: payload_to_interface(payload)?,
+            payload: proto_to_payloads(payload)?,
             points: points
                 .into_iter()
                 .map(|p| p.try_into())
@@ -232,9 +233,26 @@ impl Points for PointsService {
             collection_name,
             wait,
             field_name,
+            field_type,
         } = request.into_inner();
 
-        let operation = CreateFieldIndex { field_name };
+        let field_type = match field_type {
+            None => None,
+            Some(f) => match FieldType::from_i32(f) {
+                None => return Err(Status::invalid_argument("cannot convert field_type")),
+                Some(v) => match v {
+                    FieldType::Keyword => Some(PayloadSchemaType::Keyword),
+                    FieldType::Integer => Some(PayloadSchemaType::Integer),
+                    FieldType::Float => Some(PayloadSchemaType::Float),
+                    FieldType::Geo => Some(PayloadSchemaType::Geo),
+                },
+            },
+        };
+
+        let operation = CreateFieldIndex {
+            field_name,
+            field_type,
+        };
 
         let timing = Instant::now();
         let result = do_create_index(

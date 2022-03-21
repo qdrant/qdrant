@@ -194,9 +194,6 @@ pub struct PayloadSchemaInfo {
     /// Field data type
     #[prost(enumeration = "PayloadSchemaType", tag = "1")]
     pub data_type: i32,
-    /// If this field is indexed
-    #[prost(bool, tag = "2")]
-    pub indexed: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionInfo {
@@ -737,7 +734,7 @@ pub struct SetPayloadPoints {
     pub wait: ::core::option::Option<bool>,
     /// New payload values
     #[prost(map = "string, message", tag = "3")]
-    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Payload>,
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, ::prost_types::Value>,
     /// List of point to modify
     #[prost(message, repeated, tag = "4")]
     pub points: ::prost::alloc::vec::Vec<PointId>,
@@ -780,6 +777,9 @@ pub struct CreateFieldIndexCollection {
     /// Field name to index
     #[prost(string, tag = "3")]
     pub field_name: ::prost::alloc::string::String,
+    /// Field type.
+    #[prost(enumeration = "FieldType", optional, tag = "4")]
+    pub field_type: ::core::option::Option<i32>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteFieldIndexCollection {
@@ -930,7 +930,7 @@ pub struct ScoredPoint {
     pub id: ::core::option::Option<PointId>,
     /// Payload
     #[prost(map = "string, message", tag = "2")]
-    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Payload>,
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, ::prost_types::Value>,
     /// Similarity score
     #[prost(float, tag = "3")]
     pub score: f32,
@@ -965,7 +965,7 @@ pub struct RetrievedPoint {
     #[prost(message, optional, tag = "1")]
     pub id: ::core::option::Option<PointId>,
     #[prost(map = "string, message", tag = "2")]
-    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Payload>,
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, ::prost_types::Value>,
     #[prost(float, repeated, tag = "3")]
     pub vector: ::prost::alloc::vec::Vec<f32>,
 }
@@ -1121,50 +1121,7 @@ pub struct PointStruct {
     #[prost(float, repeated, tag = "2")]
     pub vector: ::prost::alloc::vec::Vec<f32>,
     #[prost(map = "string, message", tag = "3")]
-    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Payload>,
-}
-// ---------------------------------------------
-// ------------------ Payload ------------------
-// ---------------------------------------------
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Payload {
-    #[prost(oneof = "payload::PayloadOneOf", tags = "1, 2, 3, 4")]
-    pub payload_one_of: ::core::option::Option<payload::PayloadOneOf>,
-}
-/// Nested message and enum types in `Payload`.
-pub mod payload {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum PayloadOneOf {
-        #[prost(message, tag = "1")]
-        Keyword(super::KeywordPayload),
-        #[prost(message, tag = "2")]
-        Integer(super::IntegerPayload),
-        #[prost(message, tag = "3")]
-        Float(super::FloatPayload),
-        #[prost(message, tag = "4")]
-        Geo(super::GeoPayload),
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct KeywordPayload {
-    #[prost(string, repeated, tag = "1")]
-    pub values: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct IntegerPayload {
-    #[prost(int64, repeated, tag = "1")]
-    pub values: ::prost::alloc::vec::Vec<i64>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FloatPayload {
-    #[prost(double, repeated, tag = "1")]
-    pub values: ::prost::alloc::vec::Vec<f64>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GeoPayload {
-    #[prost(message, repeated, tag = "1")]
-    pub values: ::prost::alloc::vec::Vec<GeoPoint>,
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, ::prost_types::Value>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoPoint {
@@ -1172,6 +1129,14 @@ pub struct GeoPoint {
     pub lon: f64,
     #[prost(double, tag = "2")]
     pub lat: f64,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum FieldType {
+    Keyword = 0,
+    Integer = 1,
+    Float = 2,
+    Geo = 3,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

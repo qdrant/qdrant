@@ -5,14 +5,12 @@ use crate::index::field_index::geo_hash::{
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
-    PayloadFieldIndexBuilder, PrimaryCondition,
+    PayloadFieldIndexBuilder, PrimaryCondition, ValueIndexer,
 };
-use crate::payload_storage::condition_checker::{
-    check_geo_points_within_bbox, check_geo_points_within_radius,
-};
-use crate::types::{FieldCondition, GeoPoint, PayloadKeyType, PayloadType, PointOffsetType};
+use crate::types::{FieldCondition, GeoPoint, PayloadKeyType, PointOffsetType};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, HashSet};
 use std::mem;
@@ -135,7 +133,7 @@ impl PersistedGeoMapIndex {
         }
     }
 
-    fn add_many(&mut self, idx: PointOffsetType, values: &[GeoPoint]) {
+    fn add_many_geo_points(&mut self, idx: PointOffsetType, values: &[GeoPoint]) {
         if self.point_to_values.len() <= idx as usize {
             // That's a smart reallocation
             self.point_to_values.resize(idx as usize + 1, vec![]);
@@ -241,12 +239,30 @@ impl PersistedGeoMapIndex {
     }
 }
 
-impl PayloadFieldIndexBuilder for PersistedGeoMapIndex {
-    fn add(&mut self, id: PointOffsetType, value: &PayloadType) {
+impl ValueIndexer<GeoPoint> for PersistedGeoMapIndex {
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<GeoPoint>) {
+        self.add_many_geo_points(id, &values)
+    }
+
+    fn get_value(&self, value: &Value) -> Option<GeoPoint> {
         match value {
-            PayloadType::Geo(geo_points) => self.add_many(id, geo_points),
-            _ => panic!("Unexpected payload type: {:?}", value),
+            Value::Object(obj) => {
+                let lon_op = obj.get("lon").and_then(|x| x.as_f64());
+                let lat_op = obj.get("lat").and_then(|x| x.as_f64());
+
+                if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
+                    return Some(GeoPoint { lon, lat });
+                }
+                None
+            }
+            _ => None,
         }
+    }
+}
+
+impl PayloadFieldIndexBuilder for PersistedGeoMapIndex {
+    fn add(&mut self, id: PointOffsetType, value: &Value) {
+        self.add_point(id, value)
     }
 
     fn build(&mut self) -> FieldIndex {
@@ -290,8 +306,11 @@ impl PayloadFieldIndex for PersistedGeoMapIndex {
             let geo_condition_copy = geo_bounding_box.clone();
             return Some(Box::new(self.get_iterator(geo_hashes).filter(
                 move |point| {
-                    let geo_points = self.point_to_values.get(*point as usize).unwrap();
-                    check_geo_points_within_bbox(geo_points, &geo_condition_copy)
+                    self.point_to_values
+                        .get(*point as usize)
+                        .unwrap()
+                        .iter()
+                        .any(|point| geo_condition_copy.check_point(point.lon, point.lat))
                 },
             )));
         }
@@ -301,8 +320,11 @@ impl PayloadFieldIndex for PersistedGeoMapIndex {
             let geo_condition_copy = geo_radius.clone();
             return Some(Box::new(self.get_iterator(geo_hashes).filter(
                 move |point| {
-                    let geo_points = self.point_to_values.get(*point as usize).unwrap();
-                    check_geo_points_within_radius(geo_points, &geo_condition_copy)
+                    self.point_to_values
+                        .get(*point as usize)
+                        .unwrap()
+                        .iter()
+                        .any(|point| geo_condition_copy.check_point(point.lon, point.lat))
                 },
             )));
         }
@@ -361,6 +383,7 @@ mod tests {
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
+    use serde_json::json;
 
     const NYC: GeoPoint = GeoPoint {
         lat: 40.75798,
@@ -398,7 +421,7 @@ mod tests {
 
         for idx in 0..num_points {
             let geo_points = random_geo_payload(&mut rnd, num_geo_values);
-            index.add(idx as u32, &geo_points)
+            index.add(idx as PointOffsetType, &Value::Array(geo_points))
         }
         assert_eq!(index.points_count, num_points);
         assert_eq!(index.values_count, num_points * num_geo_values);
@@ -456,7 +479,9 @@ mod tests {
                 .iter()
                 .enumerate()
                 .filter(|(_idx, geo_points)| {
-                    check_geo_points_within_radius(geo_points, &geo_radius)
+                    geo_points
+                        .iter()
+                        .any(|geo_point| geo_radius.check_point(geo_point.lon, geo_point.lat))
                 })
                 .map(|(idx, _geo_points)| idx as PointOffsetType)
                 .collect_vec(),
@@ -507,9 +532,18 @@ mod tests {
         let mut index = PersistedGeoMapIndex::default();
 
         let r_meters = 100.0;
+        let geo_values = json!([
+            {
+                "lon": BERLIN.lon,
+                "lat": BERLIN.lat
+            },
+            {
+                "lon": NYC.lon,
+                "lat": NYC.lat
+            }
+        ]);
 
-        let geo_points = PayloadType::Geo(vec![NYC, BERLIN]);
-        index.add(1, &geo_points);
+        index.add(1, &geo_values);
         let field_index = index.build();
 
         // around NYC
@@ -553,8 +587,17 @@ mod tests {
     #[test]
     fn match_cardinality_point_with_multi_close_geo_payload() {
         let mut index = PersistedGeoMapIndex::default();
-        let geo_points = PayloadType::Geo(vec![BERLIN, POTSDAM]);
-        index.add(1, &geo_points);
+        let geo_values = json!([
+            {
+                "lon": BERLIN.lon,
+                "lat": BERLIN.lat
+            },
+            {
+                "lon": POTSDAM.lon,
+                "lat": POTSDAM.lat
+            }
+        ]);
+        index.add(1, &geo_values);
         let field_index = index.build();
 
         let berlin_geo_radius = GeoRadius {
