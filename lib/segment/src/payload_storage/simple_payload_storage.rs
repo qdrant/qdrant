@@ -8,7 +8,6 @@ use serde_json::Value;
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::PayloadStorage;
 
-/// Since sled is used for reading only during the initialization, large read cache is not required
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 const DB_NAME: &str = "payload";
 

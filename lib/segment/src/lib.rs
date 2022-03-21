@@ -1,4 +1,4 @@
-mod common;
+pub mod common;
 pub mod entry;
 pub mod fixtures;
 mod id_tracker;

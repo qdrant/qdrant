@@ -1,6 +1,4 @@
 use collection::operations::types::CollectionError;
-use sled::transaction::TransactionError;
-use sled::Error;
 use std::io::Error as IoError;
 use thiserror::Error;
 use tokio::task::JoinError;
@@ -35,22 +33,6 @@ impl From<CollectionError> for StorageError {
             err @ CollectionError::InconsistentFailure { .. } => StorageError::ServiceError {
                 description: format!("{err}"),
             },
-        }
-    }
-}
-
-impl From<Error> for StorageError {
-    fn from(err: Error) -> Self {
-        StorageError::ServiceError {
-            description: format!("Persistence error: {:?}", err),
-        }
-    }
-}
-
-impl From<TransactionError> for StorageError {
-    fn from(err: TransactionError) -> Self {
-        StorageError::ServiceError {
-            description: format!("Persistence error: {}", err),
         }
     }
 }

@@ -13,7 +13,6 @@ tempdir = "0.3.7"
 
 [dependencies]
 
-sled = "0.34"
 num_cpus = "1.13"
 thiserror = "1.0"
 rand = "0.8.5"

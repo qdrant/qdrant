@@ -2,11 +2,8 @@ use std::collections::HashMap;
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
-use std::str::from_utf8;
 use std::sync::Arc;
 
-use sled::transaction::UnabortableTransactionError;
-use sled::{Config, Db};
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard};
 
@@ -25,6 +22,7 @@ use crate::content_manager::collection_meta_ops::{
     CreateAliasOperation, CreateCollection, DeleteAlias, DeleteAliasOperation, RenameAlias,
     RenameAliasOperation, UpdateCollection,
 };
+use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::errors::StorageError;
 use crate::types::StorageConfig;
@@ -36,10 +34,6 @@ use raft::{eraftpb::Entry as RaftEntry, RaftState};
 use std::ops::Deref;
 #[cfg(feature = "consensus")]
 use wal::Wal;
-
-/// Since sled is used for reading only during the initialization, large read cache is not required
-#[allow(clippy::identity_op)]
-const SLED_CACHE_SIZE: u64 = 1 * 1024 * 1024; // 1 mb
 
 const COLLECTIONS_DIR: &str = "collections";
 #[cfg(feature = "consensus")]
@@ -53,7 +47,7 @@ pub struct TableOfContent {
     storage_config: StorageConfig,
     search_runtime: Runtime,
     collection_management_runtime: Runtime,
-    alias_persistence: Db,
+    alias_persistence: AliasPersistence,
     segment_searcher: Box<dyn CollectionSearcher + Sync + Send>,
 
     #[cfg(feature = "consensus")]
@@ -91,13 +85,10 @@ impl TableOfContent {
             collections.insert(collection_name, collection);
         }
 
-        let alias_path = Path::new(&storage_config.storage_path).join("aliases.sled");
+        let alias_path = Path::new(&storage_config.storage_path).join("aliases");
 
-        let alias_persistence = Config::new()
-            .cache_capacity(SLED_CACHE_SIZE)
-            .path(alias_path)
-            .open()
-            .expect("Can't open database by the provided config");
+        let alias_persistence =
+            AliasPersistence::open(alias_path).expect("Can't open database by the provided config");
 
         #[cfg(feature = "consensus")]
         let collection_meta_wal = {
@@ -155,11 +146,11 @@ impl TableOfContent {
     /// If alias exists - returns the original collection name
     /// If neither exists - returns [`StorageError`]
     async fn resolve_name(&self, collection_name: &str) -> Result<String, StorageError> {
-        let alias_collection_name = self.alias_persistence.get(collection_name.as_bytes())?;
+        let alias_collection_name = self.alias_persistence.get(collection_name)?;
 
         let resolved_name = match alias_collection_name {
             None => collection_name.to_string(),
-            Some(resolved_alias) => from_utf8(&resolved_alias).unwrap().to_string(),
+            Some(resolved_alias) => resolved_alias,
         };
         self.collections
             .read()
@@ -289,13 +280,12 @@ impl TableOfContent {
                         .validate_collection_not_exists(&alias_name)
                         .await?;
 
-                    self.alias_persistence
-                        .insert(alias_name.as_bytes(), collection_name.as_bytes())?;
+                    self.alias_persistence.insert(alias_name, collection_name)?;
                 }
                 AliasOperations::DeleteAlias(DeleteAliasOperation {
                     delete_alias: DeleteAlias { alias_name },
                 }) => {
-                    self.alias_persistence.remove(alias_name.as_bytes())?;
+                    self.alias_persistence.remove(&alias_name)?;
                 }
                 AliasOperations::RenameAlias(RenameAliasOperation {
                     rename_alias:
@@ -304,28 +294,19 @@ impl TableOfContent {
                             new_alias_name,
                         },
                 }) => {
-                    if !self
-                        .alias_persistence
-                        .contains_key(old_alias_name.as_bytes())?
-                    {
+                    if !self.alias_persistence.contains_alias(&old_alias_name)? {
                         return Err(StorageError::NotFound {
                             description: format!("Alias {} does not exists!", old_alias_name),
                         });
                     }
 
-                    let transaction_res = self.alias_persistence.transaction(|tx_db| {
-                        let collection = tx_db
-                            .remove(old_alias_name.as_bytes())?
-                            .ok_or(UnabortableTransactionError::Conflict)?;
-
-                        tx_db.insert(new_alias_name.as_bytes(), collection)?;
-                        Ok(())
-                    });
-                    transaction_res?;
+                    // safe Option.unwrap as the alias mapping is currently locked exclusively
+                    let collection = self.alias_persistence.remove(&old_alias_name)?.unwrap();
+                    // remove + insert is not transactional
+                    self.alias_persistence.insert(new_alias_name, collection)?
                 }
             };
         }
-        self.alias_persistence.flush()?;
         Ok(true)
     }
 
@@ -445,15 +426,7 @@ impl TableOfContent {
 
     /// List of all aliases for a given collection
     pub fn collection_aliases(&self, collection_name: &str) -> Result<Vec<String>, StorageError> {
-        let mut result = vec![];
-        for pair in self.alias_persistence.iter() {
-            let (alias_bt, target_collection_bt) = pair?;
-            let alias = from_utf8(&alias_bt).unwrap().to_string();
-            let target_collection = from_utf8(&target_collection_bt).unwrap();
-            if collection_name == target_collection {
-                result.push(alias);
-            }
-        }
+        let result = self.alias_persistence.collection_aliases(collection_name)?;
         Ok(result)
     }
 
