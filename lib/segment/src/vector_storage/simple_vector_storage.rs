@@ -19,6 +19,7 @@ use atomic_refcell::AtomicRefCell;
 use bit_vec::BitVec;
 use std::mem::size_of;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleVectorStorage<TMetric: Metric> {
@@ -41,6 +42,7 @@ pub struct SimpleRawScorer<'a, TMetric: Metric> {
     pub vectors: &'a ChunkedVectors,
     pub deleted: &'a BitVec,
     pub metric: PhantomData<TMetric>,
+    pub num_comparisons: AtomicU64,
 }
 
 impl<TMetric> RawScorer for SimpleRawScorer<'_, TMetric>
@@ -54,6 +56,7 @@ where
                 continue;
             }
             let other_vector = self.vectors.get(point_id);
+            self.num_comparisons.fetch_add(1, Ordering::SeqCst);
             scores[size] = ScoredPointOffset {
                 idx: point_id,
                 score: TMetric::similarity(&self.query, other_vector),
@@ -73,13 +76,23 @@ where
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
         let other_vector = self.vectors.get(point);
+<<<<<<< HEAD
         TMetric::similarity(&self.query, other_vector)
+=======
+        self.num_comparisons.fetch_add(1, Ordering::SeqCst);
+        self.metric.similarity(&self.query, other_vector)
+>>>>>>> 803e512 (similarity counter)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let vector_a = self.vectors.get(point_a);
         let vector_b = self.vectors.get(point_b);
+<<<<<<< HEAD
         TMetric::similarity(vector_a, vector_b)
+=======
+        self.num_comparisons.fetch_add(1, Ordering::SeqCst);
+        self.metric.similarity(vector_a, vector_b)
+>>>>>>> 803e512 (similarity counter)
     }
 }
 
@@ -267,7 +280,11 @@ where
             query: TMetric::preprocess(&vector).unwrap_or(vector),
             vectors: &self.vectors,
             deleted: &self.deleted,
+<<<<<<< HEAD
             metric: PhantomData,
+=======
+            num_comparisons: AtomicU64::new(0)
+>>>>>>> 803e512 (similarity counter)
         })
     }
 
@@ -276,7 +293,11 @@ where
             query: self.vectors.get(point_id).to_vec(),
             vectors: &self.vectors,
             deleted: &self.deleted,
+<<<<<<< HEAD
             metric: PhantomData,
+=======
+            num_comparisons: AtomicU64::new(0)
+>>>>>>> 803e512 (similarity counter)
         })
     }
 
