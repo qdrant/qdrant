@@ -1,7 +1,5 @@
 mod prof;
 
-use std::sync::atomic::Ordering;
-use std::time::Instant;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::rngs::StdRng;
 use rand::{thread_rng, SeedableRng};
@@ -10,6 +8,8 @@ use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::simple::{CosineMetric, DotProductMetric};
 use segment::types::PointOffsetType;
+use std::sync::atomic::Ordering;
+use std::time::Instant;
 
 const NUM_VECTORS: usize = 200000;
 const DIM: usize = 16;
