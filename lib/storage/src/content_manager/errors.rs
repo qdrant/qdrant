@@ -70,3 +70,12 @@ impl From<JoinError> for StorageError {
         }
     }
 }
+
+#[cfg(feature = "consensus")]
+impl From<serde_cbor::Error> for StorageError {
+    fn from(err: serde_cbor::Error) -> Self {
+        StorageError::ServiceError {
+            description: format!("cbor (de)serialization error: {}", err),
+        }
+    }
+}

@@ -8,8 +8,8 @@ use collection::operations::types::{
 };
 use collection::operations::CollectionUpdateOperations;
 use segment::types::ScoredPoint;
-use storage::content_manager::storage_ops::{
-    ChangeAliasesOperation, CreateCollection, StorageOperations, UpdateCollection,
+use storage::content_manager::collection_meta_ops::{
+    ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, UpdateCollection,
 };
 
 use crate::common::models::CollectionsResponse;
@@ -23,7 +23,7 @@ mod settings;
 struct AllDefinitions {
     a1: CollectionsResponse,
     a2: CollectionInfo,
-    a3: StorageOperations,
+    a3: CollectionMetaOperations,
     a4: PointRequest,
     a5: Record,
     a6: SearchRequest,

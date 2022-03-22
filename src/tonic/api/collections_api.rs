@@ -14,7 +14,7 @@ use crate::tonic::qdrant::{
 use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::Instant;
-use storage::content_manager::storage_ops::{
+use storage::content_manager::collection_meta_ops::{
     CreateCollection as StorageCreateCollection, CreateCollectionOperation,
     DeleteCollectionOperation, UpdateCollection as StorageUpdateCollection,
     UpdateCollectionOperation,
@@ -62,9 +62,10 @@ impl Collections for CollectionsService {
         &self,
         request: Request<CreateCollection>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
-        let operations = storage::content_manager::storage_ops::StorageOperations::try_from(
-            request.into_inner(),
-        )?;
+        let operations =
+            storage::content_manager::collection_meta_ops::CollectionMetaOperations::try_from(
+                request.into_inner(),
+            )?;
         let timing = Instant::now();
         let result = self
             .toc
@@ -81,7 +82,9 @@ impl Collections for CollectionsService {
         request: Request<UpdateCollection>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
         let operations =
-            storage::content_manager::storage_ops::StorageOperations::from(request.into_inner());
+            storage::content_manager::collection_meta_ops::CollectionMetaOperations::from(
+                request.into_inner(),
+            );
         let timing = Instant::now();
         let result = self
             .toc
@@ -98,7 +101,9 @@ impl Collections for CollectionsService {
         request: Request<DeleteCollection>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
         let operations =
-            storage::content_manager::storage_ops::StorageOperations::from(request.into_inner());
+            storage::content_manager::collection_meta_ops::CollectionMetaOperations::from(
+                request.into_inner(),
+            );
         let timing = Instant::now();
         let result = self
             .toc
@@ -126,7 +131,9 @@ impl From<(Instant, CollectionsResponse)> for ListCollectionsResponse {
     }
 }
 
-impl TryFrom<CreateCollection> for storage::content_manager::storage_ops::StorageOperations {
+impl TryFrom<CreateCollection>
+    for storage::content_manager::collection_meta_ops::CollectionMetaOperations
+{
     type Error = Status;
 
     fn try_from(value: CreateCollection) -> Result<Self, Self::Error> {
@@ -146,9 +153,9 @@ impl TryFrom<CreateCollection> for storage::content_manager::storage_ops::Storag
                 hnsw_config: value.hnsw_config.map(|v| v.into()),
                 wal_config: value.wal_config.map(|v| v.into()),
                 optimizers_config: value.optimizers_config.map(|v| v.into()),
-                shard_number: value
-                    .shard_number
-                    .unwrap_or_else(storage::content_manager::storage_ops::default_shard_number),
+                shard_number: value.shard_number.unwrap_or_else(
+                    storage::content_manager::collection_meta_ops::default_shard_number,
+                ),
             },
         }))
     }
@@ -303,7 +310,9 @@ impl From<(Instant, bool)> for CollectionOperationResponse {
     }
 }
 
-impl From<UpdateCollection> for storage::content_manager::storage_ops::StorageOperations {
+impl From<UpdateCollection>
+    for storage::content_manager::collection_meta_ops::CollectionMetaOperations
+{
     fn from(value: UpdateCollection) -> Self {
         Self::UpdateCollection(UpdateCollectionOperation {
             collection_name: value.collection_name,
@@ -314,7 +323,9 @@ impl From<UpdateCollection> for storage::content_manager::storage_ops::StorageOp
     }
 }
 
-impl From<DeleteCollection> for storage::content_manager::storage_ops::StorageOperations {
+impl From<DeleteCollection>
+    for storage::content_manager::collection_meta_ops::CollectionMetaOperations
+{
     fn from(value: DeleteCollection) -> Self {
         Self::DeleteCollection(DeleteCollectionOperation(value.collection_name))
     }

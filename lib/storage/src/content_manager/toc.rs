@@ -20,23 +20,30 @@ use collection::operations::CollectionUpdateOperations;
 use collection::Collection;
 use segment::types::ScoredPoint;
 
+use crate::content_manager::collection_meta_ops::{
+    AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
+    CreateAliasOperation, CreateCollection, DeleteAlias, DeleteAliasOperation, RenameAlias,
+    RenameAliasOperation, UpdateCollection,
+};
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::errors::StorageError;
-use crate::content_manager::storage_ops::{
-    AliasOperations, ChangeAliasesOperation, CreateAlias, CreateAliasOperation, CreateCollection,
-    DeleteAlias, DeleteAliasOperation, RenameAlias, RenameAliasOperation, StorageOperations,
-    UpdateCollection,
-};
 use crate::types::StorageConfig;
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
+
+#[cfg(feature = "consensus")]
+use raft::{eraftpb::Entry as RaftEntry, RaftState};
 use std::ops::Deref;
+#[cfg(feature = "consensus")]
+use wal::Wal;
 
 /// Since sled is used for reading only during the initialization, large read cache is not required
 #[allow(clippy::identity_op)]
 const SLED_CACHE_SIZE: u64 = 1 * 1024 * 1024; // 1 mb
 
 const COLLECTIONS_DIR: &str = "collections";
+#[cfg(feature = "consensus")]
+const COLLECTIONS_META_WAL_DIR: &str = "collections_meta_wal";
 
 /// The main object of the service. It holds all objects, required for proper functioning.
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
@@ -48,6 +55,11 @@ pub struct TableOfContent {
     collection_management_runtime: Runtime,
     alias_persistence: Db,
     segment_searcher: Box<dyn CollectionSearcher + Sync + Send>,
+
+    #[cfg(feature = "consensus")]
+    collection_meta_wal: Arc<std::sync::Mutex<Wal>>,
+    #[cfg(feature = "consensus")]
+    raft_state: RaftState,
 }
 
 impl TableOfContent {
@@ -87,6 +99,17 @@ impl TableOfContent {
             .open()
             .expect("Can't open database by the provided config");
 
+        #[cfg(feature = "consensus")]
+        let collection_meta_wal = {
+            let collections_meta_wal_path =
+                Path::new(&storage_config.storage_path).join(&COLLECTIONS_META_WAL_DIR);
+            create_dir_all(&collections_meta_wal_path)
+                .expect("Can't create Collections meta Wal directory");
+            Arc::new(std::sync::Mutex::new(
+                Wal::open(collections_meta_wal_path).unwrap(),
+            ))
+        };
+
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: storage_config.clone(),
@@ -94,6 +117,10 @@ impl TableOfContent {
             alias_persistence,
             segment_searcher: Box::new(SimpleCollectionSearcher::new()),
             collection_management_runtime,
+            #[cfg(feature = "consensus")]
+            collection_meta_wal,
+            #[cfg(feature = "consensus")]
+            raft_state: RaftState::default(),
         }
     }
 
@@ -304,21 +331,23 @@ impl TableOfContent {
 
     pub async fn perform_collection_operation(
         &self,
-        operation: StorageOperations,
+        operation: CollectionMetaOperations,
     ) -> Result<bool, StorageError> {
         match operation {
-            StorageOperations::CreateCollection(operation) => {
+            CollectionMetaOperations::CreateCollection(operation) => {
                 self.create_collection(&operation.collection_name, operation.create_collection)
                     .await
             }
-            StorageOperations::UpdateCollection(operation) => {
+            CollectionMetaOperations::UpdateCollection(operation) => {
                 self.update_collection(&operation.collection_name, operation.update_collection)
                     .await
             }
-            StorageOperations::DeleteCollection(operation) => {
+            CollectionMetaOperations::DeleteCollection(operation) => {
                 self.delete_collection(&operation.0).await
             }
-            StorageOperations::ChangeAliases(operation) => self.update_aliases(operation).await,
+            CollectionMetaOperations::ChangeAliases(operation) => {
+                self.update_aliases(operation).await
+            }
         }
     }
 
@@ -462,6 +491,47 @@ impl TableOfContent {
             .await
             .map_err(|err| err.into())
     }
+
+    #[cfg(feature = "consensus")]
+    pub fn collection_wal_entry(&self, id: u64) -> raft::Result<RaftEntry> {
+        <RaftEntry as prost::Message>::decode(
+            self.collection_meta_wal
+                .lock()
+                .map_err(consensus::raft_error_other)?
+                .entry(id)
+                .ok_or(raft::Error::Store(raft::StorageError::Unavailable))?
+                .as_ref(),
+        )
+        .map_err(consensus::raft_error_other)
+    }
+
+    pub fn this_peer_id(&self) -> u32 {
+        0
+    }
+
+    #[cfg(feature = "consensus")]
+    async fn collection_meta_snapshot(&self) -> consensus::CollectionMetaSnapshot {
+        let collections: HashMap<collection::CollectionId, collection::State> = self
+            .collections
+            .read()
+            .await
+            .iter()
+            .map(|(id, collection)| (id.clone(), collection.state(self.this_peer_id())))
+            .collect();
+        consensus::CollectionMetaSnapshot {
+            collections,
+            // TODO: fill aliases
+            aliases: HashMap::new(),
+        }
+    }
+
+    #[cfg(feature = "consensus")]
+    #[allow(dead_code)]
+    async fn apply_entry(&self, entry: &RaftEntry) -> Result<(), StorageError> {
+        let operation: CollectionMetaOperations = entry.try_into()?;
+        self.perform_collection_operation(operation).await?;
+        Ok(())
+    }
 }
 
 // `TableOfContent` should not be dropped from async context.
@@ -472,5 +542,132 @@ impl Drop for TableOfContent {
                 collection.before_drop().await;
             }
         });
+    }
+}
+
+#[cfg(feature = "consensus")]
+mod consensus {
+    use std::{collections::HashMap, sync::Arc};
+
+    use collection::CollectionId;
+    use raft::{eraftpb::Entry as RaftEntry, storage::Storage as RaftStorage, RaftState};
+    use serde::{Deserialize, Serialize};
+
+    use super::TableOfContent;
+
+    impl RaftStorage for TableOfContent {
+        fn initial_state(&self) -> raft::Result<RaftState> {
+            Ok(RaftState::default())
+        }
+
+        fn entries(
+            &self,
+            low: u64,
+            high: u64,
+            max_size: impl Into<Option<u64>>,
+        ) -> raft::Result<Vec<RaftEntry>> {
+            let max_size: Option<_> = max_size.into();
+            (low..high)
+                .take(max_size.unwrap_or(high - low + 1) as usize)
+                .map(|id| self.collection_wal_entry(id))
+                .collect()
+        }
+
+        fn term(&self, idx: u64) -> raft::Result<u64> {
+            Ok(self.collection_wal_entry(idx)?.term)
+        }
+
+        fn first_index(&self) -> raft::Result<u64> {
+            Ok(self
+                .collection_meta_wal
+                .lock()
+                .map_err(raft_error_other)?
+                .first_index()
+                + 1)
+        }
+
+        fn last_index(&self) -> raft::Result<u64> {
+            Ok(self
+                .collection_meta_wal
+                .lock()
+                .map_err(raft_error_other)?
+                .num_entries())
+        }
+
+        fn snapshot(&self, request_index: u64) -> raft::Result<raft::eraftpb::Snapshot> {
+            let snapshot = self
+                .collection_management_runtime
+                .block_on(self.collection_meta_snapshot());
+            if self.raft_state.hard_state.commit >= request_index {
+                Ok(raft::eraftpb::Snapshot {
+                    data: serde_cbor::to_vec(&snapshot).map_err(raft_error_other)?,
+                    metadata: Some(raft::eraftpb::SnapshotMetadata {
+                        conf_state: Some(self.raft_state.conf_state.clone()),
+                        index: self.raft_state.hard_state.commit,
+                        term: self.raft_state.hard_state.term,
+                    }),
+                })
+            } else {
+                Err(raft::Error::Store(
+                    raft::StorageError::SnapshotTemporarilyUnavailable,
+                ))
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    struct TableOfContentRef(Arc<TableOfContent>);
+
+    impl RaftStorage for TableOfContentRef {
+        fn initial_state(&self) -> raft::Result<raft::RaftState> {
+            self.0.initial_state()
+        }
+
+        fn entries(
+            &self,
+            low: u64,
+            high: u64,
+            max_size: impl Into<Option<u64>>,
+        ) -> raft::Result<Vec<raft::eraftpb::Entry>> {
+            self.0.entries(low, high, max_size)
+        }
+
+        fn term(&self, idx: u64) -> raft::Result<u64> {
+            self.0.term(idx)
+        }
+
+        fn first_index(&self) -> raft::Result<u64> {
+            self.0.first_index()
+        }
+
+        fn last_index(&self) -> raft::Result<u64> {
+            self.0.last_index()
+        }
+
+        fn snapshot(&self, request_index: u64) -> raft::Result<raft::eraftpb::Snapshot> {
+            self.0.snapshot(request_index)
+        }
+    }
+
+    #[derive(Debug, Serialize, Deserialize, Clone)]
+    pub struct CollectionMetaSnapshot {
+        pub collections: HashMap<CollectionId, collection::State>,
+        pub aliases: HashMap<String, CollectionId>,
+    }
+
+    impl TryFrom<&raft::eraftpb::Snapshot> for CollectionMetaSnapshot {
+        type Error = serde_cbor::Error;
+
+        fn try_from(snapshot: &raft::eraftpb::Snapshot) -> Result<Self, Self::Error> {
+            serde_cbor::from_slice(snapshot.get_data())
+        }
+    }
+
+    #[derive(thiserror::Error, Debug)]
+    #[error("{0}")]
+    struct StrError(String);
+
+    pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
+        raft::Error::Store(raft::StorageError::Other(Box::new(StrError(e.to_string()))))
     }
 }
