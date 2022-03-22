@@ -253,8 +253,7 @@ where
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        let iter = (0..self.vectors.len() as PointOffsetType)
-            .step_by(self.dim)
+        let iter = (0..(self.vectors.len() / self.dim) as PointOffsetType)
             .filter(move |id| !self.deleted[*id as usize]);
         Box::new(iter)
     }
