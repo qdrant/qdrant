@@ -12,24 +12,12 @@ pub const ALIAS_MAPPING_CONFIG_FILE: &str = "data.json";
 struct AliasMapping(HashMap<String, String>);
 
 impl AliasMapping {
-    // TODO error type conversion
     pub fn load(path: &Path) -> Result<Self, StorageError> {
-        read_json(path).map_err(|err| {
-            println!("failed to read_json {:?}", err);
-            StorageError::ServiceError {
-                description: "something bad happened".to_string(),
-            }
-        })
+        read_json(path).map_err(|err| err.into())
     }
 
-    // TODO error type conversion
     pub fn save(&self, path: &Path) -> Result<(), StorageError> {
-        atomic_save_json(path, self).map_err(|err| {
-            println!("failed to save_json {:?}", err);
-            StorageError::ServiceError {
-                description: "something bad happened".to_string(),
-            }
-        })
+        atomic_save_json(path, self).map_err(|err| err.into())
     }
 }
 
