@@ -3,7 +3,6 @@ use crate::spaces::metric::Metric;
 use crate::types::{Filter, PointOffsetType, VectorElementType};
 use crate::vector_storage::simple_vector_storage::SimpleRawScorer;
 use bit_vec::BitVec;
-use itertools::Itertools;
 use rand::Rng;
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
@@ -19,7 +18,8 @@ impl ConditionChecker for FakeConditionChecker {
 }
 
 pub struct TestRawScorerProducer<TMetric: Metric> {
-    pub vectors: Vec<Vec<VectorElementType>>,
+    pub dim: usize,
+    pub vectors: Vec<VectorElementType>,
     pub deleted: BitVec,
     pub metric: TMetric,
 }
@@ -32,14 +32,15 @@ where
     where
         R: Rng + ?Sized,
     {
-        let vectors = (0..num_vectors)
-            .map(|_x| {
-                let rnd_vec = random_vector(rng, dim);
-                metric.preprocess(&rnd_vec).unwrap_or(rnd_vec)
-            })
-            .collect_vec();
+        let mut vectors = Vec::new();
+        for _ in 0..num_vectors {
+            let rnd_vec = random_vector(rng, dim);
+            let rnd_vec = metric.preprocess(&rnd_vec).unwrap_or(rnd_vec);
+            vectors.extend_from_slice(rnd_vec.as_slice());
+        }
 
         TestRawScorerProducer {
+            dim,
             vectors,
             deleted: BitVec::from_elem(num_vectors, false),
             metric,
@@ -48,6 +49,7 @@ where
 
     pub fn get_raw_scorer(&self, query: Vec<VectorElementType>) -> SimpleRawScorer<TMetric> {
         SimpleRawScorer {
+            dim: self.dim,
             query: self.metric.preprocess(&query).unwrap_or(query),
             metric: &self.metric,
             vectors: &self.vectors,
