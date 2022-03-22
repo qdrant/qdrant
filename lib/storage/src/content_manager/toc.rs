@@ -17,12 +17,12 @@ use collection::operations::CollectionUpdateOperations;
 use collection::Collection;
 use segment::types::ScoredPoint;
 
+use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collection_meta_ops::{
     AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
     CreateAliasOperation, CreateCollection, DeleteAlias, DeleteAliasOperation, RenameAlias,
     RenameAliasOperation, UpdateCollection,
 };
-use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::errors::StorageError;
 use crate::types::StorageConfig;
