@@ -63,10 +63,6 @@ impl AliasPersistence {
         self.alias_mapping.0.get(alias).cloned()
     }
 
-    pub fn contains_alias(&self, alias: &str) -> bool {
-        self.alias_mapping.0.contains_key(alias)
-    }
-
     pub fn insert(&mut self, alias: String, collection_name: String) -> Result<(), StorageError> {
         self.alias_mapping.0.insert(alias, collection_name);
         self.alias_mapping.save(&self.data_path)?;
@@ -77,6 +73,27 @@ impl AliasPersistence {
         let res = self.alias_mapping.0.remove(alias);
         self.alias_mapping.save(&self.data_path)?;
         Ok(res)
+    }
+
+    pub fn rename_alias(
+        &mut self,
+        old_alias_name: &str,
+        new_alias_name: String,
+    ) -> Result<(), StorageError> {
+        match self.get(old_alias_name) {
+            None => {
+                return Err(StorageError::NotFound {
+                    description: format!("Alias {} does not exists!", old_alias_name),
+                })
+            }
+            Some(collection_name) => {
+                self.alias_mapping.0.remove(old_alias_name);
+                self.alias_mapping.0.insert(new_alias_name, collection_name);
+                // 'remove' & 'insert' saved atomically
+                self.alias_mapping.save(&self.data_path)?;
+                Ok(())
+            }
+        }
     }
 
     pub fn collection_aliases(&self, collection_name: &str) -> Vec<String> {

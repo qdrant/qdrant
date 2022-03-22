@@ -295,16 +295,7 @@ impl TableOfContent {
                             new_alias_name,
                         },
                 }) => {
-                    if !alias_lock.contains_alias(&old_alias_name) {
-                        return Err(StorageError::NotFound {
-                            description: format!("Alias {} does not exists!", old_alias_name),
-                        });
-                    }
-
-                    // safe Option.unwrap as the alias mapping is currently locked exclusively
-                    let collection = alias_lock.remove(&old_alias_name)?.unwrap();
-                    // remove + insert is not transactional
-                    alias_lock.insert(new_alias_name, collection)?
+                    alias_lock.rename_alias(&old_alias_name, new_alias_name)?;
                 }
             };
         }
