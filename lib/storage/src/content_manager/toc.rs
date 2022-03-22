@@ -47,7 +47,7 @@ pub struct TableOfContent {
     storage_config: StorageConfig,
     search_runtime: Runtime,
     collection_management_runtime: Runtime,
-    alias_persistence: AliasPersistence,
+    alias_persistence: RwLock<AliasPersistence>,
     segment_searcher: Box<dyn CollectionSearcher + Sync + Send>,
 
     #[cfg(feature = "consensus")]
@@ -105,7 +105,7 @@ impl TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: storage_config.clone(),
             search_runtime,
-            alias_persistence,
+            alias_persistence: RwLock::new(alias_persistence),
             segment_searcher: Box::new(SimpleCollectionSearcher::new()),
             collection_management_runtime,
             #[cfg(feature = "consensus")]
@@ -146,7 +146,7 @@ impl TableOfContent {
     /// If alias exists - returns the original collection name
     /// If neither exists - returns [`StorageError`]
     async fn resolve_name(&self, collection_name: &str) -> Result<String, StorageError> {
-        let alias_collection_name = self.alias_persistence.get(collection_name)?;
+        let alias_collection_name = self.alias_persistence.read().await.get(collection_name);
 
         let resolved_name = match alias_collection_name {
             None => collection_name.to_string(),
@@ -264,6 +264,7 @@ impl TableOfContent {
         // Lock all collections for alias changes
         // Prevent search on partially switched collections
         let collection_lock = self.collections.write().await;
+        let mut alias_lock = self.alias_persistence.write().await;
         for action in operation.actions {
             match action {
                 AliasOperations::CreateAlias(CreateAliasOperation {
@@ -280,12 +281,12 @@ impl TableOfContent {
                         .validate_collection_not_exists(&alias_name)
                         .await?;
 
-                    self.alias_persistence.insert(alias_name, collection_name)?;
+                    alias_lock.insert(alias_name, collection_name)?;
                 }
                 AliasOperations::DeleteAlias(DeleteAliasOperation {
                     delete_alias: DeleteAlias { alias_name },
                 }) => {
-                    self.alias_persistence.remove(&alias_name)?;
+                    alias_lock.remove(&alias_name)?;
                 }
                 AliasOperations::RenameAlias(RenameAliasOperation {
                     rename_alias:
@@ -294,16 +295,16 @@ impl TableOfContent {
                             new_alias_name,
                         },
                 }) => {
-                    if !self.alias_persistence.contains_alias(&old_alias_name)? {
+                    if !alias_lock.contains_alias(&old_alias_name) {
                         return Err(StorageError::NotFound {
                             description: format!("Alias {} does not exists!", old_alias_name),
                         });
                     }
 
                     // safe Option.unwrap as the alias mapping is currently locked exclusively
-                    let collection = self.alias_persistence.remove(&old_alias_name)?.unwrap();
+                    let collection = alias_lock.remove(&old_alias_name)?.unwrap();
                     // remove + insert is not transactional
-                    self.alias_persistence.insert(new_alias_name, collection)?
+                    alias_lock.insert(new_alias_name, collection)?
                 }
             };
         }
@@ -425,8 +426,15 @@ impl TableOfContent {
     }
 
     /// List of all aliases for a given collection
-    pub fn collection_aliases(&self, collection_name: &str) -> Result<Vec<String>, StorageError> {
-        let result = self.alias_persistence.collection_aliases(collection_name)?;
+    pub async fn collection_aliases(
+        &self,
+        collection_name: &str,
+    ) -> Result<Vec<String>, StorageError> {
+        let result = self
+            .alias_persistence
+            .read()
+            .await
+            .collection_aliases(collection_name);
         Ok(result)
     }
 

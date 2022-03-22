@@ -24,6 +24,7 @@ impl AliasMapping {
 /// Not thread-safe, accesses must be synchronized by an exclusive lock at the call site
 pub struct AliasPersistence {
     data_path: PathBuf,
+    alias_mapping: AliasMapping,
 }
 
 impl AliasPersistence {
@@ -46,43 +47,40 @@ impl AliasPersistence {
             fs::create_dir_all(&dir_path)?;
         }
         let data_path = Self::init_file(&dir_path)?;
-        Ok(AliasPersistence { data_path })
+        let alias_mapping = AliasMapping::load(&data_path)?;
+        Ok(AliasPersistence {
+            data_path,
+            alias_mapping,
+        })
     }
 
-    pub fn get(&self, key: &str) -> Result<Option<String>, StorageError> {
-        let alias = AliasMapping::load(&self.data_path)?;
-        Ok(alias.0.get(key).cloned())
+    pub fn get(&self, key: &str) -> Option<String> {
+        self.alias_mapping.0.get(key).cloned()
     }
 
-    pub fn contains_alias(&self, key: &str) -> Result<bool, StorageError> {
-        let alias = AliasMapping::load(&self.data_path)?;
-        Ok(alias.0.contains_key(key))
+    pub fn contains_alias(&self, key: &str) -> bool {
+        self.alias_mapping.0.contains_key(key)
     }
 
-    pub fn insert(&self, key: String, value: String) -> Result<(), StorageError> {
-        let mut alias = AliasMapping::load(&self.data_path)?;
-        println!("inserting {} {}", &key, &value);
-        // not checking if it already existed
-        alias.0.insert(key, value);
-        alias.save(&self.data_path)?;
+    pub fn insert(&mut self, key: String, value: String) -> Result<(), StorageError> {
+        self.alias_mapping.0.insert(key, value);
+        self.alias_mapping.save(&self.data_path)?;
         Ok(())
     }
 
-    pub fn remove(&self, key: &str) -> Result<Option<String>, StorageError> {
-        let mut alias = AliasMapping::load(&self.data_path)?;
-        let res = alias.0.remove(key);
-        alias.save(&self.data_path)?;
+    pub fn remove(&mut self, key: &str) -> Result<Option<String>, StorageError> {
+        let res = self.alias_mapping.0.remove(key);
+        self.alias_mapping.save(&self.data_path)?;
         Ok(res)
     }
 
-    pub fn collection_aliases(&self, collection_name: &str) -> Result<Vec<String>, StorageError> {
+    pub fn collection_aliases(&self, collection_name: &str) -> Vec<String> {
         let mut result = vec![];
-        let alias = AliasMapping::load(&self.data_path)?;
-        for (alias, target_collection) in alias.0.into_iter() {
+        for (alias, target_collection) in self.alias_mapping.0.iter() {
             if collection_name == target_collection {
-                result.push(alias);
+                result.push(alias.clone());
             }
         }
-        Ok(result)
+        result
     }
 }
