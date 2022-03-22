@@ -8,8 +8,11 @@ use std::path::{Path, PathBuf};
 
 pub const ALIAS_MAPPING_CONFIG_FILE: &str = "data.json";
 
+type Alias = String;
+type CollectionName = String;
+
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
-struct AliasMapping(HashMap<String, String>);
+struct AliasMapping(HashMap<Alias, CollectionName>);
 
 impl AliasMapping {
     pub fn load(path: &Path) -> Result<Self, StorageError> {
@@ -22,6 +25,8 @@ impl AliasMapping {
 }
 
 /// Not thread-safe, accesses must be synchronized by an exclusive lock at the call site
+/// - Reads are served from memory.
+/// - Writes are durably saved.
 pub struct AliasPersistence {
     data_path: PathBuf,
     alias_mapping: AliasMapping,
@@ -54,22 +59,22 @@ impl AliasPersistence {
         })
     }
 
-    pub fn get(&self, key: &str) -> Option<String> {
-        self.alias_mapping.0.get(key).cloned()
+    pub fn get(&self, alias: &str) -> Option<String> {
+        self.alias_mapping.0.get(alias).cloned()
     }
 
-    pub fn contains_alias(&self, key: &str) -> bool {
-        self.alias_mapping.0.contains_key(key)
+    pub fn contains_alias(&self, alias: &str) -> bool {
+        self.alias_mapping.0.contains_key(alias)
     }
 
-    pub fn insert(&mut self, key: String, value: String) -> Result<(), StorageError> {
-        self.alias_mapping.0.insert(key, value);
+    pub fn insert(&mut self, alias: String, collection_name: String) -> Result<(), StorageError> {
+        self.alias_mapping.0.insert(alias, collection_name);
         self.alias_mapping.save(&self.data_path)?;
         Ok(())
     }
 
-    pub fn remove(&mut self, key: &str) -> Result<Option<String>, StorageError> {
-        let res = self.alias_mapping.0.remove(key);
+    pub fn remove(&mut self, alias: &str) -> Result<Option<String>, StorageError> {
+        let res = self.alias_mapping.0.remove(alias);
         self.alias_mapping.save(&self.data_path)?;
         Ok(res)
     }
