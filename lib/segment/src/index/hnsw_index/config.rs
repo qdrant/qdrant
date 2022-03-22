@@ -34,10 +34,10 @@ impl HnswGraphConfig {
     }
 
     pub fn load(path: &Path) -> OperationResult<Self> {
-        read_json(path)
+        read_json(path).map_err(|err| err.into())
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {
-        atomic_save_json(path, self)
+        atomic_save_json(path, self).map_err(|err| err.into())
     }
 }

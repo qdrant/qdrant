@@ -1,7 +1,7 @@
 use collection::operations::types::CollectionError;
+use segment::common::file_operations::FileStorageError;
 use std::io::Error as IoError;
 use thiserror::Error;
-use tokio::task::JoinError;
 
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
@@ -14,6 +14,14 @@ pub enum StorageError {
     ServiceError { description: String },
     #[error("Bad request: {description}")]
     BadRequest { description: String },
+}
+
+impl StorageError {
+    pub fn service_error(description: &str) -> StorageError {
+        StorageError::ServiceError {
+            description: description.to_string(),
+        }
+    }
 }
 
 impl From<CollectionError> for StorageError {
@@ -39,16 +47,20 @@ impl From<CollectionError> for StorageError {
 
 impl From<IoError> for StorageError {
     fn from(err: IoError) -> Self {
-        StorageError::ServiceError {
-            description: format!("{}", err),
-        }
+        StorageError::service_error(&format!("{}", err))
     }
 }
 
-impl From<JoinError> for StorageError {
-    fn from(err: JoinError) -> Self {
-        StorageError::ServiceError {
-            description: format!("{}", err),
+impl From<FileStorageError> for StorageError {
+    fn from(err: FileStorageError) -> Self {
+        match err {
+            FileStorageError::IoError { description } => StorageError::service_error(&description),
+            FileStorageError::UserAtomicIoError => {
+                StorageError::service_error("Unknown atomic write error")
+            }
+            FileStorageError::GenericError { description } => {
+                StorageError::service_error(&description)
+            }
         }
     }
 }

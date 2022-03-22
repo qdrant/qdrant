@@ -1,3 +1,4 @@
+use crate::common::file_operations::FileStorageError;
 use crate::types::{
     Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
@@ -49,6 +50,22 @@ pub struct SegmentFailedState {
     pub version: SeqNumberType,
     pub point_id: Option<PointIdType>,
     pub error: OperationError,
+}
+
+impl From<FileStorageError> for OperationError {
+    fn from(err: FileStorageError) -> Self {
+        match err {
+            FileStorageError::IoError { description } => {
+                OperationError::service_error(&format!("IO Error: {}", description))
+            }
+            FileStorageError::UserAtomicIoError => {
+                OperationError::service_error("Unknown atomic write error")
+            }
+            FileStorageError::GenericError { description } => {
+                OperationError::service_error(&description)
+            }
+        }
+    }
 }
 
 impl<E> From<AtomicIoError<E>> for OperationError {
