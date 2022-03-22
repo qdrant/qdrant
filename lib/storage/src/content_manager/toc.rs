@@ -493,16 +493,16 @@ impl TableOfContent {
     }
 
     #[cfg(feature = "consensus")]
-    pub fn collection_wal_entry(&self, id: u64) -> RaftEntry {
+    pub fn collection_wal_entry(&self, id: u64) -> raft::Result<RaftEntry> {
         <RaftEntry as prost::Message>::decode(
             self.collection_meta_wal
                 .lock()
-                .unwrap()
+                .map_err(consensus::raft_error_other)?
                 .entry(id)
-                .unwrap()
+                .ok_or(raft::Error::Store(raft::StorageError::Unavailable))?
                 .as_ref(),
         )
-        .unwrap()
+        .map_err(consensus::raft_error_other)
     }
 
     pub fn this_peer_id(&self) -> u32 {
@@ -567,14 +567,14 @@ mod consensus {
             max_size: impl Into<Option<u64>>,
         ) -> raft::Result<Vec<RaftEntry>> {
             let max_size: Option<_> = max_size.into();
-            Ok((low..high)
+            (low..high)
                 .take(max_size.unwrap_or(high - low + 1) as usize)
                 .map(|id| self.collection_wal_entry(id))
-                .collect())
+                .collect()
         }
 
         fn term(&self, idx: u64) -> raft::Result<u64> {
-            Ok(self.collection_wal_entry(idx).term)
+            Ok(self.collection_wal_entry(idx)?.term)
         }
 
         fn first_index(&self) -> raft::Result<u64> {
@@ -667,7 +667,7 @@ mod consensus {
     #[error("{0}")]
     struct StrError(String);
 
-    fn raft_error_other(e: impl std::error::Error) -> raft::Error {
+    pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
         raft::Error::Store(raft::StorageError::Other(Box::new(StrError(e.to_string()))))
     }
 }
