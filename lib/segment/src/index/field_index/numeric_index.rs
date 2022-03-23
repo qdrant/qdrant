@@ -41,7 +41,11 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
 
     pub fn check_value(&self, idx: PointOffsetType, range: &Range) -> bool {
         self.get_values(idx)
-            .map(|values| values.iter().any(|number| range.check_range(number.to_f64().unwrap())))
+            .map(|values| {
+                values
+                    .iter()
+                    .any(|number| range.check_range(number.to_f64().unwrap()))
+            })
             .unwrap_or(false)
     }
 
@@ -148,7 +152,7 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
             total_values as usize,
             values_count as usize,
         )
-            .round() as usize;
+        .round() as usize;
 
         CardinalityEstimation {
             primary_clauses: vec![],
@@ -158,21 +162,24 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
         }
     }
 
-    fn add_many_to_list(&mut self, idx: PointOffsetType, values: impl IntoIterator<Item=N>) {
+    fn add_many_to_list(&mut self, idx: PointOffsetType, values: impl IntoIterator<Item = N>) {
         let mut total_values = 0;
         if self.point_to_values.len() <= idx as usize {
             self.point_to_values.resize(idx as usize + 1, vec![])
         }
         self.point_to_values[idx as usize] = values.into_iter().collect();
         for value in &self.point_to_values[idx as usize] {
-            self.elements.push(Element { id: idx, value: value.to_owned() });
+            self.elements.push(Element {
+                id: idx,
+                value: value.to_owned(),
+            });
             total_values += 1;
         }
         self.points_count += 1;
         self.max_values_per_point = self.max_values_per_point.max(total_values);
     }
 
-    fn condition_iter(&self, range: &Range) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+    fn condition_iter(&self, range: &Range) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let (lower_index, upper_index) = self.search_range(range);
         Box::new(
             (&self.elements[lower_index..upper_index])
@@ -187,7 +194,7 @@ impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         condition
             .range
             .as_ref()
@@ -208,7 +215,7 @@ impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         // Creates half-overlapped ranges of points.
         let num_elements = self.elements.len();
         let value_per_point = num_elements as f64 / self.points_count as f64;
@@ -337,10 +344,10 @@ mod tests {
 
         let mut index: PersistedNumericIndex<_> = Default::default();
 
-        values.into_iter()
+        values
+            .into_iter()
             .enumerate()
             .for_each(|(idx, values)| index.add_many_to_list(idx as PointOffsetType + 1, values));
-
 
         let blocks = index
             .payload_blocks(threshold, "test".to_owned())
@@ -382,7 +389,8 @@ mod tests {
 
         let mut index: PersistedNumericIndex<_> = Default::default();
 
-        values.into_iter()
+        values
+            .into_iter()
             .enumerate()
             .for_each(|(idx, values)| index.add_many_to_list(idx as PointOffsetType, values));
 
@@ -511,7 +519,8 @@ mod tests {
 
         let mut index: PersistedNumericIndex<_> = Default::default();
 
-        values.into_iter()
+        values
+            .into_iter()
             .enumerate()
             .for_each(|(idx, values)| index.add_many_to_list(idx as PointOffsetType + 1, values));
 
@@ -542,7 +551,7 @@ mod tests {
             points_count: 9,
             max_values_per_point: 1,
             elements: vec![Element { id: 1, value: 1 }, Element { id: 2, value: 3 }],
-            point_to_values: vec![vec![1], vec![3]]
+            point_to_values: vec![vec![1], vec![3]],
         };
 
         let json = serde_json::to_string_pretty(&index).unwrap();
