@@ -474,11 +474,11 @@ impl GraphLayers {
     }
 
     pub fn load(path: &Path) -> OperationResult<Self> {
-        read_bin(path)
+        Ok(read_bin(path)?)
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {
-        atomic_save_bin(path, self)
+        Ok(atomic_save_bin(path, self)?)
     }
 }
 

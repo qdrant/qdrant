@@ -620,7 +620,7 @@ dependencies = [
  "merge",
  "num_cpus",
  "ordered-float",
- "parking_lot 0.12.0",
+ "parking_lot",
  "rand 0.8.5",
  "rmp-serde",
  "schemars",
@@ -1037,16 +1037,6 @@ dependencies = [
  "kernel32-sys",
  "libc",
  "winapi 0.2.8",
-]
-
-[[package]]
-name = "fs2"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
-dependencies = [
- "libc",
- "winapi 0.3.9",
 ]
 
 [[package]]
@@ -1485,15 +1475,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "instant"
-version = "0.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61124eeebbd69b8190558df225adf7e4caafce0d743919e5d6b19652314ec5ec"
-dependencies = [
- "cfg-if",
-]
-
-[[package]]
 name = "itertools"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1728,7 +1709,7 @@ version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f20f72ed93291a72e22e8b16bb18762183bb4943f0f483da5b8be1a9e8192752"
 dependencies = [
- "fs2 0.2.5",
+ "fs2",
  "kernel32-sys",
  "libc",
  "winapi 0.2.8",
@@ -1964,37 +1945,12 @@ dependencies = [
 
 [[package]]
 name = "parking_lot"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d17b78036a60663b797adeaee46f5c9dfebb86948d1255007a1d6be0271ff99"
-dependencies = [
- "instant",
- "lock_api",
- "parking_lot_core 0.8.5",
-]
-
-[[package]]
-name = "parking_lot"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "87f5ec2493a61ac0506c0f4199f99070cbe83857b0337006a30f3e6719b8ef58"
 dependencies = [
  "lock_api",
- "parking_lot_core 0.9.0",
-]
-
-[[package]]
-name = "parking_lot_core"
-version = "0.8.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d76e8e1493bcac0d2766c42737f34458f1c8c50c0d23bcb24ea953affb273216"
-dependencies = [
- "cfg-if",
- "instant",
- "libc",
- "redox_syscall",
- "smallvec",
- "winapi 0.3.9",
+ "parking_lot_core",
 ]
 
 [[package]]
@@ -2186,7 +2142,7 @@ dependencies = [
  "log 0.4.16",
  "nix",
  "once_cell",
- "parking_lot 0.12.0",
+ "parking_lot",
  "prost 0.9.0",
  "prost-build 0.9.0",
  "prost-derive 0.9.0",
@@ -2370,7 +2326,7 @@ dependencies = [
  "log 0.4.16",
  "num-traits",
  "num_cpus",
- "parking_lot 0.12.0",
+ "parking_lot",
  "prost 0.9.0",
  "prost-types 0.9.0",
  "raft",
@@ -2786,7 +2742,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "ordered-float",
- "parking_lot 0.12.0",
+ "parking_lot",
  "pprof",
  "rand 0.8.5",
  "rmp-serde",
@@ -2934,22 +2890,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f173ac3d1a7e3b28003f40de0b5ce7fe2710f9b9dc3fc38664cebee46b3b6527"
 
 [[package]]
-name = "sled"
-version = "0.34.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f96b4737c2ce5987354855aed3797279def4ebf734436c6aa4552cf8e169935"
-dependencies = [
- "crc32fast",
- "crossbeam-epoch",
- "crossbeam-utils",
- "fs2 0.4.3",
- "fxhash",
- "libc",
- "log 0.4.16",
- "parking_lot 0.11.2",
-]
-
-[[package]]
 name = "slog"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3014,7 +2954,6 @@ dependencies = [
  "segment",
  "serde",
  "serde_cbor",
- "sled",
  "tempdir",
  "thiserror",
  "tokio",
@@ -3243,7 +3182,7 @@ dependencies = [
  "mio",
  "num_cpus",
  "once_cell",
- "parking_lot 0.12.0",
+ "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",
@@ -3551,7 +3490,7 @@ dependencies = [
  "docopt",
  "env_logger 0.3.5",
  "eventual",
- "fs2 0.2.5",
+ "fs2",
  "log 0.3.9",
  "memmap 0.2.3",
  "rand 0.3.23",

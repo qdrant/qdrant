@@ -18,7 +18,6 @@ use bit_vec::BitVec;
 use std::mem::size_of;
 use std::sync::Arc;
 
-/// Since sled is used for reading only during the initialization, large read cache is not required
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 
 /// In-memory vector storage with on-update persistence using `store`
