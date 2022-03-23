@@ -12,7 +12,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
- "log 0.4.14",
+ "log 0.4.16",
  "memchr 2.4.0",
  "pin-project-lite",
  "tokio",
@@ -46,7 +46,7 @@ dependencies = [
  "itoa 1.0.1",
  "language-tags",
  "local-channel",
- "log 0.4.14",
+ "log 0.4.16",
  "mime",
  "percent-encoding",
  "pin-project-lite",
@@ -75,7 +75,7 @@ dependencies = [
  "bytestring",
  "firestorm",
  "http",
- "log 0.4.14",
+ "log 0.4.16",
  "regex 1.5.4",
  "serde",
 ]
@@ -101,7 +101,7 @@ dependencies = [
  "actix-utils",
  "futures-core",
  "futures-util",
- "log 0.4.14",
+ "log 0.4.16",
  "mio",
  "num_cpus",
  "socket2",
@@ -155,7 +155,7 @@ dependencies = [
  "futures-util",
  "itoa 1.0.1",
  "language-tags",
- "log 0.4.14",
+ "log 0.4.16",
  "mime",
  "once_cell",
  "pin-project-lite",
@@ -616,7 +616,7 @@ dependencies = [
  "hashring",
  "indicatif",
  "itertools 0.10.3",
- "log 0.4.14",
+ "log 0.4.16",
  "merge",
  "num_cpus",
  "ordered-float",
@@ -938,7 +938,7 @@ checksum = "0b2cf0344971ee6c64c31be0d530793fba457d322dfec2810c453d0ef228f9c3"
 dependencies = [
  "atty",
  "humantime",
- "log 0.4.14",
+ "log 0.4.16",
  "regex 1.5.4",
  "termcolor",
 ]
@@ -1195,7 +1195,7 @@ checksum = "61faf6a68f9432b5287c393268e86a07e4dfed79e6e0962b0e6e59b2f70c77d8"
 dependencies = [
  "geo-types",
  "geographiclib-rs",
- "log 0.4.14",
+ "log 0.4.16",
  "num-traits",
  "robust",
  "rstar",
@@ -1477,7 +1477,7 @@ dependencies = [
  "indexmap",
  "itoa 1.0.1",
  "lazy_static 1.4.0",
- "log 0.4.14",
+ "log 0.4.16",
  "num-format",
  "quick-xml",
  "rgb",
@@ -1683,14 +1683,14 @@ version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e19e8d5c34a3e0e2223db8e060f9e8264aeeb5c5fc64a4ee9965c062211c024b"
 dependencies = [
- "log 0.4.14",
+ "log 0.4.16",
 ]
 
 [[package]]
 name = "log"
-version = "0.4.14"
+version = "0.4.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51b9bbe6c47d51fc3e1a9b945965946b4c44142ab8792c50835a980d362c2710"
+checksum = "6389c490849ff5bc16be905ae24bc913a9c8892e19b2341dbc175e14c341c2b8"
 dependencies = [
  "cfg-if",
 ]
@@ -1804,7 +1804,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba272f85fa0b41fc91872be579b3bbe0f56b792aa361a380eb669469f68dafb2"
 dependencies = [
  "libc",
- "log 0.4.14",
+ "log 0.4.16",
  "miow",
  "ntapi",
  "winapi 0.3.9",
@@ -2183,7 +2183,7 @@ dependencies = [
  "findshlibs",
  "inferno",
  "libc",
- "log 0.4.14",
+ "log 0.4.16",
  "nix",
  "once_cell",
  "parking_lot 0.12.0",
@@ -2264,7 +2264,7 @@ dependencies = [
  "bytes",
  "heck",
  "itertools 0.9.0",
- "log 0.4.14",
+ "log 0.4.16",
  "multimap",
  "petgraph 0.5.1",
  "prost 0.7.0",
@@ -2283,7 +2283,7 @@ dependencies = [
  "heck",
  "itertools 0.10.3",
  "lazy_static 1.4.0",
- "log 0.4.14",
+ "log 0.4.16",
  "multimap",
  "petgraph 0.6.0",
  "prost 0.9.0",
@@ -2367,7 +2367,7 @@ dependencies = [
  "config",
  "env_logger 0.9.0",
  "itertools 0.10.3",
- "log 0.4.14",
+ "log 0.4.16",
  "num-traits",
  "num_cpus",
  "parking_lot 0.12.0",
@@ -2781,7 +2781,7 @@ dependencies = [
  "geohash",
  "itertools 0.10.3",
  "json-patch",
- "log 0.4.14",
+ "log 0.4.16",
  "memmap 0.7.0",
  "num-derive",
  "num-traits",
@@ -2945,7 +2945,7 @@ dependencies = [
  "fs2 0.4.3",
  "fxhash",
  "libc",
- "log 0.4.14",
+ "log 0.4.16",
  "parking_lot 0.11.2",
 ]
 
@@ -2968,11 +2968,11 @@ dependencies = [
 
 [[package]]
 name = "slog-stdlog"
-version = "4.1.0"
+version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8228ab7302adbf4fcb37e66f3cda78003feb521e7fd9e3847ec117a7784d0f5a"
+checksum = "6706b2ace5bbae7291d3f8d2473e2bfab073ccd7d03670946197aec98471fa3e"
 dependencies = [
- "log 0.4.14",
+ "log 0.4.16",
  "slog",
  "slog-scope",
 ]
@@ -3292,7 +3292,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
- "log 0.4.14",
+ "log 0.4.16",
  "pin-project-lite",
  "tokio",
 ]
@@ -3306,7 +3306,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
- "log 0.4.14",
+ "log 0.4.16",
  "pin-project-lite",
  "tokio",
 ]
@@ -3402,7 +3402,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09adeb8c97449311ccd28a427f96fb563e7fd31aabf994189879d9da2394b89d"
 dependencies = [
  "cfg-if",
- "log 0.4.14",
+ "log 0.4.16",
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
@@ -3576,7 +3576,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ce8a968cb1cd110d136ff8b819a556d6fb6d919363c61534f6860c7eb172ba0"
 dependencies = [
- "log 0.4.14",
+ "log 0.4.16",
  "try-lock",
 ]
 
@@ -3604,7 +3604,7 @@ checksum = "3b33f6a0694ccfea53d94db8b2ed1c3a8a4c86dd936b13b9f0a15ec4a451b900"
 dependencies = [
  "bumpalo",
  "lazy_static 1.4.0",
- "log 0.4.14",
+ "log 0.4.16",
  "proc-macro2",
  "quote",
  "syn",
