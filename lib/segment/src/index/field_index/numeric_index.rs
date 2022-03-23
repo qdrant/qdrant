@@ -420,6 +420,7 @@ mod tests {
 
         point_to_values.resize(num_points, vec![]);
 
+        #[allow(clippy::needless_range_loop)]
         for i in 0..num_points {
             for _ in 0..values_per_point {
                 let value = rng.gen_range(0.0..100.0);
