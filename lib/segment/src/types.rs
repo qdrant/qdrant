@@ -546,6 +546,15 @@ pub struct Range {
     pub lte: Option<FloatPayloadType>,
 }
 
+impl Range {
+    pub fn check_range(&self, number: FloatPayloadType) -> bool {
+        self.lt.map_or(true, |x| number < x)
+            && self.gt.map_or(true, |x| number > x)
+            && self.lte.map_or(true, |x| number <= x)
+            && self.gte.map_or(true, |x| number >= x)
+    }
+}
+
 /// Geo filter request
 ///
 /// Matches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges

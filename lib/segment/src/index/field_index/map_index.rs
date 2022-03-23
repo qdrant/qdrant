@@ -18,6 +18,7 @@ use crate::types::{
 #[derive(Serialize, Deserialize, Default)]
 pub struct PersistedMapIndex<N: Hash + Eq + Clone> {
     map: HashMap<N, Vec<PointOffsetType>>,
+    point_to_values: Vec<Vec<N>>,
 }
 
 impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
@@ -35,17 +36,31 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
         }
     }
 
-    fn add_many_to_map(&mut self, idx: PointOffsetType, values: impl IntoIterator<Item = N>) {
-        for value in values {
-            let entry = self.map.entry(value).or_default();
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<N>> {
+        self.point_to_values.get(idx as usize)
+    }
+
+    pub fn check_value(&self, idx: PointOffsetType, reference: &N) -> bool {
+        self.get_values(idx)
+            .map(|values| values.iter().any(|x| x == reference))
+            .unwrap_or(false)
+    }
+
+    fn add_many_to_map(&mut self, idx: PointOffsetType, values: impl IntoIterator<Item=N>) {
+        if self.point_to_values.len() <= idx as usize {
+            self.point_to_values.resize(idx as usize + 1, vec![])
+        }
+        self.point_to_values[idx as usize] = values.into_iter().collect();
+        for value in &self.point_to_values[idx as usize] {
+            let entry = self.map.entry(value.clone()).or_default();
             entry.push(idx);
         }
     }
 
-    fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
         self.map
             .get(value)
-            .map(|ids| Box::new(ids.iter().copied()) as Box<dyn Iterator<Item = PointOffsetType>>)
+            .map(|ids| Box::new(ids.iter().copied()) as Box<dyn Iterator<Item=PointOffsetType>>)
             .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>()))
     }
 }
@@ -54,7 +69,7 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
         match &condition.r#match {
             Some(Match::Keyword(MatchKeyword { keyword })) => Some(self.get_iterator(keyword)),
             _ => None,
@@ -78,7 +93,7 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
         let iter = self
             .map
             .iter()
@@ -101,7 +116,7 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
         match &condition.r#match {
             Some(Match::Integer(MatchInteger { integer })) => Some(self.get_iterator(integer)),
             _ => None,
@@ -125,7 +140,7 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
         let iter = self
             .map
             .iter()
@@ -163,8 +178,9 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
     }
 
     fn build(&mut self) -> FieldIndex {
-        let data = mem::take(&mut self.map);
-        FieldIndex::KeywordIndex(PersistedMapIndex { map: data })
+        let map = mem::take(&mut self.map);
+        let column = mem::take(&mut self.point_to_values);
+        FieldIndex::KeywordIndex(PersistedMapIndex { map, point_to_values: column })
     }
 }
 
@@ -187,7 +203,8 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<IntPayloadType> {
     }
 
     fn build(&mut self) -> FieldIndex {
-        let data = mem::take(&mut self.map);
-        FieldIndex::IntMapIndex(PersistedMapIndex { map: data })
+        let map = mem::take(&mut self.map);
+        let column = mem::take(&mut self.point_to_values);
+        FieldIndex::IntMapIndex(PersistedMapIndex { map, point_to_values: column })
     }
 }
