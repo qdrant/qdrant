@@ -9,10 +9,9 @@ use std::path::{Path, PathBuf};
 pub const ALIAS_MAPPING_CONFIG_FILE: &str = "data.json";
 
 type Alias = String;
-type CollectionName = String;
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
-struct AliasMapping(HashMap<Alias, CollectionName>);
+struct AliasMapping(HashMap<Alias, collection::CollectionId>);
 
 impl AliasMapping {
     pub fn load(path: &Path) -> Result<Self, StorageError> {
@@ -24,7 +23,7 @@ impl AliasMapping {
     }
 }
 
-/// Not thread-safe, accesses must be synchronized by an exclusive lock at the call site
+/// Persists mapping between alias and collection name. The data is assumed to be relatively small.
 /// - Reads are served from memory.
 /// - Writes are durably saved.
 pub struct AliasPersistence {
