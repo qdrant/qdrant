@@ -44,7 +44,7 @@ mod tests {
 
         handle
             .block_on(
-                toc.perform_collection_operation(CollectionMetaOperations::CreateCollection(
+                toc.submit_collection_operation(CollectionMetaOperations::CreateCollection(
                     CreateCollectionOperation {
                         collection_name: "test".to_string(),
                         create_collection: CreateCollection {
@@ -62,7 +62,7 @@ mod tests {
 
         handle
             .block_on(
-                toc.perform_collection_operation(CollectionMetaOperations::ChangeAliases(
+                toc.submit_collection_operation(CollectionMetaOperations::ChangeAliases(
                     ChangeAliasesOperation {
                         actions: vec![CreateAlias {
                             collection_name: "test".to_string(),
@@ -76,7 +76,7 @@ mod tests {
 
         handle
             .block_on(
-                toc.perform_collection_operation(CollectionMetaOperations::ChangeAliases(
+                toc.submit_collection_operation(CollectionMetaOperations::ChangeAliases(
                     ChangeAliasesOperation {
                         actions: vec![
                             CreateAlias {

@@ -111,7 +111,7 @@ impl TryFrom<api::grpc::qdrant::AliasOperations> for AliasOperations {
     }
 }
 
-impl TryFrom<api::grpc::qdrant::ChangeAliases> for ChangeAliasesOperation {
+impl TryFrom<api::grpc::qdrant::ChangeAliases> for CollectionMetaOperations {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::ChangeAliases) -> Result<Self, Self::Error> {
@@ -120,6 +120,6 @@ impl TryFrom<api::grpc::qdrant::ChangeAliases> for ChangeAliasesOperation {
             .into_iter()
             .map(|a| a.try_into())
             .collect::<Result<_, _>>()?;
-        Ok(ChangeAliasesOperation { actions })
+        Ok(Self::ChangeAliases(ChangeAliasesOperation { actions }))
     }
 }

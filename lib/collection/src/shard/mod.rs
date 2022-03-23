@@ -4,7 +4,7 @@ pub mod remote_shard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::{
     CollectionInfo, CollectionResult, CollectionSearcher, CollectionUpdateOperations, LocalShard,
-    OptimizersConfigDiff, PeerId, PointRequest, Record, SearchRequest, UpdateResult,
+    PeerId, PointRequest, Record, SearchRequest, UpdateResult,
 };
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
@@ -63,11 +63,6 @@ pub trait ShardOperation {
         with_vector: bool,
         filter: Option<&Filter>,
     ) -> CollectionResult<Vec<Record>>;
-
-    async fn update_optimizer_params(
-        &self,
-        optimizer_config_diff: OptimizersConfigDiff,
-    ) -> CollectionResult<()>;
 
     async fn info(&self) -> CollectionResult<CollectionInfo>;
 

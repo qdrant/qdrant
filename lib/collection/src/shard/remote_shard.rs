@@ -1,7 +1,7 @@
 use crate::shard::{PeerId, ShardId, ShardOperation};
 use crate::{
     CollectionId, CollectionInfo, CollectionResult, CollectionSearcher, CollectionUpdateOperations,
-    OptimizersConfigDiff, PointRequest, Record, SearchRequest, UpdateResult,
+    PointRequest, Record, SearchRequest, UpdateResult,
 };
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
@@ -39,13 +39,6 @@ impl ShardOperation for &RemoteShard {
         with_vector: bool,
         filter: Option<&Filter>,
     ) -> CollectionResult<Vec<Record>> {
-        todo!()
-    }
-
-    async fn update_optimizer_params(
-        &self,
-        optimizer_config_diff: OptimizersConfigDiff,
-    ) -> CollectionResult<()> {
         todo!()
     }
 

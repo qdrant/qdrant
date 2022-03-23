@@ -65,11 +65,36 @@ impl From<FileStorageError> for StorageError {
     }
 }
 
+impl<Guard> From<std::sync::PoisonError<Guard>> for StorageError {
+    fn from(err: std::sync::PoisonError<Guard>) -> Self {
+        StorageError::ServiceError {
+            description: format!("Mutex lock poisoned: {}", err),
+        }
+    }
+}
+
+impl<T> From<std::sync::mpsc::SendError<T>> for StorageError {
+    fn from(err: std::sync::mpsc::SendError<T>) -> Self {
+        StorageError::ServiceError {
+            description: format!("Channel closed: {}", err),
+        }
+    }
+}
+
 #[cfg(feature = "consensus")]
 impl From<serde_cbor::Error> for StorageError {
     fn from(err: serde_cbor::Error) -> Self {
         StorageError::ServiceError {
             description: format!("cbor (de)serialization error: {}", err),
+        }
+    }
+}
+
+#[cfg(feature = "consensus")]
+impl From<prost::EncodeError> for StorageError {
+    fn from(err: prost::EncodeError) -> Self {
+        StorageError::ServiceError {
+            description: format!("prost encode error: {}", err),
         }
     }
 }
