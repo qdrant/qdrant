@@ -149,19 +149,27 @@ impl GraphLayers {
         visited_list: &mut VisitedList,
         points_scorer: &FilteredScorer,
     ) {
+        let limit = self.get_m(level);
+        let mut scores_buffer: Vec<ScoredPointOffset> = vec![
+            ScoredPointOffset{ idx: 0, score: 0. }; limit];
+        let mut points_ids: Vec<PointOffsetType> = vec![];
+        points_ids.reserve(2 * limit);
+
         while let Some(candidate) = searcher.candidates.pop() {
             if candidate.score < searcher.lower_bound() {
                 break;
             }
-            let mut links_iter = self
-                .links(candidate.idx, level)
-                .iter()
-                .copied()
-                .filter(|point_id| !visited_list.check_and_update_visited(*point_id));
+
+            points_ids.clear();
+            for link in self.links(candidate.idx, level) {
+                if !visited_list.check_and_update_visited(*link) {
+                    points_ids.push(*link);
+                }
+            }
 
             points_scorer.score_iterable_points(
-                &mut links_iter,
-                self.get_m(level),
+                &points_ids,
+                &mut scores_buffer,
                 |score_point| searcher.process_candidate(score_point),
             );
         }
@@ -208,11 +216,18 @@ impl GraphLayers {
             score: points_scorer.score_point(entry_point),
         };
         for level in rev_range(top_level, target_level) {
+            let limit = self.get_m(level);
+            let mut scores_buffer: Vec<ScoredPointOffset> = vec![
+                ScoredPointOffset{ idx: 0, score: 0. }; limit];
+            let mut points_ids: Vec<PointOffsetType> = vec![];
+            points_ids.reserve(2 * limit);
+
             let mut changed = true;
             while changed {
                 changed = false;
-                let mut links = self.links(current_point.idx, level).iter().copied();
-                points_scorer.score_iterable_points(&mut links, self.get_m(level), |score_point| {
+                //todo
+                let links = self.links(current_point.idx, level).iter().copied().collect_vec();
+                points_scorer.score_iterable_points(&links, &mut scores_buffer, |score_point| {
                     if score_point.score > current_point.score {
                         changed = true;
                         current_point = score_point;

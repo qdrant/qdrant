@@ -45,6 +45,30 @@ where
         Box::new(res_iter)
     }
 
+    fn score_points_2(
+        &self,
+        points: &[PointOffsetType],
+        scores: &mut [ScoredPointOffset],
+    ) -> usize {
+        let mut size: usize = 0;
+        for point in points {
+            if self.mmap_store.deleted(*point).unwrap_or(true) {
+                continue;
+            }
+            let other_vector = self.mmap_store.raw_vector(*point).unwrap();
+            scores[size] = ScoredPointOffset {
+                idx: *point,
+                score: self.metric.similarity(&self.query, other_vector),
+            };
+
+            size += 1;
+            if size == scores.len() {
+                return size;
+            }
+        }
+        size
+    }
+
     fn check_point(&self, point: PointOffsetType) -> bool {
         (point < self.mmap_store.num_vectors as PointOffsetType)
             && !self.mmap_store.deleted(point).unwrap_or(true)

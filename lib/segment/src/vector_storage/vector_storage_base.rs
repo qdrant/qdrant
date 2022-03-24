@@ -33,6 +33,13 @@ pub trait RawScorer {
         &'a self,
         points: &'a mut dyn Iterator<Item = PointOffsetType>,
     ) -> Box<dyn Iterator<Item = ScoredPointOffset> + 'a>;
+
+    fn score_points_2(
+        &self,
+        points: &[PointOffsetType],
+        scores: &mut [ScoredPointOffset],
+    ) -> usize;
+
     /// Return true if point satisfies current search context (exists and not deleted)
     fn check_point(&self, point: PointOffsetType) -> bool;
     /// Score stored vector with vector under the given index
