@@ -102,7 +102,54 @@ $docker_grpcurl -d '{
   "negative": [{ "num": 2 }]
 }' $QDRANT_HOST qdrant.Points/Recommend
 
+# create alias
+$docker_grpcurl -d '{
+  "actions": [
+    {
+      "create_alias": {
+        "alias_name": "test_alias",
+        "collection_name": "test_collection"
+      }
+    }
+  ]
+}' $QDRANT_HOST qdrant.Collections/UpdateAliases
 
+# search via alias
+$docker_grpcurl -d '{
+  "collection_name": "test_alias",
+  "vector": [0.2,0.1,0.9,0.7],
+  "top": 3
+}' $QDRANT_HOST qdrant.Points/Search
+
+# rename alias
+$docker_grpcurl -d '{
+  "actions": [
+    {
+      "rename_alias": {
+        "old_alias_name": "test_alias",
+        "new_alias_name": "new_test_alias"
+      }
+    }
+  ]
+}' $QDRANT_HOST qdrant.Collections/UpdateAliases
+
+# search via renamed alias
+$docker_grpcurl -d '{
+  "collection_name": "new_test_alias",
+  "vector": [0.2,0.1,0.9,0.7],
+  "top": 3
+}' $QDRANT_HOST qdrant.Points/Search
+
+# delete alias
+$docker_grpcurl -d '{
+  "actions": [
+    {
+      "delete_alias": {
+        "alias_name": "new_test_alias"
+      }
+    }
+  ]
+}' $QDRANT_HOST qdrant.Collections/UpdateAliases
 
 
 #SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.vectors_count')
@@ -136,29 +183,3 @@ $docker_grpcurl -d '{
 #      "vector": [0.2, 0.1, 0.9, 0.7],
 #      "top": 3
 #  }' | jq
-#
-#
-#
-#curl -L -X POST "http://$QDRANT_HOST/collections" \
-#  --fail -s \
-#  -H 'Content-Type: application/json' \
-#  --data-raw '{
-#      "change_aliases": {
-#          "actions": [
-#              {
-#                  "create_alias": {
-#                      "alias_name": "test_alias",
-#                      "collection_name": "test_collection"
-#                  }
-#              }
-#          ]
-#      }
-#  }' | jq
-#
-#curl -L -X POST "http://$QDRANT_HOST/collections/test_alias/points/search" \
-#  -H 'Content-Type: application/json' \
-#  --fail -s \
-#  --data-raw '{
-#        "vector": [0.2,0.1,0.9,0.7],
-#        "top": 3
-#    }' | jq
