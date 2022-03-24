@@ -257,6 +257,7 @@ impl TableOfContent {
         }
     }
 
+    /// performs several alias changes in an atomic fashion
     pub async fn update_aliases(
         &self,
         operation: ChangeAliasesOperation,

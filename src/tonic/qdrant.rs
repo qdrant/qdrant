@@ -223,6 +223,52 @@ pub struct CollectionInfo {
     pub payload_schema:
         ::std::collections::HashMap<::prost::alloc::string::String, PayloadSchemaInfo>,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ChangeAliases {
+    #[prost(message, repeated, tag = "1")]
+    pub actions: ::prost::alloc::vec::Vec<AliasOperations>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AliasOperations {
+    #[prost(oneof = "alias_operations::Action", tags = "1, 2, 3")]
+    pub action: ::core::option::Option<alias_operations::Action>,
+}
+/// Nested message and enum types in `AliasOperations`.
+pub mod alias_operations {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Action {
+        #[prost(message, tag = "1")]
+        CreateAlias(super::CreateAlias),
+        #[prost(message, tag = "2")]
+        RenameAlias(super::RenameAlias),
+        #[prost(message, tag = "3")]
+        DeleteAlias(super::DeleteAlias),
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateAlias {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Name of the alias
+    #[prost(string, tag = "2")]
+    pub alias_name: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RenameAlias {
+    /// Name of the alias to rename
+    #[prost(string, tag = "1")]
+    pub old_alias_name: ::prost::alloc::string::String,
+    /// Name of the alias
+    #[prost(string, tag = "2")]
+    pub new_alias_name: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteAlias {
+    /// Name of the alias
+    #[prost(string, tag = "1")]
+    pub alias_name: ::prost::alloc::string::String,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Distance {
@@ -391,6 +437,22 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/Delete");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = ""]
+        #[doc = "Update Aliases of the existing collection"]
+        pub async fn update_aliases(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ChangeAliases>,
+        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/UpdateAliases");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 #[doc = r" Generated server implementations."]
@@ -429,6 +491,12 @@ pub mod collections_server {
         async fn delete(
             &self,
             request: tonic::Request<super::DeleteCollection>,
+        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status>;
+        #[doc = ""]
+        #[doc = "Update Aliases of the existing collection"]
+        async fn update_aliases(
+            &self,
+            request: tonic::Request<super::ChangeAliases>,
         ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status>;
     }
     #[derive(Debug)]
@@ -617,6 +685,37 @@ pub mod collections_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = DeleteSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Collections/UpdateAliases" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateAliasesSvc<T: Collections>(pub Arc<T>);
+                    impl<T: Collections> tonic::server::UnaryService<super::ChangeAliases> for UpdateAliasesSvc<T> {
+                        type Response = super::CollectionOperationResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ChangeAliases>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).update_aliases(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpdateAliasesSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
                             accept_compression_encodings,

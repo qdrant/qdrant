@@ -27,6 +27,10 @@ service Collections {
   Drop collection and all associated data
    */
   rpc Delete (DeleteCollection) returns (CollectionOperationResponse) {}
+  /*
+  Update Aliases of the existing collection
+  */
+  rpc UpdateAliases (ChangeAliases) returns (CollectionOperationResponse) {}
 }
 
 message GetCollectionInfoRequest {
@@ -202,4 +206,30 @@ message CollectionInfo {
   uint64 ram_data_size = 6; // Used RAM (not implemented)
   CollectionConfig config = 7; // Configuration
   map<string, PayloadSchemaInfo> payload_schema = 8; // Collection data types
+}
+
+message ChangeAliases {
+  repeated AliasOperations actions = 1; // List of actions
+}
+
+message AliasOperations {
+  oneof action {
+    CreateAlias create_alias = 1;
+    RenameAlias rename_alias = 2;
+    DeleteAlias delete_alias = 3;
+  }
+}
+
+message CreateAlias {
+  string collection_name = 1; // Name of the collection
+  string alias_name = 2; // New name of the alias
+}
+
+message RenameAlias {
+  string old_alias_name = 1; // Name of the alias to rename
+  string new_alias_name = 2; // Name of the alias
+}
+
+message DeleteAlias {
+  string alias_name = 1; // Name of the alias
 }

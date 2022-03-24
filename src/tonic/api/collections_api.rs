@@ -5,19 +5,20 @@ use crate::common::models::CollectionsResponse;
 use crate::tonic::api::common::error_to_status;
 use crate::tonic::qdrant::collections_server::Collections;
 use crate::tonic::qdrant::{
-    CollectionConfig, CollectionDescription, CollectionInfo, CollectionOperationResponse,
-    CollectionParams, CollectionStatus, CreateCollection, DeleteCollection, Distance,
-    GetCollectionInfoRequest, GetCollectionInfoResponse, HnswConfigDiff, ListCollectionsRequest,
-    ListCollectionsResponse, OptimizerStatus, OptimizersConfigDiff, PayloadSchemaInfo,
-    PayloadSchemaType, UpdateCollection, WalConfigDiff,
+    alias_operations, AliasOperations, ChangeAliases, CollectionConfig, CollectionDescription,
+    CollectionInfo, CollectionOperationResponse, CollectionParams, CollectionStatus, CreateAlias,
+    CreateCollection, DeleteAlias, DeleteCollection, Distance, GetCollectionInfoRequest,
+    GetCollectionInfoResponse, HnswConfigDiff, ListCollectionsRequest, ListCollectionsResponse,
+    OptimizerStatus, OptimizersConfigDiff, PayloadSchemaInfo, PayloadSchemaType, RenameAlias,
+    UpdateCollection, WalConfigDiff,
 };
 use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::Instant;
 use storage::content_manager::collection_meta_ops::{
-    CreateCollection as StorageCreateCollection, CreateCollectionOperation,
-    DeleteCollectionOperation, UpdateCollection as StorageUpdateCollection,
-    UpdateCollectionOperation,
+    CreateAliasOperation, CreateCollection as StorageCreateCollection, CreateCollectionOperation,
+    DeleteAliasOperation, DeleteCollectionOperation, RenameAliasOperation,
+    UpdateCollection as StorageUpdateCollection, UpdateCollectionOperation,
 };
 use storage::content_manager::toc::TableOfContent;
 
@@ -108,6 +109,25 @@ impl Collections for CollectionsService {
         let result = self
             .toc
             .perform_collection_operation(operations)
+            .await
+            .map_err(error_to_status)?;
+
+        let response = CollectionOperationResponse::from((timing, result));
+        Ok(Response::new(response))
+    }
+
+    async fn update_aliases(
+        &self,
+        request: Request<ChangeAliases>,
+    ) -> Result<Response<CollectionOperationResponse>, Status> {
+        let operations =
+            storage::content_manager::collection_meta_ops::ChangeAliasesOperation::try_from(
+                request.into_inner(),
+            )?;
+        let timing = Instant::now();
+        let result = self
+            .toc
+            .update_aliases(operations)
             .await
             .map_err(error_to_status)?;
 
@@ -328,5 +348,65 @@ impl From<DeleteCollection>
 {
     fn from(value: DeleteCollection) -> Self {
         Self::DeleteCollection(DeleteCollectionOperation(value.collection_name))
+    }
+}
+
+impl From<CreateAlias> for storage::content_manager::collection_meta_ops::AliasOperations {
+    fn from(value: CreateAlias) -> Self {
+        Self::CreateAlias(CreateAliasOperation {
+            create_alias: storage::content_manager::collection_meta_ops::CreateAlias {
+                collection_name: value.collection_name,
+                alias_name: value.alias_name,
+            },
+        })
+    }
+}
+
+impl From<DeleteAlias> for storage::content_manager::collection_meta_ops::AliasOperations {
+    fn from(value: DeleteAlias) -> Self {
+        Self::DeleteAlias(DeleteAliasOperation {
+            delete_alias: storage::content_manager::collection_meta_ops::DeleteAlias {
+                alias_name: value.alias_name,
+            },
+        })
+    }
+}
+
+impl From<RenameAlias> for storage::content_manager::collection_meta_ops::AliasOperations {
+    fn from(value: RenameAlias) -> Self {
+        Self::RenameAlias(RenameAliasOperation {
+            rename_alias: storage::content_manager::collection_meta_ops::RenameAlias {
+                old_alias_name: value.old_alias_name,
+                new_alias_name: value.new_alias_name,
+            },
+        })
+    }
+}
+
+impl TryFrom<AliasOperations> for storage::content_manager::collection_meta_ops::AliasOperations {
+    type Error = Status;
+
+    fn try_from(value: AliasOperations) -> Result<Self, Self::Error> {
+        match value.action {
+            Some(alias_operations::Action::CreateAlias(create)) => Ok(create.into()),
+            Some(alias_operations::Action::DeleteAlias(delete)) => Ok(delete.into()),
+            Some(alias_operations::Action::RenameAlias(rename)) => Ok(rename.into()),
+            _ => Err(Status::invalid_argument("Malformed AliasOperation type")),
+        }
+    }
+}
+
+impl TryFrom<ChangeAliases>
+    for storage::content_manager::collection_meta_ops::ChangeAliasesOperation
+{
+    type Error = Status;
+
+    fn try_from(value: ChangeAliases) -> Result<Self, Self::Error> {
+        let actions: Vec<storage::content_manager::collection_meta_ops::AliasOperations> = value
+            .actions
+            .into_iter()
+            .map(|a| a.try_into())
+            .collect::<Result<_, _>>()?;
+        Ok(storage::content_manager::collection_meta_ops::ChangeAliasesOperation { actions })
     }
 }
