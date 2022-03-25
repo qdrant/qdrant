@@ -50,7 +50,6 @@ impl<'a> FilteredScorer<'a> {
                     .for_each(action);
             }
             Some(f) => {
-                //todo
                 let filtered_points: Vec<PointOffsetType> = point_ids
                     .iter()
                     .copied()
@@ -66,17 +65,6 @@ impl<'a> FilteredScorer<'a> {
                     .for_each(action);
             }
         };
-    }
-
-    pub fn score_points<F>(&self, ids: &[PointOffsetType], limit: usize, action: F)
-    where
-        F: FnMut(ScoredPointOffset),
-    {
-        //todo
-        let mut scores_buffer: Vec<ScoredPointOffset> =
-            vec![ScoredPointOffset { idx: 0, score: 0. }; limit];
-
-        self.score_iterable_points(ids, &mut scores_buffer, action);
     }
 
     pub fn score_point(&self, point_id: PointOffsetType) -> ScoreType {

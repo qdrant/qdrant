@@ -223,7 +223,6 @@ impl GraphLayers {
             let mut changed = true;
             while changed {
                 changed = false;
-                //todo
                 let links = self
                     .links(current_point.idx, level)
                     .iter()
