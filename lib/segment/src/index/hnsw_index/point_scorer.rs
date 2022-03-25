@@ -40,19 +40,30 @@ impl<'a> FilteredScorer<'a> {
     {
         match self.filter {
             None => {
-                let count = self.raw_scorer.score_points_2(point_ids, scored_points_buffer);
-                scored_points_buffer.iter().take(count).copied().for_each(action);
-            },
+                let count = self
+                    .raw_scorer
+                    .score_points(point_ids, scored_points_buffer);
+                scored_points_buffer
+                    .iter()
+                    .take(count)
+                    .copied()
+                    .for_each(action);
+            }
             Some(f) => {
                 //todo
-                /*
-                let mut points_filtered_iterator =
-                    points_iterator.filter(move |id| self.condition_checker.check(*id, f));
-                self.raw_scorer
-                    .score_points(&mut points_filtered_iterator)
-                    .take(limit)
+                let filtered_points: Vec<PointOffsetType> = point_ids
+                    .iter()
+                    .copied()
+                    .filter(|id| self.condition_checker.check(*id, f))
+                    .collect();
+                let count = self
+                    .raw_scorer
+                    .score_points(&filtered_points, scored_points_buffer);
+                scored_points_buffer
+                    .iter()
+                    .take(count)
+                    .copied()
                     .for_each(action);
-                    */
             }
         };
     }
@@ -62,8 +73,8 @@ impl<'a> FilteredScorer<'a> {
         F: FnMut(ScoredPointOffset),
     {
         //todo
-        let mut scores_buffer: Vec<ScoredPointOffset> = vec![
-            ScoredPointOffset{ idx: 0, score: 0. }; limit];
+        let mut scores_buffer: Vec<ScoredPointOffset> =
+            vec![ScoredPointOffset { idx: 0, score: 0. }; limit];
 
         self.score_iterable_points(ids, &mut scores_buffer, action);
     }

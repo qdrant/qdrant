@@ -10,6 +10,7 @@ use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::simple::CosineMetric;
 use segment::types::PointOffsetType;
+use segment::vector_storage::ScoredPointOffset;
 
 const NUM_VECTORS: usize = 100000;
 const DIM: usize = 64;
@@ -46,6 +47,8 @@ fn hnsw_benchmark(c: &mut Criterion) {
         })
     });
 
+    let plain_search_range: Vec<PointOffsetType> = (0..NUM_VECTORS as PointOffsetType).collect();
+    let mut plain_search_points_buffer = vec![ScoredPointOffset { idx: 0, score: 0. }; NUM_VECTORS];
     group.bench_function("plain_search", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
@@ -53,13 +56,16 @@ fn hnsw_benchmark(c: &mut Criterion) {
             let raw_scorer = vector_holder.get_raw_scorer(query);
             let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
 
-            let mut iter = 0..NUM_VECTORS as PointOffsetType;
             let mut top_score = 0.;
-            scorer.score_iterable_points(&mut iter, NUM_VECTORS, |score| {
-                if score.score > top_score {
-                    top_score = score.score
-                }
-            });
+            scorer.score_iterable_points(
+                &plain_search_range,
+                &mut plain_search_points_buffer,
+                |score| {
+                    if score.score > top_score {
+                        top_score = score.score
+                    }
+                },
+            );
         })
     });
 

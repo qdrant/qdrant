@@ -150,8 +150,8 @@ impl GraphLayers {
         points_scorer: &FilteredScorer,
     ) {
         let limit = self.get_m(level);
-        let mut scores_buffer: Vec<ScoredPointOffset> = vec![
-            ScoredPointOffset{ idx: 0, score: 0. }; limit];
+        let mut scores_buffer: Vec<ScoredPointOffset> =
+            vec![ScoredPointOffset { idx: 0, score: 0. }; limit];
         let mut points_ids: Vec<PointOffsetType> = vec![];
         points_ids.reserve(2 * limit);
 
@@ -167,11 +167,9 @@ impl GraphLayers {
                 }
             }
 
-            points_scorer.score_iterable_points(
-                &points_ids,
-                &mut scores_buffer,
-                |score_point| searcher.process_candidate(score_point),
-            );
+            points_scorer.score_iterable_points(&points_ids, &mut scores_buffer, |score_point| {
+                searcher.process_candidate(score_point)
+            });
         }
     }
 
@@ -217,8 +215,8 @@ impl GraphLayers {
         };
         for level in rev_range(top_level, target_level) {
             let limit = self.get_m(level);
-            let mut scores_buffer: Vec<ScoredPointOffset> = vec![
-                ScoredPointOffset{ idx: 0, score: 0. }; limit];
+            let mut scores_buffer: Vec<ScoredPointOffset> =
+                vec![ScoredPointOffset { idx: 0, score: 0. }; limit];
             let mut points_ids: Vec<PointOffsetType> = vec![];
             points_ids.reserve(2 * limit);
 
@@ -226,7 +224,11 @@ impl GraphLayers {
             while changed {
                 changed = false;
                 //todo
-                let links = self.links(current_point.idx, level).iter().copied().collect_vec();
+                let links = self
+                    .links(current_point.idx, level)
+                    .iter()
+                    .copied()
+                    .collect_vec();
                 points_scorer.score_iterable_points(&links, &mut scores_buffer, |score_point| {
                     if score_point.score > current_point.score {
                         changed = true;
