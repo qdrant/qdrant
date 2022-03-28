@@ -1,14 +1,12 @@
 mod api;
-#[allow(clippy::all)]
-pub mod qdrant;
 
-use crate::common::models::VersionInfo;
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::points_api::PointsService;
-use qdrant::collections_server::CollectionsServer;
-use qdrant::points_server::PointsServer;
-use qdrant::qdrant_server::{Qdrant, QdrantServer};
-use qdrant::{HealthCheckReply, HealthCheckRequest};
+use ::api::grpc::models::VersionInfo;
+use ::api::grpc::qdrant::collections_server::CollectionsServer;
+use ::api::grpc::qdrant::points_server::PointsServer;
+use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
+use ::api::grpc::qdrant::{HealthCheckReply, HealthCheckRequest};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -18,15 +16,6 @@ use tonic::{transport::Server, Request, Response, Status};
 
 #[derive(Default)]
 pub struct QdrantService {}
-
-impl From<VersionInfo> for HealthCheckReply {
-    fn from(info: VersionInfo) -> Self {
-        HealthCheckReply {
-            title: info.title,
-            version: info.version,
-        }
-    }
-}
 
 #[tonic::async_trait]
 impl Qdrant for QdrantService {

@@ -1,9 +1,9 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
-        .out_dir("src/tonic/") // saves generated structures at this location
+        .out_dir("lib/api/src/grpc/") // saves generated structures at this location
         .compile(
-            &["src/tonic/proto/qdrant.proto"], // proto entry point
-            &["src/tonic/proto"], // specify the root location to search proto dependencies
+            &["lib/api/src/grpc/proto/qdrant.proto"], // proto entry point
+            &["lib/api/src/grpc/proto"], // specify the root location to search proto dependencies
         )
         .unwrap();
 

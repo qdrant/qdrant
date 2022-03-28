@@ -12,8 +12,8 @@ use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, UpdateCollection,
 };
 
-use crate::common::models::CollectionsResponse;
 use crate::common::points::CreateFieldIndex;
+use api::grpc::models::CollectionsResponse;
 
 mod actix;
 mod common;

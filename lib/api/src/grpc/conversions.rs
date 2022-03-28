@@ -1,26 +1,25 @@
-use crate::tonic::qdrant::condition::ConditionOneOf;
-use crate::tonic::qdrant::point_id::PointIdOptions;
-use crate::tonic::qdrant::points_selector::PointsSelectorOneOf;
-use crate::tonic::qdrant::r#match::MatchValue;
-use crate::tonic::qdrant::with_payload_selector::SelectorOptions;
-use crate::tonic::qdrant::{
-    Condition, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, Match,
-    PointId, PointStruct, PointsOperationResponse, PointsSelector, Range, RetrievedPoint,
-    ScoredPoint, SearchParams, UpdateResult, WithPayloadSelector,
+use crate::grpc::models::{CollectionsResponse, VersionInfo};
+use crate::grpc::qdrant::condition::ConditionOneOf;
+use crate::grpc::qdrant::point_id::PointIdOptions;
+use crate::grpc::qdrant::r#match::MatchValue;
+use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
+use crate::grpc::qdrant::{
+    CollectionDescription, CollectionOperationResponse, Condition, FieldCondition, Filter,
+    GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply, ListCollectionsResponse,
+    Match, PayloadSchemaInfo, PayloadSchemaType, PointId, Range, ScoredPoint, SearchParams,
+    WithPayloadSelector,
 };
-use collection::operations::point_ops::PointIdsList;
+
 use prost_types::value::Kind;
 use prost_types::ListValue;
-use segment::types::{
-    Payload, PayloadSelectorExclude, PayloadSelectorInclude, PointIdType, WithPayloadInterface,
-};
+
 use serde_json::{Map, Number, Value};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 use tonic::Status;
 use uuid::Uuid;
 
-pub fn payload_to_proto(payload: Payload) -> HashMap<String, prost_types::Value> {
+pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, prost_types::Value> {
     payload
         .into_iter()
         .map(|(k, v)| (k, json_to_proto(v)))
@@ -56,7 +55,9 @@ fn json_to_proto(json_value: Value) -> prost_types::Value {
     }
 }
 
-pub fn proto_to_payloads(proto: HashMap<String, prost_types::Value>) -> Result<Payload, Status> {
+pub fn proto_to_payloads(
+    proto: HashMap<String, prost_types::Value>,
+) -> Result<segment::types::Payload, Status> {
     let mut map: Map<String, Value> = Map::new();
     for (k, v) in proto.into_iter() {
         map.insert(k, proto_to_json(v)?);
@@ -96,6 +97,54 @@ fn proto_to_json(proto: prost_types::Value) -> Result<Value, Status> {
     }
 }
 
+impl From<VersionInfo> for HealthCheckReply {
+    fn from(info: VersionInfo) -> Self {
+        HealthCheckReply {
+            title: info.title,
+            version: info.version,
+        }
+    }
+}
+
+impl From<(Instant, CollectionsResponse)> for ListCollectionsResponse {
+    fn from(value: (Instant, CollectionsResponse)) -> Self {
+        let (timing, response) = value;
+        let collections = response
+            .collections
+            .into_iter()
+            .map(|desc| CollectionDescription { name: desc.name })
+            .collect::<Vec<_>>();
+        Self {
+            collections,
+            time: timing.elapsed().as_secs_f64(),
+        }
+    }
+}
+
+impl From<segment::types::PayloadIndexInfo> for PayloadSchemaInfo {
+    fn from(schema: segment::types::PayloadIndexInfo) -> Self {
+        PayloadSchemaInfo {
+            data_type: match schema.data_type {
+                segment::types::PayloadSchemaType::Keyword => PayloadSchemaType::Keyword,
+                segment::types::PayloadSchemaType::Integer => PayloadSchemaType::Integer,
+                segment::types::PayloadSchemaType::Float => PayloadSchemaType::Float,
+                segment::types::PayloadSchemaType::Geo => PayloadSchemaType::Geo,
+            }
+            .into(),
+        }
+    }
+}
+
+impl From<(Instant, bool)> for CollectionOperationResponse {
+    fn from(value: (Instant, bool)) -> Self {
+        let (timing, result) = value;
+        CollectionOperationResponse {
+            result,
+            time: timing.elapsed().as_secs_f64(),
+        }
+    }
+}
+
 impl From<segment::types::GeoPoint> for GeoPoint {
     fn from(geo: segment::types::GeoPoint) -> Self {
         Self {
@@ -105,15 +154,19 @@ impl From<segment::types::GeoPoint> for GeoPoint {
     }
 }
 
-impl TryFrom<WithPayloadSelector> for WithPayloadInterface {
+impl TryFrom<WithPayloadSelector> for segment::types::WithPayloadInterface {
     type Error = Status;
 
     fn try_from(value: WithPayloadSelector) -> Result<Self, Self::Error> {
         match value.selector_options {
             Some(options) => Ok(match options {
-                SelectorOptions::Enable(flag) => WithPayloadInterface::Bool(flag),
-                SelectorOptions::Exclude(s) => PayloadSelectorExclude::new(s.exclude).into(),
-                SelectorOptions::Include(s) => PayloadSelectorInclude::new(s.include).into(),
+                SelectorOptions::Enable(flag) => segment::types::WithPayloadInterface::Bool(flag),
+                SelectorOptions::Exclude(s) => {
+                    segment::types::PayloadSelectorExclude::new(s.exclude).into()
+                }
+                SelectorOptions::Include(s) => {
+                    segment::types::PayloadSelectorInclude::new(s.include).into()
+                }
             }),
             _ => Err(Status::invalid_argument("No PayloadSelector".to_string())),
         }
@@ -128,12 +181,12 @@ impl From<SearchParams> for segment::types::SearchParams {
     }
 }
 
-impl From<PointIdType> for PointId {
-    fn from(point_id: PointIdType) -> Self {
+impl From<segment::types::PointIdType> for PointId {
+    fn from(point_id: segment::types::PointIdType) -> Self {
         PointId {
             point_id_options: Some(match point_id {
-                PointIdType::NumId(num) => PointIdOptions::Num(num),
-                PointIdType::Uuid(uuid) => PointIdOptions::Uuid(uuid.to_string()),
+                segment::types::PointIdType::NumId(num) => PointIdOptions::Num(num),
+                segment::types::PointIdType::Uuid(uuid) => PointIdOptions::Uuid(uuid.to_string()),
             }),
         }
     }
@@ -151,78 +204,20 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
     }
 }
 
-impl From<collection::operations::types::Record> for RetrievedPoint {
-    fn from(record: collection::operations::types::Record) -> Self {
-        Self {
-            id: Some(record.id.into()),
-            payload: record.payload.map(payload_to_proto).unwrap_or_default(),
-            vector: record.vector.unwrap_or_default(),
-        }
-    }
-}
-
-impl TryFrom<PointId> for PointIdType {
+impl TryFrom<PointId> for segment::types::PointIdType {
     type Error = Status;
 
     fn try_from(value: PointId) -> Result<Self, Self::Error> {
         match value.point_id_options {
-            Some(PointIdOptions::Num(num_id)) => Ok(PointIdType::NumId(num_id)),
+            Some(PointIdOptions::Num(num_id)) => Ok(segment::types::PointIdType::NumId(num_id)),
             Some(PointIdOptions::Uuid(uui_str)) => Uuid::parse_str(&uui_str)
-                .map(PointIdType::Uuid)
+                .map(segment::types::PointIdType::Uuid)
                 .map_err(|_err| {
                     Status::invalid_argument(format!("Unable to parse UUID: {}", uui_str))
                 }),
             _ => Err(Status::invalid_argument(
                 "No ID options provided".to_string(),
             )),
-        }
-    }
-}
-
-impl TryFrom<PointStruct> for collection::operations::point_ops::PointStruct {
-    type Error = Status;
-
-    fn try_from(value: PointStruct) -> Result<Self, Self::Error> {
-        let PointStruct {
-            id,
-            vector,
-            payload,
-        } = value;
-
-        let converted_payload = proto_to_payloads(payload)?;
-
-        Ok(Self {
-            id: id
-                .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
-                .try_into()?,
-            vector,
-            payload: Some(converted_payload),
-        })
-    }
-}
-
-impl TryFrom<PointsSelector> for collection::operations::point_ops::PointsSelector {
-    type Error = Status;
-
-    fn try_from(value: PointsSelector) -> Result<Self, Self::Error> {
-        match value.points_selector_one_of {
-            Some(PointsSelectorOneOf::Points(points)) => Ok(
-                collection::operations::point_ops::PointsSelector::PointIdsSelector(PointIdsList {
-                    points: points
-                        .ids
-                        .into_iter()
-                        .map(|p| p.try_into())
-                        .collect::<Result<Vec<_>, _>>()?,
-                }),
-            ),
-            Some(PointsSelectorOneOf::Filter(f)) => Ok(
-                collection::operations::point_ops::PointsSelector::FilterSelector(
-                    collection::operations::point_ops::FilterSelector {
-                        filter: f.try_into()?,
-                    },
-                ),
-            ),
-            _ => Err(Status::invalid_argument("Malformed PointsSelector type")),
         }
     }
 }
@@ -276,7 +271,7 @@ impl TryFrom<HasIdCondition> for segment::types::HasIdCondition {
     type Error = Status;
 
     fn try_from(value: HasIdCondition) -> Result<Self, Self::Error> {
-        let set: HashSet<PointIdType> = value
+        let set: HashSet<segment::types::PointIdType> = value
             .has_id
             .into_iter()
             .map(|p| p.try_into())
@@ -374,25 +369,6 @@ impl TryFrom<Match> for segment::types::Match {
                 MatchValue::Integer(int) => int.into(),
             }),
             _ => Err(Status::invalid_argument("Malformed Match condition")),
-        }
-    }
-}
-
-impl From<(Instant, collection::operations::types::UpdateResult)> for PointsOperationResponse {
-    fn from(value: (Instant, collection::operations::types::UpdateResult)) -> Self {
-        let (timing, response) = value;
-        Self {
-            result: Some(response.into()),
-            time: timing.elapsed().as_secs_f64(),
-        }
-    }
-}
-
-impl From<collection::operations::types::UpdateResult> for UpdateResult {
-    fn from(value: collection::operations::types::UpdateResult) -> Self {
-        Self {
-            operation_id: value.operation_id,
-            status: value.status as i32,
         }
     }
 }
