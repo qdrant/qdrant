@@ -225,6 +225,7 @@ pub struct CollectionInfo {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ChangeAliases {
+    /// List of actions
     #[prost(message, repeated, tag = "1")]
     pub actions: ::prost::alloc::vec::Vec<AliasOperations>,
 }
@@ -250,7 +251,7 @@ pub struct CreateAlias {
     /// Name of the collection
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Name of the alias
+    /// New name of the alias
     #[prost(string, tag = "2")]
     pub alias_name: ::prost::alloc::string::String,
 }
