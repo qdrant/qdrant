@@ -1,32 +1,27 @@
-use crate::payload_storage::ConditionChecker;
-use crate::types::{Filter, PointOffsetType, ScoreType};
+use crate::payload_storage::FilterContext;
+use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset};
 
 pub struct FilteredScorer<'a> {
     pub raw_scorer: &'a dyn RawScorer,
-    pub condition_checker: &'a dyn ConditionChecker,
-    pub filter: Option<&'a Filter>,
+    pub filter_context: Option<&'a dyn FilterContext>,
 }
 
 impl<'a> FilteredScorer<'a> {
     pub fn new(
         raw_scorer: &'a dyn RawScorer,
-        condition_checker: &'a dyn ConditionChecker,
-        filter: Option<&'a Filter>,
+        filter_context: Option<&'a dyn FilterContext>,
     ) -> Self {
         FilteredScorer {
             raw_scorer,
-            condition_checker,
-            filter,
+            filter_context,
         }
     }
 
     pub fn check_point(&self, point_id: PointOffsetType) -> bool {
-        match self.filter {
+        match self.filter_context {
             None => self.raw_scorer.check_point(point_id),
-            Some(f) => {
-                self.condition_checker.check(point_id, f) && self.raw_scorer.check_point(point_id)
-            }
+            Some(f) => f.check(point_id) && self.raw_scorer.check_point(point_id),
         }
     }
 
@@ -38,15 +33,14 @@ impl<'a> FilteredScorer<'a> {
     ) where
         F: FnMut(ScoredPointOffset),
     {
-        match self.filter {
+        match self.filter_context {
             None => self
                 .raw_scorer
                 .score_points(points_iterator)
                 .take(limit)
                 .for_each(action),
             Some(f) => {
-                let mut points_filtered_iterator =
-                    points_iterator.filter(move |id| self.condition_checker.check(*id, f));
+                let mut points_filtered_iterator = points_iterator.filter(move |id| f.check(*id));
                 self.raw_scorer
                     .score_points(&mut points_filtered_iterator)
                     .take(limit)

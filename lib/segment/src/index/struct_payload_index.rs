@@ -16,7 +16,7 @@ use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
-use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
+use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorageSS};
 use crate::types::{
     Condition, FieldCondition, Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointOffsetType,
@@ -341,6 +341,10 @@ impl PayloadIndex for StructPayloadIndex {
             let matched_points_iter = preselected.into_iter();
             Box::new(matched_points_iter)
         };
+    }
+
+    fn filter_context(&self, _filter: &Filter) -> Box<dyn FilterContext> {
+        todo!()
     }
 
     fn payload_blocks(

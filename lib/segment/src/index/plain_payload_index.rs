@@ -1,5 +1,5 @@
 use crate::index::{PayloadIndex, PayloadIndexSS, VectorIndex};
-use crate::payload_storage::ConditionCheckerSS;
+use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::types::{
     Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType, SearchParams,
     VectorElementType,
@@ -113,6 +113,10 @@ impl PayloadIndex for PlainPayloadIndex {
             }
         }
         Box::new(matched_points.into_iter())
+    }
+
+    fn filter_context(&self, _filter: &Filter) -> Box<dyn FilterContext> {
+        todo!()
     }
 
     fn payload_blocks(
