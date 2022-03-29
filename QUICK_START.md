@@ -137,7 +137,7 @@ curl -L -X POST 'http://localhost:6333/collections/test_collection/points/search
               {
                   "key": "city",
                   "match": {
-                      "keyword": "London"
+                      "value": "London"
                   }
               }
           ]

@@ -7,6 +7,8 @@ pub mod payload_storage;
 pub mod segment;
 pub mod segment_constructor;
 pub mod spaces;
+
+#[allow(deprecated)]
 pub mod types;
 pub mod vector_storage;
 
