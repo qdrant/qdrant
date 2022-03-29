@@ -51,9 +51,6 @@ collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
 
-[build-dependencies]
-tonic-build = { version = "0.6.2", features = ["prost"] }
-
 [[bin]]
 name = "schema_generator"
 path = "src/schema_generator.rs"

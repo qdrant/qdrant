@@ -263,6 +263,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tonic",
+ "tonic-build",
  "uuid",
 ]
 
@@ -2359,7 +2360,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
- "tonic-build",
 ]
 
 [[package]]
