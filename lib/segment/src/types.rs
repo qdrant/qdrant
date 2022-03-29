@@ -514,10 +514,26 @@ pub struct MatchInteger {
 /// Match filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
+pub struct MatchBool {
+    /// Bool value to match
+    pub bool: bool,
+}
+
+
+/// Match filter request
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum Match {
     Keyword(MatchKeyword),
     Integer(MatchInteger),
+    Bool(MatchBool),
+}
+
+impl From<bool> for Match {
+    fn from(val: bool) -> Self {
+        Self::Bool(MatchBool { bool: val })
+    }
 }
 
 impl From<String> for Match {
@@ -590,6 +606,7 @@ impl GeoRadius {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct FieldCondition {
+    /// Payload key
     pub key: PayloadKeyType,
     /// Check if point has field with a given value
     pub r#match: Option<Match>,

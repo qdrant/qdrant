@@ -1,6 +1,6 @@
 //! Contains functions for interpreting filter queries and defining if given points pass the conditions
 
-use crate::types::{GeoBoundingBox, GeoRadius, Match, MatchInteger, MatchKeyword, Range};
+use crate::types::{GeoBoundingBox, GeoRadius, Match, MatchBool, MatchInteger, MatchKeyword, Range};
 use serde_json::Value;
 
 pub trait ValueChecker {
@@ -32,11 +32,22 @@ impl ValueChecker for MatchInteger {
     }
 }
 
+
+impl ValueChecker for MatchBool {
+    fn check_match(&self, payload: &Value) -> bool {
+        match payload {
+            Value::Bool(val) => self.bool == *val,
+            _ => false,
+        }
+    }
+}
+
 impl ValueChecker for Match {
     fn check_match(&self, payload: &Value) -> bool {
         match self {
             Match::Keyword(match_keyword) => match_keyword.check_match(payload),
             Match::Integer(match_integer) => match_integer.check_match(payload),
+            Match::Bool(match_bool) => match_bool.check_match(payload),
         }
     }
 }
