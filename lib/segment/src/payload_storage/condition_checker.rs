@@ -20,13 +20,12 @@ impl ValueChecker for Match {
             Match::Value(MatchValue { value }) => match (payload, value) {
                 (Value::Bool(stored), ValueVariants::Bool(val)) => stored == val,
                 (Value::String(stored), ValueVariants::Keyword(val)) => stored == val,
-                (Value::Number(stored), ValueVariants::Integer(val)) => stored
-                    .as_i64()
-                    .map(|num| num == *val)
-                    .unwrap_or(false),
+                (Value::Number(stored), ValueVariants::Integer(val)) => {
+                    stored.as_i64().map(|num| num == *val).unwrap_or(false)
+                }
                 _ => false,
-            }
-            _ => panic!("use of deprecated conditions")
+            },
+            _ => panic!("use of deprecated conditions"),
         }
     }
 }

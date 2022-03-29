@@ -29,7 +29,7 @@ pub type IntPayloadType = i64;
 
 /// Type, used for specifying point ID in user interface
 #[derive(
-Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema,
+    Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema,
 )]
 #[serde(untagged)]
 pub enum ExtendedPointId {
@@ -553,27 +553,37 @@ impl From<MatchInterface> for Match {
     fn from(value: MatchInterface) -> Self {
         match value {
             MatchInterface::Value(value) => Self::Value(MatchValue { value: value.value }),
-            MatchInterface::Keyword(MatchKeyword { keyword }) => Self::Value(MatchValue { value: ValueVariants::Keyword(keyword) }),
-            MatchInterface::Integer(MatchInteger { integer }) => Self::Value(MatchValue { value: ValueVariants::Integer(integer) }),
+            MatchInterface::Keyword(MatchKeyword { keyword }) => Self::Value(MatchValue {
+                value: ValueVariants::Keyword(keyword),
+            }),
+            MatchInterface::Integer(MatchInteger { integer }) => Self::Value(MatchValue {
+                value: ValueVariants::Integer(integer),
+            }),
         }
     }
 }
 
 impl From<bool> for Match {
     fn from(flag: bool) -> Self {
-        Self::Value(MatchValue { value: ValueVariants::Bool(flag) })
+        Self::Value(MatchValue {
+            value: ValueVariants::Bool(flag),
+        })
     }
 }
 
 impl From<String> for Match {
     fn from(keyword: String) -> Self {
-        Self::Value(MatchValue { value: ValueVariants::Keyword(keyword) })
+        Self::Value(MatchValue {
+            value: ValueVariants::Keyword(keyword),
+        })
     }
 }
 
 impl From<IntPayloadType> for Match {
     fn from(integer: IntPayloadType) -> Self {
-        Self::Value(MatchValue { value: ValueVariants::Integer(integer) })
+        Self::Value(MatchValue {
+            value: ValueVariants::Integer(integer),
+        })
     }
 }
 
@@ -899,7 +909,12 @@ mod tests {
         }
         "#;
         let condition: FieldCondition = serde_json::from_str(query).unwrap();
-        assert_eq!(condition.r#match.unwrap(), Match::Value(MatchValue { value: ValueVariants::Integer(42) }));
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Integer(42)
+            })
+        );
 
         let query = r#"
         {
@@ -907,7 +922,12 @@ mod tests {
             "match": { "keyword": "world" }
         }"#;
         let condition: FieldCondition = serde_json::from_str(query).unwrap();
-        assert_eq!(condition.r#match.unwrap(), Match::Value(MatchValue { value: ValueVariants::Keyword("world".to_owned()) }));
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Keyword("world".to_owned())
+            })
+        );
 
         let query = r#"
         {
@@ -916,7 +936,12 @@ mod tests {
         }
         "#;
         let condition: FieldCondition = serde_json::from_str(query).unwrap();
-        assert_eq!(condition.r#match.unwrap(), Match::Value(MatchValue { value: ValueVariants::Integer(42) }));
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Integer(42)
+            })
+        );
 
         let query = r#"
         {
@@ -925,7 +950,12 @@ mod tests {
         }
         "#;
         let condition: FieldCondition = serde_json::from_str(query).unwrap();
-        assert_eq!(condition.r#match.unwrap(), Match::Value(MatchValue { value: ValueVariants::Bool(true) }));
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Bool(true)
+            })
+        );
 
         let query = r#"
         {
@@ -935,7 +965,12 @@ mod tests {
         "#;
 
         let condition: FieldCondition = serde_json::from_str(query).unwrap();
-        assert_eq!(condition.r#match.unwrap(), Match::Value(MatchValue { value: ValueVariants::Keyword("world".to_owned()) }));
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Keyword("world".to_owned())
+            })
+        );
     }
 
     #[test]

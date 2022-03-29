@@ -9,7 +9,10 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PrimaryCondition, ValueIndexer,
 };
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
-use crate::types::{FieldCondition, IntPayloadType, Match, MatchValue, PayloadKeyType, PointOffsetType, ValueVariants};
+use crate::types::{
+    FieldCondition, IntPayloadType, Match, MatchValue, PayloadKeyType, PointOffsetType,
+    ValueVariants,
+};
 
 /// HashMap-based type of index
 #[derive(Serialize, Deserialize, Default)]
@@ -32,17 +35,17 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
         }
     }
 
-    fn add_many_to_map(&mut self, idx: PointOffsetType, values: impl IntoIterator<Item=N>) {
+    fn add_many_to_map(&mut self, idx: PointOffsetType, values: impl IntoIterator<Item = N>) {
         for value in values {
             let entry = self.map.entry(value).or_default();
             entry.push(idx);
         }
     }
 
-    fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+    fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         self.map
             .get(value)
-            .map(|ids| Box::new(ids.iter().copied()) as Box<dyn Iterator<Item=PointOffsetType>>)
+            .map(|ids| Box::new(ids.iter().copied()) as Box<dyn Iterator<Item = PointOffsetType>>)
             .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>()))
     }
 }
@@ -51,16 +54,20 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         match &condition.r#match {
-            Some(Match::Value(MatchValue { value: ValueVariants::Keyword(keyword) })) => Some(self.get_iterator(keyword)),
+            Some(Match::Value(MatchValue {
+                value: ValueVariants::Keyword(keyword),
+            })) => Some(self.get_iterator(keyword)),
             _ => None,
         }
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         match &condition.r#match {
-            Some(Match::Value(MatchValue { value: ValueVariants::Keyword(keyword) })) => {
+            Some(Match::Value(MatchValue {
+                value: ValueVariants::Keyword(keyword),
+            })) => {
                 let mut estimation = self.match_cardinality(keyword);
                 estimation
                     .primary_clauses
@@ -75,7 +82,7 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         let iter = self
             .map
             .iter()
@@ -98,16 +105,20 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         match &condition.r#match {
-            Some(Match::Value(MatchValue { value: ValueVariants::Integer(integer) })) => Some(self.get_iterator(integer)),
+            Some(Match::Value(MatchValue {
+                value: ValueVariants::Integer(integer),
+            })) => Some(self.get_iterator(integer)),
             _ => None,
         }
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         match &condition.r#match {
-            Some(Match::Value(MatchValue { value: ValueVariants::Integer(integer) })) => {
+            Some(Match::Value(MatchValue {
+                value: ValueVariants::Integer(integer),
+            })) => {
                 let mut estimation = self.match_cardinality(integer);
                 estimation
                     .primary_clauses
@@ -122,7 +133,7 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         let iter = self
             .map
             .iter()
