@@ -21,7 +21,7 @@ tokio = {version = "~1.17", features = ["rt-multi-thread"]}
 serde = { version = "~1.0", features = ["derive"] }
 schemars = { version = "0.8.8", features = ["uuid"] }
 itertools = "0.10"
-async-trait = "0.1.52"
+async-trait = "0.1.53"
 
 raft = { version = "0.6.0", features = ["prost-codec"], default-features = false, optional = true }
 prost = { version = "0.7", optional = true }
