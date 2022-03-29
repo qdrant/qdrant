@@ -159,6 +159,59 @@
         ],
         "type": "object"
       },
+      "CollectionMetaOperations": {
+        "description": "Enumeration of all possible collection update operations",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "create_collection": {
+                "$ref": "#/components/schemas/CreateCollectionOperation"
+              }
+            },
+            "required": [
+              "create_collection"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "update_collection": {
+                "$ref": "#/components/schemas/UpdateCollectionOperation"
+              }
+            },
+            "required": [
+              "update_collection"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "delete_collection": {
+                "$ref": "#/components/schemas/DeleteCollectionOperation"
+              }
+            },
+            "required": [
+              "delete_collection"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "change_aliases": {
+                "$ref": "#/components/schemas/ChangeAliasesOperation"
+              }
+            },
+            "required": [
+              "change_aliases"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "CollectionParams": {
         "properties": {
           "distance": {
@@ -1654,59 +1707,6 @@
         ],
         "type": "object"
       },
-      "StorageOperations": {
-        "description": "Enumeration of all possible collection update operations",
-        "oneOf": [
-          {
-            "additionalProperties": false,
-            "properties": {
-              "create_collection": {
-                "$ref": "#/components/schemas/CreateCollectionOperation"
-              }
-            },
-            "required": [
-              "create_collection"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "properties": {
-              "update_collection": {
-                "$ref": "#/components/schemas/UpdateCollectionOperation"
-              }
-            },
-            "required": [
-              "update_collection"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "properties": {
-              "delete_collection": {
-                "$ref": "#/components/schemas/DeleteCollectionOperation"
-              }
-            },
-            "required": [
-              "delete_collection"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "properties": {
-              "change_aliases": {
-                "$ref": "#/components/schemas/ChangeAliasesOperation"
-              }
-            },
-            "required": [
-              "change_aliases"
-            ],
-            "type": "object"
-          }
-        ]
-      },
       "UpdateCollection": {
         "description": "Operation for updating parameters of the existing collection",
         "properties": {
@@ -1916,7 +1916,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/StorageOperations"
+                "$ref": "#/components/schemas/CollectionMetaOperations"
               }
             }
           },
