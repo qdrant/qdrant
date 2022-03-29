@@ -1,7 +1,7 @@
 syntax = "proto3";
 
-import "collections.proto";
-import "points.proto";
+import "collections_service.proto";
+import "points_service.proto";
 
 option java_multiple_files = true;
 option java_package = "tech.qdrant.grpc";
