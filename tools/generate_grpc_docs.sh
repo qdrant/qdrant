@@ -8,7 +8,7 @@ cd "$(dirname "$0")/../"
 
 docker run --rm \
   -v $(pwd)/docs/grpc:/out \
-  -v $(pwd)/src/tonic/proto:/protos \
+  -v $(pwd)/lib/api/src/grpc/proto:/protos \
   pseudomuto/protoc-gen-doc --doc_opt=markdown,docs.md
 
 # <https://github.com/pseudomuto/protoc-gen-doc/issues/383>
