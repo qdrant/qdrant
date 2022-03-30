@@ -253,6 +253,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "595d3cfa7a60d4555cb5067b99f07142a08ea778de5cf993f7b75c7d8fabc486"
 
 [[package]]
+name = "api"
+version = "0.1.0"
+dependencies = [
+ "prost 0.9.0",
+ "prost-types 0.9.0",
+ "schemars",
+ "segment",
+ "serde",
+ "serde_json",
+ "tonic",
+ "tonic-build",
+ "uuid",
+]
+
+[[package]]
 name = "approx"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -607,6 +622,7 @@ dependencies = [
 name = "collection"
 version = "0.3.1"
 dependencies = [
+ "api",
  "arc-swap",
  "async-trait",
  "atomicwrites",
@@ -631,6 +647,7 @@ dependencies = [
  "tempdir",
  "thiserror",
  "tokio",
+ "tonic",
  "wal",
 ]
 
@@ -2319,6 +2336,7 @@ name = "qdrant"
 version = "0.6.0"
 dependencies = [
  "actix-web",
+ "api",
  "collection",
  "config",
  "env_logger 0.9.0",
@@ -2330,7 +2348,6 @@ dependencies = [
  "prost 0.9.0",
  "prost-types 0.9.0",
  "raft",
- "rand 0.8.5",
  "rusty-hook",
  "schemars",
  "segment",
@@ -2343,8 +2360,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
- "tonic-build",
- "uuid",
 ]
 
 [[package]]
@@ -2943,6 +2958,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 name = "storage"
 version = "0.2.0"
 dependencies = [
+ "api",
  "async-trait",
  "collection",
  "itertools 0.10.3",
@@ -2957,6 +2973,7 @@ dependencies = [
  "tempdir",
  "thiserror",
  "tokio",
+ "tonic",
  "wal",
 ]
 

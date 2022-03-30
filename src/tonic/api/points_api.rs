@@ -5,11 +5,11 @@ use crate::common::points::{
     do_get_points, do_scroll_points, do_search_points, do_set_payload, do_update_points,
     CreateFieldIndex,
 };
-use crate::tonic::api::common::error_to_status;
-use crate::tonic::qdrant::points_server::Points;
 
-use crate::tonic::api::conversions::proto_to_payloads;
-use crate::tonic::qdrant::{
+use api::grpc::qdrant::points_server::Points;
+
+use api::grpc::conversions::proto_to_payloads;
+use api::grpc::qdrant::{
     ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
     DeletePayloadPoints, DeletePoints, FieldType, GetPoints, GetResponse, PointsOperationResponse,
     RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse,
@@ -23,6 +23,7 @@ use segment::types::PayloadSchemaType;
 use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Instant;
+use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 
 pub struct PointsService {
@@ -32,6 +33,16 @@ pub struct PointsService {
 impl PointsService {
     pub fn new(toc: Arc<TableOfContent>) -> Self {
         Self { toc }
+    }
+}
+
+fn points_operation_response(
+    timing: Instant,
+    update_result: collection::operations::types::UpdateResult,
+) -> PointsOperationResponse {
+    PointsOperationResponse {
+        result: Some(update_result.into()),
+        time: timing.elapsed().as_secs_f64(),
     }
 }
 
@@ -66,7 +77,7 @@ impl Points for PointsService {
         .await
         .map_err(error_to_status)?;
 
-        let response = PointsOperationResponse::from((timing, result));
+        let response = points_operation_response(timing, result);
         Ok(Response::new(response))
     }
 
@@ -95,7 +106,7 @@ impl Points for PointsService {
         .await
         .map_err(error_to_status)?;
 
-        let response = PointsOperationResponse::from((timing, result));
+        let response = points_operation_response(timing, result);
         Ok(Response::new(response))
     }
 
@@ -159,7 +170,7 @@ impl Points for PointsService {
         .await
         .map_err(error_to_status)?;
 
-        let response = PointsOperationResponse::from((timing, result));
+        let response = points_operation_response(timing, result);
         Ok(Response::new(response))
     }
 
@@ -192,7 +203,7 @@ impl Points for PointsService {
         .await
         .map_err(error_to_status)?;
 
-        let response = PointsOperationResponse::from((timing, result));
+        let response = points_operation_response(timing, result);
         Ok(Response::new(response))
     }
 
@@ -221,7 +232,7 @@ impl Points for PointsService {
         .await
         .map_err(error_to_status)?;
 
-        let response = PointsOperationResponse::from((timing, result));
+        let response = points_operation_response(timing, result);
         Ok(Response::new(response))
     }
 
@@ -264,7 +275,7 @@ impl Points for PointsService {
         .await
         .map_err(error_to_status)?;
 
-        let response = PointsOperationResponse::from((timing, result));
+        let response = points_operation_response(timing, result);
         Ok(Response::new(response))
     }
 
@@ -288,7 +299,7 @@ impl Points for PointsService {
         .await
         .map_err(error_to_status)?;
 
-        let response = PointsOperationResponse::from((timing, result));
+        let response = points_operation_response(timing, result);
         Ok(Response::new(response))
     }
 

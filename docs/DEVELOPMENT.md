@@ -80,7 +80,7 @@ Here is a quick step-by-step guide:
 
 Qdrant uses [tonic](https://github.com/hyperium/tonic) to serve gRPC traffic.
 
-Our protocol buffers are defined in `src/tonic/proto/*.proto`
+Our protocol buffers are defined in `lib/api/src/grpc/proto/*.proto`
 
 1. define request and response types using protocol buffers (use [oneOf](https://developers.google.com/protocol-buffers/docs/proto3#oneof) for enums payloads)
 2. specify RPC methods inside the service definition using protocol buffers

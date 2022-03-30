@@ -27,12 +27,10 @@ num_cpus = "1.13"
 thiserror = "1.0"
 log = "0.4"
 env_logger = "0.9.0"
-rand = "0.8.5"
 serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"
 schemars = { version = "0.8.8", features = ["uuid"] }
 itertools = "0.10"
-uuid = { version = "0.8", features = ["v4", "serde"] }
 
 config = "~0.12.0"
 
@@ -51,9 +49,7 @@ slog-stdlog = { version = "4.1.1", optional = true }
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
-
-[build-dependencies]
-tonic-build = { version = "0.6.2", features = ["prost"] }
+api = { path = "lib/api" }
 
 [[bin]]
 name = "schema_generator"
