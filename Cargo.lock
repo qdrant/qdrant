@@ -256,7 +256,7 @@ checksum = "595d3cfa7a60d4555cb5067b99f07142a08ea778de5cf993f7b75c7d8fabc486"
 name = "api"
 version = "0.1.0"
 dependencies = [
- "prost 0.9.0",
+ "prost 0.10.0",
  "prost-types 0.9.0",
  "schemars",
  "segment",
@@ -2229,6 +2229,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bd5316aa8f5c82add416dfbc25116b84b748a21153f512917e8143640a71bbd"
+dependencies = [
+ "bytes",
+ "prost-derive 0.10.0",
+]
+
+[[package]]
 name = "prost-build"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2293,6 +2303,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df35198f0777b75e9ff669737c6da5136b59dba33cf5a010a6d1cc4d56defc6f"
+dependencies = [
+ "anyhow",
+ "itertools 0.10.3",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2345,7 +2368,7 @@ dependencies = [
  "num-traits",
  "num_cpus",
  "parking_lot",
- "prost 0.9.0",
+ "prost 0.10.0",
  "prost-types 0.9.0",
  "raft",
  "rusty-hook",
@@ -2963,7 +2986,7 @@ dependencies = [
  "collection",
  "itertools 0.10.3",
  "num_cpus",
- "prost 0.7.0",
+ "prost 0.10.0",
  "raft",
  "rand 0.8.5",
  "schemars",
