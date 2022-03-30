@@ -88,5 +88,6 @@ Our protocol buffers are defined in `lib/api/src/grpc/proto/*.proto`
 4. implement the service trait in Rust
 5. start server `cargo run --bin qdrant`
 6. run integration test `./tests/basic_grpc_test.sh`
+7. generate docs `./tools/generate_grpc_docs.sh`
 
 Here is a good [tonic tutorial](https://github.com/hyperium/tonic/blob/master/examples/routeguide-tutorial.md#defining-the-service) for reference.
