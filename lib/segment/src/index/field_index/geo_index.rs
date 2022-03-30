@@ -153,7 +153,7 @@ impl PersistedGeoMapIndex {
 
     fn add_many_geo_points(&mut self, idx: PointOffsetType, values: &[GeoPoint]) {
         if values.is_empty() {
-            return
+            return;
         }
 
         if self.point_to_values.len() <= idx as usize {

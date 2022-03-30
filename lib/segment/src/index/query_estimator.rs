@@ -213,14 +213,12 @@ mod tests {
                 exp: has_id.has_id.len(),
                 max: has_id.has_id.len(),
             },
-            Condition::IsEmpty(condition) => {
-                CardinalityEstimation {
-                    primary_clauses: vec![PrimaryCondition::IsEmpty(condition.to_owned())],
-                    min: 0,
-                    exp: TOTAL / 2,
-                    max: TOTAL,
-                }
-            }
+            Condition::IsEmpty(condition) => CardinalityEstimation {
+                primary_clauses: vec![PrimaryCondition::IsEmpty(condition.to_owned())],
+                min: 0,
+                exp: TOTAL / 2,
+                max: TOTAL,
+            },
         }
     }
 

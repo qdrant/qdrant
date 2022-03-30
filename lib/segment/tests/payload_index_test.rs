@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use itertools::Itertools;
     use rand::Rng;
     use segment::entry::entry_point::SegmentEntry;
@@ -8,11 +7,16 @@ mod tests {
         random_filter, random_geo_payload, random_int_payload, random_keyword_payload,
         random_vector, LAT_RANGE, LON_RANGE,
     };
-    use segment::segment_constructor::build_segment;
-    use segment::types::{Condition, Distance, FieldCondition, Filter, GeoPoint, GeoRadius, Indexes, IsEmptyCondition, Payload, PayloadField, PayloadIndexType, PayloadSchemaType, Range, SegmentConfig, StorageType, WithPayload};
-    use serde_json::json;
-    use tempdir::TempDir;
     use segment::segment::Segment;
+    use segment::segment_constructor::build_segment;
+    use segment::types::{
+        Condition, Distance, FieldCondition, Filter, GeoPoint, GeoRadius, Indexes,
+        IsEmptyCondition, Payload, PayloadField, PayloadIndexType, PayloadSchemaType, Range,
+        SegmentConfig, StorageType, WithPayload,
+    };
+    use serde_json::json;
+    use std::path::Path;
+    use tempdir::TempDir;
 
     fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
         let mut rnd = rand::thread_rng();
@@ -49,14 +53,16 @@ mod tests {
                     str_key: random_keyword_payload(&mut rnd),
                     int_key: random_int_payload(&mut rnd, 2),
                     geo_key: geo_payload
-                }).into()
+                })
+                .into()
             } else {
                 json!({
                     str_key: random_keyword_payload(&mut rnd),
                     int_key: random_int_payload(&mut rnd, 2),
                     geo_key: geo_payload,
                     flicking_key: random_int_payload(&mut rnd, 3)
-                }).into()
+                })
+                .into()
             };
 
             plain_segment.upsert_point(opnum, idx, &vector).unwrap();
@@ -95,7 +101,9 @@ mod tests {
         let (struct_segment, plain_segment) = build_test_segments(dir1.path(), dir2.path());
 
         let filter = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
-            is_empty: PayloadField { key: "flicking".to_string() }
+            is_empty: PayloadField {
+                key: "flicking".to_string(),
+            },
         }));
 
         let estimation_struct = struct_segment
@@ -108,7 +116,11 @@ mod tests {
             .borrow()
             .estimate_cardinality(&filter);
 
-        let real_number = plain_segment.payload_index.borrow().query_points(&filter).count();
+        let real_number = plain_segment
+            .payload_index
+            .borrow()
+            .query_points(&filter)
+            .count();
 
         assert!(estimation_plain.max >= real_number);
         assert!(estimation_plain.min <= real_number);
@@ -116,8 +128,10 @@ mod tests {
         assert!(estimation_struct.max >= real_number);
         assert!(estimation_struct.min <= real_number);
 
-        assert!((estimation_struct.exp as f64 - real_number as f64).abs() < (estimation_plain.exp as f64 - real_number as f64).abs());
-
+        assert!(
+            (estimation_struct.exp as f64 - real_number as f64).abs()
+                < (estimation_plain.exp as f64 - real_number as f64).abs()
+        );
 
         eprintln!("estimation_struct = {:#?}", estimation_struct);
         eprintln!("estimation_plain = {:#?}", estimation_plain);
@@ -208,7 +222,11 @@ mod tests {
 
             assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
             assert!(estimation.exp <= estimation.max, "{:#?}", estimation);
-            assert!(estimation.max <= struct_segment.vector_storage.borrow().vector_count() as usize, "{:#?}", estimation);
+            assert!(
+                estimation.max <= struct_segment.vector_storage.borrow().vector_count() as usize,
+                "{:#?}",
+                estimation
+            );
 
             plain_result
                 .iter()
@@ -276,7 +294,11 @@ mod tests {
 
             assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
             assert!(estimation.exp <= estimation.max, "{:#?}", estimation);
-            assert!(estimation.max <= struct_segment.vector_storage.borrow().vector_count() as usize, "{:#?}", estimation);
+            assert!(
+                estimation.max <= struct_segment.vector_storage.borrow().vector_count() as usize,
+                "{:#?}",
+                estimation
+            );
 
             let struct_result = struct_segment
                 .search(
@@ -296,7 +318,11 @@ mod tests {
 
             assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
             assert!(estimation.exp <= estimation.max, "{:#?}", estimation);
-            assert!(estimation.max <= struct_segment.vector_storage.borrow().vector_count() as usize, "{:#?}", estimation);
+            assert!(
+                estimation.max <= struct_segment.vector_storage.borrow().vector_count() as usize,
+                "{:#?}",
+                estimation
+            );
 
             plain_result
                 .iter()

@@ -63,10 +63,10 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
         }
     }
 
-    fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+    fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         self.map
             .get(value)
-            .map(|ids| Box::new(ids.iter().copied()) as Box<dyn Iterator<Item=PointOffsetType>>)
+            .map(|ids| Box::new(ids.iter().copied()) as Box<dyn Iterator<Item = PointOffsetType>>)
             .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>()))
     }
 }
@@ -75,7 +75,7 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                                   value: ValueVariants::Keyword(keyword),
@@ -103,7 +103,7 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         let iter = self
             .map
             .iter()
@@ -130,7 +130,7 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                                   value: ValueVariants::Integer(integer),
@@ -158,7 +158,7 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         let iter = self
             .map
             .iter()

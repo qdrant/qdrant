@@ -59,7 +59,7 @@ impl StructPayloadIndex {
     fn query_field(
         &self,
         field_condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         let indexes = self
             .field_indexes
             .get(&field_condition.key)
@@ -278,14 +278,18 @@ impl PayloadIndex for StructPayloadIndex {
                         indexed_points = indexed_points.max(index.count_indexed_points())
                     }
                     CardinalityEstimation {
-                        primary_clauses: vec![PrimaryCondition::IsEmpty(IsEmptyCondition { is_empty: field.to_owned() })],
+                        primary_clauses: vec![PrimaryCondition::IsEmpty(IsEmptyCondition {
+                            is_empty: field.to_owned(),
+                        })],
                         min: 0, // It is possible, that some non-empty payloads are not indexed
                         exp: total_points.saturating_sub(indexed_points), // Expect field type consistency
                         max: total_points.saturating_sub(indexed_points),
                     }
                 } else {
                     CardinalityEstimation {
-                        primary_clauses: vec![PrimaryCondition::IsEmpty(IsEmptyCondition { is_empty: field.to_owned() })],
+                        primary_clauses: vec![PrimaryCondition::IsEmpty(IsEmptyCondition {
+                            is_empty: field.to_owned(),
+                        })],
                         min: 0,
                         exp: total_points / 2,
                         max: total_points,
@@ -318,7 +322,7 @@ impl PayloadIndex for StructPayloadIndex {
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
-    ) -> Box<dyn Iterator<Item=PointOffsetType> + 'a> {
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let vector_storage_ref = self.vector_storage.borrow();
 
@@ -375,7 +379,7 @@ impl PayloadIndex for StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         threshold: usize,
-    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         match self.field_indexes.get(field) {
             None => Box::new(vec![].into_iter()),
             Some(indexes) => {

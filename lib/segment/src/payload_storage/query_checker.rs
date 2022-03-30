@@ -10,8 +10,8 @@ use crate::payload_storage::ConditionChecker;
 use crate::types::{Condition, Filter, IsEmptyCondition, Payload, PointOffsetType};
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool
-    where
-        F: Fn(&Condition) -> bool,
+where
+    F: Fn(&Condition) -> bool,
 {
     match condition {
         Condition::Filter(filter) => check_filter(checker, filter),
@@ -20,8 +20,8 @@ fn check_condition<F>(checker: &F, condition: &Condition) -> bool
 }
 
 fn check_filter<F>(checker: &F, filter: &Filter) -> bool
-    where
-        F: Fn(&Condition) -> bool,
+where
+    F: Fn(&Condition) -> bool,
 {
     check_should(checker, &filter.should)
         && check_must(checker, &filter.must)
@@ -29,8 +29,8 @@ fn check_filter<F>(checker: &F, filter: &Filter) -> bool
 }
 
 fn check_should<F>(checker: &F, should: &Option<Vec<Condition>>) -> bool
-    where
-        F: Fn(&Condition) -> bool,
+where
+    F: Fn(&Condition) -> bool,
 {
     let check = |x| check_condition(checker, x);
     match should {
@@ -40,8 +40,8 @@ fn check_should<F>(checker: &F, should: &Option<Vec<Condition>>) -> bool
 }
 
 fn check_must<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
-    where
-        F: Fn(&Condition) -> bool,
+where
+    F: Fn(&Condition) -> bool,
 {
     let check = |x| check_condition(checker, x);
     match must {
@@ -51,8 +51,8 @@ fn check_must<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
 }
 
 fn check_must_not<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
-    where
-        F: Fn(&Condition) -> bool,
+where
+    F: Fn(&Condition) -> bool,
 {
     let check = |x| !check_condition(checker, x);
     match must {
@@ -101,24 +101,24 @@ impl ConditionChecker for SimpleConditionChecker {
                         // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
                         res = res
                             || field_condition
-                            .r#match
-                            .as_ref()
-                            .map_or(false, |condition| condition.check(p));
+                                .r#match
+                                .as_ref()
+                                .map_or(false, |condition| condition.check(p));
                         res = res
                             || field_condition
-                            .range
-                            .as_ref()
-                            .map_or(false, |condition| condition.check(p));
+                                .range
+                                .as_ref()
+                                .map_or(false, |condition| condition.check(p));
                         res = res
                             || field_condition
-                            .geo_radius
-                            .as_ref()
-                            .map_or(false, |condition| condition.check(p));
+                                .geo_radius
+                                .as_ref()
+                                .map_or(false, |condition| condition.check(p));
                         res = res
                             || field_condition
-                            .geo_bounding_box
-                            .as_ref()
-                            .map_or(false, |condition| condition.check(p));
+                                .geo_bounding_box
+                                .as_ref()
+                                .map_or(false, |condition| condition.check(p));
                         res
                     })
                 }
@@ -136,8 +136,8 @@ impl ConditionChecker for SimpleConditionChecker {
                         Some(value) => match value {
                             Value::Null => true,
                             Value::Array(array) => array.is_empty(),
-                            _ => false
-                        }
+                            _ => false,
+                        },
                     }
                 }
             }
@@ -157,8 +157,8 @@ mod tests {
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::payload_storage::PayloadStorage;
-    use crate::types::{GeoPoint, PayloadField};
     use crate::types::{FieldCondition, GeoBoundingBox, Range};
+    use crate::types::{GeoPoint, PayloadField};
 
     use super::*;
 
@@ -179,7 +179,7 @@ mod tests {
             "color": "red",
             "has_delivery": true,
         })
-            .into();
+        .into();
 
         let mut payload_storage = SimplePayloadStorage::open(dir.path()).unwrap();
         let mut id_tracker = SimpleIdTracker::open(dir_id_tracker.path()).unwrap();
@@ -196,11 +196,15 @@ mod tests {
         );
 
         let is_empty_condition_1 = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
-            is_empty: PayloadField { key: "price".to_string() }
+            is_empty: PayloadField {
+                key: "price".to_string(),
+            },
         }));
 
         let is_empty_condition_2 = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
-            is_empty: PayloadField { key: "something_new".to_string() }
+            is_empty: PayloadField {
+                key: "something_new".to_string(),
+            },
         }));
 
         assert!(!payload_checker.check(0, &is_empty_condition_1));
