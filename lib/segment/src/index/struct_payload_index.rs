@@ -343,8 +343,11 @@ impl PayloadIndex for StructPayloadIndex {
         };
     }
 
-    fn filter_context(&self, _filter: &Filter) -> Box<dyn FilterContext> {
-        todo!()
+    fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
+        Box::new(StructFilterContext {
+            filter,
+            condition_checker: self.condition_checker.clone(),
+        })
     }
 
     fn payload_blocks(
@@ -361,5 +364,16 @@ impl PayloadIndex for StructPayloadIndex {
                 }))
             }
         }
+    }
+}
+
+pub struct StructFilterContext<'a> {
+    condition_checker: Arc<ConditionCheckerSS>,
+    filter: &'a Filter,
+}
+
+impl<'a> FilterContext for StructFilterContext<'a> {
+    fn check(&self, point_id: PointOffsetType) -> bool {
+        self.condition_checker.check(point_id, self.filter)
     }
 }

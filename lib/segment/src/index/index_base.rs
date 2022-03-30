@@ -47,7 +47,7 @@ pub trait PayloadIndex {
         query: &'a Filter,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>;
 
-    fn filter_context(&self, filter: &Filter) -> Box<dyn FilterContext>;
+    fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index

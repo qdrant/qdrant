@@ -115,8 +115,11 @@ impl PayloadIndex for PlainPayloadIndex {
         Box::new(matched_points.into_iter())
     }
 
-    fn filter_context(&self, _filter: &Filter) -> Box<dyn FilterContext> {
-        todo!()
+    fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
+        Box::new(PlainFilterContext {
+            filter,
+            condition_checker: self.condition_checker.clone(),
+        })
     }
 
     fn payload_blocks(
@@ -168,5 +171,16 @@ impl VectorIndex for PlainIndex {
 
     fn build_index(&mut self, _stopped: &AtomicBool) -> OperationResult<()> {
         Ok(())
+    }
+}
+
+pub struct PlainFilterContext<'a> {
+    condition_checker: Arc<ConditionCheckerSS>,
+    filter: &'a Filter,
+}
+
+impl<'a> FilterContext for PlainFilterContext<'a> {
+    fn check(&self, point_id: PointOffsetType) -> bool {
+        self.condition_checker.check(point_id, self.filter)
     }
 }
