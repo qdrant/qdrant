@@ -228,6 +228,7 @@ message Match {
   oneof match_value {
     string keyword = 1; // Match string keyword
     int64 integer = 2; // Match integer
+    bool boolean = 3; // Match boolean
   }
 }
 
