@@ -279,6 +279,9 @@
             "$ref": "#/components/schemas/FieldCondition"
           },
           {
+            "$ref": "#/components/schemas/IsEmptyCondition"
+          },
+          {
             "$ref": "#/components/schemas/HasIdCondition"
           },
           {
@@ -822,6 +825,18 @@
         },
         "type": "object"
       },
+      "IsEmptyCondition": {
+        "description": "Select points with empty payload for a specified field",
+        "properties": {
+          "is_empty": {
+            "$ref": "#/components/schemas/PayloadField"
+          }
+        },
+        "required": [
+          "is_empty"
+        ],
+        "type": "object"
+      },
       "Match": {
         "anyOf": [
           {
@@ -1040,6 +1055,19 @@
       },
       "Payload": {
         "additionalProperties": true,
+        "type": "object"
+      },
+      "PayloadField": {
+        "description": "Payload field",
+        "properties": {
+          "key": {
+            "description": "Payload field name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
         "type": "object"
       },
       "PayloadIndexInfo": {

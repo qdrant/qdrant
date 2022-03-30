@@ -113,6 +113,32 @@ def test_exclude_payload():
         assert 'city' not in result['payload']
 
 
+def test_is_empty_condition():
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": [0.2, 0.1, 0.9, 0.7],
+            "top": 5,
+            "filter": {
+                "should": [
+                    {
+                        "is_empty": {
+                            "key": "city"
+                        }
+                    }
+                ]
+            },
+            "with_payload": True
+        }
+    )
+
+    assert len(response.json()['result']) == 2
+    assert "city" not in response.json()['result'][0]['payload']
+    assert response.ok
+
+
 def test_recommendation():
     response = request_with_validation(
         api='/collections/{collection_name}/points/recommend',

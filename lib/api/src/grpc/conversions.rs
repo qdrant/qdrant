@@ -5,9 +5,9 @@ use crate::grpc::qdrant::r#match::MatchValue;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     CollectionDescription, CollectionOperationResponse, Condition, FieldCondition, Filter,
-    GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply, ListCollectionsResponse,
-    Match, PayloadSchemaInfo, PayloadSchemaType, PointId, Range, ScoredPoint, SearchParams,
-    WithPayloadSelector,
+    GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply, IsEmptyCondition,
+    ListCollectionsResponse, Match, PayloadSchemaInfo, PayloadSchemaType, PointId, Range,
+    ScoredPoint, SearchParams, WithPayloadSelector,
 };
 
 use prost_types::value::Kind;
@@ -252,17 +252,30 @@ impl TryFrom<Condition> for segment::types::Condition {
     type Error = Status;
 
     fn try_from(value: Condition) -> Result<Self, Self::Error> {
-        match value.condition_one_of {
-            Some(ConditionOneOf::Field(field)) => {
-                Ok(segment::types::Condition::Field(field.try_into()?))
-            }
-            Some(ConditionOneOf::HasId(has_id)) => {
-                Ok(segment::types::Condition::HasId(has_id.try_into()?))
-            }
-            Some(ConditionOneOf::Filter(filter)) => {
-                Ok(segment::types::Condition::Filter(filter.try_into()?))
-            }
-            _ => Err(Status::invalid_argument("Malformed Condition type")),
+        if let Some(condition) = value.condition_one_of {
+            return match condition {
+                ConditionOneOf::Field(field) => {
+                    Ok(segment::types::Condition::Field(field.try_into()?))
+                }
+                ConditionOneOf::HasId(has_id) => {
+                    Ok(segment::types::Condition::HasId(has_id.try_into()?))
+                }
+                ConditionOneOf::Filter(filter) => {
+                    Ok(segment::types::Condition::Filter(filter.try_into()?))
+                }
+                ConditionOneOf::IsEmpty(is_empty) => {
+                    Ok(segment::types::Condition::IsEmpty(is_empty.into()))
+                }
+            };
+        }
+        Err(Status::invalid_argument("Malformed Condition type"))
+    }
+}
+
+impl From<IsEmptyCondition> for segment::types::IsEmptyCondition {
+    fn from(value: IsEmptyCondition) -> Self {
+        segment::types::IsEmptyCondition {
+            is_empty: segment::types::PayloadField { key: value.key },
         }
     }
 }

@@ -50,6 +50,7 @@
     - [GetPoints](#qdrant-GetPoints)
     - [GetResponse](#qdrant-GetResponse)
     - [HasIdCondition](#qdrant-HasIdCondition)
+    - [IsEmptyCondition](#qdrant-IsEmptyCondition)
     - [Match](#qdrant-Match)
     - [PayloadExcludeSelector](#qdrant-PayloadExcludeSelector)
     - [PayloadIncludeSelector](#qdrant-PayloadIncludeSelector)
@@ -601,6 +602,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | field | [FieldCondition](#qdrant-FieldCondition) |  |  |
+| isEmpty | [IsEmptyCondition](#qdrant-IsEmptyCondition) |  |  |
 | hasId | [HasIdCondition](#qdrant-HasIdCondition) |  |  |
 | filter | [Filter](#qdrant-Filter) |  |  |
 
@@ -806,6 +808,21 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | has_id | [PointId](#qdrant-PointId) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-IsEmptyCondition"></a>
+
+### IsEmptyCondition
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
 
 
 

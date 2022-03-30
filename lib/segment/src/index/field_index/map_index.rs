@@ -19,6 +19,7 @@ use crate::types::{
 pub struct PersistedMapIndex<N: Hash + Eq + Clone> {
     map: HashMap<N, Vec<PointOffsetType>>,
     point_to_values: Vec<Vec<N>>,
+    total_points: usize,
 }
 
 impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
@@ -46,21 +47,26 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
             .unwrap_or(false)
     }
 
-    fn add_many_to_map(&mut self, idx: PointOffsetType, values: impl IntoIterator<Item = N>) {
+    fn add_many_to_map(&mut self, idx: PointOffsetType, values: impl IntoIterator<Item=N>) {
         if self.point_to_values.len() <= idx as usize {
             self.point_to_values.resize(idx as usize + 1, vec![])
         }
         self.point_to_values[idx as usize] = values.into_iter().collect();
+        let mut empty = true;
         for value in &self.point_to_values[idx as usize] {
             let entry = self.map.entry(value.clone()).or_default();
             entry.push(idx);
+            empty = false;
+        }
+        if !empty {
+            self.total_points += 1;
         }
     }
 
-    fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
         self.map
             .get(value)
-            .map(|ids| Box::new(ids.iter().copied()) as Box<dyn Iterator<Item = PointOffsetType>>)
+            .map(|ids| Box::new(ids.iter().copied()) as Box<dyn Iterator<Item=PointOffsetType>>)
             .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>()))
     }
 }
@@ -69,11 +75,11 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
-                value: ValueVariants::Keyword(keyword),
-            })) => Some(self.get_iterator(keyword)),
+                                  value: ValueVariants::Keyword(keyword),
+                              })) => Some(self.get_iterator(keyword)),
             _ => None,
         }
     }
@@ -81,8 +87,8 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
-                value: ValueVariants::Keyword(keyword),
-            })) => {
+                                  value: ValueVariants::Keyword(keyword),
+                              })) => {
                 let mut estimation = self.match_cardinality(keyword);
                 estimation
                     .primary_clauses
@@ -97,7 +103,7 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
         let iter = self
             .map
             .iter()
@@ -114,17 +120,21 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
             });
         Box::new(iter)
     }
+
+    fn count_indexed_points(&self) -> usize {
+        self.total_points
+    }
 }
 
 impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
-                value: ValueVariants::Integer(integer),
-            })) => Some(self.get_iterator(integer)),
+                                  value: ValueVariants::Integer(integer),
+                              })) => Some(self.get_iterator(integer)),
             _ => None,
         }
     }
@@ -132,8 +142,8 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
-                value: ValueVariants::Integer(integer),
-            })) => {
+                                  value: ValueVariants::Integer(integer),
+                              })) => {
                 let mut estimation = self.match_cardinality(integer);
                 estimation
                     .primary_clauses
@@ -148,7 +158,7 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
         let iter = self
             .map
             .iter()
@@ -164,6 +174,10 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
                 cardinality: point_ids.len(),
             });
         Box::new(iter)
+    }
+
+    fn count_indexed_points(&self) -> usize {
+        self.total_points
     }
 }
 
@@ -191,6 +205,7 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
         FieldIndex::KeywordIndex(PersistedMapIndex {
             map,
             point_to_values: column,
+            total_points: self.total_points,
         })
     }
 }
@@ -219,6 +234,7 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<IntPayloadType> {
         FieldIndex::IntMapIndex(PersistedMapIndex {
             map,
             point_to_values: column,
+            total_points: self.total_points,
         })
     }
 }

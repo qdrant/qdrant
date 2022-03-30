@@ -207,9 +207,14 @@ message Filter {
 message Condition {
   oneof condition_one_of {
     FieldCondition field = 1;
-    HasIdCondition hasId = 2;
-    Filter filter = 3;
+    IsEmptyCondition isEmpty = 2;
+    HasIdCondition hasId = 3;
+    Filter filter = 4;
   }
+}
+
+message IsEmptyCondition {
+  string key = 1;
 }
 
 message HasIdCondition {
