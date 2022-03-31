@@ -65,7 +65,7 @@ impl Collections for CollectionsService {
         let timing = Instant::now();
         let result = self
             .toc
-            .perform_collection_operation(operations)
+            .submit_collection_operation(operations)
             .await
             .map_err(error_to_status)?;
 
@@ -84,7 +84,7 @@ impl Collections for CollectionsService {
         let timing = Instant::now();
         let result = self
             .toc
-            .perform_collection_operation(operations)
+            .submit_collection_operation(operations)
             .await
             .map_err(error_to_status)?;
 
@@ -103,7 +103,7 @@ impl Collections for CollectionsService {
         let timing = Instant::now();
         let result = self
             .toc
-            .perform_collection_operation(operations)
+            .submit_collection_operation(operations)
             .await
             .map_err(error_to_status)?;
 
@@ -116,13 +116,13 @@ impl Collections for CollectionsService {
         request: Request<ChangeAliases>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
         let operations =
-            storage::content_manager::collection_meta_ops::ChangeAliasesOperation::try_from(
+            storage::content_manager::collection_meta_ops::CollectionMetaOperations::try_from(
                 request.into_inner(),
             )?;
         let timing = Instant::now();
         let result = self
             .toc
-            .update_aliases(operations)
+            .submit_collection_operation(operations)
             .await
             .map_err(error_to_status)?;
 

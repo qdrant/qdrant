@@ -4,7 +4,8 @@ use actix_web::rt::time::Instant;
 use actix_web::{delete, get, patch, post, put, web, Responder};
 use std::sync::Arc;
 use storage::content_manager::collection_meta_ops::{
-    ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, UpdateCollection,
+    ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
+    DeleteCollectionOperation, UpdateCollection, UpdateCollectionOperation,
 };
 use storage::content_manager::toc::TableOfContent;
 
@@ -33,7 +34,7 @@ async fn update_collections(
     operation: web::Json<CollectionMetaOperations>,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = toc.perform_collection_operation(operation.0).await;
+    let response = toc.submit_collection_operation(operation.0).await;
     process_response(response, timing)
 }
 
@@ -45,7 +46,14 @@ async fn create_collection(
 ) -> impl Responder {
     let timing = Instant::now();
     let name = path.into_inner();
-    let response = toc.create_collection(&name, operation.0).await;
+    let response = toc
+        .submit_collection_operation(CollectionMetaOperations::CreateCollection(
+            CreateCollectionOperation {
+                collection_name: name,
+                create_collection: operation.0,
+            },
+        ))
+        .await;
     process_response(response, timing)
 }
 
@@ -57,7 +65,14 @@ async fn update_collection(
 ) -> impl Responder {
     let timing = Instant::now();
     let name = path.into_inner();
-    let response = toc.update_collection(&name, operation.0).await;
+    let response = toc
+        .submit_collection_operation(CollectionMetaOperations::UpdateCollection(
+            UpdateCollectionOperation {
+                collection_name: name,
+                update_collection: operation.0,
+            },
+        ))
+        .await;
     process_response(response, timing)
 }
 
@@ -68,7 +83,11 @@ async fn delete_collection(
 ) -> impl Responder {
     let timing = Instant::now();
     let name = path.into_inner();
-    let response = toc.delete_collection(&name).await;
+    let response = toc
+        .submit_collection_operation(CollectionMetaOperations::DeleteCollection(
+            DeleteCollectionOperation(name),
+        ))
+        .await;
     process_response(response, timing)
 }
 
@@ -78,7 +97,9 @@ async fn update_aliases(
     operation: web::Json<ChangeAliasesOperation>,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = toc.update_aliases(operation.0).await;
+    let response = toc
+        .submit_collection_operation(CollectionMetaOperations::ChangeAliases(operation.0))
+        .await;
     process_response(response, timing)
 }
 

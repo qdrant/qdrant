@@ -2962,6 +2962,7 @@ dependencies = [
  "async-trait",
  "collection",
  "itertools 0.10.3",
+ "log 0.4.16",
  "num_cpus",
  "prost 0.7.0",
  "raft",

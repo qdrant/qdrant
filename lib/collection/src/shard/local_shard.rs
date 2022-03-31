@@ -31,7 +31,7 @@ use crate::operations::types::{
     UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::optimizers_builder::build_optimizers;
+use crate::optimizers_builder::{build_optimizers, OptimizersConfig};
 use crate::shard::ShardOperation;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
@@ -276,6 +276,65 @@ impl LocalShard {
         bar.finish();
     }
 
+    /// Updates shard optimization params:
+    /// - Saves new params on disk
+    /// - Stops existing optimization loop
+    /// - Runs new optimizers with new params
+    pub async fn update_optimizer_with_diff(
+        &self,
+        optimizer_config_diff: OptimizersConfigDiff,
+    ) -> CollectionResult<()> {
+        log::debug!("Updating optimizer params");
+        {
+            let mut config = self.config.write().await;
+            config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
+            config.save(&self.path)?;
+        }
+        self.on_optimizer_config_update().await
+    }
+
+    /// Updates shard optimization params:
+    /// - Saves new params on disk
+    /// - Stops existing optimization loop
+    /// - Runs new optimizers with new params
+    pub async fn update_optimizer_with_config(
+        &self,
+        optimizer_config: OptimizersConfig,
+    ) -> CollectionResult<()> {
+        log::debug!("Updating optimizer params");
+        {
+            let mut config = self.config.write().await;
+            config.optimizer_config = optimizer_config;
+            config.save(&self.path)?;
+        }
+        self.on_optimizer_config_update().await
+    }
+
+    pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
+        let config = self.config.read().await;
+        let mut update_handler = self.update_handler.lock().await;
+
+        let (update_sender, update_receiver) = mpsc::unbounded_channel();
+        // makes sure that the Stop signal is the last one in this channel
+        let old_sender = self.update_sender.swap(Arc::new(update_sender));
+        old_sender.send(UpdateSignal::Stop)?;
+        update_handler.stop_flush_worker();
+
+        update_handler.wait_workers_stops().await?;
+        let new_optimizers = build_optimizers(
+            &self.path,
+            &config.params,
+            &config.optimizer_config,
+            &config.hnsw_config,
+        );
+        update_handler.optimizers = new_optimizers;
+        update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
+        update_handler.run_workers(update_receiver);
+        self.update_sender.load().send(UpdateSignal::Nop)?;
+
+        Ok(())
+    }
+
     pub async fn before_drop(&mut self) {
         // Finishes update tasks right before destructor stuck to do so with runtime
         self.update_sender.load().send(UpdateSignal::Stop).unwrap();
@@ -376,44 +435,6 @@ impl ShardOperation for &LocalShard {
         points.sort_by_key(|point| point.id);
 
         Ok(points)
-    }
-
-    /// Updates shard optimization params:
-    /// - Saves new params on disk
-    /// - Stops existing optimization loop
-    /// - Runs new optimizers with new params
-    async fn update_optimizer_params(
-        &self,
-        optimizer_config_diff: OptimizersConfigDiff,
-    ) -> CollectionResult<()> {
-        log::debug!("Updating optimizer params");
-        {
-            let mut config = self.config.write().await;
-            config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
-            config.save(&self.path)?;
-        }
-        let config = self.config.read().await;
-        let mut update_handler = self.update_handler.lock().await;
-
-        let (update_sender, update_receiver) = mpsc::unbounded_channel();
-        // makes sure that the Stop signal is the last one in this channel
-        let old_sender = self.update_sender.swap(Arc::new(update_sender));
-        old_sender.send(UpdateSignal::Stop)?;
-        update_handler.stop_flush_worker();
-
-        update_handler.wait_workers_stops().await?;
-        let new_optimizers = build_optimizers(
-            &self.path,
-            &config.params,
-            &config.optimizer_config,
-            &config.hnsw_config,
-        );
-        update_handler.optimizers = new_optimizers;
-        update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
-        update_handler.run_workers(update_receiver);
-        self.update_sender.load().send(UpdateSignal::Nop)?;
-
-        Ok(())
     }
 
     /// Collect overview information about the shard
