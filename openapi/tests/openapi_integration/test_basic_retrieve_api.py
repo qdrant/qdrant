@@ -135,7 +135,8 @@ def test_is_empty_condition():
     )
 
     assert len(response.json()['result']) == 2
-    assert "city" not in response.json()['result'][0]['payload']
+    for result in response.json()['result']:
+        assert "city" not in result['payload']
     assert response.ok
 
 
