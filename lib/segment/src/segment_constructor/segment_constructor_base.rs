@@ -76,7 +76,6 @@ fn create_segment(
         )),
         Indexes::Hnsw(hnsw_config) => sp(HNSWIndex::open(
             &vector_index_path,
-            condition_checker.clone(),
             vector_storage.clone(),
             payload_index.clone(),
             hnsw_config,

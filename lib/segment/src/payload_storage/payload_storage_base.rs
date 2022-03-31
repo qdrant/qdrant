@@ -42,5 +42,10 @@ pub trait ConditionChecker {
     fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool;
 }
 
+pub trait FilterContext {
+    /// Check if point satisfies filter condition. Return true if satisfies
+    fn check(&self, point_id: PointOffsetType) -> bool;
+}
+
 pub type PayloadStorageSS = dyn PayloadStorage + Sync + Send;
 pub type ConditionCheckerSS = dyn ConditionChecker + Sync + Send;

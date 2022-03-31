@@ -1,5 +1,5 @@
 use crate::index::visited_pool::VisitedList;
-use crate::payload_storage::ConditionChecker;
+use crate::payload_storage::{ConditionChecker, FilterContext};
 use crate::types::{Filter, PointOffsetType};
 
 pub struct BuildConditionChecker {
@@ -18,6 +18,15 @@ impl BuildConditionChecker {
 
 impl ConditionChecker for BuildConditionChecker {
     fn check(&self, point_id: PointOffsetType, _query: &Filter) -> bool {
+        if point_id == self.current_point {
+            return false; // Do not match current point while inserting it (second time)
+        }
+        self.filter_list.check(point_id)
+    }
+}
+
+impl FilterContext for BuildConditionChecker {
+    fn check(&self, point_id: PointOffsetType) -> bool {
         if point_id == self.current_point {
             return false; // Do not match current point while inserting it (second time)
         }

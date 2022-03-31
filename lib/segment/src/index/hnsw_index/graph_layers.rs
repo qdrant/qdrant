@@ -486,7 +486,7 @@ impl GraphLayers {
 mod tests {
     use super::*;
     use crate::fixtures::index_fixtures::{
-        random_vector, FakeConditionChecker, TestRawScorerProducer,
+        random_vector, FakeFilterContext, TestRawScorerProducer,
     };
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
@@ -564,9 +564,9 @@ mod tests {
         vector_storage: &TestRawScorerProducer<CosineMetric>,
         graph: &GraphLayers,
     ) -> Vec<ScoredPointOffset> {
-        let fake_condition_checker = FakeConditionChecker {};
+        let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_storage.get_raw_scorer(query.to_owned());
-        let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
+        let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
         let ef = 16;
         graph.search(top, ef, &scorer)
     }
@@ -598,10 +598,10 @@ mod tests {
         );
 
         for idx in 0..(num_vectors as PointOffsetType) {
-            let fake_condition_checker = FakeConditionChecker {};
+            let fake_filter_context = FakeFilterContext {};
             let added_vector = vector_holder.vectors[idx as usize].to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
-            let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
+            let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
             let level = graph_layers.get_random_layer(rng);
             graph_layers.link_new_point(idx, level, &scorer);
         }
@@ -629,10 +629,10 @@ mod tests {
 
         let linking_idx: PointOffsetType = 7;
 
-        let fake_condition_checker = FakeConditionChecker {};
+        let fake_filter_context = FakeFilterContext {};
         let added_vector = vector_holder.vectors[linking_idx as usize].to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector);
-        let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
+        let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
 
         let nearest_on_level = graph_layers.search_on_level(
             ScoredPointOffset {
@@ -748,11 +748,11 @@ mod tests {
         let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, CosineMetric {}, &mut rng);
         let mut graph_layers =
             GraphLayers::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
-        let fake_condition_checker = FakeConditionChecker {};
+        let fake_filter_context = FakeFilterContext {};
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
             let added_vector = vector_holder.vectors[idx as usize].to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector);
-            let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
+            let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
             let level = graph_layers.get_random_layer(&mut rng);
             graph_layers.link_new_point(idx, level, &scorer);
         }

@@ -1,5 +1,6 @@
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::payload_storage::FilterContext;
 use crate::types::{
     Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType, SearchParams,
     VectorElementType,
@@ -45,6 +46,8 @@ pub trait PayloadIndex {
         &'a self,
         query: &'a Filter,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>;
+
+    fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index

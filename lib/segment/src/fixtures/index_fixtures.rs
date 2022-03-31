@@ -1,4 +1,4 @@
-use crate::payload_storage::ConditionChecker;
+use crate::payload_storage::{ConditionChecker, FilterContext};
 use crate::spaces::metric::Metric;
 use crate::types::{Filter, PointOffsetType, VectorElementType};
 use crate::vector_storage::simple_vector_storage::SimpleRawScorer;
@@ -14,6 +14,14 @@ pub struct FakeConditionChecker {}
 
 impl ConditionChecker for FakeConditionChecker {
     fn check(&self, _point_id: PointOffsetType, _query: &Filter) -> bool {
+        true
+    }
+}
+
+pub struct FakeFilterContext {}
+
+impl FilterContext for FakeFilterContext {
+    fn check(&self, _point_id: PointOffsetType) -> bool {
         true
     }
 }
