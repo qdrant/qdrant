@@ -2,8 +2,10 @@ mod api;
 
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::points_api::PointsService;
+use crate::tonic::api::points_internal_api::PointsInternalService;
 use ::api::grpc::models::VersionInfo;
 use ::api::grpc::qdrant::collections_server::CollectionsServer;
+use ::api::grpc::qdrant::points_internal_server::PointsInternalServer;
 use ::api::grpc::qdrant::points_server::PointsServer;
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
 use ::api::grpc::qdrant::{HealthCheckReply, HealthCheckRequest};
@@ -44,6 +46,7 @@ pub fn init(toc: Arc<TableOfContent>, host: String, grpc_port: u16) -> std::io::
             let service = QdrantService::default();
             let collections_service = CollectionsService::new(toc.clone());
             let points_service = PointsService::new(toc.clone());
+            let points_internal_service = PointsInternalService::new(toc.clone());
 
             log::info!("Qdrant gRPC listening on {}", grpc_port);
 
@@ -51,6 +54,7 @@ pub fn init(toc: Arc<TableOfContent>, host: String, grpc_port: u16) -> std::io::
                 .add_service(QdrantServer::new(service))
                 .add_service(CollectionsServer::new(collections_service))
                 .add_service(PointsServer::new(points_service))
+                .add_service(PointsInternalServer::new(points_internal_service)) // TODO serve from different port
                 .serve_with_shutdown(socket, async {
                     signal::ctrl_c().await.unwrap();
                     log::info!("Stopping gRPC");

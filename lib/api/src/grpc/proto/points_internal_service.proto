@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+import "points.proto";
+
+option java_multiple_files = true;
+option java_package = "tech.qdrant.grpc";
+option java_outer_classname = "QdrantProto";
+
+package qdrant;
+
+import "google/protobuf/struct.proto";
+
+service PointsInternal {
+  rpc Upsert (UpsertPointsInternal) returns (PointsOperationResponse) {}
+}
+
+message UpsertPointsInternal {
+  UpsertPoints upsert_points = 1;
+  uint32 shard_id = 2;
+}

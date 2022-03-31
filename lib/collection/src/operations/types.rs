@@ -218,6 +218,12 @@ pub enum CollectionError {
     },
 }
 
+impl CollectionError {
+    pub fn service_error(error: String) -> CollectionError {
+        CollectionError::ServiceError { error }
+    }
+}
+
 impl From<OperationError> for CollectionError {
     fn from(err: OperationError) -> Self {
         match err {
