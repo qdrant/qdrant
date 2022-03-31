@@ -29,8 +29,6 @@ impl Consensus {
     ) -> raft::Result<(Self, Sender<Message>)> {
         let config = Config {
             id: 1,
-            // The max size limits the max size of each appended message. Mostly, 1 MB is enough.
-            max_size_per_msg: 1024 * 1024 * 1024,
             ..Default::default()
         };
         config.validate()?;
