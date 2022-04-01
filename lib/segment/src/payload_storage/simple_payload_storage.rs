@@ -32,10 +32,6 @@ impl SimplePayloadStorage {
         for (key, val) in store.iterator_cf(cf_handle, IteratorMode::Start) {
             let point_id: PointOffsetType = serde_cbor::from_slice(&key).unwrap();
             let payload: Payload = serde_cbor::from_slice(&val).unwrap();
-
-            //TODO(gvelo): handle schema properly
-            //SimplePayloadStorage::update_schema(schema_store.clone(), &payload).unwrap();
-
             payload_map.insert(point_id, payload);
         }
 

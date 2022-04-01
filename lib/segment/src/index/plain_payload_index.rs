@@ -15,6 +15,7 @@ use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use crate::id_tracker::points_iterator::PointsIteratorSS;
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -22,7 +23,7 @@ use std::sync::Arc;
 /// rather than spend time for index re-building
 pub struct PlainPayloadIndex {
     condition_checker: Arc<ConditionCheckerSS>,
-    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
     config: PayloadConfig,
     path: PathBuf,
 }
@@ -39,7 +40,7 @@ impl PlainPayloadIndex {
 
     pub fn open(
         condition_checker: Arc<ConditionCheckerSS>,
-        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+        points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
         path: &Path,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
@@ -52,7 +53,7 @@ impl PlainPayloadIndex {
 
         let index = PlainPayloadIndex {
             condition_checker,
-            vector_storage,
+            points_iterator,
             config,
             path: path.to_owned(),
         };
@@ -93,7 +94,7 @@ impl PayloadIndex for PlainPayloadIndex {
     }
 
     fn estimate_cardinality(&self, _query: &Filter) -> CardinalityEstimation {
-        let total_points = self.vector_storage.borrow().vector_count();
+        let total_points = self.points_iterator.borrow().points_count();
         CardinalityEstimation {
             primary_clauses: vec![],
             min: 0,
@@ -105,9 +106,9 @@ impl PayloadIndex for PlainPayloadIndex {
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    ) -> Box<dyn Iterator<Item=PointOffsetType> + 'a> {
         let mut matched_points = vec![];
-        for i in self.vector_storage.borrow().iter_ids() {
+        for i in self.points_iterator.borrow().iter_ids() {
             if self.condition_checker.check(i, query) {
                 matched_points.push(i);
             }
@@ -126,7 +127,7 @@ impl PayloadIndex for PlainPayloadIndex {
         &self,
         _field: PayloadKeyTypeRef,
         _threshold: usize,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
         // No blocks for un-indexed payload
         Box::new(vec![].into_iter())
     }

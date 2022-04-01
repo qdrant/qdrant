@@ -9,6 +9,7 @@ use log::debug;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::IdTrackerSS;
+use crate::id_tracker::points_iterator::PointsIteratorSS;
 use crate::index::field_index::index_selector::index_selector;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
@@ -21,7 +22,6 @@ use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType, PayloadKeyTypeRef,
     PayloadSchemaType, PointOffsetType,
 };
-use crate::vector_storage::VectorStorageSS;
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 
@@ -30,7 +30,7 @@ type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
 pub struct StructPayloadIndex {
     condition_checker: Arc<ConditionCheckerSS>,
-    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
     /// Payload storage
     payload: Arc<AtomicRefCell<PayloadStorageSS>>,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
@@ -152,7 +152,7 @@ impl StructPayloadIndex {
 
     pub fn open(
         condition_checker: Arc<ConditionCheckerSS>,
-        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+        points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
         payload: Arc<AtomicRefCell<PayloadStorageSS>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         path: &Path,
@@ -167,7 +167,7 @@ impl StructPayloadIndex {
 
         let mut index = StructPayloadIndex {
             condition_checker,
-            vector_storage,
+            points_iterator,
             payload,
             id_tracker,
             field_indexes: Default::default(),
@@ -226,7 +226,7 @@ impl StructPayloadIndex {
     }
 
     pub fn total_points(&self) -> usize {
-        self.vector_storage.borrow().vector_count()
+        self.points_iterator.borrow().points_count()
     }
 }
 
@@ -327,11 +327,11 @@ impl PayloadIndex for StructPayloadIndex {
         query: &'a Filter,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
-        let vector_storage_ref = self.vector_storage.borrow();
+        let points_iterator_ref = self.points_iterator.borrow();
 
         let query_cardinality = self.estimate_cardinality(query);
         return if query_cardinality.primary_clauses.is_empty() {
-            let full_scan_iterator = vector_storage_ref.iter_ids();
+            let full_scan_iterator = points_iterator_ref.iter_ids();
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points = full_scan_iterator
                 .filter(|i| self.condition_checker.check(*i, query))
@@ -343,7 +343,7 @@ impl PayloadIndex for StructPayloadIndex {
             // ToDo: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
             let mut visited_list = self
                 .visited_pool
-                .get(vector_storage_ref.total_vector_count());
+                .get(points_iterator_ref.max_id() as usize);
 
             #[allow(clippy::needless_collect)]
                 let preselected: Vec<PointOffsetType> = query_cardinality
@@ -353,7 +353,7 @@ impl PayloadIndex for StructPayloadIndex {
                     match clause {
                         PrimaryCondition::Condition(field_condition) => {
                             self.query_field(field_condition).unwrap_or_else(
-                                || vector_storage_ref.iter_ids(), /* index is not built */
+                                || points_iterator_ref.iter_ids(), /* index is not built */
                             )
                         }
                         PrimaryCondition::Ids(ids) => Box::new(ids.iter().copied()),
