@@ -513,10 +513,15 @@ impl TableOfContent {
         wait: bool,
     ) -> Result<UpdateResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        collection
-            .update(operation, shard_selection, wait)
-            .await
-            .map_err(|err| err.into())
+        let result = match shard_selection {
+            Some(shard_selection) => {
+                collection
+                    .update_from_peer(operation, shard_selection, wait)
+                    .await
+            }
+            None => collection.update_from_client(operation, wait).await,
+        };
+        result.map_err(|err| err.into())
     }
 
     #[cfg(feature = "consensus")]

@@ -205,21 +205,6 @@ impl Collection {
         self.shards.values()
     }
 
-    pub async fn update(
-        &self,
-        operation: CollectionUpdateOperations,
-        shard_selection: Option<ShardId>,
-        wait: bool,
-    ) -> CollectionResult<UpdateResult> {
-        match shard_selection {
-            Some(shard_selection) => {
-                self.update_from_peer(operation, shard_selection, wait)
-                    .await
-            }
-            None => self.update_from_client(operation, wait).await,
-        }
-    }
-
     pub async fn update_from_peer(
         &self,
         operation: CollectionUpdateOperations,
