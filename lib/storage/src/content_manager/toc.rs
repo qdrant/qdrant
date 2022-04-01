@@ -17,14 +17,16 @@ use collection::operations::CollectionUpdateOperations;
 use collection::Collection;
 use segment::types::ScoredPoint;
 
-use crate::content_manager::alias_mapping::AliasPersistence;
-use crate::content_manager::collection_meta_ops::{
-    AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
-    CreateAliasOperation, CreateCollection, DeleteAlias, DeleteAliasOperation, RenameAlias,
-    RenameAliasOperation, UpdateCollection,
+use crate::content_manager::{
+    alias_mapping::AliasPersistence,
+    collection_meta_ops::{
+        AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
+        CreateAliasOperation, CreateCollection, DeleteAlias, DeleteAliasOperation, RenameAlias,
+        RenameAliasOperation, UpdateCollection,
+    },
+    collections_ops::{Checker, Collections},
+    errors::StorageError,
 };
-use crate::content_manager::collections_ops::{Checker, Collections};
-use crate::content_manager::errors::StorageError;
 use crate::types::StorageConfig;
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
@@ -545,8 +547,7 @@ impl TableOfContent {
             .collect();
         consensus::CollectionMetaSnapshot {
             collections,
-            // TODO: fill aliases
-            aliases: HashMap::new(),
+            aliases: self.alias_persistence.read().await.state().clone(),
         }
     }
 
@@ -612,6 +613,12 @@ impl TableOfContent {
                     self.delete_collection(collection_name).await?;
                 }
             }
+
+            // Apply alias mapping
+            self.alias_persistence
+                .write()
+                .await
+                .apply_state(snapshot.aliases)?;
             Ok(())
         })
     }
@@ -656,6 +663,8 @@ mod consensus {
         RaftState,
     };
     use serde::{Deserialize, Serialize};
+
+    use crate::content_manager::alias_mapping::AliasMapping;
 
     use super::TableOfContent;
 
@@ -790,7 +799,7 @@ mod consensus {
     #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
     pub struct CollectionMetaSnapshot {
         pub collections: HashMap<CollectionId, collection::State>,
-        pub aliases: HashMap<String, CollectionId>,
+        pub aliases: AliasMapping,
     }
 
     impl TryFrom<&raft::eraftpb::Snapshot> for CollectionMetaSnapshot {

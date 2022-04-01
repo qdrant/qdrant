@@ -11,7 +11,7 @@ pub const ALIAS_MAPPING_CONFIG_FILE: &str = "data.json";
 type Alias = String;
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
-struct AliasMapping(HashMap<Alias, collection::CollectionId>);
+pub struct AliasMapping(HashMap<Alias, collection::CollectionId>);
 
 impl AliasMapping {
     pub fn load(path: &Path) -> Result<Self, StorageError> {
@@ -103,5 +103,17 @@ impl AliasPersistence {
             }
         }
         result
+    }
+
+    #[cfg(feature = "consensus")]
+    pub fn state(&self) -> &AliasMapping {
+        &self.alias_mapping
+    }
+
+    #[cfg(feature = "consensus")]
+    pub fn apply_state(&mut self, alias_mapping: AliasMapping) -> Result<(), StorageError> {
+        self.alias_mapping = alias_mapping;
+        self.alias_mapping.save(&self.data_path)?;
+        Ok(())
     }
 }
