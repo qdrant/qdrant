@@ -6,6 +6,7 @@ use api::grpc::qdrant::{PointsOperationResponse, UpsertPointsInternal};
 use std::sync::Arc;
 use storage::content_manager::toc::TableOfContent;
 
+/// This API is intended for P2P communication within a distributed deployment.
 pub struct PointsInternalService {
     toc: Arc<TableOfContent>,
 }
