@@ -13,7 +13,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "log 0.4.16",
- "memchr 2.4.0",
+ "memchr 2.4.1",
  "pin-project-lite",
  "tokio",
  "tokio-util 0.7.0",
@@ -76,7 +76,7 @@ dependencies = [
  "firestorm",
  "http",
  "log 0.4.16",
- "regex 1.5.4",
+ "regex 1.5.5",
  "serde",
 ]
 
@@ -159,7 +159,7 @@ dependencies = [
  "mime",
  "once_cell",
  "pin-project-lite",
- "regex 1.5.4",
+ "regex 1.5.5",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -228,7 +228,7 @@ version = "0.7.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e37cfd5e7657ada45f742d6e99ca5788580b5c529dc78faf11ece6dc702656f"
 dependencies = [
- "memchr 2.4.0",
+ "memchr 2.4.1",
 ]
 
 [[package]]
@@ -256,8 +256,8 @@ checksum = "595d3cfa7a60d4555cb5067b99f07142a08ea778de5cf993f7b75c7d8fabc486"
 name = "api"
 version = "0.1.0"
 dependencies = [
- "prost 0.9.0",
- "prost-types 0.9.0",
+ "prost 0.10.0",
+ "prost-types 0.10.0",
  "schemars",
  "segment",
  "serde",
@@ -369,6 +369,49 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
+name = "axum"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5611d4977882c5af1c0f7a34d51b5d87f784f86912bb543986b014ea4995ef93"
+dependencies = [
+ "async-trait",
+ "axum-core",
+ "bitflags",
+ "bytes",
+ "futures-util",
+ "http",
+ "http-body",
+ "hyper",
+ "itoa 1.0.1",
+ "matchit",
+ "memchr 2.4.1",
+ "mime",
+ "percent-encoding",
+ "pin-project-lite",
+ "serde",
+ "sync_wrapper",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tower-layer",
+ "tower-service",
+]
+
+[[package]]
+name = "axum-core"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95cd109b3e93c9541dcce5b0219dcf89169dcc58c1bebed65082808324258afb"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures-util",
+ "http",
+ "http-body",
+ "mime",
+]
+
+[[package]]
 name = "backtrace"
 version = "0.3.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -412,7 +455,7 @@ dependencies = [
  "peeking_take_while",
  "proc-macro2",
  "quote",
- "regex 1.5.4",
+ "regex 1.5.5",
  "rustc-hash",
  "shlex",
 ]
@@ -487,7 +530,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90682c8d613ad3373e66de8c6411e0ae2ab2571e879d2efbf73558cc66f21279"
 dependencies = [
  "lazy_static 1.4.0",
- "memchr 2.4.0",
+ "memchr 2.4.1",
  "regex-automata",
  "serde",
 ]
@@ -616,6 +659,15 @@ dependencies = [
  "bitflags",
  "textwrap",
  "unicode-width",
+]
+
+[[package]]
+name = "cmake"
+version = "0.1.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7b858541263efe664aead4a5209a4ae5c5d2811167d4ed4ee0944503f8d2089"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -754,7 +806,7 @@ dependencies = [
  "oorandom",
  "plotters",
  "rayon",
- "regex 1.5.4",
+ "regex 1.5.5",
  "serde",
  "serde_cbor",
  "serde_derive",
@@ -845,7 +897,7 @@ version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b2466559f260f48ad25fe6317b3c8dac77b5bdb5763ac7d9d6103530663bc90"
 dependencies = [
- "memchr 2.4.0",
+ "memchr 2.4.1",
 ]
 
 [[package]]
@@ -956,7 +1008,7 @@ dependencies = [
  "atty",
  "humantime",
  "log 0.4.16",
- "regex 1.5.4",
+ "regex 1.5.5",
  "termcolor",
 ]
 
@@ -1151,7 +1203,7 @@ dependencies = [
  "futures-macro",
  "futures-sink",
  "futures-task",
- "memchr 2.4.0",
+ "memchr 2.4.1",
  "pin-project-lite",
  "pin-utils",
  "slab",
@@ -1356,6 +1408,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "heck"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2540771e65fc8cb83cd6e8a237f70c319bd5c29f78ed1084ba5d50eeac86f7f9"
+
+[[package]]
 name = "hermit-abi"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1385,6 +1443,12 @@ dependencies = [
  "http",
  "pin-project-lite",
 ]
+
+[[package]]
+name = "http-range-header"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bfe8eed0a9285ef776bb792479ea3834e8b94e13d615c2f66d03dd50a435a29"
 
 [[package]]
 name = "httparse"
@@ -1470,7 +1534,7 @@ dependencies = [
  "console",
  "lazy_static 1.4.0",
  "number_prefix",
- "regex 1.5.4",
+ "regex 1.5.5",
 ]
 
 [[package]]
@@ -1706,6 +1770,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ffc5c5338469d4d3ea17d269fa8ea3512ad247247c30bd2df69e68309ed0a08"
 
 [[package]]
+name = "matchit"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73cbba799671b762df5a175adf59ce145165747bb891505c43d09aefbbf38beb"
+
+[[package]]
 name = "memchr"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1716,9 +1786,9 @@ dependencies = [
 
 [[package]]
 name = "memchr"
-version = "2.4.0"
+version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b16bd47d9e329435e309c58469fe0791c2d0d1ba96ec0954152a5ae2b04387dc"
+checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
 
 [[package]]
 name = "memmap"
@@ -1854,7 +1924,7 @@ version = "7.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b1d11e1ef389c76fe5b81bcaf2ea32cf88b62bc494e19f493d0b30e7a930109"
 dependencies = [
- "memchr 2.4.0",
+ "memchr 2.4.1",
  "minimal-lexical",
  "version_check",
 ]
@@ -1920,7 +1990,7 @@ version = "0.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8bc1d42047cf336f0f939c99e97183cf31551bf0f2865a2ec9c8d91fd4ffb5e"
 dependencies = [
- "memchr 2.4.0",
+ "memchr 2.4.1",
 ]
 
 [[package]]
@@ -2176,6 +2246,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac74c624d6b2d21f425f752262f42188365d7b8ff1aff74c82e45136510a4857"
 
 [[package]]
+name = "prettyplease"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b83ec2d0af5c5c556257ff52c9f98934e243b9fd39604bfb2a9b75ec2e97f18"
+dependencies = [
+ "proc-macro2",
+ "syn",
+]
+
+[[package]]
 name = "proc-macro-error"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2229,13 +2309,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bd5316aa8f5c82add416dfbc25116b84b748a21153f512917e8143640a71bbd"
+dependencies = [
+ "bytes",
+ "prost-derive 0.10.0",
+]
+
+[[package]]
 name = "prost-build"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32d3ebd75ac2679c2af3a92246639f9fcc8a442ee420719cc4fe195b98dd5fa3"
 dependencies = [
  "bytes",
- "heck",
+ "heck 0.3.3",
  "itertools 0.9.0",
  "log 0.4.16",
  "multimap",
@@ -2253,7 +2343,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62941722fb675d463659e49c4f3fe1fe792ff24fe5bbaa9c08cd3b98a1c354f5"
 dependencies = [
  "bytes",
- "heck",
+ "heck 0.3.3",
  "itertools 0.10.3",
  "lazy_static 1.4.0",
  "log 0.4.16",
@@ -2261,7 +2351,29 @@ dependencies = [
  "petgraph 0.6.0",
  "prost 0.9.0",
  "prost-types 0.9.0",
- "regex 1.5.4",
+ "regex 1.5.5",
+ "tempfile",
+ "which",
+]
+
+[[package]]
+name = "prost-build"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "328f9f29b82409216decb172d81e936415d21245befa79cd34c3f29d87d1c50b"
+dependencies = [
+ "bytes",
+ "cfg-if",
+ "cmake",
+ "heck 0.4.0",
+ "itertools 0.10.3",
+ "lazy_static 1.4.0",
+ "log 0.4.16",
+ "multimap",
+ "petgraph 0.6.0",
+ "prost 0.10.0",
+ "prost-types 0.10.0",
+ "regex 1.5.5",
  "tempfile",
  "which",
 ]
@@ -2293,6 +2405,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df35198f0777b75e9ff669737c6da5136b59dba33cf5a010a6d1cc4d56defc6f"
+dependencies = [
+ "anyhow",
+ "itertools 0.10.3",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2310,6 +2435,16 @@ checksum = "534b7a0e836e3c482d2693070f982e39e7611da9695d4d1f5a4b186b51faef0a"
 dependencies = [
  "bytes",
  "prost 0.9.0",
+]
+
+[[package]]
+name = "prost-types"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "926681c118ae6e512a3ccefd4abbe5521a14f4cc1e207356d4d00c0b7f2006fd"
+dependencies = [
+ "bytes",
+ "prost 0.10.0",
 ]
 
 [[package]]
@@ -2345,8 +2480,8 @@ dependencies = [
  "num-traits",
  "num_cpus",
  "parking_lot",
- "prost 0.9.0",
- "prost-types 0.9.0",
+ "prost 0.10.0",
+ "prost-types 0.10.0",
  "raft",
  "rusty-hook",
  "schemars",
@@ -2368,7 +2503,7 @@ version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8533f14c8382aaad0d592c812ac3b826162128b65662331e1127b45c3d18536b"
 dependencies = [
- "memchr 2.4.0",
+ "memchr 2.4.1",
 ]
 
 [[package]]
@@ -2533,12 +2668,12 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.5.4"
+version = "1.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d07a8629359eb56f1e2fb1652bb04212c072a87ba68546a04065d525673ac461"
+checksum = "1a11647b6b25ff05a515cb92c365cec08801e83423a235b51e231e1808747286"
 dependencies = [
  "aho-corasick 0.7.18",
- "memchr 2.4.0",
+ "memchr 2.4.1",
  "regex-syntax 0.6.25",
 ]
 
@@ -3025,6 +3160,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "sync_wrapper"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20518fe4a4c9acf048008599e464deb21beeae3d3578418951a189c235a7a9a8"
+
+[[package]]
 name = "syncbox"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3196,7 +3337,7 @@ checksum = "2af73ac49756f3f7c01172e34a23e5d0216f6c32333757c2c61feb2bbff5a5ee"
 dependencies = [
  "bytes",
  "libc",
- "memchr 2.4.0",
+ "memchr 2.4.1",
  "mio",
  "num_cpus",
  "once_cell",
@@ -3279,12 +3420,13 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff08f4649d10a70ffa3522ca559031285d8e421d727ac85c60825761818f5d0a"
+checksum = "9a1a361140b1af3f548e0a5105126b3fc737542f6cd4947b66419c80be07db22"
 dependencies = [
  "async-stream",
  "async-trait",
+ "axum",
  "base64",
  "bytes",
  "futures-core",
@@ -3296,11 +3438,11 @@ dependencies = [
  "hyper-timeout",
  "percent-encoding",
  "pin-project",
- "prost 0.9.0",
- "prost-derive 0.9.0",
+ "prost 0.10.0",
+ "prost-derive 0.10.0",
  "tokio",
  "tokio-stream",
- "tokio-util 0.6.7",
+ "tokio-util 0.7.0",
  "tower",
  "tower-layer",
  "tower-service",
@@ -3310,34 +3452,54 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9403f1bafde247186684b230dc6f38b5cd514584e8bec1dd32514be4745fa757"
+checksum = "4d17087af5c80e5d5fc8ba9878e60258065a0a757e35efe7a05b7904bece1943"
 dependencies = [
+ "prettyplease",
  "proc-macro2",
- "prost-build 0.9.0",
+ "prost-build 0.10.0",
  "quote",
  "syn",
 ]
 
 [[package]]
 name = "tower"
-version = "0.4.8"
+version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f60422bc7fefa2f3ec70359b8ff1caff59d785877eb70595904605bcc412470f"
+checksum = "9a89fd63ad6adf737582df5db40d286574513c69a11dac5214dc3b5603d6713e"
 dependencies = [
  "futures-core",
  "futures-util",
  "indexmap",
  "pin-project",
+ "pin-project-lite",
  "rand 0.8.5",
  "slab",
  "tokio",
- "tokio-stream",
- "tokio-util 0.6.7",
+ "tokio-util 0.7.0",
  "tower-layer",
  "tower-service",
  "tracing",
+]
+
+[[package]]
+name = "tower-http"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aba3f3efabf7fb41fae8534fc20a817013dd1c12cb45441efb6c82e6556b4cd8"
+dependencies = [
+ "bitflags",
+ "bytes",
+ "futures-core",
+ "futures-util",
+ "http",
+ "http-body",
+ "http-range-header",
+ "pin-project-lite",
+ "tower",
+ "tower-layer",
+ "tower-service",
 ]
 
 [[package]]
