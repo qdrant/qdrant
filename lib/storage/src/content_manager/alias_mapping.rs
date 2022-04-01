@@ -111,7 +111,9 @@ impl AliasPersistence {
     }
 
     #[cfg(feature = "consensus")]
-    pub fn apply_state(&mut self, alias_mapping: AliasMapping) {
+    pub fn apply_state(&mut self, alias_mapping: AliasMapping) -> Result<(), StorageError> {
         self.alias_mapping = alias_mapping;
+        self.alias_mapping.save(&self.data_path)?;
+        Ok(())
     }
 }

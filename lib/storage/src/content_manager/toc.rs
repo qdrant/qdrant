@@ -618,7 +618,7 @@ impl TableOfContent {
             self.alias_persistence
                 .write()
                 .await
-                .apply_state(snapshot.aliases);
+                .apply_state(snapshot.aliases)?;
             Ok(())
         })
     }
