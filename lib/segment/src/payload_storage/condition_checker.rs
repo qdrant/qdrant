@@ -46,12 +46,7 @@ impl ValueChecker for Range {
         match payload {
             Value::Number(num) => num
                 .as_f64()
-                .map(|number| {
-                    self.lt.map_or(true, |x| number < x)
-                        && self.gt.map_or(true, |x| number > x)
-                        && self.lte.map_or(true, |x| number <= x)
-                        && self.gte.map_or(true, |x| number >= x)
-                })
+                .map(|number| self.check_range(number))
                 .unwrap_or(false),
             _ => false,
         }

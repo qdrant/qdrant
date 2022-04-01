@@ -31,9 +31,24 @@ pub struct PersistedNumericIndex<N: ToPrimitive + Clone> {
     points_count: usize,
     max_values_per_point: usize,
     elements: Vec<Element<N>>,
+    point_to_values: Vec<Vec<N>>,
 }
 
 impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<N>> {
+        self.point_to_values.get(idx as usize)
+    }
+
+    pub fn check_value(&self, idx: PointOffsetType, range: &Range) -> bool {
+        self.get_values(idx)
+            .map(|values| {
+                values
+                    .iter()
+                    .any(|number| range.check_range(number.to_f64().unwrap()))
+            })
+            .unwrap_or(false)
+    }
+
     fn search_range(&self, range: &Range) -> (usize, usize) {
         let mut lower_index = 0;
         let mut upper_index = self.elements.len();
@@ -147,10 +162,17 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
         }
     }
 
-    fn add_many_to_list(&mut self, id: PointOffsetType, values: impl IntoIterator<Item = N>) {
+    fn add_many_to_list(&mut self, idx: PointOffsetType, values: impl IntoIterator<Item = N>) {
         let mut total_values = 0;
-        for value in values {
-            self.elements.push(Element { id, value });
+        if self.point_to_values.len() <= idx as usize {
+            self.point_to_values.resize(idx as usize + 1, vec![])
+        }
+        self.point_to_values[idx as usize] = values.into_iter().collect();
+        for value in &self.point_to_values[idx as usize] {
+            self.elements.push(Element {
+                id: idx,
+                value: value.to_owned(),
+            });
             total_values += 1;
         }
         self.points_count += 1;
@@ -257,11 +279,13 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<FloatPayloadType> {
 
     fn build(&mut self) -> FieldIndex {
         let mut elements = mem::take(&mut self.elements);
+        let point_to_values = mem::take(&mut self.point_to_values);
         elements.sort_by_key(|el| OrderedFloat(el.value));
         FieldIndex::FloatIndex(PersistedNumericIndex {
             points_count: self.points_count,
             max_values_per_point: self.max_values_per_point,
             elements,
+            point_to_values,
         })
     }
 }
@@ -286,11 +310,13 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<IntPayloadType> {
 
     fn build(&mut self) -> FieldIndex {
         let mut elements = mem::take(&mut self.elements);
+        let point_to_values = mem::take(&mut self.point_to_values);
         elements.sort_by_key(|el| el.value);
         FieldIndex::IntIndex(PersistedNumericIndex {
             points_count: self.points_count,
             max_values_per_point: self.max_values_per_point,
             elements,
+            point_to_values,
         })
     }
 }
@@ -304,21 +330,24 @@ mod tests {
     #[test]
     fn test_payload_blocks() {
         let threshold = 4;
-        let index = PersistedNumericIndex {
-            points_count: 9,
-            max_values_per_point: 1,
-            elements: vec![
-                Element { id: 1, value: 1.0 },
-                Element { id: 2, value: 1.0 },
-                Element { id: 3, value: 1.0 },
-                Element { id: 4, value: 1.0 },
-                Element { id: 5, value: 1.0 },
-                Element { id: 6, value: 2.0 },
-                Element { id: 7, value: 2.0 },
-                Element { id: 8, value: 2.0 },
-                Element { id: 9, value: 2.0 },
-            ],
-        };
+        let values = vec![
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![2.0],
+            vec![2.0],
+            vec![2.0],
+            vec![2.0],
+        ];
+
+        let mut index: PersistedNumericIndex<_> = Default::default();
+
+        values
+            .into_iter()
+            .enumerate()
+            .for_each(|(idx, values)| index.add_many_to_list(idx as PointOffsetType + 1, values));
 
         let blocks = index
             .payload_blocks(threshold, "test".to_owned())
@@ -346,21 +375,24 @@ mod tests {
 
     #[test]
     fn test_bsearch() {
-        let index = PersistedNumericIndex {
-            points_count: 9,
-            max_values_per_point: 1,
-            elements: vec![
-                Element { id: 1, value: 1.0 },
-                Element { id: 2, value: 3.0 },
-                Element { id: 3, value: 6.0 },
-                Element { id: 4, value: 9.0 },
-                Element { id: 5, value: 9.0 },
-                Element { id: 6, value: 12.0 },
-                Element { id: 7, value: 13.0 },
-                Element { id: 8, value: 30.0 },
-                Element { id: 9, value: 33.0 },
-            ],
-        };
+        let values = vec![
+            vec![1.0],
+            vec![3.0],
+            vec![6.0],
+            vec![9.0],
+            vec![9.0],
+            vec![12.0],
+            vec![13.0],
+            vec![30.0],
+            vec![33.0],
+        ];
+
+        let mut index: PersistedNumericIndex<_> = Default::default();
+
+        values
+            .into_iter()
+            .enumerate()
+            .for_each(|(idx, values)| index.add_many_to_list(idx as PointOffsetType, values));
 
         let res = index.search_range(&Range {
             lt: None,
@@ -377,19 +409,25 @@ mod tests {
             lte: None,
         });
         let elements = &index.elements[res.0..res.1];
-        assert_eq!(elements[0].id, 3);
-        assert_eq!(elements[elements.len() - 1].id, 7);
+        assert_eq!(elements[0].id, 2);
+        assert_eq!(elements[elements.len() - 1].id, 6);
     }
 
     fn random_index(num_points: usize, values_per_point: usize) -> PersistedNumericIndex<f64> {
         let mut rng = StdRng::seed_from_u64(42);
         let mut elements: Vec<Element<f64>> = vec![];
+        let mut point_to_values = vec![];
 
+        point_to_values.resize(num_points, vec![]);
+
+        #[allow(clippy::needless_range_loop)]
         for i in 0..num_points {
             for _ in 0..values_per_point {
+                let value = rng.gen_range(0.0..100.0);
+                point_to_values[i].push(value);
                 elements.push(Element {
                     id: i as PointOffsetType,
-                    value: rng.gen_range(0.0..100.0),
+                    value,
                 });
             }
         }
@@ -400,6 +438,7 @@ mod tests {
             points_count: num_points,
             max_values_per_point: values_per_point,
             elements,
+            point_to_values,
         }
     }
 
@@ -467,21 +506,24 @@ mod tests {
 
     #[test]
     fn test_cardinality() {
-        let index = PersistedNumericIndex {
-            points_count: 9,
-            max_values_per_point: 1,
-            elements: vec![
-                Element { id: 1, value: 1.0 },
-                Element { id: 2, value: 3.0 },
-                Element { id: 3, value: 6.0 },
-                Element { id: 4, value: 9.0 },
-                Element { id: 5, value: 9.0 },
-                Element { id: 6, value: 12.0 },
-                Element { id: 7, value: 13.0 },
-                Element { id: 8, value: 30.0 },
-                Element { id: 9, value: 33.0 },
-            ],
-        };
+        let values = vec![
+            vec![1.0],
+            vec![3.0],
+            vec![6.0],
+            vec![9.0],
+            vec![9.0],
+            vec![12.0],
+            vec![13.0],
+            vec![30.0],
+            vec![33.0],
+        ];
+
+        let mut index: PersistedNumericIndex<_> = Default::default();
+
+        values
+            .into_iter()
+            .enumerate()
+            .for_each(|(idx, values)| index.add_many_to_list(idx as PointOffsetType + 1, values));
 
         let estimation = index.range_cardinality(&Range {
             lt: Some(15.0),
@@ -510,6 +552,7 @@ mod tests {
             points_count: 9,
             max_values_per_point: 1,
             elements: vec![Element { id: 1, value: 1 }, Element { id: 2, value: 3 }],
+            point_to_values: vec![vec![1], vec![3]],
         };
 
         let json = serde_json::to_string_pretty(&index).unwrap();

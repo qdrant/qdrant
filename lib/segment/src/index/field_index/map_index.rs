@@ -18,6 +18,7 @@ use crate::types::{
 #[derive(Serialize, Deserialize, Default)]
 pub struct PersistedMapIndex<N: Hash + Eq + Clone> {
     map: HashMap<N, Vec<PointOffsetType>>,
+    point_to_values: Vec<Vec<N>>,
 }
 
 impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
@@ -35,9 +36,23 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
         }
     }
 
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<N>> {
+        self.point_to_values.get(idx as usize)
+    }
+
+    pub fn check_value(&self, idx: PointOffsetType, reference: &N) -> bool {
+        self.get_values(idx)
+            .map(|values| values.iter().any(|x| x == reference))
+            .unwrap_or(false)
+    }
+
     fn add_many_to_map(&mut self, idx: PointOffsetType, values: impl IntoIterator<Item = N>) {
-        for value in values {
-            let entry = self.map.entry(value).or_default();
+        if self.point_to_values.len() <= idx as usize {
+            self.point_to_values.resize(idx as usize + 1, vec![])
+        }
+        self.point_to_values[idx as usize] = values.into_iter().collect();
+        for value in &self.point_to_values[idx as usize] {
+            let entry = self.map.entry(value.clone()).or_default();
             entry.push(idx);
         }
     }
@@ -163,8 +178,12 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
     }
 
     fn build(&mut self) -> FieldIndex {
-        let data = mem::take(&mut self.map);
-        FieldIndex::KeywordIndex(PersistedMapIndex { map: data })
+        let map = mem::take(&mut self.map);
+        let column = mem::take(&mut self.point_to_values);
+        FieldIndex::KeywordIndex(PersistedMapIndex {
+            map,
+            point_to_values: column,
+        })
     }
 }
 
@@ -187,7 +206,11 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<IntPayloadType> {
     }
 
     fn build(&mut self) -> FieldIndex {
-        let data = mem::take(&mut self.map);
-        FieldIndex::IntMapIndex(PersistedMapIndex { map: data })
+        let map = mem::take(&mut self.map);
+        let column = mem::take(&mut self.point_to_values);
+        FieldIndex::IntMapIndex(PersistedMapIndex {
+            map,
+            point_to_values: column,
+        })
     }
 }

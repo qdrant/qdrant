@@ -7,7 +7,9 @@ use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
     PayloadFieldIndexBuilder, PrimaryCondition, ValueIndexer,
 };
-use crate::types::{FieldCondition, GeoPoint, PayloadKeyType, PointOffsetType};
+use crate::types::{
+    FieldCondition, GeoBoundingBox, GeoPoint, GeoRadius, PayloadKeyType, PointOffsetType,
+};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -49,6 +51,22 @@ pub struct PersistedGeoMapIndex {
 }
 
 impl PersistedGeoMapIndex {
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<GeoPoint>> {
+        self.point_to_values.get(idx as usize)
+    }
+
+    pub fn check_radius(&self, idx: PointOffsetType, radius: &GeoRadius) -> bool {
+        self.get_values(idx)
+            .map(|values| values.iter().any(|x| radius.check_point(x.lon, x.lat)))
+            .unwrap_or(false)
+    }
+
+    pub fn check_box(&self, idx: PointOffsetType, bbox: &GeoBoundingBox) -> bool {
+        self.get_values(idx)
+            .map(|values| values.iter().any(|x| bbox.check_point(x.lon, x.lat)))
+            .unwrap_or(false)
+    }
+
     pub fn match_cardinality(&self, values: &[GeoHash]) -> CardinalityEstimation {
         let common_hash = common_hash_prefix(values);
 
