@@ -17,7 +17,10 @@ use crate::index::query_estimator::estimate_filter;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorageSS};
-use crate::types::{Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType};
+use crate::types::{
+    Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType, PayloadKeyTypeRef,
+    PayloadSchemaType, PointOffsetType,
+};
 use crate::vector_storage::VectorStorageSS;
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
