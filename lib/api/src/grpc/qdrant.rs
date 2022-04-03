@@ -1147,7 +1147,7 @@ pub struct FieldCondition {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
-    #[prost(oneof = "r#match::MatchValue", tags = "1, 2")]
+    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3")]
     pub match_value: ::core::option::Option<r#match::MatchValue>,
 }
 /// Nested message and enum types in `Match`.
@@ -1160,6 +1160,9 @@ pub mod r#match {
         /// Match integer
         #[prost(int64, tag = "2")]
         Integer(i64),
+        /// Match boolean
+        #[prost(bool, tag = "3")]
+        Boolean(bool),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

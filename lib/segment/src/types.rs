@@ -495,40 +495,95 @@ pub fn infer_value_type(value: &Value) -> Option<PayloadSchemaType> {
     }
 }
 
-/// Match by keyword
+/// Match by keyword (deprecated)
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[deprecated]
 pub struct MatchKeyword {
     /// Keyword value to match
+    #[deprecated]
     pub keyword: String,
 }
 
-/// Match filter request
+/// Match filter request (deprecated)
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[deprecated]
 pub struct MatchInteger {
     /// Integer value to match
+    #[deprecated]
     pub integer: IntPayloadType,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum ValueVariants {
+    Keyword(String),
+    Integer(IntPayloadType),
+    Bool(bool),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchValue {
+    pub value: ValueVariants,
 }
 
 /// Match filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
-pub enum Match {
+pub enum MatchInterface {
+    Value(MatchValue),
     Keyword(MatchKeyword),
     Integer(MatchInteger),
 }
 
+/// Match filter request
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(from = "MatchInterface")]
+#[serde(untagged)]
+pub enum Match {
+    Value(MatchValue),
+    Keyword(MatchKeyword),
+    Integer(MatchInteger),
+}
+
+impl From<MatchInterface> for Match {
+    fn from(value: MatchInterface) -> Self {
+        match value {
+            MatchInterface::Value(value) => Self::Value(MatchValue { value: value.value }),
+            MatchInterface::Keyword(MatchKeyword { keyword }) => Self::Value(MatchValue {
+                value: ValueVariants::Keyword(keyword),
+            }),
+            MatchInterface::Integer(MatchInteger { integer }) => Self::Value(MatchValue {
+                value: ValueVariants::Integer(integer),
+            }),
+        }
+    }
+}
+
+impl From<bool> for Match {
+    fn from(flag: bool) -> Self {
+        Self::Value(MatchValue {
+            value: ValueVariants::Bool(flag),
+        })
+    }
+}
+
 impl From<String> for Match {
     fn from(keyword: String) -> Self {
-        Self::Keyword(MatchKeyword { keyword })
+        Self::Value(MatchValue {
+            value: ValueVariants::Keyword(keyword),
+        })
     }
 }
 
 impl From<IntPayloadType> for Match {
     fn from(integer: IntPayloadType) -> Self {
-        Self::Integer(MatchInteger { integer })
+        Self::Value(MatchValue {
+            value: ValueVariants::Integer(integer),
+        })
     }
 }
 
@@ -599,6 +654,7 @@ impl GeoRadius {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct FieldCondition {
+    /// Payload key
     pub key: PayloadKeyType,
     /// Check if point has field with a given value
     pub r#match: Option<Match>,
@@ -824,39 +880,6 @@ mod tests {
         eprintln!("de_record = {:#?}", de_record);
     }
 
-    // ToDo: Check serialization of UUID here later
-    // #[test]
-    // fn test_long_id_deserialization() {
-    //     let query1 = r#"
-    //     {
-    //         "has_id": [7730993719707444524137094407]
-    //     }"#;
-    //
-    //     let de_record: Condition = serde_json::from_str(query1).expect("deserialization ok");
-    //     eprintln!("de_record = {:#?}", de_record);
-    //
-    //     let query2 = HasIdCondition {
-    //         has_id: HashSet::from_iter(vec![7730993719707444524137094407].iter().cloned()),
-    //     };
-    //
-    //     let json = serde_json::to_string(&query2).expect("serialization ok");
-    //
-    //     eprintln!("json = {:#?}", json);
-    // }
-    //
-    // #[test]
-    // fn test_long_ids_serialization() {
-    //     let operation = Filter {
-    //         should: None,
-    //         must: Some(vec![Condition::HasId(HasIdCondition {
-    //             has_id: HashSet::from_iter(vec![7730993719707444524137094407].iter().cloned()),
-    //         })]),
-    //         must_not: None,
-    //     };
-    //     check_json_serialization(operation.clone());
-    //     check_cbor_serialization(operation);
-    // }
-
     #[test]
     fn test_serialize_query() {
         let filter = Filter {
@@ -884,6 +907,79 @@ mod tests {
         let filter: Result<Filter, _> = serde_json::from_str(query1);
 
         assert!(filter.is_err())
+    }
+
+    #[test]
+    fn test_parse_match_query() {
+        let query = r#"
+        {
+            "key": "hello",
+            "match": { "integer": 42 }
+        }
+        "#;
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Integer(42)
+            })
+        );
+
+        let query = r#"
+        {
+            "key": "hello",
+            "match": { "keyword": "world" }
+        }"#;
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Keyword("world".to_owned())
+            })
+        );
+
+        let query = r#"
+        {
+            "key": "hello",
+            "match": { "value": 42 }
+        }
+        "#;
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Integer(42)
+            })
+        );
+
+        let query = r#"
+        {
+            "key": "hello",
+            "match": { "value": true }
+        }
+        "#;
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Bool(true)
+            })
+        );
+
+        let query = r#"
+        {
+            "key": "hello",
+            "match": { "value": "world" }
+        }
+        "#;
+
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Keyword("world".to_owned())
+            })
+        );
     }
 
     #[test]

@@ -10,8 +10,8 @@ use crate::index::field_index::{
 };
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
 use crate::types::{
-    FieldCondition, IntPayloadType, Match, MatchInteger, MatchKeyword, PayloadKeyType,
-    PointOffsetType,
+    FieldCondition, IntPayloadType, Match, MatchValue, PayloadKeyType, PointOffsetType,
+    ValueVariants,
 };
 
 /// HashMap-based type of index
@@ -71,14 +71,18 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
         condition: &FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         match &condition.r#match {
-            Some(Match::Keyword(MatchKeyword { keyword })) => Some(self.get_iterator(keyword)),
+            Some(Match::Value(MatchValue {
+                value: ValueVariants::Keyword(keyword),
+            })) => Some(self.get_iterator(keyword)),
             _ => None,
         }
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         match &condition.r#match {
-            Some(Match::Keyword(MatchKeyword { keyword })) => {
+            Some(Match::Value(MatchValue {
+                value: ValueVariants::Keyword(keyword),
+            })) => {
                 let mut estimation = self.match_cardinality(keyword);
                 estimation
                     .primary_clauses
@@ -118,14 +122,18 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
         condition: &FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         match &condition.r#match {
-            Some(Match::Integer(MatchInteger { integer })) => Some(self.get_iterator(integer)),
+            Some(Match::Value(MatchValue {
+                value: ValueVariants::Integer(integer),
+            })) => Some(self.get_iterator(integer)),
             _ => None,
         }
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         match &condition.r#match {
-            Some(Match::Integer(MatchInteger { integer })) => {
+            Some(Match::Value(MatchValue {
+                value: ValueVariants::Integer(integer),
+            })) => {
                 let mut estimation = self.match_cardinality(integer);
                 estimation
                     .primary_clauses

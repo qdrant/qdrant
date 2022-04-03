@@ -162,11 +162,11 @@ mod tests {
                     "lon": 13.404954,
                     "lat": 52.520008,
             },
-            "price":499.90,
-            "amount":10,
-            "rating":vec![3, 7, 9, 9],
-            "color":"red",
-            "has_delivery":1,
+            "price": 499.90,
+            "amount": 10,
+            "rating": vec![3, 7, 9, 9],
+            "color": "red",
+            "has_delivery": true,
         })
         .into();
 
@@ -202,7 +202,7 @@ mod tests {
 
         let with_delivery = Condition::Field(FieldCondition {
             key: "has_delivery".to_string(),
-            r#match: Some(1.into()),
+            r#match: Some(true.into()),
             range: None,
             geo_bounding_box: None,
             geo_radius: None,

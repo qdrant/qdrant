@@ -1,6 +1,6 @@
 //! Contains functions for interpreting filter queries and defining if given points pass the conditions
 
-use crate::types::{GeoBoundingBox, GeoRadius, Match, MatchInteger, MatchKeyword, Range};
+use crate::types::{GeoBoundingBox, GeoRadius, Match, MatchValue, Range, ValueVariants};
 use serde_json::Value;
 
 pub trait ValueChecker {
@@ -14,29 +14,18 @@ pub trait ValueChecker {
     }
 }
 
-impl ValueChecker for MatchKeyword {
-    fn check_match(&self, payload: &Value) -> bool {
-        match payload {
-            Value::String(keyword) => self.keyword == *keyword,
-            _ => false,
-        }
-    }
-}
-
-impl ValueChecker for MatchInteger {
-    fn check_match(&self, payload: &Value) -> bool {
-        match payload {
-            Value::Number(num) => num.as_i64().map(|x| x == self.integer).unwrap_or(false),
-            _ => false,
-        }
-    }
-}
-
 impl ValueChecker for Match {
     fn check_match(&self, payload: &Value) -> bool {
         match self {
-            Match::Keyword(match_keyword) => match_keyword.check_match(payload),
-            Match::Integer(match_integer) => match_integer.check_match(payload),
+            Match::Value(MatchValue { value }) => match (payload, value) {
+                (Value::Bool(stored), ValueVariants::Bool(val)) => stored == val,
+                (Value::String(stored), ValueVariants::Keyword(val)) => stored == val,
+                (Value::Number(stored), ValueVariants::Integer(val)) => {
+                    stored.as_i64().map(|num| num == *val).unwrap_or(false)
+                }
+                _ => false,
+            },
+            _ => panic!("use of deprecated conditions"),
         }
     }
 }

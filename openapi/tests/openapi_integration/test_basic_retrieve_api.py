@@ -62,7 +62,7 @@ def test_points_retrieve():
                     {
                         "key": "city",
                         "match": {
-                            "keyword": "London"
+                            "value": "London"
                         }
                     }
                 ]
@@ -97,7 +97,7 @@ def test_exclude_payload():
                     {
                         "key": "city",
                         "match": {
-                            "keyword": "London"
+                            "value": "London"
                         }
                     }
                 ]

@@ -367,6 +367,7 @@ impl TryFrom<Match> for segment::types::Match {
             Some(mv) => Ok(match mv {
                 MatchValue::Keyword(kw) => kw.into(),
                 MatchValue::Integer(int) => int.into(),
+                MatchValue::Boolean(flag) => flag.into(),
             }),
             _ => Err(Status::invalid_argument("Malformed Match condition")),
         }
