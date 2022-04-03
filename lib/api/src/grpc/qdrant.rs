@@ -1108,7 +1108,7 @@ pub struct Filter {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Condition {
-    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3")]
+    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4")]
     pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
 }
 /// Nested message and enum types in `Condition`.
@@ -1118,10 +1118,17 @@ pub mod condition {
         #[prost(message, tag = "1")]
         Field(super::FieldCondition),
         #[prost(message, tag = "2")]
-        HasId(super::HasIdCondition),
+        IsEmpty(super::IsEmptyCondition),
         #[prost(message, tag = "3")]
+        HasId(super::HasIdCondition),
+        #[prost(message, tag = "4")]
         Filter(super::Filter),
     }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IsEmptyCondition {
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HasIdCondition {

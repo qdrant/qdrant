@@ -152,10 +152,15 @@ impl PersistedGeoMapIndex {
     }
 
     fn add_many_geo_points(&mut self, idx: PointOffsetType, values: &[GeoPoint]) {
+        if values.is_empty() {
+            return;
+        }
+
         if self.point_to_values.len() <= idx as usize {
             // That's a smart reallocation
             self.point_to_values.resize(idx as usize + 1, vec![]);
         }
+
         self.point_to_values[idx as usize] = values.to_vec();
 
         let mut seen_hashes: HashSet<&str> = Default::default();
@@ -390,6 +395,10 @@ impl PayloadFieldIndex for PersistedGeoMapIndex {
                     cardinality: size,
                 }),
         )
+    }
+
+    fn count_indexed_points(&self) -> usize {
+        self.points_count
     }
 }
 

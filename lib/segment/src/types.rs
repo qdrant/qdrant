@@ -666,6 +666,19 @@ pub struct FieldCondition {
     pub geo_radius: Option<GeoRadius>,
 }
 
+/// Payload field
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+pub struct PayloadField {
+    /// Payload field name
+    pub key: PayloadKeyType,
+}
+
+/// Select points with empty payload for a specified field
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+pub struct IsEmptyCondition {
+    pub is_empty: PayloadField,
+}
+
 /// ID-based filtering condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 pub struct HasIdCondition {
@@ -683,6 +696,8 @@ impl From<HashSet<PointIdType>> for HasIdCondition {
 pub enum Condition {
     /// Check if field satisfies provided condition
     Field(FieldCondition),
+    /// Check if payload field is empty: equals to `NULL`, empty array, or does not exists
+    IsEmpty(IsEmptyCondition),
     /// Check if points id is in a given set
     HasId(HasIdCondition),
     /// Nested filter

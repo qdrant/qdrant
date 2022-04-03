@@ -1,4 +1,4 @@
-use crate::types::{FieldCondition, PointOffsetType};
+use crate::types::{FieldCondition, IsEmptyCondition, PointOffsetType};
 use std::collections::HashSet;
 
 mod field_index_base;
@@ -15,6 +15,7 @@ pub use field_index_base::*;
 #[derive(Debug, Clone)]
 pub enum PrimaryCondition {
     Condition(FieldCondition),
+    IsEmpty(IsEmptyCondition),
     Ids(HashSet<PointOffsetType>),
 }
 

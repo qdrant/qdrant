@@ -213,6 +213,12 @@ mod tests {
                 exp: has_id.has_id.len(),
                 max: has_id.has_id.len(),
             },
+            Condition::IsEmpty(condition) => CardinalityEstimation {
+                primary_clauses: vec![PrimaryCondition::IsEmpty(condition.to_owned())],
+                min: 0,
+                exp: TOTAL / 2,
+                max: TOTAL,
+            },
         }
     }
 
@@ -241,6 +247,7 @@ mod tests {
         match &estimation.primary_clauses[0] {
             PrimaryCondition::Condition(field) => assert_eq!(&field.key, "size"),
             PrimaryCondition::Ids(_) => panic!(),
+            PrimaryCondition::IsEmpty(_) => panic!(),
         }
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);
@@ -353,6 +360,7 @@ mod tests {
                 assert!(vec!["price".to_owned(), "size".to_owned(),].contains(&field.key))
             }
             PrimaryCondition::Ids(_) => panic!("Should not go here"),
+            PrimaryCondition::IsEmpty(_) => panic!("Should not go here"),
         });
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);

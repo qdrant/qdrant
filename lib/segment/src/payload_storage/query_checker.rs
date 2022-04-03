@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use serde_json::Value;
 
 use crate::id_tracker::IdTrackerSS;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::ConditionChecker;
-use crate::types::{Condition, Filter, Payload, PointOffsetType};
+use crate::types::{Condition, Filter, IsEmptyCondition, Payload, PointOffsetType};
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool
 where
@@ -129,6 +130,16 @@ impl ConditionChecker for SimpleConditionChecker {
                     has_id.has_id.contains(&external_id)
                 }
                 Condition::Filter(_) => panic!("Unexpected branching!"),
+                Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
+                    match payload.get_value(&field.key) {
+                        None => true,
+                        Some(value) => match value {
+                            Value::Null => true,
+                            Value::Array(array) => array.is_empty(),
+                            _ => false,
+                        },
+                    }
+                }
             }
         };
 
@@ -146,8 +157,8 @@ mod tests {
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::payload_storage::PayloadStorage;
-    use crate::types::GeoPoint;
     use crate::types::{FieldCondition, GeoBoundingBox, Range};
+    use crate::types::{GeoPoint, PayloadField};
 
     use super::*;
 
@@ -183,6 +194,21 @@ mod tests {
             Arc::new(AtomicRefCell::new(payload_storage)),
             Arc::new(AtomicRefCell::new(id_tracker)),
         );
+
+        let is_empty_condition_1 = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+            is_empty: PayloadField {
+                key: "price".to_string(),
+            },
+        }));
+
+        let is_empty_condition_2 = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+            is_empty: PayloadField {
+                key: "something_new".to_string(),
+            },
+        }));
+
+        assert!(!payload_checker.check(0, &is_empty_condition_1));
+        assert!(payload_checker.check(0, &is_empty_condition_2));
 
         let match_red = Condition::Field(FieldCondition {
             key: "color".to_string(),

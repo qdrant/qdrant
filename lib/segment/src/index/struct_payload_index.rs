@@ -18,8 +18,8 @@ use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorageSS};
 use crate::types::{
-    Condition, FieldCondition, Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    PointOffsetType,
+    Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType, PayloadKeyTypeRef,
+    PayloadSchemaType, PointOffsetType,
 };
 use crate::vector_storage::VectorStorageSS;
 
@@ -272,6 +272,33 @@ impl PayloadIndex for StructPayloadIndex {
 
         let estimator = |condition: &Condition| match condition {
             Condition::Filter(_) => panic!("Unexpected branching"),
+            Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
+                let total_points = self.total_points();
+
+                let mut indexed_points = 0;
+                if let Some(field_indexes) = self.field_indexes.get(&field.key) {
+                    for index in field_indexes {
+                        indexed_points = indexed_points.max(index.count_indexed_points())
+                    }
+                    CardinalityEstimation {
+                        primary_clauses: vec![PrimaryCondition::IsEmpty(IsEmptyCondition {
+                            is_empty: field.to_owned(),
+                        })],
+                        min: 0, // It is possible, that some non-empty payloads are not indexed
+                        exp: total_points.saturating_sub(indexed_points), // Expect field type consistency
+                        max: total_points.saturating_sub(indexed_points),
+                    }
+                } else {
+                    CardinalityEstimation {
+                        primary_clauses: vec![PrimaryCondition::IsEmpty(IsEmptyCondition {
+                            is_empty: field.to_owned(),
+                        })],
+                        min: 0,
+                        exp: total_points / 2,
+                        max: total_points,
+                    }
+                }
+            }
             Condition::HasId(has_id) => {
                 let id_tracker_ref = self.id_tracker.borrow();
                 let mapped_ids: HashSet<PointOffsetType> = has_id
@@ -319,7 +346,7 @@ impl PayloadIndex for StructPayloadIndex {
                 .get(vector_storage_ref.total_vector_count());
 
             #[allow(clippy::needless_collect)]
-            let preselected: Vec<PointOffsetType> = query_cardinality
+                let preselected: Vec<PointOffsetType> = query_cardinality
                 .primary_clauses
                 .iter()
                 .flat_map(|clause| {
@@ -330,6 +357,7 @@ impl PayloadIndex for StructPayloadIndex {
                             )
                         }
                         PrimaryCondition::Ids(ids) => Box::new(ids.iter().copied()),
+                        PrimaryCondition::IsEmpty(_) => vector_storage_ref.iter_ids() /* there are no fast index for IsEmpty */
                     }
                 })
                 .filter(|&id| !visited_list.check_and_update_visited(id))

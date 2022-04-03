@@ -19,6 +19,7 @@ use crate::types::{
 pub struct PersistedMapIndex<N: Hash + Eq + Clone> {
     map: HashMap<N, Vec<PointOffsetType>>,
     point_to_values: Vec<Vec<N>>,
+    total_points: usize,
 }
 
 impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
@@ -51,9 +52,14 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
             self.point_to_values.resize(idx as usize + 1, vec![])
         }
         self.point_to_values[idx as usize] = values.into_iter().collect();
+        let mut empty = true;
         for value in &self.point_to_values[idx as usize] {
             let entry = self.map.entry(value.clone()).or_default();
             entry.push(idx);
+            empty = false;
+        }
+        if !empty {
+            self.total_points += 1;
         }
     }
 
@@ -114,6 +120,10 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
             });
         Box::new(iter)
     }
+
+    fn count_indexed_points(&self) -> usize {
+        self.total_points
+    }
 }
 
 impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
@@ -165,6 +175,10 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
             });
         Box::new(iter)
     }
+
+    fn count_indexed_points(&self) -> usize {
+        self.total_points
+    }
 }
 
 impl ValueIndexer<String> for PersistedMapIndex<String> {
@@ -191,6 +205,7 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
         FieldIndex::KeywordIndex(PersistedMapIndex {
             map,
             point_to_values: column,
+            total_points: self.total_points,
         })
     }
 }
@@ -219,6 +234,7 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<IntPayloadType> {
         FieldIndex::IntMapIndex(PersistedMapIndex {
             map,
             point_to_values: column,
+            total_points: self.total_points,
         })
     }
 }

@@ -175,8 +175,10 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
             });
             total_values += 1;
         }
-        self.points_count += 1;
-        self.max_values_per_point = self.max_values_per_point.max(total_values);
+        if total_values > 0 {
+            self.points_count += 1;
+            self.max_values_per_point = self.max_values_per_point.max(total_values);
+        }
     }
 
     fn condition_iter(&self, range: &Range) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
@@ -256,6 +258,10 @@ impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
             });
 
         Box::new(iter)
+    }
+
+    fn count_indexed_points(&self) -> usize {
+        self.points_count
     }
 }
 
