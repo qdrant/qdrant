@@ -246,13 +246,7 @@ impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
                 let cardinality = self.range_cardinality(&range);
 
                 PayloadBlockCondition {
-                    condition: FieldCondition {
-                        key: key.clone(),
-                        r#match: None,
-                        range: Some(range),
-                        geo_bounding_box: None,
-                        geo_radius: None,
-                    },
+                    condition: FieldCondition::new_range(key.clone(), range),
                     cardinality: cardinality.exp,
                 }
             });
@@ -462,13 +456,7 @@ mod tests {
         let estimation = index.range_cardinality(&query);
 
         let result = index
-            .filter(&FieldCondition {
-                key: "".to_string(),
-                r#match: None,
-                range: Some(query),
-                geo_bounding_box: None,
-                geo_radius: None,
-            })
+            .filter(&FieldCondition::new_range("".to_string(), query))
             .unwrap()
             .collect_vec();
 
@@ -493,13 +481,7 @@ mod tests {
         let estimation = index.range_cardinality(&query);
 
         let result = index
-            .filter(&FieldCondition {
-                key: "".to_string(),
-                r#match: None,
-                range: Some(query),
-                geo_bounding_box: None,
-                geo_radius: None,
-            })
+            .filter(&FieldCondition::new_range("".to_string(), query))
             .unwrap()
             .collect_vec();
 
