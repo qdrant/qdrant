@@ -1,6 +1,5 @@
-use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
-
+use std::sync::Arc;
 
 /// Intermediate data structure intended to help returning an iterator
 /// which depends on some guarded internal object.
@@ -13,13 +12,13 @@ use atomic_refcell::AtomicRefCell;
 /// be modified to other structures like `Mutex`, `RwLock`, e.t.c.
 pub struct ArcAtomicRefCellIterator<T: ?Sized, I> {
     _holder: Arc<AtomicRefCell<T>>,
-    iterator: I
+    iterator: I,
 }
 
 impl<'a, T: 'a + ?Sized, I> ArcAtomicRefCellIterator<T, I> {
     pub fn new<F>(holder: Arc<AtomicRefCell<T>>, f: F) -> Self
     where
-        F: FnOnce(&'a T) -> I + 'a
+        F: FnOnce(&'a T) -> I + 'a,
     {
         // We want to express that it's safe to keep the iterator around for as long as the
         // Arc is around. Unfortunately, we can't say this directly with lifetimes, because
@@ -36,10 +35,10 @@ impl<'a, T: 'a + ?Sized, I> ArcAtomicRefCellIterator<T, I> {
         // This operation should be safe overall, once we are keeping actual source of data alive
         // with `_holder` in our reference counter.
         // Even if the all other handlers are dropped - iterator will stay valid due to the reference counter.
-        let reference = unsafe {  holder.as_ptr().as_ref().unwrap() };
+        let reference = unsafe { holder.as_ptr().as_ref().unwrap() };
         Self {
             _holder: holder,
-            iterator: f(reference)
+            iterator: f(reference),
         }
     }
 }

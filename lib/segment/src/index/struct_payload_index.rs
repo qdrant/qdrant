@@ -8,8 +8,8 @@ use itertools::Itertools;
 use log::debug;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::id_tracker::IdTrackerSS;
 use crate::id_tracker::points_iterator::PointsIteratorSS;
+use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
@@ -341,9 +341,7 @@ impl PayloadIndex for StructPayloadIndex {
         } else {
             // CPU-optimized strategy here: points are made unique before applying other filters.
             // ToDo: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
-            let mut visited_list = self
-                .visited_pool
-                .get(points_iterator_ref.max_id() as usize);
+            let mut visited_list = self.visited_pool.get(points_iterator_ref.max_id() as usize);
 
             #[allow(clippy::needless_collect)]
                 let preselected: Vec<PointOffsetType> = query_cardinality

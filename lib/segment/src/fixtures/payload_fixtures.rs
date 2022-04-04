@@ -1,4 +1,6 @@
-use crate::types::{Condition, FieldCondition, Filter, Payload, Range as RangeCondition, VectorElementType};
+use crate::types::{
+    Condition, FieldCondition, Filter, Payload, Range as RangeCondition, VectorElementType,
+};
 use itertools::Itertools;
 use rand::seq::SliceRandom;
 use rand::Rng;
@@ -53,7 +55,9 @@ pub fn random_keyword<R: Rng + ?Sized>(rnd_gen: &mut R) -> String {
 pub fn random_keyword_payload<R: Rng + ?Sized>(rnd_gen: &mut R, num_values: usize) -> Value {
     if num_values > 1 {
         Value::Array(
-            (0..num_values).map(|_| Value::String(random_keyword(rnd_gen))).collect()
+            (0..num_values)
+                .map(|_| Value::String(random_keyword(rnd_gen)))
+                .collect(),
         )
     } else {
         Value::String(random_keyword(rnd_gen))
@@ -148,21 +152,21 @@ pub fn random_filter<R: Rng + ?Sized>(rnd_gen: &mut R) -> Filter {
 pub fn generate_diverse_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
     let payload: Payload = if rnd_gen.gen_range(0.0..1.0) < 0.5 {
         json!({
-                    STR_KEY: random_keyword_payload(rnd_gen, 2),
-                    INT_KEY: random_int_payload(rnd_gen, 2),
-                    FLT_KEY: rnd_gen.gen_range(0.0..10.0),
-                    GEO_KEY: random_geo_payload(rnd_gen, 2)
-                })
-            .into()
+            STR_KEY: random_keyword_payload(rnd_gen, 2),
+            INT_KEY: random_int_payload(rnd_gen, 2),
+            FLT_KEY: rnd_gen.gen_range(0.0..10.0),
+            GEO_KEY: random_geo_payload(rnd_gen, 2)
+        })
+        .into()
     } else {
         json!({
-                    STR_KEY: random_keyword_payload(rnd_gen, 2),
-                    INT_KEY: random_int_payload(rnd_gen, 2),
-                    FLT_KEY: rnd_gen.gen_range(0.0..10.0),
-                    GEO_KEY: random_geo_payload(rnd_gen, 2),
-                    FLICKING_KEY: random_int_payload(rnd_gen, 2)
-                })
-            .into()
+            STR_KEY: random_keyword_payload(rnd_gen, 2),
+            INT_KEY: random_int_payload(rnd_gen, 2),
+            FLT_KEY: rnd_gen.gen_range(0.0..10.0),
+            GEO_KEY: random_geo_payload(rnd_gen, 2),
+            FLICKING_KEY: random_int_payload(rnd_gen, 2)
+        })
+        .into()
     };
 
     payload

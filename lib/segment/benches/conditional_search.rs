@@ -3,16 +3,17 @@ mod prof;
 use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
 use rand::rngs::StdRng;
-use rand::{SeedableRng, Rng};
-use tempdir::TempDir;
-use segment::fixtures::payload_context_fixture::{create_plain_payload_index, create_struct_payload_index};
+use rand::{Rng, SeedableRng};
+use segment::fixtures::payload_context_fixture::{
+    create_plain_payload_index, create_struct_payload_index,
+};
 use segment::fixtures::payload_fixtures::random_must_filter;
 use segment::index::PayloadIndex;
 use segment::types::PointOffsetType;
+use tempdir::TempDir;
 
 const NUM_POINTS: usize = 100000;
 const CHECK_SAMPLE_SIZE: usize = 1000;
-
 
 fn conditional_plain_search_benchmark(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
@@ -31,7 +32,10 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
             query_count += 1;
         })
     });
-    eprintln!("result_size / query_count = {:#?}", result_size / query_count);
+    eprintln!(
+        "result_size / query_count = {:#?}",
+        result_size / query_count
+    );
 
     let mut result_size = 0;
     let mut query_count = 0;
@@ -39,16 +43,24 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
     group.bench_function("conditional-search-context-check", |b| {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
-            let sample = (0..CHECK_SAMPLE_SIZE).map(|_| rng.gen_range(0..NUM_POINTS) as PointOffsetType).collect_vec();
+            let sample = (0..CHECK_SAMPLE_SIZE)
+                .map(|_| rng.gen_range(0..NUM_POINTS) as PointOffsetType)
+                .collect_vec();
             let context = plain_index.filter_context(&filter);
 
-            let filtered_sample = sample.into_iter().filter(|id| context.check(*id)).collect_vec();
+            let filtered_sample = sample
+                .into_iter()
+                .filter(|id| context.check(*id))
+                .collect_vec();
             result_size += filtered_sample.len();
             query_count += 1;
         })
     });
 
-    eprintln!("result_size / query_count = {:#?}", result_size / query_count);
+    eprintln!(
+        "result_size / query_count = {:#?}",
+        result_size / query_count
+    );
 
     group.finish();
 }
@@ -78,7 +90,10 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
             query_count += 1;
         })
     });
-    eprintln!("result_size / query_count = {:#?}", result_size / query_count);
+    eprintln!(
+        "result_size / query_count = {:#?}",
+        result_size / query_count
+    );
 
     let mut result_size = 0;
     let mut query_count = 0;
@@ -86,16 +101,24 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
     group.bench_function("struct-conditional-search-context-check", |b| {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
-            let sample = (0..CHECK_SAMPLE_SIZE).map(|_| rng.gen_range(0..NUM_POINTS) as PointOffsetType).collect_vec();
+            let sample = (0..CHECK_SAMPLE_SIZE)
+                .map(|_| rng.gen_range(0..NUM_POINTS) as PointOffsetType)
+                .collect_vec();
             let context = struct_index.filter_context(&filter);
 
-            let filtered_sample = sample.into_iter().filter(|id| context.check(*id)).collect_vec();
+            let filtered_sample = sample
+                .into_iter()
+                .filter(|id| context.check(*id))
+                .collect_vec();
             result_size += filtered_sample.len();
             query_count += 1;
         })
     });
 
-    eprintln!("result_size / query_count = {:#?}", result_size / query_count);
+    eprintln!(
+        "result_size / query_count = {:#?}",
+        result_size / query_count
+    );
 
     group.finish();
 }

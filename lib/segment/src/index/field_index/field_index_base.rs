@@ -13,7 +13,7 @@ pub trait PayloadFieldIndex {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>>;
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>>;
 
     /// Return estimation of points amount which satisfy given condition
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation>;
@@ -24,7 +24,7 @@ pub trait PayloadFieldIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_>;
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
 
     /// Returns an amount of unique indexed points
     fn count_indexed_points(&self) -> usize;
@@ -87,7 +87,7 @@ impl PayloadFieldIndex for FieldIndex {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> Option<Box<dyn Iterator<Item=PointOffsetType> + '_>> {
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         self.get_payload_field_index().filter(condition)
     }
 
@@ -100,7 +100,7 @@ impl PayloadFieldIndex for FieldIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         self.get_payload_field_index()
             .payload_blocks(threshold, key)
     }

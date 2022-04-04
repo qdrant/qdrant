@@ -1,16 +1,15 @@
 use crate::types::{Filter, Payload, PayloadKeyTypeRef, PointOffsetType};
+use atomic_refcell::AtomicRefCell;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
-use atomic_refcell::AtomicRefCell;
 
 use serde_json::Value;
 
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTrackerSS;
-use crate::payload_storage::{ConditionChecker, PayloadStorage};
 use crate::payload_storage::query_checker::check_payload;
-
+use crate::payload_storage::{ConditionChecker, PayloadStorage};
 
 /// Same as `SimplePayloadStorage` but without persistence
 /// Warn: for tests only
@@ -71,7 +70,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(())
     }
 
-    fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         Box::new(self.payload.keys().copied())
     }
 }

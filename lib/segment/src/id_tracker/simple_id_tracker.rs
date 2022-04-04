@@ -1,4 +1,5 @@
 use crate::entry::entry_point::OperationResult;
+use crate::id_tracker::points_iterator::PointsIterator;
 use crate::id_tracker::IdTracker;
 use crate::types::{ExtendedPointId, PointIdType, PointOffsetType, SeqNumberType};
 use bincode;
@@ -7,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use uuid::Uuid;
-use crate::id_tracker::points_iterator::PointsIterator;
 
 /// Point Id type used for storing ids internally
 /// Should be serializable by `bincode`, therefore is not untagged.
@@ -207,7 +207,7 @@ impl PointsIterator for SimpleIdTracker {
         self.internal_to_external.len()
     }
 
-    fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
+    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         self.iter_internal()
     }
 

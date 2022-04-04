@@ -8,6 +8,7 @@ use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 use std::collections::HashMap;
 
 use crate::entry::entry_point::OperationResult;
+use crate::id_tracker::points_iterator::PointsIteratorSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
 use atomic_refcell::AtomicRefCell;
@@ -15,7 +16,6 @@ use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use crate::id_tracker::points_iterator::PointsIteratorSS;
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -106,7 +106,7 @@ impl PayloadIndex for PlainPayloadIndex {
     fn query_points<'a>(
         &'a self,
         query: &'a Filter,
-    ) -> Box<dyn Iterator<Item=PointOffsetType> + 'a> {
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         let mut matched_points = vec![];
         for i in self.points_iterator.borrow().iter_ids() {
             if self.condition_checker.check(i, query) {
@@ -127,7 +127,7 @@ impl PayloadIndex for PlainPayloadIndex {
         &self,
         _field: PayloadKeyTypeRef,
         _threshold: usize,
-    ) -> Box<dyn Iterator<Item=PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         // No blocks for un-indexed payload
         Box::new(vec![].into_iter())
     }

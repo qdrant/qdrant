@@ -11,8 +11,8 @@ use crate::payload_storage::ConditionChecker;
 use crate::types::{Condition, Filter, IsEmptyCondition, Payload, PointOffsetType};
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool
-where
-    F: Fn(&Condition) -> bool,
+    where
+        F: Fn(&Condition) -> bool,
 {
     match condition {
         Condition::Filter(filter) => check_filter(checker, filter),
@@ -21,8 +21,8 @@ where
 }
 
 fn check_filter<F>(checker: &F, filter: &Filter) -> bool
-where
-    F: Fn(&Condition) -> bool,
+    where
+        F: Fn(&Condition) -> bool,
 {
     check_should(checker, &filter.should)
         && check_must(checker, &filter.must)
@@ -30,8 +30,8 @@ where
 }
 
 fn check_should<F>(checker: &F, should: &Option<Vec<Condition>>) -> bool
-where
-    F: Fn(&Condition) -> bool,
+    where
+        F: Fn(&Condition) -> bool,
 {
     let check = |x| check_condition(checker, x);
     match should {
@@ -41,8 +41,8 @@ where
 }
 
 fn check_must<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
-where
-    F: Fn(&Condition) -> bool,
+    where
+        F: Fn(&Condition) -> bool,
 {
     let check = |x| check_condition(checker, x);
     match must {
@@ -52,8 +52,8 @@ where
 }
 
 fn check_must_not<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
-where
-    F: Fn(&Condition) -> bool,
+    where
+        F: Fn(&Condition) -> bool,
 {
     let check = |x| !check_condition(checker, x);
     match must {
@@ -62,7 +62,12 @@ where
     }
 }
 
-pub fn check_payload(payload: &Payload, id_tracker: &IdTrackerSS, query: &Filter, point_id: PointOffsetType) -> bool {
+pub fn check_payload(
+    payload: &Payload,
+    id_tracker: &IdTrackerSS,
+    query: &Filter,
+    point_id: PointOffsetType,
+) -> bool {
     let checker = |condition: &Condition| {
         match condition {
             Condition::Field(field_condition) => {
@@ -164,7 +169,7 @@ mod tests {
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::payload_storage::PayloadStorage;
-    use crate::types::{FieldCondition, GeoBoundingBox, Range, ValuesCount};
+    use crate::types::{FieldCondition, GeoBoundingBox, Range};
     use crate::types::{GeoPoint, PayloadField};
 
     use super::*;
@@ -174,10 +179,11 @@ mod tests {
         let dir = TempDir::new("payload_dir").unwrap();
         let dir_id_tracker = TempDir::new("id_tracker_dir").unwrap();
 
-        let payload: Payload = json!({
-            "location":{
-                "lon": 13.404954,
-                "lat": 52.520008,
+        let payload: Payload = json!(
+            {
+                "location":{
+                    "lon": 13.404954,
+                    "lat": 52.520008,
             },
             "price": 499.90,
             "amount": 10,
@@ -185,7 +191,7 @@ mod tests {
             "color": "red",
             "has_delivery": true,
         })
-        .into();
+            .into();
 
         let mut payload_storage = SimplePayloadStorage::open(dir.path()).unwrap();
         let mut id_tracker = SimpleIdTracker::open(dir_id_tracker.path()).unwrap();
