@@ -228,9 +228,9 @@ mod tests {
                         shard_number: 1,
                     },
                 }),
+                true,
             ))
             .unwrap();
-        thread::sleep(Duration::from_secs(5));
 
         // Then
         assert_eq!(toc_arc.hard_state().unwrap().commit, 2);

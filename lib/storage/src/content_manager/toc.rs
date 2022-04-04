@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::num::NonZeroU32;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -30,14 +31,15 @@ use crate::content_manager::{
 use crate::types::StorageConfig;
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
-
 use collection::shard::ShardId;
+
 #[cfg(feature = "consensus")]
 use raft::{
     eraftpb::{Entry as RaftEntry, Snapshot as RaftSnapshot},
     RaftState,
 };
-use std::ops::Deref;
+#[cfg(feature = "consensus")]
+use tokio::sync::oneshot;
 #[cfg(feature = "consensus")]
 use wal::Wal;
 
@@ -65,6 +67,8 @@ pub struct TableOfContent {
     raft_state: Arc<std::sync::Mutex<RaftState>>,
     #[cfg(feature = "consensus")]
     propose_sender: Option<std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>>,
+    #[cfg(feature = "consensus")]
+    on_meta_op_apply: std::sync::Mutex<HashMap<CollectionMetaOperations, oneshot::Sender<bool>>>,
 }
 
 impl TableOfContent {
@@ -125,6 +129,8 @@ impl TableOfContent {
             raft_state: Arc::new(std::sync::Mutex::new(RaftState::default())),
             #[cfg(feature = "consensus")]
             propose_sender: None,
+            #[cfg(feature = "consensus")]
+            on_meta_op_apply: std::sync::Mutex::new(HashMap::new()),
         }
     }
 
@@ -321,13 +327,15 @@ impl TableOfContent {
         Ok(true)
     }
 
+    #[allow(unused_variables)]
     pub async fn submit_collection_operation(
         &self,
         operation: CollectionMetaOperations,
+        wait: bool,
     ) -> Result<bool, StorageError> {
         #[cfg(feature = "consensus")]
         {
-            self.propose_collection_meta_op(operation)
+            self.propose_collection_meta_op(operation, wait).await
         }
         #[cfg(not(feature = "consensus"))]
         {
@@ -336,17 +344,31 @@ impl TableOfContent {
     }
 
     #[cfg(feature = "consensus")]
-    fn propose_collection_meta_op(
+    async fn propose_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
+        wait: bool,
     ) -> Result<bool, StorageError> {
-        match &self.propose_sender {
-            Some(sender) => sender.lock()?.send(serde_cbor::to_vec(&operation)?)?,
-            None => log::error!(
-                "Cannot submit collection meta operation proposal: no sender supplied to ToC"
-            ),
-        }
-        Ok(true)
+        let propose_sender = match &self.propose_sender {
+            Some(sender) => sender,
+            None => {
+                log::error!(
+                    "Cannot submit collection meta operation proposal: no sender supplied to ToC"
+                );
+                return Ok(true);
+            }
+        };
+        let serialized = serde_cbor::to_vec(&operation)?;
+        let result = if wait {
+            let (sender, receiver) = oneshot::channel();
+            self.on_meta_op_apply.lock()?.insert(operation, sender);
+            propose_sender.lock()?.send(serialized)?;
+            receiver.await?
+        } else {
+            propose_sender.lock()?.send(serialized)?;
+            true
+        };
+        Ok(result)
     }
 
     async fn perform_collection_meta_op(
@@ -561,8 +583,16 @@ impl TableOfContent {
     #[cfg(feature = "consensus")]
     pub fn apply_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
         let operation: CollectionMetaOperations = entry.try_into()?;
-        self.collection_management_runtime
-            .block_on(self.perform_collection_meta_op(operation))
+        let on_apply = self.on_meta_op_apply.lock()?.remove(&operation);
+        let result = self
+            .collection_management_runtime
+            .block_on(self.perform_collection_meta_op(operation))?;
+        if let Some(on_apply) = on_apply {
+            if on_apply.send(result).is_err() {
+                log::warn!("Failed to notify on collection meta operation completion.")
+            }
+        }
+        Ok(result)
     }
 
     #[cfg(feature = "consensus")]

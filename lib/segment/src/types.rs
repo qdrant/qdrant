@@ -72,7 +72,9 @@ impl FromStr for ExtendedPointId {
 pub type PointIdType = ExtendedPointId;
 
 /// Type of internal tags, build from payload
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, FromPrimitive, PartialEq, Eq)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, FromPrimitive, PartialEq, Eq, Hash,
+)]
 /// Distance function types used to compare vectors
 pub enum Distance {
     /// https://en.wikipedia.org/wiki/Cosine_similarity
