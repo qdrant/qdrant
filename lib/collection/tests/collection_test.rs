@@ -50,7 +50,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         .into(),
     );
 
-    let insert_result = collection.update(insert_points, true).await;
+    let insert_result = collection.update_from_client(insert_points, true).await;
 
     match insert_result {
         Ok(res) => {
@@ -107,7 +107,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         .into(),
     );
 
-    let insert_result = collection.update(insert_points, true).await;
+    let insert_result = collection.update_from_client(insert_points, true).await;
 
     match insert_result {
         Ok(res) => {
@@ -172,7 +172,10 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
             .into(),
         );
 
-        collection.update(insert_points, true).await.unwrap();
+        collection
+            .update_from_client(insert_points, true)
+            .await
+            .unwrap();
 
         let payload: Payload = serde_json::from_str(r#"{"color":"red"}"#).unwrap();
 
@@ -182,7 +185,10 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
                 points: vec![2.into(), 3.into()],
             }));
 
-        collection.update(assign_payload, true).await.unwrap();
+        collection
+            .update_from_client(assign_payload, true)
+            .await
+            .unwrap();
         collection.before_drop().await;
     }
 
@@ -290,7 +296,10 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         .into(),
     );
 
-    collection.update(insert_points, true).await.unwrap();
+    collection
+        .update_from_client(insert_points, true)
+        .await
+        .unwrap();
     let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection
         .recommend_by(
@@ -347,7 +356,10 @@ async fn test_read_api_with_shards(shard_number: u32) {
         .into(),
     ));
 
-    collection.update(insert_points, true).await.unwrap();
+    collection
+        .update_from_client(insert_points, true)
+        .await
+        .unwrap();
 
     let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection
@@ -398,7 +410,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
         .into(),
     );
 
-    let insert_result = collection.update(insert_points, true).await;
+    let insert_result = collection.update_from_client(insert_points, true).await;
 
     match insert_result {
         Ok(res) => {
@@ -419,7 +431,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
         PointOperations::DeletePointsByFilter(delete_filter),
     );
 
-    let delete_result = collection.update(delete_points, true).await;
+    let delete_result = collection.update_from_client(delete_points, true).await;
 
     match delete_result {
         Ok(res) => {

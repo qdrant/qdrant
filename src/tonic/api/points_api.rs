@@ -2,12 +2,12 @@ use tonic::{Request, Response, Status};
 
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_get_points, do_scroll_points, do_search_points, do_set_payload, do_update_points,
-    CreateFieldIndex,
+    do_get_points, do_scroll_points, do_search_points, do_set_payload, CreateFieldIndex,
 };
 
 use api::grpc::qdrant::points_server::Points;
 
+use crate::tonic::api::points_common::{points_operation_response, upsert};
 use api::grpc::conversions::proto_to_payloads;
 use api::grpc::qdrant::{
     ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
@@ -16,9 +16,7 @@ use api::grpc::qdrant::{
     SetPayloadPoints, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
-use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsList};
 use collection::operations::types::{PointRequest, ScrollRequest, SearchRequest};
-use collection::operations::CollectionUpdateOperations;
 use segment::types::PayloadSchemaType;
 use std::convert::TryInto;
 use std::sync::Arc;
@@ -36,49 +34,13 @@ impl PointsService {
     }
 }
 
-fn points_operation_response(
-    timing: Instant,
-    update_result: collection::operations::types::UpdateResult,
-) -> PointsOperationResponse {
-    PointsOperationResponse {
-        result: Some(update_result.into()),
-        time: timing.elapsed().as_secs_f64(),
-    }
-}
-
 #[tonic::async_trait]
 impl Points for PointsService {
     async fn upsert(
         &self,
         request: Request<UpsertPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        let UpsertPoints {
-            collection_name,
-            wait,
-            points,
-        } = request.into_inner();
-
-        let points = points
-            .into_iter()
-            .map(|point| point.try_into())
-            .collect::<Result<_, _>>()?;
-
-        let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-            PointInsertOperations::PointsList(PointsList { points }),
-        ));
-
-        let timing = Instant::now();
-        let result = do_update_points(
-            self.toc.as_ref(),
-            &collection_name,
-            operation,
-            wait.unwrap_or(false),
-        )
-        .await
-        .map_err(error_to_status)?;
-
-        let response = points_operation_response(timing, result);
-        Ok(Response::new(response))
+        upsert(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn delete(
@@ -101,6 +63,7 @@ impl Points for PointsService {
             self.toc.as_ref(),
             &collection_name,
             points_selector,
+            None,
             wait.unwrap_or(false),
         )
         .await
@@ -165,6 +128,7 @@ impl Points for PointsService {
             self.toc.as_ref(),
             &collection_name,
             operation,
+            None,
             wait.unwrap_or(false),
         )
         .await
@@ -198,6 +162,7 @@ impl Points for PointsService {
             self.toc.as_ref(),
             &collection_name,
             operation,
+            None,
             wait.unwrap_or(false),
         )
         .await
@@ -227,6 +192,7 @@ impl Points for PointsService {
             self.toc.as_ref(),
             &collection_name,
             points_selector,
+            None,
             wait.unwrap_or(false),
         )
         .await
@@ -270,6 +236,7 @@ impl Points for PointsService {
             self.toc.as_ref(),
             &collection_name,
             operation,
+            None,
             wait.unwrap_or(false),
         )
         .await
@@ -294,6 +261,7 @@ impl Points for PointsService {
             self.toc.as_ref(),
             &collection_name,
             field_name,
+            None,
             wait.unwrap_or(false),
         )
         .await

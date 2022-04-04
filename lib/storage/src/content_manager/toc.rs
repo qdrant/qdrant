@@ -31,6 +31,7 @@ use crate::types::StorageConfig;
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 
+use collection::shard::ShardId;
 #[cfg(feature = "consensus")]
 use raft::{
     eraftpb::{Entry as RaftEntry, Snapshot as RaftSnapshot},
@@ -510,13 +511,19 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         operation: CollectionUpdateOperations,
+        shard_selection: Option<ShardId>,
         wait: bool,
     ) -> Result<UpdateResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-        collection
-            .update(operation, wait)
-            .await
-            .map_err(|err| err.into())
+        let result = match shard_selection {
+            Some(shard_selection) => {
+                collection
+                    .update_from_peer(operation, shard_selection, wait)
+                    .await
+            }
+            None => collection.update_from_client(operation, wait).await,
+        };
+        result.map_err(|err| err.into())
     }
 
     #[cfg(feature = "consensus")]

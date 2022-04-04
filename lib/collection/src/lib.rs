@@ -11,6 +11,7 @@ use std::{
 
 use crate::operations::types::PointRequest;
 use crate::operations::OperationToShard;
+use crate::shard::ShardOperation;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
@@ -204,7 +205,29 @@ impl Collection {
         self.shards.values()
     }
 
-    pub async fn update(
+    pub async fn update_from_peer(
+        &self,
+        operation: CollectionUpdateOperations,
+        shard_selection: ShardId,
+        wait: bool,
+    ) -> CollectionResult<UpdateResult> {
+        match self.shards.get(&shard_selection) {
+            None => Err(CollectionError::service_error(format!(
+                "Shard {} does not exist",
+                shard_selection
+            ))),
+            Some(Shard::Remote(_)) => Err(CollectionError::service_error(format!(
+                "Shard {} is not local on peer",
+                shard_selection
+            ))),
+            Some(Shard::Local(local_shard)) => {
+                let res = local_shard.update(operation.clone(), wait).await;
+                res
+            }
+        }
+    }
+
+    pub async fn update_from_client(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
