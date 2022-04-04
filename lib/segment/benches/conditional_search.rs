@@ -72,7 +72,6 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
         result_size / query_count
     );
 
-
     let mut result_size = 0;
     let mut query_count = 0;
 

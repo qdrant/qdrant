@@ -69,8 +69,8 @@ impl PlainPayloadIndex {
     pub fn query_points_callback<'a, F: FnMut(PointOffsetType)>(
         &'a self,
         query: &'a Filter,
-        mut callback: F
-    ){
+        mut callback: F,
+    ) {
         for id in self.points_iterator.borrow().iter_ids() {
             if self.condition_checker.check(id, query) {
                 callback(id)
