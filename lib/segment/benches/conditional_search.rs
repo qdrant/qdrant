@@ -161,7 +161,7 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
-    targets = /* conditional_struct_search_benchmark, */ conditional_plain_search_benchmark
+    targets = conditional_struct_search_benchmark, conditional_plain_search_benchmark
 }
 
 criterion_main!(benches);
