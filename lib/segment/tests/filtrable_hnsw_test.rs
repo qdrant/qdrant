@@ -121,18 +121,15 @@ mod tests {
             let left_range = rnd.gen_range(0..400);
             let right_range = left_range + range_size;
 
-            let filter = Filter::new_must(Condition::Field(FieldCondition {
-                key: int_key.to_owned(),
-                r#match: None,
-                range: Some(Range {
+            let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
+                int_key.to_owned(),
+                Range {
                     lt: None,
                     gt: None,
                     gte: Some(left_range as f64),
                     lte: Some(right_range as f64),
-                }),
-                geo_bounding_box: None,
-                geo_radius: None,
-            }));
+                },
+            )));
 
             let filter_query = Some(&filter);
             // let filter_query = None;
