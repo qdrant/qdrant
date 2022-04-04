@@ -259,7 +259,10 @@ mod tests {
                 radius: r_meters,
             };
 
-            let condition = Condition::Field(FieldCondition::new_geo_radius("geo_key".to_string(), geo_radius));
+            let condition = Condition::Field(FieldCondition::new_geo_radius(
+                "geo_key".to_string(),
+                geo_radius,
+            ));
 
             let query_filter = Filter {
                 should: None,
