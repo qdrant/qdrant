@@ -60,7 +60,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
     group.bench_function("conditional-search-query-points-callback", |b| {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
-            plain_index.query_points_callback(&filter, |id| {
+            plain_index.query_points_callback(&filter, |_id| {
                 result_size += 1;
             });
             query_count += 1;
