@@ -73,14 +73,20 @@ pub fn random_vector(rnd_gen: &mut ThreadRng, size: usize) -> Vec<VectorElementT
 pub fn random_field_condition(rnd_gen: &mut ThreadRng) -> Condition {
     let kv_or_int: bool = rnd_gen.gen();
     if kv_or_int {
-        Condition::Field(FieldCondition::new_match("kvd".to_string(), random_keyword(rnd_gen).into()))
+        Condition::Field(FieldCondition::new_match(
+            "kvd".to_string(),
+            random_keyword(rnd_gen).into(),
+        ))
     } else {
-        Condition::Field(FieldCondition::new_range("int".to_string(), RangeCondition {
-            lt: None,
-            gt: None,
-            gte: Some(rnd_gen.gen_range(INT_RANGE) as f64),
-            lte: Some(rnd_gen.gen_range(INT_RANGE) as f64),
-        }))
+        Condition::Field(FieldCondition::new_range(
+            "int".to_string(),
+            RangeCondition {
+                lt: None,
+                gt: None,
+                gte: Some(rnd_gen.gen_range(INT_RANGE) as f64),
+                lte: Some(rnd_gen.gen_range(INT_RANGE) as f64),
+            },
+        ))
     }
 }
 

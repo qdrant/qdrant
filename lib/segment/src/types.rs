@@ -986,7 +986,10 @@ mod tests {
     #[test]
     fn test_serialize_query() {
         let filter = Filter {
-            must: Some(vec![Condition::Field(FieldCondition::new_match("hello".to_owned(), "world".to_owned().into()))]),
+            must: Some(vec![Condition::Field(FieldCondition::new_match(
+                "hello".to_owned(),
+                "world".to_owned().into(),
+            ))]),
             must_not: None,
             should: None,
         };

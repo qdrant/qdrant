@@ -162,7 +162,7 @@ mod tests {
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::payload_storage::PayloadStorage;
-    use crate::types::{ValuesCount, FieldCondition, GeoBoundingBox, Range};
+    use crate::types::{FieldCondition, GeoBoundingBox, Range, ValuesCount};
     use crate::types::{GeoPoint, PayloadField};
 
     use super::*;
@@ -214,25 +214,27 @@ mod tests {
         assert!(!payload_checker.check(0, &is_empty_condition_1));
         assert!(payload_checker.check(0, &is_empty_condition_2));
 
-        let many_value_count_condition = Filter::new_must(Condition::Field(FieldCondition::new_values_count(
-            "rating".to_string(),
-            ValuesCount {
-                lt: None,
-                gt: None,
-                gte: Some(10),
-                lte: None
-            }
-        )));
+        let many_value_count_condition =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                "rating".to_string(),
+                ValuesCount {
+                    lt: None,
+                    gt: None,
+                    gte: Some(10),
+                    lte: None,
+                },
+            )));
 
-        let few_value_count_condition = Filter::new_must(Condition::Field(FieldCondition::new_values_count(
-            "rating".to_string(),
-            ValuesCount {
-                lt: Some(5),
-                gt: None,
-                gte: None,
-                lte: None
-            }
-        )));
+        let few_value_count_condition =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                "rating".to_string(),
+                ValuesCount {
+                    lt: Some(5),
+                    gt: None,
+                    gte: None,
+                    lte: None,
+                },
+            )));
 
         assert!(!payload_checker.check(0, &many_value_count_condition));
         assert!(payload_checker.check(0, &few_value_count_condition));

@@ -385,7 +385,10 @@ impl PayloadFieldIndex for PersistedGeoMapIndex {
         Box::new(
             self.get_large_hashes(threshold)
                 .map(move |(geo_hash, size)| PayloadBlockCondition {
-                    condition: FieldCondition::new_geo_bounding_box(key.clone(), geo_hash_to_box(geo_hash)),
+                    condition: FieldCondition::new_geo_bounding_box(
+                        key.clone(),
+                        geo_hash_to_box(geo_hash),
+                    ),
                     cardinality: size,
                 }),
         )

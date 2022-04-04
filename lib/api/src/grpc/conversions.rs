@@ -3,7 +3,12 @@ use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::point_id::PointIdOptions;
 use crate::grpc::qdrant::r#match::MatchValue;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
-use crate::grpc::qdrant::{CollectionDescription, CollectionOperationResponse, Condition, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply, IsEmptyCondition, ListCollectionsResponse, Match, PayloadSchemaInfo, PayloadSchemaType, PointId, Range, ScoredPoint, SearchParams, ValuesCount, WithPayloadSelector};
+use crate::grpc::qdrant::{
+    CollectionDescription, CollectionOperationResponse, Condition, FieldCondition, Filter,
+    GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply, IsEmptyCondition,
+    ListCollectionsResponse, Match, PayloadSchemaInfo, PayloadSchemaType, PointId, Range,
+    ScoredPoint, SearchParams, ValuesCount, WithPayloadSelector,
+};
 
 use prost_types::value::Kind;
 use prost_types::ListValue;

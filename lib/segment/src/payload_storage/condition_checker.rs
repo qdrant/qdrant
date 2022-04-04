@@ -1,6 +1,8 @@
 //! Contains functions for interpreting filter queries and defining if given points pass the conditions
 
-use crate::types::{ValuesCount, GeoBoundingBox, GeoRadius, Match, MatchValue, Range, ValueVariants};
+use crate::types::{
+    GeoBoundingBox, GeoRadius, Match, MatchValue, Range, ValueVariants, ValuesCount,
+};
 use serde_json::Value;
 
 pub trait ValueChecker {
