@@ -40,6 +40,42 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
     let mut result_size = 0;
     let mut query_count = 0;
 
+    // Same benchmark, but with larger expected result
+    group.bench_function("conditional-search-query-points-large", |b| {
+        b.iter(|| {
+            let filter = random_must_filter(&mut rng, 1);
+            result_size += plain_index.query_points(&filter).count();
+            query_count += 1;
+        })
+    });
+    eprintln!(
+        "result_size / query_count = {:#?}",
+        result_size / query_count
+    );
+
+    let mut result_size = 0;
+    let mut query_count = 0;
+
+    // Same benchmark, but with larger expected result
+    group.bench_function("conditional-search-query-points-callback", |b| {
+        b.iter(|| {
+            let filter = random_must_filter(&mut rng, 2);
+            plain_index.query_points_callback(&filter, |id| {
+                result_size += 1;
+            });
+            query_count += 1;
+        })
+    });
+
+    eprintln!(
+        "result_size / query_count = {:#?}",
+        result_size / query_count
+    );
+
+
+    let mut result_size = 0;
+    let mut query_count = 0;
+
     group.bench_function("conditional-search-context-check", |b| {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
@@ -126,7 +162,7 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
-    targets = conditional_struct_search_benchmark, conditional_plain_search_benchmark
+    targets = /* conditional_struct_search_benchmark, */ conditional_plain_search_benchmark
 }
 
 criterion_main!(benches);

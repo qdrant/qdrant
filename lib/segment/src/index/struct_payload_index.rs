@@ -3,6 +3,7 @@ use std::fs::{create_dir_all, remove_file, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
 use log::debug;
@@ -327,18 +328,22 @@ impl PayloadIndex for StructPayloadIndex {
         query: &'a Filter,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
-        let points_iterator_ref = self.points_iterator.borrow();
 
         let query_cardinality = self.estimate_cardinality(query);
         return if query_cardinality.primary_clauses.is_empty() {
-            let full_scan_iterator = points_iterator_ref.iter_ids();
-            // Worst case: query expected to return few matches, but index can't be used
-            let matched_points = full_scan_iterator
-                .filter(|i| self.condition_checker.check(*i, query))
-                .collect_vec();
+            let full_scan_iterator =
+                ArcAtomicRefCellIterator::new(self.points_iterator.clone(), |points_iterator| {
+                    points_iterator.iter_ids()
+                });
 
-            Box::new(matched_points.into_iter())
+            // Worst case: query expected to return few matches, but index can't be used
+            let matched_points =
+                full_scan_iterator.filter(|i| self.condition_checker.check(*i, query));
+
+            Box::new(matched_points)
         } else {
+            let points_iterator_ref = self.points_iterator.borrow();
+
             // CPU-optimized strategy here: points are made unique before applying other filters.
             // ToDo: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
             let mut visited_list = self.visited_pool.get(points_iterator_ref.max_id() as usize);
