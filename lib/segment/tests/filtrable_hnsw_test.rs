@@ -18,6 +18,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     use tempdir::TempDir;
+    use segment::vector_storage::storage_points_iterator::StoragePointsIterator;
 
     #[test]
     fn test_filterable_hnsw() {
@@ -67,12 +68,12 @@ mod tests {
 
         let payload_index = StructPayloadIndex::open(
             segment.condition_checker.clone(),
-            segment.vector_storage.clone(),
+            Arc::new(AtomicRefCell::new(StoragePointsIterator(segment.vector_storage.clone()))),
             segment.payload_storage.clone(),
             segment.id_tracker.clone(),
             payload_index_dir.path(),
         )
-        .unwrap();
+            .unwrap();
 
         let payload_index_ptr = Arc::new(AtomicRefCell::new(payload_index));
 
@@ -88,7 +89,7 @@ mod tests {
             payload_index_ptr.clone(),
             hnsw_config,
         )
-        .unwrap();
+            .unwrap();
 
         hnsw_index.build_index(&stopped).unwrap();
 

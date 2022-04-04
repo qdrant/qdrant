@@ -1,23 +1,27 @@
-use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
+use crate::types::{Filter, Payload, PayloadKeyTypeRef, PointOffsetType};
 use std::collections::HashMap;
+use std::ops::Deref;
+use std::sync::Arc;
+use atomic_refcell::AtomicRefCell;
 
 use serde_json::Value;
 
 use crate::entry::entry_point::OperationResult;
-use crate::payload_storage::PayloadStorage;
+use crate::id_tracker::IdTrackerSS;
+use crate::payload_storage::{ConditionChecker, PayloadStorage};
+use crate::payload_storage::query_checker::check_payload;
 
 
 /// Same as `SimplePayloadStorage` but without persistence
 /// Warn: for tests only
+#[derive(Default)]
 pub struct InMemoryPayloadStorage {
     payload: HashMap<PointOffsetType, Payload>,
 }
 
 impl InMemoryPayloadStorage {
-    pub fn new() -> Self {
-        InMemoryPayloadStorage {
-            payload: Default::default()
-        }
+    pub fn payload_ptr(&self, point_id: PointOffsetType) -> Option<&Payload> {
+        self.payload.get(&point_id)
     }
 }
 
@@ -67,8 +71,41 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(())
     }
 
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    fn iter_ids(&self) -> Box<dyn Iterator<Item=PointOffsetType> + '_> {
         Box::new(self.payload.keys().copied())
+    }
+}
+
+pub struct InMemoryConditionChecker {
+    payload_storage: Arc<AtomicRefCell<InMemoryPayloadStorage>>,
+    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+}
+
+impl InMemoryConditionChecker {
+    pub fn new(
+        payload_storage: Arc<AtomicRefCell<InMemoryPayloadStorage>>,
+        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    ) -> Self {
+        InMemoryConditionChecker {
+            payload_storage,
+            id_tracker,
+        }
+    }
+}
+
+impl ConditionChecker for InMemoryConditionChecker {
+    fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
+        let empty_payload: Payload = Default::default();
+
+        let payload_storage_guard = self.payload_storage.borrow();
+        let payload_ptr = payload_storage_guard.payload_ptr(point_id);
+
+        let payload = match payload_ptr {
+            None => &empty_payload,
+            Some(x) => x,
+        };
+
+        check_payload(payload, self.id_tracker.borrow().deref(), query, point_id)
     }
 }
 
@@ -78,7 +115,7 @@ mod tests {
 
     #[test]
     fn test_wipe() {
-        let mut storage = InMemoryPayloadStorage::new();
+        let mut storage = InMemoryPayloadStorage::default();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
         storage.assign(100, &payload).unwrap();
         storage.wipe().unwrap();
@@ -115,7 +152,7 @@ mod tests {
         }"#;
 
         let payload: Payload = serde_json::from_str(data).unwrap();
-        let mut storage = InMemoryPayloadStorage::new();
+        let mut storage = InMemoryPayloadStorage::default();
         storage.assign(100, &payload).unwrap();
         let pload = storage.payload(100);
         assert_eq!(pload, payload);

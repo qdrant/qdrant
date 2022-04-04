@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
@@ -61,9 +62,69 @@ where
     }
 }
 
+pub fn check_payload(payload: &Payload, id_tracker: &IdTrackerSS, query: &Filter, point_id: PointOffsetType) -> bool {
+    let checker = |condition: &Condition| {
+        match condition {
+            Condition::Field(field_condition) => {
+                payload.get_value(&field_condition.key).map_or(false, |p| {
+                    let mut res = false;
+                    // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
+                    res = res
+                        || field_condition
+                        .r#match
+                        .as_ref()
+                        .map_or(false, |condition| condition.check(p));
+                    res = res
+                        || field_condition
+                        .range
+                        .as_ref()
+                        .map_or(false, |condition| condition.check(p));
+                    res = res
+                        || field_condition
+                        .geo_radius
+                        .as_ref()
+                        .map_or(false, |condition| condition.check(p));
+                    res = res
+                        || field_condition
+                        .geo_bounding_box
+                        .as_ref()
+                        .map_or(false, |condition| condition.check(p));
+                    res = res
+                        || field_condition
+                        .values_count
+                        .as_ref()
+                        .map_or(false, |condition| condition.check(p));
+                    res
+                })
+            }
+            Condition::HasId(has_id) => {
+                let external_id = match id_tracker.external_id(point_id) {
+                    None => return false,
+                    Some(id) => id,
+                };
+                has_id.has_id.contains(&external_id)
+            }
+            Condition::Filter(_) => panic!("Unexpected branching!"),
+            Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
+                match payload.get_value(&field.key) {
+                    None => true,
+                    Some(value) => match value {
+                        Value::Null => true,
+                        Value::Array(array) => array.is_empty(),
+                        _ => false,
+                    },
+                }
+            }
+        }
+    };
+
+    check_filter(&checker, query)
+}
+
 pub struct SimpleConditionChecker {
     payload_storage: Arc<AtomicRefCell<SimplePayloadStorage>>,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    empty_payload: Payload
 }
 
 impl SimpleConditionChecker {
@@ -74,81 +135,22 @@ impl SimpleConditionChecker {
         SimpleConditionChecker {
             payload_storage,
             id_tracker,
+            empty_payload: Default::default()
         }
     }
 }
 
-// Uncomment when stabilized
-// const EMPTY_PAYLOAD: TheMap<PayloadKeyType, PayloadType> = TheMap::new();
-
 impl ConditionChecker for SimpleConditionChecker {
     fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
-        let empty_payload: Payload = Default::default();
-
         let payload_storage_guard = self.payload_storage.borrow();
         let payload_ptr = payload_storage_guard.payload_ptr(point_id);
 
         let payload = match payload_ptr {
-            None => &empty_payload,
+            None => &self.empty_payload,
             Some(x) => x,
         };
 
-        let checker = |condition: &Condition| {
-            match condition {
-                Condition::Field(field_condition) => {
-                    payload.get_value(&field_condition.key).map_or(false, |p| {
-                        let mut res = false;
-                        // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
-                        res = res
-                            || field_condition
-                                .r#match
-                                .as_ref()
-                                .map_or(false, |condition| condition.check(p));
-                        res = res
-                            || field_condition
-                                .range
-                                .as_ref()
-                                .map_or(false, |condition| condition.check(p));
-                        res = res
-                            || field_condition
-                                .geo_radius
-                                .as_ref()
-                                .map_or(false, |condition| condition.check(p));
-                        res = res
-                            || field_condition
-                                .geo_bounding_box
-                                .as_ref()
-                                .map_or(false, |condition| condition.check(p));
-                        res = res
-                            || field_condition
-                                .values_count
-                                .as_ref()
-                                .map_or(false, |condition| condition.check(p));
-                        res
-                    })
-                }
-                Condition::HasId(has_id) => {
-                    let external_id = match self.id_tracker.borrow().external_id(point_id) {
-                        None => return false,
-                        Some(id) => id,
-                    };
-                    has_id.has_id.contains(&external_id)
-                }
-                Condition::Filter(_) => panic!("Unexpected branching!"),
-                Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
-                    match payload.get_value(&field.key) {
-                        None => true,
-                        Some(value) => match value {
-                            Value::Null => true,
-                            Value::Array(array) => array.is_empty(),
-                            _ => false,
-                        },
-                    }
-                }
-            }
-        };
-
-        check_filter(&checker, query)
+        check_payload(payload, self.id_tracker.borrow().deref(), query, point_id)
     }
 }
 
@@ -214,49 +216,35 @@ mod tests {
         assert!(!payload_checker.check(0, &is_empty_condition_1));
         assert!(payload_checker.check(0, &is_empty_condition_2));
 
-        let many_value_count_condition =
-            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
-                "rating".to_string(),
-                ValuesCount {
-                    lt: None,
-                    gt: None,
-                    gte: Some(10),
-                    lte: None,
-                },
-            )));
+        let match_red = Condition::Field(FieldCondition {
+            key: "color".to_string(),
+            r#match: Some("red".to_owned().into()),
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+        });
 
-        let few_value_count_condition =
-            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
-                "rating".to_string(),
-                ValuesCount {
-                    lt: Some(5),
-                    gt: None,
-                    gte: None,
-                    lte: None,
-                },
-            )));
+        let match_blue = Condition::Field(FieldCondition {
+            key: "color".to_string(),
+            r#match: Some("blue".to_owned().into()),
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+        });
 
-        assert!(!payload_checker.check(0, &many_value_count_condition));
-        assert!(payload_checker.check(0, &few_value_count_condition));
+        let with_delivery = Condition::Field(FieldCondition {
+            key: "has_delivery".to_string(),
+            r#match: Some(true.into()),
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+        });
 
-        let match_red = Condition::Field(FieldCondition::new_match(
-            "color".to_string(),
-            "red".to_owned().into(),
-        ));
-
-        let match_blue = Condition::Field(FieldCondition::new_match(
-            "color".to_string(),
-            "blue".to_owned().into(),
-        ));
-
-        let with_delivery = Condition::Field(FieldCondition::new_match(
-            "has_delivery".to_string(),
-            true.into(),
-        ));
-
-        let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box(
-            "location".to_string(),
-            GeoBoundingBox {
+        let in_berlin = Condition::Field(FieldCondition {
+            key: "location".to_string(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: Some(GeoBoundingBox {
                 top_left: GeoPoint {
                     lon: 13.08835,
                     lat: 52.67551,
@@ -265,12 +253,15 @@ mod tests {
                     lon: 13.76116,
                     lat: 52.33826,
                 },
-            },
-        ));
+            }),
+            geo_radius: None,
+        });
 
-        let in_moscow = Condition::Field(FieldCondition::new_geo_bounding_box(
-            "location".to_string(),
-            GeoBoundingBox {
+        let in_moscow = Condition::Field(FieldCondition {
+            key: "location".to_string(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: Some(GeoBoundingBox {
                 top_left: GeoPoint {
                     lon: 37.0366,
                     lat: 56.1859,
@@ -279,18 +270,22 @@ mod tests {
                     lon: 38.2532,
                     lat: 55.317,
                 },
-            },
-        ));
+            }),
+            geo_radius: None,
+        });
 
-        let with_bad_rating = Condition::Field(FieldCondition::new_range(
-            "rating".to_string(),
-            Range {
+        let with_bad_rating = Condition::Field(FieldCondition {
+            key: "rating".to_string(),
+            r#match: None,
+            range: Some(Range {
                 lt: None,
                 gt: None,
                 gte: None,
                 lte: Some(5.),
-            },
-        ));
+            }),
+            geo_bounding_box: None,
+            geo_radius: None,
+        });
 
         let query = Filter {
             should: None,

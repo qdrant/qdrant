@@ -357,7 +357,7 @@ impl PayloadIndex for StructPayloadIndex {
                             )
                         }
                         PrimaryCondition::Ids(ids) => Box::new(ids.iter().copied()),
-                        PrimaryCondition::IsEmpty(_) => vector_storage_ref.iter_ids() /* there are no fast index for IsEmpty */
+                        PrimaryCondition::IsEmpty(_) => points_iterator_ref.iter_ids() /* there are no fast index for IsEmpty */
                     }
                 })
                 .filter(|&id| !visited_list.check_and_update_visited(id))

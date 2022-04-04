@@ -212,7 +212,7 @@ impl PointsIterator for SimpleIdTracker {
     }
 
     fn max_id(&self) -> PointOffsetType {
-        todo!()
+        self.max_internal_id
     }
 }
 
