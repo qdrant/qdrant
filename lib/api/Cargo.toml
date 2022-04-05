@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tonic = "0.7.0"
+tonic = "0.7.1"
 prost = "0.10.0"
 prost-types = "0.10.0"
 serde = { version = "~1.0", features = ["derive"] }
