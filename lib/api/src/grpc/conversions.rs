@@ -7,7 +7,7 @@ use crate::grpc::qdrant::{
     CollectionDescription, CollectionOperationResponse, Condition, FieldCondition, Filter,
     GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply, IsEmptyCondition,
     ListCollectionsResponse, Match, PayloadSchemaInfo, PayloadSchemaType, PointId, Range,
-    ScoredPoint, SearchParams, WithPayloadSelector,
+    ScoredPoint, SearchParams, ValuesCount, WithPayloadSelector,
 };
 
 use prost_types::value::Kind;
@@ -303,6 +303,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             range,
             geo_bounding_box,
             geo_radius,
+            values_count,
         } = value;
 
         let geo_bounding_box =
@@ -314,6 +315,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             range: range.map(|r| r.into()),
             geo_bounding_box,
             geo_radius,
+            values_count: values_count.map(|r| r.into()),
         })
     }
 }
@@ -368,6 +370,17 @@ impl From<Range> for segment::types::Range {
             gt: value.gt,
             gte: value.gte,
             lte: value.lte,
+        }
+    }
+}
+
+impl From<ValuesCount> for segment::types::ValuesCount {
+    fn from(value: ValuesCount) -> Self {
+        Self {
+            lt: value.lt.map(|x| x as usize),
+            gt: value.gt.map(|x| x as usize),
+            gte: value.gte.map(|x| x as usize),
+            lte: value.lte.map(|x| x as usize),
         }
     }
 }

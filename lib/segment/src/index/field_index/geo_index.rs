@@ -385,13 +385,10 @@ impl PayloadFieldIndex for PersistedGeoMapIndex {
         Box::new(
             self.get_large_hashes(threshold)
                 .map(move |(geo_hash, size)| PayloadBlockCondition {
-                    condition: FieldCondition {
-                        key: key.clone(),
-                        r#match: None,
-                        range: None,
-                        geo_bounding_box: Some(geo_hash_to_box(geo_hash)),
-                        geo_radius: None,
-                    },
+                    condition: FieldCondition::new_geo_bounding_box(
+                        key.clone(),
+                        geo_hash_to_box(geo_hash),
+                    ),
                     cardinality: size,
                 }),
         )
@@ -433,13 +430,7 @@ mod tests {
     };
 
     fn condition_for_geo_radius(key: String, geo_radius: GeoRadius) -> FieldCondition {
-        FieldCondition {
-            key,
-            r#match: None,
-            range: None,
-            geo_bounding_box: None,
-            geo_radius: Some(geo_radius),
-        }
+        FieldCondition::new_geo_radius(key, geo_radius)
     }
 
     fn build_random_index(num_points: usize, num_geo_values: usize) -> FieldIndex {

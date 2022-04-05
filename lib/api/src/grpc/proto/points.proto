@@ -227,6 +227,7 @@ message FieldCondition {
   Range range = 3; // Check if points value lies in a given range
   GeoBoundingBox geo_bounding_box = 4; // Check if points geo location lies in a given area
   GeoRadius geo_radius = 5; // Check if geo point is within a given radius
+  ValuesCount values_count = 6; // Check number of values for a specific field
 }
 
 message Match {
@@ -252,6 +253,13 @@ message GeoBoundingBox {
 message GeoRadius {
   GeoPoint center = 1; // Center of the circle
   float radius = 2; // In meters
+}
+
+message ValuesCount {
+  optional uint64 lt = 1;
+  optional uint64 gt = 2;
+  optional uint64 gte = 3;
+  optional uint64 lte = 4;
 }
 
 // ---------------------------------------------

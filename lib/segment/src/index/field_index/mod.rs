@@ -13,6 +13,7 @@ mod stat_tools;
 pub use field_index_base::*;
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum PrimaryCondition {
     Condition(FieldCondition),
     IsEmpty(IsEmptyCondition),

@@ -109,13 +109,7 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
             .iter()
             .filter(move |(_value, point_ids)| point_ids.len() > threshold)
             .map(move |(value, point_ids)| PayloadBlockCondition {
-                condition: FieldCondition {
-                    key: key.clone(),
-                    r#match: Some(value.to_owned().into()),
-                    range: None,
-                    geo_bounding_box: None,
-                    geo_radius: None,
-                },
+                condition: FieldCondition::new_match(key.clone(), value.to_owned().into()),
                 cardinality: point_ids.len(),
             });
         Box::new(iter)
@@ -164,13 +158,7 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
             .iter()
             .filter(move |(_value, point_ids)| point_ids.len() >= threshold)
             .map(move |(value, point_ids)| PayloadBlockCondition {
-                condition: FieldCondition {
-                    key: key.clone(),
-                    r#match: Some((*value).into()),
-                    range: None,
-                    geo_bounding_box: None,
-                    geo_radius: None,
-                },
+                condition: FieldCondition::new_match(key.clone(), (*value).into()),
                 cardinality: point_ids.len(),
             });
         Box::new(iter)

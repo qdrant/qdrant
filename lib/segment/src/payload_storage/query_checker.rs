@@ -119,6 +119,11 @@ impl ConditionChecker for SimpleConditionChecker {
                                 .geo_bounding_box
                                 .as_ref()
                                 .map_or(false, |condition| condition.check(p));
+                        res = res
+                            || field_condition
+                                .values_count
+                                .as_ref()
+                                .map_or(false, |condition| condition.check(p));
                         res
                     })
                 }
@@ -157,7 +162,7 @@ mod tests {
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::payload_storage::PayloadStorage;
-    use crate::types::{FieldCondition, GeoBoundingBox, Range};
+    use crate::types::{FieldCondition, GeoBoundingBox, Range, ValuesCount};
     use crate::types::{GeoPoint, PayloadField};
 
     use super::*;
@@ -167,11 +172,10 @@ mod tests {
         let dir = TempDir::new("payload_dir").unwrap();
         let dir_id_tracker = TempDir::new("id_tracker_dir").unwrap();
 
-        let payload: Payload = json!(
-            {
-                "location":{
-                    "lon": 13.404954,
-                    "lat": 52.520008,
+        let payload: Payload = json!({
+            "location":{
+                "lon": 13.404954,
+                "lat": 52.520008,
             },
             "price": 499.90,
             "amount": 10,
@@ -210,35 +214,49 @@ mod tests {
         assert!(!payload_checker.check(0, &is_empty_condition_1));
         assert!(payload_checker.check(0, &is_empty_condition_2));
 
-        let match_red = Condition::Field(FieldCondition {
-            key: "color".to_string(),
-            r#match: Some("red".to_owned().into()),
-            range: None,
-            geo_bounding_box: None,
-            geo_radius: None,
-        });
+        let many_value_count_condition =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                "rating".to_string(),
+                ValuesCount {
+                    lt: None,
+                    gt: None,
+                    gte: Some(10),
+                    lte: None,
+                },
+            )));
 
-        let match_blue = Condition::Field(FieldCondition {
-            key: "color".to_string(),
-            r#match: Some("blue".to_owned().into()),
-            range: None,
-            geo_bounding_box: None,
-            geo_radius: None,
-        });
+        let few_value_count_condition =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                "rating".to_string(),
+                ValuesCount {
+                    lt: Some(5),
+                    gt: None,
+                    gte: None,
+                    lte: None,
+                },
+            )));
 
-        let with_delivery = Condition::Field(FieldCondition {
-            key: "has_delivery".to_string(),
-            r#match: Some(true.into()),
-            range: None,
-            geo_bounding_box: None,
-            geo_radius: None,
-        });
+        assert!(!payload_checker.check(0, &many_value_count_condition));
+        assert!(payload_checker.check(0, &few_value_count_condition));
 
-        let in_berlin = Condition::Field(FieldCondition {
-            key: "location".to_string(),
-            r#match: None,
-            range: None,
-            geo_bounding_box: Some(GeoBoundingBox {
+        let match_red = Condition::Field(FieldCondition::new_match(
+            "color".to_string(),
+            "red".to_owned().into(),
+        ));
+
+        let match_blue = Condition::Field(FieldCondition::new_match(
+            "color".to_string(),
+            "blue".to_owned().into(),
+        ));
+
+        let with_delivery = Condition::Field(FieldCondition::new_match(
+            "has_delivery".to_string(),
+            true.into(),
+        ));
+
+        let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box(
+            "location".to_string(),
+            GeoBoundingBox {
                 top_left: GeoPoint {
                     lon: 13.08835,
                     lat: 52.67551,
@@ -247,15 +265,12 @@ mod tests {
                     lon: 13.76116,
                     lat: 52.33826,
                 },
-            }),
-            geo_radius: None,
-        });
+            },
+        ));
 
-        let in_moscow = Condition::Field(FieldCondition {
-            key: "location".to_string(),
-            r#match: None,
-            range: None,
-            geo_bounding_box: Some(GeoBoundingBox {
+        let in_moscow = Condition::Field(FieldCondition::new_geo_bounding_box(
+            "location".to_string(),
+            GeoBoundingBox {
                 top_left: GeoPoint {
                     lon: 37.0366,
                     lat: 56.1859,
@@ -264,22 +279,18 @@ mod tests {
                     lon: 38.2532,
                     lat: 55.317,
                 },
-            }),
-            geo_radius: None,
-        });
+            },
+        ));
 
-        let with_bad_rating = Condition::Field(FieldCondition {
-            key: "rating".to_string(),
-            r#match: None,
-            range: Some(Range {
+        let with_bad_rating = Condition::Field(FieldCondition::new_range(
+            "rating".to_string(),
+            Range {
                 lt: None,
                 gt: None,
                 gte: None,
                 lte: Some(5.),
-            }),
-            geo_bounding_box: None,
-            geo_radius: None,
-        });
+            },
+        ));
 
         let query = Filter {
             should: None,

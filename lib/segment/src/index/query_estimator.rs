@@ -174,6 +174,7 @@ mod tests {
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
+            values_count: None,
         })
     }
 

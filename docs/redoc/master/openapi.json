@@ -624,6 +624,17 @@
               }
             ],
             "description": "Check if points value lies in a given range"
+          },
+          "values_count": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValuesCount"
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Check number of values of the field"
           }
         },
         "required": [
@@ -1832,6 +1843,40 @@
             "type": "boolean"
           }
         ]
+      },
+      "ValuesCount": {
+        "description": "Values count filter request",
+        "properties": {
+          "gt": {
+            "description": "point.key.length() > values_count.gt",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "gte": {
+            "description": "point.key.length() >= values_count.gte",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "lt": {
+            "description": "point.key.length() < values_count.lt",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "lte": {
+            "description": "point.key.length() <= values_count.lte",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "type": "object"
       },
       "WalConfig": {
         "properties": {

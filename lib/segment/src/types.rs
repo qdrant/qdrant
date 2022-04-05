@@ -610,6 +610,35 @@ impl Range {
     }
 }
 
+/// Values count filter request
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct ValuesCount {
+    /// point.key.length() < values_count.lt
+    pub lt: Option<usize>,
+    /// point.key.length() > values_count.gt
+    pub gt: Option<usize>,
+    /// point.key.length() >= values_count.gte
+    pub gte: Option<usize>,
+    /// point.key.length() <= values_count.lte
+    pub lte: Option<usize>,
+}
+
+impl ValuesCount {
+    pub fn check_count(&self, value: &Value) -> bool {
+        let count = match value {
+            Value::Null => 0,
+            Value::Array(array) => array.len(),
+            _ => 1,
+        };
+
+        self.lt.map_or(true, |x| count < x)
+            && self.gt.map_or(true, |x| count > x)
+            && self.lte.map_or(true, |x| count <= x)
+            && self.gte.map_or(true, |x| count >= x)
+    }
+}
+
 /// Geo filter request
 ///
 /// Matches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges
@@ -664,6 +693,65 @@ pub struct FieldCondition {
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
     pub geo_radius: Option<GeoRadius>,
+    /// Check number of values of the field
+    pub values_count: Option<ValuesCount>,
+}
+
+impl FieldCondition {
+    pub fn new_match(key: PayloadKeyType, r#match: Match) -> Self {
+        Self {
+            key,
+            r#match: Some(r#match),
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            values_count: None,
+        }
+    }
+
+    pub fn new_range(key: PayloadKeyType, range: Range) -> Self {
+        Self {
+            key,
+            r#match: None,
+            range: Some(range),
+            geo_bounding_box: None,
+            geo_radius: None,
+            values_count: None,
+        }
+    }
+
+    pub fn new_geo_bounding_box(key: PayloadKeyType, geo_bounding_box: GeoBoundingBox) -> Self {
+        Self {
+            key,
+            r#match: None,
+            range: None,
+            geo_bounding_box: Some(geo_bounding_box),
+            geo_radius: None,
+            values_count: None,
+        }
+    }
+
+    pub fn new_geo_radius(key: PayloadKeyType, geo_radius: GeoRadius) -> Self {
+        Self {
+            key,
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: Some(geo_radius),
+            values_count: None,
+        }
+    }
+
+    pub fn new_values_count(key: PayloadKeyType, values_count: ValuesCount) -> Self {
+        Self {
+            key,
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            values_count: Some(values_count),
+        }
+    }
 }
 
 /// Payload field
@@ -898,13 +986,10 @@ mod tests {
     #[test]
     fn test_serialize_query() {
         let filter = Filter {
-            must: Some(vec![Condition::Field(FieldCondition {
-                key: "hello".to_owned(),
-                r#match: Some("world".to_owned().into()),
-                range: None,
-                geo_bounding_box: None,
-                geo_radius: None,
-            })]),
+            must: Some(vec![Condition::Field(FieldCondition::new_match(
+                "hello".to_owned(),
+                "world".to_owned().into(),
+            ))]),
             must_not: None,
             should: None,
         };

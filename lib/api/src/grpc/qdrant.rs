@@ -1151,6 +1151,9 @@ pub struct FieldCondition {
     /// Check if geo point is within a given radius
     #[prost(message, optional, tag = "5")]
     pub geo_radius: ::core::option::Option<GeoRadius>,
+    /// Check number of values for a specific field
+    #[prost(message, optional, tag = "6")]
+    pub values_count: ::core::option::Option<ValuesCount>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
@@ -1200,6 +1203,17 @@ pub struct GeoRadius {
     /// In meters
     #[prost(float, tag = "2")]
     pub radius: f32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ValuesCount {
+    #[prost(uint64, optional, tag = "1")]
+    pub lt: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "2")]
+    pub gt: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "3")]
+    pub gte: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "4")]
+    pub lte: ::core::option::Option<u64>,
 }
 // ---------------------------------------------
 // -------------- Points Selector --------------
@@ -2004,7 +2018,7 @@ pub struct UpsertPointsInternal {
     #[prost(uint32, tag = "2")]
     pub shard_id: u32,
 }
-#[doc = r" Generated client implementations."]
+/// Generated client implementations.
 pub mod points_internal_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
@@ -2013,7 +2027,7 @@ pub mod points_internal_client {
         inner: tonic::client::Grpc<T>,
     }
     impl PointsInternalClient<tonic::transport::Channel> {
-        #[doc = r" Attempt to create a new client by connecting to a given endpoint."]
+        /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
             D: std::convert::TryInto<tonic::transport::Endpoint>,
@@ -2026,8 +2040,8 @@ pub mod points_internal_client {
     impl<T> PointsInternalClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::ResponseBody: Body + Send + 'static,
         T::Error: Into<StdError>,
+        T::ResponseBody: Default + Body<Data = Bytes> + Send + 'static,
         <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {
         pub fn new(inner: T) -> Self {
@@ -2051,15 +2065,17 @@ pub mod points_internal_client {
         {
             PointsInternalClient::new(InterceptedService::new(inner, interceptor))
         }
-        #[doc = r" Compress requests with `gzip`."]
-        #[doc = r""]
-        #[doc = r" This requires the server to support it otherwise it might respond with an"]
-        #[doc = r" error."]
+        /// Compress requests with `gzip`.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
         pub fn send_gzip(mut self) -> Self {
             self.inner = self.inner.send_gzip();
             self
         }
-        #[doc = r" Enable decompressing responses with `gzip`."]
+        /// Enable decompressing responses with `gzip`.
+        #[must_use]
         pub fn accept_gzip(mut self) -> Self {
             self.inner = self.inner.accept_gzip();
             self
@@ -2080,11 +2096,11 @@ pub mod points_internal_client {
         }
     }
 }
-#[doc = r" Generated server implementations."]
+/// Generated server implementations.
 pub mod points_internal_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    #[doc = "Generated trait containing gRPC methods that should be implemented for use with PointsInternalServer."]
+    ///Generated trait containing gRPC methods that should be implemented for use with PointsInternalServer.
     #[async_trait]
     pub trait PointsInternal: Send + Sync + 'static {
         async fn upsert(
@@ -2101,7 +2117,9 @@ pub mod points_internal_server {
     struct _Inner<T>(Arc<T>);
     impl<T: PointsInternal> PointsInternalServer<T> {
         pub fn new(inner: T) -> Self {
-            let inner = Arc::new(inner);
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
             let inner = _Inner(inner);
             Self {
                 inner,
@@ -2123,7 +2141,7 @@ pub mod points_internal_server {
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;
-        type Error = Never;
+        type Error = std::convert::Infallible;
         type Future = BoxFuture<Self::Response, Self::Error>;
         fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))

@@ -144,18 +144,15 @@ mod tests {
 
         let (struct_segment, _) = build_test_segments(dir1.path(), dir2.path());
 
-        let filter = Filter::new_must(Condition::Field(FieldCondition {
-            key: "int_key".to_owned(),
-            r#match: None,
-            range: Some(Range {
+        let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
+            "int_key".to_owned(),
+            Range {
                 lt: None,
                 gt: None,
                 gte: Some(50.),
                 lte: Some(100.),
-            }),
-            geo_bounding_box: None,
-            geo_radius: None,
-        }));
+            },
+        )));
 
         let estimation = struct_segment
             .payload_index
@@ -262,13 +259,10 @@ mod tests {
                 radius: r_meters,
             };
 
-            let condition = Condition::Field(FieldCondition {
-                key: "geo_key".to_string(),
-                r#match: None,
-                range: None,
-                geo_bounding_box: None,
-                geo_radius: Some(geo_radius),
-            });
+            let condition = Condition::Field(FieldCondition::new_geo_radius(
+                "geo_key".to_string(),
+                geo_radius,
+            ));
 
             let query_filter = Filter {
                 should: None,
