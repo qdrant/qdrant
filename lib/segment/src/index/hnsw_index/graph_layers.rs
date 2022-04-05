@@ -24,20 +24,20 @@ pub const HNSW_GRAPH_FILE: &str = "graph.bin";
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct GraphLayers {
-    max_level: usize,
-    m: usize,
-    m0: usize,
-    ef_construct: usize,
-    level_factor: f64,
+    pub max_level: usize,
+    pub m: usize,
+    pub m0: usize,
+    pub ef_construct: usize,
+    pub level_factor: f64,
     // Exclude points according to "not closer than base" heuristic?
-    use_heuristic: bool,
+    pub use_heuristic: bool,
     // Factor of level probability
-    links_layers: Vec<LayersContainer>,
-    entry_points: EntryPoints,
+    pub links_layers: Vec<LayersContainer>,
+    pub entry_points: EntryPoints,
 
     // Fields used on construction phase only
     #[serde(skip)]
-    visited_pool: VisitedPool,
+    pub visited_pool: VisitedPool,
 }
 
 /// Object contains links between nodes for HNSW search

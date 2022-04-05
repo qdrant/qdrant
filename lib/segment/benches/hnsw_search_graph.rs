@@ -11,7 +11,7 @@ use segment::types::PointOffsetType;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 
-const NUM_VECTORS: usize = 200000;
+const NUM_VECTORS: usize = 200_000;
 const DIM: usize = 16;
 const M: usize = 16;
 const TOP: usize = 10;
@@ -38,7 +38,8 @@ fn hnsw_benchmark(c: &mut Criterion) {
     }
 
     let build_duration = now.elapsed().as_secs_f64();
-    eprintln!("build_duration = {:#?}", build_duration);
+    eprintln!("build_duration = {:#?}s", build_duration);
+    eprintln!("graph_layers.max_level = {:#?}", graph_layers.max_level);
 
     let mut total_cmps = 0;
     let mut iterations = 0;
