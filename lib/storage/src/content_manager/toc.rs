@@ -379,6 +379,7 @@ impl TableOfContent {
                         wait_timeout.as_secs_f64()
                     ),
                 },
+                // ??? - forwards 3 possible errors: timeout, sender dropped, operation failed
             )???)
     }
 
