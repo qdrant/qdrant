@@ -61,7 +61,6 @@ fn create_segment(
                 &payload_index_path,
             )?),
             PayloadIndexType::Struct => sp(StructPayloadIndex::open(
-                condition_checker.clone(),
                 vector_storage.clone(),
                 payload_storage.clone(),
                 id_tracker.clone(),

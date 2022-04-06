@@ -8,4 +8,5 @@ mod sample_estimation;
 pub mod struct_payload_index;
 mod visited_pool;
 
+pub use field_index::*;
 pub use index_base::*;

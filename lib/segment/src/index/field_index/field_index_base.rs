@@ -7,6 +7,7 @@ use crate::types::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 
 pub trait PayloadFieldIndex {
     /// Get iterator over points fitting given `condition`
@@ -57,6 +58,8 @@ pub trait PayloadFieldIndexBuilder {
 
     fn build(&mut self) -> FieldIndex;
 }
+
+pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
 
 /// Common interface for all possible types of field indexes
 /// Enables polymorphism on field indexes

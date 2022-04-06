@@ -10,12 +10,15 @@ use log::debug;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;
-use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
+use crate::index::field_index::{
+    CardinalityEstimation, IndexesMap, PayloadBlockCondition, PrimaryCondition,
+};
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
+use crate::payload_storage::query_checker::SimpleConditionChecker;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorageSS};
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType, PayloadKeyTypeRef,
@@ -25,8 +28,6 @@ use crate::vector_storage::VectorStorageSS;
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 
-type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
-
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
 pub struct StructPayloadIndex {
     condition_checker: Arc<ConditionCheckerSS>,
@@ -35,7 +36,7 @@ pub struct StructPayloadIndex {
     payload: Arc<AtomicRefCell<PayloadStorageSS>>,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     /// Indexes, associated with fields
-    field_indexes: IndexesMap,
+    field_indexes: Arc<AtomicRefCell<IndexesMap>>,
     config: PayloadConfig,
     /// Root of index persistence dir
     path: PathBuf,
@@ -47,16 +48,19 @@ impl StructPayloadIndex {
         &self,
         condition: &FieldCondition,
     ) -> Option<CardinalityEstimation> {
-        self.field_indexes.get(&condition.key).and_then(|indexes| {
-            let mut result_estimation: Option<CardinalityEstimation> = None;
-            for index in indexes {
-                result_estimation = index.estimate_cardinality(condition);
-                if result_estimation.is_some() {
-                    break;
+        self.field_indexes
+            .borrow()
+            .get(&condition.key)
+            .and_then(|indexes| {
+                let mut result_estimation: Option<CardinalityEstimation> = None;
+                for index in indexes {
+                    result_estimation = index.estimate_cardinality(condition);
+                    if result_estimation.is_some() {
+                        break;
+                    }
                 }
-            }
-            result_estimation
-        })
+                result_estimation
+            })
     }
 
     fn query_field(
@@ -65,6 +69,7 @@ impl StructPayloadIndex {
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         let indexes = self
             .field_indexes
+            .borrow()
             .get(&field_condition.key)
             .and_then(|indexes| {
                 indexes
@@ -98,7 +103,7 @@ impl StructPayloadIndex {
         let field_index_path = Self::get_field_index_path(&self.path, field);
         create_dir_all(field_index_dir)?;
 
-        match self.field_indexes.get(field) {
+        match self.field_indexes.borrow().get(field) {
             None => {}
             Some(indexes) => {
                 let file = File::create(&field_index_path)?;
@@ -146,12 +151,11 @@ impl StructPayloadIndex {
             let field_index = self.load_or_build_field_index(field, payload_type.to_owned())?;
             field_indexes.insert(field.clone(), field_index);
         }
-        self.field_indexes = field_indexes;
+        self.field_indexes = Arc::new(AtomicRefCell::new(field_indexes));
         Ok(())
     }
 
     pub fn open(
-        condition_checker: Arc<ConditionCheckerSS>,
         vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
         payload: Arc<AtomicRefCell<PayloadStorageSS>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
@@ -164,6 +168,11 @@ impl StructPayloadIndex {
         } else {
             PayloadConfig::default()
         };
+
+        let condition_checker = Arc::new(SimpleConditionChecker::new(
+            payload.clone(),
+            id_tracker.clone(),
+        ));
 
         let mut index = StructPayloadIndex {
             condition_checker,
@@ -218,7 +227,9 @@ impl StructPayloadIndex {
         payload_type: PayloadSchemaType,
     ) -> OperationResult<()> {
         let field_indexes = self.build_field_index(field, payload_type)?;
-        self.field_indexes.insert(field.into(), field_indexes);
+        self.field_indexes
+            .borrow()
+            .insert(field.into(), field_indexes);
 
         self.save_field_index(field)?;
 
@@ -256,7 +267,7 @@ impl PayloadIndex for StructPayloadIndex {
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
         self.config.indexed_fields.remove(field);
         self.save_config()?;
-        self.field_indexes.remove(field);
+        self.field_indexes.borrow().remove(field);
 
         let field_index_path = Self::get_field_index_path(&self.path, field);
 
@@ -276,7 +287,7 @@ impl PayloadIndex for StructPayloadIndex {
                 let total_points = self.total_points();
 
                 let mut indexed_points = 0;
-                if let Some(field_indexes) = self.field_indexes.get(&field.key) {
+                if let Some(field_indexes) = self.field_indexes.borrow().get(&field.key) {
                     for index in field_indexes {
                         indexed_points = indexed_points.max(index.count_indexed_points())
                     }
@@ -383,7 +394,7 @@ impl PayloadIndex for StructPayloadIndex {
         field: PayloadKeyTypeRef,
         threshold: usize,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
-        match self.field_indexes.get(field) {
+        match self.field_indexes.borrow().get(field) {
             None => Box::new(vec![].into_iter()),
             Some(indexes) => {
                 let field_clone = field.to_owned();

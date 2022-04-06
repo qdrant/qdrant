@@ -4,10 +4,13 @@ use atomic_refcell::AtomicRefCell;
 use serde_json::Value;
 
 use crate::id_tracker::IdTrackerSS;
+use crate::index::IndexesMap;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::ConditionChecker;
-use crate::types::{Condition, Filter, IsEmptyCondition, Payload, PointOffsetType};
+use crate::types::{
+    Condition, Filter, IsEmptyCondition, Payload, PayloadKeyTypeRef, PointOffsetType,
+};
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool
 where
@@ -64,17 +67,24 @@ where
 pub struct SimpleConditionChecker {
     payload_storage: Arc<AtomicRefCell<SimplePayloadStorage>>,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    field_index: Arc<AtomicRefCell<IndexesMap>>,
 }
 
 impl SimpleConditionChecker {
     pub fn new(
         payload_storage: Arc<AtomicRefCell<SimplePayloadStorage>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+        field_index: Arc<AtomicRefCell<IndexesMap>>,
     ) -> Self {
         SimpleConditionChecker {
             payload_storage,
             id_tracker,
+            field_index,
         }
+    }
+
+    fn get_field_value(&self, field_name: PayloadKeyTypeRef) -> Value {
+        todo!()
     }
 }
 
