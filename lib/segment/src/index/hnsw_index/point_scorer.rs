@@ -43,7 +43,7 @@ impl<'a> FilteredScorer<'a> {
                     .take(count)
                     .copied()
                     .for_each(action);
-            },
+            }
             Some(f) => {
                 let filtered_points: Vec<PointOffsetType> = point_ids
                     .iter()
