@@ -1,6 +1,3 @@
-extern crate profiler_proc_macro;
-use profiler_proc_macro::trace;
-
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
@@ -79,7 +76,6 @@ pub struct UpdateHandler {
 }
 
 impl UpdateHandler {
-    #[trace]
     pub fn new(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         runtime_handle: Handle,
@@ -184,7 +180,6 @@ impl UpdateHandler {
     /// Checks conditions for all optimizers until there is no suggested segment
     /// Starts a task for each optimization
     /// Returns handles for started tasks
-    #[trace]
     pub(crate) fn launch_optimization<F>(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,

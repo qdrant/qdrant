@@ -38,7 +38,7 @@ tonic = "0.7.0"
 
 segment = {path = "../segment"}
 api = {path = "../api"}
-profiler_proc_macro = {path = "lib/profiler_proc_macro"}
+profiler_proc_macro = {path = "../profiler_proc_macro"}
 
 itertools = "0.10"
 indicatif = "0.16.2"

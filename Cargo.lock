@@ -683,6 +683,7 @@ dependencies = [
  "num_cpus",
  "ordered-float",
  "parking_lot",
+ "profiler_proc_macro",
  "rand 0.8.5",
  "rmp-serde",
  "schemars",
@@ -694,6 +695,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
+ "tracy-client",
  "wal",
 ]
 
@@ -2484,6 +2486,7 @@ dependencies = [
  "num-traits",
  "num_cpus",
  "parking_lot",
+ "profiler_proc_macro",
  "prost 0.10.0",
  "prost-types 0.10.0",
  "raft",
@@ -2499,6 +2502,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
+ "tracy-client",
 ]
 
 [[package]]
@@ -3105,6 +3109,7 @@ dependencies = [
  "itertools 0.10.3",
  "log 0.4.16",
  "num_cpus",
+ "profiler_proc_macro",
  "prost 0.7.0",
  "raft",
  "rand 0.8.5",
@@ -3116,6 +3121,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
+ "tracy-client",
  "wal",
 ]
 
@@ -3561,6 +3567,25 @@ checksum = "97d095ae15e245a057c8e8451bab9b3ee1e1f68e9ba2b4fbc18d0ac5237835f2"
 dependencies = [
  "pin-project",
  "tracing",
+]
+
+[[package]]
+name = "tracy-client"
+version = "0.12.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dffcb26a0c786a0e154afdf21284969ff23759f42f156bcfddddae1a3c2404f2"
+dependencies = [
+ "once_cell",
+ "tracy-client-sys",
+]
+
+[[package]]
+name = "tracy-client-sys"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6226e4e77f0d46ce7ebb0a4b1daa82790035248b75bbf605b932a1d7b3b22b6d"
+dependencies = [
+ "cc",
 ]
 
 [[package]]

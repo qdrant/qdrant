@@ -13,12 +13,10 @@ pub fn trace(_: TokenStream, input: TokenStream) -> TokenStream {
         input_fn.sig.ident
     );
 
-    if let Some(idx) = input_string.find("{") {
+    if let Some(idx) = input_string.find('{') {
         input_string.insert_str(idx + 1, &string_to_insert);
     }
-    let result = input_string.parse().unwrap();
-
-    result
+    input_string.parse().unwrap()
 }
 
 /*
