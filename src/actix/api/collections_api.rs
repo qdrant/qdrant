@@ -34,7 +34,7 @@ async fn update_collections(
     operation: web::Json<CollectionMetaOperations>,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = toc.submit_collection_operation(operation.0, true).await;
+    let response = toc.submit_collection_operation(operation.0, None).await;
     process_response(response, timing)
 }
 
@@ -52,7 +52,7 @@ async fn create_collection(
                 collection_name: name,
                 create_collection: operation.0,
             }),
-            true,
+            None,
         )
         .await;
     process_response(response, timing)
@@ -72,7 +72,7 @@ async fn update_collection(
                 collection_name: name,
                 update_collection: operation.0,
             }),
-            true,
+            None,
         )
         .await;
     process_response(response, timing)
@@ -88,7 +88,7 @@ async fn delete_collection(
     let response = toc
         .submit_collection_operation(
             CollectionMetaOperations::DeleteCollection(DeleteCollectionOperation(name)),
-            true,
+            None,
         )
         .await;
     process_response(response, timing)
@@ -101,7 +101,7 @@ async fn update_aliases(
 ) -> impl Responder {
     let timing = Instant::now();
     let response = toc
-        .submit_collection_operation(CollectionMetaOperations::ChangeAliases(operation.0), true)
+        .submit_collection_operation(CollectionMetaOperations::ChangeAliases(operation.0), None)
         .await;
     process_response(response, timing)
 }

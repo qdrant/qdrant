@@ -55,7 +55,7 @@ mod tests {
                         shard_number: 1,
                     },
                 }),
-                true,
+                None,
             ))
             .unwrap();
 
@@ -68,7 +68,7 @@ mod tests {
                         }
                         .into()],
                 }),
-                true,
+                None,
             ))
             .unwrap();
 
@@ -92,7 +92,7 @@ mod tests {
                             .into(),
                         ],
                 }),
-                true,
+                None,
             ))
             .unwrap();
 

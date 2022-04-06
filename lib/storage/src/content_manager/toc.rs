@@ -4,6 +4,7 @@ use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -49,6 +50,8 @@ pub use consensus::TableOfContentRef;
 const COLLECTIONS_DIR: &str = "collections";
 #[cfg(feature = "consensus")]
 const COLLECTIONS_META_WAL_DIR: &str = "collections_meta_wal";
+#[cfg(feature = "consensus")]
+const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 
 /// The main object of the service. It holds all objects, required for proper functioning.
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
@@ -68,7 +71,9 @@ pub struct TableOfContent {
     #[cfg(feature = "consensus")]
     propose_sender: Option<std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>>,
     #[cfg(feature = "consensus")]
-    on_meta_op_apply: std::sync::Mutex<HashMap<CollectionMetaOperations, oneshot::Sender<bool>>>,
+    on_meta_op_apply: std::sync::Mutex<
+        HashMap<CollectionMetaOperations, oneshot::Sender<Result<bool, StorageError>>>,
+    >,
 }
 
 impl TableOfContent {
@@ -327,15 +332,18 @@ impl TableOfContent {
         Ok(true)
     }
 
+    /// If `wait_timeout` is not supplied - then default duration will be used.
+    /// This function needs to be called from a runtime with timers enabled.
     #[allow(unused_variables)]
     pub async fn submit_collection_operation(
         &self,
         operation: CollectionMetaOperations,
-        wait: bool,
+        wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
         #[cfg(feature = "consensus")]
         {
-            self.propose_collection_meta_op(operation, wait).await
+            self.propose_collection_meta_op(operation, wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT))
+                .await
         }
         #[cfg(not(feature = "consensus"))]
         {
@@ -347,7 +355,7 @@ impl TableOfContent {
     async fn propose_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
-        wait: bool,
+        wait_timeout: Duration,
     ) -> Result<bool, StorageError> {
         let propose_sender = match &self.propose_sender {
             Some(sender) => sender,
@@ -359,16 +367,19 @@ impl TableOfContent {
             }
         };
         let serialized = serde_cbor::to_vec(&operation)?;
-        let result = if wait {
-            let (sender, receiver) = oneshot::channel();
-            self.on_meta_op_apply.lock()?.insert(operation, sender);
-            propose_sender.lock()?.send(serialized)?;
-            receiver.await?
-        } else {
-            propose_sender.lock()?.send(serialized)?;
-            true
-        };
-        Ok(result)
+        let (sender, receiver) = oneshot::channel();
+        self.on_meta_op_apply.lock()?.insert(operation, sender);
+        propose_sender.lock()?.send(serialized)?;
+        Ok(tokio::time::timeout(wait_timeout, receiver)
+            .await
+            .map_err(
+                |_: tokio::time::error::Elapsed| StorageError::ServiceError {
+                    description: format!(
+                        "Waiting for collection meta operation commit failed. Timeout set at: {} seconds",
+                        wait_timeout.as_secs_f64()
+                    ),
+                },
+            )???)
     }
 
     async fn perform_collection_meta_op(
@@ -586,13 +597,13 @@ impl TableOfContent {
         let on_apply = self.on_meta_op_apply.lock()?.remove(&operation);
         let result = self
             .collection_management_runtime
-            .block_on(self.perform_collection_meta_op(operation))?;
+            .block_on(self.perform_collection_meta_op(operation));
         if let Some(on_apply) = on_apply {
-            if on_apply.send(result).is_err() {
+            if on_apply.send(result.clone()).is_err() {
                 log::warn!("Failed to notify on collection meta operation completion.")
             }
         }
-        Ok(result)
+        result
     }
 
     #[cfg(feature = "consensus")]
