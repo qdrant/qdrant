@@ -65,7 +65,7 @@ impl Collections for CollectionsService {
         let timing = Instant::now();
         let result = self
             .toc
-            .submit_collection_operation(operations)
+            .submit_collection_operation(operations, None)
             .await
             .map_err(error_to_status)?;
 
@@ -84,7 +84,7 @@ impl Collections for CollectionsService {
         let timing = Instant::now();
         let result = self
             .toc
-            .submit_collection_operation(operations)
+            .submit_collection_operation(operations, None)
             .await
             .map_err(error_to_status)?;
 
@@ -103,7 +103,7 @@ impl Collections for CollectionsService {
         let timing = Instant::now();
         let result = self
             .toc
-            .submit_collection_operation(operations)
+            .submit_collection_operation(operations, None)
             .await
             .map_err(error_to_status)?;
 
@@ -122,7 +122,7 @@ impl Collections for CollectionsService {
         let timing = Instant::now();
         let result = self
             .toc
-            .submit_collection_operation(operations)
+            .submit_collection_operation(operations, None)
             .await
             .map_err(error_to_status)?;
 

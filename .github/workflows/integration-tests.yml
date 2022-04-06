@@ -30,3 +30,24 @@ jobs:
         run: |
           ./tests/integration-tests.sh
         shell: bash
+
+  test-consensus:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v1
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - name: Build
+        run: cargo build --features consensus
+      - name: Run integration tests
+        run: |
+          ./tests/integration-tests.sh
+        shell: bash

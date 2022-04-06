@@ -81,6 +81,14 @@ impl<T> From<std::sync::mpsc::SendError<T>> for StorageError {
     }
 }
 
+impl From<tokio::sync::oneshot::error::RecvError> for StorageError {
+    fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
+        StorageError::ServiceError {
+            description: format!("Channel sender dropped: {}", err),
+        }
+    }
+}
+
 #[cfg(feature = "consensus")]
 impl From<serde_cbor::Error> for StorageError {
     fn from(err: serde_cbor::Error) -> Self {

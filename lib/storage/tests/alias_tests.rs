@@ -43,42 +43,39 @@ mod tests {
         let toc = TableOfContent::new(&config, runtime);
 
         handle
-            .block_on(
-                toc.submit_collection_operation(CollectionMetaOperations::CreateCollection(
-                    CreateCollectionOperation {
-                        collection_name: "test".to_string(),
-                        create_collection: CreateCollection {
-                            vector_size: 10,
-                            distance: Distance::Cosine,
-                            hnsw_config: None,
-                            wal_config: None,
-                            optimizers_config: None,
-                            shard_number: 1,
-                        },
+            .block_on(toc.submit_collection_operation(
+                CollectionMetaOperations::CreateCollection(CreateCollectionOperation {
+                    collection_name: "test".to_string(),
+                    create_collection: CreateCollection {
+                        vector_size: 10,
+                        distance: Distance::Cosine,
+                        hnsw_config: None,
+                        wal_config: None,
+                        optimizers_config: None,
+                        shard_number: 1,
                     },
-                )),
-            )
+                }),
+                None,
+            ))
             .unwrap();
 
         handle
-            .block_on(
-                toc.submit_collection_operation(CollectionMetaOperations::ChangeAliases(
-                    ChangeAliasesOperation {
-                        actions: vec![CreateAlias {
+            .block_on(toc.submit_collection_operation(
+                CollectionMetaOperations::ChangeAliases(ChangeAliasesOperation {
+                    actions: vec![CreateAlias {
                             collection_name: "test".to_string(),
                             alias_name: "test_alias".to_string(),
                         }
                         .into()],
-                    },
-                )),
-            )
+                }),
+                None,
+            ))
             .unwrap();
 
         handle
-            .block_on(
-                toc.submit_collection_operation(CollectionMetaOperations::ChangeAliases(
-                    ChangeAliasesOperation {
-                        actions: vec![
+            .block_on(toc.submit_collection_operation(
+                CollectionMetaOperations::ChangeAliases(ChangeAliasesOperation {
+                    actions: vec![
                             CreateAlias {
                                 collection_name: "test".to_string(),
                                 alias_name: "test_alias2".to_string(),
@@ -94,9 +91,9 @@ mod tests {
                             }
                             .into(),
                         ],
-                    },
-                )),
-            )
+                }),
+                None,
+            ))
             .unwrap();
 
         handle.block_on(toc.get_collection("test_alias3")).unwrap();

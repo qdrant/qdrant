@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::num::NonZeroU32;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -30,14 +32,15 @@ use crate::content_manager::{
 use crate::types::StorageConfig;
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
-
 use collection::shard::ShardId;
+
 #[cfg(feature = "consensus")]
 use raft::{
     eraftpb::{Entry as RaftEntry, Snapshot as RaftSnapshot},
     RaftState,
 };
-use std::ops::Deref;
+#[cfg(feature = "consensus")]
+use tokio::sync::oneshot;
 #[cfg(feature = "consensus")]
 use wal::Wal;
 
@@ -47,6 +50,8 @@ pub use consensus::TableOfContentRef;
 const COLLECTIONS_DIR: &str = "collections";
 #[cfg(feature = "consensus")]
 const COLLECTIONS_META_WAL_DIR: &str = "collections_meta_wal";
+#[cfg(feature = "consensus")]
+const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 
 /// The main object of the service. It holds all objects, required for proper functioning.
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
@@ -65,6 +70,10 @@ pub struct TableOfContent {
     raft_state: Arc<std::sync::Mutex<RaftState>>,
     #[cfg(feature = "consensus")]
     propose_sender: Option<std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>>,
+    #[cfg(feature = "consensus")]
+    on_meta_op_apply: std::sync::Mutex<
+        HashMap<CollectionMetaOperations, oneshot::Sender<Result<bool, StorageError>>>,
+    >,
 }
 
 impl TableOfContent {
@@ -125,6 +134,8 @@ impl TableOfContent {
             raft_state: Arc::new(std::sync::Mutex::new(RaftState::default())),
             #[cfg(feature = "consensus")]
             propose_sender: None,
+            #[cfg(feature = "consensus")]
+            on_meta_op_apply: std::sync::Mutex::new(HashMap::new()),
         }
     }
 
@@ -321,13 +332,18 @@ impl TableOfContent {
         Ok(true)
     }
 
+    /// If `wait_timeout` is not supplied - then default duration will be used.
+    /// This function needs to be called from a runtime with timers enabled.
+    #[allow(unused_variables)]
     pub async fn submit_collection_operation(
         &self,
         operation: CollectionMetaOperations,
+        wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
         #[cfg(feature = "consensus")]
         {
-            self.propose_collection_meta_op(operation)
+            self.propose_collection_meta_op(operation, wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT))
+                .await
         }
         #[cfg(not(feature = "consensus"))]
         {
@@ -336,17 +352,35 @@ impl TableOfContent {
     }
 
     #[cfg(feature = "consensus")]
-    fn propose_collection_meta_op(
+    async fn propose_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
+        wait_timeout: Duration,
     ) -> Result<bool, StorageError> {
-        match &self.propose_sender {
-            Some(sender) => sender.lock()?.send(serde_cbor::to_vec(&operation)?)?,
-            None => log::error!(
-                "Cannot submit collection meta operation proposal: no sender supplied to ToC"
-            ),
-        }
-        Ok(true)
+        let propose_sender = match &self.propose_sender {
+            Some(sender) => sender,
+            None => {
+                log::error!(
+                    "Cannot submit collection meta operation proposal: no sender supplied to ToC"
+                );
+                return Ok(true);
+            }
+        };
+        let serialized = serde_cbor::to_vec(&operation)?;
+        let (sender, receiver) = oneshot::channel();
+        self.on_meta_op_apply.lock()?.insert(operation, sender);
+        propose_sender.lock()?.send(serialized)?;
+        Ok(tokio::time::timeout(wait_timeout, receiver)
+            .await
+            .map_err(
+                |_: tokio::time::error::Elapsed| StorageError::ServiceError {
+                    description: format!(
+                        "Waiting for collection meta operation commit failed. Timeout set at: {} seconds",
+                        wait_timeout.as_secs_f64()
+                    ),
+                },
+                // ??? - forwards 3 possible errors: timeout, sender dropped, operation failed
+            )???)
     }
 
     async fn perform_collection_meta_op(
@@ -561,8 +595,16 @@ impl TableOfContent {
     #[cfg(feature = "consensus")]
     pub fn apply_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
         let operation: CollectionMetaOperations = entry.try_into()?;
-        self.collection_management_runtime
-            .block_on(self.perform_collection_meta_op(operation))
+        let on_apply = self.on_meta_op_apply.lock()?.remove(&operation);
+        let result = self
+            .collection_management_runtime
+            .block_on(self.perform_collection_meta_op(operation));
+        if let Some(on_apply) = on_apply {
+            if on_apply.send(result.clone()).is_err() {
+                log::warn!("Failed to notify on collection meta operation completion.")
+            }
+        }
+        result
     }
 
     #[cfg(feature = "consensus")]
