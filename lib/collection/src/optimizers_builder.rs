@@ -8,13 +8,12 @@ use crate::collection_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
 use crate::config::CollectionParams;
 use crate::update_handler::Optimizer;
 use schemars::JsonSchema;
-use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::types::HnswConfig;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 pub struct OptimizersConfig {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     pub deleted_threshold: f64,
@@ -55,7 +54,6 @@ pub fn build_optimizers(
     collection_params: &CollectionParams,
     optimizers_config: &OptimizersConfig,
     hnsw_config: &HnswConfig,
-    schema_store: Arc<SchemaStorage>,
 ) -> Arc<Vec<Arc<Optimizer>>> {
     let segments_path = shard_path.join("segments");
     let temp_segments_path = shard_path.join("temp_segments");
@@ -75,7 +73,6 @@ pub fn build_optimizers(
             temp_segments_path.clone(),
             collection_params.clone(),
             *hnsw_config,
-            schema_store.clone(),
         )),
         Arc::new(IndexingOptimizer::new(
             threshold_config.clone(),
@@ -83,7 +80,6 @@ pub fn build_optimizers(
             temp_segments_path.clone(),
             collection_params.clone(),
             *hnsw_config,
-            schema_store.clone(),
         )),
         Arc::new(VacuumOptimizer::new(
             optimizers_config.deleted_threshold,
@@ -93,7 +89,6 @@ pub fn build_optimizers(
             temp_segments_path,
             collection_params.clone(),
             *hnsw_config,
-            schema_store,
         )),
     ])
 }

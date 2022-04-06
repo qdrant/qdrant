@@ -3,94 +3,112 @@ extern crate profiler_proc_macro;
 use profiler_proc_macro::trace;
 
 use crate::types::{
-    GeoBoundingBox, GeoRadius, Match, MatchInteger, MatchKeyword, PayloadType, Range,
+    GeoBoundingBox, GeoRadius, Match, MatchValue, Range, ValueVariants, ValuesCount,
 };
-use geo::algorithm::haversine_distance::HaversineDistance;
-use geo::Point;
+use serde_json::Value;
 
-#[trace]
-pub fn match_payload(payload: &PayloadType, condition_match: &Match) -> bool {
-    match payload {
-        PayloadType::Keyword(payload_kws) => {
-            payload_kws.iter().any(|payload_kw| match condition_match {
-                Match::Keyword(MatchKeyword { keyword }) => keyword == payload_kw,
+pub trait ValueChecker {
+    fn check_match(&self, payload: &Value) -> bool;
+
+    fn check(&self, payload: &Value) -> bool {
+        match payload {
+            Value::Array(values) => values.iter().any(|x| self.check_match(x)),
+            _ => self.check_match(payload),
+        }
+    }
+}
+
+impl ValueChecker for Match {
+    #[trace]
+    fn check_match(&self, payload: &Value) -> bool {
+        match self {
+            Match::Value(MatchValue { value }) => match (payload, value) {
+                (Value::Bool(stored), ValueVariants::Bool(val)) => stored == val,
+                (Value::String(stored), ValueVariants::Keyword(val)) => stored == val,
+                (Value::Number(stored), ValueVariants::Integer(val)) => {
+                    stored.as_i64().map(|num| num == *val).unwrap_or(false)
+                }
                 _ => false,
-            })
+            },
+            _ => panic!("use of deprecated conditions"),
         }
-        PayloadType::Integer(payload_ints) => {
-            payload_ints
-                .iter()
-                .copied()
-                .any(|payload_int| match condition_match {
-                    Match::Integer(MatchInteger { integer }) => *integer == payload_int,
-                    _ => false,
-                })
-        }
-        _ => false,
     }
 }
 
-#[trace]
-pub fn match_range(payload: &PayloadType, num_range: &Range) -> bool {
-    let condition = |number| {
-        num_range.lt.map_or(true, |x| number < x)
-            && num_range.gt.map_or(true, |x| number > x)
-            && num_range.lte.map_or(true, |x| number <= x)
-            && num_range.gte.map_or(true, |x| number >= x)
-    };
-
-    match payload {
-        PayloadType::Float(num) => num.iter().copied().any(condition),
-        PayloadType::Integer(num) => num.iter().copied().any(|x| condition(x as f64)),
-        _ => false,
+impl ValueChecker for Range {
+    #[trace]
+    fn check_match(&self, payload: &Value) -> bool {
+        match payload {
+            Value::Number(num) => num
+                .as_f64()
+                .map(|number| self.check_range(number))
+                .unwrap_or(false),
+            _ => false,
+        }
     }
 }
 
-#[trace]
-pub fn match_geo(payload: &PayloadType, geo_bounding_box: &GeoBoundingBox) -> bool {
-    return match payload {
-        PayloadType::Geo(geo_points) => geo_points.iter().any(|geo_point| {
-            (geo_bounding_box.top_left.lon < geo_point.lon)
-                && (geo_point.lon < geo_bounding_box.bottom_right.lon)
-                && (geo_bounding_box.bottom_right.lat < geo_point.lat)
-                && (geo_point.lat < geo_bounding_box.top_left.lat)
-        }),
-        _ => false,
-    };
+impl ValueChecker for GeoBoundingBox {
+    #[trace]
+    fn check_match(&self, payload: &Value) -> bool {
+        match payload {
+            Value::Object(obj) => {
+                let lon_op = obj.get("lon").and_then(|x| x.as_f64());
+                let lat_op = obj.get("lat").and_then(|x| x.as_f64());
+
+                if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
+                    return self.check_point(lon, lat);
+                }
+                false
+            }
+            _ => false,
+        }
+    }
 }
 
-#[trace]
-pub fn match_geo_radius(payload: &PayloadType, geo_radius_query: &GeoRadius) -> bool {
-    return match payload {
-        PayloadType::Geo(geo_points) => {
-            let query_center = Point::new(geo_radius_query.center.lon, geo_radius_query.center.lat);
+impl ValueChecker for GeoRadius {
+    #[trace]
+    fn check_match(&self, payload: &Value) -> bool {
+        match payload {
+            Value::Object(obj) => {
+                let lon_op = obj.get("lon").and_then(|x| x.as_f64());
+                let lat_op = obj.get("lat").and_then(|x| x.as_f64());
 
-            geo_points.iter().any(|geo_point| {
-                query_center.haversine_distance(&Point::new(geo_point.lon, geo_point.lat))
-                    < geo_radius_query.radius
-            })
+                if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
+                    return self.check_point(lon, lat);
+                }
+                false
+            }
+            _ => false,
         }
-        _ => false,
-    };
+    }
+}
+
+impl ValueChecker for ValuesCount {
+    fn check_match(&self, payload: &Value) -> bool {
+        self.check_count(payload)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::GeoPoint;
+    use serde_json::json;
 
     #[test]
     fn test_geo_matching() {
-        let berlin_and_moscow = PayloadType::Geo(vec![
-            GeoPoint {
-                lat: 52.52197645,
-                lon: 13.413637435864272,
+        let berlin_and_moscow = json!([
+            {
+                "lat": 52.52197645,
+                "lon": 13.413637435864272
             },
-            GeoPoint {
-                lat: 55.7536283,
-                lon: 37.62137960067377,
-            },
+            {
+                "lat": 55.7536283,
+                "lon": 37.62137960067377,
+            }
         ]);
+
         let near_berlin_query = GeoRadius {
             center: GeoPoint {
                 lat: 52.511,
@@ -106,7 +124,7 @@ mod tests {
             radius: 2000.0,
         };
 
-        assert!(match_geo_radius(&berlin_and_moscow, &near_berlin_query));
-        assert!(!match_geo_radius(&berlin_and_moscow, &miss_geo_query));
+        assert!(near_berlin_query.check(&berlin_and_moscow));
+        assert!(!miss_geo_query.check(&berlin_and_moscow));
     }
 }

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 
+use async_trait::async_trait;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -12,12 +13,12 @@ use segment::segment_constructor::simple_segment_constructor::build_simple_segme
 use std::cmp::max;
 use std::fs::create_dir_all;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::runtime::{self, Runtime};
+use tokio::runtime::{self, Handle, Runtime};
 use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot, Mutex, RwLock as TokioRwLock};
 
 use segment::types::{
-    ExtendedPointId, Filter, PayloadKeyType, PayloadSchemaInfo, SegmentType, WithPayload,
-    WithPayloadInterface,
+    ExtendedPointId, Filter, PayloadIndexInfo, PayloadKeyType, ScoredPoint, SegmentType,
+    WithPayload, WithPayloadInterface,
 };
 
 use crate::collection_manager::collection_managers::CollectionSearcher;
@@ -30,22 +31,20 @@ use crate::operations::types::{
     UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::optimizers_builder::build_optimizers;
+use crate::optimizers_builder::{build_optimizers, OptimizersConfig};
+use crate::shard::ShardOperation;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
-use crate::CollectionId;
-use segment::payload_storage::schema_storage::SchemaStorage;
+use crate::{CollectionId, PointRequest, SearchRequest, ShardId};
 use segment::segment_constructor::load_segment;
 use std::fs::{read_dir, remove_dir_all};
 
-pub type ShardId = u32;
-
-/// Shard
+/// LocalShard
 ///
-/// Shard is an entity that can be moved between peers and contains some part of one collections data.
+/// LocalShard is an entity that can be moved between peers and contains some part of one collections data.
 ///
 /// Holds all object, required for collection functioning
-pub struct Shard {
+pub struct LocalShard {
     segments: Arc<RwLock<SegmentHolder>>,
     // TODO: Move config into Raft global state
     config: Arc<TokioRwLock<CollectionConfig>>,
@@ -54,12 +53,11 @@ pub struct Shard {
     runtime_handle: Option<Runtime>,
     update_sender: ArcSwap<UnboundedSender<UpdateSignal>>,
     path: PathBuf,
-    schema_store: Arc<SchemaStorage>,
     before_drop_called: bool,
 }
 
 /// Shard holds information about segments and WAL.
-impl Shard {
+impl LocalShard {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: ShardId,
@@ -69,7 +67,6 @@ impl Shard {
         wal: SerdeWal<CollectionUpdateOperations>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         collection_path: &Path,
-        schema_store: Arc<SchemaStorage>,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
 
@@ -111,9 +108,12 @@ impl Shard {
             runtime_handle: Some(optimize_runtime),
             update_sender: ArcSwap::from_pointee(update_sender),
             path: collection_path.to_owned(),
-            schema_store,
             before_drop_called: false,
         }
+    }
+
+    fn segments(&self) -> &RwLock<SegmentHolder> {
+        self.segments.deref()
     }
 
     pub async fn load(
@@ -121,7 +121,7 @@ impl Shard {
         collection_id: CollectionId,
         shard_path: &Path,
         collection_config: &CollectionConfig,
-    ) -> Shard {
+    ) -> LocalShard {
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
         let mut segment_holder = SegmentHolder::default();
@@ -131,8 +131,6 @@ impl Shard {
             &(&collection_config.wal_config).into(),
         )
         .expect("Can't read WAL");
-
-        let schema_storage = Arc::new(SchemaStorage::new());
 
         let segment_dirs = read_dir(&segments_path).unwrap_or_else(|err| {
             panic!(
@@ -153,7 +151,7 @@ impl Shard {
                 });
                 continue;
             }
-            let segment = match load_segment(&segments_path, schema_storage.clone()) {
+            let segment = match load_segment(&segments_path) {
                 Ok(x) => x,
                 Err(err) => panic!(
                     "Can't load segments from {}, error: {}",
@@ -169,10 +167,9 @@ impl Shard {
             &collection_config.params,
             &collection_config.optimizer_config,
             &collection_config.hnsw_config,
-            schema_storage.clone(),
         );
 
-        let collection = Shard::new(
+        let collection = LocalShard::new(
             id,
             collection_id,
             segment_holder,
@@ -180,7 +177,6 @@ impl Shard {
             wal,
             optimizers,
             shard_path,
-            schema_storage,
         );
 
         collection.load_from_wal().await;
@@ -202,7 +198,7 @@ impl Shard {
         collection_id: CollectionId,
         shard_path: &Path,
         config: &CollectionConfig,
-    ) -> CollectionResult<Shard> {
+    ) -> CollectionResult<LocalShard> {
         let wal_path = shard_path.join("wal");
 
         create_dir_all(&wal_path).map_err(|err| CollectionError::ServiceError {
@@ -217,14 +213,11 @@ impl Shard {
 
         let mut segment_holder = SegmentHolder::default();
 
-        let schema_storage = Arc::new(SchemaStorage::new());
-
         for _sid in 0..config.optimizer_config.default_segment_number {
             let segment = build_simple_segment(
                 &segments_path,
                 config.params.vector_size,
                 config.params.distance,
-                schema_storage.clone(),
             )?;
             segment_holder.add(segment);
         }
@@ -237,10 +230,9 @@ impl Shard {
             &config.params,
             &config.optimizer_config,
             &config.hnsw_config,
-            schema_storage.clone(),
         );
 
-        let collection = Shard::new(
+        let collection = LocalShard::new(
             id,
             collection_id,
             segment_holder,
@@ -248,20 +240,136 @@ impl Shard {
             wal,
             optimizers,
             shard_path,
-            schema_storage,
         );
 
         Ok(collection)
     }
 
-    pub fn segments(&self) -> &RwLock<SegmentHolder> {
-        self.segments.deref()
+    pub async fn stop_flush_worker(&self) {
+        let mut update_handler = self.update_handler.lock().await;
+        update_handler.stop_flush_worker()
     }
 
+    pub async fn wait_update_workers_stop(&self) -> CollectionResult<()> {
+        let mut update_handler = self.update_handler.lock().await;
+        update_handler.wait_workers_stops().await
+    }
+
+    /// Loads latest collection operations from WAL
+    pub async fn load_from_wal(&self) {
+        let wal = self.wal.lock().await;
+        let bar = ProgressBar::new(wal.len());
+        bar.set_message("Recovering collection");
+        let segments = self.segments();
+        // ToDo: Start from minimal applied version
+        for (op_num, update) in wal.read_all() {
+            // Panic only in case of internal error. If wrong formatting - skip
+            if let Err(CollectionError::ServiceError { error }) =
+                CollectionUpdater::update(segments, op_num, update)
+            {
+                panic!("Can't apply WAL operation: {}", error)
+            }
+            bar.inc(1);
+        }
+
+        self.segments.read().flush_all().unwrap();
+        bar.finish();
+    }
+
+    /// Updates shard optimization params:
+    /// - Saves new params on disk
+    /// - Stops existing optimization loop
+    /// - Runs new optimizers with new params
+    pub async fn update_optimizer_with_diff(
+        &self,
+        optimizer_config_diff: OptimizersConfigDiff,
+    ) -> CollectionResult<()> {
+        log::debug!("Updating optimizer params");
+        {
+            let mut config = self.config.write().await;
+            config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
+            config.save(&self.path)?;
+        }
+        self.on_optimizer_config_update().await
+    }
+
+    /// Updates shard optimization params:
+    /// - Saves new params on disk
+    /// - Stops existing optimization loop
+    /// - Runs new optimizers with new params
+    pub async fn update_optimizer_with_config(
+        &self,
+        optimizer_config: OptimizersConfig,
+    ) -> CollectionResult<()> {
+        log::debug!("Updating optimizer params");
+        {
+            let mut config = self.config.write().await;
+            config.optimizer_config = optimizer_config;
+            config.save(&self.path)?;
+        }
+        self.on_optimizer_config_update().await
+    }
+
+    pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
+        let config = self.config.read().await;
+        let mut update_handler = self.update_handler.lock().await;
+
+        let (update_sender, update_receiver) = mpsc::unbounded_channel();
+        // makes sure that the Stop signal is the last one in this channel
+        let old_sender = self.update_sender.swap(Arc::new(update_sender));
+        old_sender.send(UpdateSignal::Stop)?;
+        update_handler.stop_flush_worker();
+
+        update_handler.wait_workers_stops().await?;
+        let new_optimizers = build_optimizers(
+            &self.path,
+            &config.params,
+            &config.optimizer_config,
+            &config.hnsw_config,
+        );
+        update_handler.optimizers = new_optimizers;
+        update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
+        update_handler.run_workers(update_receiver);
+        self.update_sender.load().send(UpdateSignal::Nop)?;
+
+        Ok(())
+    }
+
+    pub async fn before_drop(&mut self) {
+        // Finishes update tasks right before destructor stuck to do so with runtime
+        self.update_sender.load().send(UpdateSignal::Stop).unwrap();
+
+        self.stop_flush_worker().await;
+
+        self.wait_update_workers_stop().await.unwrap();
+
+        match self.runtime_handle.take() {
+            None => {}
+            Some(handle) => {
+                // The drop could be called from the tokio context, e.g. from perform_collection_operation method.
+                // Calling remove from there would lead to the following error in a new version of tokio:
+                // "Cannot drop a runtime in a context where blocking is not allowed. This happens when a runtime is dropped from within an asynchronous context."
+                // So the workaround for move out the runtime handler and drop it in the separate thread.
+                // The proper solution is to reconsider the collection to be an owner of the runtime
+
+                let thread_handler = thread::Builder::new()
+                    .name("collection_drop".to_string())
+                    .spawn(move || drop(handle))
+                    .unwrap();
+                thread_handler.join().unwrap();
+            }
+        }
+
+        self.before_drop_called = true;
+    }
+}
+
+#[async_trait]
+impl ShardOperation for &LocalShard {
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
-    pub async fn update(
+    async fn update(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
@@ -300,7 +408,7 @@ impl Shard {
         }
     }
 
-    pub async fn scroll_by(
+    async fn scroll_by(
         &self,
         segment_searcher: &(dyn CollectionSearcher + Sync),
         offset: Option<ExtendedPointId>,
@@ -330,7 +438,7 @@ impl Shard {
     }
 
     /// Collect overview information about the shard
-    pub async fn info(&self) -> CollectionResult<CollectionInfo> {
+    async fn info(&self) -> CollectionResult<CollectionInfo> {
         let collection_config = self.config.read().await.clone();
         let segments = self.segments.read();
         let mut vectors_count = 0;
@@ -338,7 +446,7 @@ impl Shard {
         let mut ram_size = 0;
         let mut disk_size = 0;
         let mut status = CollectionStatus::Green;
-        let mut schema: HashMap<PayloadKeyType, PayloadSchemaInfo> = Default::default();
+        let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
         for (_idx, segment) in segments.iter() {
             segments_count += 1;
             let segment_info = segment.get().read().info();
@@ -348,7 +456,7 @@ impl Shard {
             vectors_count += segment_info.num_vectors;
             disk_size += segment_info.disk_usage_bytes;
             ram_size += segment_info.ram_usage_bytes;
-            for (key, val) in segment_info.schema {
+            for (key, val) in segment_info.index_schema {
                 schema.insert(key, val);
             }
         }
@@ -373,106 +481,31 @@ impl Shard {
         })
     }
 
-    /// Updates shard optimization params:
-    /// - Saves new params on disk
-    /// - Stops existing optimization loop
-    /// - Runs new optimizers with new params
-    pub async fn update_optimizer_params(
+    async fn search(
         &self,
-        optimizer_config_diff: OptimizersConfigDiff,
-    ) -> CollectionResult<()> {
-        log::debug!("Updating optimizer params");
-        {
-            let mut config = self.config.write().await;
-            config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
-            config.save(&self.path)?;
-        }
-        let config = self.config.read().await;
-        let mut update_handler = self.update_handler.lock().await;
-
-        let (update_sender, update_receiver) = mpsc::unbounded_channel();
-        // makes sure that the Stop signal is the last one in this channel
-        let old_sender = self.update_sender.swap(Arc::new(update_sender));
-        old_sender.send(UpdateSignal::Stop)?;
-        update_handler.stop_flush_worker();
-
-        update_handler.wait_workers_stops().await?;
-        let new_optimizers = build_optimizers(
-            &self.path,
-            &config.params,
-            &config.optimizer_config,
-            &config.hnsw_config,
-            self.schema_store.clone(),
-        );
-        update_handler.optimizers = new_optimizers;
-        update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
-        update_handler.run_workers(update_receiver);
-        self.update_sender.load().send(UpdateSignal::Nop)?;
-
-        Ok(())
+        request: Arc<SearchRequest>,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        segment_searcher
+            .search(self.segments(), request.clone(), search_runtime_handle)
+            .await
     }
 
-    pub async fn stop_flush_worker(&self) {
-        let mut update_handler = self.update_handler.lock().await;
-        update_handler.stop_flush_worker()
-    }
-
-    pub async fn wait_update_workers_stop(&self) -> CollectionResult<()> {
-        let mut update_handler = self.update_handler.lock().await;
-        update_handler.wait_workers_stops().await
-    }
-
-    /// Loads latest collection operations from WAL
-    pub async fn load_from_wal(&self) {
-        let wal = self.wal.lock().await;
-        let bar = ProgressBar::new(wal.len());
-        bar.set_message("Recovering collection");
-        let segments = self.segments();
-        // ToDo: Start from minimal applied version
-        for (op_num, update) in wal.read_all() {
-            // Panic only in case of internal error. If wrong formatting - skip
-            if let Err(CollectionError::ServiceError { error }) =
-                CollectionUpdater::update(segments, op_num, update)
-            {
-                panic!("Can't apply WAL operation: {}", error)
-            }
-            bar.inc(1);
-        }
-
-        self.segments.read().flush_all().unwrap();
-        bar.finish();
-    }
-
-    pub async fn before_drop(&mut self) {
-        // Finishes update tasks right before destructor stuck to do so with runtime
-        self.update_sender.load().send(UpdateSignal::Stop).unwrap();
-
-        self.stop_flush_worker().await;
-
-        self.wait_update_workers_stop().await.unwrap();
-
-        match self.runtime_handle.take() {
-            None => {}
-            Some(handle) => {
-                // The drop could be called from the tokio context, e.g. from perform_collection_operation method.
-                // Calling remove from there would lead to the following error in a new version of tokio:
-                // "Cannot drop a runtime in a context where blocking is not allowed. This happens when a runtime is dropped from within an asynchronous context."
-                // So the workaround for move out the runtime handler and drop it in the separate thread.
-                // The proper solution is to reconsider the collection to be an owner of the runtime
-
-                let thread_handler = thread::Builder::new()
-                    .name("collection_drop".to_string())
-                    .spawn(move || drop(handle))
-                    .unwrap();
-                thread_handler.join().unwrap();
-            }
-        }
-
-        self.before_drop_called = true;
+    async fn retrieve(
+        &self,
+        request: Arc<PointRequest>,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        with_payload: &WithPayload,
+        with_vector: bool,
+    ) -> CollectionResult<Vec<Record>> {
+        segment_searcher
+            .retrieve(self.segments(), &request.ids, with_payload, with_vector)
+            .await
     }
 }
 
-impl Drop for Shard {
+impl Drop for LocalShard {
     fn drop(&mut self) {
         if !self.before_drop_called {
             // Panic is used to get fast feedback in unit and integration tests

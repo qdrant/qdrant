@@ -6,54 +6,7 @@ option java_outer_classname = "QdrantProto";
 
 package qdrant;
 
-service Points {
-  /*
-  Perform insert + updates on points. If point with given ID already exists - it will be overwritten.
-   */
-  rpc Upsert (UpsertPoints) returns (PointsOperationResponse) {}
-  /*
-  Delete points
-   */
-  rpc Delete (DeletePoints) returns (PointsOperationResponse) {}
-  /*
-  Retrieve points
-   */
-  rpc Get (GetPoints) returns (GetResponse) {}
-  /*
-  Set payload for points
-   */
-  rpc SetPayload (SetPayloadPoints) returns (PointsOperationResponse) {}
-  /*
-  Delete specified key payload for points
-   */
-  rpc DeletePayload (DeletePayloadPoints) returns (PointsOperationResponse) {}
-  /*
-  Remove all payload for specified points
-   */
-  rpc ClearPayload (ClearPayloadPoints) returns (PointsOperationResponse) {}
-  /*
-  Create index for field in collection
-   */
-  rpc CreateFieldIndex (CreateFieldIndexCollection) returns (PointsOperationResponse) {}
-  /*
-  Delete field index for collection
-   */
-  rpc DeleteFieldIndex (DeleteFieldIndexCollection) returns (PointsOperationResponse) {}
-  /*
-  Retrieve closest points based on vector similarity and given filtering conditions
-   */
-  rpc Search (SearchPoints) returns (SearchResponse) {}
-  /*
-  Iterate over all or filtered points points
-  */
-  rpc Scroll (ScrollPoints) returns (ScrollResponse) {}
-  /*
-  Look for the points which are closer to stored positive examples and at the same time further to negative examples.
-   */
-  rpc Recommend (RecommendPoints) returns (RecommendResponse) {}
-
-
-}
+import "google/protobuf/struct.proto";
 
 // ---------------------------------------------
 // ------------- Point Id Requests -------------
@@ -93,7 +46,7 @@ message GetPoints {
 message SetPayloadPoints {
   string collection_name = 1; // name of the collection
   optional bool wait = 2; // Wait until the changes have been applied?
-  map<string, Payload> payload = 3; // New payload values
+  map<string, google.protobuf.Value> payload = 3; // New payload values
   repeated PointId points = 4; // List of point to modify
 }
 
@@ -110,10 +63,18 @@ message ClearPayloadPoints {
   PointsSelector points = 3; // Affected points
 }
 
+enum FieldType {
+  FieldTypeKeyword = 0;
+  FieldTypeInteger = 1;
+  FieldTypeFloat = 2;
+  FieldTypeGeo = 3;
+}
+
 message CreateFieldIndexCollection {
   string collection_name = 1; // name of the collection
   optional bool wait = 2; // Wait until the changes have been applied?
   string field_name = 3; // Field name to index
+  optional FieldType field_type = 4; // Field type.
 }
 
 message DeleteFieldIndexCollection {
@@ -200,7 +161,7 @@ enum UpdateStatus {
 
 message ScoredPoint {
   PointId id = 1; // Point id
-  map<string, Payload> payload = 2; // Payload
+  map<string, google.protobuf.Value> payload = 2; // Payload
   float score = 3; // Similarity score
   repeated float vector = 4; // Vector
   uint64 version = 5; // Last update operation applied to this point
@@ -219,7 +180,7 @@ message ScrollResponse {
 
 message RetrievedPoint {
   PointId id = 1;
-  map<string, Payload> payload = 2;
+  map<string, google.protobuf.Value> payload = 2;
   repeated float vector = 3;
 }
 
@@ -246,9 +207,14 @@ message Filter {
 message Condition {
   oneof condition_one_of {
     FieldCondition field = 1;
-    HasIdCondition hasId = 2;
-    Filter filter = 3;
+    IsEmptyCondition isEmpty = 2;
+    HasIdCondition hasId = 3;
+    Filter filter = 4;
   }
+}
+
+message IsEmptyCondition {
+  string key = 1;
 }
 
 message HasIdCondition {
@@ -261,12 +227,14 @@ message FieldCondition {
   Range range = 3; // Check if points value lies in a given range
   GeoBoundingBox geo_bounding_box = 4; // Check if points geo location lies in a given area
   GeoRadius geo_radius = 5; // Check if geo point is within a given radius
+  ValuesCount values_count = 6; // Check number of values for a specific field
 }
 
 message Match {
   oneof match_value {
     string keyword = 1; // Match string keyword
     int64 integer = 2; // Match integer
+    bool boolean = 3; // Match boolean
   }
 }
 
@@ -285,6 +253,13 @@ message GeoBoundingBox {
 message GeoRadius {
   GeoPoint center = 1; // Center of the circle
   float radius = 2; // In meters
+}
+
+message ValuesCount {
+  optional uint64 lt = 1;
+  optional uint64 gt = 2;
+  optional uint64 gte = 3;
+  optional uint64 lte = 4;
 }
 
 // ---------------------------------------------
@@ -310,38 +285,9 @@ message PointsIdsList {
 message PointStruct {
   PointId id = 1;
   repeated float vector = 2;
-  map<string, Payload> payload = 3;
+  map<string, google.protobuf.Value> payload = 3;
 }
 
-
-// ---------------------------------------------
-// ------------------ Payload ------------------
-// ---------------------------------------------
-
-message Payload {
-  oneof payload_one_of {
-    KeywordPayload keyword = 1;
-    IntegerPayload integer = 2;
-    FloatPayload float = 3;
-    GeoPayload geo = 4;
-  }
-}
-
-message KeywordPayload {
-  repeated string values = 1;
-}
-
-message IntegerPayload {
-  repeated int64 values = 1;
-}
-
-message FloatPayload {
-  repeated double values = 1;
-}
-
-message GeoPayload {
-  repeated GeoPoint values = 1;
-}
 
 message GeoPoint {
   double lon = 1;

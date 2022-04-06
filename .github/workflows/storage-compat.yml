@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: sudo apt-get install clang libopenblas-dev libgfortran-10-dev gfortran git-lfs
+        run: sudo apt-get install clang git-lfs
       - name: Setup git-lfs
         run: git lfs install
       - name: Install minimal stable
@@ -24,7 +24,7 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v1
       - name: Run storage compatibility test
         run: |

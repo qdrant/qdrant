@@ -30,7 +30,7 @@ fn combine_must_estimations(
         .map(|x| (x.exp as f64) / (total as f64))
         .product();
 
-    let exp_estimation = (exp_estimation_prob * (total as f64)) as usize;
+    let exp_estimation = (exp_estimation_prob * (total as f64)).round() as usize;
 
     let clauses = estimations
         .iter()
@@ -124,7 +124,7 @@ where
         .map(|x| (total - x.exp) as f64 / (total as f64))
         .product();
     let element_hit_prob = 1.0 - element_not_hit_prob;
-    let expected_count = (element_hit_prob * (total as f64)) as usize;
+    let expected_count = (element_hit_prob * (total as f64)).round() as usize;
     CardinalityEstimation {
         primary_clauses: clauses,
         min: should_estimations.iter().map(|x| x.min).max().unwrap_or(0),
@@ -184,6 +184,7 @@ mod tests {
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
+            values_count: None,
         })
     }
 
@@ -223,6 +224,12 @@ mod tests {
                 exp: has_id.has_id.len(),
                 max: has_id.has_id.len(),
             },
+            Condition::IsEmpty(condition) => CardinalityEstimation {
+                primary_clauses: vec![PrimaryCondition::IsEmpty(condition.to_owned())],
+                min: 0,
+                exp: TOTAL / 2,
+                max: TOTAL,
+            },
         }
     }
 
@@ -251,6 +258,7 @@ mod tests {
         match &estimation.primary_clauses[0] {
             PrimaryCondition::Condition(field) => assert_eq!(&field.key, "size"),
             PrimaryCondition::Ids(_) => panic!(),
+            PrimaryCondition::IsEmpty(_) => panic!(),
         }
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);
@@ -363,9 +371,22 @@ mod tests {
                 assert!(vec!["price".to_owned(), "size".to_owned(),].contains(&field.key))
             }
             PrimaryCondition::Ids(_) => panic!("Should not go here"),
+            PrimaryCondition::IsEmpty(_) => panic!("Should not go here"),
         });
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);
         assert!(estimation.min <= estimation.exp);
+    }
+    #[test]
+    fn test_combine_must_estimations() {
+        let estimations = vec![CardinalityEstimation {
+            primary_clauses: vec![],
+            min: 12,
+            exp: 12,
+            max: 12,
+        }];
+
+        let res = combine_must_estimations(&estimations, 10_000);
+        eprintln!("res = {:#?}", res);
     }
 }

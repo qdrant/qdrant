@@ -20,10 +20,10 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v1
       - name: Install dependencies
-        run: sudo apt-get install clang libopenblas-dev libgfortran-10-dev gfortran
+        run: sudo apt-get install clang
       - name: Build
         run: cargo build
       - name: Run integration tests

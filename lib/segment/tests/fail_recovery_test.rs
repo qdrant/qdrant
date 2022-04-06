@@ -4,7 +4,7 @@ mod fixtures;
 mod tests {
     use crate::fixtures::segment::empty_segment;
     use segment::entry::entry_point::{OperationError, SegmentEntry, SegmentFailedState};
-    use segment::types::PayloadType;
+    use serde_json::json;
     use tempdir::TempDir;
 
     #[test]
@@ -28,8 +28,7 @@ mod tests {
         let fail_res = segment.set_payload(
             3,
             1.into(),
-            "color",
-            PayloadType::Keyword(vec!["red".to_string()]),
+            &json!({ "color": vec!["red".to_string()] }).into(),
         );
         assert!(fail_res.is_err());
 
@@ -37,8 +36,7 @@ mod tests {
         let fail_res = segment.set_payload(
             3,
             2.into(),
-            "color",
-            PayloadType::Keyword(vec!["red".to_string()]),
+            &json!({ "color": vec!["red".to_string()] }).into(),
         );
         assert!(fail_res.is_err());
 
@@ -46,8 +44,7 @@ mod tests {
         let ok_res = segment.set_payload(
             2,
             2.into(),
-            "color",
-            PayloadType::Keyword(vec!["red".to_string()]),
+            &json!({ "color": vec!["red".to_string()] }).into(),
         );
         assert!(ok_res.is_ok());
         assert!(segment.error_status.is_some());
@@ -56,8 +53,7 @@ mod tests {
         let recover_res = segment.set_payload(
             2,
             1.into(),
-            "color",
-            PayloadType::Keyword(vec!["red".to_string()]),
+            &json!({ "color": vec!["red".to_string()] }).into(),
         );
 
         assert!(recover_res.is_ok());

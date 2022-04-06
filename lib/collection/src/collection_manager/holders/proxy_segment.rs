@@ -5,16 +5,17 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 use parking_lot::RwLock;
 use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
 use segment::types::{
-    Condition, Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType, ScoredPoint,
-    SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap,
+    Condition, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
     VectorElementType, WithPayload,
 };
 use std::cmp::max;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 type LockedRmSet = Arc<RwLock<HashSet<PointIdType>>>;
 type LockedFieldsSet = Arc<RwLock<HashSet<PayloadKeyType>>>;
+type LockedFieldsMap = Arc<RwLock<HashMap<PayloadKeyType, PayloadSchemaType>>>;
 
 /// This object is a wrapper around read-only segment.
 /// It could be used to provide all read and write operations while wrapped segment is being optimized (i.e. not available for writing)
@@ -25,7 +26,7 @@ pub struct ProxySegment {
     /// Points which should not longer used from wrapped_segment
     deleted_points: LockedRmSet,
     deleted_indexes: LockedFieldsSet,
-    created_indexes: LockedFieldsSet,
+    created_indexes: LockedFieldsMap,
     last_flushed_version: Arc<RwLock<Option<SeqNumberType>>>,
 }
 
@@ -34,7 +35,7 @@ impl ProxySegment {
         segment: LockedSegment,
         write_segment: LockedSegment,
         deleted_points: LockedRmSet,
-        created_indexes: LockedFieldsSet,
+        created_indexes: LockedFieldsMap,
         deleted_indexes: LockedFieldsSet,
     ) -> Self {
         ProxySegment {
@@ -62,7 +63,7 @@ impl ProxySegment {
         let mut write_segment = segment_arc.write();
 
         write_segment.upsert_point(op_num, point_id, &vector)?;
-        write_segment.set_full_payload(op_num, point_id, payload)?;
+        write_segment.set_full_payload(op_num, point_id, &payload)?;
 
         Ok(true)
     }
@@ -216,7 +217,7 @@ impl SegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        full_payload: TheMap<PayloadKeyType, PayloadType>,
+        full_payload: &Payload,
     ) -> OperationResult<bool> {
         self.move_if_exists(op_num, point_id)?;
         self.write_segment
@@ -226,32 +227,17 @@ impl SegmentEntry for ProxySegment {
     }
 
     #[trace]
-    fn set_full_payload_with_json(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        full_payload: &str,
-    ) -> OperationResult<bool> {
-        self.move_if_exists(op_num, point_id)?;
-        self.write_segment
-            .get()
-            .write()
-            .set_full_payload_with_json(op_num, point_id, full_payload)
-    }
-
-    #[trace]
     fn set_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        key: PayloadKeyTypeRef,
-        payload: PayloadType,
+        payload: &Payload,
     ) -> OperationResult<bool> {
         self.move_if_exists(op_num, point_id)?;
         self.write_segment
             .get()
             .write()
-            .set_payload(op_num, point_id, key, payload)
+            .set_payload(op_num, point_id, payload)
     }
 
     #[trace]
@@ -298,10 +284,7 @@ impl SegmentEntry for ProxySegment {
     }
 
     #[trace]
-    fn payload(
-        &self,
-        point_id: PointIdType,
-    ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>> {
+    fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment.get().read().payload(point_id)
         } else {
@@ -393,7 +376,7 @@ impl SegmentEntry for ProxySegment {
             ram_usage_bytes: wrapped_info.ram_usage_bytes + write_info.ram_usage_bytes,
             disk_usage_bytes: wrapped_info.disk_usage_bytes + write_info.disk_usage_bytes,
             is_appendable: false,
-            schema: wrapped_info.schema,
+            index_schema: wrapped_info.index_schema,
         }
     }
 
@@ -451,25 +434,47 @@ impl SegmentEntry for ProxySegment {
     }
 
     #[trace]
-    fn create_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
+    fn create_field_index(
+        &mut self,
+        op_num: u64,
+        key: PayloadKeyTypeRef,
+        field_type: &Option<PayloadSchemaType>,
+    ) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);
         }
-        self.created_indexes.write().insert(key.into());
-        self.deleted_indexes.write().remove(key);
+
         self.write_segment
             .get()
             .write()
-            .create_field_index(op_num, key)
+            .create_field_index(op_num, key, field_type)?;
+        let indexed_fields = self.write_segment.get().read().get_indexed_fields();
+
+        let schema_type = match indexed_fields.get(key) {
+            Some(schema_type) => schema_type,
+            None => return Ok(false),
+        };
+
+        self.created_indexes
+            .write()
+            .insert(key.into(), schema_type.to_owned());
+        self.deleted_indexes.write().remove(key);
+
+        Ok(true)
     }
 
     #[trace]
-    fn get_indexed_fields(&self) -> Vec<PayloadKeyType> {
+    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType> {
         let indexed_fields = self.wrapped_segment.get().read().get_indexed_fields();
         indexed_fields
             .into_iter()
-            .chain(self.created_indexes.read().iter().cloned())
-            .filter(|x| !self.deleted_indexes.read().contains(x))
+            .chain(
+                self.created_indexes
+                    .read()
+                    .iter()
+                    .map(|(k, v)| (k.to_owned(), v.to_owned())),
+            )
+            .filter(|(key, _)| !self.deleted_indexes.read().contains(key))
             .collect()
     }
 
@@ -477,6 +482,7 @@ impl SegmentEntry for ProxySegment {
         self.write_segment.get().read().check_error()
     }
 
+    #[trace]
     fn delete_filtered<'a>(
         &'a mut self,
         op_num: SeqNumberType,
@@ -504,7 +510,9 @@ mod tests {
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let created_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+        let created_indexes = Arc::new(RwLock::new(
+            HashMap::<PayloadKeyType, PayloadSchemaType>::new(),
+        ));
 
         let mut proxy_segment = ProxySegment::new(
             original_segment,
@@ -561,13 +569,10 @@ mod tests {
         let dir = TempDir::new("segment_dir").unwrap();
         let original_segment = LockedSegment::new(build_segment_1(dir.path()));
 
-        let filter = Filter::new_must_not(Condition::Field(FieldCondition {
-            key: "color".to_string(),
-            r#match: Some("blue".to_string().into()),
-            range: None,
-            geo_bounding_box: None,
-            geo_radius: None,
-        }));
+        let filter = Filter::new_must_not(Condition::Field(FieldCondition::new_match(
+            "color".to_string(),
+            "blue".to_string().into(),
+        )));
 
         let original_points = original_segment.get().read().read_filtered(None, 100, None);
 
@@ -581,7 +586,9 @@ mod tests {
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let created_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+        let created_indexes = Arc::new(RwLock::new(
+            HashMap::<PayloadKeyType, PayloadSchemaType>::new(),
+        ));
 
         let mut proxy_segment = ProxySegment::new(
             original_segment,

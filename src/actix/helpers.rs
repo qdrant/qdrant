@@ -1,9 +1,8 @@
 extern crate profiler_proc_macro;
 use profiler_proc_macro::trace;
-
-use crate::common::models::{ApiResponse, ApiStatus};
 use actix_web::rt::time::Instant;
 use actix_web::{HttpResponse, Responder};
+use api::grpc::models::{ApiResponse, ApiStatus};
 use serde::Serialize;
 use std::fmt::Debug;
 use storage::content_manager::errors::StorageError;

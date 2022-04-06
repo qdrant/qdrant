@@ -2,16 +2,16 @@ mod prof;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
-use segment::types::{PayloadInterface, PayloadInterfaceStrict, PayloadVariant};
+use segment::types::Payload;
+use serde_json::json;
 
 fn serde_formats_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("serde-formats-group");
 
     let payloads = (0..1000)
         .map(|x| {
-            PayloadInterface::Payload(PayloadInterfaceStrict::Keyword(PayloadVariant::Value(
-                format!("val_{}", x),
-            )))
+            let payload: Payload = json!({"val":format!("val_{}", x),}).into();
+            payload
         })
         .collect_vec();
 
@@ -37,7 +37,7 @@ fn serde_formats_bench(c: &mut Criterion) {
     group.bench_function("serde-deserialize-cbor", |b| {
         b.iter(|| {
             for bytes in &cbor_bytes {
-                let _payload: PayloadInterface = serde_cbor::from_slice(bytes).unwrap();
+                let _payload: Payload = serde_cbor::from_slice(bytes).unwrap();
             }
         });
     });
@@ -54,7 +54,7 @@ fn serde_formats_bench(c: &mut Criterion) {
     group.bench_function("serde-deserialize-rmp", |b| {
         b.iter(|| {
             for bytes in &rmp_bytes {
-                let _payload: PayloadInterface = rmp_serde::from_read_ref(bytes).unwrap();
+                let _payload: Payload = rmp_serde::from_read_ref(bytes).unwrap();
             }
         });
     });

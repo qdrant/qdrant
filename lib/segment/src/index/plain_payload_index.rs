@@ -1,11 +1,14 @@
 extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::index::{PayloadIndex, PayloadIndexSS, VectorIndex};
-use crate::payload_storage::ConditionCheckerSS;
+use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::types::{
-    Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType, SearchParams, VectorElementType,
+    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType, SearchParams,
+    VectorElementType,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
-use profiler_proc_macro::trace;
+use std::collections::HashMap;
 
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
@@ -68,28 +71,31 @@ impl PlainPayloadIndex {
 
 impl PayloadIndex for PlainPayloadIndex {
     #[trace]
-    fn indexed_fields(&self) -> Vec<PayloadKeyType> {
+    fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType> {
         self.config.indexed_fields.clone()
     }
 
     #[trace]
-    fn set_indexed(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        if !self.config.indexed_fields.iter().any(|x| x == field) {
-            self.config.indexed_fields.push(field.into());
+    fn set_indexed(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        payload_type: PayloadSchemaType,
+    ) -> OperationResult<()> {
+        if self
+            .config
+            .indexed_fields
+            .insert(field.to_owned(), payload_type)
+            .is_none()
+        {
             return self.save_config();
         }
+
         Ok(())
     }
 
     #[trace]
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        self.config.indexed_fields = self
-            .config
-            .indexed_fields
-            .iter()
-            .cloned()
-            .filter(|x| x != field)
-            .collect();
+        self.config.indexed_fields.remove(field);
         self.save_config()
     }
 
@@ -119,6 +125,13 @@ impl PayloadIndex for PlainPayloadIndex {
     }
 
     #[trace]
+    fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
+        Box::new(PlainFilterContext {
+            filter,
+            condition_checker: self.condition_checker.clone(),
+        })
+    }
+
     fn payload_blocks(
         &self,
         _field: PayloadKeyTypeRef,
@@ -169,5 +182,16 @@ impl VectorIndex for PlainIndex {
 
     fn build_index(&mut self, _stopped: &AtomicBool) -> OperationResult<()> {
         Ok(())
+    }
+}
+
+pub struct PlainFilterContext<'a> {
+    condition_checker: Arc<ConditionCheckerSS>,
+    filter: &'a Filter,
+}
+
+impl<'a> FilterContext for PlainFilterContext<'a> {
+    fn check(&self, point_id: PointOffsetType) -> bool {
+        self.condition_checker.check(point_id, self.filter)
     }
 }

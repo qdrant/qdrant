@@ -9,11 +9,9 @@ use crate::collection_manager::optimizers::segment_optimizer::{
 };
 use crate::config::CollectionParams;
 use ordered_float::OrderedFloat;
-use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::types::{HnswConfig, SegmentType};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 /// Optimizer which looks for segments with hig amount of soft-deleted points.
 /// Used to free up space.
@@ -25,7 +23,6 @@ pub struct VacuumOptimizer {
     collection_temp_dir: PathBuf,
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
-    schema_store: Arc<SchemaStorage>,
 }
 
 impl VacuumOptimizer {
@@ -38,7 +35,6 @@ impl VacuumOptimizer {
         collection_temp_dir: PathBuf,
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
-        schema_store: Arc<SchemaStorage>,
     ) -> Self {
         VacuumOptimizer {
             deleted_threshold,
@@ -48,7 +44,6 @@ impl VacuumOptimizer {
             collection_temp_dir,
             collection_params,
             hnsw_config,
-            schema_store,
         }
     }
 
@@ -118,10 +113,6 @@ impl SegmentOptimizer for VacuumOptimizer {
             Some((segment_id, _segment)) => vec![segment_id],
         }
     }
-
-    fn schema_store(&self) -> Arc<SchemaStorage> {
-        self.schema_store.clone()
-    }
 }
 
 #[cfg(test)]
@@ -132,7 +123,9 @@ mod tests {
     use itertools::Itertools;
     use parking_lot::RwLock;
     use rand::Rng;
-    use segment::types::{Distance, PayloadType};
+    use segment::types::Distance;
+    use serde_json::json;
+    use serde_json::Value;
     use std::num::NonZeroU32;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
@@ -183,12 +176,7 @@ mod tests {
             segment
                 .get()
                 .write()
-                .set_payload(
-                    102,
-                    point_id,
-                    "color",
-                    PayloadType::Keyword(vec!["red".to_string()]),
-                )
+                .set_payload(102, point_id, &json!({ "color": "red" }).into())
                 .unwrap();
         }
 
@@ -196,7 +184,7 @@ mod tests {
             segment
                 .get()
                 .write()
-                .set_payload(102, point_id, "size", PayloadType::Float(vec![0.42]))
+                .set_payload(102, point_id, &json!({"size":0.42}).into())
                 .unwrap();
         }
 
@@ -218,7 +206,6 @@ mod tests {
                 shard_number: NonZeroU32::new(1).unwrap(),
             },
             Default::default(),
-            Arc::new(SchemaStorage::new()),
         );
 
         let suggested_to_optimize =
@@ -260,12 +247,12 @@ mod tests {
             let payload = segment_guard
                 .payload(point_id)
                 .unwrap()
-                .get("color")
+                .get_value("color")
                 .unwrap()
                 .clone();
 
             match payload {
-                PayloadType::Keyword(x) => assert_eq!(x[0], "red"),
+                Value::String(x) => assert_eq!(x, "red"),
                 _ => panic!(),
             }
         }

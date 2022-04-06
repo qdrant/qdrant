@@ -1,6 +1,7 @@
 extern crate profiler_proc_macro;
 use profiler_proc_macro::trace;
 
+use crate::index::field_index::geo_index::PersistedGeoMapIndex;
 use crate::index::field_index::map_index::PersistedMapIndex;
 use crate::index::field_index::numeric_index::PersistedNumericIndex;
 use crate::index::field_index::PayloadFieldIndexBuilder;
@@ -20,6 +21,6 @@ pub fn index_selector(payload_type: &PayloadSchemaType) -> Vec<Box<dyn PayloadFi
                 PersistedNumericIndex::<FloatPayloadType>::default(),
             )]
         }
-        PayloadSchemaType::Geo => vec![],
+        PayloadSchemaType::Geo => vec![Box::new(PersistedGeoMapIndex::default())],
     }
 }

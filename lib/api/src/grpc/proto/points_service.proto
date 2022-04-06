@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+import "points.proto";
+
+option java_multiple_files = true;
+option java_package = "tech.qdrant.grpc";
+option java_outer_classname = "QdrantProto";
+
+package qdrant;
+
+import "google/protobuf/struct.proto";
+
+service Points {
+  /*
+  Perform insert + updates on points. If point with given ID already exists - it will be overwritten.
+   */
+  rpc Upsert (UpsertPoints) returns (PointsOperationResponse) {}
+  /*
+  Delete points
+   */
+  rpc Delete (DeletePoints) returns (PointsOperationResponse) {}
+  /*
+  Retrieve points
+   */
+  rpc Get (GetPoints) returns (GetResponse) {}
+  /*
+  Set payload for points
+   */
+  rpc SetPayload (SetPayloadPoints) returns (PointsOperationResponse) {}
+  /*
+  Delete specified key payload for points
+   */
+  rpc DeletePayload (DeletePayloadPoints) returns (PointsOperationResponse) {}
+  /*
+  Remove all payload for specified points
+   */
+  rpc ClearPayload (ClearPayloadPoints) returns (PointsOperationResponse) {}
+  /*
+  Create index for field in collection
+   */
+  rpc CreateFieldIndex (CreateFieldIndexCollection) returns (PointsOperationResponse) {}
+  /*
+  Delete field index for collection
+   */
+  rpc DeleteFieldIndex (DeleteFieldIndexCollection) returns (PointsOperationResponse) {}
+  /*
+  Retrieve closest points based on vector similarity and given filtering conditions
+   */
+  rpc Search (SearchPoints) returns (SearchResponse) {}
+  /*
+  Iterate over all or filtered points points
+  */
+  rpc Scroll (ScrollPoints) returns (ScrollResponse) {}
+  /*
+  Look for the points which are closer to stored positive examples and at the same time further to negative examples.
+   */
+  rpc Recommend (RecommendPoints) returns (RecommendResponse) {}
+
+
+}

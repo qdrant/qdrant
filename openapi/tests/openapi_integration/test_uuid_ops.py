@@ -24,12 +24,12 @@ def test_uuid_operations():
                 {
                     "id": "b524a3c4-c568-4383-8019-c9ca08243d6a",
                     "vector": [0.15, 0.21, 0.96, 0.04],
-                    "payload": {"city": {"type": "keyword", "value": "Berlin"}}
+                    "payload": {"city": "Berlin"}
                 },
                 {
                     "id": "1d675313-d3dd-4646-8b98-8052364872da",
                     "vector": [0.19, 0.81, 0.75, 0.11],
-                    "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"]}}
+                    "payload": {"city": ["Berlin", "London"]}
                 }
             ]
         }

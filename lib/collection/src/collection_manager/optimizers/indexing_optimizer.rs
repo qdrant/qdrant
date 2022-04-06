@@ -3,9 +3,7 @@ use profiler_proc_macro::trace;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::types::{HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType};
 
 use crate::collection_manager::holders::segment_holder::{
@@ -26,7 +24,6 @@ pub struct IndexingOptimizer {
     collection_temp_dir: PathBuf,
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
-    schema_store: Arc<SchemaStorage>,
 }
 
 impl IndexingOptimizer {
@@ -36,7 +33,6 @@ impl IndexingOptimizer {
         collection_temp_dir: PathBuf,
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
-        schema_store: Arc<SchemaStorage>,
     ) -> Self {
         IndexingOptimizer {
             thresholds_config,
@@ -44,7 +40,6 @@ impl IndexingOptimizer {
             collection_temp_dir,
             collection_params,
             hnsw_config,
-            schema_store,
         }
     }
 
@@ -141,10 +136,6 @@ impl SegmentOptimizer for IndexingOptimizer {
             Some((segment_id, _segment)) => vec![segment_id],
         }
     }
-
-    fn schema_store(&self) -> Arc<SchemaStorage> {
-        self.schema_store.clone()
-    }
 }
 
 #[cfg(test)]
@@ -156,9 +147,10 @@ mod tests {
 
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
+    use serde_json::json;
     use tempdir::TempDir;
 
-    use segment::types::StorageType;
+    use segment::types::{Payload, PayloadSchemaType, StorageType};
 
     use crate::collection_manager::fixtures::random_segment;
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
@@ -168,7 +160,7 @@ mod tests {
     use crate::operations::point_ops::{
         Batch, PointInsertOperations, PointOperations, PointsBatch,
     };
-    use crate::operations::FieldIndexOperations;
+    use crate::operations::{CreateIndex, FieldIndexOperations};
 
     use super::*;
 
@@ -215,7 +207,6 @@ mod tests {
                 shard_number: NonZeroU32::new(1).unwrap(),
             },
             Default::default(),
-            Arc::new(SchemaStorage::new()),
         );
 
         let locked_holder = Arc::new(RwLock::new(holder));
@@ -238,7 +229,10 @@ mod tests {
         process_field_index_operation(
             locked_holder.deref(),
             opnum.next().unwrap(),
-            &FieldIndexOperations::CreateIndex(payload_field.clone()),
+            &FieldIndexOperations::CreateIndex(CreateIndex {
+                field_name: payload_field.to_owned(),
+                field_type: Some(PayloadSchemaType::Integer),
+            }),
         )
         .unwrap();
 
@@ -309,15 +303,17 @@ mod tests {
 
         for info in &infos {
             assert!(
-                info.schema.contains_key(&payload_field),
+                info.index_schema.contains_key(&payload_field),
                 "Testing that payload is not lost"
             );
-            assert!(
-                info.schema[&payload_field].indexed,
-                "Testing that payload index is not lost"
+            assert_eq!(
+                info.index_schema[&payload_field].data_type,
+                PayloadSchemaType::Integer,
+                "Testing that payload type is not lost"
             );
         }
 
+        let point_payload: Payload = json!({"number":10000i64}).into();
         let insert_point_ops =
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
                 batch: Batch {
@@ -327,7 +323,11 @@ mod tests {
                         vec![1.0, 0.0, 0.5, 0.5],
                         vec![1.0, 0.0, 0.5, 1.0],
                     ],
-                    payloads: None,
+                    payloads: Some(vec![
+                        Some(point_payload.clone()),
+                        Some(point_payload.clone()),
+                        Some(point_payload),
+                    ]),
                 },
             }));
 

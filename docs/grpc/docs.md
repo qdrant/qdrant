@@ -4,13 +4,17 @@
 ## Table of Contents
 
 - [collections.proto](#collections-proto)
+    - [AliasOperations](#qdrant-AliasOperations)
+    - [ChangeAliases](#qdrant-ChangeAliases)
     - [CollectionConfig](#qdrant-CollectionConfig)
     - [CollectionDescription](#qdrant-CollectionDescription)
     - [CollectionInfo](#qdrant-CollectionInfo)
     - [CollectionInfo.PayloadSchemaEntry](#qdrant-CollectionInfo-PayloadSchemaEntry)
     - [CollectionOperationResponse](#qdrant-CollectionOperationResponse)
     - [CollectionParams](#qdrant-CollectionParams)
+    - [CreateAlias](#qdrant-CreateAlias)
     - [CreateCollection](#qdrant-CreateCollection)
+    - [DeleteAlias](#qdrant-DeleteAlias)
     - [DeleteCollection](#qdrant-DeleteCollection)
     - [GetCollectionInfoRequest](#qdrant-GetCollectionInfoRequest)
     - [GetCollectionInfoResponse](#qdrant-GetCollectionInfoResponse)
@@ -20,6 +24,7 @@
     - [OptimizerStatus](#qdrant-OptimizerStatus)
     - [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff)
     - [PayloadSchemaInfo](#qdrant-PayloadSchemaInfo)
+    - [RenameAlias](#qdrant-RenameAlias)
     - [UpdateCollection](#qdrant-UpdateCollection)
     - [WalConfigDiff](#qdrant-WalConfigDiff)
   
@@ -27,6 +32,7 @@
     - [Distance](#qdrant-Distance)
     - [PayloadSchemaType](#qdrant-PayloadSchemaType)
   
+- [collections_service.proto](#collections_service-proto)
     - [Collections](#qdrant-Collections)
   
 - [points.proto](#points-proto)
@@ -38,18 +44,14 @@
     - [DeletePoints](#qdrant-DeletePoints)
     - [FieldCondition](#qdrant-FieldCondition)
     - [Filter](#qdrant-Filter)
-    - [FloatPayload](#qdrant-FloatPayload)
     - [GeoBoundingBox](#qdrant-GeoBoundingBox)
-    - [GeoPayload](#qdrant-GeoPayload)
     - [GeoPoint](#qdrant-GeoPoint)
     - [GeoRadius](#qdrant-GeoRadius)
     - [GetPoints](#qdrant-GetPoints)
     - [GetResponse](#qdrant-GetResponse)
     - [HasIdCondition](#qdrant-HasIdCondition)
-    - [IntegerPayload](#qdrant-IntegerPayload)
-    - [KeywordPayload](#qdrant-KeywordPayload)
+    - [IsEmptyCondition](#qdrant-IsEmptyCondition)
     - [Match](#qdrant-Match)
-    - [Payload](#qdrant-Payload)
     - [PayloadExcludeSelector](#qdrant-PayloadExcludeSelector)
     - [PayloadIncludeSelector](#qdrant-PayloadIncludeSelector)
     - [PointId](#qdrant-PointId)
@@ -74,10 +76,18 @@
     - [SetPayloadPoints.PayloadEntry](#qdrant-SetPayloadPoints-PayloadEntry)
     - [UpdateResult](#qdrant-UpdateResult)
     - [UpsertPoints](#qdrant-UpsertPoints)
+    - [ValuesCount](#qdrant-ValuesCount)
     - [WithPayloadSelector](#qdrant-WithPayloadSelector)
   
+    - [FieldType](#qdrant-FieldType)
     - [UpdateStatus](#qdrant-UpdateStatus)
   
+- [points_internal_service.proto](#points_internal_service-proto)
+    - [UpsertPointsInternal](#qdrant-UpsertPointsInternal)
+  
+    - [PointsInternal](#qdrant-PointsInternal)
+  
+- [points_service.proto](#points_service-proto)
     - [Points](#qdrant-Points)
   
 - [qdrant.proto](#qdrant-proto)
@@ -94,6 +104,38 @@
 <p align="right"><a href="#top">Top</a></p>
 
 ## collections.proto
+
+
+
+<a name="qdrant-AliasOperations"></a>
+
+### AliasOperations
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| create_alias | [CreateAlias](#qdrant-CreateAlias) |  |  |
+| rename_alias | [RenameAlias](#qdrant-RenameAlias) |  |  |
+| delete_alias | [DeleteAlias](#qdrant-DeleteAlias) |  |  |
+
+
+
+
+
+
+<a name="qdrant-ChangeAliases"></a>
+
+### ChangeAliases
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| actions | [AliasOperations](#qdrant-AliasOperations) | repeated | List of actions |
+
+
+
 
 
 
@@ -201,6 +243,22 @@
 
 
 
+<a name="qdrant-CreateAlias"></a>
+
+### CreateAlias
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| alias_name | [string](#string) |  | New name of the alias |
+
+
+
+
+
+
 <a name="qdrant-CreateCollection"></a>
 
 ### CreateCollection
@@ -216,6 +274,21 @@
 | wal_config | [WalConfigDiff](#qdrant-WalConfigDiff) | optional | Configuration of the Write-Ahead-Log |
 | optimizers_config | [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff) | optional | Configuration of the optimizers |
 | shard_number | [uint32](#uint32) | optional | Number of shards in the collection, default = 1 |
+
+
+
+
+
+
+<a name="qdrant-DeleteAlias"></a>
+
+### DeleteAlias
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| alias_name | [string](#string) |  | Name of the alias |
 
 
 
@@ -365,7 +438,22 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | data_type | [PayloadSchemaType](#qdrant-PayloadSchemaType) |  | Field data type |
-| indexed | [bool](#bool) |  | If this field is indexed |
+
+
+
+
+
+
+<a name="qdrant-RenameAlias"></a>
+
+### RenameAlias
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| old_alias_name | [string](#string) |  | Name of the alias to rename |
+| new_alias_name | [string](#string) |  | Name of the alias |
 
 
 
@@ -452,6 +540,22 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
  
 
+ 
+
+
+
+<a name="collections_service-proto"></a>
+<p align="right"><a href="#top">Top</a></p>
+
+## collections_service.proto
+
+
+ 
+
+ 
+
+ 
+
 
 <a name="qdrant-Collections"></a>
 
@@ -465,6 +569,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Create | [CreateCollection](#qdrant-CreateCollection) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Create new collection with given parameters |
 | Update | [UpdateCollection](#qdrant-UpdateCollection) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Update parameters of the existing collection |
 | Delete | [DeleteCollection](#qdrant-DeleteCollection) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Drop collection and all associated data |
+| UpdateAliases | [ChangeAliases](#qdrant-ChangeAliases) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Update Aliases of the existing collection |
 
  
 
@@ -503,6 +608,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | field | [FieldCondition](#qdrant-FieldCondition) |  |  |
+| isEmpty | [IsEmptyCondition](#qdrant-IsEmptyCondition) |  |  |
 | hasId | [HasIdCondition](#qdrant-HasIdCondition) |  |  |
 | filter | [Filter](#qdrant-Filter) |  |  |
 
@@ -522,6 +628,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | collection_name | [string](#string) |  | name of the collection |
 | wait | [bool](#bool) | optional | Wait until the changes have been applied? |
 | field_name | [string](#string) |  | Field name to index |
+| field_type | [FieldType](#qdrant-FieldType) | optional | Field type. |
 
 
 
@@ -593,6 +700,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | range | [Range](#qdrant-Range) |  | Check if points value lies in a given range |
 | geo_bounding_box | [GeoBoundingBox](#qdrant-GeoBoundingBox) |  | Check if points geo location lies in a given area |
 | geo_radius | [GeoRadius](#qdrant-GeoRadius) |  | Check if geo point is within a given radius |
+| values_count | [ValuesCount](#qdrant-ValuesCount) |  | Check number of values for a specific field |
 
 
 
@@ -616,21 +724,6 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 
 
-<a name="qdrant-FloatPayload"></a>
-
-### FloatPayload
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| values | [double](#double) | repeated |  |
-
-
-
-
-
-
 <a name="qdrant-GeoBoundingBox"></a>
 
 ### GeoBoundingBox
@@ -641,21 +734,6 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | ----- | ---- | ----- | ----------- |
 | top_left | [GeoPoint](#qdrant-GeoPoint) |  | north-west corner |
 | bottom_right | [GeoPoint](#qdrant-GeoPoint) |  | south-east corner |
-
-
-
-
-
-
-<a name="qdrant-GeoPayload"></a>
-
-### GeoPayload
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| values | [GeoPoint](#qdrant-GeoPoint) | repeated |  |
 
 
 
@@ -743,30 +821,15 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 
 
-<a name="qdrant-IntegerPayload"></a>
+<a name="qdrant-IsEmptyCondition"></a>
 
-### IntegerPayload
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| values | [int64](#int64) | repeated |  |
-
-
-
-
-
-
-<a name="qdrant-KeywordPayload"></a>
-
-### KeywordPayload
+### IsEmptyCondition
 
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| values | [string](#string) | repeated |  |
+| key | [string](#string) |  |  |
 
 
 
@@ -783,24 +846,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | ----- | ---- | ----- | ----------- |
 | keyword | [string](#string) |  | Match string keyword |
 | integer | [int64](#int64) |  | Match integer |
-
-
-
-
-
-
-<a name="qdrant-Payload"></a>
-
-### Payload
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| keyword | [KeywordPayload](#qdrant-KeywordPayload) |  |  |
-| integer | [IntegerPayload](#qdrant-IntegerPayload) |  |  |
-| float | [FloatPayload](#qdrant-FloatPayload) |  |  |
-| geo | [GeoPayload](#qdrant-GeoPayload) |  |  |
+| boolean | [bool](#bool) |  | Match boolean |
 
 
 
@@ -879,7 +925,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
-| value | [Payload](#qdrant-Payload) |  |  |
+| value | [google.protobuf.Value](#google-protobuf-Value) |  |  |
 
 
 
@@ -1015,7 +1061,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
-| value | [Payload](#qdrant-Payload) |  |  |
+| value | [google.protobuf.Value](#google-protobuf-Value) |  |  |
 
 
 
@@ -1050,7 +1096,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
-| value | [Payload](#qdrant-Payload) |  |  |
+| value | [google.protobuf.Value](#google-protobuf-Value) |  |  |
 
 
 
@@ -1173,7 +1219,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
-| value | [Payload](#qdrant-Payload) |  |  |
+| value | [google.protobuf.Value](#google-protobuf-Value) |  |  |
 
 
 
@@ -1213,6 +1259,24 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 
 
+<a name="qdrant-ValuesCount"></a>
+
+### ValuesCount
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| lt | [uint64](#uint64) | optional |  |
+| gt | [uint64](#uint64) | optional |  |
+| gte | [uint64](#uint64) | optional |  |
+| lte | [uint64](#uint64) | optional |  |
+
+
+
+
+
+
 <a name="qdrant-WithPayloadSelector"></a>
 
 ### WithPayloadSelector
@@ -1232,6 +1296,20 @@ If indexation speed have more priority for your - make this parameter lower. If 
  
 
 
+<a name="qdrant-FieldType"></a>
+
+### FieldType
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| FieldTypeKeyword | 0 |  |
+| FieldTypeInteger | 1 |  |
+| FieldTypeFloat | 2 |  |
+| FieldTypeGeo | 3 |  |
+
+
+
 <a name="qdrant-UpdateStatus"></a>
 
 ### UpdateStatus
@@ -1243,6 +1321,64 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Acknowledged | 1 | Update is received, but not processed yet |
 | Completed | 2 | Update is applied and ready for search |
 
+
+ 
+
+ 
+
+ 
+
+
+
+<a name="points_internal_service-proto"></a>
+<p align="right"><a href="#top">Top</a></p>
+
+## points_internal_service.proto
+
+
+
+<a name="qdrant-UpsertPointsInternal"></a>
+
+### UpsertPointsInternal
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| upsert_points | [UpsertPoints](#qdrant-UpsertPoints) |  |  |
+| shard_id | [uint32](#uint32) |  |  |
+
+
+
+
+
+ 
+
+ 
+
+ 
+
+
+<a name="qdrant-PointsInternal"></a>
+
+### PointsInternal
+
+
+| Method Name | Request Type | Response Type | Description |
+| ----------- | ------------ | ------------- | ------------|
+| Upsert | [UpsertPointsInternal](#qdrant-UpsertPointsInternal) | [PointsOperationResponse](#qdrant-PointsOperationResponse) |  |
+
+ 
+
+
+
+<a name="points_service-proto"></a>
+<p align="right"><a href="#top">Top</a></p>
+
+## points_service.proto
+
+
+ 
 
  
 

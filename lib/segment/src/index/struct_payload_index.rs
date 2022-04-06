@@ -19,9 +19,10 @@ use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
-use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
+use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorageSS};
 use crate::types::{
-    Condition, FieldCondition, Filter, PayloadKeyType, PayloadKeyTypeRef, PointOffsetType,
+    Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType, PayloadKeyTypeRef,
+    PayloadSchemaType, PointOffsetType,
 };
 use crate::vector_storage::VectorStorageSS;
 
@@ -122,6 +123,7 @@ impl StructPayloadIndex {
     fn load_or_build_field_index(
         &self,
         field: PayloadKeyTypeRef,
+        payload_type: PayloadSchemaType,
     ) -> OperationResult<Vec<FieldIndex>> {
         let field_index_path = Self::get_field_index_path(&self.path, field);
         if field_index_path.exists() {
@@ -142,7 +144,7 @@ impl StructPayloadIndex {
                 field,
                 field_index_path.to_str().unwrap()
             );
-            let res = self.build_field_index(field)?;
+            let res = self.build_field_index(field, payload_type)?;
             self.save_field_index(field)?;
             Ok(res)
         }
@@ -151,8 +153,8 @@ impl StructPayloadIndex {
     #[trace]
     fn load_all_fields(&mut self) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
-        for field in &self.config.indexed_fields {
-            let field_index = self.load_or_build_field_index(field)?;
+        for (field, payload_type) in &self.config.indexed_fields {
+            let field_index = self.load_or_build_field_index(field, payload_type.to_owned())?;
             field_indexes.insert(field.clone(), field_index);
         }
         self.field_indexes = field_indexes;
@@ -197,30 +199,20 @@ impl StructPayloadIndex {
     }
 
     #[trace]
-    pub fn build_field_index(&self, field: PayloadKeyTypeRef) -> OperationResult<Vec<FieldIndex>> {
-        let payload_ref = self.payload.borrow();
-        let schema = payload_ref.schema();
+    pub fn build_field_index(
+        &self,
+        field: PayloadKeyTypeRef,
+        field_type: PayloadSchemaType,
+    ) -> OperationResult<Vec<FieldIndex>> {
+        let payload_storage = self.payload.borrow();
 
-        let field_type_opt = schema.get(field);
-
-        if field_type_opt.is_none() {
-            // There is not data to index
-            return Ok(vec![]);
-        }
-
-        let field_type = field_type_opt.unwrap();
-
-        let mut builders = index_selector(field_type);
-
-        for point_id in payload_ref.iter_ids() {
-            let point_payload = payload_ref.payload(point_id);
-            let field_value_opt = point_payload.get(field);
-            match field_value_opt {
-                None => {}
-                Some(field_value) => {
-                    for builder in &mut builders {
-                        builder.add(point_id, field_value);
-                    }
+        let mut builders = index_selector(&field_type);
+        for point_id in payload_storage.iter_ids() {
+            let point_payload = payload_storage.payload(point_id);
+            let field_value_opt = point_payload.get_value(field);
+            if let Some(field_value) = field_value_opt {
+                for builder in &mut builders {
+                    builder.add(point_id, field_value);
                 }
             }
         }
@@ -234,13 +226,12 @@ impl StructPayloadIndex {
     }
 
     #[trace]
-    fn build_and_save(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        if !self.config.indexed_fields.iter().any(|x| x == field) {
-            self.config.indexed_fields.push(field.into());
-            self.save_config()?;
-        }
-
-        let field_indexes = self.build_field_index(field)?;
+    fn build_and_save(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        payload_type: PayloadSchemaType,
+    ) -> OperationResult<()> {
+        let field_indexes = self.build_field_index(field, payload_type)?;
         self.field_indexes.insert(field.into(), field_indexes);
 
         self.save_field_index(field)?;
@@ -256,29 +247,32 @@ impl StructPayloadIndex {
 
 impl PayloadIndex for StructPayloadIndex {
     #[trace]
-    fn indexed_fields(&self) -> Vec<PayloadKeyType> {
+    fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType> {
         self.config.indexed_fields.clone()
     }
 
     #[trace]
-    fn set_indexed(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        if !self.config.indexed_fields.iter().any(|x| x == field) {
-            self.config.indexed_fields.push(field.into());
+    fn set_indexed(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        payload_type: PayloadSchemaType,
+    ) -> OperationResult<()> {
+        if self
+            .config
+            .indexed_fields
+            .insert(field.to_owned(), payload_type)
+            .is_none()
+        {
             self.save_config()?;
-            self.build_and_save(field)?;
+            self.build_and_save(field, payload_type)?;
         }
+
         Ok(())
     }
 
     #[trace]
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        self.config.indexed_fields = self
-            .config
-            .indexed_fields
-            .iter()
-            .cloned()
-            .filter(|x| x != field)
-            .collect();
+        self.config.indexed_fields.remove(field);
         self.save_config()?;
         self.field_indexes.remove(field);
 
@@ -297,6 +291,33 @@ impl PayloadIndex for StructPayloadIndex {
 
         let estimator = |condition: &Condition| match condition {
             Condition::Filter(_) => panic!("Unexpected branching"),
+            Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
+                let total_points = self.total_points();
+
+                let mut indexed_points = 0;
+                if let Some(field_indexes) = self.field_indexes.get(&field.key) {
+                    for index in field_indexes {
+                        indexed_points = indexed_points.max(index.count_indexed_points())
+                    }
+                    CardinalityEstimation {
+                        primary_clauses: vec![PrimaryCondition::IsEmpty(IsEmptyCondition {
+                            is_empty: field.to_owned(),
+                        })],
+                        min: 0, // It is possible, that some non-empty payloads are not indexed
+                        exp: total_points.saturating_sub(indexed_points), // Expect field type consistency
+                        max: total_points.saturating_sub(indexed_points),
+                    }
+                } else {
+                    CardinalityEstimation {
+                        primary_clauses: vec![PrimaryCondition::IsEmpty(IsEmptyCondition {
+                            is_empty: field.to_owned(),
+                        })],
+                        min: 0,
+                        exp: total_points / 2,
+                        max: total_points,
+                    }
+                }
+            }
             Condition::HasId(has_id) => {
                 let id_tracker_ref = self.id_tracker.borrow();
                 let mapped_ids: HashSet<PointOffsetType> = has_id
@@ -345,7 +366,7 @@ impl PayloadIndex for StructPayloadIndex {
                 .get(vector_storage_ref.total_vector_count());
 
             #[allow(clippy::needless_collect)]
-            let preselected: Vec<PointOffsetType> = query_cardinality
+                let preselected: Vec<PointOffsetType> = query_cardinality
                 .primary_clauses
                 .iter()
                 .flat_map(|clause| {
@@ -356,6 +377,7 @@ impl PayloadIndex for StructPayloadIndex {
                             )
                         }
                         PrimaryCondition::Ids(ids) => Box::new(ids.iter().copied()),
+                        PrimaryCondition::IsEmpty(_) => vector_storage_ref.iter_ids() /* there are no fast index for IsEmpty */
                     }
                 })
                 .filter(|&id| !visited_list.check_and_update_visited(id))
@@ -367,6 +389,14 @@ impl PayloadIndex for StructPayloadIndex {
             let matched_points_iter = preselected.into_iter();
             Box::new(matched_points_iter)
         };
+    }
+
+    #[trace]
+    fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
+        Box::new(StructFilterContext {
+            filter,
+            condition_checker: self.condition_checker.clone(),
+        })
     }
 
     #[trace]
@@ -384,5 +414,16 @@ impl PayloadIndex for StructPayloadIndex {
                 }))
             }
         }
+    }
+}
+
+pub struct StructFilterContext<'a> {
+    condition_checker: Arc<ConditionCheckerSS>,
+    filter: &'a Filter,
+}
+
+impl<'a> FilterContext for StructFilterContext<'a> {
+    fn check(&self, point_id: PointOffsetType) -> bool {
+        self.condition_checker.check(point_id, self.filter)
     }
 }

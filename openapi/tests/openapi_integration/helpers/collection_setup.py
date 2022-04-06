@@ -46,27 +46,27 @@ def basic_collection_setup(collection_name='test_collection'):
                 {
                     "id": 1,
                     "vector": [0.05, 0.61, 0.76, 0.74],
-                    "payload": {"city": {"type": "keyword", "value": "Berlin"}}
+                    "payload": {"city": "Berlin"}
                 },
                 {
                     "id": 2,
                     "vector": [0.19, 0.81, 0.75, 0.11],
-                    "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"]}}
+                    "payload": {"city": ["Berlin", "London"]}
                 },
                 {
                     "id": 3,
                     "vector": [0.36, 0.55, 0.47, 0.94],
-                    "payload": {"city": {"type": "keyword", "value": ["Berlin", "Moscow"]}}
+                    "payload": {"city": ["Berlin", "Moscow"]}
                 },
                 {
                     "id": 4,
                     "vector": [0.18, 0.01, 0.85, 0.80],
-                    "payload": {"city": {"type": "keyword", "value": ["London", "Moscow"]}}
+                    "payload": {"city": ["London", "Moscow"]}
                 },
                 {
                     "id": 5,
                     "vector": [0.24, 0.18, 0.22, 0.44],
-                    "payload": {"count": {"type": "integer", "value": [0]}}
+                    "payload": {"count": 0}
                 },
                 {
                     "id": 6,

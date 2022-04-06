@@ -10,6 +10,8 @@ use std::{
 };
 
 use crate::operations::types::PointRequest;
+use crate::operations::OperationToShard;
+use crate::shard::ShardOperation;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
@@ -23,6 +25,7 @@ use operations::{
     },
     CollectionUpdateOperations, SplitByShard, Validate,
 };
+use optimizers_builder::OptimizersConfig;
 use segment::{
     spaces::tools::peek_top_scores_iterable,
     types::{
@@ -30,10 +33,9 @@ use segment::{
         WithPayload, WithPayloadInterface,
     },
 };
-use shard::{Shard, ShardId};
+use serde::{Deserialize, Serialize};
+use shard::{local_shard::LocalShard, Shard, ShardId};
 use tokio::runtime::Handle;
-
-use crate::operations::OperationToShard;
 
 pub mod collection_manager;
 mod common;
@@ -49,10 +51,60 @@ mod tests;
 
 pub type CollectionId = String;
 
+pub type PeerId = u32;
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct State {
+    pub config: CollectionConfig,
+    pub shard_to_peer: HashMap<ShardId, PeerId>,
+}
+
+impl State {
+    pub async fn apply(
+        self,
+        this_peer_id: PeerId,
+        collection: &mut Collection,
+    ) -> CollectionResult<()> {
+        Self::apply_config(self.config, collection).await?;
+        Self::apply_shard_to_peer(self.shard_to_peer, this_peer_id, collection);
+        Ok(())
+    }
+
+    async fn apply_config(
+        config: CollectionConfig,
+        collection: &mut Collection,
+    ) -> CollectionResult<()> {
+        log::warn!("Applying only optimizers config snapshot. Other config updates are not yet implemented.");
+        collection
+            .update_optimizer_params(config.optimizer_config)
+            .await
+    }
+
+    fn apply_shard_to_peer(
+        shard_to_peer: HashMap<ShardId, PeerId>,
+        this_peer_id: PeerId,
+        collection: &mut Collection,
+    ) {
+        for (shard_id, peer_id) in shard_to_peer {
+            match collection.shards.get(&shard_id) {
+                Some(shard) => {
+                    if shard.peer_id(this_peer_id) != peer_id {
+                        log::warn!("Shard movement between peers is not yet implemented. Failed to move shard {shard_id} to peer {peer_id}")
+                    }
+                }
+                None => log::warn!(
+                    "Shard addition is not yet implemented. Failed to add shard {shard_id}"
+                ),
+            }
+        }
+    }
+}
+
 /// Collection's data is split into several shards.
 pub struct Collection {
     shards: HashMap<ShardId, Shard>,
     ring: HashRing<ShardId>,
+    config: CollectionConfig,
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
 }
@@ -72,7 +124,7 @@ impl Collection {
                 .map_err(|err| CollectionError::ServiceError {
                     error: format!("Can't create shard {shard_id} directory. Error: {}", err),
                 })
-                .and_then(|()| Shard::build(shard_id, id.clone(), &shard_path, config));
+                .and_then(|()| LocalShard::build(shard_id, id.clone(), &shard_path, config));
             let shard = match shard {
                 Ok(shard) => shard,
                 Err(err) => {
@@ -84,12 +136,13 @@ impl Collection {
                     return Err(err);
                 }
             };
-            shards.insert(shard_id, shard);
+            shards.insert(shard_id, Shard::Local(shard));
             ring.add(shard_id);
         }
         Ok(Self {
             shards,
             ring,
+            config: config.clone(),
             before_drop_called: false,
         })
     }
@@ -112,27 +165,31 @@ impl Collection {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
                 shard_id,
-                Shard::load(shard_id, id.clone(), &shard_path, &config).await,
+                Shard::Local(LocalShard::load(shard_id, id.clone(), &shard_path, &config).await),
             );
             ring.add(shard_id);
         }
         Self {
             shards,
             ring,
+            config,
             before_drop_called: false,
         }
     }
 
     fn try_migrate_legacy_one_shard(collection_path: &Path) -> io::Result<()> {
-        if Shard::segments_path(collection_path).is_dir() {
+        if LocalShard::segments_path(collection_path).is_dir() {
             log::warn!("Migrating legacy collection storage to 1 shard.");
             let shard_path = shard_path(collection_path, 0);
-            let new_segmnents_path = Shard::segments_path(&shard_path);
-            let new_wal_path = Shard::wal_path(&shard_path);
+            let new_segmnents_path = LocalShard::segments_path(&shard_path);
+            let new_wal_path = LocalShard::wal_path(&shard_path);
             create_dir_all(&new_segmnents_path)?;
             create_dir_all(&new_wal_path)?;
-            rename(Shard::segments_path(collection_path), &new_segmnents_path)?;
-            rename(Shard::wal_path(collection_path), &new_wal_path)?;
+            rename(
+                LocalShard::segments_path(collection_path),
+                &new_segmnents_path,
+            )?;
+            rename(LocalShard::wal_path(collection_path), &new_wal_path)?;
             log::info!("Migration finished.");
         }
         Ok(())
@@ -148,7 +205,29 @@ impl Collection {
         self.shards.values()
     }
 
-    pub async fn update(
+    pub async fn update_from_peer(
+        &self,
+        operation: CollectionUpdateOperations,
+        shard_selection: ShardId,
+        wait: bool,
+    ) -> CollectionResult<UpdateResult> {
+        match self.shards.get(&shard_selection) {
+            None => Err(CollectionError::service_error(format!(
+                "Shard {} does not exist",
+                shard_selection
+            ))),
+            Some(Shard::Remote(_)) => Err(CollectionError::service_error(format!(
+                "Shard {} is not local on peer",
+                shard_selection
+            ))),
+            Some(Shard::Local(local_shard)) => {
+                let res = local_shard.update(operation.clone(), wait).await;
+                res
+            }
+        }
+    }
+
+    pub async fn update_from_client(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
@@ -159,12 +238,17 @@ impl Collection {
         match by_shard {
             OperationToShard::ByShard(by_shard) => {
                 for (shard_id, operation) in by_shard {
-                    results.push(self.shard_by_id(shard_id).update(operation, wait).await)
+                    results.push(
+                        self.shard_by_id(shard_id)
+                            .get()
+                            .update(operation, wait)
+                            .await,
+                    )
                 }
             }
             OperationToShard::ToAll(operation) => {
                 for shard in self.all_shards() {
-                    results.push(shard.update(operation.clone(), wait).await)
+                    results.push(shard.get().update(operation.clone(), wait).await)
                 }
             }
         }
@@ -291,8 +375,9 @@ impl Collection {
         let mut points = Vec::new();
         let request = Arc::new(request);
         for shard in self.all_shards() {
-            let mut shard_points = segment_searcher
-                .search(shard.segments(), request.clone(), search_runtime_handle)
+            let mut shard_points = shard
+                .get()
+                .search(request.clone(), segment_searcher, search_runtime_handle)
                 .await?;
             points.append(&mut shard_points);
         }
@@ -328,6 +413,7 @@ impl Collection {
         let mut points = Vec::new();
         for shard in self.all_shards() {
             let mut shard_points = shard
+                .get()
                 .scroll_by(
                     segment_searcher,
                     offset,
@@ -365,11 +451,17 @@ impl Collection {
             .unwrap_or(&WithPayloadInterface::Bool(false));
         let with_payload = WithPayload::from(with_payload_interface);
         let with_vector = request.with_vector;
-
+        let request = Arc::new(request);
         let mut points = Vec::new();
         for shard in self.all_shards() {
-            let mut shard_points = segment_searcher
-                .retrieve(shard.segments(), &request.ids, &with_payload, with_vector)
+            let mut shard_points = shard
+                .get()
+                .retrieve(
+                    request.clone(),
+                    segment_searcher,
+                    &with_payload,
+                    with_vector,
+                )
                 .await?;
             points.append(&mut shard_points);
         }
@@ -380,14 +472,34 @@ impl Collection {
     /// - Saves new params on disk
     /// - Stops existing optimization loop
     /// - Runs new optimizers with new params
-    pub async fn update_optimizer_params(
+    pub async fn update_optimizer_params_from_diff(
         &self,
         optimizer_config_diff: OptimizersConfigDiff,
     ) -> CollectionResult<()> {
         for shard in self.all_shards() {
-            shard
-                .update_optimizer_params(optimizer_config_diff.clone())
-                .await?;
+            if let Shard::Local(shard) = shard {
+                shard
+                    .update_optimizer_with_diff(optimizer_config_diff.clone())
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Updates shard optimization params:
+    /// - Saves new params on disk
+    /// - Stops existing optimization loop
+    /// - Runs new optimizers with new params
+    pub async fn update_optimizer_params(
+        &self,
+        optimizer_config: OptimizersConfig,
+    ) -> CollectionResult<()> {
+        for shard in self.all_shards() {
+            if let Shard::Local(shard) = shard {
+                shard
+                    .update_optimizer_with_config(optimizer_config.clone())
+                    .await?;
+            }
         }
         Ok(())
     }
@@ -397,10 +509,11 @@ impl Collection {
         let mut info = shards
             .next()
             .expect("At least 1 shard expected")
+            .get()
             .info()
             .await?;
         for shard in shards {
-            let mut shard_info = shard.info().await?;
+            let mut shard_info = shard.get().info().await?;
             info.status = max(info.status, shard_info.status);
             info.optimizer_status = max(info.optimizer_status, shard_info.optimizer_status);
             info.vectors_count += shard_info.vectors_count;
@@ -421,6 +534,25 @@ impl Collection {
             .collect();
         futures.collect::<Vec<()>>().await;
         self.before_drop_called = true
+    }
+
+    pub fn state(&self, this_peer_id: PeerId) -> State {
+        State {
+            config: self.config.clone(),
+            shard_to_peer: self
+                .shards
+                .iter()
+                .map(|(shard_id, shard)| (*shard_id, shard.peer_id(this_peer_id)))
+                .collect(),
+        }
+    }
+
+    pub async fn apply_state(
+        &mut self,
+        state: State,
+        this_peer_id: PeerId,
+    ) -> CollectionResult<()> {
+        state.apply(this_peer_id, self).await
     }
 }
 

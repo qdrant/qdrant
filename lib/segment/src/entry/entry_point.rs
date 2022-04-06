@@ -1,9 +1,12 @@
+use crate::common::file_operations::FileStorageError;
 use crate::types::{
-    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadType, PointIdType, ScoredPoint, SearchParams,
-    SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, TheMap, VectorElementType, WithPayload,
+    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
+    VectorElementType, WithPayload,
 };
 use atomicwrites::Error as AtomicIoError;
 use rocksdb::Error;
+use std::collections::HashMap;
 use std::io::Error as IoError;
 use std::result;
 use thiserror::Error;
@@ -23,6 +26,10 @@ pub enum OperationError {
         field_name: PayloadKeyType,
         expected_type: String,
     },
+    #[error("Unable to infer type for the field '{field_name}'. Please specify `field_type`")]
+    TypeInferenceError { field_name: PayloadKeyType },
+    /// Service Error prevents further update of the collection until it is fixed.
+    /// Should only be used for hardware, data corruption, IO, or other unexpected internal errors.
     #[error("Service runtime error: {description}")]
     ServiceError { description: String },
     #[error("Operation cancelled: {description}")]
@@ -43,6 +50,22 @@ pub struct SegmentFailedState {
     pub version: SeqNumberType,
     pub point_id: Option<PointIdType>,
     pub error: OperationError,
+}
+
+impl From<FileStorageError> for OperationError {
+    fn from(err: FileStorageError) -> Self {
+        match err {
+            FileStorageError::IoError { description } => {
+                OperationError::service_error(&format!("IO Error: {}", description))
+            }
+            FileStorageError::UserAtomicIoError => {
+                OperationError::service_error("Unknown atomic write error")
+            }
+            FileStorageError::GenericError { description } => {
+                OperationError::service_error(&description)
+            }
+        }
+    }
 }
 
 impl<E> From<AtomicIoError<E>> for OperationError {
@@ -119,26 +142,18 @@ pub trait SegmentEntry {
         point_id: PointIdType,
     ) -> OperationResult<bool>;
 
-    fn set_full_payload(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        full_payload: TheMap<PayloadKeyType, PayloadType>,
-    ) -> OperationResult<bool>;
-
-    fn set_full_payload_with_json(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        full_payload: &str,
-    ) -> OperationResult<bool>;
-
     fn set_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        key: PayloadKeyTypeRef,
-        payload: PayloadType,
+        payload: &Payload,
+    ) -> OperationResult<bool>;
+
+    fn set_full_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        full_payload: &Payload,
     ) -> OperationResult<bool>;
 
     fn delete_payload(
@@ -156,10 +171,7 @@ pub trait SegmentEntry {
 
     fn vector(&self, point_id: PointIdType) -> OperationResult<Vec<VectorElementType>>;
 
-    fn payload(
-        &self,
-        point_id: PointIdType,
-    ) -> OperationResult<TheMap<PayloadKeyType, PayloadType>>;
+    fn payload(&self, point_id: PointIdType) -> OperationResult<Payload>;
 
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
 
@@ -211,10 +223,11 @@ pub trait SegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
+        field_type: &Option<PayloadSchemaType>,
     ) -> OperationResult<bool>;
 
     /// Get indexed fields
-    fn get_indexed_fields(&self) -> Vec<PayloadKeyType>;
+    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType>;
 
     /// Checks if segment errored during last operations
     fn check_error(&self) -> Option<SegmentFailedState>;

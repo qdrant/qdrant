@@ -6,3 +6,4 @@
 /openapi-merged.yaml
 /openapi-merged.json
 /openapi-points.yaml
+__pycache__/

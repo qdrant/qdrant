@@ -1,4 +1,6 @@
 extern crate profiler_proc_macro;
+use profiler_proc_macro::trace;
+
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
@@ -7,12 +9,9 @@ use crate::collection_manager::optimizers::segment_optimizer::{
 };
 use crate::config::CollectionParams;
 use itertools::Itertools;
-use profiler_proc_macro::trace;
-use segment::payload_storage::schema_storage::SchemaStorage;
 use segment::types::{HnswConfig, SegmentType};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 /// Optimizer that tries to reduce number of segments until it fits configured value.
 /// It merges 3 smallest segments into a single large segment.
@@ -26,7 +25,6 @@ pub struct MergeOptimizer {
     collection_temp_dir: PathBuf,
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
-    schema_store: Arc<SchemaStorage>,
 }
 
 impl MergeOptimizer {
@@ -39,7 +37,6 @@ impl MergeOptimizer {
         collection_temp_dir: PathBuf,
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
-        schema_store: Arc<SchemaStorage>,
     ) -> Self {
         MergeOptimizer {
             max_segments,
@@ -49,7 +46,6 @@ impl MergeOptimizer {
             collection_temp_dir,
             collection_params,
             hnsw_config,
-            schema_store,
         }
     }
 }
@@ -123,10 +119,6 @@ impl SegmentOptimizer for MergeOptimizer {
         }
 
         candidates
-    }
-
-    fn schema_store(&self) -> Arc<SchemaStorage> {
-        self.schema_store.clone()
     }
 }
 

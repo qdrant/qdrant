@@ -7,8 +7,8 @@ use crate::collection_manager::segments_updater::upsert_points;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::entry::entry_point::SegmentEntry;
-use segment::types::{PayloadKeyType, PointIdType};
-use std::collections::HashSet;
+use segment::types::{PayloadKeyType, PayloadSchemaType, PointIdType};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use tempdir::TempDir;
@@ -22,14 +22,16 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
 
     let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
     let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-    let proxy_created_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+    let proxy_created_indexes = Arc::new(RwLock::new(
+        HashMap::<PayloadKeyType, PayloadSchemaType>::new(),
+    ));
 
     let proxy = ProxySegment::new(
         optimizing_segment,
         temp_segment,
         proxy_deleted_points,
-        proxy_deleted_indexes,
         proxy_created_indexes,
+        proxy_deleted_indexes,
     );
 
     let (new_id, _replaced_segments) = write_segments.swap(proxy, &[sid]);

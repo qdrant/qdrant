@@ -5,7 +5,6 @@ mod tests {
     use crate::fixtures::segment::{build_segment_1, build_segment_2, empty_segment};
     use itertools::Itertools;
     use segment::entry::entry_point::{OperationError, SegmentEntry};
-    use segment::payload_storage::schema_storage::SchemaStorage;
     use segment::segment::Segment;
     use segment::segment_constructor::segment_builder::SegmentBuilder;
     use segment::types::{Indexes, SegmentConfig};
@@ -27,13 +26,8 @@ mod tests {
         let segment1 = build_segment_1(dir.path());
         let mut segment2 = build_segment_2(dir.path());
 
-        let mut builder = SegmentBuilder::new(
-            dir.path(),
-            temp_dir.path(),
-            &segment1.segment_config,
-            Arc::new(SchemaStorage::new()),
-        )
-        .unwrap();
+        let mut builder =
+            SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
 
         // Include overlapping with segment1 to check the
         segment2
@@ -88,13 +82,8 @@ mod tests {
             storage_type: Default::default(),
         };
 
-        let mut builder = SegmentBuilder::new(
-            dir.path(),
-            temp_dir.path(),
-            &segment_config,
-            Arc::new(SchemaStorage::new()),
-        )
-        .unwrap();
+        let mut builder =
+            SegmentBuilder::new(dir.path(), temp_dir.path(), &segment_config).unwrap();
 
         builder.update_from(segment, &*stopped).unwrap();
 

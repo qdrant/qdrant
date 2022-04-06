@@ -1,7 +1,8 @@
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::entry::entry_point::OperationResult;
-use crate::types::PayloadKeyType;
+use crate::types::{PayloadKeyType, PayloadSchemaType};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "config.json";
@@ -9,7 +10,7 @@ pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "config.json";
 /// Keeps information of which field should be index
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
 pub struct PayloadConfig {
-    pub indexed_fields: Vec<PayloadKeyType>,
+    pub indexed_fields: HashMap<PayloadKeyType, PayloadSchemaType>,
 }
 
 impl PayloadConfig {
@@ -18,10 +19,10 @@ impl PayloadConfig {
     }
 
     pub fn load(path: &Path) -> OperationResult<Self> {
-        read_json(path)
+        Ok(read_json(path)?)
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {
-        atomic_save_json(path, self)
+        Ok(atomic_save_json(path, self)?)
     }
 }

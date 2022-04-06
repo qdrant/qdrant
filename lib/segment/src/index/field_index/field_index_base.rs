@@ -1,13 +1,15 @@
 extern crate profiler_proc_macro;
 use profiler_proc_macro::trace;
 
+use crate::index::field_index::geo_index::PersistedGeoMapIndex;
 use crate::index::field_index::map_index::PersistedMapIndex;
 use crate::index::field_index::numeric_index::PersistedNumericIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::types::{
-    FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PayloadType, PointOffsetType,
+    FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 pub trait PayloadFieldIndex {
     /// Get iterator over points fitting given `condition`
@@ -26,10 +28,35 @@ pub trait PayloadFieldIndex {
         threshold: usize,
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
+
+    /// Returns an amount of unique indexed points
+    fn count_indexed_points(&self) -> usize;
+}
+
+pub trait ValueIndexer<T> {
+    /// Add multiple values associated with a single point
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<T>);
+
+    /// Extract index-able value from payload `Value`
+    fn get_value(&self, value: &Value) -> Option<T>;
+
+    /// Add point with payload to index
+    fn add_point(&mut self, id: PointOffsetType, payload: &Value) {
+        match payload {
+            Value::Array(values) => {
+                self.add_many(id, values.iter().flat_map(|x| self.get_value(x)).collect())
+            }
+            _ => {
+                if let Some(x) = self.get_value(payload) {
+                    self.add_many(id, vec![x])
+                }
+            }
+        }
+    }
 }
 
 pub trait PayloadFieldIndexBuilder {
-    fn add(&mut self, id: PointOffsetType, value: &PayloadType);
+    fn add(&mut self, id: PointOffsetType, value: &Value);
 
     fn build(&mut self) -> FieldIndex;
 }
@@ -44,6 +71,7 @@ pub enum FieldIndex {
     IntMapIndex(PersistedMapIndex<IntPayloadType>),
     KeywordIndex(PersistedMapIndex<String>),
     FloatIndex(PersistedNumericIndex<FloatPayloadType>),
+    GeoIndex(PersistedGeoMapIndex),
 }
 
 impl FieldIndex {
@@ -54,6 +82,7 @@ impl FieldIndex {
             FieldIndex::IntMapIndex(payload_field_index) => payload_field_index,
             FieldIndex::KeywordIndex(payload_field_index) => payload_field_index,
             FieldIndex::FloatIndex(payload_field_index) => payload_field_index,
+            FieldIndex::GeoIndex(payload_field_index) => payload_field_index,
         }
     }
 }
@@ -81,5 +110,9 @@ impl PayloadFieldIndex for FieldIndex {
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         self.get_payload_field_index()
             .payload_blocks(threshold, key)
+    }
+
+    fn count_indexed_points(&self) -> usize {
+        self.get_payload_field_index().count_indexed_points()
     }
 }

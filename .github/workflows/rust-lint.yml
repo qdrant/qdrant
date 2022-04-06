@@ -22,7 +22,7 @@ jobs:
         toolchain: stable
         override: true
         components: rustfmt, clippy
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - uses: Swatinem/rust-cache@v1
       with:
         key: clippy
