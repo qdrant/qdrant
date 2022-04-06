@@ -16,7 +16,7 @@ use crate::optimizers_builder::OptimizersConfig;
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 pub struct WalConfig {
     /// Size of a single WAL segment in MB
     pub wal_capacity_mb: usize,
@@ -42,7 +42,7 @@ impl Default for WalConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct CollectionParams {
     /// Size of a vectors used
@@ -58,7 +58,7 @@ fn default_shard_number() -> NonZeroU32 {
     NonZeroU32::new(1).unwrap()
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 pub struct CollectionConfig {
     pub params: CollectionParams,
     pub hnsw_config: HnswConfig,

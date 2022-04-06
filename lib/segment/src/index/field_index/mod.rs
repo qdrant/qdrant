@@ -1,4 +1,4 @@
-use crate::types::{FieldCondition, PointOffsetType};
+use crate::types::{FieldCondition, IsEmptyCondition, PointOffsetType};
 use std::collections::HashSet;
 
 mod field_index_base;
@@ -13,8 +13,10 @@ mod stat_tools;
 pub use field_index_base::*;
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum PrimaryCondition {
     Condition(FieldCondition),
+    IsEmpty(IsEmptyCondition),
     Ids(HashSet<PointOffsetType>),
 }
 

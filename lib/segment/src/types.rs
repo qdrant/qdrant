@@ -72,7 +72,9 @@ impl FromStr for ExtendedPointId {
 pub type PointIdType = ExtendedPointId;
 
 /// Type of internal tags, build from payload
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, FromPrimitive)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, FromPrimitive, PartialEq, Eq, Hash,
+)]
 /// Distance function types used to compare vectors
 pub enum Distance {
     /// https://en.wikipedia.org/wiki/Cosine_similarity
@@ -495,40 +497,95 @@ pub fn infer_value_type(value: &Value) -> Option<PayloadSchemaType> {
     }
 }
 
-/// Match by keyword
+/// Match by keyword (deprecated)
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[deprecated]
 pub struct MatchKeyword {
     /// Keyword value to match
+    #[deprecated]
     pub keyword: String,
 }
 
-/// Match filter request
+/// Match filter request (deprecated)
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[deprecated]
 pub struct MatchInteger {
     /// Integer value to match
+    #[deprecated]
     pub integer: IntPayloadType,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum ValueVariants {
+    Keyword(String),
+    Integer(IntPayloadType),
+    Bool(bool),
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchValue {
+    pub value: ValueVariants,
 }
 
 /// Match filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
-pub enum Match {
+pub enum MatchInterface {
+    Value(MatchValue),
     Keyword(MatchKeyword),
     Integer(MatchInteger),
 }
 
+/// Match filter request
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(from = "MatchInterface")]
+#[serde(untagged)]
+pub enum Match {
+    Value(MatchValue),
+    Keyword(MatchKeyword),
+    Integer(MatchInteger),
+}
+
+impl From<MatchInterface> for Match {
+    fn from(value: MatchInterface) -> Self {
+        match value {
+            MatchInterface::Value(value) => Self::Value(MatchValue { value: value.value }),
+            MatchInterface::Keyword(MatchKeyword { keyword }) => Self::Value(MatchValue {
+                value: ValueVariants::Keyword(keyword),
+            }),
+            MatchInterface::Integer(MatchInteger { integer }) => Self::Value(MatchValue {
+                value: ValueVariants::Integer(integer),
+            }),
+        }
+    }
+}
+
+impl From<bool> for Match {
+    fn from(flag: bool) -> Self {
+        Self::Value(MatchValue {
+            value: ValueVariants::Bool(flag),
+        })
+    }
+}
+
 impl From<String> for Match {
     fn from(keyword: String) -> Self {
-        Self::Keyword(MatchKeyword { keyword })
+        Self::Value(MatchValue {
+            value: ValueVariants::Keyword(keyword),
+        })
     }
 }
 
 impl From<IntPayloadType> for Match {
     fn from(integer: IntPayloadType) -> Self {
-        Self::Integer(MatchInteger { integer })
+        Self::Value(MatchValue {
+            value: ValueVariants::Integer(integer),
+        })
     }
 }
 
@@ -544,6 +601,44 @@ pub struct Range {
     pub gte: Option<FloatPayloadType>,
     /// point.key <= range.lte
     pub lte: Option<FloatPayloadType>,
+}
+
+impl Range {
+    pub fn check_range(&self, number: FloatPayloadType) -> bool {
+        self.lt.map_or(true, |x| number < x)
+            && self.gt.map_or(true, |x| number > x)
+            && self.lte.map_or(true, |x| number <= x)
+            && self.gte.map_or(true, |x| number >= x)
+    }
+}
+
+/// Values count filter request
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct ValuesCount {
+    /// point.key.length() < values_count.lt
+    pub lt: Option<usize>,
+    /// point.key.length() > values_count.gt
+    pub gt: Option<usize>,
+    /// point.key.length() >= values_count.gte
+    pub gte: Option<usize>,
+    /// point.key.length() <= values_count.lte
+    pub lte: Option<usize>,
+}
+
+impl ValuesCount {
+    pub fn check_count(&self, value: &Value) -> bool {
+        let count = match value {
+            Value::Null => 0,
+            Value::Array(array) => array.len(),
+            _ => 1,
+        };
+
+        self.lt.map_or(true, |x| count < x)
+            && self.gt.map_or(true, |x| count > x)
+            && self.lte.map_or(true, |x| count <= x)
+            && self.gte.map_or(true, |x| count >= x)
+    }
 }
 
 /// Geo filter request
@@ -590,6 +685,7 @@ impl GeoRadius {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct FieldCondition {
+    /// Payload key
     pub key: PayloadKeyType,
     /// Check if point has field with a given value
     pub r#match: Option<Match>,
@@ -599,6 +695,78 @@ pub struct FieldCondition {
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
     pub geo_radius: Option<GeoRadius>,
+    /// Check number of values of the field
+    pub values_count: Option<ValuesCount>,
+}
+
+impl FieldCondition {
+    pub fn new_match(key: PayloadKeyType, r#match: Match) -> Self {
+        Self {
+            key,
+            r#match: Some(r#match),
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            values_count: None,
+        }
+    }
+
+    pub fn new_range(key: PayloadKeyType, range: Range) -> Self {
+        Self {
+            key,
+            r#match: None,
+            range: Some(range),
+            geo_bounding_box: None,
+            geo_radius: None,
+            values_count: None,
+        }
+    }
+
+    pub fn new_geo_bounding_box(key: PayloadKeyType, geo_bounding_box: GeoBoundingBox) -> Self {
+        Self {
+            key,
+            r#match: None,
+            range: None,
+            geo_bounding_box: Some(geo_bounding_box),
+            geo_radius: None,
+            values_count: None,
+        }
+    }
+
+    pub fn new_geo_radius(key: PayloadKeyType, geo_radius: GeoRadius) -> Self {
+        Self {
+            key,
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: Some(geo_radius),
+            values_count: None,
+        }
+    }
+
+    pub fn new_values_count(key: PayloadKeyType, values_count: ValuesCount) -> Self {
+        Self {
+            key,
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            values_count: Some(values_count),
+        }
+    }
+}
+
+/// Payload field
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+pub struct PayloadField {
+    /// Payload field name
+    pub key: PayloadKeyType,
+}
+
+/// Select points with empty payload for a specified field
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+pub struct IsEmptyCondition {
+    pub is_empty: PayloadField,
 }
 
 /// ID-based filtering condition
@@ -618,6 +786,8 @@ impl From<HashSet<PointIdType>> for HasIdCondition {
 pub enum Condition {
     /// Check if field satisfies provided condition
     Field(FieldCondition),
+    /// Check if payload field is empty: equals to `NULL`, empty array, or does not exists
+    IsEmpty(IsEmptyCondition),
     /// Check if points id is in a given set
     HasId(HasIdCondition),
     /// Nested filter
@@ -815,49 +985,13 @@ mod tests {
         eprintln!("de_record = {:#?}", de_record);
     }
 
-    // ToDo: Check serialization of UUID here later
-    // #[test]
-    // fn test_long_id_deserialization() {
-    //     let query1 = r#"
-    //     {
-    //         "has_id": [7730993719707444524137094407]
-    //     }"#;
-    //
-    //     let de_record: Condition = serde_json::from_str(query1).expect("deserialization ok");
-    //     eprintln!("de_record = {:#?}", de_record);
-    //
-    //     let query2 = HasIdCondition {
-    //         has_id: HashSet::from_iter(vec![7730993719707444524137094407].iter().cloned()),
-    //     };
-    //
-    //     let json = serde_json::to_string(&query2).expect("serialization ok");
-    //
-    //     eprintln!("json = {:#?}", json);
-    // }
-    //
-    // #[test]
-    // fn test_long_ids_serialization() {
-    //     let operation = Filter {
-    //         should: None,
-    //         must: Some(vec![Condition::HasId(HasIdCondition {
-    //             has_id: HashSet::from_iter(vec![7730993719707444524137094407].iter().cloned()),
-    //         })]),
-    //         must_not: None,
-    //     };
-    //     check_json_serialization(operation.clone());
-    //     check_cbor_serialization(operation);
-    // }
-
     #[test]
     fn test_serialize_query() {
         let filter = Filter {
-            must: Some(vec![Condition::Field(FieldCondition {
-                key: "hello".to_owned(),
-                r#match: Some("world".to_owned().into()),
-                range: None,
-                geo_bounding_box: None,
-                geo_radius: None,
-            })]),
+            must: Some(vec![Condition::Field(FieldCondition::new_match(
+                "hello".to_owned(),
+                "world".to_owned().into(),
+            ))]),
             must_not: None,
             should: None,
         };
@@ -875,6 +1009,79 @@ mod tests {
         let filter: Result<Filter, _> = serde_json::from_str(query1);
 
         assert!(filter.is_err())
+    }
+
+    #[test]
+    fn test_parse_match_query() {
+        let query = r#"
+        {
+            "key": "hello",
+            "match": { "integer": 42 }
+        }
+        "#;
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Integer(42)
+            })
+        );
+
+        let query = r#"
+        {
+            "key": "hello",
+            "match": { "keyword": "world" }
+        }"#;
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Keyword("world".to_owned())
+            })
+        );
+
+        let query = r#"
+        {
+            "key": "hello",
+            "match": { "value": 42 }
+        }
+        "#;
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Integer(42)
+            })
+        );
+
+        let query = r#"
+        {
+            "key": "hello",
+            "match": { "value": true }
+        }
+        "#;
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Bool(true)
+            })
+        );
+
+        let query = r#"
+        {
+            "key": "hello",
+            "match": { "value": "world" }
+        }
+        "#;
+
+        let condition: FieldCondition = serde_json::from_str(query).unwrap();
+        assert_eq!(
+            condition.r#match.unwrap(),
+            Match::Value(MatchValue {
+                value: ValueVariants::Keyword("world".to_owned())
+            })
+        );
     }
 
     #[test]

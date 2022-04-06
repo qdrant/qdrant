@@ -176,7 +176,7 @@ info:
                 {
                     "key": "city",
                     "match": {
-                        "keyword": "London"
+                        "value": "London"
                     }
                 }
             ]

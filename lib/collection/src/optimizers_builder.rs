@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 pub struct OptimizersConfig {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     pub deleted_threshold: f64,

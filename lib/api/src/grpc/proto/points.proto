@@ -8,55 +8,6 @@ package qdrant;
 
 import "google/protobuf/struct.proto";
 
-service Points {
-  /*
-  Perform insert + updates on points. If point with given ID already exists - it will be overwritten.
-   */
-  rpc Upsert (UpsertPoints) returns (PointsOperationResponse) {}
-  /*
-  Delete points
-   */
-  rpc Delete (DeletePoints) returns (PointsOperationResponse) {}
-  /*
-  Retrieve points
-   */
-  rpc Get (GetPoints) returns (GetResponse) {}
-  /*
-  Set payload for points
-   */
-  rpc SetPayload (SetPayloadPoints) returns (PointsOperationResponse) {}
-  /*
-  Delete specified key payload for points
-   */
-  rpc DeletePayload (DeletePayloadPoints) returns (PointsOperationResponse) {}
-  /*
-  Remove all payload for specified points
-   */
-  rpc ClearPayload (ClearPayloadPoints) returns (PointsOperationResponse) {}
-  /*
-  Create index for field in collection
-   */
-  rpc CreateFieldIndex (CreateFieldIndexCollection) returns (PointsOperationResponse) {}
-  /*
-  Delete field index for collection
-   */
-  rpc DeleteFieldIndex (DeleteFieldIndexCollection) returns (PointsOperationResponse) {}
-  /*
-  Retrieve closest points based on vector similarity and given filtering conditions
-   */
-  rpc Search (SearchPoints) returns (SearchResponse) {}
-  /*
-  Iterate over all or filtered points points
-  */
-  rpc Scroll (ScrollPoints) returns (ScrollResponse) {}
-  /*
-  Look for the points which are closer to stored positive examples and at the same time further to negative examples.
-   */
-  rpc Recommend (RecommendPoints) returns (RecommendResponse) {}
-
-
-}
-
 // ---------------------------------------------
 // ------------- Point Id Requests -------------
 // ---------------------------------------------
@@ -256,9 +207,14 @@ message Filter {
 message Condition {
   oneof condition_one_of {
     FieldCondition field = 1;
-    HasIdCondition hasId = 2;
-    Filter filter = 3;
+    IsEmptyCondition isEmpty = 2;
+    HasIdCondition hasId = 3;
+    Filter filter = 4;
   }
+}
+
+message IsEmptyCondition {
+  string key = 1;
 }
 
 message HasIdCondition {
@@ -271,12 +227,14 @@ message FieldCondition {
   Range range = 3; // Check if points value lies in a given range
   GeoBoundingBox geo_bounding_box = 4; // Check if points geo location lies in a given area
   GeoRadius geo_radius = 5; // Check if geo point is within a given radius
+  ValuesCount values_count = 6; // Check number of values for a specific field
 }
 
 message Match {
   oneof match_value {
     string keyword = 1; // Match string keyword
     int64 integer = 2; // Match integer
+    bool boolean = 3; // Match boolean
   }
 }
 
@@ -295,6 +253,13 @@ message GeoBoundingBox {
 message GeoRadius {
   GeoPoint center = 1; // Center of the circle
   float radius = 2; // In meters
+}
+
+message ValuesCount {
+  optional uint64 lt = 1;
+  optional uint64 gt = 2;
+  optional uint64 gte = 3;
+  optional uint64 lte = 4;
 }
 
 // ---------------------------------------------

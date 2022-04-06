@@ -22,7 +22,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/StorageOperations"
+              $ref: "#/components/schemas/CollectionMetaOperations"
       responses: #@ response(type("boolean"))
 
   /collections/{collection_name}:

@@ -3,9 +3,7 @@ mod prof;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::rngs::StdRng;
 use rand::{thread_rng, SeedableRng};
-use segment::fixtures::index_fixtures::{
-    random_vector, FakeConditionChecker, TestRawScorerProducer,
-};
+use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::simple::CosineMetric;
@@ -25,13 +23,13 @@ fn hnsw_benchmark(c: &mut Criterion) {
     let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, CosineMetric {}, &mut rng);
     let mut group = c.benchmark_group("hnsw-index-search-group");
     let mut rng = thread_rng();
-    let fake_condition_checker = FakeConditionChecker {};
+    let fake_filter_context = FakeFilterContext {};
 
     let mut graph_layers = GraphLayers::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
     for idx in 0..(NUM_VECTORS as PointOffsetType) {
         let added_vector = vector_holder.vectors[idx as usize].to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector);
-        let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
+        let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
         let level = graph_layers.get_random_layer(&mut rng);
         graph_layers.link_new_point(idx, level, &scorer);
     }
@@ -41,7 +39,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
             let query = random_vector(&mut rng, DIM);
 
             let raw_scorer = vector_holder.get_raw_scorer(query);
-            let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
+            let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
 
             graph_layers.search(TOP, EF, &scorer);
         })
@@ -54,7 +52,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
             let query = random_vector(&mut rng, DIM);
 
             let raw_scorer = vector_holder.get_raw_scorer(query);
-            let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
+            let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
 
             let mut top_score = 0.;
             scorer.score_iterable_points(

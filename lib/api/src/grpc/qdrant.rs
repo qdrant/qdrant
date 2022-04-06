@@ -223,6 +223,53 @@ pub struct CollectionInfo {
     pub payload_schema:
         ::std::collections::HashMap<::prost::alloc::string::String, PayloadSchemaInfo>,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ChangeAliases {
+    /// List of actions
+    #[prost(message, repeated, tag = "1")]
+    pub actions: ::prost::alloc::vec::Vec<AliasOperations>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AliasOperations {
+    #[prost(oneof = "alias_operations::Action", tags = "1, 2, 3")]
+    pub action: ::core::option::Option<alias_operations::Action>,
+}
+/// Nested message and enum types in `AliasOperations`.
+pub mod alias_operations {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Action {
+        #[prost(message, tag = "1")]
+        CreateAlias(super::CreateAlias),
+        #[prost(message, tag = "2")]
+        RenameAlias(super::RenameAlias),
+        #[prost(message, tag = "3")]
+        DeleteAlias(super::DeleteAlias),
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateAlias {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// New name of the alias
+    #[prost(string, tag = "2")]
+    pub alias_name: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RenameAlias {
+    /// Name of the alias to rename
+    #[prost(string, tag = "1")]
+    pub old_alias_name: ::prost::alloc::string::String,
+    /// Name of the alias
+    #[prost(string, tag = "2")]
+    pub new_alias_name: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteAlias {
+    /// Name of the alias
+    #[prost(string, tag = "1")]
+    pub alias_name: ::prost::alloc::string::String,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Distance {
@@ -251,7 +298,7 @@ pub enum PayloadSchemaType {
     Float = 3,
     Geo = 4,
 }
-#[doc = r" Generated client implementations."]
+/// Generated client implementations.
 pub mod collections_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
@@ -260,7 +307,7 @@ pub mod collections_client {
         inner: tonic::client::Grpc<T>,
     }
     impl CollectionsClient<tonic::transport::Channel> {
-        #[doc = r" Attempt to create a new client by connecting to a given endpoint."]
+        /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
             D: std::convert::TryInto<tonic::transport::Endpoint>,
@@ -273,8 +320,8 @@ pub mod collections_client {
     impl<T> CollectionsClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::ResponseBody: Body + Send + 'static,
         T::Error: Into<StdError>,
+        T::ResponseBody: Default + Body<Data = Bytes> + Send + 'static,
         <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {
         pub fn new(inner: T) -> Self {
@@ -298,21 +345,23 @@ pub mod collections_client {
         {
             CollectionsClient::new(InterceptedService::new(inner, interceptor))
         }
-        #[doc = r" Compress requests with `gzip`."]
-        #[doc = r""]
-        #[doc = r" This requires the server to support it otherwise it might respond with an"]
-        #[doc = r" error."]
+        /// Compress requests with `gzip`.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
         pub fn send_gzip(mut self) -> Self {
             self.inner = self.inner.send_gzip();
             self
         }
-        #[doc = r" Enable decompressing responses with `gzip`."]
+        /// Enable decompressing responses with `gzip`.
+        #[must_use]
         pub fn accept_gzip(mut self) -> Self {
             self.inner = self.inner.accept_gzip();
             self
         }
-        #[doc = ""]
-        #[doc = "Get detailed information about specified existing collection"]
+        ///
+        ///Get detailed information about specified existing collection
         pub async fn get(
             &mut self,
             request: impl tonic::IntoRequest<super::GetCollectionInfoRequest>,
@@ -327,8 +376,8 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/Get");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = ""]
-        #[doc = "Get list name of all existing collections"]
+        ///
+        ///Get list name of all existing collections
         pub async fn list(
             &mut self,
             request: impl tonic::IntoRequest<super::ListCollectionsRequest>,
@@ -343,8 +392,8 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/List");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = ""]
-        #[doc = "Create new collection with given parameters"]
+        ///
+        ///Create new collection with given parameters
         pub async fn create(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateCollection>,
@@ -359,8 +408,8 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/Create");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = ""]
-        #[doc = "Update parameters of the existing collection"]
+        ///
+        ///Update parameters of the existing collection
         pub async fn update(
             &mut self,
             request: impl tonic::IntoRequest<super::UpdateCollection>,
@@ -375,8 +424,8 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/Update");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = ""]
-        #[doc = "Drop collection and all associated data"]
+        ///
+        ///Drop collection and all associated data
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteCollection>,
@@ -391,44 +440,66 @@ pub mod collections_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/Delete");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        ///
+        ///Update Aliases of the existing collection
+        pub async fn update_aliases(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ChangeAliases>,
+        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Collections/UpdateAliases");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
-#[doc = r" Generated server implementations."]
+/// Generated server implementations.
 pub mod collections_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    #[doc = "Generated trait containing gRPC methods that should be implemented for use with CollectionsServer."]
+    ///Generated trait containing gRPC methods that should be implemented for use with CollectionsServer.
     #[async_trait]
     pub trait Collections: Send + Sync + 'static {
-        #[doc = ""]
-        #[doc = "Get detailed information about specified existing collection"]
+        ///
+        ///Get detailed information about specified existing collection
         async fn get(
             &self,
             request: tonic::Request<super::GetCollectionInfoRequest>,
         ) -> Result<tonic::Response<super::GetCollectionInfoResponse>, tonic::Status>;
-        #[doc = ""]
-        #[doc = "Get list name of all existing collections"]
+        ///
+        ///Get list name of all existing collections
         async fn list(
             &self,
             request: tonic::Request<super::ListCollectionsRequest>,
         ) -> Result<tonic::Response<super::ListCollectionsResponse>, tonic::Status>;
-        #[doc = ""]
-        #[doc = "Create new collection with given parameters"]
+        ///
+        ///Create new collection with given parameters
         async fn create(
             &self,
             request: tonic::Request<super::CreateCollection>,
         ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status>;
-        #[doc = ""]
-        #[doc = "Update parameters of the existing collection"]
+        ///
+        ///Update parameters of the existing collection
         async fn update(
             &self,
             request: tonic::Request<super::UpdateCollection>,
         ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status>;
-        #[doc = ""]
-        #[doc = "Drop collection and all associated data"]
+        ///
+        ///Drop collection and all associated data
         async fn delete(
             &self,
             request: tonic::Request<super::DeleteCollection>,
+        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status>;
+        ///
+        ///Update Aliases of the existing collection
+        async fn update_aliases(
+            &self,
+            request: tonic::Request<super::ChangeAliases>,
         ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status>;
     }
     #[derive(Debug)]
@@ -440,7 +511,9 @@ pub mod collections_server {
     struct _Inner<T>(Arc<T>);
     impl<T: Collections> CollectionsServer<T> {
         pub fn new(inner: T) -> Self {
-            let inner = Arc::new(inner);
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
             let inner = _Inner(inner);
             Self {
                 inner,
@@ -462,7 +535,7 @@ pub mod collections_server {
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;
-        type Error = Never;
+        type Error = std::convert::Infallible;
         type Future = BoxFuture<Self::Response, Self::Error>;
         fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
@@ -627,6 +700,37 @@ pub mod collections_server {
                     };
                     Box::pin(fut)
                 }
+                "/qdrant.Collections/UpdateAliases" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateAliasesSvc<T: Collections>(pub Arc<T>);
+                    impl<T: Collections> tonic::server::UnaryService<super::ChangeAliases> for UpdateAliasesSvc<T> {
+                        type Response = super::CollectionOperationResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ChangeAliases>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).update_aliases(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpdateAliasesSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 _ => Box::pin(async move {
                     Ok(http::Response::builder()
                         .status(200)
@@ -661,9 +765,10 @@ pub mod collections_server {
     impl<T: Collections> tonic::transport::NamedService for CollectionsServer<T> {
         const NAME: &'static str = "qdrant.Collections";
     }
-} // ---------------------------------------------
-  // ------------- Point Id Requests -------------
-  // ---------------------------------------------
+}
+// ---------------------------------------------
+// ------------- Point Id Requests -------------
+// ---------------------------------------------
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointId {
@@ -1003,7 +1108,7 @@ pub struct Filter {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Condition {
-    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3")]
+    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4")]
     pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
 }
 /// Nested message and enum types in `Condition`.
@@ -1013,10 +1118,17 @@ pub mod condition {
         #[prost(message, tag = "1")]
         Field(super::FieldCondition),
         #[prost(message, tag = "2")]
-        HasId(super::HasIdCondition),
+        IsEmpty(super::IsEmptyCondition),
         #[prost(message, tag = "3")]
+        HasId(super::HasIdCondition),
+        #[prost(message, tag = "4")]
         Filter(super::Filter),
     }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IsEmptyCondition {
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HasIdCondition {
@@ -1039,10 +1151,13 @@ pub struct FieldCondition {
     /// Check if geo point is within a given radius
     #[prost(message, optional, tag = "5")]
     pub geo_radius: ::core::option::Option<GeoRadius>,
+    /// Check number of values for a specific field
+    #[prost(message, optional, tag = "6")]
+    pub values_count: ::core::option::Option<ValuesCount>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Match {
-    #[prost(oneof = "r#match::MatchValue", tags = "1, 2")]
+    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3")]
     pub match_value: ::core::option::Option<r#match::MatchValue>,
 }
 /// Nested message and enum types in `Match`.
@@ -1055,6 +1170,9 @@ pub mod r#match {
         /// Match integer
         #[prost(int64, tag = "2")]
         Integer(i64),
+        /// Match boolean
+        #[prost(bool, tag = "3")]
+        Boolean(bool),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1085,6 +1203,17 @@ pub struct GeoRadius {
     /// In meters
     #[prost(float, tag = "2")]
     pub radius: f32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ValuesCount {
+    #[prost(uint64, optional, tag = "1")]
+    pub lt: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "2")]
+    pub gt: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "3")]
+    pub gte: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "4")]
+    pub lte: ::core::option::Option<u64>,
 }
 // ---------------------------------------------
 // -------------- Points Selector --------------
@@ -1147,7 +1276,7 @@ pub enum UpdateStatus {
     /// Update is applied and ready for search
     Completed = 2,
 }
-#[doc = r" Generated client implementations."]
+/// Generated client implementations.
 pub mod points_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
@@ -1156,7 +1285,7 @@ pub mod points_client {
         inner: tonic::client::Grpc<T>,
     }
     impl PointsClient<tonic::transport::Channel> {
-        #[doc = r" Attempt to create a new client by connecting to a given endpoint."]
+        /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
             D: std::convert::TryInto<tonic::transport::Endpoint>,
@@ -1169,8 +1298,8 @@ pub mod points_client {
     impl<T> PointsClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::ResponseBody: Body + Send + 'static,
         T::Error: Into<StdError>,
+        T::ResponseBody: Default + Body<Data = Bytes> + Send + 'static,
         <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {
         pub fn new(inner: T) -> Self {
@@ -1194,21 +1323,23 @@ pub mod points_client {
         {
             PointsClient::new(InterceptedService::new(inner, interceptor))
         }
-        #[doc = r" Compress requests with `gzip`."]
-        #[doc = r""]
-        #[doc = r" This requires the server to support it otherwise it might respond with an"]
-        #[doc = r" error."]
+        /// Compress requests with `gzip`.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
         pub fn send_gzip(mut self) -> Self {
             self.inner = self.inner.send_gzip();
             self
         }
-        #[doc = r" Enable decompressing responses with `gzip`."]
+        /// Enable decompressing responses with `gzip`.
+        #[must_use]
         pub fn accept_gzip(mut self) -> Self {
             self.inner = self.inner.accept_gzip();
             self
         }
-        #[doc = ""]
-        #[doc = "Perform insert + updates on points. If point with given ID already exists - it will be overwritten."]
+        ///
+        ///Perform insert + updates on points. If point with given ID already exists - it will be overwritten.
         pub async fn upsert(
             &mut self,
             request: impl tonic::IntoRequest<super::UpsertPoints>,
@@ -1223,8 +1354,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Upsert");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = ""]
-        #[doc = "Delete points"]
+        ///
+        ///Delete points
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeletePoints>,
@@ -1239,8 +1370,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Delete");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = ""]
-        #[doc = "Retrieve points"]
+        ///
+        ///Retrieve points
         pub async fn get(
             &mut self,
             request: impl tonic::IntoRequest<super::GetPoints>,
@@ -1255,8 +1386,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Get");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = ""]
-        #[doc = "Set payload for points"]
+        ///
+        ///Set payload for points
         pub async fn set_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::SetPayloadPoints>,
@@ -1271,8 +1402,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/SetPayload");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = ""]
-        #[doc = "Delete specified key payload for points"]
+        ///
+        ///Delete specified key payload for points
         pub async fn delete_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::DeletePayloadPoints>,
@@ -1287,8 +1418,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/DeletePayload");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = ""]
-        #[doc = "Remove all payload for specified points"]
+        ///
+        ///Remove all payload for specified points
         pub async fn clear_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::ClearPayloadPoints>,
@@ -1303,8 +1434,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/ClearPayload");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = ""]
-        #[doc = "Create index for field in collection"]
+        ///
+        ///Create index for field in collection
         pub async fn create_field_index(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateFieldIndexCollection>,
@@ -1319,8 +1450,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/CreateFieldIndex");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = ""]
-        #[doc = "Delete field index for collection"]
+        ///
+        ///Delete field index for collection
         pub async fn delete_field_index(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteFieldIndexCollection>,
@@ -1335,8 +1466,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/DeleteFieldIndex");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = ""]
-        #[doc = "Retrieve closest points based on vector similarity and given filtering conditions"]
+        ///
+        ///Retrieve closest points based on vector similarity and given filtering conditions
         pub async fn search(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchPoints>,
@@ -1351,8 +1482,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Search");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = ""]
-        #[doc = "Iterate over all or filtered points points"]
+        ///
+        ///Iterate over all or filtered points points
         pub async fn scroll(
             &mut self,
             request: impl tonic::IntoRequest<super::ScrollPoints>,
@@ -1367,8 +1498,8 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Scroll");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = ""]
-        #[doc = "Look for the points which are closer to stored positive examples and at the same time further to negative examples."]
+        ///
+        ///Look for the points which are closer to stored positive examples and at the same time further to negative examples.
         pub async fn recommend(
             &mut self,
             request: impl tonic::IntoRequest<super::RecommendPoints>,
@@ -1385,75 +1516,75 @@ pub mod points_client {
         }
     }
 }
-#[doc = r" Generated server implementations."]
+/// Generated server implementations.
 pub mod points_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    #[doc = "Generated trait containing gRPC methods that should be implemented for use with PointsServer."]
+    ///Generated trait containing gRPC methods that should be implemented for use with PointsServer.
     #[async_trait]
     pub trait Points: Send + Sync + 'static {
-        #[doc = ""]
-        #[doc = "Perform insert + updates on points. If point with given ID already exists - it will be overwritten."]
+        ///
+        ///Perform insert + updates on points. If point with given ID already exists - it will be overwritten.
         async fn upsert(
             &self,
             request: tonic::Request<super::UpsertPoints>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
-        #[doc = ""]
-        #[doc = "Delete points"]
+        ///
+        ///Delete points
         async fn delete(
             &self,
             request: tonic::Request<super::DeletePoints>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
-        #[doc = ""]
-        #[doc = "Retrieve points"]
+        ///
+        ///Retrieve points
         async fn get(
             &self,
             request: tonic::Request<super::GetPoints>,
         ) -> Result<tonic::Response<super::GetResponse>, tonic::Status>;
-        #[doc = ""]
-        #[doc = "Set payload for points"]
+        ///
+        ///Set payload for points
         async fn set_payload(
             &self,
             request: tonic::Request<super::SetPayloadPoints>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
-        #[doc = ""]
-        #[doc = "Delete specified key payload for points"]
+        ///
+        ///Delete specified key payload for points
         async fn delete_payload(
             &self,
             request: tonic::Request<super::DeletePayloadPoints>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
-        #[doc = ""]
-        #[doc = "Remove all payload for specified points"]
+        ///
+        ///Remove all payload for specified points
         async fn clear_payload(
             &self,
             request: tonic::Request<super::ClearPayloadPoints>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
-        #[doc = ""]
-        #[doc = "Create index for field in collection"]
+        ///
+        ///Create index for field in collection
         async fn create_field_index(
             &self,
             request: tonic::Request<super::CreateFieldIndexCollection>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
-        #[doc = ""]
-        #[doc = "Delete field index for collection"]
+        ///
+        ///Delete field index for collection
         async fn delete_field_index(
             &self,
             request: tonic::Request<super::DeleteFieldIndexCollection>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
-        #[doc = ""]
-        #[doc = "Retrieve closest points based on vector similarity and given filtering conditions"]
+        ///
+        ///Retrieve closest points based on vector similarity and given filtering conditions
         async fn search(
             &self,
             request: tonic::Request<super::SearchPoints>,
         ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status>;
-        #[doc = ""]
-        #[doc = "Iterate over all or filtered points points"]
+        ///
+        ///Iterate over all or filtered points points
         async fn scroll(
             &self,
             request: tonic::Request<super::ScrollPoints>,
         ) -> Result<tonic::Response<super::ScrollResponse>, tonic::Status>;
-        #[doc = ""]
-        #[doc = "Look for the points which are closer to stored positive examples and at the same time further to negative examples."]
+        ///
+        ///Look for the points which are closer to stored positive examples and at the same time further to negative examples.
         async fn recommend(
             &self,
             request: tonic::Request<super::RecommendPoints>,
@@ -1468,7 +1599,9 @@ pub mod points_server {
     struct _Inner<T>(Arc<T>);
     impl<T: Points> PointsServer<T> {
         pub fn new(inner: T) -> Self {
-            let inner = Arc::new(inner);
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
             let inner = _Inner(inner);
             Self {
                 inner,
@@ -1490,7 +1623,7 @@ pub mod points_server {
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;
-        type Error = Never;
+        type Error = std::convert::Infallible;
         type Future = BoxFuture<Self::Response, Self::Error>;
         fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
@@ -1879,6 +2012,210 @@ pub mod points_server {
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpsertPointsInternal {
+    #[prost(message, optional, tag = "1")]
+    pub upsert_points: ::core::option::Option<UpsertPoints>,
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+}
+/// Generated client implementations.
+pub mod points_internal_client {
+    #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
+    use tonic::codegen::*;
+    #[derive(Debug, Clone)]
+    pub struct PointsInternalClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl PointsInternalClient<tonic::transport::Channel> {
+        /// Attempt to create a new client by connecting to a given endpoint.
+        pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+        where
+            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D::Error: Into<StdError>,
+        {
+            let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+            Ok(Self::new(conn))
+        }
+    }
+    impl<T> PointsInternalClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::BoxBody>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Default + Body<Data = Bytes> + Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> PointsInternalClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
+        {
+            PointsInternalClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with `gzip`.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_gzip(mut self) -> Self {
+            self.inner = self.inner.send_gzip();
+            self
+        }
+        /// Enable decompressing responses with `gzip`.
+        #[must_use]
+        pub fn accept_gzip(mut self) -> Self {
+            self.inner = self.inner.accept_gzip();
+            self
+        }
+        pub async fn upsert(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpsertPointsInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.PointsInternal/Upsert");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+    }
+}
+/// Generated server implementations.
+pub mod points_internal_server {
+    #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
+    use tonic::codegen::*;
+    ///Generated trait containing gRPC methods that should be implemented for use with PointsInternalServer.
+    #[async_trait]
+    pub trait PointsInternal: Send + Sync + 'static {
+        async fn upsert(
+            &self,
+            request: tonic::Request<super::UpsertPointsInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+    }
+    #[derive(Debug)]
+    pub struct PointsInternalServer<T: PointsInternal> {
+        inner: _Inner<T>,
+        accept_compression_encodings: (),
+        send_compression_encodings: (),
+    }
+    struct _Inner<T>(Arc<T>);
+    impl<T: PointsInternal> PointsInternalServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            let inner = _Inner(inner);
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+            }
+        }
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for PointsInternalServer<T>
+    where
+        T: PointsInternal,
+        B: Body + Send + 'static,
+        B::Error: Into<StdError> + Send + 'static,
+    {
+        type Response = http::Response<tonic::body::BoxBody>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            let inner = self.inner.clone();
+            match req.uri().path() {
+                "/qdrant.PointsInternal/Upsert" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpsertSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<T: PointsInternal> tonic::server::UnaryService<super::UpsertPointsInternal> for UpsertSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UpsertPointsInternal>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).upsert(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpsertSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => Box::pin(async move {
+                    Ok(http::Response::builder()
+                        .status(200)
+                        .header("grpc-status", "12")
+                        .header("content-type", "application/grpc")
+                        .body(empty_body())
+                        .unwrap())
+                }),
+            }
+        }
+    }
+    impl<T: PointsInternal> Clone for PointsInternalServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+            }
+        }
+    }
+    impl<T: PointsInternal> Clone for _Inner<T> {
+        fn clone(&self) -> Self {
+            Self(self.0.clone())
+        }
+    }
+    impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{:?}", self.0)
+        }
+    }
+    impl<T: PointsInternal> tonic::transport::NamedService for PointsInternalServer<T> {
+        const NAME: &'static str = "qdrant.PointsInternal";
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HealthCheckRequest {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HealthCheckReply {
@@ -1887,7 +2224,7 @@ pub struct HealthCheckReply {
     #[prost(string, tag = "2")]
     pub version: ::prost::alloc::string::String,
 }
-#[doc = r" Generated client implementations."]
+/// Generated client implementations.
 pub mod qdrant_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
@@ -1896,7 +2233,7 @@ pub mod qdrant_client {
         inner: tonic::client::Grpc<T>,
     }
     impl QdrantClient<tonic::transport::Channel> {
-        #[doc = r" Attempt to create a new client by connecting to a given endpoint."]
+        /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
             D: std::convert::TryInto<tonic::transport::Endpoint>,
@@ -1909,8 +2246,8 @@ pub mod qdrant_client {
     impl<T> QdrantClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::ResponseBody: Body + Send + 'static,
         T::Error: Into<StdError>,
+        T::ResponseBody: Default + Body<Data = Bytes> + Send + 'static,
         <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {
         pub fn new(inner: T) -> Self {
@@ -1934,15 +2271,17 @@ pub mod qdrant_client {
         {
             QdrantClient::new(InterceptedService::new(inner, interceptor))
         }
-        #[doc = r" Compress requests with `gzip`."]
-        #[doc = r""]
-        #[doc = r" This requires the server to support it otherwise it might respond with an"]
-        #[doc = r" error."]
+        /// Compress requests with `gzip`.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
         pub fn send_gzip(mut self) -> Self {
             self.inner = self.inner.send_gzip();
             self
         }
-        #[doc = r" Enable decompressing responses with `gzip`."]
+        /// Enable decompressing responses with `gzip`.
+        #[must_use]
         pub fn accept_gzip(mut self) -> Self {
             self.inner = self.inner.accept_gzip();
             self
@@ -1963,11 +2302,11 @@ pub mod qdrant_client {
         }
     }
 }
-#[doc = r" Generated server implementations."]
+/// Generated server implementations.
 pub mod qdrant_server {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
-    #[doc = "Generated trait containing gRPC methods that should be implemented for use with QdrantServer."]
+    ///Generated trait containing gRPC methods that should be implemented for use with QdrantServer.
     #[async_trait]
     pub trait Qdrant: Send + Sync + 'static {
         async fn health_check(
@@ -1984,7 +2323,9 @@ pub mod qdrant_server {
     struct _Inner<T>(Arc<T>);
     impl<T: Qdrant> QdrantServer<T> {
         pub fn new(inner: T) -> Self {
-            let inner = Arc::new(inner);
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
             let inner = _Inner(inner);
             Self {
                 inner,
@@ -2006,7 +2347,7 @@ pub mod qdrant_server {
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;
-        type Error = Never;
+        type Error = std::convert::Infallible;
         type Future = BoxFuture<Self::Response, Self::Error>;
         fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
