@@ -19,7 +19,7 @@ where
     }
 }
 
-fn check_filter<F>(checker: &F, filter: &Filter) -> bool
+pub fn check_filter<F>(checker: &F, filter: &Filter) -> bool
 where
     F: Fn(&Condition) -> bool,
 {
