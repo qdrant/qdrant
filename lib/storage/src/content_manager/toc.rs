@@ -370,7 +370,7 @@ impl TableOfContent {
         let (sender, receiver) = oneshot::channel();
         self.on_meta_op_apply.lock()?.insert(operation, sender);
         propose_sender.lock()?.send(serialized)?;
-        Ok(tokio::time::timeout(wait_timeout, receiver)
+        tokio::time::timeout(wait_timeout, receiver)
             .await
             .map_err(
                 |_: tokio::time::error::Elapsed| StorageError::ServiceError {
@@ -380,7 +380,7 @@ impl TableOfContent {
                     ),
                 },
                 // ??? - forwards 3 possible errors: timeout, sender dropped, operation failed
-            )???)
+            )??
     }
 
     async fn perform_collection_meta_op(
