@@ -150,10 +150,8 @@ impl GraphLayers {
         points_scorer: &FilteredScorer,
     ) {
         let limit = self.get_m(level);
-        let mut scores_buffer: Vec<ScoredPointOffset> =
-            vec![ScoredPointOffset { idx: 0, score: 0. }; limit];
-        let mut points_ids: Vec<PointOffsetType> = vec![];
-        points_ids.reserve(2 * limit);
+        let mut scores_buffer: Vec<ScoredPointOffset> = vec![ScoredPointOffset::default(); limit];
+        let mut points_ids: Vec<PointOffsetType> = Vec::with_capacity(2 * limit);
 
         while let Some(candidate) = searcher.candidates.pop() {
             if candidate.score < searcher.lower_bound() {
@@ -211,10 +209,9 @@ impl GraphLayers {
         target_level: usize,
         points_scorer: &FilteredScorer,
     ) -> ScoredPointOffset {
-        let mut links: Vec<PointOffsetType> = vec![];
-        links.reserve(2 * self.get_m(0));
+        let mut links: Vec<PointOffsetType> = Vec::with_capacity(2 * self.get_m(0));
         let mut scores_buffer: Vec<ScoredPointOffset> =
-            vec![ScoredPointOffset { idx: 0, score: 0. }; self.get_m(0)];
+            vec![ScoredPointOffset::default(); self.get_m(0)];
 
         let mut current_point = ScoredPointOffset {
             idx: entry_point,
@@ -222,7 +219,7 @@ impl GraphLayers {
         };
         for level in rev_range(top_level, target_level) {
             let limit = self.get_m(level);
-            scores_buffer.resize(limit, ScoredPointOffset { idx: 0, score: 0. });
+            scores_buffer.resize(limit, ScoredPointOffset::default());
 
             let mut changed = true;
             while changed {

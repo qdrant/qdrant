@@ -5,7 +5,7 @@ use rand::Rng;
 use std::cmp::Ordering;
 use std::ops::Range;
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Default)]
 pub struct ScoredPointOffset {
     pub idx: PointOffsetType,
     pub score: ScoreType,

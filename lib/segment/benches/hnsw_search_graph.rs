@@ -47,7 +47,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
 
     let mut plain_search_range: Vec<PointOffsetType> =
         (0..NUM_VECTORS as PointOffsetType).collect();
-    let mut plain_search_points_buffer = vec![ScoredPointOffset { idx: 0, score: 0. }; NUM_VECTORS];
+    let mut plain_search_points_buffer = vec![ScoredPointOffset::default(); NUM_VECTORS];
     group.bench_function("plain_search", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);

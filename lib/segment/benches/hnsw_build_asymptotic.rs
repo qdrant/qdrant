@@ -72,7 +72,7 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
         })
     });
 
-    let mut scored_points_buffer = vec![ScoredPointOffset { idx: 0, score: 0. }; 1000];
+    let mut scored_points_buffer = vec![ScoredPointOffset::default(); 1000];
     group.bench_function("build-n-search-hnsw-10x-score-point", |b| {
         b.iter(|| {
             let fake_filter_context = FakeFilterContext {};
@@ -123,7 +123,7 @@ fn scoring_vectors(c: &mut Criterion) {
     let num_vectors = base_num_vectors;
     let vector_holder = TestRawScorerProducer::new(DIM, num_vectors, metric.clone(), &mut rng);
 
-    let mut scored_points_buffer = vec![ScoredPointOffset { idx: 0, score: 0. }; points_per_cycle];
+    let mut scored_points_buffer = vec![ScoredPointOffset::default(); points_per_cycle];
     group.bench_function("score-point", |b| {
         b.iter(|| {
             let fake_filter_context = FakeFilterContext {};
@@ -141,7 +141,7 @@ fn scoring_vectors(c: &mut Criterion) {
     let num_vectors = base_num_vectors * 10;
     let vector_holder = TestRawScorerProducer::new(DIM, num_vectors, metric.clone(), &mut rng);
 
-    let mut scored_points_buffer = vec![ScoredPointOffset { idx: 0, score: 0. }; points_per_cycle];
+    let mut scored_points_buffer = vec![ScoredPointOffset::default(); points_per_cycle];
     group.bench_function("score-point-10x", |b| {
         b.iter(|| {
             let fake_filter_context = FakeFilterContext {};
@@ -159,7 +159,7 @@ fn scoring_vectors(c: &mut Criterion) {
     let num_vectors = base_num_vectors * 50;
     let vector_holder = TestRawScorerProducer::new(DIM, num_vectors, metric, &mut rng);
 
-    let mut scored_points_buffer = vec![ScoredPointOffset { idx: 0, score: 0. }; points_per_cycle];
+    let mut scored_points_buffer = vec![ScoredPointOffset::default(); points_per_cycle];
     group.bench_function("score-point-50x", |b| {
         b.iter(|| {
             let fake_filter_context = FakeFilterContext {};
