@@ -167,9 +167,11 @@ impl GraphLayers {
                 }
             }
 
-            points_scorer.score_iterable_points(&points_ids, &mut scores_buffer, |score_point| {
-                searcher.process_candidate(score_point)
-            });
+            points_scorer.score_points_to_buffer(
+                &mut points_ids,
+                &mut scores_buffer,
+                |score_point| searcher.process_candidate(score_point),
+            );
         }
     }
 
@@ -209,31 +211,36 @@ impl GraphLayers {
         target_level: usize,
         points_scorer: &FilteredScorer,
     ) -> ScoredPointOffset {
+        let mut links: Vec<PointOffsetType> = vec![];
+        links.reserve(2 * self.get_m(0));
+        let mut scores_buffer: Vec<ScoredPointOffset> =
+            vec![ScoredPointOffset { idx: 0, score: 0. }; self.get_m(0)];
+
         let mut current_point = ScoredPointOffset {
             idx: entry_point,
             score: points_scorer.score_point(entry_point),
         };
         for level in rev_range(top_level, target_level) {
             let limit = self.get_m(level);
-            let mut scores_buffer: Vec<ScoredPointOffset> =
-                vec![ScoredPointOffset { idx: 0, score: 0. }; limit];
-            let mut points_ids: Vec<PointOffsetType> = vec![];
-            points_ids.reserve(2 * limit);
+            scores_buffer.resize(limit, ScoredPointOffset { idx: 0, score: 0. });
 
             let mut changed = true;
             while changed {
                 changed = false;
-                let links = self
-                    .links(current_point.idx, level)
-                    .iter()
-                    .copied()
-                    .collect_vec();
-                points_scorer.score_iterable_points(&links, &mut scores_buffer, |score_point| {
-                    if score_point.score > current_point.score {
-                        changed = true;
-                        current_point = score_point;
-                    }
-                });
+
+                links.clear();
+                links.extend_from_slice(self.links(current_point.idx, level));
+
+                points_scorer.score_points_to_buffer(
+                    &mut links,
+                    &mut scores_buffer,
+                    |score_point| {
+                        if score_point.score > current_point.score {
+                            changed = true;
+                            current_point = score_point;
+                        }
+                    },
+                );
             }
         }
         current_point

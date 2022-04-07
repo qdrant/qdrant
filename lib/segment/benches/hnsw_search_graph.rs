@@ -45,7 +45,8 @@ fn hnsw_benchmark(c: &mut Criterion) {
         })
     });
 
-    let plain_search_range: Vec<PointOffsetType> = (0..NUM_VECTORS as PointOffsetType).collect();
+    let mut plain_search_range: Vec<PointOffsetType> =
+        (0..NUM_VECTORS as PointOffsetType).collect();
     let mut plain_search_points_buffer = vec![ScoredPointOffset { idx: 0, score: 0. }; NUM_VECTORS];
     group.bench_function("plain_search", |b| {
         b.iter(|| {
@@ -55,8 +56,8 @@ fn hnsw_benchmark(c: &mut Criterion) {
             let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
 
             let mut top_score = 0.;
-            scorer.score_iterable_points(
-                &plain_search_range,
+            scorer.score_points_to_buffer(
+                &mut plain_search_range,
                 &mut plain_search_points_buffer,
                 |score| {
                     if score.score > top_score {

@@ -25,41 +25,39 @@ impl<'a> FilteredScorer<'a> {
         }
     }
 
-    pub fn score_iterable_points<F>(
+    pub fn score_points_to_buffer<F>(
         &self,
-        point_ids: &[PointOffsetType],
+        point_ids: &mut [PointOffsetType],
         scored_points_buffer: &mut [ScoredPointOffset],
         action: F,
     ) where
         F: FnMut(ScoredPointOffset),
     {
-        match self.filter_context {
-            None => {
-                let count = self
-                    .raw_scorer
-                    .score_points(point_ids, scored_points_buffer);
-                scored_points_buffer
-                    .iter()
-                    .take(count)
-                    .copied()
-                    .for_each(action);
-            }
+        // apply filter and store filtered ids to source slice memory
+        let filtered_point_ids = match self.filter_context {
+            None => point_ids,
             Some(f) => {
-                let filtered_points: Vec<PointOffsetType> = point_ids
-                    .iter()
-                    .copied()
-                    .filter(|id| f.check(*id))
-                    .collect();
-                let count = self
-                    .raw_scorer
-                    .score_points(&filtered_points, scored_points_buffer);
-                scored_points_buffer
-                    .iter()
-                    .take(count)
-                    .copied()
-                    .for_each(action);
+                let len = point_ids.len();
+                let mut filtered_len = 0;
+                for i in 0..len {
+                    let point_id = point_ids[i];
+                    if f.check(point_id) {
+                        point_ids[filtered_len] = point_id;
+                        filtered_len += 1;
+                    }
+                }
+                &point_ids[0..filtered_len]
             }
         };
+
+        let count = self
+            .raw_scorer
+            .score_points(filtered_point_ids, scored_points_buffer);
+        scored_points_buffer
+            .iter()
+            .take(count)
+            .copied()
+            .for_each(action);
     }
 
     pub fn score_point(&self, point_id: PointOffsetType) -> ScoreType {
