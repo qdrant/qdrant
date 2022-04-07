@@ -1,10 +1,13 @@
 use crate::payload_storage::FilterContext;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset};
+use std::cell::RefCell;
+use std::ops::DerefMut;
 
 pub struct FilteredScorer<'a> {
     pub raw_scorer: &'a dyn RawScorer,
     pub filter_context: Option<&'a dyn FilterContext>,
+    points_buffer: RefCell<Vec<ScoredPointOffset>>,
 }
 
 impl<'a> FilteredScorer<'a> {
@@ -15,6 +18,7 @@ impl<'a> FilteredScorer<'a> {
         FilteredScorer {
             raw_scorer,
             filter_context,
+            points_buffer: RefCell::new(vec![]),
         }
     }
 
@@ -25,12 +29,21 @@ impl<'a> FilteredScorer<'a> {
         }
     }
 
-    pub fn score_points_to_buffer<F>(
-        &self,
-        point_ids: &mut [PointOffsetType],
-        scored_points_buffer: &mut [ScoredPointOffset],
-        action: F,
-    ) where
+    /// Method filters and calculates scores for the given slice of points
+    /// and yields obtained scores into the callback.
+    ///
+    /// For performance reasons:
+    /// - This function uses callback instead of iterator
+    /// - This function mutates input values
+    ///
+    /// # Arguments
+    ///
+    /// * `point_ids` - list of points to score. *Warn*: This input will be wrecked during the execution.
+    /// * `limit` - limits the number of points to process after filtering.
+    /// * `action` - callback. This function is called for each scored point (not more than `limit` times)
+    ///
+    pub fn score_points<F>(&self, point_ids: &mut [PointOffsetType], limit: usize, action: F)
+    where
         F: FnMut(ScoredPointOffset),
     {
         // apply filter and store filtered ids to source slice memory
@@ -50,9 +63,12 @@ impl<'a> FilteredScorer<'a> {
             }
         };
 
+        let mut scored_points_buffer = self.points_buffer.borrow_mut();
+        scored_points_buffer.resize(limit, ScoredPointOffset::default());
+
         let count = self
             .raw_scorer
-            .score_points(filtered_point_ids, scored_points_buffer);
+            .score_points(filtered_point_ids, scored_points_buffer.deref_mut());
         scored_points_buffer
             .iter()
             .take(count)
