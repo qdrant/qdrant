@@ -63,7 +63,9 @@ paths:
             type: string
         - name: timeout
           in: query
-          description: Wait for operation commit timeout in millis
+          description: |
+            Wait for operation commit timeout in millis. 
+            If timeout is reached - request will return with service error.
           schema:
             type: integer
       responses: #@ response(type("boolean"))
@@ -90,7 +92,9 @@ paths:
             type: string
         - name: timeout
           in: query
-          description: Wait for operation commit timeout in millis
+          description: |
+            Wait for operation commit timeout in millis. 
+            If timeout is reached - request will return with service error.
           schema:
             type: integer
       responses: #@ response(type("boolean"))
@@ -110,7 +114,9 @@ paths:
             type: string
         - name: timeout
           in: query
-          description: Wait for operation commit timeout in millis
+          description: |
+            Wait for operation commit timeout in millis. 
+            If timeout is reached - request will return with service error.
           schema:
             type: integer
       responses: #@ response(type("boolean"))
@@ -130,7 +136,9 @@ paths:
       parameters:
         - name: timeout
           in: query
-          description: Wait for operation commit timeout in millis
+          description: |
+            Wait for operation commit timeout in millis. 
+            If timeout is reached - request will return with service error.
           schema:
             type: integer
       responses: #@ response(type("boolean"))
