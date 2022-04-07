@@ -2216,6 +2216,48 @@ pub struct UpsertPointsInternal {
     #[prost(uint32, tag="2")]
     pub shard_id: u32,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeletePointsInternal {
+    #[prost(message, optional, tag="1")]
+    pub delete_points: ::core::option::Option<DeletePoints>,
+    #[prost(uint32, tag="2")]
+    pub shard_id: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SetPayloadPointsInternal {
+    #[prost(message, optional, tag="1")]
+    pub set_payload_points: ::core::option::Option<SetPayloadPoints>,
+    #[prost(uint32, tag="2")]
+    pub shard_id: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeletePayloadPointsInternal {
+    #[prost(message, optional, tag="1")]
+    pub delete_payload_points: ::core::option::Option<DeletePayloadPoints>,
+    #[prost(uint32, tag="2")]
+    pub shard_id: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClearPayloadPointsInternal {
+    #[prost(message, optional, tag="1")]
+    pub clear_payload_points: ::core::option::Option<ClearPayloadPoints>,
+    #[prost(uint32, tag="2")]
+    pub shard_id: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateFieldIndexCollectionInternal {
+    #[prost(message, optional, tag="1")]
+    pub create_field_index_collection: ::core::option::Option<CreateFieldIndexCollection>,
+    #[prost(uint32, tag="2")]
+    pub shard_id: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteFieldIndexCollectionInternal {
+    #[prost(message, optional, tag="1")]
+    pub delete_field_index_collection: ::core::option::Option<DeleteFieldIndexCollection>,
+    #[prost(uint32, tag="2")]
+    pub shard_id: u32,
+}
 /// Generated client implementations.
 pub mod points_internal_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -2298,6 +2340,120 @@ pub mod points_internal_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn delete(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeletePointsInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/Delete",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn set_payload(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SetPayloadPointsInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/SetPayload",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn delete_payload(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeletePayloadPointsInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/DeletePayload",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn clear_payload(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ClearPayloadPointsInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/ClearPayload",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn create_field_index(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateFieldIndexCollectionInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/CreateFieldIndex",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn delete_field_index(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteFieldIndexCollectionInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/DeleteFieldIndex",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -2310,6 +2466,30 @@ pub mod points_internal_server {
         async fn upsert(
             &self,
             request: tonic::Request<super::UpsertPointsInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn delete(
+            &self,
+            request: tonic::Request<super::DeletePointsInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn set_payload(
+            &self,
+            request: tonic::Request<super::SetPayloadPointsInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn delete_payload(
+            &self,
+            request: tonic::Request<super::DeletePayloadPointsInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn clear_payload(
+            &self,
+            request: tonic::Request<super::ClearPayloadPointsInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn create_field_index(
+            &self,
+            request: tonic::Request<super::CreateFieldIndexCollectionInternal>,
+        ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn delete_field_index(
+            &self,
+            request: tonic::Request<super::DeleteFieldIndexCollectionInternal>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
     }
     #[derive(Debug)]
@@ -2386,6 +2566,248 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = UpsertSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/Delete" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::DeletePointsInternal>
+                    for DeleteSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeletePointsInternal>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).delete(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/SetPayload" => {
+                    #[allow(non_camel_case_types)]
+                    struct SetPayloadSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::SetPayloadPointsInternal>
+                    for SetPayloadSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SetPayloadPointsInternal>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).set_payload(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = SetPayloadSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/DeletePayload" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeletePayloadSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::DeletePayloadPointsInternal>
+                    for DeletePayloadSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeletePayloadPointsInternal>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).delete_payload(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeletePayloadSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/ClearPayload" => {
+                    #[allow(non_camel_case_types)]
+                    struct ClearPayloadSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::ClearPayloadPointsInternal>
+                    for ClearPayloadSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ClearPayloadPointsInternal>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).clear_payload(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ClearPayloadSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/CreateFieldIndex" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateFieldIndexSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<
+                        super::CreateFieldIndexCollectionInternal,
+                    > for CreateFieldIndexSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::CreateFieldIndexCollectionInternal,
+                            >,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).create_field_index(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CreateFieldIndexSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/DeleteFieldIndex" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteFieldIndexSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<
+                        super::DeleteFieldIndexCollectionInternal,
+                    > for DeleteFieldIndexSvc<T> {
+                        type Response = super::PointsOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::DeleteFieldIndexCollectionInternal,
+                            >,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).delete_field_index(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteFieldIndexSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
