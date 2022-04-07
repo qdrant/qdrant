@@ -7,6 +7,7 @@ use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
 use log::debug;
+use serde_json::Value;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::points_iterator::PointsIteratorSS;
@@ -18,10 +19,12 @@ use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
+use crate::payload_storage::condition_checker::ValueChecker;
+use crate::payload_storage::query_checker::check_filter;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorageSS};
 use crate::types::{
-    Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType, PayloadKeyTypeRef,
-    PayloadSchemaType, PointOffsetType,
+    Condition, FieldCondition, Filter, GeoPoint, IsEmptyCondition, PayloadKeyType,
+    PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
 };
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
@@ -375,10 +378,12 @@ impl PayloadIndex for StructPayloadIndex {
     }
 
     fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
-        Box::new(StructFilterContext {
+        Box::new(StructFilterContext::new(
+            self.condition_checker.clone(),
             filter,
-            condition_checker: self.condition_checker.clone(),
-        })
+            &self.field_indexes,
+            self.estimate_cardinality(filter),
+        ))
     }
 
     fn payload_blocks(
@@ -401,10 +406,186 @@ impl PayloadIndex for StructPayloadIndex {
 pub struct StructFilterContext<'a> {
     condition_checker: Arc<ConditionCheckerSS>,
     filter: &'a Filter,
+    field_indexes: &'a IndexesMap,
+    fallback: bool,
+    cardinality_estimation: CardinalityEstimation,
+}
+
+impl<'a> StructFilterContext<'a> {
+    fn new(
+        condition_checker: Arc<ConditionCheckerSS>,
+        filter: &'a Filter,
+        field_indexes: &'a IndexesMap,
+        cardinality_estimation: CardinalityEstimation,
+    ) -> Self {
+        let fallback = check_fallback(&cardinality_estimation.primary_clauses, field_indexes);
+
+        Self {
+            condition_checker,
+            filter,
+            field_indexes,
+            cardinality_estimation,
+            fallback,
+        }
+    }
+
+    fn get_field_value(
+        &self,
+        field_name: PayloadKeyTypeRef,
+        point_id: PointOffsetType,
+    ) -> Option<Value> {
+        match self.field_indexes.get(field_name) {
+            Some(indexes) => match &indexes[0] {
+                FieldIndex::IntIndex(int_index) => {
+                    let values = int_index.get_values(point_id);
+                    match values {
+                        None => None,
+                        Some(v) => {
+                            if v.len() == 1 {
+                                return Some(Value::Number(v[0].into()));
+                            }
+                            let values = v
+                                .iter()
+                                .map(|i| Value::Number(i.to_owned().into()))
+                                .collect();
+                            Some(Value::Array(values))
+                        }
+                    }
+                }
+                FieldIndex::IntMapIndex(int_map_index) => {
+                    let values = int_map_index.get_values(point_id);
+                    match values {
+                        None => None,
+                        Some(v) => {
+                            if v.len() == 1 {
+                                return Some(Value::Number(v[0].into()));
+                            }
+                            let values = v
+                                .iter()
+                                .map(|i| Value::Number(i.to_owned().into()))
+                                .collect();
+                            Some(Value::Array(values))
+                        }
+                    }
+                }
+                FieldIndex::KeywordIndex(keyword_index) => {
+                    let values = keyword_index.get_values(point_id);
+                    match values {
+                        None => None,
+                        Some(v) => {
+                            if v.len() == 1 {
+                                return Some(Value::String(v[0].clone()));
+                            }
+                            let values = v.iter().map(|i| Value::String(i.to_owned())).collect();
+                            Some(Value::Array(values))
+                        }
+                    }
+                }
+
+                FieldIndex::FloatIndex(float_index) => {
+                    let values = float_index.get_values(point_id);
+                    match values {
+                        None => None,
+                        Some(v) => {
+                            if v.len() == 1 {
+                                return Some(Value::Number(
+                                    serde_json::Number::from_f64(v[0]).unwrap(),
+                                ));
+                            }
+                            let values = v
+                                .iter()
+                                .map(|i| Value::Number(serde_json::Number::from_f64(*i).unwrap()))
+                                .collect();
+                            Some(Value::Array(values))
+                        }
+                    }
+                }
+                FieldIndex::GeoIndex(geo_index) => {
+                    let values = geo_index.get_values(point_id);
+                    match values {
+                        None => None,
+                        Some(v) => {
+                            if v.len() == 1 {
+                                return Some(build_geo_obj(&v[0]));
+                            }
+                            let values = v.iter().map(|i| build_geo_obj(i)).collect();
+                            Some(Value::Array(values))
+                        }
+                    }
+                }
+            },
+            None => None,
+        }
+    }
+}
+
+fn build_geo_obj(geo_point: &GeoPoint) -> Value {
+    let mut geo_obj = serde_json::Map::new();
+    geo_obj.insert(
+        "lat".to_string(),
+        Value::Number(serde_json::Number::from_f64(geo_point.lat).unwrap()),
+    );
+    geo_obj.insert(
+        "lon".to_string(),
+        Value::Number(serde_json::Number::from_f64(geo_point.lon).unwrap()),
+    );
+    return Value::Object(geo_obj);
+}
+
+fn check_fallback(primary_clauses: &[PrimaryCondition], field_indexes: &IndexesMap) -> bool {
+    primary_clauses.iter().any(|p| match p {
+        PrimaryCondition::Condition(field_condition) => {
+            field_indexes.get(&field_condition.key).is_none()
+        }
+        _ => true,
+    })
 }
 
 impl<'a> FilterContext for StructFilterContext<'a> {
     fn check(&self, point_id: PointOffsetType) -> bool {
-        self.condition_checker.check(point_id, self.filter)
+        if self.fallback {
+            return self.condition_checker.check(point_id, self.filter);
+        }
+
+        let checker = |condition: &Condition| {
+            match condition {
+                Condition::Field(field_condition) => {
+                    self.get_field_value(&field_condition.key, point_id)
+                        .map_or(false, |p| {
+                            let mut res = false;
+                            // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
+                            res = res
+                                || field_condition
+                                    .r#match
+                                    .as_ref()
+                                    .map_or(false, |condition| condition.check(&p));
+                            res = res
+                                || field_condition
+                                    .range
+                                    .as_ref()
+                                    .map_or(false, |condition| condition.check(&p));
+                            res = res
+                                || field_condition
+                                    .geo_radius
+                                    .as_ref()
+                                    .map_or(false, |condition| condition.check(&p));
+                            res = res
+                                || field_condition
+                                    .geo_bounding_box
+                                    .as_ref()
+                                    .map_or(false, |condition| condition.check(&p));
+                            res = res
+                                || field_condition
+                                    .values_count
+                                    .as_ref()
+                                    .map_or(false, |condition| condition.check(&p));
+                            res
+                        })
+                }
+                _ => panic!("Unexpected condition!"),
+            }
+        };
+
+        check_filter(&checker, self.filter)
     }
 }
