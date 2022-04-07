@@ -43,20 +43,26 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
     }
 }
 
-impl From<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
-    fn from(value: api::grpc::qdrant::UpdateCollection) -> Self {
-        Self::UpdateCollection(UpdateCollectionOperation {
+impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::UpdateCollection) -> Result<Self, Self::Error> {
+        Ok(Self::UpdateCollection(UpdateCollectionOperation {
             collection_name: value.collection_name,
             update_collection: UpdateCollection {
                 optimizers_config: value.optimizers_config.map(|v| v.into()),
             },
-        })
+        }))
     }
 }
 
-impl From<api::grpc::qdrant::DeleteCollection> for CollectionMetaOperations {
-    fn from(value: api::grpc::qdrant::DeleteCollection) -> Self {
-        Self::DeleteCollection(DeleteCollectionOperation(value.collection_name))
+impl TryFrom<api::grpc::qdrant::DeleteCollection> for CollectionMetaOperations {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::DeleteCollection) -> Result<Self, Self::Error> {
+        Ok(Self::DeleteCollection(DeleteCollectionOperation(
+            value.collection_name,
+        )))
     }
 }
 
