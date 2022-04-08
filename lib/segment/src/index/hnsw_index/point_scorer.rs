@@ -28,17 +28,14 @@ impl<'a> FilteredScorer<'a> {
     }
 
     /// Method filters and calculates scores for the given slice of points
-    /// and yields obtained scores into the callback.
     ///
-    /// For performance reasons:
-    /// - This function uses callback instead of iterator
-    /// - This function mutates input values
+    /// For performance reasons this function mutates input values.
+    /// For result slice allocation this function mutates self.
     ///
     /// # Arguments
     ///
     /// * `point_ids` - list of points to score. *Warn*: This input will be wrecked during the execution.
     /// * `limit` - limits the number of points to process after filtering.
-    /// * `action` - callback. This function is called for each scored point (not more than `limit` times)
     ///
     pub fn score_points(
         &mut self,
