@@ -5,6 +5,7 @@ use crate::vector_storage::{RawScorer, ScoredPointOffset};
 pub struct FilteredScorer<'a> {
     pub raw_scorer: &'a dyn RawScorer,
     pub filter_context: Option<&'a dyn FilterContext>,
+    points_buffer: Vec<ScoredPointOffset>,
 }
 
 impl<'a> FilteredScorer<'a> {
@@ -15,6 +16,7 @@ impl<'a> FilteredScorer<'a> {
         FilteredScorer {
             raw_scorer,
             filter_context,
+            points_buffer: Vec::new(),
         }
     }
 
@@ -25,37 +27,44 @@ impl<'a> FilteredScorer<'a> {
         }
     }
 
-    pub fn score_iterable_points<F>(
-        &self,
-        points_iterator: &mut dyn Iterator<Item = PointOffsetType>,
+    /// Method filters and calculates scores for the given slice of points
+    ///
+    /// For performance reasons this function mutates input values.
+    /// For result slice allocation this function mutates self.
+    ///
+    /// # Arguments
+    ///
+    /// * `point_ids` - list of points to score. *Warn*: This input will be wrecked during the execution.
+    /// * `limit` - limits the number of points to process after filtering.
+    ///
+    pub fn score_points(
+        &mut self,
+        point_ids: &mut [PointOffsetType],
         limit: usize,
-        action: F,
-    ) where
-        F: FnMut(ScoredPointOffset),
-    {
-        match self.filter_context {
-            None => self
-                .raw_scorer
-                .score_points(points_iterator)
-                .take(limit)
-                .for_each(action),
+    ) -> &[ScoredPointOffset] {
+        // apply filter and store filtered ids to source slice memory
+        let filtered_point_ids = match self.filter_context {
+            None => point_ids,
             Some(f) => {
-                let mut points_filtered_iterator = points_iterator.filter(move |id| f.check(*id));
-                self.raw_scorer
-                    .score_points(&mut points_filtered_iterator)
-                    .take(limit)
-                    .for_each(action);
+                let len = point_ids.len();
+                let mut filtered_len = 0;
+                for i in 0..len {
+                    let point_id = point_ids[i];
+                    if f.check(point_id) {
+                        point_ids[filtered_len] = point_id;
+                        filtered_len += 1;
+                    }
+                }
+                &point_ids[0..filtered_len]
             }
         };
-    }
 
-    pub fn score_points<F>(&self, ids: &[PointOffsetType], limit: usize, action: F)
-    where
-        F: FnMut(ScoredPointOffset),
-    {
-        let mut points_iterator = ids.iter().copied();
-
-        self.score_iterable_points(&mut points_iterator, limit, action);
+        self.points_buffer
+            .resize(limit, ScoredPointOffset::default());
+        let count = self
+            .raw_scorer
+            .score_points(filtered_point_ids, &mut self.points_buffer);
+        &self.points_buffer[0..count]
     }
 
     pub fn score_point(&self, point_id: PointOffsetType) -> ScoreType {

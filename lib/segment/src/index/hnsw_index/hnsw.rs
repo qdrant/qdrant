@@ -115,7 +115,7 @@ impl HNSWIndex {
                 FilteredScorer::new(raw_scorer.as_ref(), Some(block_condition_checker));
 
             let level = self.graph.point_level(block_point_id);
-            graph.link_new_point(block_point_id, level, &points_scorer);
+            graph.link_new_point(block_point_id, level, points_scorer);
         }
     }
 
@@ -141,7 +141,7 @@ impl HNSWIndex {
 
         let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
 
-        self.graph.search(top, ef, &points_scorer)
+        self.graph.search(top, ef, points_scorer)
     }
 }
 
@@ -227,7 +227,7 @@ impl VectorIndex for HNSWIndex {
             let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
             let level = self.graph.get_random_layer(&mut rng);
-            self.graph.link_new_point(vector_id, level, &points_scorer);
+            self.graph.link_new_point(vector_id, level, points_scorer);
         }
 
         debug!("finish main graph");

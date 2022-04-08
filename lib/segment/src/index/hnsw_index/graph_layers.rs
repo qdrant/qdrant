@@ -147,23 +147,28 @@ impl GraphLayers {
         searcher: &mut SearchContext,
         level: usize,
         visited_list: &mut VisitedList,
-        points_scorer: &FilteredScorer,
+        points_scorer: &mut FilteredScorer,
     ) {
+        let limit = self.get_m(level);
+        let mut points_ids: Vec<PointOffsetType> = Vec::with_capacity(2 * limit);
+
         while let Some(candidate) = searcher.candidates.pop() {
             if candidate.score < searcher.lower_bound() {
                 break;
             }
-            let mut links_iter = self
-                .links(candidate.idx, level)
+
+            points_ids.clear();
+            for link in self.links(candidate.idx, level) {
+                if !visited_list.check_and_update_visited(*link) {
+                    points_ids.push(*link);
+                }
+            }
+
+            let scores = points_scorer.score_points(&mut points_ids, limit);
+            scores
                 .iter()
                 .copied()
-                .filter(|point_id| !visited_list.check_and_update_visited(*point_id));
-
-            points_scorer.score_iterable_points(
-                &mut links_iter,
-                self.get_m(level),
-                |score_point| searcher.process_candidate(score_point),
-            );
+                .for_each(|score_point| searcher.process_candidate(score_point));
         }
     }
 
@@ -172,7 +177,7 @@ impl GraphLayers {
         level_entry: ScoredPointOffset,
         level: usize,
         ef: usize,
-        points_scorer: &FilteredScorer,
+        points_scorer: &mut FilteredScorer,
         existing_links: LinkContainerRef,
     ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
         let mut visited_list = self.visited_pool.get(self.num_points());
@@ -201,18 +206,26 @@ impl GraphLayers {
         entry_point: PointOffsetType,
         top_level: usize,
         target_level: usize,
-        points_scorer: &FilteredScorer,
+        points_scorer: &mut FilteredScorer,
     ) -> ScoredPointOffset {
+        let mut links: Vec<PointOffsetType> = Vec::with_capacity(2 * self.get_m(0));
+
         let mut current_point = ScoredPointOffset {
             idx: entry_point,
             score: points_scorer.score_point(entry_point),
         };
         for level in rev_range(top_level, target_level) {
+            let limit = self.get_m(level);
+
             let mut changed = true;
             while changed {
                 changed = false;
-                let mut links = self.links(current_point.idx, level).iter().copied();
-                points_scorer.score_iterable_points(&mut links, self.get_m(level), |score_point| {
+
+                links.clear();
+                links.extend_from_slice(self.links(current_point.idx, level));
+
+                let scores = points_scorer.score_points(&mut links, limit);
+                scores.iter().copied().for_each(|score_point| {
                     if score_point.score > current_point.score {
                         changed = true;
                         current_point = score_point;
@@ -301,7 +314,7 @@ impl GraphLayers {
         &mut self,
         point_id: PointOffsetType,
         level: usize,
-        points_scorer: &FilteredScorer,
+        mut points_scorer: FilteredScorer,
     ) {
         // Check if there is an suitable entry point
         //   - entry point level if higher or equal
@@ -328,7 +341,7 @@ impl GraphLayers {
                         entry_point.point_id,
                         entry_point.level,
                         level,
-                        points_scorer,
+                        &mut points_scorer,
                     )
                 } else {
                     ScoredPointOffset {
@@ -339,8 +352,6 @@ impl GraphLayers {
                 // minimal common level for entry points
                 let linking_level = min(level, entry_point.level);
 
-                let scorer = |a, b| points_scorer.score_internal(a, b);
-
                 for curr_level in (0..=linking_level).rev() {
                     let level_m = self.get_m(curr_level);
                     let existing_links = &self.links_layers[point_id as usize][curr_level];
@@ -349,9 +360,11 @@ impl GraphLayers {
                         level_entry,
                         curr_level,
                         self.ef_construct,
-                        points_scorer,
+                        &mut points_scorer,
                         existing_links,
                     );
+
+                    let scorer = |a, b| points_scorer.score_internal(a, b);
 
                     if self.use_heuristic {
                         let selected_nearest =
@@ -452,7 +465,7 @@ impl GraphLayers {
         &self,
         top: usize,
         ef: usize,
-        points_scorer: &FilteredScorer,
+        mut points_scorer: FilteredScorer,
     ) -> Vec<ScoredPointOffset> {
         let entry_point = match self
             .entry_points
@@ -462,10 +475,15 @@ impl GraphLayers {
             Some(ep) => ep,
         };
 
-        let zero_level_entry =
-            self.search_entry(entry_point.point_id, entry_point.level, 0, points_scorer);
+        let zero_level_entry = self.search_entry(
+            entry_point.point_id,
+            entry_point.level,
+            0,
+            &mut points_scorer,
+        );
 
-        let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), points_scorer, &[]);
+        let nearest =
+            self.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer, &[]);
         nearest.into_iter().take(top).collect_vec()
     }
 
@@ -568,7 +586,7 @@ mod tests {
         let raw_scorer = vector_storage.get_raw_scorer(query.to_owned());
         let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
         let ef = 16;
-        graph.search(top, ef, &scorer)
+        graph.search(top, ef, scorer)
     }
 
     const M: usize = 8;
@@ -603,7 +621,7 @@ mod tests {
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
             let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
             let level = graph_layers.get_random_layer(rng);
-            graph_layers.link_new_point(idx, level, &scorer);
+            graph_layers.link_new_point(idx, level, scorer);
         }
 
         (vector_holder, graph_layers)
@@ -632,7 +650,7 @@ mod tests {
         let fake_filter_context = FakeFilterContext {};
         let added_vector = vector_holder.vectors[linking_idx as usize].to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector);
-        let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
+        let mut scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
 
         let nearest_on_level = graph_layers.search_on_level(
             ScoredPointOffset {
@@ -641,7 +659,7 @@ mod tests {
             },
             0,
             32,
-            &scorer,
+            &mut scorer,
             &[],
         );
 
@@ -754,7 +772,7 @@ mod tests {
             let raw_scorer = vector_holder.get_raw_scorer(added_vector);
             let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
             let level = graph_layers.get_random_layer(&mut rng);
-            graph_layers.link_new_point(idx, level, &scorer);
+            graph_layers.link_new_point(idx, level, scorer);
         }
 
         let number_layers = graph_layers.links_layers.len();

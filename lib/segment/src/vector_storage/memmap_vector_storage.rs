@@ -29,20 +29,24 @@ impl<TMetric> RawScorer for MemmapRawScorer<'_, TMetric>
 where
     TMetric: Metric,
 {
-    fn score_points<'a>(
-        &'a self,
-        points: &'a mut dyn Iterator<Item = PointOffsetType>,
-    ) -> Box<dyn Iterator<Item = ScoredPointOffset> + 'a> {
-        let res_iter = points
-            .filter(move |point| !self.mmap_store.deleted(*point).unwrap_or(true))
-            .map(move |point| {
-                let other_vector = self.mmap_store.raw_vector(point).unwrap();
-                ScoredPointOffset {
-                    idx: point,
-                    score: self.metric.similarity(&self.query, other_vector),
-                }
-            });
-        Box::new(res_iter)
+    fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
+        let mut size: usize = 0;
+        for point in points {
+            if self.mmap_store.deleted(*point).unwrap_or(true) {
+                continue;
+            }
+            let other_vector = self.mmap_store.raw_vector(*point).unwrap();
+            scores[size] = ScoredPointOffset {
+                idx: *point,
+                score: self.metric.similarity(&self.query, other_vector),
+            };
+
+            size += 1;
+            if size == scores.len() {
+                return size;
+            }
+        }
+        size
     }
 
     fn check_point(&self, point: PointOffsetType) -> bool {
@@ -304,7 +308,6 @@ where
 mod tests {
     use super::*;
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
-    use itertools::Itertools;
     use std::mem::transmute;
     use tempdir::TempDir;
 
@@ -404,9 +407,9 @@ mod tests {
 
         let scorer = borrowed_storage.raw_scorer(query);
 
-        let res = scorer
-            .score_points(&mut query_points.iter().cloned())
-            .collect_vec();
+        let mut res = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
+        let res_count = scorer.score_points(&query_points, &mut res);
+        res.resize(res_count, ScoredPointOffset { idx: 0, score: 0. });
 
         assert_eq!(res.len(), 3);
         assert_eq!(res[0].idx, 0);

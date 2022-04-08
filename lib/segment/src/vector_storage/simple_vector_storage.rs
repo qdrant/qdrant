@@ -47,20 +47,24 @@ impl<TMetric> RawScorer for SimpleRawScorer<'_, TMetric>
 where
     TMetric: Metric,
 {
-    fn score_points<'a>(
-        &'a self,
-        points: &'a mut dyn Iterator<Item = PointOffsetType>,
-    ) -> Box<dyn Iterator<Item = ScoredPointOffset> + 'a> {
-        let res_iter = points
-            .filter(move |point| !self.deleted[*point as usize])
-            .map(move |point| {
-                let other_vector = self.vectors.get(point as usize).unwrap();
-                ScoredPointOffset {
-                    idx: point,
-                    score: self.metric.similarity(&self.query, other_vector),
-                }
-            });
-        Box::new(res_iter)
+    fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
+        let mut size: usize = 0;
+        for point in points {
+            if self.deleted[*point as usize] {
+                continue;
+            }
+            let other_vector = self.vectors.get(*point as usize).unwrap();
+            scores[size] = ScoredPointOffset {
+                idx: *point,
+                score: self.metric.similarity(&self.query, other_vector),
+            };
+
+            size += 1;
+            if size == scores.len() {
+                return size;
+            }
+        }
+        size
     }
 
     fn check_point(&self, point: PointOffsetType) -> bool {
@@ -326,7 +330,6 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
-    use itertools::Itertools;
 
     #[test]
     fn test_score_points() {
@@ -372,13 +375,15 @@ mod tests {
             borrowed_storage.score_points(&query, &mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
         let raw_scorer = borrowed_storage.raw_scorer(query);
-
         let query_points = vec![0, 1, 2, 3, 4];
-        let mut query_points1 = query_points.iter().cloned();
-        let mut query_points2 = query_points.iter().cloned();
 
-        let raw_res1 = raw_scorer.score_points(&mut query_points1).collect_vec();
-        let raw_res2 = raw_scorer.score_points(&mut query_points2).collect_vec();
+        let mut raw_res1 = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
+        let raw_res1_count = raw_scorer.score_points(&query_points, &mut raw_res1);
+        raw_res1.resize(raw_res1_count, ScoredPointOffset { idx: 0, score: 0. });
+
+        let mut raw_res2 = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
+        let raw_res2_count = raw_scorer.score_points(&query_points, &mut raw_res2);
+        raw_res2.resize(raw_res2_count, ScoredPointOffset { idx: 0, score: 0. });
 
         assert_eq!(raw_res1, raw_res2);
 
