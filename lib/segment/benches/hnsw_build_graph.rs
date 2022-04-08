@@ -29,9 +29,9 @@ fn hnsw_benchmark(c: &mut Criterion) {
             for idx in 0..(NUM_VECTORS as PointOffsetType) {
                 let added_vector = vector_holder.vectors[idx as usize].to_vec();
                 let raw_scorer = vector_holder.get_raw_scorer(added_vector);
-                let mut scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
+                let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
                 let level = graph_layers.get_random_layer(&mut rng);
-                graph_layers.link_new_point(idx, level, &mut scorer);
+                graph_layers.link_new_point(idx, level, scorer);
             }
         })
     });
