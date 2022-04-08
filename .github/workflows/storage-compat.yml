@@ -26,7 +26,7 @@ jobs:
           toolchain: stable
       - uses: actions/checkout@v3
       - name: Install protoc
-        run: .github/workflows/protoc.sh
+        run: .github/scripts/protoc.sh
         shell: bash
       - uses: Swatinem/rust-cache@v1
       - name: Run storage compatibility test

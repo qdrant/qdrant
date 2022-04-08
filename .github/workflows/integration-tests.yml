@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get install clang
       - name: Install protoc
-        run: .github/workflows/protoc.sh
+        run: .github/scripts/protoc.sh
         shell: bash
       - name: Build
         run: cargo build
@@ -48,7 +48,7 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get install clang
       - name: Install protoc
-        run: .github/workflows/protoc.sh
+        run: .github/scripts/protoc.sh
         shell: bash
       - name: Build
         run: cargo build --features consensus

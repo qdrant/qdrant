@@ -29,7 +29,7 @@ jobs:
     - name: Install dependencies
       run: sudo apt-get install clang
     - name: Install protoc
-      run: .github/workflows/protoc.sh
+      run: .github/scripts/protoc.sh
       shell: bash
     - name: Check code formatting
       run: cargo fmt --all -- --check
