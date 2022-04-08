@@ -1,6 +1,7 @@
 use crate::payload_storage::ConditionChecker;
 use crate::spaces::metric::Metric;
 use crate::types::{Filter, PointOffsetType, VectorElementType};
+use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::simple_vector_storage::SimpleRawScorer;
 use bit_vec::BitVec;
 use rand::Rng;
@@ -19,7 +20,7 @@ impl ConditionChecker for FakeConditionChecker {
 
 pub struct TestRawScorerProducer<TMetric: Metric> {
     pub dim: usize,
-    pub vectors: Vec<VectorElementType>,
+    pub vectors: ChunkedVectors,
     pub deleted: BitVec,
     pub metric: TMetric,
 }
@@ -32,11 +33,11 @@ where
     where
         R: Rng + ?Sized,
     {
-        let mut vectors = Vec::new();
+        let mut vectors = ChunkedVectors::new(dim);
         for _ in 0..num_vectors {
             let rnd_vec = random_vector(rng, dim);
             let rnd_vec = metric.preprocess(&rnd_vec).unwrap_or(rnd_vec);
-            vectors.extend_from_slice(rnd_vec.as_slice());
+            vectors.push(&rnd_vec);
         }
 
         TestRawScorerProducer {

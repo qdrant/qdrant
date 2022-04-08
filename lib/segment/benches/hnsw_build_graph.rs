@@ -27,8 +27,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
                 GraphLayers::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
             let fake_condition_checker = FakeConditionChecker {};
             for idx in 0..(NUM_VECTORS as PointOffsetType) {
-                let i = idx as usize * DIM;
-                let added_vector = vector_holder.vectors[i..i + DIM].to_vec();
+                let added_vector = vector_holder.vectors.get(idx).to_vec();
                 let raw_scorer = vector_holder.get_raw_scorer(added_vector);
                 let scorer = FilteredScorer::new(&raw_scorer, &fake_condition_checker, None);
                 let level = graph_layers.get_random_layer(&mut rng);
