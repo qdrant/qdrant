@@ -743,7 +743,7 @@ mod tests {
         for idx in 0..vector_holder.vectors.len() as PointOffsetType {
             let vec = &vector_holder.vectors.get(idx);
             reference_top.push(ScoredPointOffset {
-                idx: idx,
+                idx,
                 score: vector_holder.metric.similarity(vec, &processed_query),
             });
         }
