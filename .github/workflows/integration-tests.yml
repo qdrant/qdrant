@@ -25,13 +25,12 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get install clang
       - name: Install protoc
-        run: |
-          .github/workflows/protoc.sh
+        run: .github/workflows/protoc.sh
+        shell: bash
       - name: Build
         run: cargo build
       - name: Run integration tests
-        run: |
-          ./tests/integration-tests.sh
+        run: ./tests/integration-tests.sh
         shell: bash
 
   test-consensus:
@@ -49,11 +48,10 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get install clang
       - name: Install protoc
-        run: |
-          .github/workflows/protoc.sh
+        run: .github/workflows/protoc.sh
+        shell: bash
       - name: Build
         run: cargo build --features consensus
       - name: Run integration tests
-        run: |
-          ./tests/integration-tests.sh
+        run: ./tests/integration-tests.sh
         shell: bash
