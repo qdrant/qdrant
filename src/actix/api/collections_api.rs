@@ -18,7 +18,7 @@ struct WaitTimeout {
 
 impl WaitTimeout {
     pub fn timeout(&self) -> Option<Duration> {
-        self.timeout.map(Duration::from_millis)
+        self.timeout.map(Duration::from_secs)
     }
 }
 

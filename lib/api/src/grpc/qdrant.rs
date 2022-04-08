@@ -138,8 +138,8 @@ pub struct CreateCollection {
     /// Number of shards in the collection, default = 1
     #[prost(uint32, optional, tag="7")]
     pub shard_number: ::core::option::Option<u32>,
-    /// Wait timeout for operation commit, if not specified - default value will be supplied
-    #[prost(uint64, optional, tag = "8")]
+    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    #[prost(uint64, optional, tag="8")]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -150,8 +150,8 @@ pub struct UpdateCollection {
     /// New configuration parameters for the collection
     #[prost(message, optional, tag="2")]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
-    /// Wait timeout for operation commit, if not specified - default value will be supplied
-    #[prost(uint64, optional, tag = "8")]
+    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    #[prost(uint64, optional, tag="3")]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -159,8 +159,8 @@ pub struct DeleteCollection {
     /// Name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Wait timeout for operation commit, if not specified - default value will be supplied
-    #[prost(uint64, optional, tag = "8")]
+    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    #[prost(uint64, optional, tag="2")]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -237,8 +237,8 @@ pub struct ChangeAliases {
     /// List of actions
     #[prost(message, repeated, tag="1")]
     pub actions: ::prost::alloc::vec::Vec<AliasOperations>,
-    /// Wait timeout for operation commit, if not specified - default value will be supplied
-    #[prost(uint64, optional, tag = "8")]
+    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    #[prost(uint64, optional, tag="2")]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

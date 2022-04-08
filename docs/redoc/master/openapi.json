@@ -2087,7 +2087,7 @@
         "operationId": "update_aliases",
         "parameters": [
           {
-            "description": "Wait for operation commit timeout in millis. \nIf timeout is reached - request will return with service error.\n",
+            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
             "in": "query",
             "name": "timeout",
             "schema": {
@@ -2174,7 +2174,7 @@
             }
           },
           {
-            "description": "Wait for operation commit timeout in millis. \nIf timeout is reached - request will return with service error.\n",
+            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
             "in": "query",
             "name": "timeout",
             "schema": {
@@ -2316,7 +2316,7 @@
             }
           },
           {
-            "description": "Wait for operation commit timeout in millis. \nIf timeout is reached - request will return with service error.\n",
+            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
             "in": "query",
             "name": "timeout",
             "schema": {
@@ -2488,7 +2488,7 @@
             }
           },
           {
-            "description": "Wait for operation commit timeout in millis. \nIf timeout is reached - request will return with service error.\n",
+            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
             "in": "query",
             "name": "timeout",
             "schema": {

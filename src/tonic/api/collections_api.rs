@@ -114,7 +114,7 @@ macro_rules! impl_with_timeout {
     ($operation:ty) => {
         impl WithTimeout for $operation {
             fn wait_timeout(&self) -> Option<Duration> {
-                self.timeout.map(Duration::from_millis)
+                self.timeout.map(Duration::from_secs)
             }
         }
     };

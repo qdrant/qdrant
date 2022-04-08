@@ -64,7 +64,7 @@ paths:
         - name: timeout
           in: query
           description: |
-            Wait for operation commit timeout in millis. 
+            Wait for operation commit timeout in seconds. 
             If timeout is reached - request will return with service error.
           schema:
             type: integer
@@ -93,7 +93,7 @@ paths:
         - name: timeout
           in: query
           description: |
-            Wait for operation commit timeout in millis. 
+            Wait for operation commit timeout in seconds. 
             If timeout is reached - request will return with service error.
           schema:
             type: integer
@@ -115,7 +115,7 @@ paths:
         - name: timeout
           in: query
           description: |
-            Wait for operation commit timeout in millis. 
+            Wait for operation commit timeout in seconds. 
             If timeout is reached - request will return with service error.
           schema:
             type: integer
@@ -137,7 +137,7 @@ paths:
         - name: timeout
           in: query
           description: |
-            Wait for operation commit timeout in millis. 
+            Wait for operation commit timeout in seconds. 
             If timeout is reached - request will return with service error.
           schema:
             type: integer

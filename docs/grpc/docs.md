@@ -133,7 +133,7 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | actions | [AliasOperations](#qdrant-AliasOperations) | repeated | List of actions |
-| timeout | [uint64](#uint64) | optional | Wait timeout for operation commit, if not specified - default value will be supplied |
+| timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
 
 
 
@@ -275,7 +275,7 @@
 | wal_config | [WalConfigDiff](#qdrant-WalConfigDiff) | optional | Configuration of the Write-Ahead-Log |
 | optimizers_config | [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff) | optional | Configuration of the optimizers |
 | shard_number | [uint32](#uint32) | optional | Number of shards in the collection, default = 1 |
-| timeout | [uint64](#uint64) | optional | Wait timeout for operation commit, if not specified - default value will be supplied |
+| timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
 
 
 
@@ -306,7 +306,7 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | Name of the collection |
-| timeout | [uint64](#uint64) | optional | Wait timeout for operation commit, if not specified - default value will be supplied |
+| timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
 
 
 
@@ -473,7 +473,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | Name of the collection |
 | optimizers_config | [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff) | optional | New configuration parameters for the collection |
-| timeout | [uint64](#uint64) | optional | Wait timeout for operation commit, if not specified - default value will be supplied |
+| timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
 
 
 
