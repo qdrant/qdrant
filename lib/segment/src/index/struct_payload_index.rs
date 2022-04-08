@@ -7,7 +7,6 @@ use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
 use log::debug;
-use serde_json::Value;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::points_iterator::PointsIteratorSS;
@@ -19,12 +18,10 @@ use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
-use crate::payload_storage::condition_checker::ValueChecker;
-use crate::payload_storage::query_checker::check_filter;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorageSS};
 use crate::types::{
-    Condition, FieldCondition, Filter, GeoPoint, IsEmptyCondition, Match, MatchValue,
-    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType, ValueVariants,
+    Condition, FieldCondition, Filter, IsEmptyCondition, Match, MatchValue, PayloadKeyType,
+    PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType, ValueVariants,
 };
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
@@ -406,10 +403,8 @@ impl PayloadIndex for StructPayloadIndex {
 pub struct StructFilterContext<'a> {
     condition_checker: Arc<ConditionCheckerSS>,
     filter: &'a Filter,
-    field_indexes: &'a IndexesMap,
     fallback: bool,
-    cardinality_estimation: CardinalityEstimation,
-    checkers: Vec<fn(PointOffsetType) -> bool>,
+    checkers: Vec<Box<dyn Fn(PointOffsetType) -> bool + 'a>>,
 }
 
 impl<'a> StructFilterContext<'a> {
@@ -426,23 +421,58 @@ impl<'a> StructFilterContext<'a> {
             match clause {
                 PrimaryCondition::Condition(field_condition) => {
                     let indexes_opt = field_indexes.get(&field_condition.key);
-                    let indexes = if indexes_opt.is_some() {
-                        indexes_opt.unwrap()
+                    let indexes = if let Some(indexes) = indexes_opt {
+                        indexes
                     } else {
                         continue;
                     };
-
                     for index in indexes {
-                        match (&field_condition.r#match, index) {
+                        let cond_match = field_condition.r#match.clone();
+                        match (cond_match, index) {
                             (
                                 Some(Match::Value(MatchValue {
                                     value: ValueVariants::Keyword(keyword),
                                 })),
                                 FieldIndex::KeywordIndex(index),
-                            ) => checkers.push(|point_id: PointOffsetType| {
-                                index.get_values(point_id) == keyword
-                            }),
-                            (_, _) => todo!(),
+                            ) => {
+                                checkers.push(Box::new(move |point_id: PointOffsetType| match index
+                                    .get_values(point_id)
+                                {
+                                    None => false,
+                                    Some(values) => values.iter().any(|k| k == &keyword),
+                                })
+                                    as Box<dyn Fn(PointOffsetType) -> bool>)
+                            }
+                            (
+                                Some(Match::Value(MatchValue {
+                                    value: ValueVariants::Integer(value),
+                                })),
+                                FieldIndex::IntIndex(index),
+                            ) => {
+                                checkers.push(Box::new(move |point_id: PointOffsetType| match index
+                                    .get_values(point_id)
+                                {
+                                    None => false,
+                                    Some(values) => values.iter().any(|i| i == &value),
+                                })
+                                    as Box<dyn Fn(PointOffsetType) -> bool>)
+                            }
+                            (
+                                Some(Match::Value(MatchValue {
+                                    value: ValueVariants::Integer(value),
+                                })),
+                                FieldIndex::IntMapIndex(index),
+                            ) => {
+                                checkers.push(Box::new(move |point_id: PointOffsetType| match index
+                                    .get_values(point_id)
+                                {
+                                    None => false,
+                                    Some(values) => values.iter().any(|i| i == &value),
+                                })
+                                    as Box<dyn Fn(PointOffsetType) -> bool>)
+                            }
+
+                            (_, _) => {}
                         }
                     }
                 }
@@ -454,25 +484,10 @@ impl<'a> StructFilterContext<'a> {
         Self {
             condition_checker,
             filter,
-            field_indexes,
-            cardinality_estimation,
             fallback,
             checkers,
         }
     }
-}
-
-fn build_geo_obj(geo_point: &GeoPoint) -> Value {
-    let mut geo_obj = serde_json::Map::new();
-    geo_obj.insert(
-        "lat".to_string(),
-        Value::Number(serde_json::Number::from_f64(geo_point.lat).unwrap()),
-    );
-    geo_obj.insert(
-        "lon".to_string(),
-        Value::Number(serde_json::Number::from_f64(geo_point.lon).unwrap()),
-    );
-    return Value::Object(geo_obj);
 }
 
 fn check_fallback(primary_clauses: &[PrimaryCondition], field_indexes: &IndexesMap) -> bool {
