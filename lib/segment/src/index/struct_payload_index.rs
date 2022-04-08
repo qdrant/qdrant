@@ -23,8 +23,8 @@ use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::query_checker::check_filter;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorageSS};
 use crate::types::{
-    Condition, FieldCondition, Filter, GeoPoint, IsEmptyCondition, PayloadKeyType,
-    PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
+    Condition, FieldCondition, Filter, GeoPoint, IsEmptyCondition, Match, MatchValue,
+    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType, ValueVariants,
 };
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
@@ -409,6 +409,7 @@ pub struct StructFilterContext<'a> {
     field_indexes: &'a IndexesMap,
     fallback: bool,
     cardinality_estimation: CardinalityEstimation,
+    checkers: Vec<fn(PointOffsetType) -> bool>,
 }
 
 impl<'a> StructFilterContext<'a> {
@@ -418,7 +419,37 @@ impl<'a> StructFilterContext<'a> {
         field_indexes: &'a IndexesMap,
         cardinality_estimation: CardinalityEstimation,
     ) -> Self {
+        let mut checkers = vec![];
         let fallback = check_fallback(&cardinality_estimation.primary_clauses, field_indexes);
+
+        for clause in cardinality_estimation.primary_clauses {
+            match clause {
+                PrimaryCondition::Condition(field_condition) => {
+                    let indexes_opt = field_indexes.get(&field_condition.key);
+                    let indexes = if indexes_opt.is_some() {
+                        indexes_opt.unwrap()
+                    } else {
+                        continue;
+                    };
+
+                    for index in indexes {
+                        match (&field_condition.r#match, index) {
+                            (
+                                Some(Match::Value(MatchValue {
+                                    value: ValueVariants::Keyword(keyword),
+                                })),
+                                FieldIndex::KeywordIndex(index),
+                            ) => checkers.push(|point_id: PointOffsetType| {
+                                index.get_values(point_id) == keyword
+                            }),
+                            (_, _) => todo!(),
+                        }
+                    }
+                }
+                PrimaryCondition::IsEmpty(_) => {}
+                PrimaryCondition::Ids(_) => {}
+            }
+        }
 
         Self {
             condition_checker,
@@ -426,95 +457,7 @@ impl<'a> StructFilterContext<'a> {
             field_indexes,
             cardinality_estimation,
             fallback,
-        }
-    }
-
-    fn get_field_value(
-        &self,
-        field_name: PayloadKeyTypeRef,
-        point_id: PointOffsetType,
-    ) -> Option<Value> {
-        match self.field_indexes.get(field_name) {
-            Some(indexes) => match &indexes[0] {
-                FieldIndex::IntIndex(int_index) => {
-                    let values = int_index.get_values(point_id);
-                    match values {
-                        None => None,
-                        Some(v) => {
-                            if v.len() == 1 {
-                                return Some(Value::Number(v[0].into()));
-                            }
-                            let values = v
-                                .iter()
-                                .map(|i| Value::Number(i.to_owned().into()))
-                                .collect();
-                            Some(Value::Array(values))
-                        }
-                    }
-                }
-                FieldIndex::IntMapIndex(int_map_index) => {
-                    let values = int_map_index.get_values(point_id);
-                    match values {
-                        None => None,
-                        Some(v) => {
-                            if v.len() == 1 {
-                                return Some(Value::Number(v[0].into()));
-                            }
-                            let values = v
-                                .iter()
-                                .map(|i| Value::Number(i.to_owned().into()))
-                                .collect();
-                            Some(Value::Array(values))
-                        }
-                    }
-                }
-                FieldIndex::KeywordIndex(keyword_index) => {
-                    let values = keyword_index.get_values(point_id);
-                    match values {
-                        None => None,
-                        Some(v) => {
-                            if v.len() == 1 {
-                                return Some(Value::String(v[0].clone()));
-                            }
-                            let values = v.iter().map(|i| Value::String(i.to_owned())).collect();
-                            Some(Value::Array(values))
-                        }
-                    }
-                }
-
-                FieldIndex::FloatIndex(float_index) => {
-                    let values = float_index.get_values(point_id);
-                    match values {
-                        None => None,
-                        Some(v) => {
-                            if v.len() == 1 {
-                                return Some(Value::Number(
-                                    serde_json::Number::from_f64(v[0]).unwrap(),
-                                ));
-                            }
-                            let values = v
-                                .iter()
-                                .map(|i| Value::Number(serde_json::Number::from_f64(*i).unwrap()))
-                                .collect();
-                            Some(Value::Array(values))
-                        }
-                    }
-                }
-                FieldIndex::GeoIndex(geo_index) => {
-                    let values = geo_index.get_values(point_id);
-                    match values {
-                        None => None,
-                        Some(v) => {
-                            if v.len() == 1 {
-                                return Some(build_geo_obj(&v[0]));
-                            }
-                            let values = v.iter().map(|i| build_geo_obj(i)).collect();
-                            Some(Value::Array(values))
-                        }
-                    }
-                }
-            },
-            None => None,
+            checkers,
         }
     }
 }
@@ -543,49 +486,11 @@ fn check_fallback(primary_clauses: &[PrimaryCondition], field_indexes: &IndexesM
 
 impl<'a> FilterContext for StructFilterContext<'a> {
     fn check(&self, point_id: PointOffsetType) -> bool {
-        if self.fallback {
-            return self.condition_checker.check(point_id, self.filter);
+        // At least one primary condition should be satisfied - that is necessary, but not sufficient condition
+        if !self.fallback && !self.checkers.iter().any(|foo| foo(point_id)) {
+            false
+        } else {
+            self.condition_checker.check(point_id, self.filter)
         }
-
-        let checker = |condition: &Condition| {
-            match condition {
-                Condition::Field(field_condition) => {
-                    self.get_field_value(&field_condition.key, point_id)
-                        .map_or(false, |p| {
-                            let mut res = false;
-                            // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
-                            res = res
-                                || field_condition
-                                    .r#match
-                                    .as_ref()
-                                    .map_or(false, |condition| condition.check(&p));
-                            res = res
-                                || field_condition
-                                    .range
-                                    .as_ref()
-                                    .map_or(false, |condition| condition.check(&p));
-                            res = res
-                                || field_condition
-                                    .geo_radius
-                                    .as_ref()
-                                    .map_or(false, |condition| condition.check(&p));
-                            res = res
-                                || field_condition
-                                    .geo_bounding_box
-                                    .as_ref()
-                                    .map_or(false, |condition| condition.check(&p));
-                            res = res
-                                || field_condition
-                                    .values_count
-                                    .as_ref()
-                                    .map_or(false, |condition| condition.check(&p));
-                            res
-                        })
-                }
-                _ => panic!("Unexpected condition!"),
-            }
-        };
-
-        check_filter(&checker, self.filter)
     }
 }
