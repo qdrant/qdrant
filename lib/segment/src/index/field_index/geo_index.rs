@@ -7,7 +7,9 @@ use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
     PayloadFieldIndexBuilder, PrimaryCondition, ValueIndexer,
 };
-use crate::types::{FieldCondition, GeoPoint, PayloadKeyType, PointOffsetType};
+use crate::types::{
+    FieldCondition, GeoBoundingBox, GeoPoint, GeoRadius, PayloadKeyType, PointOffsetType,
+};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -49,6 +51,22 @@ pub struct PersistedGeoMapIndex {
 }
 
 impl PersistedGeoMapIndex {
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<GeoPoint>> {
+        self.point_to_values.get(idx as usize)
+    }
+
+    pub fn check_radius(&self, idx: PointOffsetType, radius: &GeoRadius) -> bool {
+        self.get_values(idx)
+            .map(|values| values.iter().any(|x| radius.check_point(x.lon, x.lat)))
+            .unwrap_or(false)
+    }
+
+    pub fn check_box(&self, idx: PointOffsetType, bbox: &GeoBoundingBox) -> bool {
+        self.get_values(idx)
+            .map(|values| values.iter().any(|x| bbox.check_point(x.lon, x.lat)))
+            .unwrap_or(false)
+    }
+
     pub fn match_cardinality(&self, values: &[GeoHash]) -> CardinalityEstimation {
         let common_hash = common_hash_prefix(values);
 
@@ -134,10 +152,15 @@ impl PersistedGeoMapIndex {
     }
 
     fn add_many_geo_points(&mut self, idx: PointOffsetType, values: &[GeoPoint]) {
+        if values.is_empty() {
+            return;
+        }
+
         if self.point_to_values.len() <= idx as usize {
             // That's a smart reallocation
             self.point_to_values.resize(idx as usize + 1, vec![]);
         }
+
         self.point_to_values[idx as usize] = values.to_vec();
 
         let mut seen_hashes: HashSet<&str> = Default::default();
@@ -362,16 +385,17 @@ impl PayloadFieldIndex for PersistedGeoMapIndex {
         Box::new(
             self.get_large_hashes(threshold)
                 .map(move |(geo_hash, size)| PayloadBlockCondition {
-                    condition: FieldCondition {
-                        key: key.clone(),
-                        r#match: None,
-                        range: None,
-                        geo_bounding_box: Some(geo_hash_to_box(geo_hash)),
-                        geo_radius: None,
-                    },
+                    condition: FieldCondition::new_geo_bounding_box(
+                        key.clone(),
+                        geo_hash_to_box(geo_hash),
+                    ),
                     cardinality: size,
                 }),
         )
+    }
+
+    fn count_indexed_points(&self) -> usize {
+        self.points_count
     }
 }
 
@@ -406,13 +430,7 @@ mod tests {
     };
 
     fn condition_for_geo_radius(key: String, geo_radius: GeoRadius) -> FieldCondition {
-        FieldCondition {
-            key,
-            r#match: None,
-            range: None,
-            geo_bounding_box: None,
-            geo_radius: Some(geo_radius),
-        }
+        FieldCondition::new_geo_radius(key, geo_radius)
     }
 
     fn build_random_index(num_points: usize, num_geo_values: usize) -> FieldIndex {

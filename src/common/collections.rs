@@ -1,4 +1,4 @@
-use crate::common::models::{CollectionDescription, CollectionsResponse};
+use api::grpc::models::{CollectionDescription, CollectionsResponse};
 use collection::operations::types::CollectionInfo;
 use itertools::Itertools;
 use storage::content_manager::errors::StorageError;

@@ -5,7 +5,6 @@ use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::index::{PayloadIndexSS, VectorIndex};
-use crate::payload_storage::ConditionCheckerSS;
 use crate::types::Condition::Field;
 use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VectorElementType};
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
@@ -22,7 +21,6 @@ use std::sync::Arc;
 const HNSW_USE_HEURISTIC: bool = true;
 
 pub struct HNSWIndex {
-    condition_checker: Arc<ConditionCheckerSS>,
     vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
     payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
     config: HnswGraphConfig,
@@ -33,7 +31,6 @@ pub struct HNSWIndex {
 impl HNSWIndex {
     pub fn open(
         path: &Path,
-        condition_checker: Arc<ConditionCheckerSS>,
         vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
         payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
         hnsw_config: HnswConfig,
@@ -67,7 +64,6 @@ impl HNSWIndex {
         };
 
         Ok(HNSWIndex {
-            condition_checker,
             vector_storage,
             payload_index,
             config,
@@ -116,7 +112,7 @@ impl HNSWIndex {
             let raw_scorer = vector_storage.raw_scorer(vector);
             block_condition_checker.current_point = block_point_id;
             let points_scorer =
-                FilteredScorer::new(raw_scorer.as_ref(), block_condition_checker, None);
+                FilteredScorer::new(raw_scorer.as_ref(), Some(block_condition_checker));
 
             let level = self.graph.point_level(block_point_id);
             graph.link_new_point(block_point_id, level, &points_scorer);
@@ -139,9 +135,11 @@ impl HNSWIndex {
 
         let vector_storage = self.vector_storage.borrow();
         let raw_scorer = vector_storage.raw_scorer(vector.to_owned());
+        let payload_index = self.payload_index.borrow();
 
-        let points_scorer =
-            FilteredScorer::new(raw_scorer.as_ref(), &*self.condition_checker, filter);
+        let filter_context = filter.map(|f| payload_index.filter_context(f));
+
+        let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
 
         self.graph.search(top, ef, &points_scorer)
     }
@@ -180,11 +178,13 @@ impl VectorIndex for HNSWIndex {
                     return self.search_with_graph(vector, filter, top, params);
                 }
 
+                let filter_context = payload_index.filter_context(query_filter);
+
                 // Fast cardinality estimation is not enough, do sample estimation of cardinality
 
                 return if sample_check_cardinality(
                     vector_storage.sample_ids(),
-                    |idx| self.condition_checker.check(idx, query_filter),
+                    |idx| filter_context.check(idx),
                     self.config.indexing_threshold,
                     vector_storage.vector_count(),
                 ) {
@@ -224,8 +224,7 @@ impl VectorIndex for HNSWIndex {
             }
             let vector = vector_storage.get_vector(vector_id).unwrap();
             let raw_scorer = vector_storage.raw_scorer(vector);
-            let points_scorer =
-                FilteredScorer::new(raw_scorer.as_ref(), &*self.condition_checker, None);
+            let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
             let level = self.graph.get_random_layer(&mut rng);
             self.graph.link_new_point(vector_id, level, &points_scorer);

@@ -22,7 +22,7 @@ pub trait DiffConfig<T: DeserializeOwned + Serialize> {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Merge)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Merge, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct HnswConfigDiff {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
@@ -35,7 +35,7 @@ pub struct HnswConfigDiff {
     pub full_scan_threshold: Option<usize>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Merge)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Merge, PartialEq, Eq, Hash)]
 pub struct WalConfigDiff {
     /// Size of a single WAL segment in MB
     pub wal_capacity_mb: Option<usize>,
@@ -77,6 +77,37 @@ pub struct OptimizersConfigDiff {
     /// Maximum available threads for optimization workers
     pub max_optimization_threads: Option<usize>,
 }
+
+impl std::hash::Hash for OptimizersConfigDiff {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.deleted_threshold.map(f64::to_le_bytes).hash(state);
+        self.vacuum_min_vector_number.hash(state);
+        self.default_segment_number.hash(state);
+        self.max_segment_size.hash(state);
+        self.memmap_threshold.hash(state);
+        self.indexing_threshold.hash(state);
+        self.payload_indexing_threshold.hash(state);
+        self.flush_interval_sec.hash(state);
+        self.max_optimization_threads.hash(state);
+    }
+}
+
+impl PartialEq for OptimizersConfigDiff {
+    fn eq(&self, other: &Self) -> bool {
+        self.deleted_threshold.map(f64::to_le_bytes)
+            == other.deleted_threshold.map(f64::to_le_bytes)
+            && self.vacuum_min_vector_number == other.vacuum_min_vector_number
+            && self.default_segment_number == other.default_segment_number
+            && self.max_segment_size == other.max_segment_size
+            && self.memmap_threshold == other.memmap_threshold
+            && self.indexing_threshold == other.indexing_threshold
+            && self.payload_indexing_threshold == other.payload_indexing_threshold
+            && self.flush_interval_sec == other.flush_interval_sec
+            && self.max_optimization_threads == other.max_optimization_threads
+    }
+}
+
+impl Eq for OptimizersConfigDiff {}
 
 impl DiffConfig<HnswConfig> for HnswConfigDiff {}
 

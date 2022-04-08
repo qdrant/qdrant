@@ -41,7 +41,10 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
                 },
             })),
         );
-        collection.update(insert_points, true).await.unwrap();
+        collection
+            .update_from_client(insert_points, true)
+            .await
+            .unwrap();
         collection.before_drop().await;
     }
 
@@ -69,7 +72,10 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
                 },
             })),
         );
-        collection.update(insert_points, true).await.unwrap();
+        collection
+            .update_from_client(insert_points, true)
+            .await
+            .unwrap();
         collection.before_drop().await;
     }
 
@@ -132,7 +138,10 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
                 },
             })),
         );
-        collection.update(insert_points, true).await.unwrap();
+        collection
+            .update_from_client(insert_points, true)
+            .await
+            .unwrap();
         collection.before_drop().await;
     }
 

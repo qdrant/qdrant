@@ -24,33 +24,57 @@ fn main() -> std::io::Result<()> {
     std::env::set_var("RUST_LOG", &settings.log_level);
     env_logger::init();
 
-    #[cfg(feature = "consensus")]
-    {
-        // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
-        // logs from it to `log` crate
-        let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
-
-        let (mut consensus, _message_sender) = Consensus::new(&slog_logger);
-        thread::Builder::new()
-            .name("raft".to_string())
-            .spawn(move || consensus.start())?;
-    }
-
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it
     let runtime = create_search_runtime(settings.storage.performance.max_search_threads)
         .expect("Can't create runtime.");
-
     let runtime_handle = runtime.handle().clone();
 
-    let toc = TableOfContent::new(&settings.storage, runtime);
+    #[allow(unused_mut)]
+    let mut toc = TableOfContent::new(&settings.storage, runtime);
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {
             log::info!("Loaded collection: {}", collection);
         }
     });
 
+    #[cfg(feature = "consensus")]
+    let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
+    #[cfg(feature = "consensus")]
+    toc.with_propose_sender(propose_sender);
+
     let toc_arc = Arc::new(toc);
+
+    #[cfg(feature = "consensus")]
+    {
+        // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
+        // logs from it to `log` crate
+        let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
+
+        let (mut consensus, message_sender) = Consensus::new(&slog_logger, toc_arc.clone().into())
+            .expect("Can't initialize consensus");
+        thread::Builder::new()
+            .name("raft".to_string())
+            .spawn(move || {
+                if let Err(err) = consensus.start() {
+                    log::error!("Consensus stopped with error: {err}")
+                }
+            })?;
+
+        thread::Builder::new()
+            .name("forward-proposals".to_string())
+            .spawn(move || {
+                while let Ok(entry) = propose_receiver.recv() {
+                    if message_sender
+                        .send(consensus::Message::FromClient(entry))
+                        .is_err()
+                    {
+                        log::error!("Can not forward new entry to consensus as it was stopped.");
+                        break;
+                    }
+                }
+            })?;
+    }
 
     let mut handles: Vec<JoinHandle<Result<(), Error>>> = vec![];
 

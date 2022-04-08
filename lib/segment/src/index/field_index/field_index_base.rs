@@ -25,13 +25,19 @@ pub trait PayloadFieldIndex {
         threshold: usize,
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
+
+    /// Returns an amount of unique indexed points
+    fn count_indexed_points(&self) -> usize;
 }
 
 pub trait ValueIndexer<T> {
+    /// Add multiple values associated with a single point
     fn add_many(&mut self, id: PointOffsetType, values: Vec<T>);
 
+    /// Extract index-able value from payload `Value`
     fn get_value(&self, value: &Value) -> Option<T>;
 
+    /// Add point with payload to index
     fn add_point(&mut self, id: PointOffsetType, payload: &Value) {
         match payload {
             Value::Array(values) => {
@@ -97,5 +103,9 @@ impl PayloadFieldIndex for FieldIndex {
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         self.get_payload_field_index()
             .payload_blocks(threshold, key)
+    }
+
+    fn count_indexed_points(&self) -> usize {
+        self.get_payload_field_index().count_indexed_points()
     }
 }

@@ -10,6 +10,8 @@ use std::{
 };
 
 use crate::operations::types::PointRequest;
+use crate::operations::OperationToShard;
+use crate::shard::ShardOperation;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
@@ -23,6 +25,7 @@ use operations::{
     },
     CollectionUpdateOperations, SplitByShard, Validate,
 };
+use optimizers_builder::OptimizersConfig;
 use segment::{
     spaces::tools::peek_top_scores_iterable,
     types::{
@@ -30,12 +33,9 @@ use segment::{
         WithPayload, WithPayloadInterface,
     },
 };
+use serde::{Deserialize, Serialize};
+use shard::{local_shard::LocalShard, Shard, ShardId};
 use tokio::runtime::Handle;
-
-use crate::operations::OperationToShard;
-use crate::shard::local_shard::LocalShard;
-use crate::shard::{Shard, ShardId};
-use crate::Shard::Local;
 
 pub mod collection_manager;
 mod common;
@@ -51,10 +51,60 @@ mod tests;
 
 pub type CollectionId = String;
 
+pub type PeerId = u32;
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct State {
+    pub config: CollectionConfig,
+    pub shard_to_peer: HashMap<ShardId, PeerId>,
+}
+
+impl State {
+    pub async fn apply(
+        self,
+        this_peer_id: PeerId,
+        collection: &mut Collection,
+    ) -> CollectionResult<()> {
+        Self::apply_config(self.config, collection).await?;
+        Self::apply_shard_to_peer(self.shard_to_peer, this_peer_id, collection);
+        Ok(())
+    }
+
+    async fn apply_config(
+        config: CollectionConfig,
+        collection: &mut Collection,
+    ) -> CollectionResult<()> {
+        log::warn!("Applying only optimizers config snapshot. Other config updates are not yet implemented.");
+        collection
+            .update_optimizer_params(config.optimizer_config)
+            .await
+    }
+
+    fn apply_shard_to_peer(
+        shard_to_peer: HashMap<ShardId, PeerId>,
+        this_peer_id: PeerId,
+        collection: &mut Collection,
+    ) {
+        for (shard_id, peer_id) in shard_to_peer {
+            match collection.shards.get(&shard_id) {
+                Some(shard) => {
+                    if shard.peer_id(this_peer_id) != peer_id {
+                        log::warn!("Shard movement between peers is not yet implemented. Failed to move shard {shard_id} to peer {peer_id}")
+                    }
+                }
+                None => log::warn!(
+                    "Shard addition is not yet implemented. Failed to add shard {shard_id}"
+                ),
+            }
+        }
+    }
+}
+
 /// Collection's data is split into several shards.
 pub struct Collection {
     shards: HashMap<ShardId, Shard>,
     ring: HashRing<ShardId>,
+    config: CollectionConfig,
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
 }
@@ -86,12 +136,13 @@ impl Collection {
                     return Err(err);
                 }
             };
-            shards.insert(shard_id, Local(shard));
+            shards.insert(shard_id, Shard::Local(shard));
             ring.add(shard_id);
         }
         Ok(Self {
             shards,
             ring,
+            config: config.clone(),
             before_drop_called: false,
         })
     }
@@ -114,13 +165,14 @@ impl Collection {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
                 shard_id,
-                Local(LocalShard::load(shard_id, id.clone(), &shard_path, &config).await),
+                Shard::Local(LocalShard::load(shard_id, id.clone(), &shard_path, &config).await),
             );
             ring.add(shard_id);
         }
         Self {
             shards,
             ring,
+            config,
             before_drop_called: false,
         }
     }
@@ -153,7 +205,29 @@ impl Collection {
         self.shards.values()
     }
 
-    pub async fn update(
+    pub async fn update_from_peer(
+        &self,
+        operation: CollectionUpdateOperations,
+        shard_selection: ShardId,
+        wait: bool,
+    ) -> CollectionResult<UpdateResult> {
+        match self.shards.get(&shard_selection) {
+            None => Err(CollectionError::service_error(format!(
+                "Shard {} does not exist",
+                shard_selection
+            ))),
+            Some(Shard::Remote(_)) => Err(CollectionError::service_error(format!(
+                "Shard {} is not local on peer",
+                shard_selection
+            ))),
+            Some(Shard::Local(local_shard)) => {
+                let res = local_shard.update(operation.clone(), wait).await;
+                res
+            }
+        }
+    }
+
+    pub async fn update_from_client(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
@@ -398,15 +472,34 @@ impl Collection {
     /// - Saves new params on disk
     /// - Stops existing optimization loop
     /// - Runs new optimizers with new params
-    pub async fn update_optimizer_params(
+    pub async fn update_optimizer_params_from_diff(
         &self,
         optimizer_config_diff: OptimizersConfigDiff,
     ) -> CollectionResult<()> {
         for shard in self.all_shards() {
-            shard
-                .get()
-                .update_optimizer_params(optimizer_config_diff.clone())
-                .await?;
+            if let Shard::Local(shard) = shard {
+                shard
+                    .update_optimizer_with_diff(optimizer_config_diff.clone())
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Updates shard optimization params:
+    /// - Saves new params on disk
+    /// - Stops existing optimization loop
+    /// - Runs new optimizers with new params
+    pub async fn update_optimizer_params(
+        &self,
+        optimizer_config: OptimizersConfig,
+    ) -> CollectionResult<()> {
+        for shard in self.all_shards() {
+            if let Shard::Local(shard) = shard {
+                shard
+                    .update_optimizer_with_config(optimizer_config.clone())
+                    .await?;
+            }
         }
         Ok(())
     }
@@ -441,6 +534,25 @@ impl Collection {
             .collect();
         futures.collect::<Vec<()>>().await;
         self.before_drop_called = true
+    }
+
+    pub fn state(&self, this_peer_id: PeerId) -> State {
+        State {
+            config: self.config.clone(),
+            shard_to_peer: self
+                .shards
+                .iter()
+                .map(|(shard_id, shard)| (*shard_id, shard.peer_id(this_peer_id)))
+                .collect(),
+        }
+    }
+
+    pub async fn apply_state(
+        &mut self,
+        state: State,
+        this_peer_id: PeerId,
+    ) -> CollectionResult<()> {
+        state.apply(this_peer_id, self).await
     }
 }
 

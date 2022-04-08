@@ -80,7 +80,7 @@ Here is a quick step-by-step guide:
 
 Qdrant uses [tonic](https://github.com/hyperium/tonic) to serve gRPC traffic.
 
-Our protocol buffers are defined in `src/tonic/proto/*.proto`
+Our protocol buffers are defined in `lib/api/src/grpc/proto/*.proto`
 
 1. define request and response types using protocol buffers (use [oneOf](https://developers.google.com/protocol-buffers/docs/proto3#oneof) for enums payloads)
 2. specify RPC methods inside the service definition using protocol buffers
@@ -88,5 +88,6 @@ Our protocol buffers are defined in `src/tonic/proto/*.proto`
 4. implement the service trait in Rust
 5. start server `cargo run --bin qdrant`
 6. run integration test `./tests/basic_grpc_test.sh`
+7. generate docs `./tools/generate_grpc_docs.sh`
 
 Here is a good [tonic tutorial](https://github.com/hyperium/tonic/blob/master/examples/routeguide-tutorial.md#defining-the-service) for reference.

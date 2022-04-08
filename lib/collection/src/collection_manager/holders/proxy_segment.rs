@@ -544,13 +544,10 @@ mod tests {
         let dir = TempDir::new("segment_dir").unwrap();
         let original_segment = LockedSegment::new(build_segment_1(dir.path()));
 
-        let filter = Filter::new_must_not(Condition::Field(FieldCondition {
-            key: "color".to_string(),
-            r#match: Some("blue".to_string().into()),
-            range: None,
-            geo_bounding_box: None,
-            geo_radius: None,
-        }));
+        let filter = Filter::new_must_not(Condition::Field(FieldCondition::new_match(
+            "color".to_string(),
+            "blue".to_string().into(),
+        )));
 
         let original_points = original_segment.get().read().read_filtered(None, 100, None);
 

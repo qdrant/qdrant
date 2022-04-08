@@ -1,4 +1,6 @@
 use collection::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
+#[cfg(feature = "consensus")]
+use raft::eraftpb::Entry as RaftEntry;
 use schemars::JsonSchema;
 use segment::types::Distance;
 use serde::{Deserialize, Serialize};
@@ -7,35 +9,35 @@ use serde::{Deserialize, Serialize};
 
 /// Create alternative name for a collection.
 /// Collection will be available under both names for search, retrieve,
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateAlias {
     pub collection_name: String,
     pub alias_name: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateAliasOperation {
     pub create_alias: CreateAlias,
 }
 
 /// Delete alias if exists
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct DeleteAlias {
     pub alias_name: String,
 }
 
 /// Delete alias if exists
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct DeleteAliasOperation {
     pub delete_alias: DeleteAlias,
 }
 
 /// Change alias to a new one
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct RenameAlias {
     pub old_alias_name: String,
@@ -43,14 +45,14 @@ pub struct RenameAlias {
 }
 
 /// Change alias to a new one
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct RenameAliasOperation {
     pub rename_alias: RenameAlias,
 }
 
 /// Group of all the possible operations related to collection aliases
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum AliasOperations {
@@ -78,7 +80,7 @@ impl From<RenameAlias> for AliasOperations {
 }
 
 /// Operation for creating new collection and (optionally) specify index params
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateCollection {
     pub vector_size: usize,
@@ -99,7 +101,7 @@ pub const fn default_shard_number() -> u32 {
 }
 
 /// Operation for creating new collection and (optionally) specify index params
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateCollectionOperation {
     pub collection_name: String,
@@ -108,7 +110,7 @@ pub struct CreateCollectionOperation {
 }
 
 /// Operation for updating parameters of the existing collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateCollection {
     /// Custom params for Optimizers.  If none - values from service configuration file are used.
@@ -117,7 +119,7 @@ pub struct UpdateCollection {
 }
 
 /// Operation for updating parameters of the existing collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateCollectionOperation {
     pub collection_name: String,
@@ -128,23 +130,32 @@ pub struct UpdateCollectionOperation {
 /// Operation for performing changes of collection aliases.
 /// Alias changes are atomic, meaning that no collection modifications can happen between
 /// alias operations.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct ChangeAliasesOperation {
     pub actions: Vec<AliasOperations>,
 }
 
 /// Operation for deleting collection with given name
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct DeleteCollectionOperation(pub String);
 
 /// Enumeration of all possible collection update operations
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
-pub enum StorageOperations {
+pub enum CollectionMetaOperations {
     CreateCollection(CreateCollectionOperation),
     UpdateCollection(UpdateCollectionOperation),
     DeleteCollection(DeleteCollectionOperation),
     ChangeAliases(ChangeAliasesOperation),
+}
+
+#[cfg(feature = "consensus")]
+impl TryFrom<&RaftEntry> for CollectionMetaOperations {
+    type Error = serde_cbor::Error;
+
+    fn try_from(entry: &RaftEntry) -> Result<Self, Self::Error> {
+        serde_cbor::from_slice(entry.get_data())
+    }
 }

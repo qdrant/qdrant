@@ -3,6 +3,7 @@ pub mod api;
 pub mod helpers;
 
 use crate::actix::api::collections_api::config_collections_api;
+use ::api::grpc::models::VersionInfo;
 use actix_web::middleware::Logger;
 use actix_web::web::Data;
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
@@ -13,7 +14,6 @@ use crate::actix::api::recommend_api::recommend_points;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::search_points;
 use crate::actix::api::update_api::config_update_api;
-use crate::common::models::VersionInfo;
 use crate::settings::{max_web_workers, Settings};
 
 fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error::Error {

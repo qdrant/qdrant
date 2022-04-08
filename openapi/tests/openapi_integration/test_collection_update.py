@@ -37,7 +37,7 @@ def test_collection_update():
                 {
                     "id": 7,
                     "vector": [0.15, 0.31, 0.76, 0.74],
-                    "payload": {"city": {"type": "keyword", "value": "Rome"}}
+                    "payload": {"city": "Rome"}
                 }
             ]
         }
