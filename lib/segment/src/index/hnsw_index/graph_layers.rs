@@ -150,7 +150,6 @@ impl GraphLayers {
         points_scorer: &FilteredScorer,
     ) {
         let limit = self.get_m(level);
-        let mut scores_buffer: Vec<ScoredPointOffset> = vec![ScoredPointOffset::default(); limit];
         let mut points_ids: Vec<PointOffsetType> = Vec::with_capacity(2 * limit);
 
         while let Some(candidate) = searcher.candidates.pop() {
@@ -165,11 +164,9 @@ impl GraphLayers {
                 }
             }
 
-            points_scorer.score_points_to_buffer(
-                &mut points_ids,
-                &mut scores_buffer,
-                |score_point| searcher.process_candidate(score_point),
-            );
+            points_scorer.score_points(&mut points_ids, limit, |score_point| {
+                searcher.process_candidate(score_point)
+            });
         }
     }
 
@@ -210,8 +207,6 @@ impl GraphLayers {
         points_scorer: &FilteredScorer,
     ) -> ScoredPointOffset {
         let mut links: Vec<PointOffsetType> = Vec::with_capacity(2 * self.get_m(0));
-        let mut scores_buffer: Vec<ScoredPointOffset> =
-            vec![ScoredPointOffset::default(); self.get_m(0)];
 
         let mut current_point = ScoredPointOffset {
             idx: entry_point,
@@ -219,7 +214,6 @@ impl GraphLayers {
         };
         for level in rev_range(top_level, target_level) {
             let limit = self.get_m(level);
-            scores_buffer.resize(limit, ScoredPointOffset::default());
 
             let mut changed = true;
             while changed {
@@ -228,16 +222,12 @@ impl GraphLayers {
                 links.clear();
                 links.extend_from_slice(self.links(current_point.idx, level));
 
-                points_scorer.score_points_to_buffer(
-                    &mut links,
-                    &mut scores_buffer,
-                    |score_point| {
-                        if score_point.score > current_point.score {
-                            changed = true;
-                            current_point = score_point;
-                        }
-                    },
-                );
+                points_scorer.score_points(&mut links, limit, |score_point| {
+                    if score_point.score > current_point.score {
+                        changed = true;
+                        current_point = score_point;
+                    }
+                });
             }
         }
         current_point
