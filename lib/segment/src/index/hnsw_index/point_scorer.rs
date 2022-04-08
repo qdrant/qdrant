@@ -1,13 +1,11 @@
 use crate::payload_storage::FilterContext;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset};
-use std::cell::RefCell;
-use std::ops::DerefMut;
 
 pub struct FilteredScorer<'a> {
     pub raw_scorer: &'a dyn RawScorer,
     pub filter_context: Option<&'a dyn FilterContext>,
-    points_buffer: RefCell<Vec<ScoredPointOffset>>,
+    points_buffer: Vec<ScoredPointOffset>,
 }
 
 impl<'a> FilteredScorer<'a> {
@@ -18,7 +16,7 @@ impl<'a> FilteredScorer<'a> {
         FilteredScorer {
             raw_scorer,
             filter_context,
-            points_buffer: RefCell::new(vec![]),
+            points_buffer: Vec::new(),
         }
     }
 
@@ -30,22 +28,20 @@ impl<'a> FilteredScorer<'a> {
     }
 
     /// Method filters and calculates scores for the given slice of points
-    /// and yields obtained scores into the callback.
     ///
-    /// For performance reasons:
-    /// - This function uses callback instead of iterator
-    /// - This function mutates input values
+    /// For performance reasons this function mutates input values.
+    /// For result slice allocation this function mutates self.
     ///
     /// # Arguments
     ///
     /// * `point_ids` - list of points to score. *Warn*: This input will be wrecked during the execution.
     /// * `limit` - limits the number of points to process after filtering.
-    /// * `action` - callback. This function is called for each scored point (not more than `limit` times)
     ///
-    pub fn score_points<F>(&self, point_ids: &mut [PointOffsetType], limit: usize, action: F)
-    where
-        F: FnMut(ScoredPointOffset),
-    {
+    pub fn score_points(
+        &mut self,
+        point_ids: &mut [PointOffsetType],
+        limit: usize,
+    ) -> &[ScoredPointOffset] {
         // apply filter and store filtered ids to source slice memory
         let filtered_point_ids = match self.filter_context {
             None => point_ids,
@@ -63,17 +59,12 @@ impl<'a> FilteredScorer<'a> {
             }
         };
 
-        let mut scored_points_buffer = self.points_buffer.borrow_mut();
-        scored_points_buffer.resize(limit, ScoredPointOffset::default());
-
+        self.points_buffer
+            .resize(limit, ScoredPointOffset::default());
         let count = self
             .raw_scorer
-            .score_points(filtered_point_ids, scored_points_buffer.deref_mut());
-        scored_points_buffer
-            .iter()
-            .take(count)
-            .copied()
-            .for_each(action);
+            .score_points(filtered_point_ids, &mut self.points_buffer);
+        &self.points_buffer[0..count]
     }
 
     pub fn score_point(&self, point_id: PointOffsetType) -> ScoreType {

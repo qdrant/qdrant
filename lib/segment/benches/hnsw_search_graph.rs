@@ -8,7 +8,6 @@ use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::simple::CosineMetric;
 use segment::types::PointOffsetType;
-use segment::vector_storage::ScoredPointOffset;
 
 const NUM_VECTORS: usize = 100000;
 const DIM: usize = 64;
@@ -31,7 +30,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
         let raw_scorer = vector_holder.get_raw_scorer(added_vector);
         let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
         let level = graph_layers.get_random_layer(&mut rng);
-        graph_layers.link_new_point(idx, level, &scorer);
+        graph_layers.link_new_point(idx, level, scorer);
     }
 
     group.bench_function("hnsw_search", |b| {
@@ -41,7 +40,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
             let raw_scorer = vector_holder.get_raw_scorer(query);
             let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
 
-            graph_layers.search(TOP, EF, &scorer);
+            graph_layers.search(TOP, EF, scorer);
         })
     });
 
@@ -52,10 +51,11 @@ fn hnsw_benchmark(c: &mut Criterion) {
             let query = random_vector(&mut rng, DIM);
 
             let raw_scorer = vector_holder.get_raw_scorer(query);
-            let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
+            let mut scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
 
             let mut top_score = 0.;
-            scorer.score_points(&mut plain_search_range, NUM_VECTORS, |score| {
+            let scores = scorer.score_points(&mut plain_search_range, NUM_VECTORS);
+            scores.iter().copied().for_each(|score| {
                 if score.score > top_score {
                     top_score = score.score
                 }
