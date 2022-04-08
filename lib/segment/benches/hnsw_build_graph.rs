@@ -31,7 +31,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
                 let raw_scorer = vector_holder.get_raw_scorer(added_vector);
                 let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
                 let level = graph_layers.get_random_layer(&mut rng);
-                graph_layers.link_new_point(idx, level, &scorer);
+                graph_layers.link_new_point(idx, level, scorer);
             }
         })
     });

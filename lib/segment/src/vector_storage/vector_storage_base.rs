@@ -5,7 +5,7 @@ use rand::Rng;
 use std::cmp::Ordering;
 use std::ops::Range;
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Default)]
 pub struct ScoredPointOffset {
     pub idx: PointOffsetType,
     pub score: ScoreType,
@@ -28,11 +28,8 @@ impl PartialOrd for ScoredPointOffset {
 /// Optimized scorer for multiple scoring requests comparing with a single query
 /// Holds current query and params, receives only subset of points to score
 pub trait RawScorer {
-    // ToDo: Replace boxed iterator with callback and make a benchmark (-4% on benchmarks, but ugly)
-    fn score_points<'a>(
-        &'a self,
-        points: &'a mut dyn Iterator<Item = PointOffsetType>,
-    ) -> Box<dyn Iterator<Item = ScoredPointOffset> + 'a>;
+    fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize;
+
     /// Return true if point satisfies current search context (exists and not deleted)
     fn check_point(&self, point: PointOffsetType) -> bool;
     /// Score stored vector with vector under the given index
