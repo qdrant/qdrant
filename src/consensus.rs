@@ -187,7 +187,6 @@ mod tests {
         env_logger::init();
         let runtime = crate::create_search_runtime(settings.storage.performance.max_search_threads)
             .expect("Can't create runtime.");
-        let handle = runtime.handle().clone();
         let mut toc = TableOfContent::new(&settings.storage, runtime);
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
         toc.with_propose_sender(propose_sender);
@@ -215,7 +214,10 @@ mod tests {
         assert_eq!(toc_arc.all_collections_sync().len(), 0);
 
         // When
-        handle
+
+        // New runtime is used as timers need to be enabled.
+        tokio::runtime::Runtime::new()
+            .unwrap()
             .block_on(toc_arc.submit_collection_operation(
                 CollectionMetaOperations::CreateCollection(CreateCollectionOperation {
                     collection_name: "test".to_string(),
@@ -228,9 +230,9 @@ mod tests {
                         shard_number: 1,
                     },
                 }),
+                None,
             ))
             .unwrap();
-        thread::sleep(Duration::from_secs(5));
 
         // Then
         assert_eq!(toc_arc.hard_state().unwrap().commit, 2);

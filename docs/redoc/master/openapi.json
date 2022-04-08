@@ -2085,6 +2085,16 @@
     "/collections/aliases": {
       "post": {
         "operationId": "update_aliases",
+        "parameters": [
+          {
+            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "in": "query",
+            "name": "timeout",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -2161,6 +2171,14 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "in": "query",
+            "name": "timeout",
+            "schema": {
+              "type": "integer"
             }
           }
         ],
@@ -2295,6 +2313,14 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "in": "query",
+            "name": "timeout",
+            "schema": {
+              "type": "integer"
             }
           }
         ],
@@ -2459,6 +2485,14 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "in": "query",
+            "name": "timeout",
+            "schema": {
+              "type": "integer"
             }
           }
         ],

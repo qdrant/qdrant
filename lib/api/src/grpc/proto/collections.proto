@@ -137,15 +137,18 @@ message CreateCollection {
   optional WalConfigDiff wal_config = 5; // Configuration of the Write-Ahead-Log
   optional OptimizersConfigDiff optimizers_config = 6; // Configuration of the optimizers
   optional uint32 shard_number = 7; // Number of shards in the collection, default = 1
+  optional uint64 timeout = 8; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
 }
 
 message UpdateCollection {
   string collection_name = 1; // Name of the collection
   optional OptimizersConfigDiff optimizers_config = 2; // New configuration parameters for the collection
+  optional uint64 timeout = 3; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
 }
 
 message DeleteCollection {
   string collection_name = 1; // Name of the collection
+  optional uint64 timeout = 2; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
 }
 
 message CollectionOperationResponse {
@@ -183,6 +186,7 @@ message CollectionInfo {
 
 message ChangeAliases {
   repeated AliasOperations actions = 1; // List of actions
+  optional uint64 timeout = 2; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
 }
 
 message AliasOperations {
