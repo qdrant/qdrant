@@ -61,6 +61,13 @@ paths:
           required: true
           schema:
             type: string
+        - name: timeout
+          in: query
+          description: |
+            Wait for operation commit timeout in seconds. 
+            If timeout is reached - request will return with service error.
+          schema:
+            type: integer
       responses: #@ response(type("boolean"))
 
     patch:
@@ -83,6 +90,13 @@ paths:
           required: true
           schema:
             type: string
+        - name: timeout
+          in: query
+          description: |
+            Wait for operation commit timeout in seconds. 
+            If timeout is reached - request will return with service error.
+          schema:
+            type: integer
       responses: #@ response(type("boolean"))
 
     delete:
@@ -98,6 +112,13 @@ paths:
           required: true
           schema:
             type: string
+        - name: timeout
+          in: query
+          description: |
+            Wait for operation commit timeout in seconds. 
+            If timeout is reached - request will return with service error.
+          schema:
+            type: integer
       responses: #@ response(type("boolean"))
 
   /collections/aliases:
@@ -112,7 +133,14 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ChangeAliasesOperation"
-
+      parameters:
+        - name: timeout
+          in: query
+          description: |
+            Wait for operation commit timeout in seconds. 
+            If timeout is reached - request will return with service error.
+          schema:
+            type: integer
       responses: #@ response(type("boolean"))
 
   /collections/{collection_name}/index:
