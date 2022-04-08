@@ -27,7 +27,6 @@ impl FilterContext for FakeFilterContext {
 }
 
 pub struct TestRawScorerProducer<TMetric: Metric> {
-    pub dim: usize,
     pub vectors: ChunkedVectors,
     pub deleted: BitVec,
     pub metric: TMetric,
@@ -49,7 +48,6 @@ where
         }
 
         TestRawScorerProducer {
-            dim,
             vectors,
             deleted: BitVec::from_elem(num_vectors, false),
             metric,
@@ -58,7 +56,6 @@ where
 
     pub fn get_raw_scorer(&self, query: Vec<VectorElementType>) -> SimpleRawScorer<TMetric> {
         SimpleRawScorer {
-            dim: self.dim,
             query: self.metric.preprocess(&query).unwrap_or(query),
             metric: &self.metric,
             vectors: &self.vectors,

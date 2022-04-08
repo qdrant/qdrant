@@ -38,7 +38,6 @@ struct StoredRecord {
 }
 
 pub struct SimpleRawScorer<'a, TMetric: Metric> {
-    pub dim: usize,
     pub query: Vec<VectorElementType>,
     pub metric: &'a TMetric,
     pub vectors: &'a ChunkedVectors,
@@ -255,7 +254,6 @@ where
 
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
         Box::new(SimpleRawScorer {
-            dim: self.dim,
             query: self.metric.preprocess(&vector).unwrap_or(vector),
             metric: &self.metric,
             vectors: &self.vectors,
@@ -265,7 +263,6 @@ where
 
     fn raw_scorer_internal(&self, point_id: PointOffsetType) -> Box<dyn RawScorer + '_> {
         Box::new(SimpleRawScorer {
-            dim: self.dim,
             query: self.vectors.get(point_id).to_vec(),
             metric: &self.metric,
             vectors: &self.vectors,
