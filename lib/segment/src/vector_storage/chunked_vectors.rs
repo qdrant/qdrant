@@ -21,7 +21,6 @@ impl ChunkedVectors {
     pub fn new(dim: usize) -> ChunkedVectors {
         let vector_size = dim * mem::size_of::<VectorElementType>();
         let chunk_capacity = max(MIN_CHUNK_CAPACITY, CHUNK_SIZE / vector_size);
-        // allocate power of two sized chunks to reduce fragmentation
         ChunkedVectors {
             dim,
             len: 0,
