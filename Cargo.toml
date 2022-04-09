@@ -12,7 +12,7 @@ default = [ "web" ]
 web = ["actix-web"]
 service_debug = ["parking_lot", "parking_lot/deadlock_detection"]
 consensus = ["raft", "slog", "slog-stdlog", "storage/consensus"]
-
+tracy = ["tracy-client", "collection/tracy", "profiler_proc_macro/tracy", "segment/tracy", "storage/tracy" ]
 
 [dev-dependencies]
 tempdir = "0.3.7"
@@ -21,7 +21,7 @@ rusty-hook = "^0.11.2"
 
 [dependencies]
 
-tracy-client = { version = "0.12.6", features = ["enable"], optional = true }
+tracy-client = { version = "0.12.7", features = ["enable"], optional = true }
 parking_lot = { version = "0.12", features=["deadlock_detection"], optional = true }
 
 num_cpus = "1.13"

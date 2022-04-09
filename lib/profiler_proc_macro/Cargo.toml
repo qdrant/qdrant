@@ -4,8 +4,11 @@ version = "0.1.0"
 authors = ["Andrey Vasnetsov <vasnetsov93@gmail.com>"]
 edition = "2021"
 
+[features]
+tracy = []
+
 [lib]
 proc-macro = true
 
 [dependencies]
-syn = { version = "1.0.85", features = ["extra-traits"], optional = true }
+syn = { version = "1.0", features = ["extra-traits"] }

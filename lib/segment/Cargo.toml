@@ -6,6 +6,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+tracy = ["tracy-client"]
+
 [dev-dependencies]
 pprof = { version = "0.7", features = ["flamegraph", "prost-codec"] }
 tempdir = "0.3.7"
@@ -14,7 +17,7 @@ rmp-serde = "~1.0"
 
 [dependencies]
 
-tracy-client = { version = "0.12.6", features = ["enable"], optional = true }
+tracy-client = { version = "0.12.7", features = ["enable"], optional = true }
 parking_lot = "0.12"
 itertools = "0.10"
 rocksdb = { version = "0.18.0", default-features = false, features = [ "snappy" ] }

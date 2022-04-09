@@ -6,13 +6,14 @@ edition = "2021"
 
 [features]
 consensus = ["raft", "prost", "serde_cbor"]
+tracy = ["tracy-client"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dev-dependencies]
 tempdir = "0.3.7"
 
 [dependencies]
-tracy-client = { version = "0.12.6", features = ["enable"], optional = true }
+tracy-client = { version = "0.12.7", features = ["enable"], optional = true }
 num_cpus = "1.13"
 thiserror = "1.0"
 rand = "0.8.5"

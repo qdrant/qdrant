@@ -1,13 +1,12 @@
 extern crate proc_macro;
 
-#[cfg(feature = "tracy-client")]
-use ::syn::{parse_macro_input, ItemFn};
-
 use proc_macro::TokenStream;
 
 #[proc_macro_attribute]
-#[cfg(feature = "tracy-client")]
+#[cfg(feature = "tracy")]
 pub fn trace(_: TokenStream, input: TokenStream) -> TokenStream {
+    use ::syn::{parse_macro_input, ItemFn};
+
     let mut input_string = input.to_string();
     let input_fn = parse_macro_input!(input as ItemFn);
     let string_to_insert = format!(
@@ -22,7 +21,7 @@ pub fn trace(_: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-#[cfg(not(feature = "tracy-client"))]
+#[cfg(not(feature = "tracy"))]
 pub fn trace(_: TokenStream, input: TokenStream) -> TokenStream {
     input
 }
