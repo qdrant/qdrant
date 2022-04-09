@@ -14,7 +14,7 @@ rmp-serde = "~1.0"
 
 [dependencies]
 
-tracy-client = { version = "0.12.6", features = ["enable"] }
+tracy-client = { version = "0.12.6", features = ["enable"], optional = true }
 parking_lot = "0.12"
 itertools = "0.10"
 rocksdb = { version = "0.18.0", default-features = false, features = [ "snappy" ] }
