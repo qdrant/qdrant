@@ -617,7 +617,7 @@ mod tests {
 
         for idx in 0..(num_vectors as PointOffsetType) {
             let fake_filter_context = FakeFilterContext {};
-            let added_vector = vector_holder.vectors[idx as usize].to_vec();
+            let added_vector = vector_holder.vectors.get(idx).to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
             let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
             let level = graph_layers.get_random_layer(rng);
@@ -648,7 +648,7 @@ mod tests {
         let linking_idx: PointOffsetType = 7;
 
         let fake_filter_context = FakeFilterContext {};
-        let added_vector = vector_holder.vectors[linking_idx as usize].to_vec();
+        let added_vector = vector_holder.vectors.get(linking_idx).to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector);
         let mut scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
 
@@ -740,9 +740,10 @@ mod tests {
             .preprocess(&query)
             .unwrap_or_else(|| query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
-        for (idx, vec) in vector_holder.vectors.iter().enumerate() {
+        for idx in 0..vector_holder.vectors.len() as PointOffsetType {
+            let vec = &vector_holder.vectors.get(idx);
             reference_top.push(ScoredPointOffset {
-                idx: idx as PointOffsetType,
+                idx,
                 score: vector_holder.metric.similarity(vec, &processed_query),
             });
         }
@@ -768,7 +769,7 @@ mod tests {
             GraphLayers::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
         let fake_filter_context = FakeFilterContext {};
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
-            let added_vector = vector_holder.vectors[idx as usize].to_vec();
+            let added_vector = vector_holder.vectors.get(idx).to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector);
             let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
             let level = graph_layers.get_random_layer(&mut rng);
@@ -846,10 +847,8 @@ mod tests {
         let graph_json = serde_json::to_string_pretty(&graph_layers).unwrap();
 
         let vectors_json = serde_json::to_string_pretty(
-            &vector_holder
-                .vectors
-                .iter()
-                .map(|x| x.to_vec())
+            &(0..vector_holder.vectors.len() as PointOffsetType)
+                .map(|point_id| vector_holder.vectors.get(point_id).to_vec())
                 .collect_vec(),
         )
         .unwrap();
