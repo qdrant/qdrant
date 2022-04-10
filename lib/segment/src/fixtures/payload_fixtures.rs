@@ -118,7 +118,6 @@ pub fn random_must_filter<R: Rng + ?Sized>(rnd_gen: &mut R, num_conditions: usiz
 }
 
 pub fn random_filter<R: Rng + ?Sized>(rnd_gen: &mut R, total_conditions: usize) -> Filter {
-
     let num_should = rnd_gen.gen_range(0..=total_conditions);
     let num_must = total_conditions - num_should;
 
