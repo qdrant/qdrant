@@ -1,6 +1,6 @@
-use crate::payload_storage::{ConditionChecker, FilterContext};
+use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
-use crate::types::{Filter, PointOffsetType, VectorElementType};
+use crate::types::{PointOffsetType, VectorElementType};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::simple_vector_storage::SimpleRawScorer;
 use bit_vec::BitVec;
@@ -8,14 +8,6 @@ use rand::Rng;
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
     (0..size).map(|_| rnd_gen.gen_range(0.0..1.0)).collect()
-}
-
-pub struct FakeConditionChecker {}
-
-impl ConditionChecker for FakeConditionChecker {
-    fn check(&self, _point_id: PointOffsetType, _query: &Filter) -> bool {
-        true
-    }
 }
 
 pub struct FakeFilterContext {}
