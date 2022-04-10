@@ -16,17 +16,16 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, Pr
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
+use crate::index::struct_filter_context::{IndexesMap, StructFilterContext};
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorageSS};
 use crate::types::{
-    Condition, FieldCondition, Filter, IsEmptyCondition, Match, MatchValue, PayloadKeyType,
-    PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType, ValueVariants,
+    Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType, PayloadKeyTypeRef,
+    PayloadSchemaType, PointOffsetType,
 };
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
-
-type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
 
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
 pub struct StructPayloadIndex {
@@ -396,116 +395,6 @@ impl PayloadIndex for StructPayloadIndex {
                     field_index.payload_blocks(threshold, field_clone.clone())
                 }))
             }
-        }
-    }
-}
-
-pub struct StructFilterContext<'a> {
-    condition_checker: Arc<ConditionCheckerSS>,
-    filter: &'a Filter,
-    fallback: bool,
-    checkers: Vec<Box<dyn Fn(PointOffsetType) -> bool + 'a>>,
-}
-
-impl<'a> StructFilterContext<'a> {
-    fn new(
-        condition_checker: Arc<ConditionCheckerSS>,
-        filter: &'a Filter,
-        field_indexes: &'a IndexesMap,
-        cardinality_estimation: CardinalityEstimation,
-    ) -> Self {
-        let mut checkers = vec![];
-        let fallback = check_fallback(&cardinality_estimation.primary_clauses, field_indexes);
-
-        for clause in cardinality_estimation.primary_clauses {
-            match clause {
-                PrimaryCondition::Condition(field_condition) => {
-                    let indexes_opt = field_indexes.get(&field_condition.key);
-                    let indexes = if let Some(indexes) = indexes_opt {
-                        indexes
-                    } else {
-                        continue;
-                    };
-                    for index in indexes {
-                        let cond_match = field_condition.r#match.clone();
-                        match (cond_match, index) {
-                            (
-                                Some(Match::Value(MatchValue {
-                                    value: ValueVariants::Keyword(keyword),
-                                })),
-                                FieldIndex::KeywordIndex(index),
-                            ) => {
-                                checkers.push(Box::new(move |point_id: PointOffsetType| match index
-                                    .get_values(point_id)
-                                {
-                                    None => false,
-                                    Some(values) => values.iter().any(|k| k == &keyword),
-                                })
-                                    as Box<dyn Fn(PointOffsetType) -> bool>)
-                            }
-                            (
-                                Some(Match::Value(MatchValue {
-                                    value: ValueVariants::Integer(value),
-                                })),
-                                FieldIndex::IntIndex(index),
-                            ) => {
-                                checkers.push(Box::new(move |point_id: PointOffsetType| match index
-                                    .get_values(point_id)
-                                {
-                                    None => false,
-                                    Some(values) => values.iter().any(|i| i == &value),
-                                })
-                                    as Box<dyn Fn(PointOffsetType) -> bool>)
-                            }
-                            (
-                                Some(Match::Value(MatchValue {
-                                    value: ValueVariants::Integer(value),
-                                })),
-                                FieldIndex::IntMapIndex(index),
-                            ) => {
-                                checkers.push(Box::new(move |point_id: PointOffsetType| match index
-                                    .get_values(point_id)
-                                {
-                                    None => false,
-                                    Some(values) => values.iter().any(|i| i == &value),
-                                })
-                                    as Box<dyn Fn(PointOffsetType) -> bool>)
-                            }
-
-                            (_, _) => {}
-                        }
-                    }
-                }
-                PrimaryCondition::IsEmpty(_) => {}
-                PrimaryCondition::Ids(_) => {}
-            }
-        }
-
-        Self {
-            condition_checker,
-            filter,
-            fallback,
-            checkers,
-        }
-    }
-}
-
-fn check_fallback(primary_clauses: &[PrimaryCondition], field_indexes: &IndexesMap) -> bool {
-    primary_clauses.iter().any(|p| match p {
-        PrimaryCondition::Condition(field_condition) => {
-            field_indexes.get(&field_condition.key).is_none()
-        }
-        _ => true,
-    })
-}
-
-impl<'a> FilterContext for StructFilterContext<'a> {
-    fn check(&self, point_id: PointOffsetType) -> bool {
-        // At least one primary condition should be satisfied - that is necessary, but not sufficient condition
-        if !self.fallback && !self.checkers.iter().any(|foo| foo(point_id)) {
-            false
-        } else {
-            self.condition_checker.check(point_id, self.filter)
         }
     }
 }

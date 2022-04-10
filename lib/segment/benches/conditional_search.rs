@@ -16,11 +16,13 @@ const NUM_POINTS: usize = 100000;
 const CHECK_SAMPLE_SIZE: usize = 1000;
 
 fn conditional_plain_search_benchmark(c: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(42);
+    let seed = 42;
+
+    let mut rng = StdRng::seed_from_u64(seed);
     let mut group = c.benchmark_group("conditional-search-group");
 
     let dir = TempDir::new("storage_dir").unwrap();
-    let plain_index = create_plain_payload_index(dir.path(), NUM_POINTS);
+    let plain_index = create_plain_payload_index(dir.path(), NUM_POINTS, seed);
 
     let mut result_size = 0;
     let mut query_count = 0;
@@ -104,8 +106,10 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
     let mut group = c.benchmark_group("conditional-search-group");
 
+    let seed = 42;
+
     let dir = TempDir::new("storage_dir").unwrap();
-    let struct_index = create_struct_payload_index(dir.path(), NUM_POINTS);
+    let struct_index = create_struct_payload_index(dir.path(), NUM_POINTS, seed);
 
     let mut result_size = 0;
     let mut query_count = 0;
