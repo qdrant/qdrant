@@ -1,5 +1,6 @@
 use crate::types::{Filter, Payload, PayloadKeyTypeRef, PointOffsetType};
 use atomic_refcell::AtomicRefCell;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -97,20 +98,80 @@ impl ConditionChecker for InMemoryConditionChecker {
         let empty_payload: Payload = Default::default();
 
         let payload_storage_guard = self.payload_storage.borrow();
-        let payload_ptr = payload_storage_guard.payload_ptr(point_id);
 
-        let payload = match payload_ptr {
-            None => &empty_payload,
-            Some(x) => x,
-        };
-
-        check_payload(payload, self.id_tracker.borrow().deref(), query, point_id)
+        let payload_cell: RefCell<Option<&Payload>> = RefCell::new(None);
+        check_payload(
+            || {
+                if payload_cell.borrow().is_none() {
+                    payload_cell.replace(Some(match payload_storage_guard.payload_ptr(point_id) {
+                        None => &empty_payload,
+                        Some(x) => x,
+                    }));
+                }
+                payload_cell.borrow().unwrap()
+            },
+            self.id_tracker.borrow().deref(),
+            query,
+            point_id,
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::payload_context_fixture::IdsIterator;
+    use crate::types::{Condition, FieldCondition};
+    use serde_json::json;
+
+    #[test]
+    fn test_condition_checking() {
+        let id_tracker = IdsIterator::new(1);
+        let get_payload = || {
+            let payload: Payload = serde_json::from_value(json!({
+                "name": "John Doe",
+                "age": 43,
+                "boolean": "true",
+                "floating": 30.5,
+                "string_array": ["hello", "world"],
+                "boolean_array": ["true", "false"],
+                "float_array": [1.0, 2.0],
+            }))
+            .unwrap();
+            eprintln!("assigning payload"); // should occur only once
+            payload
+        };
+
+        let query = Filter {
+            should: None,
+            must: Some(vec![
+                Condition::Field(FieldCondition::new_match("age".to_string(), 43.into())),
+                Condition::Field(FieldCondition::new_match(
+                    "name".to_string(),
+                    "John Doe".to_string().into(),
+                )),
+            ]),
+            must_not: None,
+        };
+
+        // Example:
+        // How to check for payload in case if Payload is stored on disk
+        // and it is preferred to only load the Payload once and if it is strictly required.
+
+        let payload: RefCell<Option<Payload>> = RefCell::new(None);
+        check_payload(
+            || {
+                eprintln!("request payload");
+                if payload.borrow().is_none() {
+                    payload.replace(Some(get_payload()));
+                }
+                unsafe { payload.try_borrow_unguarded().unwrap().as_ref().unwrap() }
+            },
+            &id_tracker,
+            &query,
+            0,
+        );
+    }
 
     #[test]
     fn test_wipe() {

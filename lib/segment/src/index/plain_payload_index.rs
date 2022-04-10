@@ -65,18 +65,6 @@ impl PlainPayloadIndex {
 
         Ok(index)
     }
-
-    pub fn query_points_callback<'a, F: FnMut(PointOffsetType)>(
-        &'a self,
-        query: &'a Filter,
-        mut callback: F,
-    ) {
-        for id in self.points_iterator.borrow().iter_ids() {
-            if self.condition_checker.check(id, query) {
-                callback(id)
-            }
-        }
-    }
 }
 
 impl PayloadIndex for PlainPayloadIndex {
@@ -120,12 +108,13 @@ impl PayloadIndex for PlainPayloadIndex {
         &'a self,
         query: &'a Filter,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        let filter_context = self.filter_context(query);
         Box::new(ArcAtomicRefCellIterator::new(
             self.points_iterator.clone(),
-            |points_iterator| {
+            move |points_iterator| {
                 points_iterator
                     .iter_ids()
-                    .filter(|id| self.condition_checker.check(*id, query))
+                    .filter(move |id| filter_context.check(*id))
             },
         ))
     }

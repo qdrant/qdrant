@@ -228,6 +228,15 @@ impl StructPayloadIndex {
     pub fn total_points(&self) -> usize {
         self.points_iterator.borrow().points_count()
     }
+
+    fn struct_filtered_context<'a>(&'a self, filter: &'a Filter) -> StructFilterContext<'a> {
+        StructFilterContext::new(
+            self.condition_checker.clone(),
+            filter,
+            &self.field_indexes,
+            self.estimate_cardinality(filter),
+        )
+    }
 }
 
 impl PayloadIndex for StructPayloadIndex {
@@ -335,13 +344,15 @@ impl PayloadIndex for StructPayloadIndex {
                     points_iterator.iter_ids()
                 });
 
+            let struct_filtered_context = self.struct_filtered_context(query);
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points =
-                full_scan_iterator.filter(|i| self.condition_checker.check(*i, query));
+                full_scan_iterator.filter(move |i| struct_filtered_context.check(*i));
 
             Box::new(matched_points)
         } else {
             let points_iterator_ref = self.points_iterator.borrow();
+            let struct_filtered_context = self.struct_filtered_context(query);
 
             // CPU-optimized strategy here: points are made unique before applying other filters.
             // ToDo: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
@@ -363,7 +374,7 @@ impl PayloadIndex for StructPayloadIndex {
                     }
                 })
                 .filter(|&id| !visited_list.check_and_update_visited(id))
-                .filter(move |&i| self.condition_checker.check(i, query))
+                .filter(move |&i| struct_filtered_context.check(i))
                 .collect();
 
             self.visited_pool.return_back(visited_list);
@@ -374,12 +385,7 @@ impl PayloadIndex for StructPayloadIndex {
     }
 
     fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
-        Box::new(StructFilterContext::new(
-            self.condition_checker.clone(),
-            filter,
-            &self.field_indexes,
-            self.estimate_cardinality(filter),
-        ))
+        Box::new(self.struct_filtered_context(filter))
     }
 
     fn payload_blocks(

@@ -21,7 +21,7 @@ use std::sync::Arc;
 /// Warn: Use for tests only
 ///
 /// This struct mimics the interface of `PointsIterator` and `IdTracker` only for basic cases
-struct IdsIterator {
+pub struct IdsIterator {
     ids: Vec<PointOffsetType>,
 }
 

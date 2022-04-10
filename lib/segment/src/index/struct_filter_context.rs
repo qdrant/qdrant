@@ -1,8 +1,9 @@
 use crate::index::field_index::{CardinalityEstimation, FieldIndex, PrimaryCondition};
+use crate::payload_storage::query_checker::check_filter;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::types::{
-    Filter, FloatPayloadType, GeoBoundingBox, GeoRadius, Match, MatchValue, PayloadKeyType,
-    PointOffsetType, Range, ValueVariants,
+    Condition, Filter, FloatPayloadType, GeoBoundingBox, GeoRadius, Match, MatchValue,
+    PayloadKeyType, PointOffsetType, Range, ValueVariants,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,7 +14,22 @@ pub type ConditionChecker<'a> = Box<dyn Fn(PointOffsetType) -> bool + 'a>;
 pub struct StructFilterContext<'a> {
     condition_checker: Arc<ConditionCheckerSS>,
     filter: &'a Filter,
-    checkers: Vec<ConditionChecker<'a>>,
+    primary_checkers: Vec<ConditionChecker<'a>>,
+}
+
+pub fn fast_check_payload(
+    query: &Filter,
+    point_id: PointOffsetType,
+    checkers: &HashMap<&str, Box<dyn Fn(PointOffsetType) -> bool>>,
+) -> bool {
+    let checker = |condition: &Condition| match condition {
+        Condition::Field(field_condition) => {
+            checkers.get(field_condition.key.as_str()).unwrap()(point_id)
+        }
+        _ => panic!("unexpected condition"),
+    };
+
+    check_filter(&checker, query)
 }
 
 impl<'a> StructFilterContext<'a> {
@@ -69,7 +85,7 @@ impl<'a> StructFilterContext<'a> {
         Self {
             condition_checker,
             filter,
-            checkers,
+            primary_checkers: checkers,
         }
     }
 }
@@ -158,7 +174,9 @@ fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condition
 impl<'a> FilterContext for StructFilterContext<'a> {
     fn check(&self, point_id: PointOffsetType) -> bool {
         // At least one primary condition should be satisfied - that is necessary, but not sufficient condition
-        if !self.checkers.is_empty() && !self.checkers.iter().any(|check| check(point_id)) {
+        if !self.primary_checkers.is_empty()
+            && !self.primary_checkers.iter().any(|check| check(point_id))
+        {
             false
         } else {
             self.condition_checker.check(point_id, self.filter)
