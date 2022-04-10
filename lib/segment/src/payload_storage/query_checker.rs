@@ -11,8 +11,8 @@ use crate::payload_storage::ConditionChecker;
 use crate::types::{Condition, Filter, IsEmptyCondition, Payload, PointOffsetType};
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool
-    where
-        F: Fn(&Condition) -> bool,
+where
+    F: Fn(&Condition) -> bool,
 {
     match condition {
         Condition::Filter(filter) => check_filter(checker, filter),
@@ -21,8 +21,8 @@ fn check_condition<F>(checker: &F, condition: &Condition) -> bool
 }
 
 fn check_filter<F>(checker: &F, filter: &Filter) -> bool
-    where
-        F: Fn(&Condition) -> bool,
+where
+    F: Fn(&Condition) -> bool,
 {
     check_should(checker, &filter.should)
         && check_must(checker, &filter.must)
@@ -30,8 +30,8 @@ fn check_filter<F>(checker: &F, filter: &Filter) -> bool
 }
 
 fn check_should<F>(checker: &F, should: &Option<Vec<Condition>>) -> bool
-    where
-        F: Fn(&Condition) -> bool,
+where
+    F: Fn(&Condition) -> bool,
 {
     let check = |x| check_condition(checker, x);
     match should {
@@ -41,8 +41,8 @@ fn check_should<F>(checker: &F, should: &Option<Vec<Condition>>) -> bool
 }
 
 fn check_must<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
-    where
-        F: Fn(&Condition) -> bool,
+where
+    F: Fn(&Condition) -> bool,
 {
     let check = |x| check_condition(checker, x);
     match must {
@@ -52,8 +52,8 @@ fn check_must<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
 }
 
 fn check_must_not<F>(checker: &F, must: &Option<Vec<Condition>>) -> bool
-    where
-        F: Fn(&Condition) -> bool,
+where
+    F: Fn(&Condition) -> bool,
 {
     let check = |x| !check_condition(checker, x);
     match must {
@@ -76,29 +76,29 @@ pub fn check_payload(
                     // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
                     res = res
                         || field_condition
-                        .r#match
-                        .as_ref()
-                        .map_or(false, |condition| condition.check(p));
+                            .r#match
+                            .as_ref()
+                            .map_or(false, |condition| condition.check(p));
                     res = res
                         || field_condition
-                        .range
-                        .as_ref()
-                        .map_or(false, |condition| condition.check(p));
+                            .range
+                            .as_ref()
+                            .map_or(false, |condition| condition.check(p));
                     res = res
                         || field_condition
-                        .geo_radius
-                        .as_ref()
-                        .map_or(false, |condition| condition.check(p));
+                            .geo_radius
+                            .as_ref()
+                            .map_or(false, |condition| condition.check(p));
                     res = res
                         || field_condition
-                        .geo_bounding_box
-                        .as_ref()
-                        .map_or(false, |condition| condition.check(p));
+                            .geo_bounding_box
+                            .as_ref()
+                            .map_or(false, |condition| condition.check(p));
                     res = res
                         || field_condition
-                        .values_count
-                        .as_ref()
-                        .map_or(false, |condition| condition.check(p));
+                            .values_count
+                            .as_ref()
+                            .map_or(false, |condition| condition.check(p));
                     res
                 })
             }
@@ -129,7 +129,7 @@ pub fn check_payload(
 pub struct SimpleConditionChecker {
     payload_storage: Arc<AtomicRefCell<SimplePayloadStorage>>,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
-    empty_payload: Payload
+    empty_payload: Payload,
 }
 
 impl SimpleConditionChecker {
@@ -140,7 +140,7 @@ impl SimpleConditionChecker {
         SimpleConditionChecker {
             payload_storage,
             id_tracker,
-            empty_payload: Default::default()
+            empty_payload: Default::default(),
         }
     }
 }
@@ -191,7 +191,7 @@ mod tests {
             "color": "red",
             "has_delivery": true,
         })
-            .into();
+        .into();
 
         let mut payload_storage = SimplePayloadStorage::open(dir.path()).unwrap();
         let mut id_tracker = SimpleIdTracker::open(dir_id_tracker.path()).unwrap();
@@ -222,38 +222,56 @@ mod tests {
         assert!(!payload_checker.check(0, &is_empty_condition_1));
         assert!(payload_checker.check(0, &is_empty_condition_2));
 
-        let match_red = Condition::Field(FieldCondition::new_match("color".to_string(), "red".to_owned().into()));
-        let match_blue = Condition::Field(FieldCondition::new_match("color".to_string(), "blue".to_owned().into()));
-        let with_delivery = Condition::Field(FieldCondition::new_match("has_delivery".to_string(), true.into()));
+        let match_red = Condition::Field(FieldCondition::new_match(
+            "color".to_string(),
+            "red".to_owned().into(),
+        ));
+        let match_blue = Condition::Field(FieldCondition::new_match(
+            "color".to_string(),
+            "blue".to_owned().into(),
+        ));
+        let with_delivery = Condition::Field(FieldCondition::new_match(
+            "has_delivery".to_string(),
+            true.into(),
+        ));
 
-        let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box("location".to_string(), GeoBoundingBox {
-            top_left: GeoPoint {
-                lon: 13.08835,
-                lat: 52.67551,
+        let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box(
+            "location".to_string(),
+            GeoBoundingBox {
+                top_left: GeoPoint {
+                    lon: 13.08835,
+                    lat: 52.67551,
+                },
+                bottom_right: GeoPoint {
+                    lon: 13.76116,
+                    lat: 52.33826,
+                },
             },
-            bottom_right: GeoPoint {
-                lon: 13.76116,
-                lat: 52.33826,
-            },
-        }));
+        ));
 
-        let in_moscow = Condition::Field(FieldCondition::new_geo_bounding_box("location".to_string(), GeoBoundingBox {
-            top_left: GeoPoint {
-                lon: 37.0366,
-                lat: 56.1859,
+        let in_moscow = Condition::Field(FieldCondition::new_geo_bounding_box(
+            "location".to_string(),
+            GeoBoundingBox {
+                top_left: GeoPoint {
+                    lon: 37.0366,
+                    lat: 56.1859,
+                },
+                bottom_right: GeoPoint {
+                    lon: 38.2532,
+                    lat: 55.317,
+                },
             },
-            bottom_right: GeoPoint {
-                lon: 38.2532,
-                lat: 55.317,
-            },
-        }));
+        ));
 
-        let with_bad_rating = Condition::Field(FieldCondition::new_range("rating".to_string(), Range {
-            lt: None,
-            gt: None,
-            gte: None,
-            lte: Some(5.),
-        }));
+        let with_bad_rating = Condition::Field(FieldCondition::new_range(
+            "rating".to_string(),
+            Range {
+                lt: None,
+                gt: None,
+                gte: None,
+                lte: Some(5.),
+            },
+        ));
 
         let query = Filter {
             should: None,
