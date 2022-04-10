@@ -222,76 +222,38 @@ mod tests {
         assert!(!payload_checker.check(0, &is_empty_condition_1));
         assert!(payload_checker.check(0, &is_empty_condition_2));
 
-        let match_red = Condition::Field(FieldCondition {
-            key: "color".to_string(),
-            r#match: Some("red".to_owned().into()),
-            range: None,
-            geo_bounding_box: None,
-            geo_radius: None,
-        });
+        let match_red = Condition::Field(FieldCondition::new_match("color".to_string(), "red".to_owned().into()));
+        let match_blue = Condition::Field(FieldCondition::new_match("color".to_string(), "blue".to_owned().into()));
+        let with_delivery = Condition::Field(FieldCondition::new_match("has_delivery".to_string(), true.into()));
 
-        let match_blue = Condition::Field(FieldCondition {
-            key: "color".to_string(),
-            r#match: Some("blue".to_owned().into()),
-            range: None,
-            geo_bounding_box: None,
-            geo_radius: None,
-        });
+        let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box("location".to_string(), GeoBoundingBox {
+            top_left: GeoPoint {
+                lon: 13.08835,
+                lat: 52.67551,
+            },
+            bottom_right: GeoPoint {
+                lon: 13.76116,
+                lat: 52.33826,
+            },
+        }));
 
-        let with_delivery = Condition::Field(FieldCondition {
-            key: "has_delivery".to_string(),
-            r#match: Some(true.into()),
-            range: None,
-            geo_bounding_box: None,
-            geo_radius: None,
-        });
+        let in_moscow = Condition::Field(FieldCondition::new_geo_bounding_box("location".to_string(), GeoBoundingBox {
+            top_left: GeoPoint {
+                lon: 37.0366,
+                lat: 56.1859,
+            },
+            bottom_right: GeoPoint {
+                lon: 38.2532,
+                lat: 55.317,
+            },
+        }));
 
-        let in_berlin = Condition::Field(FieldCondition {
-            key: "location".to_string(),
-            r#match: None,
-            range: None,
-            geo_bounding_box: Some(GeoBoundingBox {
-                top_left: GeoPoint {
-                    lon: 13.08835,
-                    lat: 52.67551,
-                },
-                bottom_right: GeoPoint {
-                    lon: 13.76116,
-                    lat: 52.33826,
-                },
-            }),
-            geo_radius: None,
-        });
-
-        let in_moscow = Condition::Field(FieldCondition {
-            key: "location".to_string(),
-            r#match: None,
-            range: None,
-            geo_bounding_box: Some(GeoBoundingBox {
-                top_left: GeoPoint {
-                    lon: 37.0366,
-                    lat: 56.1859,
-                },
-                bottom_right: GeoPoint {
-                    lon: 38.2532,
-                    lat: 55.317,
-                },
-            }),
-            geo_radius: None,
-        });
-
-        let with_bad_rating = Condition::Field(FieldCondition {
-            key: "rating".to_string(),
-            r#match: None,
-            range: Some(Range {
-                lt: None,
-                gt: None,
-                gte: None,
-                lte: Some(5.),
-            }),
-            geo_bounding_box: None,
-            geo_radius: None,
-        });
+        let with_bad_rating = Condition::Field(FieldCondition::new_range("rating".to_string(), Range {
+            lt: None,
+            gt: None,
+            gte: None,
+            lte: Some(5.),
+        }));
 
         let query = Filter {
             should: None,
