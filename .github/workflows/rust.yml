@@ -24,6 +24,9 @@ jobs:
     - uses: Swatinem/rust-cache@v1
     - name: Install dependencies
       run: sudo apt-get install clang
+    - name: Install protoc
+      run: .github/scripts/protoc.sh
+      shell: bash
     - name: Run tests
       run: cargo test --all
 
@@ -40,6 +43,9 @@ jobs:
     - uses: Swatinem/rust-cache@v1
     - name: Install dependencies
       run: sudo apt-get install clang
+    - name: Install protoc
+      run: .github/scripts/protoc.sh
+      shell: bash
     - name: Test with consensus feature
       run: cargo test --package qdrant --bin qdrant --features consensus -- consensus::tests
 
