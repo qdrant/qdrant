@@ -70,7 +70,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
 
     let segment_searcher = SimpleCollectionSearcher::new();
     let search_res = collection
-        .search(search_request, &segment_searcher, &Handle::current())
+        .search(search_request, &segment_searcher, &Handle::current(), None)
         .await;
 
     match search_res {
@@ -127,7 +127,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
 
     let segment_searcher = SimpleCollectionSearcher::new();
     let search_res = collection
-        .search(search_request, &segment_searcher, &Handle::current())
+        .search(search_request, &segment_searcher, &Handle::current(), None)
         .await;
 
     match search_res {
@@ -314,6 +314,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
             },
             &segment_searcher,
             &Handle::current(),
+            None,
         )
         .await
         .unwrap();
@@ -372,6 +373,7 @@ async fn test_read_api_with_shards(shard_number: u32) {
                 with_vector: false,
             },
             &segment_searcher,
+            None,
         )
         .await
         .unwrap();
@@ -451,6 +453,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
                 with_vector: false,
             },
             &segment_searcher,
+            None,
         )
         .await
         .unwrap();

@@ -1,12 +1,12 @@
 use tonic::{Request, Response, Status};
 
-use crate::common::points::{do_get_points, do_scroll_points, do_search_points};
+use crate::common::points::do_get_points;
 
 use api::grpc::qdrant::points_server::Points;
 
 use crate::tonic::api::points_common::{
-    clear_payload, create_field_index, delete, delete_field_index, delete_payload, set_payload,
-    upsert,
+    clear_payload, create_field_index, delete, delete_field_index, delete_payload, recommend,
+    scroll, search, set_payload, upsert,
 };
 use api::grpc::qdrant::{
     ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
@@ -14,7 +14,7 @@ use api::grpc::qdrant::{
     RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse,
     SetPayloadPoints, UpsertPoints,
 };
-use collection::operations::types::{PointRequest, ScrollRequest, SearchRequest};
+use collection::operations::types::PointRequest;
 use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Instant;
@@ -117,128 +117,21 @@ impl Points for PointsService {
         &self,
         request: Request<SearchPoints>,
     ) -> Result<Response<SearchResponse>, Status> {
-        let SearchPoints {
-            collection_name,
-            vector,
-            filter,
-            top,
-            with_vector,
-            with_payload,
-            params,
-        } = request.into_inner();
-
-        let search_request = SearchRequest {
-            vector,
-            filter: filter.map(|f| f.try_into()).transpose()?,
-            params: params.map(|p| p.into()),
-            top: top as usize,
-            with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-            with_vector: with_vector.unwrap_or(false),
-        };
-
-        let timing = Instant::now();
-        let scored_points = do_search_points(self.toc.as_ref(), &collection_name, search_request)
-            .await
-            .map_err(error_to_status)?;
-
-        let response = SearchResponse {
-            result: scored_points
-                .into_iter()
-                .map(|point| point.into())
-                .collect(),
-            time: timing.elapsed().as_secs_f64(),
-        };
-
-        Ok(Response::new(response))
+        search(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn scroll(
         &self,
         request: Request<ScrollPoints>,
     ) -> Result<Response<ScrollResponse>, Status> {
-        let ScrollPoints {
-            collection_name,
-            filter,
-            offset,
-            limit,
-            with_vector,
-            with_payload,
-        } = request.into_inner();
-
-        let scroll_request = ScrollRequest {
-            offset: offset.map(|o| o.try_into()).transpose()?,
-            limit: limit.map(|l| l as usize),
-            filter: filter.map(|f| f.try_into()).transpose()?,
-            with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-            with_vector: with_vector.unwrap_or(false),
-        };
-
-        let timing = Instant::now();
-        let scrolled_points = do_scroll_points(self.toc.as_ref(), &collection_name, scroll_request)
-            .await
-            .map_err(error_to_status)?;
-
-        let response = ScrollResponse {
-            next_page_offset: scrolled_points.next_page_offset.map(|n| n.into()),
-            result: scrolled_points
-                .points
-                .into_iter()
-                .map(|point| point.into())
-                .collect(),
-            time: timing.elapsed().as_secs_f64(),
-        };
-
-        Ok(Response::new(response))
+        scroll(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn recommend(
         &self,
         request: Request<RecommendPoints>,
     ) -> Result<Response<RecommendResponse>, Status> {
-        let RecommendPoints {
-            collection_name,
-            positive,
-            negative,
-            filter,
-            top,
-            with_vector,
-            with_payload,
-            params,
-        } = request.into_inner();
-
-        let request = collection::operations::types::RecommendRequest {
-            positive: positive
-                .into_iter()
-                .map(|p| p.try_into())
-                .collect::<Result<_, _>>()?,
-            negative: negative
-                .into_iter()
-                .map(|p| p.try_into())
-                .collect::<Result<_, _>>()?,
-            filter: filter.map(|f| f.try_into()).transpose()?,
-            params: params.map(|p| p.into()),
-            top: top as usize,
-            with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-            with_vector: with_vector.unwrap_or(false),
-        };
-
-        let timing = Instant::now();
-        let recommended_points = self
-            .toc
-            .as_ref()
-            .recommend(&collection_name, request)
-            .await
-            .map_err(error_to_status)?;
-
-        let response = RecommendResponse {
-            result: recommended_points
-                .into_iter()
-                .map(|point| point.into())
-                .collect(),
-            time: timing.elapsed().as_secs_f64(),
-        };
-
-        Ok(Response::new(response))
+        recommend(self.toc.as_ref(), request.into_inner(), None).await
     }
 }
 

@@ -2270,6 +2270,27 @@ pub struct DeleteFieldIndexCollectionInternal {
     #[prost(uint32, tag="2")]
     pub shard_id: u32,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchPointsInternal {
+    #[prost(message, optional, tag="1")]
+    pub search_points: ::core::option::Option<SearchPoints>,
+    #[prost(uint32, tag="2")]
+    pub shard_id: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ScrollPointsInternal {
+    #[prost(message, optional, tag="1")]
+    pub scroll_points: ::core::option::Option<ScrollPoints>,
+    #[prost(uint32, tag="2")]
+    pub shard_id: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RecommendPointsInternal {
+    #[prost(message, optional, tag="1")]
+    pub recommend_points: ::core::option::Option<RecommendPoints>,
+    #[prost(uint32, tag="2")]
+    pub shard_id: u32,
+}
 /// Generated client implementations.
 pub mod points_internal_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -2466,6 +2487,63 @@ pub mod points_internal_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn search(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SearchPointsInternal>,
+        ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/Search",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn scroll(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ScrollPointsInternal>,
+        ) -> Result<tonic::Response<super::ScrollResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/Scroll",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn recommend(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RecommendPointsInternal>,
+        ) -> Result<tonic::Response<super::RecommendResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/Recommend",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -2503,6 +2581,18 @@ pub mod points_internal_server {
             &self,
             request: tonic::Request<super::DeleteFieldIndexCollectionInternal>,
         ) -> Result<tonic::Response<super::PointsOperationResponse>, tonic::Status>;
+        async fn search(
+            &self,
+            request: tonic::Request<super::SearchPointsInternal>,
+        ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status>;
+        async fn scroll(
+            &self,
+            request: tonic::Request<super::ScrollPointsInternal>,
+        ) -> Result<tonic::Response<super::ScrollResponse>, tonic::Status>;
+        async fn recommend(
+            &self,
+            request: tonic::Request<super::RecommendPointsInternal>,
+        ) -> Result<tonic::Response<super::RecommendResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct PointsInternalServer<T: PointsInternal> {
@@ -2820,6 +2910,120 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = DeleteFieldIndexSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/Search" => {
+                    #[allow(non_camel_case_types)]
+                    struct SearchSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::SearchPointsInternal>
+                    for SearchSvc<T> {
+                        type Response = super::SearchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SearchPointsInternal>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).search(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = SearchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/Scroll" => {
+                    #[allow(non_camel_case_types)]
+                    struct ScrollSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::ScrollPointsInternal>
+                    for ScrollSvc<T> {
+                        type Response = super::ScrollResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ScrollPointsInternal>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).scroll(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ScrollSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/Recommend" => {
+                    #[allow(non_camel_case_types)]
+                    struct RecommendSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::RecommendPointsInternal>
+                    for RecommendSvc<T> {
+                        type Response = super::RecommendResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RecommendPointsInternal>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).recommend(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = RecommendSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

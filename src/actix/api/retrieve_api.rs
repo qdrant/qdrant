@@ -31,7 +31,7 @@ async fn scroll_get_points(
     collection_name: &str,
     request: ScrollRequest,
 ) -> Result<ScrollResult, StorageError> {
-    toc.scroll(collection_name, request).await
+    toc.scroll(collection_name, request, None).await
 }
 
 #[get("/collections/{name}/points/{id}")]
