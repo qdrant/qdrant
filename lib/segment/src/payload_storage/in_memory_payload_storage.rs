@@ -1,67 +1,30 @@
-use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
+use crate::types::{Filter, Payload, PayloadKeyTypeRef, PointOffsetType};
+use atomic_refcell::AtomicRefCell;
 use std::collections::HashMap;
-use std::path::Path;
+use std::ops::Deref;
+use std::sync::Arc;
 
-use rocksdb::{IteratorMode, Options, DB};
 use serde_json::Value;
 
 use crate::entry::entry_point::OperationResult;
-use crate::payload_storage::PayloadStorage;
+use crate::id_tracker::IdTrackerSS;
+use crate::payload_storage::query_checker::check_payload;
+use crate::payload_storage::{ConditionChecker, PayloadStorage};
 
-const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
-const DB_NAME: &str = "payload";
-
-/// In-memory implementation of `PayloadStorage`.
-/// Persists all changes to disk using `store`, but only uses this storage during the initial load
-pub struct SimplePayloadStorage {
+/// Same as `SimplePayloadStorage` but without persistence
+/// Warn: for tests only
+#[derive(Default)]
+pub struct InMemoryPayloadStorage {
     payload: HashMap<PointOffsetType, Payload>,
-    store: DB,
 }
 
-impl SimplePayloadStorage {
-    pub fn open(path: &Path) -> OperationResult<Self> {
-        let mut options: Options = Options::default();
-        options.set_write_buffer_size(DB_CACHE_SIZE);
-        options.create_if_missing(true);
-        options.create_missing_column_families(true);
-        let store = DB::open_cf(&options, path, [DB_NAME])?;
-
-        let mut payload_map: HashMap<PointOffsetType, Payload> = Default::default();
-
-        let cf_handle = store.cf_handle(DB_NAME).unwrap();
-        for (key, val) in store.iterator_cf(cf_handle, IteratorMode::Start) {
-            let point_id: PointOffsetType = serde_cbor::from_slice(&key).unwrap();
-            let payload: Payload = serde_cbor::from_slice(&val).unwrap();
-            payload_map.insert(point_id, payload);
-        }
-
-        Ok(SimplePayloadStorage {
-            payload: payload_map,
-            store,
-        })
-    }
-
-    fn update_storage(&self, point_id: &PointOffsetType) -> OperationResult<()> {
-        let cf_handle = self.store.cf_handle(DB_NAME).unwrap();
-        match self.payload.get(point_id) {
-            None => self
-                .store
-                .delete_cf(cf_handle, serde_cbor::to_vec(&point_id).unwrap())?,
-            Some(payload) => self.store.put_cf(
-                cf_handle,
-                serde_cbor::to_vec(&point_id).unwrap(),
-                serde_cbor::to_vec(payload).unwrap(),
-            )?,
-        };
-        Ok(())
-    }
-
+impl InMemoryPayloadStorage {
     pub fn payload_ptr(&self, point_id: PointOffsetType) -> Option<&Payload> {
         self.payload.get(&point_id)
     }
 }
 
-impl PayloadStorage for SimplePayloadStorage {
+impl PayloadStorage for InMemoryPayloadStorage {
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
             Some(point_payload) => point_payload.merge(payload),
@@ -69,9 +32,6 @@ impl PayloadStorage for SimplePayloadStorage {
                 self.payload.insert(point_id, payload.to_owned());
             }
         }
-
-        self.update_storage(&point_id)?;
-
         Ok(())
     }
 
@@ -90,9 +50,6 @@ impl PayloadStorage for SimplePayloadStorage {
         match self.payload.get_mut(&point_id) {
             Some(payload) => {
                 let res = payload.remove(key);
-                if res.is_some() {
-                    self.update_storage(&point_id)?;
-                }
                 Ok(res)
             }
             None => Ok(None),
@@ -101,23 +58,16 @@ impl PayloadStorage for SimplePayloadStorage {
 
     fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         let res = self.payload.remove(&point_id);
-        self.update_storage(&point_id)?;
         Ok(res)
     }
 
     fn wipe(&mut self) -> OperationResult<()> {
         self.payload = HashMap::new();
-        self.store.drop_cf(DB_NAME)?;
-        let mut options: Options = Options::default();
-        options.set_write_buffer_size(DB_CACHE_SIZE);
-        options.create_if_missing(true);
-        self.store.create_cf(DB_NAME, &options)?;
         Ok(())
     }
 
     fn flush(&self) -> OperationResult<()> {
-        let cf_handle = self.store.cf_handle(DB_NAME).unwrap();
-        Ok(self.store.flush_cf(cf_handle)?)
+        Ok(())
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
@@ -125,16 +75,46 @@ impl PayloadStorage for SimplePayloadStorage {
     }
 }
 
+pub struct InMemoryConditionChecker {
+    payload_storage: Arc<AtomicRefCell<InMemoryPayloadStorage>>,
+    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+}
+
+impl InMemoryConditionChecker {
+    pub fn new(
+        payload_storage: Arc<AtomicRefCell<InMemoryPayloadStorage>>,
+        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    ) -> Self {
+        InMemoryConditionChecker {
+            payload_storage,
+            id_tracker,
+        }
+    }
+}
+
+impl ConditionChecker for InMemoryConditionChecker {
+    fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
+        let empty_payload: Payload = Default::default();
+
+        let payload_storage_guard = self.payload_storage.borrow();
+        let payload_ptr = payload_storage_guard.payload_ptr(point_id);
+
+        let payload = match payload_ptr {
+            None => &empty_payload,
+            Some(x) => x,
+        };
+
+        check_payload(payload, self.id_tracker.borrow().deref(), query, point_id)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use tempdir::TempDir;
-
     use super::*;
 
     #[test]
     fn test_wipe() {
-        let dir = TempDir::new("storage_dir").unwrap();
-        let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
+        let mut storage = InMemoryPayloadStorage::default();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
         storage.assign(100, &payload).unwrap();
         storage.wipe().unwrap();
@@ -171,8 +151,7 @@ mod tests {
         }"#;
 
         let payload: Payload = serde_json::from_str(data).unwrap();
-        let dir = TempDir::new("storage_dir").unwrap();
-        let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
+        let mut storage = InMemoryPayloadStorage::default();
         storage.assign(100, &payload).unwrap();
         let pload = storage.payload(100);
         assert_eq!(pload, payload);

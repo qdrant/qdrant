@@ -51,6 +51,10 @@ name = "hnsw_search_graph"
 harness = false
 
 [[bench]]
+name = "conditional_search"
+harness = false
+
+[[bench]]
 name = "hnsw_build_asymptotic"
 harness = false
 

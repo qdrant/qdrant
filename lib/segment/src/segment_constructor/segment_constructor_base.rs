@@ -57,12 +57,12 @@ fn create_segment(
         match config.payload_index.unwrap_or_default() {
             PayloadIndexType::Plain => sp(PlainPayloadIndex::open(
                 condition_checker.clone(),
-                vector_storage.clone(),
+                id_tracker.clone(),
                 &payload_index_path,
             )?),
             PayloadIndexType::Struct => sp(StructPayloadIndex::open(
                 condition_checker.clone(),
-                vector_storage.clone(),
+                id_tracker.clone(),
                 payload_storage.clone(),
                 id_tracker.clone(),
                 &payload_index_path,

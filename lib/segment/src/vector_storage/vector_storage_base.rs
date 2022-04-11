@@ -96,6 +96,8 @@ pub trait VectorStorage {
     }
 }
 
+trait SuperVectorStorage {}
+
 pub type VectorStorageSS = dyn VectorStorage + Sync + Send;
 
 #[cfg(test)]

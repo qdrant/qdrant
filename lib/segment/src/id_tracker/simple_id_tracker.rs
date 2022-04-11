@@ -1,4 +1,5 @@
 use crate::entry::entry_point::OperationResult;
+use crate::id_tracker::points_iterator::PointsIterator;
 use crate::id_tracker::IdTracker;
 use crate::types::{ExtendedPointId, PointIdType, PointOffsetType, SeqNumberType};
 use bincode;
@@ -55,6 +56,7 @@ pub struct SimpleIdTracker {
     internal_to_external: HashMap<PointOffsetType, PointIdType>,
     external_to_internal: BTreeMap<PointIdType, PointOffsetType>,
     external_to_version: HashMap<PointIdType, SeqNumberType>,
+    max_internal_id: PointOffsetType,
     store: DB,
 }
 
@@ -69,6 +71,7 @@ impl SimpleIdTracker {
         let mut internal_to_external: HashMap<PointOffsetType, PointIdType> = Default::default();
         let mut external_to_internal: BTreeMap<PointIdType, PointOffsetType> = Default::default();
         let mut external_to_version: HashMap<PointIdType, SeqNumberType> = Default::default();
+        let mut max_internal_id = 0;
 
         for (key, val) in
             store.iterator_cf(store.cf_handle(MAPPING_CF).unwrap(), IteratorMode::Start)
@@ -77,6 +80,7 @@ impl SimpleIdTracker {
             let internal_id: PointOffsetType = bincode::deserialize(&val).unwrap();
             internal_to_external.insert(internal_id, external_id);
             external_to_internal.insert(external_id, internal_id);
+            max_internal_id = max_internal_id.max(internal_id);
         }
 
         for (key, val) in
@@ -91,6 +95,7 @@ impl SimpleIdTracker {
             internal_to_external,
             external_to_internal,
             external_to_version,
+            max_internal_id,
             store,
         })
     }
@@ -139,6 +144,7 @@ impl IdTracker for SimpleIdTracker {
     ) -> OperationResult<()> {
         self.external_to_internal.insert(external_id, internal_id);
         self.internal_to_external.insert(internal_id, external_id);
+        self.max_internal_id = self.max_internal_id.max(internal_id);
 
         self.store.put_cf(
             self.store.cf_handle(MAPPING_CF).unwrap(),
@@ -193,6 +199,20 @@ impl IdTracker for SimpleIdTracker {
         self.store
             .flush_cf(self.store.cf_handle(VERSIONS_CF).unwrap())?;
         Ok(self.store.flush()?)
+    }
+}
+
+impl PointsIterator for SimpleIdTracker {
+    fn points_count(&self) -> usize {
+        self.internal_to_external.len()
+    }
+
+    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        self.iter_internal()
+    }
+
+    fn max_id(&self) -> PointOffsetType {
+        self.max_internal_id
     }
 }
 

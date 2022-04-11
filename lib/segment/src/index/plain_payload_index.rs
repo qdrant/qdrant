@@ -7,7 +7,9 @@ use crate::types::{
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 use std::collections::HashMap;
 
+use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::entry::entry_point::OperationResult;
+use crate::id_tracker::points_iterator::PointsIteratorSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
 use atomic_refcell::AtomicRefCell;
@@ -22,7 +24,7 @@ use std::sync::Arc;
 /// rather than spend time for index re-building
 pub struct PlainPayloadIndex {
     condition_checker: Arc<ConditionCheckerSS>,
-    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
     config: PayloadConfig,
     path: PathBuf,
 }
@@ -39,7 +41,7 @@ impl PlainPayloadIndex {
 
     pub fn open(
         condition_checker: Arc<ConditionCheckerSS>,
-        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+        points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
         path: &Path,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
@@ -52,7 +54,7 @@ impl PlainPayloadIndex {
 
         let index = PlainPayloadIndex {
             condition_checker,
-            vector_storage,
+            points_iterator,
             config,
             path: path.to_owned(),
         };
@@ -62,6 +64,18 @@ impl PlainPayloadIndex {
         }
 
         Ok(index)
+    }
+
+    pub fn query_points_callback<'a, F: FnMut(PointOffsetType)>(
+        &'a self,
+        query: &'a Filter,
+        mut callback: F,
+    ) {
+        for id in self.points_iterator.borrow().iter_ids() {
+            if self.condition_checker.check(id, query) {
+                callback(id)
+            }
+        }
     }
 }
 
@@ -93,7 +107,7 @@ impl PayloadIndex for PlainPayloadIndex {
     }
 
     fn estimate_cardinality(&self, _query: &Filter) -> CardinalityEstimation {
-        let total_points = self.vector_storage.borrow().vector_count();
+        let total_points = self.points_iterator.borrow().points_count();
         CardinalityEstimation {
             primary_clauses: vec![],
             min: 0,
@@ -106,13 +120,14 @@ impl PayloadIndex for PlainPayloadIndex {
         &'a self,
         query: &'a Filter,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        let mut matched_points = vec![];
-        for i in self.vector_storage.borrow().iter_ids() {
-            if self.condition_checker.check(i, query) {
-                matched_points.push(i);
-            }
-        }
-        Box::new(matched_points.into_iter())
+        Box::new(ArcAtomicRefCellIterator::new(
+            self.points_iterator.clone(),
+            |points_iterator| {
+                points_iterator
+                    .iter_ids()
+                    .filter(|id| self.condition_checker.check(*id, query))
+            },
+        ))
     }
 
     fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {

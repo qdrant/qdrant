@@ -50,14 +50,14 @@ mod tests {
 
             let payload: Payload = if rnd.gen_range(0.0..1.0) < 0.5 {
                 json!({
-                    str_key: random_keyword_payload(&mut rnd),
+                    str_key: random_keyword_payload(&mut rnd, 2),
                     int_key: random_int_payload(&mut rnd, 2),
                     geo_key: geo_payload
                 })
                 .into()
             } else {
                 json!({
-                    str_key: random_keyword_payload(&mut rnd),
+                    str_key: random_keyword_payload(&mut rnd, 2),
                     int_key: random_int_payload(&mut rnd, 2),
                     geo_key: geo_payload,
                     flicking_key: random_int_payload(&mut rnd, 3)

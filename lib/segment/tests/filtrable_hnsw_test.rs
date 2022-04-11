@@ -14,6 +14,7 @@ mod tests {
         PayloadIndexType, PayloadSchemaType, Range, SearchParams, SegmentConfig, SeqNumberType,
         StorageType,
     };
+    use segment::vector_storage::storage_points_iterator::StoragePointsIterator;
     use serde_json::json;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
@@ -67,7 +68,9 @@ mod tests {
 
         let payload_index = StructPayloadIndex::open(
             segment.condition_checker.clone(),
-            segment.vector_storage.clone(),
+            Arc::new(AtomicRefCell::new(StoragePointsIterator(
+                segment.vector_storage.clone(),
+            ))),
             segment.payload_storage.clone(),
             segment.id_tracker.clone(),
             payload_index_dir.path(),
