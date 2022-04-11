@@ -117,11 +117,11 @@ pub fn random_must_filter<R: Rng + ?Sized>(rnd_gen: &mut R, num_conditions: usiz
     }
 }
 
-pub fn random_filter<R: Rng + ?Sized>(rnd_gen: &mut R) -> Filter {
-    let mut rnd1 = rand::thread_rng();
+pub fn random_filter<R: Rng + ?Sized>(rnd_gen: &mut R, total_conditions: usize) -> Filter {
+    let num_should = rnd_gen.gen_range(0..=total_conditions);
+    let num_must = total_conditions - num_should;
 
-    let should_conditions = (0..=2)
-        .take_while(|_| rnd1.gen::<f64>() > 0.6)
+    let should_conditions = (0..num_should)
         .map(|_| random_field_condition(rnd_gen))
         .collect_vec();
 
@@ -131,8 +131,7 @@ pub fn random_filter<R: Rng + ?Sized>(rnd_gen: &mut R) -> Filter {
         None
     };
 
-    let must_conditions = (0..=2)
-        .take_while(|_| rnd1.gen::<f64>() > 0.6)
+    let must_conditions = (0..num_must)
         .map(|_| random_field_condition(rnd_gen))
         .collect_vec();
 

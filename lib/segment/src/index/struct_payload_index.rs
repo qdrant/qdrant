@@ -16,6 +16,7 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, Pr
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
+use crate::index::struct_filter_context::{IndexesMap, StructFilterContext};
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorageSS};
@@ -25,8 +26,6 @@ use crate::types::{
 };
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
-
-type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
 
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
 pub struct StructPayloadIndex {
@@ -375,10 +374,12 @@ impl PayloadIndex for StructPayloadIndex {
     }
 
     fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
-        Box::new(StructFilterContext {
+        Box::new(StructFilterContext::new(
+            self.condition_checker.clone(),
             filter,
-            condition_checker: self.condition_checker.clone(),
-        })
+            &self.field_indexes,
+            self.estimate_cardinality(filter),
+        ))
     }
 
     fn payload_blocks(
@@ -395,16 +396,5 @@ impl PayloadIndex for StructPayloadIndex {
                 }))
             }
         }
-    }
-}
-
-pub struct StructFilterContext<'a> {
-    condition_checker: Arc<ConditionCheckerSS>,
-    filter: &'a Filter,
-}
-
-impl<'a> FilterContext for StructFilterContext<'a> {
-    fn check(&self, point_id: PointOffsetType) -> bool {
-        self.condition_checker.check(point_id, self.filter)
     }
 }

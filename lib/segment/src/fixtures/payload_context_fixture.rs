@@ -122,9 +122,19 @@ impl IdTracker for IdsIterator {
     }
 }
 
-fn create_payload_storage(num_points: usize) -> InMemoryPayloadStorage {
+/// Creates in-memory payload storage and fills it with random points
+///
+/// # Arguments
+///
+/// * `num_points` - how many random points to insert
+///
+/// # Result
+///
+/// Payload storage fixture
+///
+fn create_payload_storage_fixture(num_points: usize, seed: u64) -> InMemoryPayloadStorage {
     let mut payload_storage = InMemoryPayloadStorage::default();
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = StdRng::seed_from_u64(seed);
 
     for id in 0..num_points {
         let payload = generate_diverse_payload(&mut rng);
@@ -147,8 +157,8 @@ fn create_payload_storage(num_points: usize) -> InMemoryPayloadStorage {
 ///
 /// `PlainPayloadIndex`
 ///
-pub fn create_plain_payload_index(path: &Path, num_points: usize) -> PlainPayloadIndex {
-    let payload_storage = create_payload_storage(num_points);
+pub fn create_plain_payload_index(path: &Path, num_points: usize, seed: u64) -> PlainPayloadIndex {
+    let payload_storage = create_payload_storage_fixture(num_points, seed);
     let ids_iterator = Arc::new(AtomicRefCell::new(IdsIterator::new(num_points)));
 
     let condition_checker = Arc::new(InMemoryConditionChecker::new(
@@ -171,8 +181,14 @@ pub fn create_plain_payload_index(path: &Path, num_points: usize) -> PlainPayloa
 ///
 /// `StructPayloadIndex`
 ///
-pub fn create_struct_payload_index(path: &Path, num_points: usize) -> StructPayloadIndex {
-    let payload_storage = Arc::new(AtomicRefCell::new(create_payload_storage(num_points)));
+pub fn create_struct_payload_index(
+    path: &Path,
+    num_points: usize,
+    seed: u64,
+) -> StructPayloadIndex {
+    let payload_storage = Arc::new(AtomicRefCell::new(create_payload_storage_fixture(
+        num_points, seed,
+    )));
     let ids_iterator = Arc::new(AtomicRefCell::new(IdsIterator::new(num_points)));
 
     let condition_checker = Arc::new(InMemoryConditionChecker::new(

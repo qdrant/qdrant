@@ -4,8 +4,8 @@ mod tests {
     use rand::Rng;
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{
-        random_filter, random_geo_payload, random_int_payload, random_keyword_payload,
-        random_vector, LAT_RANGE, LON_RANGE,
+        generate_diverse_payload, random_filter, random_vector, FLICKING_KEY, GEO_KEY, INT_KEY,
+        LAT_RANGE, LON_RANGE, STR_KEY,
     };
     use segment::segment::Segment;
     use segment::segment_constructor::build_segment;
@@ -14,18 +14,12 @@ mod tests {
         IsEmptyCondition, Payload, PayloadField, PayloadIndexType, PayloadSchemaType, Range,
         SegmentConfig, StorageType, WithPayload,
     };
-    use serde_json::json;
     use std::path::Path;
     use tempdir::TempDir;
 
     fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
         let mut rnd = rand::thread_rng();
         let dim = 5;
-
-        let str_key = "kvd";
-        let int_key = "int";
-        let flicking_key = "flicking";
-        let geo_key = "geo";
 
         let mut config = SegmentConfig {
             vector_size: dim,
@@ -45,25 +39,7 @@ mod tests {
         for n in 0..num_points {
             let idx = n.into();
             let vector = random_vector(&mut rnd, dim);
-
-            let geo_payload = random_geo_payload(&mut rnd, 2);
-
-            let payload: Payload = if rnd.gen_range(0.0..1.0) < 0.5 {
-                json!({
-                    str_key: random_keyword_payload(&mut rnd, 2),
-                    int_key: random_int_payload(&mut rnd, 2),
-                    geo_key: geo_payload
-                })
-                .into()
-            } else {
-                json!({
-                    str_key: random_keyword_payload(&mut rnd, 2),
-                    int_key: random_int_payload(&mut rnd, 2),
-                    geo_key: geo_payload,
-                    flicking_key: random_int_payload(&mut rnd, 3)
-                })
-                .into()
-            };
+            let payload: Payload = generate_diverse_payload(&mut rnd);
 
             plain_segment.upsert_point(opnum, idx, &vector).unwrap();
             struct_segment.upsert_point(opnum, idx, &vector).unwrap();
@@ -78,16 +54,16 @@ mod tests {
         }
 
         struct_segment
-            .create_field_index(opnum, str_key, &Some(PayloadSchemaType::Keyword))
+            .create_field_index(opnum, STR_KEY, &Some(PayloadSchemaType::Keyword))
             .unwrap();
         struct_segment
-            .create_field_index(opnum, int_key, &None)
+            .create_field_index(opnum, INT_KEY, &None)
             .unwrap();
         struct_segment
-            .create_field_index(opnum, geo_key, &Some(PayloadSchemaType::Geo))
+            .create_field_index(opnum, GEO_KEY, &Some(PayloadSchemaType::Geo))
             .unwrap();
         struct_segment
-            .create_field_index(opnum, flicking_key, &Some(PayloadSchemaType::Integer))
+            .create_field_index(opnum, FLICKING_KEY, &Some(PayloadSchemaType::Integer))
             .unwrap();
 
         (struct_segment, plain_segment)
@@ -189,7 +165,7 @@ mod tests {
         let attempts = 100;
         for _i in 0..attempts {
             let query_vector = random_vector(&mut rnd, dim);
-            let query_filter = random_filter(&mut rnd);
+            let query_filter = random_filter(&mut rnd, 3);
 
             let plain_result = plain_segment
                 .search(
