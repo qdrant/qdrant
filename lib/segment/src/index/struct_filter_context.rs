@@ -74,10 +74,7 @@ impl<'a> StructFilterContext<'a> {
     }
 }
 
-fn get_geo_radius_checkers(
-    index: &FieldIndex,
-    geo_radius: GeoRadius,
-) -> Option<ConditionChecker> {
+fn get_geo_radius_checkers(index: &FieldIndex, geo_radius: GeoRadius) -> Option<ConditionChecker> {
     match index {
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
             match geo_index.get_values(point_id) {
@@ -108,10 +105,7 @@ fn get_geo_bounding_box_checkers(
     }
 }
 
-fn get_range_checkers(
-    index: &FieldIndex,
-    range: Range,
-) -> Option<ConditionChecker> {
+fn get_range_checkers(index: &FieldIndex, range: Range) -> Option<ConditionChecker> {
     match index {
         FieldIndex::IntIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
             match num_index.get_values(point_id) {
@@ -132,10 +126,7 @@ fn get_range_checkers(
     }
 }
 
-fn get_match_checkers(
-    index: &FieldIndex,
-    cond_match: Match,
-) -> Option<ConditionChecker> {
+fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<ConditionChecker> {
     if let Match::Value(MatchValue {
         value: value_variant,
     }) = cond_match
