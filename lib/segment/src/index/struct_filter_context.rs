@@ -158,7 +158,7 @@ fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condition
 impl<'a> FilterContext for StructFilterContext<'a> {
     fn check(&self, point_id: PointOffsetType) -> bool {
         // At least one primary condition should be satisfied - that is necessary, but not sufficient condition
-        if !self.checkers.is_empty() && !self.checkers.iter().any(|foo| foo(point_id)) {
+        if !self.checkers.is_empty() && !self.checkers.iter().any(|check| check(point_id)) {
             false
         } else {
             self.condition_checker.check(point_id, self.filter)

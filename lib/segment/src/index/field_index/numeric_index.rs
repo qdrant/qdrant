@@ -357,6 +357,7 @@ mod tests {
             blocks[0]
                 .condition
                 .range
+                .as_ref()
                 .expect("range condition")
                 .gte
                 .expect("gte"),
@@ -366,6 +367,7 @@ mod tests {
             blocks[0]
                 .condition
                 .range
+                .as_ref()
                 .expect("range condition")
                 .lte
                 .expect("lte"),
