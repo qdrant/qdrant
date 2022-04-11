@@ -109,7 +109,7 @@ pub fn check_payload(
                 };
                 has_id.has_id.contains(&external_id)
             }
-            Condition::Filter(_) => panic!("Unexpected branching!"),
+            Condition::Filter(_) => unreachable!(),
             Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
                 match payload.get_value(&field.key) {
                     None => true,
