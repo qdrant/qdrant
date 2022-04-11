@@ -8,11 +8,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
+pub type ConditionChecker<'a> = Box<dyn Fn(PointOffsetType) -> bool + 'a>;
 
 pub struct StructFilterContext<'a> {
     condition_checker: Arc<ConditionCheckerSS>,
     filter: &'a Filter,
-    checkers: Vec<Box<dyn Fn(PointOffsetType) -> bool + 'a>>,
+    checkers: Vec<ConditionChecker<'a>>,
 }
 
 impl<'a> StructFilterContext<'a> {
@@ -22,7 +23,7 @@ impl<'a> StructFilterContext<'a> {
         field_indexes: &'a IndexesMap,
         cardinality_estimation: CardinalityEstimation,
     ) -> Self {
-        let mut checkers: Vec<Box<dyn Fn(PointOffsetType) -> bool>> = vec![];
+        let mut checkers: Vec<ConditionChecker<'a>> = vec![];
 
         for clause in cardinality_estimation.primary_clauses {
             match clause {
@@ -73,10 +74,10 @@ impl<'a> StructFilterContext<'a> {
     }
 }
 
-fn get_geo_radius_checkers<'a>(
-    index: &'a FieldIndex,
+fn get_geo_radius_checkers(
+    index: &FieldIndex,
     geo_radius: GeoRadius,
-) -> Option<Box<dyn Fn(PointOffsetType) -> bool + 'a>> {
+) -> Option<ConditionChecker> {
     match index {
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
             match geo_index.get_values(point_id) {
@@ -90,10 +91,10 @@ fn get_geo_radius_checkers<'a>(
     }
 }
 
-fn get_geo_bounding_box_checkers<'a>(
-    index: &'a FieldIndex,
+fn get_geo_bounding_box_checkers(
+    index: &FieldIndex,
     geo_bounding_box: GeoBoundingBox,
-) -> Option<Box<dyn Fn(PointOffsetType) -> bool + 'a>> {
+) -> Option<ConditionChecker> {
     match index {
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
             match geo_index.get_values(point_id) {
@@ -107,10 +108,10 @@ fn get_geo_bounding_box_checkers<'a>(
     }
 }
 
-fn get_range_checkers<'a>(
-    index: &'a FieldIndex,
+fn get_range_checkers(
+    index: &FieldIndex,
     range: Range,
-) -> Option<Box<dyn Fn(PointOffsetType) -> bool + 'a>> {
+) -> Option<ConditionChecker> {
     match index {
         FieldIndex::IntIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
             match num_index.get_values(point_id) {
@@ -131,10 +132,10 @@ fn get_range_checkers<'a>(
     }
 }
 
-fn get_match_checkers<'a>(
-    index: &'a FieldIndex,
+fn get_match_checkers(
+    index: &FieldIndex,
     cond_match: Match,
-) -> Option<Box<dyn Fn(PointOffsetType) -> bool + 'a>> {
+) -> Option<ConditionChecker> {
     if let Match::Value(MatchValue {
         value: value_variant,
     }) = cond_match
