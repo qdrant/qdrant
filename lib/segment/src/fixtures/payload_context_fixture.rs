@@ -18,13 +18,13 @@ use rand::SeedableRng;
 use std::path::Path;
 use std::sync::Arc;
 
+/// Warn: Use for tests only
+///
+/// This struct mimics the interface of `PointsIterator` and `IdTracker` only for basic cases
 struct IdsIterator {
     ids: Vec<PointOffsetType>,
 }
 
-/// Warn: Use for tests only
-///
-/// This struct mimics the interface of `PointsIterator` and `IdTracker` only for basic cases
 impl IdsIterator {
     pub fn new(num_points: usize) -> Self {
         Self {
