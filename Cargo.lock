@@ -3092,6 +3092,7 @@ version = "0.2.0"
 dependencies = [
  "api",
  "async-trait",
+ "atomicwrites",
  "collection",
  "itertools 0.10.3",
  "log 0.4.16",

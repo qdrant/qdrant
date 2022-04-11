@@ -35,10 +35,9 @@ use collection::collection_manager::simple_collection_searcher::SimpleCollection
 use collection::shard::ShardId;
 
 #[cfg(feature = "consensus")]
-use raft::{
-    eraftpb::{Entry as RaftEntry, Snapshot as RaftSnapshot},
-    RaftState,
-};
+use crate::content_manager::raft_state::Persistent as PersistentRaftState;
+#[cfg(feature = "consensus")]
+use raft::eraftpb::{Entry as RaftEntry, Snapshot as RaftSnapshot};
 #[cfg(feature = "consensus")]
 use tokio::sync::oneshot;
 #[cfg(feature = "consensus")]
@@ -67,7 +66,7 @@ pub struct TableOfContent {
     #[cfg(feature = "consensus")]
     collection_meta_wal: Arc<std::sync::Mutex<Wal>>,
     #[cfg(feature = "consensus")]
-    raft_state: Arc<std::sync::Mutex<RaftState>>,
+    raft_state: Arc<std::sync::Mutex<PersistentRaftState>>,
     #[cfg(feature = "consensus")]
     propose_sender: Option<std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>>,
     #[cfg(feature = "consensus")]
@@ -131,7 +130,10 @@ impl TableOfContent {
             #[cfg(feature = "consensus")]
             collection_meta_wal,
             #[cfg(feature = "consensus")]
-            raft_state: Arc::new(std::sync::Mutex::new(RaftState::default())),
+            raft_state: Arc::new(std::sync::Mutex::new(
+                PersistentRaftState::load_or_init(&storage_config.storage_path)
+                    .expect("Cannot initialize Raft persistent storage"),
+            )),
             #[cfg(feature = "consensus")]
             propose_sender: None,
             #[cfg(feature = "consensus")]
@@ -673,20 +675,22 @@ impl TableOfContent {
     }
 
     #[cfg(feature = "consensus")]
-    pub fn set_hard_state(&self, state: raft::eraftpb::HardState) -> Result<(), StorageError> {
-        self.raft_state.lock()?.hard_state = state;
-        Ok(())
+    pub fn set_hard_state(&self, hard_state: raft::eraftpb::HardState) -> Result<(), StorageError> {
+        self.raft_state
+            .lock()?
+            .apply_update(|state| state.hard_state = hard_state)
     }
 
     #[cfg(feature = "consensus")]
     pub fn hard_state(&self) -> Result<raft::eraftpb::HardState, StorageError> {
-        Ok(self.raft_state.lock()?.hard_state.clone())
+        Ok(self.raft_state.lock()?.state().hard_state.clone())
     }
 
     #[cfg(feature = "consensus")]
     pub fn set_commit_index(&self, index: u64) -> Result<(), StorageError> {
-        self.raft_state.lock()?.hard_state.commit = index;
-        Ok(())
+        self.raft_state
+            .lock()?
+            .apply_update(|state| state.hard_state.commit = index)
     }
 }
 
@@ -706,11 +710,7 @@ mod consensus {
     use std::{collections::HashMap, ops::Deref, sync::Arc};
 
     use collection::CollectionId;
-    use raft::{
-        eraftpb::{ConfState, Entry as RaftEntry, HardState},
-        storage::Storage as RaftStorage,
-        RaftState,
-    };
+    use raft::{eraftpb::Entry as RaftEntry, storage::Storage as RaftStorage, RaftState};
     use serde::{Deserialize, Serialize};
 
     use crate::content_manager::alias_mapping::AliasMapping;
@@ -731,11 +731,12 @@ mod consensus {
 
     impl RaftStorage for TableOfContent {
         fn initial_state(&self) -> raft::Result<RaftState> {
-            Ok(RaftState {
-                hard_state: HardState::default(),
-                // For network with 1 node, set it as learner. Node id is 1.
-                conf_state: ConfState::from((vec![1], vec![])),
-            })
+            Ok(self
+                .raft_state
+                .lock()
+                .map_err(raft_error_other)?
+                .state()
+                .clone())
         }
 
         fn entries(
@@ -751,8 +752,8 @@ mod consensus {
         fn term(&self, idx: u64) -> raft::Result<u64> {
             {
                 let raft_state = self.raft_state.lock().map_err(raft_error_other)?;
-                if idx == raft_state.hard_state.commit {
-                    return Ok(raft_state.hard_state.term);
+                if idx == raft_state.state().hard_state.commit {
+                    return Ok(raft_state.state().hard_state.term);
                 }
             }
             Ok(self.collection_wal_entry(idx)?.term)
@@ -779,7 +780,12 @@ mod consensus {
             let snapshot = self
                 .collection_management_runtime
                 .block_on(self.collection_meta_snapshot());
-            let raft_state = self.raft_state.lock().map_err(raft_error_other)?.clone();
+            let raft_state = self
+                .raft_state
+                .lock()
+                .map_err(raft_error_other)?
+                .state()
+                .clone();
             if raft_state.hard_state.commit >= request_index {
                 Ok(raft::eraftpb::Snapshot {
                     data: serde_cbor::to_vec(&snapshot).map_err(raft_error_other)?,
