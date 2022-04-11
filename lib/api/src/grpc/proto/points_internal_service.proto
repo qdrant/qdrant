@@ -12,9 +12,45 @@ import "google/protobuf/struct.proto";
 
 service PointsInternal {
   rpc Upsert (UpsertPointsInternal) returns (PointsOperationResponse) {}
+  rpc Delete (DeletePointsInternal) returns (PointsOperationResponse) {}
+  rpc SetPayload (SetPayloadPointsInternal) returns (PointsOperationResponse) {}
+  rpc DeletePayload (DeletePayloadPointsInternal) returns (PointsOperationResponse) {}
+  rpc ClearPayload (ClearPayloadPointsInternal) returns (PointsOperationResponse) {}
+  rpc CreateFieldIndex (CreateFieldIndexCollectionInternal) returns (PointsOperationResponse) {}
+  rpc DeleteFieldIndex (DeleteFieldIndexCollectionInternal) returns (PointsOperationResponse) {}
 }
 
 message UpsertPointsInternal {
   UpsertPoints upsert_points = 1;
+  uint32 shard_id = 2;
+}
+
+message DeletePointsInternal {
+  DeletePoints delete_points = 1;
+  uint32 shard_id = 2;
+}
+
+message SetPayloadPointsInternal {
+  SetPayloadPoints set_payload_points = 1;
+  uint32 shard_id = 2;
+}
+
+message DeletePayloadPointsInternal {
+  DeletePayloadPoints delete_payload_points = 1;
+  uint32 shard_id = 2;
+}
+
+message ClearPayloadPointsInternal {
+  ClearPayloadPoints clear_payload_points = 1;
+  uint32 shard_id = 2;
+}
+
+message CreateFieldIndexCollectionInternal {
+  CreateFieldIndexCollection create_field_index_collection = 1;
+  uint32 shard_id = 2;
+}
+
+message DeleteFieldIndexCollectionInternal {
+  DeleteFieldIndexCollection delete_field_index_collection = 1;
   uint32 shard_id = 2;
 }

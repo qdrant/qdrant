@@ -1,23 +1,20 @@
 use tonic::{Request, Response, Status};
 
-use crate::common::points::{
-    do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_get_points, do_scroll_points, do_search_points, do_set_payload, CreateFieldIndex,
-};
+use crate::common::points::{do_get_points, do_scroll_points, do_search_points};
 
 use api::grpc::qdrant::points_server::Points;
 
-use crate::tonic::api::points_common::{points_operation_response, upsert};
-use api::grpc::conversions::proto_to_payloads;
+use crate::tonic::api::points_common::{
+    clear_payload, create_field_index, delete, delete_field_index, delete_payload, set_payload,
+    upsert,
+};
 use api::grpc::qdrant::{
     ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
-    DeletePayloadPoints, DeletePoints, FieldType, GetPoints, GetResponse, PointsOperationResponse,
+    DeletePayloadPoints, DeletePoints, GetPoints, GetResponse, PointsOperationResponse,
     RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse,
     SetPayloadPoints, UpsertPoints,
 };
-use collection::operations::payload_ops::DeletePayload;
 use collection::operations::types::{PointRequest, ScrollRequest, SearchRequest};
-use segment::types::PayloadSchemaType;
 use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Instant;
@@ -47,30 +44,7 @@ impl Points for PointsService {
         &self,
         request: Request<DeletePoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        let DeletePoints {
-            collection_name,
-            wait,
-            points,
-        } = request.into_inner();
-
-        let points_selector = match points {
-            None => return Err(Status::invalid_argument("PointSelector is missing")),
-            Some(p) => p.try_into()?,
-        };
-
-        let timing = Instant::now();
-        let result = do_delete_points(
-            self.toc.as_ref(),
-            &collection_name,
-            points_selector,
-            None,
-            wait.unwrap_or(false),
-        )
-        .await
-        .map_err(error_to_status)?;
-
-        let response = points_operation_response(timing, result);
-        Ok(Response::new(response))
+        delete(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn get(&self, request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
@@ -108,167 +82,35 @@ impl Points for PointsService {
         &self,
         request: Request<SetPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        let SetPayloadPoints {
-            collection_name,
-            wait,
-            payload,
-            points,
-        } = request.into_inner();
-
-        let operation = collection::operations::payload_ops::SetPayload {
-            payload: proto_to_payloads(payload)?,
-            points: points
-                .into_iter()
-                .map(|p| p.try_into())
-                .collect::<Result<_, _>>()?,
-        };
-
-        let timing = Instant::now();
-        let result = do_set_payload(
-            self.toc.as_ref(),
-            &collection_name,
-            operation,
-            None,
-            wait.unwrap_or(false),
-        )
-        .await
-        .map_err(error_to_status)?;
-
-        let response = points_operation_response(timing, result);
-        Ok(Response::new(response))
+        set_payload(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn delete_payload(
         &self,
         request: Request<DeletePayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        let DeletePayloadPoints {
-            collection_name,
-            wait,
-            keys,
-            points,
-        } = request.into_inner();
-
-        let operation = DeletePayload {
-            keys,
-            points: points
-                .into_iter()
-                .map(|p| p.try_into())
-                .collect::<Result<_, _>>()?,
-        };
-
-        let timing = Instant::now();
-        let result = do_delete_payload(
-            self.toc.as_ref(),
-            &collection_name,
-            operation,
-            None,
-            wait.unwrap_or(false),
-        )
-        .await
-        .map_err(error_to_status)?;
-
-        let response = points_operation_response(timing, result);
-        Ok(Response::new(response))
+        delete_payload(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn clear_payload(
         &self,
         request: Request<ClearPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        let ClearPayloadPoints {
-            collection_name,
-            wait,
-            points,
-        } = request.into_inner();
-
-        let points_selector = match points {
-            None => return Err(Status::invalid_argument("PointSelector is missing")),
-            Some(p) => p.try_into()?,
-        };
-
-        let timing = Instant::now();
-        let result = do_clear_payload(
-            self.toc.as_ref(),
-            &collection_name,
-            points_selector,
-            None,
-            wait.unwrap_or(false),
-        )
-        .await
-        .map_err(error_to_status)?;
-
-        let response = points_operation_response(timing, result);
-        Ok(Response::new(response))
+        clear_payload(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn create_field_index(
         &self,
         request: Request<CreateFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        let CreateFieldIndexCollection {
-            collection_name,
-            wait,
-            field_name,
-            field_type,
-        } = request.into_inner();
-
-        let field_type = match field_type {
-            None => None,
-            Some(f) => match FieldType::from_i32(f) {
-                None => return Err(Status::invalid_argument("cannot convert field_type")),
-                Some(v) => match v {
-                    FieldType::Keyword => Some(PayloadSchemaType::Keyword),
-                    FieldType::Integer => Some(PayloadSchemaType::Integer),
-                    FieldType::Float => Some(PayloadSchemaType::Float),
-                    FieldType::Geo => Some(PayloadSchemaType::Geo),
-                },
-            },
-        };
-
-        let operation = CreateFieldIndex {
-            field_name,
-            field_type,
-        };
-
-        let timing = Instant::now();
-        let result = do_create_index(
-            self.toc.as_ref(),
-            &collection_name,
-            operation,
-            None,
-            wait.unwrap_or(false),
-        )
-        .await
-        .map_err(error_to_status)?;
-
-        let response = points_operation_response(timing, result);
-        Ok(Response::new(response))
+        create_field_index(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn delete_field_index(
         &self,
         request: Request<DeleteFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        let DeleteFieldIndexCollection {
-            collection_name,
-            wait,
-            field_name,
-        } = request.into_inner();
-
-        let timing = Instant::now();
-        let result = do_delete_index(
-            self.toc.as_ref(),
-            &collection_name,
-            field_name,
-            None,
-            wait.unwrap_or(false),
-        )
-        .await
-        .map_err(error_to_status)?;
-
-        let response = points_operation_response(timing, result);
-        Ok(Response::new(response))
+        delete_field_index(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn search(
