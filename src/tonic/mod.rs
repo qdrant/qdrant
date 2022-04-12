@@ -2,9 +2,11 @@ mod api;
 
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::points_api::PointsService;
+#[cfg(feature = "consensus")]
 use crate::tonic::api::points_internal_api::PointsInternalService;
 use ::api::grpc::models::VersionInfo;
 use ::api::grpc::qdrant::collections_server::CollectionsServer;
+#[cfg(feature = "consensus")]
 use ::api::grpc::qdrant::points_internal_server::PointsInternalServer;
 use ::api::grpc::qdrant::points_server::PointsServer;
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
@@ -46,7 +48,6 @@ pub fn init(toc: Arc<TableOfContent>, host: String, grpc_port: u16) -> std::io::
             let service = QdrantService::default();
             let collections_service = CollectionsService::new(toc.clone());
             let points_service = PointsService::new(toc.clone());
-            let points_internal_service = PointsInternalService::new(toc.clone());
 
             log::info!("Qdrant gRPC listening on {}", grpc_port);
 
@@ -54,10 +55,46 @@ pub fn init(toc: Arc<TableOfContent>, host: String, grpc_port: u16) -> std::io::
                 .add_service(QdrantServer::new(service))
                 .add_service(CollectionsServer::new(collections_service))
                 .add_service(PointsServer::new(points_service))
-                .add_service(PointsInternalServer::new(points_internal_service)) // TODO serve from different port
                 .serve_with_shutdown(socket, async {
                     signal::ctrl_c().await.unwrap();
                     log::info!("Stopping gRPC");
+                })
+                .await
+        })
+        .unwrap();
+    Ok(())
+}
+
+#[cfg(feature = "consensus")]
+pub fn init_internal(
+    toc: Arc<TableOfContent>,
+    host: String,
+    internal_grpc_port: u16,
+) -> std::io::Result<()> {
+    let tonic_runtime = runtime::Builder::new_multi_thread()
+        .enable_io()
+        .enable_time()
+        .thread_name_fn(|| {
+            static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+            let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+            format!("tonic-internal-{}", id)
+        })
+        .build()?;
+    tonic_runtime
+        .block_on(async {
+            let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
+
+            let service = QdrantService::default();
+            let points_internal_service = PointsInternalService::new(toc.clone());
+
+            log::info!("Qdrant internal gRPC listening on {}", internal_grpc_port);
+
+            Server::builder()
+                .add_service(QdrantServer::new(service))
+                .add_service(PointsInternalServer::new(points_internal_service))
+                .serve_with_shutdown(socket, async {
+                    signal::ctrl_c().await.unwrap();
+                    log::info!("Stopping internal gRPC");
                 })
                 .await
         })

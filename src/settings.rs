@@ -8,6 +8,7 @@ pub struct ServiceConfig {
     pub host: String,
     pub http_port: u16,
     pub grpc_port: Option<u16>, // None means that gRPC is disabled
+    pub internal_grpc_port: Option<u16>, // None means that the internal gRPC is disabled
     pub max_request_size_mb: usize,
     pub max_workers: Option<usize>,
 }
