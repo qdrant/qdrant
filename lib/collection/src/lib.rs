@@ -203,11 +203,11 @@ impl Collection {
 
     fn local_shard_by_id(&self, id: ShardId) -> CollectionResult<&LocalShard> {
         match self.shards.get(&id) {
-            None => Err(CollectionError::service_error(format!(
+            None => Err(CollectionError::bad_shard_selection(format!(
                 "Shard {} does not exist",
                 id
             ))),
-            Some(Shard::Remote(_)) => Err(CollectionError::service_error(format!(
+            Some(Shard::Remote(_)) => Err(CollectionError::bad_shard_selection(format!(
                 "Shard {} is not local on peer",
                 id
             ))),
