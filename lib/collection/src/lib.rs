@@ -4,14 +4,13 @@ use std::{
     cmp::max,
     collections::HashMap,
     fs::{create_dir_all, rename},
-    io,
+    io, iter,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use crate::operations::types::PointRequest;
 use crate::operations::OperationToShard;
-use crate::shard::ShardOperation;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
@@ -201,7 +200,7 @@ impl Collection {
             .expect("Shard is guaranteed to be added when id is added to the ring.")
     }
 
-    fn local_shard_by_id(&self, id: ShardId) -> CollectionResult<&LocalShard> {
+    fn local_shard_by_id(&self, id: ShardId) -> CollectionResult<&Shard> {
         match self.shards.get(&id) {
             None => Err(CollectionError::bad_shard_selection(format!(
                 "Shard {} does not exist",
@@ -211,7 +210,20 @@ impl Collection {
                 "Shard {} is not local on peer",
                 id
             ))),
-            Some(Shard::Local(local_shard)) => Ok(local_shard),
+            Some(shard @ Shard::Local(_)) => Ok(shard),
+        }
+    }
+
+    fn target_shards(
+        &self,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Box<dyn Iterator<Item = &Shard> + Send + '_>> {
+        match shard_selection {
+            None => Ok(Box::new(self.all_shards())),
+            Some(shard_selection) => {
+                let local_shard = self.local_shard_by_id(shard_selection)?;
+                Ok(Box::new(iter::once(local_shard)))
+            }
         }
     }
 
@@ -226,7 +238,7 @@ impl Collection {
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
         let local_shard = self.local_shard_by_id(shard_selection)?;
-        local_shard.update(operation.clone(), wait).await
+        local_shard.get().update(operation.clone(), wait).await
     }
 
     pub async fn update_from_client(
@@ -383,23 +395,12 @@ impl Collection {
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let mut points = Vec::new();
         let request = Arc::new(request);
-        match shard_selection {
-            None => {
-                for shard in self.all_shards() {
-                    let mut shard_points = shard
-                        .get()
-                        .search(request.clone(), segment_searcher, search_runtime_handle)
-                        .await?;
-                    points.append(&mut shard_points);
-                }
-            }
-            Some(shard_selection) => {
-                let local_shard = self.local_shard_by_id(shard_selection)?;
-                let local_points = local_shard
-                    .search(request.clone(), segment_searcher, search_runtime_handle)
-                    .await?;
-                points.extend(local_points)
-            }
+        for shard in self.target_shards(shard_selection)? {
+            let mut shard_points = shard
+                .get()
+                .search(request.clone(), segment_searcher, search_runtime_handle)
+                .await?;
+            points.append(&mut shard_points);
         }
         Ok(peek_top_scores_iterable(points, request.top))
     }
@@ -433,38 +434,20 @@ impl Collection {
 
         let mut points = Vec::new();
 
-        match shard_selection {
-            None => {
-                for shard in self.all_shards() {
-                    let mut shard_points = shard
-                        .get()
-                        .scroll_by(
-                            segment_searcher,
-                            offset,
-                            limit,
-                            &with_payload_interface,
-                            with_vector,
-                            request.filter.as_ref(),
-                        )
-                        .await?;
-                    points.append(&mut shard_points);
-                }
-            }
-            Some(shard_selection) => {
-                let local_shard = self.local_shard_by_id(shard_selection)?;
-                let mut shard_points = local_shard
-                    .scroll_by(
-                        segment_searcher,
-                        offset,
-                        limit,
-                        &with_payload_interface,
-                        with_vector,
-                        request.filter.as_ref(),
-                    )
-                    .await?;
-                points.append(&mut shard_points);
-            }
-        };
+        for shard in self.target_shards(shard_selection)? {
+            let mut shard_points = shard
+                .get()
+                .scroll_by(
+                    segment_searcher,
+                    offset,
+                    limit,
+                    &with_payload_interface,
+                    with_vector,
+                    request.filter.as_ref(),
+                )
+                .await?;
+            points.append(&mut shard_points);
+        }
 
         points.sort_by_key(|point| point.id);
         let mut points: Vec<_> = points.into_iter().take(limit).collect();
