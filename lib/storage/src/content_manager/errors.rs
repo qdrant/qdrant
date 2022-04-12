@@ -106,3 +106,21 @@ impl From<prost::EncodeError> for StorageError {
         }
     }
 }
+
+#[cfg(feature = "consensus")]
+impl From<prost::DecodeError> for StorageError {
+    fn from(err: prost::DecodeError) -> Self {
+        StorageError::ServiceError {
+            description: format!("prost decode error: {}", err),
+        }
+    }
+}
+
+#[cfg(feature = "consensus")]
+impl<E: std::fmt::Display> From<atomicwrites::Error<E>> for StorageError {
+    fn from(err: atomicwrites::Error<E>) -> Self {
+        StorageError::ServiceError {
+            description: format!("Failed to write file: {}", err),
+        }
+    }
+}

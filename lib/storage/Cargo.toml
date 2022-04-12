@@ -5,7 +5,7 @@ authors = ["Andrey Vasnetsov <vasnetsov93@gmail.com>"]
 edition = "2021"
 
 [features]
-consensus = ["raft", "prost", "serde_cbor"]
+consensus = ["raft", "prost", "serde_cbor", "atomicwrites"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dev-dependencies]
@@ -23,7 +23,7 @@ schemars = { version = "0.8.8", features = ["uuid"] }
 itertools = "0.10"
 async-trait = "0.1.53"
 log = "0.4"
-
+atomicwrites = { version = "0.3.1", optional = true }
 raft = { version = "0.6.0", features = ["prost-codec"], default-features = false, optional = true }
 prost = { version = "0.7.0", optional = true } # version of prost used by raft
 serde_cbor = { version = "0.11.2", optional = true }
