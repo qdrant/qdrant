@@ -1,18 +1,8 @@
 use crate::entry::entry_point::OperationResult;
-use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
-use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::types::{Filter, Payload, PayloadKeyTypeRef, PointOffsetType};
-use enum_dispatch::enum_dispatch;
 use serde_json::Value;
 
-#[enum_dispatch]
-pub enum PayloadStorageEnum {
-    InMemoryPayloadStorage,
-    SimplePayloadStorage,
-}
-
 /// Trait for payload data storage. Should allow filter checks
-#[enum_dispatch(PayloadStorageEnum)]
 pub trait PayloadStorage {
     /// Assign same payload to each given point
     fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {

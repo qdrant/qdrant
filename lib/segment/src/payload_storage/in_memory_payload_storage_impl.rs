@@ -1,17 +1,11 @@
-use crate::types::{Filter, Payload, PayloadKeyTypeRef, PointOffsetType};
-use atomic_refcell::AtomicRefCell;
-use std::cell::RefCell;
+use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
 use std::collections::HashMap;
-use std::ops::Deref;
-use std::sync::Arc;
 
 use serde_json::Value;
 
 use crate::entry::entry_point::OperationResult;
-use crate::id_tracker::IdTrackerSS;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
-use crate::payload_storage::query_checker::check_payload;
-use crate::payload_storage::{ConditionChecker, PayloadStorage};
+use crate::payload_storage::PayloadStorage;
 
 impl PayloadStorage for InMemoryPayloadStorage {
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
@@ -64,53 +58,14 @@ impl PayloadStorage for InMemoryPayloadStorage {
     }
 }
 
-pub struct InMemoryConditionChecker {
-    payload_storage: Arc<AtomicRefCell<InMemoryPayloadStorage>>,
-    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
-}
-
-impl InMemoryConditionChecker {
-    pub fn new(
-        payload_storage: Arc<AtomicRefCell<InMemoryPayloadStorage>>,
-        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
-    ) -> Self {
-        InMemoryConditionChecker {
-            payload_storage,
-            id_tracker,
-        }
-    }
-}
-
-impl ConditionChecker for InMemoryConditionChecker {
-    fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
-        let empty_payload: Payload = Default::default();
-
-        let payload_storage_guard = self.payload_storage.borrow();
-
-        let payload_cell: RefCell<Option<&Payload>> = RefCell::new(None);
-        check_payload(
-            || {
-                if payload_cell.borrow().is_none() {
-                    payload_cell.replace(Some(match payload_storage_guard.payload_ptr(point_id) {
-                        None => &empty_payload,
-                        Some(x) => x,
-                    }));
-                }
-                payload_cell.borrow().unwrap()
-            },
-            self.id_tracker.borrow().deref(),
-            query,
-            point_id,
-        )
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use super::*;
     use crate::fixtures::payload_context_fixture::IdsIterator;
-    use crate::types::{Condition, FieldCondition};
+    use crate::types::{Condition, FieldCondition, Filter};
     use serde_json::json;
+    use crate::payload_storage::query_checker::check_payload;
 
     #[test]
     fn test_condition_checking() {

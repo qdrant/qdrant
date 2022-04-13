@@ -19,7 +19,8 @@ use crate::index::query_estimator::estimate_filter;
 use crate::index::struct_filter_context::{IndexesMap, StructFilterContext};
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
-use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorageSS};
+use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorage};
+use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType, PayloadKeyTypeRef,
     PayloadSchemaType, PointOffsetType,
@@ -32,7 +33,7 @@ pub struct StructPayloadIndex {
     condition_checker: Arc<ConditionCheckerSS>,
     points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
     /// Payload storage
-    payload: Arc<AtomicRefCell<PayloadStorageSS>>,
+    payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     /// Indexes, associated with fields
     field_indexes: IndexesMap,
@@ -153,7 +154,7 @@ impl StructPayloadIndex {
     pub fn open(
         condition_checker: Arc<ConditionCheckerSS>,
         points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
-        payload: Arc<AtomicRefCell<PayloadStorageSS>>,
+        payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         path: &Path,
     ) -> OperationResult<Self> {

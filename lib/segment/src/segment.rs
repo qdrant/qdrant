@@ -4,7 +4,7 @@ use crate::entry::entry_point::{
 };
 use crate::id_tracker::IdTrackerSS;
 use crate::index::{PayloadIndexSS, VectorIndexSS};
-use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
+use crate::payload_storage::{ConditionCheckerSS, PayloadStorage};
 use crate::spaces::tools::mertic_object;
 use crate::types::{
     infer_value_type, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
@@ -19,6 +19,7 @@ use std::fs::{remove_dir_all, rename};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
@@ -38,7 +39,7 @@ pub struct Segment {
     /// Component for mapping external ids to internal and also keeping track of point versions
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
-    pub payload_storage: Arc<AtomicRefCell<PayloadStorageSS>>,
+    pub payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
     pub payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
     pub condition_checker: Arc<ConditionCheckerSS>,
     pub vector_index: Arc<AtomicRefCell<VectorIndexSS>>,
