@@ -7,153 +7,47 @@ pub type LinkContainerRef<'a> = &'a [PointOffsetType];
 
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
 struct SubVectorRef {
-    pub offset: usize,
-    pub len: usize,
-    pub capacity: usize,
-}
-
-#[derive(Deserialize, Serialize, Debug, Default)]
-struct VecVec<T> {
-    data: Vec<T>,
-    free_parts: HashMap<usize, Vec<SubVectorRef>>,
-}
-
-fn copy_within_a_slice<T: Clone>(v: &mut [T], from: usize, to: usize, len: usize) {
-    if from > to {
-        let (dst, src) = v.split_at_mut(from);
-        dst[to..to + len].clone_from_slice(&src[..len]);
-    } else {
-        let (src, dst) = v.split_at_mut(to);
-        dst[..len].clone_from_slice(&src[from..from + len]);
-    }
-}
-
-impl<T> VecVec<T>
-where
-    T: Clone + Default,
-{
-    pub fn new() -> VecVec<T> {
-        VecVec {
-            data: Vec::new(),
-            free_parts: HashMap::new(),
-        }
-    }
-
-    pub fn get(&self, subvec: &SubVectorRef, idx: usize) -> &T {
-        &self.data[subvec.offset + idx]
-    }
-
-    pub fn get_slice(&self, subvec: &SubVectorRef) -> &[T] {
-        &self.data[subvec.offset..subvec.offset + subvec.len]
-    }
-
-    pub fn set(&mut self, subvec: &SubVectorRef, idx: usize, value: T) {
-        self.data[subvec.offset + idx] = value;
-    }
-
-    pub fn pop(&mut self, subvec: &mut SubVectorRef) {
-        if subvec.len > 0 {
-            subvec.len -= 1;
-        }
-    }
-
-    pub fn insert(&mut self, subvec: &mut SubVectorRef, pos: usize, value: T) {
-        if subvec.capacity == subvec.len {
-            self.realloc(subvec);
-        }
-        self.data[subvec.offset + pos..subvec.offset + subvec.len + 1].rotate_right(1);
-        self.data[subvec.offset + pos] = value;
-        subvec.len += 1;
-    }
-
-    pub fn push(&mut self, subvec: &mut SubVectorRef, value: T) {
-        if subvec.capacity == subvec.len {
-            self.realloc(subvec);
-        }
-        self.data[subvec.offset + subvec.len] = value;
-        subvec.len += 1;
-    }
-
-    pub fn clone_from_slice(&mut self, subvec: &mut SubVectorRef, values: &[T]) {
-        while subvec.capacity < values.len() {
-            self.realloc(subvec);
-        }
-        self.data[subvec.offset..subvec.offset + values.len()].clone_from_slice(values);
-        subvec.len = values.len();
-    }
-
-    pub fn reserve(&mut self, subvec: &mut SubVectorRef, min_capacity: usize) {
-        while subvec.capacity < min_capacity {
-            self.realloc(subvec);
-        }
-    }
-
-    fn realloc(&mut self, subvec: &mut SubVectorRef) {
-        let old_part = SubVectorRef {
-            offset: subvec.offset,
-            len: 0,
-            capacity: subvec.capacity,
-        };
-        if subvec.capacity > 0 {
-            match self.free_parts.get_mut(&old_part.capacity) {
-                Some(free_datas) => {
-                    free_datas.push(old_part.clone());
-                }
-                None => {
-                    self.free_parts
-                        .insert(old_part.capacity, vec![old_part.clone()]);
-                }
-            }
-        }
-
-        let new_capacity = if subvec.capacity > 0 {
-            subvec.capacity * 2
-        } else {
-            4
-        };
-        let mut new_part = SubVectorRef {
-            offset: self.data.len(),
-            len: 0,
-            capacity: new_capacity,
-        };
-        if let Some(free_datas) = self.free_parts.get_mut(&new_capacity) {
-            if let Some(free) = free_datas.pop() {
-                new_part = free;
-            }
-        }
-
-        if self.data.len() < new_part.offset + new_part.capacity {
-            self.data
-                .resize(new_part.offset + new_part.capacity, T::default());
-        }
-        copy_within_a_slice(&mut self.data, old_part.offset, new_part.offset, subvec.len);
-        subvec.offset = new_part.offset;
-        subvec.capacity = new_part.capacity;
-    }
+    pub offset: PointOffsetType,
+    pub len: PointOffsetType,
+    pub capacity: PointOffsetType,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default)]
 pub struct LinksContainer {
     points: Vec<SubVectorRef>,
-    links_data: VecVec<PointOffsetType>,
-    levels_data: VecVec<SubVectorRef>,
+    links_data: Vec<PointOffsetType>,
+    levels_data: Vec<SubVectorRef>,
+    free_link_parts: HashMap<PointOffsetType, Vec<SubVectorRef>>,
+    free_level_parts: HashMap<PointOffsetType, Vec<SubVectorRef>>,
 }
 
 impl<'a> LinksContainer {
     pub fn new() -> LinksContainer {
         LinksContainer {
             points: Vec::new(),
-            links_data: VecVec::new(),
-            levels_data: VecVec::new(),
+            links_data: Vec::new(),
+            levels_data: Vec::new(),
+            free_link_parts: HashMap::new(),
+            free_level_parts: HashMap::new(),
         }
     }
 
     pub fn reserve(&mut self, num_vectors: usize, links_capacity: usize) {
-        self.points.resize(num_vectors, SubVectorRef::default());
-        for i in 0..self.points.len() {
-            let mut links = SubVectorRef::default();
-            self.links_data.reserve(&mut links, links_capacity);
-            self.levels_data.push(&mut self.points[i], links);
+        let links_capacity = links_capacity.next_power_of_two();
+        self.points.reserve(num_vectors);
+        for _ in 0..num_vectors {
+            let offset = self.links_data.len();
+            self.links_data.resize(offset + links_capacity, 0);
+            self.levels_data.push(SubVectorRef {
+                offset: offset as PointOffsetType,
+                len: 0,
+                capacity: links_capacity as PointOffsetType,
+            });
+            self.points.push(SubVectorRef {
+                offset: self.points.len() as PointOffsetType,
+                len: 1,
+                capacity: 1,
+            });
         }
     }
 
@@ -167,9 +61,10 @@ impl<'a> LinksContainer {
 
     pub fn get_total_edges(&self) -> usize {
         let mut cnt: usize = 0;
-        for levels in &self.points {
-            let levels = self.levels_data.get_slice(levels);
-            cnt += levels.iter().map(|x| x.len).sum::<usize>();
+        for point_id in 0..self.points.len() {
+            for level in 0..self.points[point_id].len as usize {
+                cnt += self.get_links(point_id as PointOffsetType, level).len();
+            }
         }
         cnt
     }
@@ -182,38 +77,55 @@ impl<'a> LinksContainer {
     }
 
     pub fn point_level(&self, point_id: PointOffsetType) -> usize {
-        self.points[point_id as usize].len - 1
+        self.points[point_id as usize].len as usize - 1
     }
 
     pub fn get_links(&self, point_id: PointOffsetType, level: usize) -> LinkContainerRef {
         let levels_ref = &self.points[point_id as usize];
-        if levels_ref.len != 0 {
-            let links = self.levels_data.get(levels_ref, level);
-            self.links_data.get_slice(links)
+        if level < levels_ref.len as usize {
+            let links_ref = &self.levels_data[levels_ref.offset as usize + level];
+            &self.links_data[links_ref.offset as usize..(links_ref.offset + links_ref.len) as usize]
         } else {
             &[]
         }
     }
 
     pub fn set_links(&mut self, point_id: PointOffsetType, level: usize, links: LinkContainerRef) {
-        let mut levels_ref = self.points[point_id as usize].clone();
-        while levels_ref.len <= level {
-            let links = SubVectorRef::default();
-            self.levels_data.push(&mut levels_ref, links);
+        let levels_ref = &mut self.points[point_id as usize];
+        Self::realloc(
+            &mut self.levels_data,
+            levels_ref,
+            level,
+            &mut self.free_level_parts,
+        );
+        while levels_ref.len <= level as PointOffsetType {
+            self.levels_data[(levels_ref.offset + levels_ref.len) as usize] =
+                SubVectorRef::default();
+            levels_ref.len += 1;
         }
-        let mut links_ref = self.levels_data.get(&levels_ref, level).clone();
-        self.links_data.clone_from_slice(&mut links_ref, links);
-        self.levels_data.set(&mut levels_ref, level, links_ref);
-        self.points[point_id as usize] = levels_ref;
+        let links_ref = &mut self.levels_data[levels_ref.offset as usize + level];
+        Self::realloc(
+            &mut self.links_data,
+            links_ref,
+            links.len(),
+            &mut self.free_link_parts,
+        );
+        links_ref.len = links.len() as PointOffsetType;
+        self.links_data[links_ref.offset as usize..(links_ref.offset + links_ref.len) as usize]
+            .clone_from_slice(links);
     }
 
-    pub fn add_links(&mut self, point_id: PointOffsetType, level: usize, links: LinkContainerRef) {
-        let levels_ref = &self.points[point_id as usize];
-        let mut links_ref = self.levels_data.get(levels_ref, level).clone();
-        for link in links {
-            self.links_data.push(&mut links_ref, *link);
-        }
-        self.levels_data.set(levels_ref, level, links_ref);
+    pub fn add_link(&mut self, point_id: PointOffsetType, level: usize, link: PointOffsetType) {
+        let levels_ref = &mut self.points[point_id as usize];
+        let links_ref = &mut self.levels_data[levels_ref.offset as usize + level];
+        Self::realloc(
+            &mut self.links_data,
+            links_ref,
+            links_ref.len as usize + 1,
+            &mut self.free_link_parts,
+        );
+        self.links_data[(links_ref.offset + links_ref.len) as usize] = link;
+        links_ref.len += 1;
     }
 
     pub fn set_levels(&mut self, point_id: PointOffsetType, level: usize) {
@@ -222,52 +134,43 @@ impl<'a> LinksContainer {
             self.points.resize(point_id + 1, SubVectorRef::default());
         }
 
-        let mut levels_ref = self.points[point_id].clone();
-        for _ in 0..level {
-            self.levels_data
-                .push(&mut levels_ref, SubVectorRef::default());
-        }
-        self.points[point_id] = levels_ref;
+        let levels_ref = &mut self.points[point_id];
+        Self::realloc(
+            &mut self.levels_data,
+            levels_ref,
+            level,
+            &mut self.free_level_parts,
+        );
+        levels_ref.len = level as PointOffsetType;
     }
 
     pub fn merge_from_other(&mut self, other: LinksContainer, visited_list: &mut VisitedList) {
-        //panic!("merge_from_other");
-        if other.points.len() > self.points.len() {
-            self.points
-                .resize(other.points.len(), SubVectorRef::default());
+        panic!("not yet");
+        /*
+        if other.links_layers.len() > self.links_layers.len() {
+            self.links_layers.resize(other.links_layers.len(), vec![]);
         }
-
-        for (point_id, layers) in other.points.iter().enumerate() {
-            let mut current_layers = self.points[point_id].clone();
-            let layers = other.levels_data.get_slice(layers);
-            for (level, other_links) in layers.iter().enumerate() {
-                let other_links = other.links_data.get_slice(other_links);
-                if current_layers.len <= level {
-                    let mut added_links = SubVectorRef::default();
-                    self.links_data
-                        .clone_from_slice(&mut added_links, other_links);
-                    self.levels_data.push(&mut current_layers, added_links);
+        for (point_id, layers) in other.links_layers.into_iter().enumerate() {
+            let current_layers = &mut self.links_layers[point_id];
+            for (level, other_links) in layers.into_iter().enumerate() {
+                if current_layers.len() <= level {
+                    current_layers.push(other_links);
                 } else {
                     visited_list.next_iteration();
-                    {
-                        let current_links = self.get_links(point_id as PointOffsetType, level);
-                        current_links.iter().copied().for_each(|x| {
-                            visited_list.check_and_update_visited(x);
-                        });
-                    }
-                    let mut links = self.levels_data.get(&current_layers, level).clone();
+                    let current_links = &mut current_layers[level];
+                    current_links.iter().copied().for_each(|x| {
+                        visited_list.check_and_update_visited(x);
+                    });
                     for other_link in other_links
-                        .iter()
-                        .copied()
+                        .into_iter()
                         .filter(|x| !visited_list.check_and_update_visited(*x))
                     {
-                        self.links_data.push(&mut links, other_link);
+                        current_links.push(other_link);
                     }
-                    self.levels_data.set(&current_layers, level, links);
                 }
             }
-            self.points[point_id] = current_layers;
         }
+        */
     }
 
     /// Connect new point to links, so that links contains only closest points
@@ -300,19 +203,84 @@ impl<'a> LinksContainer {
             }
         }
 
-        let mut links_ref = self
-            .levels_data
-            .get(&self.points[point_id as usize], level)
-            .clone();
-        if links_len < level_m {
-            self.links_data
-                .insert(&mut links_ref, id_to_insert, new_point_id);
-        } else if id_to_insert != links_len {
-            self.links_data.pop(&mut links_ref);
-            self.links_data
-                .insert(&mut links_ref, id_to_insert, new_point_id);
+        let levels_ref = &mut self.points[point_id as usize];
+        let links_ref = &mut self.levels_data[levels_ref.offset as usize + level];
+
+        if links_len >= level_m && id_to_insert != links_len {
+            links_ref.len -= 1; // pop last element
         }
-        self.levels_data
-            .set(&self.points[point_id as usize], level, links_ref);
+
+        if links_len < level_m || (links_len >= level_m && id_to_insert != links_len) {
+            Self::realloc(
+                &mut self.links_data,
+                links_ref,
+                links_ref.len as usize + 1,
+                &mut self.free_link_parts,
+            );
+            self.links_data
+                [links_ref.offset as usize + id_to_insert..(links_ref.offset + links_ref.len + 1) as usize]
+                .rotate_right(1);
+            self.links_data[links_ref.offset as usize + id_to_insert] = new_point_id;
+            links_ref.len += 1;
+        }
+    }
+
+    fn realloc<T>(
+        data: &mut Vec<T>,
+        subvec: &mut SubVectorRef,
+        required_capacity: usize,
+        free_parts: &mut HashMap<PointOffsetType, Vec<SubVectorRef>>,
+    ) where
+        T: Default + Clone,
+    {
+        let required_capacity = usize::next_power_of_two(required_capacity) as PointOffsetType;
+        if subvec.capacity >= required_capacity {
+            return;
+        }
+
+        let old_part = SubVectorRef {
+            offset: subvec.offset,
+            len: 0,
+            capacity: subvec.capacity,
+        };
+        if subvec.capacity > 0 {
+            match free_parts.get_mut(&old_part.capacity) {
+                Some(free_datas) => {
+                    free_datas.push(old_part.clone());
+                }
+                None => {
+                    free_parts.insert(old_part.capacity, vec![old_part.clone()]);
+                }
+            }
+        }
+
+        let mut new_part = SubVectorRef {
+            offset: data.len() as PointOffsetType,
+            len: 0,
+            capacity: required_capacity,
+        };
+        if let Some(free_datas) = free_parts.get_mut(&required_capacity) {
+            if let Some(free) = free_datas.pop() {
+                new_part = free;
+            }
+        }
+
+        let required_data_len = (new_part.offset + new_part.capacity) as usize;
+        if data.len() < required_data_len {
+            data.resize(required_data_len, T::default());
+        }
+
+        if old_part.offset > new_part.offset {
+            let (dst, src) = data.as_mut_slice().split_at_mut(old_part.offset as usize);
+            dst[new_part.offset as usize..(new_part.offset + subvec.len) as usize]
+                .clone_from_slice(&src[..subvec.len as usize]);
+        } else {
+            let (src, dst) = data.as_mut_slice().split_at_mut(new_part.offset as usize);
+            dst[..subvec.len as usize].clone_from_slice(
+                &src[old_part.offset as usize..(old_part.offset + subvec.len) as usize],
+            );
+        }
+        subvec.offset = new_part.offset;
+        subvec.capacity = new_part.capacity;
     }
 }

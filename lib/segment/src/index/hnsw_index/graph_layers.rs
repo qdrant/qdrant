@@ -331,7 +331,7 @@ impl GraphLayers {
                             if other_point_links_len < level_m {
                                 // If linked point is lack of neighbours
                                 self.links_layers
-                                    .add_links(other_point, curr_level, &[point_id]);
+                                    .add_link(other_point, curr_level, point_id);
                             } else {
                                 let mut candidates = BinaryHeap::with_capacity(level_m + 1);
                                 candidates.push(ScoredPointOffset {
