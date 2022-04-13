@@ -7,9 +7,7 @@ use crate::id_tracker::IdTracker;
 use crate::index::plain_payload_index::PlainPayloadIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::PayloadIndex;
-use crate::payload_storage::in_memory_payload_storage::{
-    InMemoryConditionChecker, InMemoryPayloadStorage,
-};
+use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::PayloadStorage;
 use crate::types::{PayloadSchemaType, PointIdType, PointOffsetType, SeqNumberType};
 use atomic_refcell::AtomicRefCell;
@@ -17,6 +15,7 @@ use rand::prelude::StdRng;
 use rand::SeedableRng;
 use std::path::Path;
 use std::sync::Arc;
+use crate::payload_storage::in_memory_payload_storage_impl::InMemoryConditionChecker;
 
 /// Warn: Use for tests only
 ///

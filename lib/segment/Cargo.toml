@@ -37,6 +37,7 @@ rand = "0.8"
 bit-vec = "0.6"
 seahash = "4.1.0"
 json-patch = "0.2.6"
+enum_dispatch = "0.3.8"
 
 [[bench]]
 name = "vector_search"
