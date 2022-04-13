@@ -1,16 +1,16 @@
 use tonic::{Request, Response, Status};
 
 use crate::tonic::api::points_common::{
-    clear_payload, create_field_index, delete, delete_field_index, delete_payload, recommend,
+    clear_payload, create_field_index, delete, delete_field_index, delete_payload, get, recommend,
     scroll, search, set_payload, upsert,
 };
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CreateFieldIndexCollectionInternal,
     DeleteFieldIndexCollectionInternal, DeletePayloadPointsInternal, DeletePointsInternal,
-    PointsOperationResponse, RecommendPointsInternal, RecommendResponse, ScrollPointsInternal,
-    ScrollResponse, SearchPointsInternal, SearchResponse, SetPayloadPointsInternal,
-    UpsertPointsInternal,
+    GetPointsInternal, GetResponse, PointsOperationResponse, RecommendPointsInternal,
+    RecommendResponse, ScrollPointsInternal, ScrollResponse, SearchPointsInternal, SearchResponse,
+    SetPayloadPointsInternal, UpsertPointsInternal,
 };
 use std::sync::Arc;
 use storage::content_manager::toc::TableOfContent;
@@ -186,6 +186,21 @@ impl PointsInternal for PointsInternalService {
             scroll_points.ok_or_else(|| Status::invalid_argument("ScrollPoints is missing"))?;
 
         scroll(self.toc.as_ref(), scroll_points, Some(shard_id)).await
+    }
+
+    async fn get(
+        &self,
+        request: Request<GetPointsInternal>,
+    ) -> Result<Response<GetResponse>, Status> {
+        let GetPointsInternal {
+            get_points,
+            shard_id,
+        } = request.into_inner();
+
+        let get_points =
+            get_points.ok_or_else(|| Status::invalid_argument("GetPoints is missing"))?;
+
+        get(self.toc.as_ref(), get_points, Some(shard_id)).await
     }
 }
 

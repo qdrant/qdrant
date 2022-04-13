@@ -482,6 +482,7 @@ impl TableOfContent {
     ///
     /// * `collection_name` - select from this collection
     /// * `request` - [`PointRequest`]
+    /// * `shard_selection` - which local shard to use
     ///
     /// # Result
     ///
@@ -490,10 +491,11 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: PointRequest,
+        shard_selection: Option<ShardId>,
     ) -> Result<Vec<Record>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .retrieve(request, self.segment_searcher.as_ref(), None)
+            .retrieve(request, self.segment_searcher.as_ref(), shard_selection)
             .await
             .map_err(|err| err.into())
     }
