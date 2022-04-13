@@ -21,7 +21,7 @@ async fn do_get_point(
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: true,
     };
-    toc.retrieve(collection_name, request)
+    toc.retrieve(collection_name, request, None)
         .await
         .map(|points| points.into_iter().next())
 }
@@ -78,7 +78,13 @@ pub async fn get_points(
     let collection_name = path.into_inner();
     let timing = Instant::now();
 
-    let response = do_get_points(&toc.into_inner(), &collection_name, request.into_inner()).await;
+    let response = do_get_points(
+        &toc.into_inner(),
+        &collection_name,
+        request.into_inner(),
+        None,
+    )
+    .await;
     process_response(response, timing)
 }
 

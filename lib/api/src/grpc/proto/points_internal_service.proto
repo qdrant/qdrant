@@ -21,6 +21,7 @@ service PointsInternal {
   rpc Search (SearchPointsInternal) returns (SearchResponse) {}
   rpc Scroll (ScrollPointsInternal) returns (ScrollResponse) {}
   rpc Recommend (RecommendPointsInternal) returns (RecommendResponse) {}
+  rpc Get (GetPointsInternal) returns (GetResponse) {}
 }
 
 message UpsertPointsInternal {
@@ -70,5 +71,10 @@ message ScrollPointsInternal {
 
 message RecommendPointsInternal {
   RecommendPoints recommend_points = 1;
+  uint32 shard_id = 2;
+}
+
+message GetPointsInternal {
+  GetPoints get_points = 1;
   uint32 shard_id = 2;
 }

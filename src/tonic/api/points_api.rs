@@ -1,11 +1,9 @@
 use tonic::{Request, Response, Status};
 
-use crate::common::points::do_get_points;
-
 use api::grpc::qdrant::points_server::Points;
 
 use crate::tonic::api::points_common::{
-    clear_payload, create_field_index, delete, delete_field_index, delete_payload, recommend,
+    clear_payload, create_field_index, delete, delete_field_index, delete_payload, get, recommend,
     scroll, search, set_payload, upsert,
 };
 use api::grpc::qdrant::{
@@ -14,11 +12,8 @@ use api::grpc::qdrant::{
     RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse,
     SetPayloadPoints, UpsertPoints,
 };
-use collection::operations::types::PointRequest;
-use std::convert::TryInto;
 use std::sync::Arc;
-use std::time::Instant;
-use storage::content_manager::conversions::error_to_status;
+
 use storage::content_manager::toc::TableOfContent;
 
 pub struct PointsService {
@@ -48,34 +43,7 @@ impl Points for PointsService {
     }
 
     async fn get(&self, request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
-        let GetPoints {
-            collection_name,
-            ids,
-            with_vector,
-            with_payload,
-        } = request.into_inner();
-
-        let point_request = PointRequest {
-            ids: ids
-                .into_iter()
-                .map(|p| p.try_into())
-                .collect::<Result<_, _>>()?,
-            with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-            with_vector: with_vector.unwrap_or(false),
-        };
-
-        let timing = Instant::now();
-
-        let records = do_get_points(self.toc.as_ref(), &collection_name, point_request)
-            .await
-            .map_err(error_to_status)?;
-
-        let response = GetResponse {
-            result: records.into_iter().map(|point| point.into()).collect(),
-            time: timing.elapsed().as_secs_f64(),
-        };
-
-        Ok(Response::new(response))
+        get(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn set_payload(

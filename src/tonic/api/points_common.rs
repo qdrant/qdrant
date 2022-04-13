@@ -1,17 +1,18 @@
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_scroll_points, do_search_points, do_set_payload, do_update_points, CreateFieldIndex,
+    do_get_points, do_scroll_points, do_search_points, do_set_payload, do_update_points,
+    CreateFieldIndex,
 };
 use api::grpc::conversions::proto_to_payloads;
 use api::grpc::qdrant::{
     ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
-    DeletePayloadPoints, DeletePoints, FieldType, PointsOperationResponse, RecommendPoints,
-    RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse,
+    DeletePayloadPoints, DeletePoints, FieldType, GetPoints, GetResponse, PointsOperationResponse,
+    RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse,
     SetPayloadPoints, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsList};
-use collection::operations::types::{ScrollRequest, SearchRequest};
+use collection::operations::types::{PointRequest, ScrollRequest, SearchRequest};
 use collection::operations::CollectionUpdateOperations;
 use collection::shard::ShardId;
 use segment::types::PayloadSchemaType;
@@ -391,6 +392,41 @@ pub async fn scroll(
             .into_iter()
             .map(|point| point.into())
             .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn get(
+    toc: &TableOfContent,
+    get_points: GetPoints,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<GetResponse>, Status> {
+    let GetPoints {
+        collection_name,
+        ids,
+        with_vector,
+        with_payload,
+    } = get_points;
+
+    let point_request = PointRequest {
+        ids: ids
+            .into_iter()
+            .map(|p| p.try_into())
+            .collect::<Result<_, _>>()?,
+        with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
+        with_vector: with_vector.unwrap_or(false),
+    };
+
+    let timing = Instant::now();
+
+    let records = do_get_points(toc, &collection_name, point_request, shard_selection)
+        .await
+        .map_err(error_to_status)?;
+
+    let response = GetResponse {
+        result: records.into_iter().map(|point| point.into()).collect(),
         time: timing.elapsed().as_secs_f64(),
     };
 
