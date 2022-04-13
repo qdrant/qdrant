@@ -1,12 +1,10 @@
-use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
+use crate::types::{Payload, PointOffsetType};
 use std::collections::HashMap;
 use std::path::Path;
 
 use rocksdb::{IteratorMode, Options, DB};
-use serde_json::Value;
 
 use crate::entry::entry_point::OperationResult;
-use crate::payload_storage::PayloadStorage;
 
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 const DB_NAME: &str = "payload";

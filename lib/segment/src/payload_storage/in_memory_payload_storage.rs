@@ -1,16 +1,6 @@
-use crate::types::{Filter, Payload, PayloadKeyTypeRef, PointOffsetType};
-use atomic_refcell::AtomicRefCell;
-use std::cell::RefCell;
+use crate::types::{Payload, PointOffsetType};
 use std::collections::HashMap;
-use std::ops::Deref;
-use std::sync::Arc;
 
-use serde_json::Value;
-
-use crate::entry::entry_point::OperationResult;
-use crate::id_tracker::IdTrackerSS;
-use crate::payload_storage::query_checker::check_payload;
-use crate::payload_storage::{ConditionChecker, PayloadStorage};
 
 /// Same as `SimplePayloadStorage` but without persistence
 /// Warn: for tests only
