@@ -530,8 +530,8 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn info(&self) -> CollectionResult<CollectionInfo> {
-        let mut shards = self.all_shards();
+    pub async fn info(&self, shard_selection: Option<ShardId>) -> CollectionResult<CollectionInfo> {
+        let mut shards = self.target_shards(shard_selection)?;
         let mut info = shards
             .next()
             .expect("At least 1 shard expected")

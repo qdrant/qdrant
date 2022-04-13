@@ -49,7 +49,7 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
     }
 
     let mut collection = Collection::load("test".to_string(), collection_dir.path()).await;
-    assert_eq!(collection.info().await.unwrap().vectors_count, 2);
+    assert_eq!(collection.info(None).await.unwrap().vectors_count, 2);
     collection.before_drop().await;
 }
 

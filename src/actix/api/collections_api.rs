@@ -36,7 +36,7 @@ async fn get_collection(
 ) -> impl Responder {
     let name = path.into_inner();
     let timing = Instant::now();
-    let response = do_get_collection(&toc.into_inner(), &name).await;
+    let response = do_get_collection(&toc.into_inner(), &name, None).await;
     process_response(response, timing)
 }
 
