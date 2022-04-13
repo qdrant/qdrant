@@ -4,6 +4,7 @@ use crate::entry::entry_point::{
 };
 use crate::id_tracker::IdTrackerSS;
 use crate::index::{PayloadIndexSS, VectorIndexSS};
+use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{ConditionCheckerSS, PayloadStorage};
 use crate::spaces::tools::mertic_object;
 use crate::types::{
@@ -19,7 +20,6 @@ use std::fs::{remove_dir_all, rename};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 

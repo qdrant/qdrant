@@ -60,12 +60,12 @@ impl PayloadStorage for InMemoryPayloadStorage {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
     use super::*;
     use crate::fixtures::payload_context_fixture::IdsIterator;
+    use crate::payload_storage::query_checker::check_payload;
     use crate::types::{Condition, FieldCondition, Filter};
     use serde_json::json;
-    use crate::payload_storage::query_checker::check_payload;
+    use std::cell::RefCell;
 
     #[test]
     fn test_condition_checking() {

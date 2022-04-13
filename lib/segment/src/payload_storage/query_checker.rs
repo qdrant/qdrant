@@ -7,8 +7,8 @@ use serde_json::Value;
 
 use crate::id_tracker::IdTrackerSS;
 use crate::payload_storage::condition_checker::ValueChecker;
-use crate::payload_storage::ConditionChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+use crate::payload_storage::ConditionChecker;
 use crate::types::{Condition, Filter, IsEmptyCondition, Payload, PointOffsetType};
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool
@@ -187,8 +187,8 @@ mod tests {
 
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTracker;
-    use crate::payload_storage::PayloadStorage;
     use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
+    use crate::payload_storage::PayloadStorage;
     use crate::types::{FieldCondition, GeoBoundingBox, Range};
     use crate::types::{GeoPoint, PayloadField};
 
@@ -213,7 +213,8 @@ mod tests {
         })
         .into();
 
-        let mut payload_storage: PayloadStorageEnum = SimplePayloadStorage::open(dir.path()).unwrap().into();
+        let mut payload_storage: PayloadStorageEnum =
+            SimplePayloadStorage::open(dir.path()).unwrap().into();
         let mut id_tracker = SimpleIdTracker::open(dir_id_tracker.path()).unwrap();
 
         id_tracker.set_link(0.into(), 0).unwrap();

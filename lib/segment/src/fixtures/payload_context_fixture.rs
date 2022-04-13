@@ -8,6 +8,7 @@ use crate::index::plain_payload_index::PlainPayloadIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::PayloadIndex;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
+use crate::payload_storage::query_checker::SimpleConditionChecker;
 use crate::payload_storage::PayloadStorage;
 use crate::types::{PayloadSchemaType, PointIdType, PointOffsetType, SeqNumberType};
 use atomic_refcell::AtomicRefCell;
@@ -15,7 +16,6 @@ use rand::prelude::StdRng;
 use rand::SeedableRng;
 use std::path::Path;
 use std::sync::Arc;
-use crate::payload_storage::query_checker::SimpleConditionChecker;
 
 /// Warn: Use for tests only
 ///
@@ -185,9 +185,9 @@ pub fn create_struct_payload_index(
     num_points: usize,
     seed: u64,
 ) -> StructPayloadIndex {
-    let payload_storage = Arc::new(AtomicRefCell::new(create_payload_storage_fixture(
-        num_points, seed,
-    ).into()));
+    let payload_storage = Arc::new(AtomicRefCell::new(
+        create_payload_storage_fixture(num_points, seed).into(),
+    ));
     let ids_iterator = Arc::new(AtomicRefCell::new(IdsIterator::new(num_points)));
 
     let condition_checker = Arc::new(SimpleConditionChecker::new(
