@@ -2,6 +2,7 @@ use crate::common::file_operations::{atomic_save_bin, read_bin};
 use crate::common::utils::rev_range;
 use crate::entry::entry_point::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
+use crate::index::hnsw_index::links_container::{LinkContainerRef, LinksContainer};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedList, VisitedPool};
@@ -16,10 +17,6 @@ use std::cmp::{max, min};
 use std::collections::BinaryHeap;
 use std::path::{Path, PathBuf};
 
-pub type LinkContainer = Vec<PointOffsetType>;
-pub type LinkContainerRef<'a> = &'a [PointOffsetType];
-pub type LayersContainer = Vec<LinkContainer>;
-
 pub const HNSW_GRAPH_FILE: &str = "graph.bin";
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -32,7 +29,7 @@ pub struct GraphLayers {
     // Exclude points according to "not closer than base" heuristic?
     use_heuristic: bool,
     // Factor of level probability
-    links_layers: Vec<LayersContainer>,
+    links_layers: LinksContainer,
     entry_points: EntryPoints,
 
     // Fields used on construction phase only
@@ -53,16 +50,10 @@ impl GraphLayers {
         use_heuristic: bool,
         reserve: bool,
     ) -> Self {
-        let mut links_layers: Vec<LayersContainer> = vec![];
-
-        for _i in 0..num_vectors {
-            let mut links: LinkContainer = Vec::new();
-            if reserve {
-                links.reserve(m0);
-            }
-            links_layers.push(vec![links]);
+        let mut links_layers = LinksContainer::new();
+        if reserve {
+            links_layers.reserve(num_vectors, m0);
         }
-
         GraphLayers {
             max_level: 0,
             m,
@@ -100,12 +91,12 @@ impl GraphLayers {
     }
 
     pub fn point_level(&self, point_id: PointOffsetType) -> usize {
-        self.links_layers[point_id as usize].len() - 1
+        self.links_layers.point_level(point_id)
     }
 
     /// Get links of current point
     fn links(&self, point_id: PointOffsetType, level: usize) -> LinkContainerRef {
-        &self.links_layers[point_id as usize][level]
+        self.links_layers.get_links(point_id, level)
     }
 
     /// Get M based on current level
@@ -129,15 +120,7 @@ impl GraphLayers {
     }
 
     fn set_levels(&mut self, point_id: PointOffsetType, level: usize) {
-        if self.links_layers.len() <= point_id as usize {
-            self.links_layers.resize(point_id as usize, vec![]);
-        }
-        let point_layers = &mut self.links_layers[point_id as usize];
-        while point_layers.len() <= level {
-            let mut links = vec![];
-            links.reserve(self.m);
-            point_layers.push(links);
-        }
+        self.links_layers.set_levels(point_id, level);
         self.max_level = max(level, self.max_level);
     }
 
@@ -236,36 +219,6 @@ impl GraphLayers {
         current_point
     }
 
-    /// Connect new point to links, so that links contains only closest points
-    fn connect_new_point<F>(
-        links: &mut LinkContainer,
-        new_point_id: PointOffsetType,
-        target_point_id: PointOffsetType,
-        level_m: usize,
-        mut score_internal: F,
-    ) where
-        F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
-    {
-        // ToDo: binary search here ? (most likely does not worth it)
-        let new_to_target = score_internal(target_point_id, new_point_id);
-
-        let mut id_to_insert = links.len();
-        for (i, &item) in links.iter().enumerate() {
-            let target_to_link = score_internal(target_point_id, item);
-            if target_to_link < new_to_target {
-                id_to_insert = i;
-                break;
-            }
-        }
-
-        if links.len() < level_m {
-            links.insert(id_to_insert, new_point_id);
-        } else if id_to_insert != links.len() {
-            links.pop();
-            links.insert(id_to_insert, new_point_id);
-        }
-    }
-
     /// <https://github.com/nmslib/hnswlib/issues/99>
     fn select_candidate_with_heuristic_from_sorted<F>(
         candidates: impl Iterator<Item = ScoredPointOffset>,
@@ -354,7 +307,7 @@ impl GraphLayers {
 
                 for curr_level in (0..=linking_level).rev() {
                     let level_m = self.get_m(curr_level);
-                    let existing_links = &self.links_layers[point_id as usize][curr_level];
+                    let existing_links = self.links_layers.get_links(point_id, curr_level);
 
                     let nearest_points = self.search_on_level(
                         level_entry,
@@ -369,23 +322,28 @@ impl GraphLayers {
                     if self.use_heuristic {
                         let selected_nearest =
                             Self::select_candidates_with_heuristic(nearest_points, level_m, scorer);
-                        self.links_layers[point_id as usize][curr_level]
-                            .clone_from(&selected_nearest);
+                        self.links_layers
+                            .set_links(point_id, curr_level, &selected_nearest);
 
                         for &other_point in &selected_nearest {
-                            let other_point_links =
-                                &mut self.links_layers[other_point as usize][curr_level];
-                            if other_point_links.len() < level_m {
+                            let other_point_links_len =
+                                self.links_layers.get_links(other_point, curr_level).len();
+                            if other_point_links_len < level_m {
                                 // If linked point is lack of neighbours
-                                other_point_links.push(point_id);
+                                self.links_layers
+                                    .add_links(other_point, curr_level, &[point_id]);
                             } else {
                                 let mut candidates = BinaryHeap::with_capacity(level_m + 1);
                                 candidates.push(ScoredPointOffset {
                                     idx: point_id,
                                     score: scorer(point_id, other_point),
                                 });
-                                for other_point_link in
-                                    other_point_links.iter().take(level_m).copied()
+                                for other_point_link in self
+                                    .links_layers
+                                    .get_links(other_point, curr_level)
+                                    .iter()
+                                    .take(level_m)
+                                    .copied()
                                 {
                                     candidates.push(ScoredPointOffset {
                                         idx: other_point_link,
@@ -398,24 +356,27 @@ impl GraphLayers {
                                         level_m,
                                         scorer,
                                     );
-                                other_point_links.clear(); // this do not free memory, which is good
-                                for selected in selected_candidates.iter().copied() {
-                                    other_point_links.push(selected);
-                                }
+                                self.links_layers.set_links(
+                                    other_point,
+                                    curr_level,
+                                    &selected_candidates,
+                                );
                             }
                         }
                     } else {
                         for nearest_point in &nearest_points {
-                            Self::connect_new_point(
-                                &mut self.links_layers[point_id as usize][curr_level],
+                            self.links_layers.connect_new_point(
+                                point_id,
+                                curr_level,
                                 nearest_point.idx,
                                 point_id,
                                 level_m,
                                 scorer,
                             );
 
-                            Self::connect_new_point(
-                                &mut self.links_layers[nearest_point.idx as usize][curr_level],
+                            self.links_layers.connect_new_point(
+                                nearest_point.idx,
+                                curr_level,
                                 point_id,
                                 nearest_point.idx,
                                 level_m,
@@ -433,31 +394,9 @@ impl GraphLayers {
 
     pub fn merge_from_other(&mut self, other: GraphLayers) {
         let mut visited_list = self.visited_pool.get(self.num_points());
-        if other.links_layers.len() > self.links_layers.len() {
-            self.links_layers.resize(other.links_layers.len(), vec![]);
-        }
-        for (point_id, layers) in other.links_layers.into_iter().enumerate() {
-            let current_layers = &mut self.links_layers[point_id];
-            for (level, other_links) in layers.into_iter().enumerate() {
-                if current_layers.len() <= level {
-                    current_layers.push(other_links);
-                } else {
-                    visited_list.next_iteration();
-                    let current_links = &mut current_layers[level];
-                    current_links.iter().copied().for_each(|x| {
-                        visited_list.check_and_update_visited(x);
-                    });
-                    for other_link in other_links
-                        .into_iter()
-                        .filter(|x| !visited_list.check_and_update_visited(*x))
-                    {
-                        current_links.push(other_link);
-                    }
-                }
-            }
-        }
+        self.links_layers
+            .merge_from_other(other.links_layers, &mut visited_list);
         self.entry_points.merge_from_other(other.entry_points);
-
         self.visited_pool.return_back(visited_list);
     }
 
@@ -565,13 +504,9 @@ mod tests {
         insert_ids.shuffle(&mut rng);
         for &id in &insert_ids {
             let level_m = graph_layers.get_m(0);
-            GraphLayers::connect_new_point(
-                &mut graph_layers.links_layers[0][0],
-                id,
-                0,
-                level_m,
-                scorer,
-            )
+            graph_layers
+                .links_layers
+                .connect_new_point(0, 0, id, 0, level_m, scorer)
         }
         assert_eq!(graph_layers.links(0, 0), &vec![1, 2, 3, 4, 5, 6]);
     }
@@ -643,7 +578,9 @@ mod tests {
         let mut graph_layers =
             GraphLayers::new(num_vectors, m, m * 2, ef_construct, entry_points_num, false);
 
-        graph_layers.links_layers[0][0] = vec![1, 2, 3, 4, 5, 6];
+        graph_layers
+            .links_layers
+            .set_links(0, 0, &vec![1, 2, 3, 4, 5, 6]);
 
         let linking_idx: PointOffsetType = 7;
 
@@ -665,7 +602,7 @@ mod tests {
 
         assert_eq!(
             nearest_on_level.len(),
-            graph_layers.links_layers[0][0].len() + 1
+            graph_layers.links_layers.get_links(0, 0).len() + 1
         );
 
         for nearest in &nearest_on_level {
@@ -719,15 +656,10 @@ mod tests {
 
         assert!(main_entry.level > 0);
 
-        let num_levels = graph_layers
-            .links_layers
-            .iter()
-            .map(|x| x.len())
-            .max()
-            .unwrap();
+        let num_levels = graph_layers.links_layers.get_max_layers();
         assert_eq!(main_entry.level + 1, num_levels);
 
-        let total_links_0: usize = graph_layers.links_layers.iter().map(|x| x[0].len()).sum();
+        let total_links_0: usize = graph_layers.links_layers.get_total_edges();
 
         assert!(total_links_0 > 0);
 
@@ -779,15 +711,10 @@ mod tests {
         let number_layers = graph_layers.links_layers.len();
         eprintln!("number_layers = {:#?}", number_layers);
 
-        let max_layers = graph_layers.links_layers.iter().map(|x| x.len()).max();
+        let max_layers = graph_layers.links_layers.get_max_layers();
         eprintln!("max_layers = {:#?}", max_layers);
 
-        eprintln!(
-            "graph_layers.links_layers[910] = {:#?}",
-            graph_layers.links_layers[910]
-        );
-
-        let total_edges: usize = graph_layers.links_layers.iter().map(|x| x[0].len()).sum();
+        let total_edges = graph_layers.links_layers.get_total_edges();
         let avg_connectivity = total_edges as f64 / NUM_VECTORS as f64;
         eprintln!("avg_connectivity = {:#?}", avg_connectivity);
     }
