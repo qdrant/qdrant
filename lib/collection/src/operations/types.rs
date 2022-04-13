@@ -208,6 +208,8 @@ pub enum CollectionError {
     BadRequest { description: String },
     #[error("Operation Cancelled: {description}")]
     Cancelled { description: String },
+    #[error("Bad shard selection: {description}")]
+    BadShardSelection { description: String },
     #[error(
     "{shards_failed} out of {shards_total} shards failed to apply operation. First error captured: {first_err}"
     )]
@@ -221,6 +223,10 @@ pub enum CollectionError {
 impl CollectionError {
     pub fn service_error(error: String) -> CollectionError {
         CollectionError::ServiceError { error }
+    }
+
+    pub fn bad_shard_selection(description: String) -> CollectionError {
+        CollectionError::BadShardSelection { description }
     }
 }
 

@@ -41,6 +41,9 @@ impl From<CollectionError> for StorageError {
             err @ CollectionError::InconsistentFailure { .. } => StorageError::ServiceError {
                 description: format!("{err}"),
             },
+            CollectionError::BadShardSelection { description } => {
+                StorageError::BadRequest { description }
+            }
         }
     }
 }

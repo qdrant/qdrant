@@ -92,6 +92,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
                 with_vector: true,
             },
             &searcher,
+            None,
         )
         .await
         .unwrap();
@@ -159,6 +160,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
                 with_vector: true,
             },
             &searcher,
+            None,
         )
         .await
         .unwrap();
@@ -190,6 +192,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
                 with_vector: false,
             },
             &searcher,
+            None,
         )
         .await
         .unwrap();

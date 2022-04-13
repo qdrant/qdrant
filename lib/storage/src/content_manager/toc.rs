@@ -433,6 +433,7 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: RecommendRequest,
+        shard_selection: Option<ShardId>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
@@ -440,6 +441,7 @@ impl TableOfContent {
                 request,
                 self.segment_searcher.deref(),
                 self.search_runtime.handle(),
+                shard_selection,
             )
             .await
             .map_err(|err| err.into())
@@ -452,7 +454,7 @@ impl TableOfContent {
     ///
     /// * `collection_name` - in what collection do we search
     /// * `request` - [`SearchRequest`]
-    ///
+    /// * `shard_selection` - which local shard to use
     /// # Result
     ///
     /// Points with search score
@@ -460,6 +462,7 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: SearchRequest,
+        shard_selection: Option<ShardId>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
@@ -467,6 +470,7 @@ impl TableOfContent {
                 request,
                 self.segment_searcher.as_ref(),
                 self.search_runtime.handle(),
+                shard_selection,
             )
             .await
             .map_err(|err| err.into())
@@ -489,7 +493,7 @@ impl TableOfContent {
     ) -> Result<Vec<Record>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .retrieve(request, self.segment_searcher.as_ref())
+            .retrieve(request, self.segment_searcher.as_ref(), None)
             .await
             .map_err(|err| err.into())
     }
@@ -527,6 +531,7 @@ impl TableOfContent {
     ///
     /// * `collection_name` - which collection to use
     /// * `request` - [`ScrollRequest`]
+    /// * `shard_selection` - which local shard to use
     ///
     /// # Result
     ///
@@ -535,10 +540,11 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: ScrollRequest,
+        shard_selection: Option<ShardId>,
     ) -> Result<ScrollResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .scroll_by(request, self.segment_searcher.deref())
+            .scroll_by(request, self.segment_searcher.deref(), shard_selection)
             .await
             .map_err(|err| err.into())
     }

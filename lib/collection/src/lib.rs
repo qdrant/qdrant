@@ -4,14 +4,13 @@ use std::{
     cmp::max,
     collections::HashMap,
     fs::{create_dir_all, rename},
-    io,
+    io, iter,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use crate::operations::types::PointRequest;
 use crate::operations::OperationToShard;
-use crate::shard::ShardOperation;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
@@ -201,6 +200,33 @@ impl Collection {
             .expect("Shard is guaranteed to be added when id is added to the ring.")
     }
 
+    fn local_shard_by_id(&self, id: ShardId) -> CollectionResult<&Shard> {
+        match self.shards.get(&id) {
+            None => Err(CollectionError::bad_shard_selection(format!(
+                "Shard {} does not exist",
+                id
+            ))),
+            Some(Shard::Remote(_)) => Err(CollectionError::bad_shard_selection(format!(
+                "Shard {} is not local on peer",
+                id
+            ))),
+            Some(shard @ Shard::Local(_)) => Ok(shard),
+        }
+    }
+
+    fn target_shards(
+        &self,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Box<dyn Iterator<Item = &Shard> + Send + '_>> {
+        match shard_selection {
+            None => Ok(Box::new(self.all_shards())),
+            Some(shard_selection) => {
+                let local_shard = self.local_shard_by_id(shard_selection)?;
+                Ok(Box::new(iter::once(local_shard)))
+            }
+        }
+    }
+
     fn all_shards(&self) -> impl Iterator<Item = &Shard> {
         self.shards.values()
     }
@@ -211,20 +237,8 @@ impl Collection {
         shard_selection: ShardId,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        match self.shards.get(&shard_selection) {
-            None => Err(CollectionError::service_error(format!(
-                "Shard {} does not exist",
-                shard_selection
-            ))),
-            Some(Shard::Remote(_)) => Err(CollectionError::service_error(format!(
-                "Shard {} is not local on peer",
-                shard_selection
-            ))),
-            Some(Shard::Local(local_shard)) => {
-                let res = local_shard.update(operation.clone(), wait).await;
-                res
-            }
-        }
+        let local_shard = self.local_shard_by_id(shard_selection)?;
+        local_shard.get().update(operation.clone(), wait).await
     }
 
     pub async fn update_from_client(
@@ -282,6 +296,7 @@ impl Collection {
         request: RecommendRequest,
         segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
+        shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.positive.is_empty() {
             return Err(CollectionError::BadRequest {
@@ -304,6 +319,7 @@ impl Collection {
                     with_vector: true,
                 },
                 segment_searcher,
+                shard_selection,
             )
             .await?;
         let vectors_map: HashMap<ExtendedPointId, Vec<VectorElementType>> = vectors
@@ -362,8 +378,13 @@ impl Collection {
             top: request.top,
         };
 
-        self.search(search_request, segment_searcher, search_runtime_handle)
-            .await
+        self.search(
+            search_request,
+            segment_searcher,
+            search_runtime_handle,
+            shard_selection,
+        )
+        .await
     }
 
     pub async fn search(
@@ -371,10 +392,11 @@ impl Collection {
         request: SearchRequest,
         segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
+        shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let mut points = Vec::new();
         let request = Arc::new(request);
-        for shard in self.all_shards() {
+        for shard in self.target_shards(shard_selection)? {
             let mut shard_points = shard
                 .get()
                 .search(request.clone(), segment_searcher, search_runtime_handle)
@@ -388,6 +410,7 @@ impl Collection {
         &self,
         request: ScrollRequest,
         segment_searcher: &(dyn CollectionSearcher + Sync),
+        shard_selection: Option<ShardId>,
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequest::default();
 
@@ -411,7 +434,8 @@ impl Collection {
         let limit = limit + 1;
 
         let mut points = Vec::new();
-        for shard in self.all_shards() {
+
+        for shard in self.target_shards(shard_selection)? {
             let mut shard_points = shard
                 .get()
                 .scroll_by(
@@ -425,6 +449,7 @@ impl Collection {
                 .await?;
             points.append(&mut shard_points);
         }
+
         points.sort_by_key(|point| point.id);
         let mut points: Vec<_> = points.into_iter().take(limit).collect();
         let next_page_offset = if points.len() < limit {
@@ -444,6 +469,7 @@ impl Collection {
         &self,
         request: PointRequest,
         segment_searcher: &(dyn CollectionSearcher + Sync),
+        shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Record>> {
         let with_payload_interface = request
             .with_payload
@@ -453,7 +479,7 @@ impl Collection {
         let with_vector = request.with_vector;
         let request = Arc::new(request);
         let mut points = Vec::new();
-        for shard in self.all_shards() {
+        for shard in self.target_shards(shard_selection)? {
             let mut shard_points = shard
                 .get()
                 .retrieve(

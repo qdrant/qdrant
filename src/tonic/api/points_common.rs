@@ -1,15 +1,17 @@
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_set_payload, do_update_points, CreateFieldIndex,
+    do_scroll_points, do_search_points, do_set_payload, do_update_points, CreateFieldIndex,
 };
 use api::grpc::conversions::proto_to_payloads;
 use api::grpc::qdrant::{
     ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
-    DeletePayloadPoints, DeletePoints, FieldType, PointsOperationResponse, SetPayloadPoints,
-    UpsertPoints,
+    DeletePayloadPoints, DeletePoints, FieldType, PointsOperationResponse, RecommendPoints,
+    RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse,
+    SetPayloadPoints, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsList};
+use collection::operations::types::{ScrollRequest, SearchRequest};
 use collection::operations::CollectionUpdateOperations;
 use collection::shard::ShardId;
 use segment::types::PayloadSchemaType;
@@ -263,5 +265,134 @@ pub async fn delete_field_index(
     .map_err(error_to_status)?;
 
     let response = points_operation_response(timing, result);
+    Ok(Response::new(response))
+}
+
+pub async fn search(
+    toc: &TableOfContent,
+    search_points: SearchPoints,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<SearchResponse>, Status> {
+    let SearchPoints {
+        collection_name,
+        vector,
+        filter,
+        top,
+        with_vector,
+        with_payload,
+        params,
+    } = search_points;
+
+    let search_request = SearchRequest {
+        vector,
+        filter: filter.map(|f| f.try_into()).transpose()?,
+        params: params.map(|p| p.into()),
+        top: top as usize,
+        with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
+        with_vector: with_vector.unwrap_or(false),
+    };
+
+    let timing = Instant::now();
+    let scored_points = do_search_points(toc, &collection_name, search_request, shard_selection)
+        .await
+        .map_err(error_to_status)?;
+
+    let response = SearchResponse {
+        result: scored_points
+            .into_iter()
+            .map(|point| point.into())
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn recommend(
+    toc: &TableOfContent,
+    recommend_points: RecommendPoints,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<RecommendResponse>, Status> {
+    let RecommendPoints {
+        collection_name,
+        positive,
+        negative,
+        filter,
+        top,
+        with_vector,
+        with_payload,
+        params,
+    } = recommend_points;
+
+    let request = collection::operations::types::RecommendRequest {
+        positive: positive
+            .into_iter()
+            .map(|p| p.try_into())
+            .collect::<Result<_, _>>()?,
+        negative: negative
+            .into_iter()
+            .map(|p| p.try_into())
+            .collect::<Result<_, _>>()?,
+        filter: filter.map(|f| f.try_into()).transpose()?,
+        params: params.map(|p| p.into()),
+        top: top as usize,
+        with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
+        with_vector: with_vector.unwrap_or(false),
+    };
+
+    let timing = Instant::now();
+    let recommended_points = toc
+        .recommend(&collection_name, request, shard_selection)
+        .await
+        .map_err(error_to_status)?;
+
+    let response = RecommendResponse {
+        result: recommended_points
+            .into_iter()
+            .map(|point| point.into())
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn scroll(
+    toc: &TableOfContent,
+    scroll_points: ScrollPoints,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<ScrollResponse>, Status> {
+    let ScrollPoints {
+        collection_name,
+        filter,
+        offset,
+        limit,
+        with_vector,
+        with_payload,
+    } = scroll_points;
+
+    let scroll_request = ScrollRequest {
+        offset: offset.map(|o| o.try_into()).transpose()?,
+        limit: limit.map(|l| l as usize),
+        filter: filter.map(|f| f.try_into()).transpose()?,
+        with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
+        with_vector: with_vector.unwrap_or(false),
+    };
+
+    let timing = Instant::now();
+    let scrolled_points = do_scroll_points(toc, &collection_name, scroll_request, shard_selection)
+        .await
+        .map_err(error_to_status)?;
+
+    let response = ScrollResponse {
+        next_page_offset: scrolled_points.next_page_offset.map(|n| n.into()),
+        result: scrolled_points
+            .points
+            .into_iter()
+            .map(|point| point.into())
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
     Ok(Response::new(response))
 }

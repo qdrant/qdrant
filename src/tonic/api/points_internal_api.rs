@@ -1,14 +1,16 @@
 use tonic::{Request, Response, Status};
 
 use crate::tonic::api::points_common::{
-    clear_payload, create_field_index, delete, delete_field_index, delete_payload, set_payload,
-    upsert,
+    clear_payload, create_field_index, delete, delete_field_index, delete_payload, recommend,
+    scroll, search, set_payload, upsert,
 };
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CreateFieldIndexCollectionInternal,
     DeleteFieldIndexCollectionInternal, DeletePayloadPointsInternal, DeletePointsInternal,
-    PointsOperationResponse, SetPayloadPointsInternal, UpsertPointsInternal,
+    PointsOperationResponse, RecommendPointsInternal, RecommendResponse, ScrollPointsInternal,
+    ScrollResponse, SearchPointsInternal, SearchResponse, SetPayloadPointsInternal,
+    UpsertPointsInternal,
 };
 use std::sync::Arc;
 use storage::content_manager::toc::TableOfContent;
@@ -139,6 +141,51 @@ impl PointsInternal for PointsInternalService {
             Some(shard_id),
         )
         .await
+    }
+
+    async fn search(
+        &self,
+        request: Request<SearchPointsInternal>,
+    ) -> Result<Response<SearchResponse>, Status> {
+        let SearchPointsInternal {
+            search_points,
+            shard_id,
+        } = request.into_inner();
+
+        let search_points =
+            search_points.ok_or_else(|| Status::invalid_argument("SearchPoints is missing"))?;
+
+        search(self.toc.as_ref(), search_points, Some(shard_id)).await
+    }
+
+    async fn recommend(
+        &self,
+        request: Request<RecommendPointsInternal>,
+    ) -> Result<Response<RecommendResponse>, Status> {
+        let RecommendPointsInternal {
+            recommend_points,
+            shard_id,
+        } = request.into_inner();
+
+        let recommend_points = recommend_points
+            .ok_or_else(|| Status::invalid_argument("RecommendPoints is missing"))?;
+
+        recommend(self.toc.as_ref(), recommend_points, Some(shard_id)).await
+    }
+
+    async fn scroll(
+        &self,
+        request: Request<ScrollPointsInternal>,
+    ) -> Result<Response<ScrollResponse>, Status> {
+        let ScrollPointsInternal {
+            scroll_points,
+            shard_id,
+        } = request.into_inner();
+
+        let scroll_points =
+            scroll_points.ok_or_else(|| Status::invalid_argument("ScrollPoints is missing"))?;
+
+        scroll(self.toc.as_ref(), scroll_points, Some(shard_id)).await
     }
 }
 
