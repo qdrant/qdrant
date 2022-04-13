@@ -106,11 +106,8 @@ mod tests {
 
         assert!(
             (estimation_struct.exp as f64 - real_number as f64).abs()
-                < (estimation_plain.exp as f64 - real_number as f64).abs()
+                <= (estimation_plain.exp as f64 - real_number as f64).abs()
         );
-
-        eprintln!("estimation_struct = {:#?}", estimation_struct);
-        eprintln!("estimation_plain = {:#?}", estimation_plain);
     }
 
     #[test]
