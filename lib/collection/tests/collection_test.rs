@@ -200,7 +200,7 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         with_vector: true,
     };
     let retrieved = loaded_collection
-        .retrieve(request, &segment_searcher)
+        .retrieve(request, &segment_searcher, None)
         .await
         .unwrap();
 

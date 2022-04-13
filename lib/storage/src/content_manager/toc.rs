@@ -493,7 +493,7 @@ impl TableOfContent {
     ) -> Result<Vec<Record>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .retrieve(request, self.segment_searcher.as_ref())
+            .retrieve(request, self.segment_searcher.as_ref(), None)
             .await
             .map_err(|err| err.into())
     }

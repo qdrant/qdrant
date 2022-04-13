@@ -319,6 +319,7 @@ impl Collection {
                     with_vector: true,
                 },
                 segment_searcher,
+                shard_selection,
             )
             .await?;
         let vectors_map: HashMap<ExtendedPointId, Vec<VectorElementType>> = vectors
@@ -468,6 +469,7 @@ impl Collection {
         &self,
         request: PointRequest,
         segment_searcher: &(dyn CollectionSearcher + Sync),
+        shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Record>> {
         let with_payload_interface = request
             .with_payload
@@ -477,7 +479,7 @@ impl Collection {
         let with_vector = request.with_vector;
         let request = Arc::new(request);
         let mut points = Vec::new();
-        for shard in self.all_shards() {
+        for shard in self.target_shards(shard_selection)? {
             let mut shard_points = shard
                 .get()
                 .retrieve(
