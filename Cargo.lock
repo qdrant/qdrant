@@ -251,7 +251,7 @@ name = "api"
 version = "0.1.0"
 dependencies = [
  "prost 0.10.0",
- "prost-types 0.10.0",
+ "prost-types 0.10.1",
  "schemars",
  "segment",
  "serde",
@@ -2369,7 +2369,7 @@ dependencies = [
  "multimap",
  "petgraph 0.6.0",
  "prost 0.10.0",
- "prost-types 0.10.0",
+ "prost-types 0.10.1",
  "regex 1.5.5",
  "tempfile",
  "which",
@@ -2436,9 +2436,9 @@ dependencies = [
 
 [[package]]
 name = "prost-types"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "926681c118ae6e512a3ccefd4abbe5521a14f4cc1e207356d4d00c0b7f2006fd"
+checksum = "2d0a014229361011dc8e69c8a1ec6c2e8d0f2af7c91e3ea3f5b2170298461e68"
 dependencies = [
  "bytes",
  "prost 0.10.0",
@@ -2478,7 +2478,7 @@ dependencies = [
  "num_cpus",
  "parking_lot",
  "prost 0.10.0",
- "prost-types 0.10.0",
+ "prost-types 0.10.1",
  "raft",
  "rusty-hook",
  "schemars",
