@@ -9,10 +9,9 @@ use serde_json::Value;
 
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTrackerSS;
+use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::query_checker::check_payload;
 use crate::payload_storage::{ConditionChecker, PayloadStorage};
-use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
-
 
 impl PayloadStorage for InMemoryPayloadStorage {
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
