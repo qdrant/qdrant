@@ -10,6 +10,7 @@ use api::grpc::qdrant::{
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::tonic::api::collections_common::get;
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 
@@ -53,17 +54,7 @@ impl Collections for CollectionsService {
         &self,
         request: Request<GetCollectionInfoRequest>,
     ) -> Result<Response<GetCollectionInfoResponse>, Status> {
-        let timing = Instant::now();
-        let collection_name = request.into_inner().collection_name;
-        let result = do_get_collection(&self.toc, &collection_name)
-            .await
-            .map_err(error_to_status)?;
-        let response = GetCollectionInfoResponse {
-            result: Some(result.into()),
-            time: timing.elapsed().as_secs_f64(),
-        };
-
-        Ok(Response::new(response))
+        get(self.toc.as_ref(), request.into_inner(), None).await
     }
 
     async fn list(

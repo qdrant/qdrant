@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "collections_service.proto";
+import "collections_internal_service.proto";
 import "points_service.proto";
 import "points_internal_service.proto";
 

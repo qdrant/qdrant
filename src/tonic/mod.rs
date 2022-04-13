@@ -1,10 +1,14 @@
 mod api;
 
 use crate::tonic::api::collections_api::CollectionsService;
+#[cfg(feature = "consensus")]
+use crate::tonic::api::collections_internal_api::CollectionsInternalService;
 use crate::tonic::api::points_api::PointsService;
 #[cfg(feature = "consensus")]
 use crate::tonic::api::points_internal_api::PointsInternalService;
 use ::api::grpc::models::VersionInfo;
+#[cfg(feature = "consensus")]
+use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
 use ::api::grpc::qdrant::collections_server::CollectionsServer;
 #[cfg(feature = "consensus")]
 use ::api::grpc::qdrant::points_internal_server::PointsInternalServer;
@@ -85,12 +89,14 @@ pub fn init_internal(
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
 
             let service = QdrantService::default();
+            let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let points_internal_service = PointsInternalService::new(toc.clone());
 
             log::info!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
             Server::builder()
                 .add_service(QdrantServer::new(service))
+                .add_service(CollectionsInternalServer::new(collections_internal_service))
                 .add_service(PointsInternalServer::new(points_internal_service))
                 .serve_with_shutdown(socket, async {
                     signal::ctrl_c().await.unwrap();
