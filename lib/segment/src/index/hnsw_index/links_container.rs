@@ -138,39 +138,80 @@ impl<'a> LinksContainer {
         Self::realloc(
             &mut self.levels_data,
             levels_ref,
-            level,
+            level + 1,
             &mut self.free_level_parts,
         );
-        levels_ref.len = level as PointOffsetType;
+        levels_ref.len = level as PointOffsetType + 1;
     }
 
     pub fn merge_from_other(&mut self, other: LinksContainer, visited_list: &mut VisitedList) {
-        panic!("not yet");
-        /*
-        if other.links_layers.len() > self.links_layers.len() {
-            self.links_layers.resize(other.links_layers.len(), vec![]);
+        if other.points.len() > self.points.len() {
+            self.points
+                .resize(other.points.len(), SubVectorRef::default());
         }
-        for (point_id, layers) in other.links_layers.into_iter().enumerate() {
-            let current_layers = &mut self.links_layers[point_id];
-            for (level, other_links) in layers.into_iter().enumerate() {
-                if current_layers.len() <= level {
-                    current_layers.push(other_links);
+
+        for (point_id, other_layers_ref) in other.points.into_iter().enumerate() {
+            let current_layers_ref = &mut self.points[point_id];
+            let other_links_refs = &other.levels_data[other_layers_ref.offset as usize
+                ..(other_layers_ref.offset + other_layers_ref.len) as usize];
+
+            Self::realloc(
+                &mut self.levels_data,
+                current_layers_ref,
+                other_layers_ref.len as usize,
+                &mut self.free_level_parts,
+            );
+
+            for (level, other_links_ref) in other_links_refs.iter().enumerate() {
+                if current_layers_ref.len as usize <= level {
+                    let mut current_links_ref = SubVectorRef::default();
+                    Self::realloc(
+                        &mut self.links_data,
+                        &mut current_links_ref,
+                        other_links_ref.len as usize,
+                        &mut self.free_link_parts,
+                    );
+                    let current_links_data = &mut self.links_data[current_links_ref.offset as usize
+                        ..(current_links_ref.offset + current_links_ref.len) as usize];
+                    let other_links_data = &other.links_data[other_links_ref.offset as usize
+                        ..(other_links_ref.offset + other_links_ref.len) as usize];
+                    current_links_data.clone_from_slice(other_links_data);
+                    self.levels_data
+                        [(current_layers_ref.offset + current_layers_ref.len) as usize] =
+                        current_links_ref;
+                    current_layers_ref.len += 1;
                 } else {
                     visited_list.next_iteration();
-                    let current_links = &mut current_layers[level];
-                    current_links.iter().copied().for_each(|x| {
-                        visited_list.check_and_update_visited(x);
-                    });
-                    for other_link in other_links
-                        .into_iter()
-                        .filter(|x| !visited_list.check_and_update_visited(*x))
+                    let current_links_ref =
+                        &mut self.levels_data[current_layers_ref.offset as usize + level];
                     {
-                        current_links.push(other_link);
+                        let current_links_data = &self.links_data[current_links_ref.offset as usize
+                            ..(current_links_ref.offset + current_links_ref.len) as usize];
+                        current_links_data.iter().copied().for_each(|x| {
+                            visited_list.check_and_update_visited(x);
+                        });
+                    }
+
+                    let other_links_data = &other.links_data[other_links_ref.offset as usize
+                        ..(other_links_ref.offset + other_links_ref.len) as usize];
+                    for other_link in other_links_data {
+                        if visited_list.check_and_update_visited(*other_link) {
+                            continue;
+                        }
+                        Self::realloc(
+                            &mut self.links_data,
+                            current_links_ref,
+                            current_links_ref.len as usize + 1,
+                            &mut self.free_link_parts,
+                        );
+                        self.links_data
+                            [(current_links_ref.offset + current_links_ref.len) as usize] =
+                            *other_link;
+                        current_links_ref.len += 1;
                     }
                 }
             }
         }
-        */
     }
 
     /// Connect new point to links, so that links contains only closest points
@@ -217,8 +258,8 @@ impl<'a> LinksContainer {
                 links_ref.len as usize + 1,
                 &mut self.free_link_parts,
             );
-            self.links_data
-                [links_ref.offset as usize + id_to_insert..(links_ref.offset + links_ref.len + 1) as usize]
+            self.links_data[links_ref.offset as usize + id_to_insert
+                ..(links_ref.offset + links_ref.len + 1) as usize]
                 .rotate_right(1);
             self.links_data[links_ref.offset as usize + id_to_insert] = new_point_id;
             links_ref.len += 1;
