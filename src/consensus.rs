@@ -32,6 +32,9 @@ impl Consensus {
             ..Default::default()
         };
         config.validate()?;
+        // Before consensus has started apply any unapplied committed entries
+        // They might have not been applied due to unplanned Qdrant shutdown
+        toc_ref.apply_entries()?;
         let node = Node::new(&config, toc_ref, logger)?;
         let (sender, receiver) = mpsc::channel();
         Ok((Self { node, receiver }, sender))
@@ -88,8 +91,9 @@ fn on_ready(raft_group: &mut Node) {
             log::error!("Failed to apply snapshot: {err}")
         }
     }
-    let mut _last_apply_index = 0;
-    handle_committed_entries(ready.take_committed_entries(), &store);
+    if let Err(err) = handle_committed_entries(ready.take_committed_entries(), &store) {
+        log::error!("Failed to apply committed entries: {err}")
+    }
     if !ready.entries().is_empty() {
         // Append entries to the Raft log.
         log::info!("Appending {} entries to raft log", ready.entries().len());
@@ -121,38 +125,19 @@ fn on_ready(raft_group: &mut Node) {
     // Send out the messages.
     handle_messages(light_rd.take_messages());
     // Apply all committed entries.
-    handle_committed_entries(light_rd.take_committed_entries(), &store);
+    if let Err(err) = handle_committed_entries(light_rd.take_committed_entries(), &store) {
+        log::error!("Failed to apply committed entries: {err}")
+    }
     // Advance the apply index.
     raft_group.advance_apply();
 }
 
-fn handle_committed_entries(entries: Vec<Entry>, toc: &TableOfContentRef) {
-    for entry in entries {
-        log::info!("Entry committed: {entry:?}");
-        // Mostly, you need to save the last apply index to resume applying
-        // TODO: handle it as part of persistent storage for raft state issue
-        let _last_apply_index = entry.index;
-
-        if entry.data.is_empty() {
-            // Emtpy entry, when the peer becomes Leader it will send an empty entry.
-            continue;
-        }
-
-        if entry.get_entry_type() == EntryType::EntryNormal {
-            let operation_result = toc.apply_entry(&entry);
-            match operation_result {
-                Ok(result) => log::info!(
-                    "Successfully applied collection meta operation entry. Index: {}. Result: {result}",
-                    entry.index
-                ),
-                Err(err) => {
-                    log::error!("Failed to apply collection meta operation entry with error: {err}")
-                }
-            }
-        }
-
-        // TODO: handle EntryConfChange
+fn handle_committed_entries(entries: Vec<Entry>, toc: &TableOfContentRef) -> raft::Result<()> {
+    if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
+        toc.set_unapplied_entries(first.index, last.index)?;
+        toc.apply_entries()?;
     }
+    Ok(())
 }
 
 fn handle_messages(messages: Vec<RaftMessage>) {
