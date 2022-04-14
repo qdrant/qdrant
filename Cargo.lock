@@ -250,8 +250,8 @@ checksum = "595d3cfa7a60d4555cb5067b99f07142a08ea778de5cf993f7b75c7d8fabc486"
 name = "api"
 version = "0.1.0"
 dependencies = [
- "prost 0.10.0",
- "prost-types 0.10.0",
+ "prost 0.10.1",
+ "prost-types 0.10.1",
  "schemars",
  "segment",
  "serde",
@@ -2307,9 +2307,9 @@ dependencies = [
 
 [[package]]
 name = "prost"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bd5316aa8f5c82add416dfbc25116b84b748a21153f512917e8143640a71bbd"
+checksum = "a07b0857a71a8cb765763950499cae2413c3f9cede1133478c43600d9e146890"
 dependencies = [
  "bytes",
  "prost-derive 0.10.0",
@@ -2368,8 +2368,8 @@ dependencies = [
  "log 0.4.16",
  "multimap",
  "petgraph 0.6.0",
- "prost 0.10.0",
- "prost-types 0.10.0",
+ "prost 0.10.1",
+ "prost-types 0.10.1",
  "regex 1.5.5",
  "tempfile",
  "which",
@@ -2436,12 +2436,12 @@ dependencies = [
 
 [[package]]
 name = "prost-types"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "926681c118ae6e512a3ccefd4abbe5521a14f4cc1e207356d4d00c0b7f2006fd"
+checksum = "2d0a014229361011dc8e69c8a1ec6c2e8d0f2af7c91e3ea3f5b2170298461e68"
 dependencies = [
  "bytes",
- "prost 0.10.0",
+ "prost 0.10.1",
 ]
 
 [[package]]
@@ -2477,8 +2477,8 @@ dependencies = [
  "num-traits",
  "num_cpus",
  "parking_lot",
- "prost 0.10.0",
- "prost-types 0.10.0",
+ "prost 0.10.1",
+ "prost-types 0.10.1",
  "raft",
  "rusty-hook",
  "schemars",
@@ -3436,7 +3436,7 @@ dependencies = [
  "hyper-timeout",
  "percent-encoding",
  "pin-project",
- "prost 0.10.0",
+ "prost 0.10.1",
  "prost-derive 0.10.0",
  "tokio",
  "tokio-stream",
