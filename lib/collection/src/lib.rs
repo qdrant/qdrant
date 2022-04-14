@@ -14,6 +14,7 @@ use crate::operations::OperationToShard;
 use crate::shard::ShardOperation;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
+use futures::future::try_join_all;
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
 use hashring::HashRing;
 use itertools::Itertools;
@@ -395,20 +396,17 @@ impl Collection {
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        let mut points = Vec::new();
         let request = Arc::new(request);
         let target_shards = self.target_shards(shard_selection)?;
-        let futures = FuturesUnordered::new();
-        for shard in &target_shards {
-            futures.push(shard.search(request.clone(), segment_searcher, search_runtime_handle));
-        }
-        let all_shard_collection_results = futures.collect::<Vec<CollectionResult<Vec<_>>>>().await;
-        all_shard_collection_results
-            .into_iter()
-            .collect::<CollectionResult<Vec<Vec<_>>>>()? // shortcut on first error
-            .into_iter()
-            .for_each(|mut v| points.append(&mut v));
-        Ok(peek_top_scores_iterable(points, request.top))
+        let all_searches = target_shards
+            .iter()
+            .map(|shard| shard.search(request.clone(), segment_searcher, search_runtime_handle));
+
+        let all_search_results = try_join_all(all_searches).await?;
+        Ok(peek_top_scores_iterable(
+            all_search_results.into_iter().flatten(),
+            request.top,
+        ))
     }
 
     pub async fn scroll_by(
@@ -438,29 +436,26 @@ impl Collection {
         // Needed to return next page offset.
         let limit = limit + 1;
 
-        let mut points = Vec::new();
-
         let target_shards = self.target_shards(shard_selection)?;
-        let futures = FuturesUnordered::new();
-        for shard in &target_shards {
-            futures.push(shard.scroll_by(
+        let scroll_futures = target_shards.iter().map(|shard| {
+            shard.scroll_by(
                 segment_searcher,
                 offset,
                 limit,
                 &with_payload_interface,
                 with_vector,
                 request.filter.as_ref(),
-            ))
-        }
-        let all_shard_collection_results = futures.collect::<Vec<CollectionResult<Vec<_>>>>().await;
-        all_shard_collection_results
-            .into_iter()
-            .collect::<CollectionResult<Vec<Vec<_>>>>()? // shortcut on first error
-            .into_iter()
-            .for_each(|mut v| points.append(&mut v));
+            )
+        });
 
-        points.sort_by_key(|point| point.id);
-        let mut points: Vec<_> = points.into_iter().take(limit).collect();
+        let mut points: Vec<_> = try_join_all(scroll_futures)
+            .await?
+            .into_iter()
+            .flatten()
+            .sorted_by_key(|point| point.id)
+            .take(limit)
+            .collect();
+
         let next_page_offset = if points.len() < limit {
             // This was the last page
             None
@@ -487,23 +482,18 @@ impl Collection {
         let with_payload = WithPayload::from(with_payload_interface);
         let with_vector = request.with_vector;
         let request = Arc::new(request);
-        let mut points = Vec::new();
         let target_shards = self.target_shards(shard_selection)?;
-        let futures = FuturesUnordered::new();
-        for shard in &target_shards {
-            futures.push(shard.retrieve(
+        let retrieve_futures = target_shards.iter().map(|shard| {
+            shard.retrieve(
                 request.clone(),
                 segment_searcher,
                 &with_payload,
                 with_vector,
-            ));
-        }
-        let all_shard_collection_results = futures.collect::<Vec<CollectionResult<Vec<_>>>>().await;
-        all_shard_collection_results
-            .into_iter()
-            .collect::<CollectionResult<Vec<Vec<_>>>>()? // shortcut on first error
-            .into_iter()
-            .for_each(|mut v| points.append(&mut v));
+            )
+        });
+
+        let all_shard_collection_results = try_join_all(retrieve_futures).await?;
+        let points = all_shard_collection_results.into_iter().flatten().collect();
         Ok(points)
     }
 
@@ -545,20 +535,17 @@ impl Collection {
 
     pub async fn info(&self, shard_selection: Option<ShardId>) -> CollectionResult<CollectionInfo> {
         let target_shards = self.target_shards(shard_selection)?;
-        let mut info = target_shards
+        let first_shard = target_shards
             .first()
-            .expect("At least 1 shard expected")
-            .info()
-            .await?;
-        let futures = FuturesUnordered::new();
-        for shard in &target_shards[1..] {
-            futures.push(shard.info());
-        }
+            .ok_or_else(|| CollectionError::ServiceError {
+                error: "There are no shards for selected collection".to_string(),
+            })?;
 
-        let all_shard_collection_results = futures.collect::<Vec<CollectionResult<_>>>().await;
+        let mut info = first_shard.info().await?;
+        let info_futures = target_shards.iter().skip(1).map(|shard| shard.info());
+
+        let all_shard_collection_results = try_join_all(info_futures).await?;
         all_shard_collection_results
-            .into_iter()
-            .collect::<CollectionResult<Vec<CollectionInfo>>>()? // shortcut on first error
             .into_iter()
             .for_each(|mut shard_info| {
                 info.status = max(info.status, shard_info.status);
