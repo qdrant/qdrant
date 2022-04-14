@@ -13,7 +13,6 @@ type Node = RawNode<TableOfContentRef>;
 
 pub enum Message {
     FromClient(Vec<u8>),
-    #[allow(dead_code)]
     FromPeer(Box<RaftMessage>),
 }
 
