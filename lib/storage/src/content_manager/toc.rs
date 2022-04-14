@@ -618,6 +618,54 @@ impl TableOfContent {
     }
 
     #[cfg(feature = "consensus")]
+    pub fn set_unapplied_entries(
+        &self,
+        first_index: u64,
+        last_index: u64,
+    ) -> Result<(), raft::Error> {
+        self.raft_state
+            .lock()
+            .map_err(consensus::raft_error_other)?
+            .set_unapplied_entries(first_index, last_index)
+            .map_err(consensus::raft_error_other)
+    }
+
+    #[cfg(feature = "consensus")]
+    pub fn apply_entries(&self) -> Result<(), raft::Error> {
+        use raft::eraftpb::EntryType;
+
+        let mut raft_state = self
+            .raft_state
+            .lock()
+            .map_err(consensus::raft_error_other)?;
+        while let Some(entry_index) = raft_state.current_unapplied_entry() {
+            log::info!("Applying committed entry with index {entry_index}");
+            let entry = self.collection_wal_entry(entry_index)?;
+            if entry.data.is_empty() {
+                // Emtpy entry, when the peer becomes Leader it will send an empty entry.
+            } else if entry.get_entry_type() == EntryType::EntryNormal {
+                let operation_result = self.apply_entry(&entry);
+                match operation_result {
+                    Ok(result) => log::info!(
+                        "Successfully applied collection meta operation entry. Index: {}. Result: {result}",
+                        entry.index
+                    ),
+                    Err(err) => {
+                        log::error!("Failed to apply collection meta operation entry with error: {err}")
+                    }
+                }
+            }
+
+            // TODO: handle EntryConfChange
+
+            raft_state
+                .entry_applied()
+                .map_err(consensus::raft_error_other)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "consensus")]
     pub fn append_entries(&self, entries: Vec<RaftEntry>) -> Result<(), StorageError> {
         use prost::Message;
 
@@ -686,7 +734,7 @@ impl TableOfContent {
     pub fn set_hard_state(&self, hard_state: raft::eraftpb::HardState) -> Result<(), StorageError> {
         self.raft_state
             .lock()?
-            .apply_update(|state| state.hard_state = hard_state)
+            .apply_state_update(|state| state.hard_state = hard_state)
     }
 
     #[cfg(feature = "consensus")]
@@ -698,7 +746,7 @@ impl TableOfContent {
     pub fn set_commit_index(&self, index: u64) -> Result<(), StorageError> {
         self.raft_state
             .lock()?
-            .apply_update(|state| state.hard_state.commit = index)
+            .apply_state_update(|state| state.hard_state.commit = index)
     }
 }
 
