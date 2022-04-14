@@ -435,20 +435,28 @@ impl Collection {
 
         let mut points = Vec::new();
 
-        for shard in self.target_shards(shard_selection)? {
-            let mut shard_points = shard
-                .get()
-                .scroll_by(
-                    segment_searcher,
-                    offset,
-                    limit,
-                    &with_payload_interface,
-                    with_vector,
-                    request.filter.as_ref(),
-                )
-                .await?;
-            points.append(&mut shard_points);
+        let target_shards = self
+            .target_shards(shard_selection)?
+            .map(|shard| shard.get());
+        let futures = FuturesUnordered::new();
+        for shard in target_shards {
+            let result = shard.scroll_by(
+                segment_searcher,
+                offset,
+                limit,
+                &with_payload_interface,
+                with_vector,
+                request.filter.as_ref(),
+            );
+            futures.push(result)
         }
+        let all_shard_collection_results = futures.collect::<Vec<CollectionResult<Vec<_>>>>().await;
+        let all_shard_results = all_shard_collection_results
+            .into_iter()
+            .collect::<CollectionResult<Vec<Vec<_>>>>()?;
+        all_shard_results
+            .into_iter()
+            .for_each(|mut v| points.append(&mut v));
 
         points.sort_by_key(|point| point.id);
         let mut points: Vec<_> = points.into_iter().take(limit).collect();
