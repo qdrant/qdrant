@@ -699,9 +699,9 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "0.13.0"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a623a46970097d353e2c8154fa527d8ce45cd0e02cc1812969b889c49b3728e8"
+checksum = "3ea917b74b6edfb5024e3b55d3c8f710b5f4ed92646429601a42e96f0812b31b"
 dependencies = [
  "async-trait",
  "json5",
