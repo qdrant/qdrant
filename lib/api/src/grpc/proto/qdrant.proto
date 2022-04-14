@@ -5,10 +5,6 @@ import "collections_internal_service.proto";
 import "points_service.proto";
 import "points_internal_service.proto";
 
-option java_multiple_files = true;
-option java_package = "tech.qdrant.grpc";
-option java_outer_classname = "QdrantProto";
-
 package qdrant;
 
 service Qdrant {
