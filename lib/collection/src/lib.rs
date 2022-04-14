@@ -4,13 +4,14 @@ use std::{
     cmp::max,
     collections::HashMap,
     fs::{create_dir_all, rename},
-    io, iter,
+    io,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use crate::operations::types::PointRequest;
 use crate::operations::OperationToShard;
+use crate::shard::ShardOperation;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
@@ -217,12 +218,12 @@ impl Collection {
     fn target_shards(
         &self,
         shard_selection: Option<ShardId>,
-    ) -> CollectionResult<Box<dyn Iterator<Item = &Shard> + Send + '_>> {
+    ) -> CollectionResult<Vec<Arc<dyn ShardOperation + Sync + Send + '_>>> {
         match shard_selection {
-            None => Ok(Box::new(self.all_shards())),
+            None => Ok(self.all_shards().map(|shard| shard.get()).collect()),
             Some(shard_selection) => {
                 let local_shard = self.local_shard_by_id(shard_selection)?;
-                Ok(Box::new(iter::once(local_shard)))
+                Ok(vec![local_shard.get()])
             }
         }
     }
@@ -396,13 +397,17 @@ impl Collection {
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let mut points = Vec::new();
         let request = Arc::new(request);
-        for shard in self.target_shards(shard_selection)? {
-            let mut shard_points = shard
-                .get()
-                .search(request.clone(), segment_searcher, search_runtime_handle)
-                .await?;
-            points.append(&mut shard_points);
+        let target_shards = self.target_shards(shard_selection)?;
+        let futures = FuturesUnordered::new();
+        for shard in &target_shards {
+            futures.push(shard.search(request.clone(), segment_searcher, search_runtime_handle));
         }
+        let all_shard_collection_results = futures.collect::<Vec<CollectionResult<Vec<_>>>>().await;
+        all_shard_collection_results
+            .into_iter()
+            .collect::<CollectionResult<Vec<Vec<_>>>>()? // shortcut on first error
+            .into_iter()
+            .for_each(|mut v| points.append(&mut v));
         Ok(peek_top_scores_iterable(points, request.top))
     }
 
@@ -435,27 +440,22 @@ impl Collection {
 
         let mut points = Vec::new();
 
-        let target_shards: Vec<_> = self
-            .target_shards(shard_selection)?
-            .map(|shard| shard.get())
-            .collect();
+        let target_shards = self.target_shards(shard_selection)?;
         let futures = FuturesUnordered::new();
         for shard in &target_shards {
-            let result = shard.scroll_by(
+            futures.push(shard.scroll_by(
                 segment_searcher,
                 offset,
                 limit,
                 &with_payload_interface,
                 with_vector,
                 request.filter.as_ref(),
-            );
-            futures.push(result)
+            ))
         }
         let all_shard_collection_results = futures.collect::<Vec<CollectionResult<Vec<_>>>>().await;
-        let all_shard_results = all_shard_collection_results
+        all_shard_collection_results
             .into_iter()
-            .collect::<CollectionResult<Vec<Vec<_>>>>()?;
-        all_shard_results
+            .collect::<CollectionResult<Vec<Vec<_>>>>()? // shortcut on first error
             .into_iter()
             .for_each(|mut v| points.append(&mut v));
 
@@ -488,18 +488,22 @@ impl Collection {
         let with_vector = request.with_vector;
         let request = Arc::new(request);
         let mut points = Vec::new();
-        for shard in self.target_shards(shard_selection)? {
-            let mut shard_points = shard
-                .get()
-                .retrieve(
-                    request.clone(),
-                    segment_searcher,
-                    &with_payload,
-                    with_vector,
-                )
-                .await?;
-            points.append(&mut shard_points);
+        let target_shards = self.target_shards(shard_selection)?;
+        let futures = FuturesUnordered::new();
+        for shard in &target_shards {
+            futures.push(shard.retrieve(
+                request.clone(),
+                segment_searcher,
+                &with_payload,
+                with_vector,
+            ));
         }
+        let all_shard_collection_results = futures.collect::<Vec<CollectionResult<Vec<_>>>>().await;
+        all_shard_collection_results
+            .into_iter()
+            .collect::<CollectionResult<Vec<Vec<_>>>>()? // shortcut on first error
+            .into_iter()
+            .for_each(|mut v| points.append(&mut v));
         Ok(points)
     }
 
@@ -540,24 +544,33 @@ impl Collection {
     }
 
     pub async fn info(&self, shard_selection: Option<ShardId>) -> CollectionResult<CollectionInfo> {
-        let mut shards = self.target_shards(shard_selection)?;
-        let mut info = shards
-            .next()
+        let target_shards = self.target_shards(shard_selection)?;
+        let mut info = target_shards
+            .first()
             .expect("At least 1 shard expected")
-            .get()
             .info()
             .await?;
-        for shard in shards {
-            let mut shard_info = shard.get().info().await?;
-            info.status = max(info.status, shard_info.status);
-            info.optimizer_status = max(info.optimizer_status, shard_info.optimizer_status);
-            info.vectors_count += shard_info.vectors_count;
-            info.segments_count += shard_info.segments_count;
-            info.disk_data_size += shard_info.disk_data_size;
-            info.ram_data_size += shard_info.ram_data_size;
-            info.payload_schema
-                .extend(shard_info.payload_schema.drain());
+        let futures = FuturesUnordered::new();
+        for shard in &target_shards[1..] {
+            futures.push(shard.info());
         }
+
+        let all_shard_collection_results = futures.collect::<Vec<CollectionResult<_>>>().await;
+        all_shard_collection_results
+            .into_iter()
+            .collect::<CollectionResult<Vec<CollectionInfo>>>()? // shortcut on first error
+            .into_iter()
+            .for_each(|mut shard_info| {
+                info.status = max(info.status, shard_info.status);
+                info.optimizer_status =
+                    max(info.optimizer_status.clone(), shard_info.optimizer_status);
+                info.vectors_count += shard_info.vectors_count;
+                info.segments_count += shard_info.segments_count;
+                info.disk_data_size += shard_info.disk_data_size;
+                info.ram_data_size += shard_info.ram_data_size;
+                info.payload_schema
+                    .extend(shard_info.payload_schema.drain());
+            });
         Ok(info)
     }
 
