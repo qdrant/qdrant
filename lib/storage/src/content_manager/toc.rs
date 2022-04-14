@@ -642,7 +642,7 @@ impl TableOfContent {
             log::info!("Applying committed entry with index {entry_index}");
             let entry = self.collection_wal_entry(entry_index)?;
             if entry.data.is_empty() {
-                // Emtpy entry, when the peer becomes Leader it will send an empty entry.
+                // Empty entry, when the peer becomes Leader it will send an empty entry.
             } else if entry.get_entry_type() == EntryType::EntryNormal {
                 let operation_result = self.apply_entry(&entry);
                 match operation_result {
