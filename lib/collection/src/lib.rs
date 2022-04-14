@@ -435,11 +435,12 @@ impl Collection {
 
         let mut points = Vec::new();
 
-        let target_shards = self
+        let target_shards: Vec<_> = self
             .target_shards(shard_selection)?
-            .map(|shard| shard.get());
+            .map(|shard| shard.get())
+            .collect();
         let futures = FuturesUnordered::new();
-        for shard in target_shards {
+        for shard in &target_shards {
             let result = shard.scroll_by(
                 segment_searcher,
                 offset,
