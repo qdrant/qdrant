@@ -23,6 +23,7 @@ type Last = u64;
 struct UnappliedEntries(Option<(Current, Last)>);
 
 impl UnappliedEntries {
+    /// Return oldest un-applied entry id if any
     fn current(&self) -> Option<u64> {
         match self.0 {
             Some((current_index, last_index)) => {
