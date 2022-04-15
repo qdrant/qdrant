@@ -9,7 +9,7 @@ use crate::id_tracker::IdTrackerSS;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::ConditionChecker;
-use crate::types::{Condition, Filter, IsEmptyCondition, Payload, PointOffsetType};
+use crate::types::{Condition, FieldCondition, Filter, IsEmptyCondition, Payload, PointOffsetType};
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool
 where
@@ -72,64 +72,64 @@ pub fn check_payload<'a, F>(
 where
     F: Fn() -> &'a Payload,
 {
-    let checker = |condition: &Condition| {
-        match condition {
-            Condition::Field(field_condition) => {
-                get_payload()
-                    .get_value(&field_condition.key)
-                    .map_or(false, |p| {
-                        let mut res = false;
-                        // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
-                        res = res
-                            || field_condition
-                                .r#match
-                                .as_ref()
-                                .map_or(false, |condition| condition.check(p));
-                        res = res
-                            || field_condition
-                                .range
-                                .as_ref()
-                                .map_or(false, |condition| condition.check(p));
-                        res = res
-                            || field_condition
-                                .geo_radius
-                                .as_ref()
-                                .map_or(false, |condition| condition.check(p));
-                        res = res
-                            || field_condition
-                                .geo_bounding_box
-                                .as_ref()
-                                .map_or(false, |condition| condition.check(p));
-                        res = res
-                            || field_condition
-                                .values_count
-                                .as_ref()
-                                .map_or(false, |condition| condition.check(p));
-                        res
-                    })
-            }
-            Condition::HasId(has_id) => {
-                let external_id = match id_tracker.external_id(point_id) {
-                    None => return false,
-                    Some(id) => id,
-                };
-                has_id.has_id.contains(&external_id)
-            }
-            Condition::Filter(_) => unreachable!(),
-            Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
-                match get_payload().get_value(&field.key) {
-                    None => true,
-                    Some(value) => match value {
-                        Value::Null => true,
-                        Value::Array(array) => array.is_empty(),
-                        _ => false,
-                    },
-                }
-            }
+    let checker = |condition: &Condition| match condition {
+        Condition::Field(field_condition) => check_field_condition(field_condition, get_payload()),
+        Condition::IsEmpty(is_empty) => check_is_empty_condition(is_empty, get_payload()),
+        Condition::HasId(has_id) => {
+            let external_id = match id_tracker.external_id(point_id) {
+                None => return false,
+                Some(id) => id,
+            };
+            has_id.has_id.contains(&external_id)
         }
+        Condition::Filter(_) => unreachable!(),
     };
 
     check_filter(&checker, query)
+}
+
+pub fn check_is_empty_condition(is_empty: &IsEmptyCondition, payload: &Payload) -> bool {
+    match payload.get_value(&is_empty.is_empty.key) {
+        None => true,
+        Some(value) => match value {
+            Value::Null => true,
+            Value::Array(array) => array.is_empty(),
+            _ => false,
+        },
+    }
+}
+
+pub fn check_field_condition(field_condition: &FieldCondition, payload: &Payload) -> bool {
+    payload.get_value(&field_condition.key).map_or(false, |p| {
+        let mut res = false;
+        // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
+        res = res
+            || field_condition
+                .r#match
+                .as_ref()
+                .map_or(false, |condition| condition.check(p));
+        res = res
+            || field_condition
+                .range
+                .as_ref()
+                .map_or(false, |condition| condition.check(p));
+        res = res
+            || field_condition
+                .geo_radius
+                .as_ref()
+                .map_or(false, |condition| condition.check(p));
+        res = res
+            || field_condition
+                .geo_bounding_box
+                .as_ref()
+                .map_or(false, |condition| condition.check(p));
+        res = res
+            || field_condition
+                .values_count
+                .as_ref()
+                .map_or(false, |condition| condition.check(p));
+        res
+    })
 }
 
 pub struct SimpleConditionChecker {

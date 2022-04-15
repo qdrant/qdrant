@@ -16,9 +16,10 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, Pr
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
-use crate::index::struct_filter_context::{IndexesMap, StructFilterContext};
+use crate::index::struct_filter_context::StructFilterContext;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
+use crate::index::query_optimization::optimizer::IndexesMap;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorage};
 use crate::types::{
@@ -238,49 +239,9 @@ impl StructPayloadIndex {
             self.estimate_cardinality(filter),
         )
     }
-}
 
-impl PayloadIndex for StructPayloadIndex {
-    fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType> {
-        self.config.indexed_fields.clone()
-    }
-
-    fn set_indexed(
-        &mut self,
-        field: PayloadKeyTypeRef,
-        payload_type: PayloadSchemaType,
-    ) -> OperationResult<()> {
-        if self
-            .config
-            .indexed_fields
-            .insert(field.to_owned(), payload_type)
-            .is_none()
-        {
-            self.save_config()?;
-            self.build_and_save(field, payload_type)?;
-        }
-
-        Ok(())
-    }
-
-    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        self.config.indexed_fields.remove(field);
-        self.save_config()?;
-        self.field_indexes.remove(field);
-
-        let field_index_path = Self::get_field_index_path(&self.path, field);
-
-        if field_index_path.exists() {
-            remove_file(&field_index_path)?;
-        }
-
-        Ok(())
-    }
-
-    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
-        let total_points = self.total_points();
-
-        let estimator = |condition: &Condition| match condition {
+    fn condition_cardinality(&self, condition: &Condition) -> CardinalityEstimation {
+        match condition {
             Condition::Filter(_) => panic!("Unexpected branching"),
             Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
                 let total_points = self.total_points();
@@ -327,7 +288,51 @@ impl PayloadIndex for StructPayloadIndex {
             Condition::Field(field_condition) => self
                 .estimate_field_condition(field_condition)
                 .unwrap_or_else(|| CardinalityEstimation::unknown(self.total_points())),
-        };
+        }
+    }
+}
+
+impl PayloadIndex for StructPayloadIndex {
+    fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType> {
+        self.config.indexed_fields.clone()
+    }
+
+    fn set_indexed(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        payload_type: PayloadSchemaType,
+    ) -> OperationResult<()> {
+        if self
+            .config
+            .indexed_fields
+            .insert(field.to_owned(), payload_type)
+            .is_none()
+        {
+            self.save_config()?;
+            self.build_and_save(field, payload_type)?;
+        }
+
+        Ok(())
+    }
+
+    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
+        self.config.indexed_fields.remove(field);
+        self.save_config()?;
+        self.field_indexes.remove(field);
+
+        let field_index_path = Self::get_field_index_path(&self.path, field);
+
+        if field_index_path.exists() {
+            remove_file(&field_index_path)?;
+        }
+
+        Ok(())
+    }
+
+    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
+        let total_points = self.total_points();
+
+        let estimator = |condition: &Condition| self.condition_cardinality(condition);
 
         estimate_filter(&estimator, query, total_points)
     }
