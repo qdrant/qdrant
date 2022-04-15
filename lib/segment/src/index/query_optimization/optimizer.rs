@@ -110,7 +110,7 @@ fn convert_conditions<'a, F, G>(
     get_payload: &'a G,
     estimator: &F,
     total: usize,
-) -> (Vec<(OptimizedCondition<'a>, CardinalityEstimation)>)
+) -> Vec<(OptimizedCondition<'a>, CardinalityEstimation)>
 where
     F: Fn(&Condition) -> CardinalityEstimation,
     G: Fn(PointOffsetType) -> &'a Payload,

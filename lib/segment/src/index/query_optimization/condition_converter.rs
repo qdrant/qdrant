@@ -4,7 +4,7 @@ use crate::index::field_index::FieldIndex;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::optimizer::IndexesMap;
 use crate::payload_storage::query_checker::{check_field_condition, check_is_empty_condition};
-use crate::types::{Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, IsEmptyCondition, Match, MatchValue, Payload, PointOffsetType, Range, ValueVariants};
+use crate::types::{Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match, MatchValue, Payload, PointOffsetType, Range, ValueVariants};
 
 pub fn condition_converter<'a, F>(
     condition: &'a Condition,

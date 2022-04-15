@@ -1,10 +1,9 @@
-use crate::index::field_index::{CardinalityEstimation, FieldIndex, PrimaryCondition};
+use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::payload_storage::query_checker::check_filter;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::types::{
-    Condition, Filter, FloatPayloadType, GeoBoundingBox, GeoRadius, Match, MatchValue,
-    PayloadKeyType, PointOffsetType, Range, ValueVariants,
+    Condition, Filter, PointOffsetType,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
