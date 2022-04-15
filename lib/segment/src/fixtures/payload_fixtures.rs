@@ -127,7 +127,7 @@ pub fn random_uncommon_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition 
                 key: FLICKING_KEY.to_string(),
             },
         }),
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
