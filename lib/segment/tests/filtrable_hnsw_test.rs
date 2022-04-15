@@ -55,7 +55,7 @@ mod tests {
             let vector = random_vector(&mut rnd, dim);
 
             let payload: Payload =
-                json!({int_key:random_int_payload(&mut rnd, num_payload_values),}).into();
+                json!({int_key:random_int_payload(&mut rnd, num_payload_values..=num_payload_values),}).into();
 
             segment
                 .upsert_point(n as SeqNumberType, idx, &vector)
