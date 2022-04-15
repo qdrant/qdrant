@@ -189,7 +189,7 @@ mod tests {
     use crate::id_tracker::IdTracker;
     use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
     use crate::payload_storage::PayloadStorage;
-    use crate::types::{FieldCondition, GeoBoundingBox, Range};
+    use crate::types::{FieldCondition, GeoBoundingBox, Range, ValuesCount};
     use crate::types::{GeoPoint, PayloadField};
 
     use super::*;
@@ -255,6 +255,31 @@ mod tests {
             "has_delivery".to_string(),
             true.into(),
         ));
+
+        let many_value_count_condition =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                "rating".to_string(),
+                ValuesCount {
+                    lt: None,
+                    gt: None,
+                    gte: Some(10),
+                    lte: None,
+                },
+            )));
+
+        let few_value_count_condition =
+            Filter::new_must(Condition::Field(FieldCondition::new_values_count(
+                "rating".to_string(),
+                ValuesCount {
+                    lt: Some(5),
+                    gt: None,
+                    gte: None,
+                    lte: None,
+                },
+            )));
+
+        assert!(!payload_checker.check(0, &many_value_count_condition));
+        assert!(payload_checker.check(0, &few_value_count_condition));
 
         let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box(
             "location".to_string(),
