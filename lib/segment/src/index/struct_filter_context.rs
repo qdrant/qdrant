@@ -1,14 +1,14 @@
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
+use crate::index::query_optimization::condition_converter::{
+    get_geo_bounding_box_checkers, get_geo_radius_checkers, get_match_checkers, get_range_checkers,
+};
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
+use crate::index::query_optimization::optimizer::IndexesMap;
 use crate::payload_storage::query_checker::check_filter;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
-use crate::types::{
-    Condition, Filter, PointOffsetType,
-};
+use crate::types::{Condition, Filter, PointOffsetType};
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::index::query_optimization::condition_converter::{get_geo_bounding_box_checkers, get_geo_radius_checkers, get_match_checkers, get_range_checkers};
-use crate::index::query_optimization::optimizer::IndexesMap;
 
 pub struct StructFilterContext<'a> {
     condition_checker: Arc<ConditionCheckerSS>,
@@ -88,7 +88,6 @@ impl<'a> StructFilterContext<'a> {
         }
     }
 }
-
 
 impl<'a> FilterContext for StructFilterContext<'a> {
     fn check(&self, point_id: PointOffsetType) -> bool {

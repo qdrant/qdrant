@@ -1,10 +1,13 @@
-use std::collections::HashSet;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::FieldIndex;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::optimizer::IndexesMap;
 use crate::payload_storage::query_checker::{check_field_condition, check_is_empty_condition};
-use crate::types::{Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match, MatchValue, Payload, PointOffsetType, Range, ValueVariants};
+use crate::types::{
+    Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match, MatchValue,
+    Payload, PointOffsetType, Range, ValueVariants,
+};
+use std::collections::HashSet;
 
 pub fn condition_converter<'a, F>(
     condition: &'a Condition,
@@ -30,8 +33,9 @@ where
         // ToDo: It might be possible to make this condition faster by using index to check
         //       if there is any value. But if value if not found,
         //       it does not mean that there are no values in payload
-        Condition::IsEmpty(is_empty) =>
-            Box::new(|point_id| check_is_empty_condition(is_empty, get_payload(point_id))),
+        Condition::IsEmpty(is_empty) => {
+            Box::new(|point_id| check_is_empty_condition(is_empty, get_payload(point_id)))
+        }
         // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
         Condition::HasId(has_id) => {
             let segment_ids: HashSet<_> = has_id
@@ -40,7 +44,7 @@ where
                 .filter_map(|external_id| id_tracker.internal_id(*external_id))
                 .collect();
             Box::new(move |point_id| segment_ids.contains(&point_id))
-        },
+        }
         Condition::Filter(_) => unreachable!(),
     }
 }

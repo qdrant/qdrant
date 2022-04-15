@@ -16,10 +16,10 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, Pr
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
+use crate::index::query_optimization::optimizer::IndexesMap;
 use crate::index::struct_filter_context::StructFilterContext;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
-use crate::index::query_optimization::optimizer::IndexesMap;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorage};
 use crate::types::{

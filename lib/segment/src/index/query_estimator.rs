@@ -142,7 +142,10 @@ where
     combine_must_estimations(&must_estimations, total)
 }
 
-pub fn invert_estimation(estimation: &CardinalityEstimation, total: usize) -> CardinalityEstimation {
+pub fn invert_estimation(
+    estimation: &CardinalityEstimation,
+    total: usize,
+) -> CardinalityEstimation {
     CardinalityEstimation {
         primary_clauses: vec![],
         min: total - estimation.max,

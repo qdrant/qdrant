@@ -2,7 +2,6 @@ use crate::types::PointOffsetType;
 
 pub type ConditionCheckerFn<'a> = Box<dyn Fn(PointOffsetType) -> bool + 'a>;
 
-
 pub enum OptimizedCondition<'a> {
     Checker(ConditionCheckerFn<'a>),
     /// Nested filter
@@ -18,23 +17,20 @@ pub struct OptimizedFilter<'a> {
     pub must_not: Option<Vec<OptimizedCondition<'a>>>,
 }
 
-pub fn check_optimized_filter(filter: &OptimizedFilter, point_id: PointOffsetType) -> bool
-{
+pub fn check_optimized_filter(filter: &OptimizedFilter, point_id: PointOffsetType) -> bool {
     check_should(&filter.should, point_id)
         && check_must(&filter.must, point_id)
         && check_must_not(&filter.must_not, point_id)
 }
 
-fn check_condition(condition: &OptimizedCondition, point_id: PointOffsetType) -> bool
-{
+fn check_condition(condition: &OptimizedCondition, point_id: PointOffsetType) -> bool {
     match condition {
         OptimizedCondition::Filter(filter) => check_optimized_filter(filter, point_id),
-        OptimizedCondition::Checker(checker) => checker(point_id)
+        OptimizedCondition::Checker(checker) => checker(point_id),
     }
 }
 
-fn check_should(should: &Option<Vec<OptimizedCondition>>, point_id: PointOffsetType) -> bool
-{
+fn check_should(should: &Option<Vec<OptimizedCondition>>, point_id: PointOffsetType) -> bool {
     let check = |condition| check_condition(condition, point_id);
     match should {
         None => true,
@@ -42,8 +38,7 @@ fn check_should(should: &Option<Vec<OptimizedCondition>>, point_id: PointOffsetT
     }
 }
 
-fn check_must(must: &Option<Vec<OptimizedCondition>>, point_id: PointOffsetType) -> bool
-{
+fn check_must(must: &Option<Vec<OptimizedCondition>>, point_id: PointOffsetType) -> bool {
     let check = |condition| check_condition(condition, point_id);
     match must {
         None => true,
@@ -51,8 +46,7 @@ fn check_must(must: &Option<Vec<OptimizedCondition>>, point_id: PointOffsetType)
     }
 }
 
-fn check_must_not(must: &Option<Vec<OptimizedCondition>>, point_id: PointOffsetType) -> bool
-{
+fn check_must_not(must: &Option<Vec<OptimizedCondition>>, point_id: PointOffsetType) -> bool {
     let check = |condition| !check_condition(condition, point_id);
     match must {
         None => true,
