@@ -25,7 +25,7 @@ use crate::index::struct_filter_context::StructFilterContext;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorage};
+use crate::payload_storage::{FilterContext, PayloadStorage};
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType,
     PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
