@@ -104,7 +104,7 @@ where
 }
 
 fn convert_conditions<'a, F>(
-    conditions: &'a[Condition],
+    conditions: &'a [Condition],
     id_tracker: &IdTrackerSS,
     field_indexes: &'a IndexesMap,
     payload_provider: PayloadProvider,
@@ -143,7 +143,7 @@ where
 }
 
 fn optimize_should<'a, F>(
-    conditions: &'a[Condition],
+    conditions: &'a [Condition],
     id_tracker: &IdTrackerSS,
     field_indexes: &'a IndexesMap,
     payload_provider: PayloadProvider,
@@ -169,7 +169,7 @@ where
 }
 
 fn optimize_must<'a, F>(
-    conditions: &'a[Condition],
+    conditions: &'a [Condition],
     id_tracker: &IdTrackerSS,
     field_indexes: &'a IndexesMap,
     payload_provider: PayloadProvider,
@@ -195,7 +195,7 @@ where
 }
 
 fn optimize_must_not<'a, F>(
-    conditions: &'a[Condition],
+    conditions: &'a [Condition],
     id_tracker: &IdTrackerSS,
     field_indexes: &'a IndexesMap,
     payload_provider: PayloadProvider,
