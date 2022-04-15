@@ -190,13 +190,7 @@ pub fn create_struct_payload_index(
     ));
     let ids_iterator = Arc::new(AtomicRefCell::new(IdsIterator::new(num_points)));
 
-    let condition_checker = Arc::new(SimpleConditionChecker::new(
-        payload_storage.clone(),
-        ids_iterator.clone(),
-    ));
-
     let mut index = StructPayloadIndex::open(
-        condition_checker,
         ids_iterator.clone(),
         payload_storage,
         ids_iterator,

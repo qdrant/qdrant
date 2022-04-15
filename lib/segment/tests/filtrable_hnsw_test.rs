@@ -67,7 +67,6 @@ mod tests {
         // let opnum = num_vectors + 1;
 
         let payload_index = StructPayloadIndex::open(
-            segment.condition_checker.clone(),
             Arc::new(AtomicRefCell::new(StoragePointsIterator(
                 segment.vector_storage.clone(),
             ))),

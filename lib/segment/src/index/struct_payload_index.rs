@@ -35,7 +35,6 @@ pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
 pub struct StructPayloadIndex {
-    condition_checker: Arc<ConditionCheckerSS>,
     points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
     /// Payload storage
     payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
@@ -157,7 +156,6 @@ impl StructPayloadIndex {
     }
 
     pub fn open(
-        condition_checker: Arc<ConditionCheckerSS>,
         points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
         payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
@@ -172,7 +170,6 @@ impl StructPayloadIndex {
         };
 
         let mut index = StructPayloadIndex {
-            condition_checker,
             points_iterator,
             payload,
             id_tracker,
