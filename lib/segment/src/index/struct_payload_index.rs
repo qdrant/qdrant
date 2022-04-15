@@ -1,6 +1,9 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, remove_file, File};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
@@ -17,14 +20,15 @@ use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
 use crate::index::query_optimization::optimizer::IndexesMap;
+use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_filter_context::StructFilterContext;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorage};
 use crate::types::{
-    Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType, PayloadKeyTypeRef,
-    PayloadSchemaType, PointOffsetType,
+    Condition, FieldCondition, Filter, IsEmptyCondition, Payload, PayloadKeyType,
+    PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
 };
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
@@ -232,11 +236,16 @@ impl StructPayloadIndex {
     }
 
     fn struct_filtered_context<'a>(&'a self, filter: &'a Filter) -> StructFilterContext<'a> {
+        let estimator = |condition: &Condition| self.condition_cardinality(condition);
+        let id_tracker = self.id_tracker.borrow();
+        let payload_provider = PayloadProvider::new(self.payload.clone());
         StructFilterContext::new(
-            self.condition_checker.clone(),
             filter,
+            id_tracker.deref(),
+            payload_provider,
             &self.field_indexes,
-            self.estimate_cardinality(filter),
+            &estimator,
+            self.total_points(),
         )
     }
 

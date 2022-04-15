@@ -5,10 +5,12 @@ use crate::index::query_estimator::{
 };
 use crate::index::query_optimization::condition_converter::condition_converter;
 use crate::index::query_optimization::optimized_filter::{OptimizedCondition, OptimizedFilter};
+use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::types::{Condition, Filter, Payload, PayloadKeyType, PointOffsetType};
 use itertools::Itertools;
 use std::cmp::Reverse;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
 
@@ -32,17 +34,16 @@ pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
 /// # Result
 ///
 /// Optimized query + Cardinality estimation
-pub fn optimize_filter<'a, F, G>(
+pub fn optimize_filter<'a, F>(
     filter: &'a Filter,
     id_tracker: &IdTrackerSS,
     field_indexes: &'a IndexesMap,
-    get_payload: &'a G,
+    payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
 ) -> (OptimizedFilter<'a>, CardinalityEstimation)
 where
     F: Fn(&Condition) -> CardinalityEstimation,
-    G: Fn(PointOffsetType) -> &'a Payload,
 {
     let mut filter_estimations: Vec<CardinalityEstimation> = vec![];
 
@@ -53,7 +54,7 @@ where
                     conditions,
                     id_tracker,
                     field_indexes,
-                    get_payload,
+                    payload_provider.clone(),
                     estimator,
                     total,
                 );
@@ -69,7 +70,7 @@ where
                     conditions,
                     id_tracker,
                     field_indexes,
-                    get_payload,
+                    payload_provider.clone(),
                     estimator,
                     total,
                 );
@@ -85,7 +86,7 @@ where
                     conditions,
                     id_tracker,
                     field_indexes,
-                    get_payload,
+                    payload_provider.clone(),
                     estimator,
                     total,
                 );
@@ -103,17 +104,16 @@ where
     )
 }
 
-fn convert_conditions<'a, F, G>(
+fn convert_conditions<'a, F>(
     conditions: &'a Vec<Condition>,
     id_tracker: &IdTrackerSS,
     field_indexes: &'a IndexesMap,
-    get_payload: &'a G,
+    payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
 ) -> Vec<(OptimizedCondition<'a>, CardinalityEstimation)>
 where
     F: Fn(&Condition) -> CardinalityEstimation,
-    G: Fn(PointOffsetType) -> &'a Payload,
 {
     conditions
         .iter()
@@ -123,7 +123,7 @@ where
                     filter,
                     id_tracker,
                     field_indexes,
-                    get_payload,
+                    payload_provider.clone(),
                     estimator,
                     total,
                 );
@@ -131,31 +131,34 @@ where
             }
             _ => {
                 let estimation = estimator(condition);
-                let condition_checker =
-                    condition_converter(condition, field_indexes, get_payload, id_tracker);
+                let condition_checker = condition_converter(
+                    condition,
+                    field_indexes,
+                    payload_provider.clone(),
+                    id_tracker,
+                );
                 (OptimizedCondition::Checker(condition_checker), estimation)
             }
         })
         .collect()
 }
 
-fn optimize_should<'a, F, G>(
+fn optimize_should<'a, F>(
     conditions: &'a Vec<Condition>,
     id_tracker: &IdTrackerSS,
     field_indexes: &'a IndexesMap,
-    get_payload: &'a G,
+    payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
 ) -> (Vec<OptimizedCondition<'a>>, CardinalityEstimation)
 where
     F: Fn(&Condition) -> CardinalityEstimation,
-    G: Fn(PointOffsetType) -> &'a Payload,
 {
     let mut converted = convert_conditions(
         conditions,
         id_tracker,
         field_indexes,
-        get_payload,
+        payload_provider,
         estimator,
         total,
     );
@@ -166,23 +169,22 @@ where
     (conditions, combine_should_estimations(&estimations, total))
 }
 
-fn optimize_must<'a, F, G>(
+fn optimize_must<'a, F>(
     conditions: &'a Vec<Condition>,
     id_tracker: &IdTrackerSS,
     field_indexes: &'a IndexesMap,
-    get_payload: &'a G,
+    payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
 ) -> (Vec<OptimizedCondition<'a>>, CardinalityEstimation)
 where
     F: Fn(&Condition) -> CardinalityEstimation,
-    G: Fn(PointOffsetType) -> &'a Payload,
 {
     let mut converted = convert_conditions(
         conditions,
         id_tracker,
         field_indexes,
-        get_payload,
+        payload_provider,
         estimator,
         total,
     );
@@ -193,23 +195,22 @@ where
     (conditions, combine_must_estimations(&estimations, total))
 }
 
-fn optimize_must_not<'a, F, G>(
+fn optimize_must_not<'a, F>(
     conditions: &'a Vec<Condition>,
     id_tracker: &IdTrackerSS,
     field_indexes: &'a IndexesMap,
-    get_payload: &'a G,
+    payload_provider: PayloadProvider,
     estimator: &F,
     total: usize,
 ) -> (Vec<OptimizedCondition<'a>>, CardinalityEstimation)
 where
     F: Fn(&Condition) -> CardinalityEstimation,
-    G: Fn(PointOffsetType) -> &'a Payload,
 {
     let mut converted = convert_conditions(
         conditions,
         id_tracker,
         field_indexes,
-        get_payload,
+        payload_provider,
         estimator,
         total,
     );

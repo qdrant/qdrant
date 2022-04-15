@@ -2,22 +2,21 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::FieldIndex;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::optimizer::IndexesMap;
+use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::query_checker::{check_field_condition, check_is_empty_condition};
 use crate::types::{
     Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match, MatchValue,
     Payload, PointOffsetType, Range, ValueVariants,
 };
 use std::collections::HashSet;
+use std::rc::Rc;
 
-pub fn condition_converter<'a, F>(
+pub fn condition_converter<'a>(
     condition: &'a Condition,
     field_indexes: &'a IndexesMap,
-    get_payload: &'a F,
+    payload_provider: PayloadProvider,
     id_tracker: &IdTrackerSS,
-) -> ConditionCheckerFn<'a>
-where
-    F: Fn(PointOffsetType) -> &'a Payload,
-{
+) -> ConditionCheckerFn<'a> {
     match condition {
         Condition::Field(field_condition) => field_indexes
             .get(&field_condition.key)
@@ -28,14 +27,20 @@ where
                     .next()
             })
             .unwrap_or_else(|| {
-                Box::new(|point_id| check_field_condition(field_condition, get_payload(point_id)))
+                Box::new(move |point_id| {
+                    payload_provider.with_payload(point_id, |payload| {
+                        check_field_condition(field_condition, payload)
+                    })
+                })
             }),
         // ToDo: It might be possible to make this condition faster by using index to check
         //       if there is any value. But if value if not found,
         //       it does not mean that there are no values in payload
-        Condition::IsEmpty(is_empty) => {
-            Box::new(|point_id| check_is_empty_condition(is_empty, get_payload(point_id)))
-        }
+        Condition::IsEmpty(is_empty) => Box::new(move |point_id| {
+            payload_provider.with_payload(point_id, |payload| {
+                check_is_empty_condition(is_empty, payload)
+            })
+        }),
         // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
         Condition::HasId(has_id) => {
             let segment_ids: HashSet<_> = has_id
