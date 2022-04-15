@@ -11,7 +11,6 @@ use itertools::Itertools;
 use std::cmp::Reverse;
 use std::collections::HashMap;
 
-
 pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
 
 /// Converts user-provided filtering condition into optimized representation

@@ -190,13 +190,9 @@ pub fn create_struct_payload_index(
     ));
     let ids_iterator = Arc::new(AtomicRefCell::new(IdsIterator::new(num_points)));
 
-    let mut index = StructPayloadIndex::open(
-        ids_iterator.clone(),
-        payload_storage,
-        ids_iterator,
-        path,
-    )
-    .unwrap();
+    let mut index =
+        StructPayloadIndex::open(ids_iterator.clone(), payload_storage, ids_iterator, path)
+            .unwrap();
 
     index
         .set_indexed(STR_KEY, PayloadSchemaType::Keyword)

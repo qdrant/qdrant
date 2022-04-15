@@ -1,4 +1,3 @@
-
 use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, remove_file, File};
 use std::ops::Deref;
@@ -27,8 +26,8 @@ use crate::index::PayloadIndex;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{FilterContext, PayloadStorage};
 use crate::types::{
-    Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType,
-    PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
+    Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType, PayloadKeyTypeRef,
+    PayloadSchemaType, PointOffsetType,
 };
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
