@@ -1,9 +1,9 @@
-use std::cell::RefCell;
+
 use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, remove_file, File};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+
 use std::sync::Arc;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
@@ -27,7 +27,7 @@ use crate::index::PayloadIndex;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorage};
 use crate::types::{
-    Condition, FieldCondition, Filter, IsEmptyCondition, Payload, PayloadKeyType,
+    Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType,
     PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
 };
 

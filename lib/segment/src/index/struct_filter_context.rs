@@ -1,19 +1,17 @@
 use crate::id_tracker::IdTrackerSS;
-use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
-use crate::index::query_optimization::condition_converter::{
-    get_geo_bounding_box_checkers, get_geo_radius_checkers, get_match_checkers, get_range_checkers,
-};
+use crate::index::field_index::{CardinalityEstimation};
+
 use crate::index::query_optimization::optimized_filter::{
-    check_optimized_filter, ConditionCheckerFn, OptimizedFilter,
+    check_optimized_filter, OptimizedFilter,
 };
 use crate::index::query_optimization::optimizer::{optimize_filter, IndexesMap};
 use crate::index::query_optimization::payload_provider::PayloadProvider;
-use crate::payload_storage::query_checker::check_filter;
-use crate::payload_storage::{ConditionCheckerSS, FilterContext};
-use crate::types::{Condition, Filter, Payload, PointOffsetType};
-use std::collections::HashMap;
-use std::rc::Rc;
-use std::sync::Arc;
+
+use crate::payload_storage::{FilterContext};
+use crate::types::{Condition, Filter, PointOffsetType};
+
+
+
 
 pub struct StructFilterContext<'a> {
     optimized_filter: OptimizedFilter<'a>,

@@ -5,11 +5,10 @@ use crate::index::query_optimization::optimizer::IndexesMap;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::query_checker::{check_field_condition, check_is_empty_condition};
 use crate::types::{
-    Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match, MatchValue,
-    Payload, PointOffsetType, Range, ValueVariants,
+    Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match, MatchValue, PointOffsetType, Range, ValueVariants,
 };
 use std::collections::HashSet;
-use std::rc::Rc;
+
 
 pub fn condition_converter<'a>(
     condition: &'a Condition,
