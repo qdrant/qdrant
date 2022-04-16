@@ -3,7 +3,7 @@ mod prof;
 use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
 use rand::rngs::StdRng;
-use rand::{thread_rng, SeedableRng, Rng};
+use rand::{thread_rng, Rng, SeedableRng};
 use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
 use segment::index::hnsw_index::base_links_container::BaseLinksContainer;
 use segment::index::hnsw_index::graph_layers::GraphLayers;
@@ -18,7 +18,6 @@ const DIM: usize = 16;
 const M: usize = 32;
 const SAMPLE: usize = 100;
 
-
 fn links_container_bench_base(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
     let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, DotProductMetric {}, &mut rng);
@@ -27,7 +26,9 @@ fn links_container_bench_base(c: &mut Criterion) {
     let mut link_container = BaseLinksContainer::new(M, NUM_VECTORS);
 
     for i in 0..NUM_VECTORS {
-        let links = (0..M).map(|_| rng.gen_range(0..NUM_VECTORS) as PointOffsetType).collect_vec();
+        let links = (0..M)
+            .map(|_| rng.gen_range(0..NUM_VECTORS) as PointOffsetType)
+            .collect_vec();
         link_container.set_links(i as PointOffsetType, &links);
     }
 
@@ -64,7 +65,9 @@ fn links_container_bench_simple(c: &mut Criterion) {
     let mut link_container = SimpleLinksContainer::new(NUM_VECTORS);
 
     for i in 0..NUM_VECTORS {
-        let links = (0..M).map(|_| rng.gen_range(0..NUM_VECTORS) as PointOffsetType).collect_vec();
+        let links = (0..M)
+            .map(|_| rng.gen_range(0..NUM_VECTORS) as PointOffsetType)
+            .collect_vec();
         link_container.set_links(i as PointOffsetType, 0, &links);
     }
 
@@ -93,7 +96,6 @@ fn links_container_bench_simple(c: &mut Criterion) {
     group.finish();
 }
 
-
 fn links_container_bench_with_levels(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
     let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, DotProductMetric {}, &mut rng);
@@ -104,7 +106,9 @@ fn links_container_bench_with_levels(c: &mut Criterion) {
     link_container.reserve(NUM_VECTORS, M);
 
     for i in 0..NUM_VECTORS {
-        let links = (0..M).map(|_| rng.gen_range(0..NUM_VECTORS) as PointOffsetType).collect_vec();
+        let links = (0..M)
+            .map(|_| rng.gen_range(0..NUM_VECTORS) as PointOffsetType)
+            .collect_vec();
         link_container.set_links(i as PointOffsetType, 0, &links);
     }
 

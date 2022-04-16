@@ -4,7 +4,7 @@ use crate::types::PointOffsetType;
 pub struct BaseLinksContainer {
     links_data: Vec<PointOffsetType>,
     links_per_record: usize,
-    num_records: usize
+    num_records: usize,
 }
 
 impl BaseLinksContainer {
@@ -21,7 +21,7 @@ impl BaseLinksContainer {
         BaseLinksContainer {
             links_data,
             links_per_record,
-            num_records
+            num_records,
         }
     }
 
