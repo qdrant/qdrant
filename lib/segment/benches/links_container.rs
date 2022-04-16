@@ -10,6 +10,7 @@ use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::links_container::LinksContainer;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::index::hnsw_index::simple_links_container::SimpleLinksContainer;
+use segment::index::hnsw_index::simple_links_container_no_level::SimpleLinksContainerNoLevel;
 use segment::spaces::simple::DotProductMetric;
 use segment::types::PointOffsetType;
 
@@ -96,6 +97,45 @@ fn links_container_bench_simple(c: &mut Criterion) {
     group.finish();
 }
 
+fn links_container_bench_simple_no_levels(c: &mut Criterion) {
+    let mut rng = StdRng::seed_from_u64(42);
+    let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, DotProductMetric {}, &mut rng);
+    let mut group = c.benchmark_group("links-container-bench");
+
+    let mut link_container = SimpleLinksContainerNoLevel::new(NUM_VECTORS);
+
+    for i in 0..NUM_VECTORS {
+        let links = (0..M)
+            .map(|_| rng.gen_range(0..NUM_VECTORS) as PointOffsetType)
+            .collect_vec();
+        link_container.set_links(i as PointOffsetType, &links);
+    }
+
+    group.bench_function("simple-no-levels", |b| {
+        b.iter(|| {
+            let query = random_vector(&mut rng, DIM);
+            let raw_scorer = vector_holder.get_raw_scorer(query);
+            let mut scorer = FilteredScorer::new(&raw_scorer, None);
+
+            let mut top_score = 0.;
+            let mut buffer = vec![];
+            for _ in 0..SAMPLE {
+                buffer.clear();
+                let point_id = rng.gen_range(0..NUM_VECTORS) as PointOffsetType;
+                buffer.extend_from_slice(link_container.get_links(point_id));
+                let scores = scorer.score_points(&mut buffer, M);
+                scores.iter().copied().for_each(|score| {
+                    if score.score > top_score {
+                        top_score = score.score
+                    }
+                });
+            }
+        })
+    });
+
+    group.finish();
+}
+
 fn links_container_bench_with_levels(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
     let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, DotProductMetric {}, &mut rng);
@@ -140,7 +180,7 @@ fn links_container_bench_with_levels(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
-    targets = links_container_bench_base, links_container_bench_simple, links_container_bench_with_levels
+    targets = links_container_bench_base, links_container_bench_simple, links_container_bench_simple_no_levels, links_container_bench_with_levels
 }
 
 criterion_main!(benches);

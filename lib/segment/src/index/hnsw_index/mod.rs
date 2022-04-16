@@ -9,6 +9,7 @@ pub mod links_container;
 pub mod point_scorer;
 mod search_context;
 pub mod simple_links_container;
+pub mod simple_links_container_no_level;
 
 #[cfg(test)]
 mod tests;
