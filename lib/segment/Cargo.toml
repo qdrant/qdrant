@@ -61,3 +61,8 @@ harness = false
 [[bench]]
 name = "id_type_benchmark"
 harness = false
+
+[[bench]]
+name = "links_container"
+harness = false
+
