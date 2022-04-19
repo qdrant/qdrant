@@ -9,7 +9,7 @@ pub enum OptimizedCondition<'a> {
 }
 
 pub struct OptimizedFilter<'a> {
-    /// At least one of thous conditions should match
+    /// At least one of those conditions should match
     pub should: Option<Vec<OptimizedCondition<'a>>>,
     /// All conditions must match
     pub must: Option<Vec<OptimizedCondition<'a>>>,
