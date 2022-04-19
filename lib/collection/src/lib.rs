@@ -14,7 +14,7 @@ use crate::operations::OperationToShard;
 use crate::shard::ShardOperation;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
-use futures::future::try_join_all;
+use futures::future::{join_all, try_join_all};
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
 use hashring::HashRing;
 use itertools::Itertools;
@@ -249,25 +249,20 @@ impl Collection {
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
         operation.validate()?;
-        let by_shard = operation.split_by_shard(&self.ring);
-        let mut results = Vec::new();
-        match by_shard {
-            OperationToShard::ByShard(by_shard) => {
-                for (shard_id, operation) in by_shard {
-                    results.push(
-                        self.shard_by_id(shard_id)
-                            .get()
-                            .update(operation, wait)
-                            .await,
-                    )
-                }
-            }
-            OperationToShard::ToAll(operation) => {
-                for shard in self.all_shards() {
-                    results.push(shard.get().update(operation.clone(), wait).await)
-                }
-            }
-        }
+        let shard_ops: Vec<_> = match operation.split_by_shard(&self.ring) {
+            OperationToShard::ByShard(by_shard) => by_shard
+                .into_iter()
+                .map(|(shard_id, operation)| (self.shard_by_id(shard_id).get(), operation))
+                .collect(),
+            OperationToShard::ToAll(operation) => self
+                .all_shards()
+                .map(|shard| (shard.get(), operation.clone()))
+                .collect(),
+        };
+        let shard_requests = shard_ops
+            .iter()
+            .map(|(shard, operation)| shard.update(operation.clone(), wait));
+        let mut results = join_all(shard_requests).await;
         let with_error = results
             .iter()
             .filter(|result| matches!(result, Err(_)))
