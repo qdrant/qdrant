@@ -23,7 +23,9 @@ use std::collections::HashMap;
 pub type VectorType = Vec<VectorElementType>;
 
 /// Current state of the collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionStatus {
     /// Collection if completely ready for requests
@@ -36,7 +38,7 @@ pub enum CollectionStatus {
 }
 
 /// Current state of the collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum OptimizersStatus {
     /// Optimizers are reporting as expected

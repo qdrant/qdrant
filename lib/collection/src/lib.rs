@@ -4,15 +4,17 @@ use std::{
     cmp::max,
     collections::HashMap,
     fs::{create_dir_all, rename},
-    io, iter,
+    io,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use crate::operations::types::PointRequest;
 use crate::operations::OperationToShard;
+use crate::shard::ShardOperation;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
+use futures::future::try_join_all;
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
 use hashring::HashRing;
 use itertools::Itertools;
@@ -217,12 +219,12 @@ impl Collection {
     fn target_shards(
         &self,
         shard_selection: Option<ShardId>,
-    ) -> CollectionResult<Box<dyn Iterator<Item = &Shard> + Send + '_>> {
+    ) -> CollectionResult<Vec<Arc<dyn ShardOperation + Sync + Send + '_>>> {
         match shard_selection {
-            None => Ok(Box::new(self.all_shards())),
+            None => Ok(self.all_shards().map(|shard| shard.get()).collect()),
             Some(shard_selection) => {
                 let local_shard = self.local_shard_by_id(shard_selection)?;
-                Ok(Box::new(iter::once(local_shard)))
+                Ok(vec![local_shard.get()])
             }
         }
     }
@@ -394,16 +396,17 @@ impl Collection {
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        let mut points = Vec::new();
         let request = Arc::new(request);
-        for shard in self.target_shards(shard_selection)? {
-            let mut shard_points = shard
-                .get()
-                .search(request.clone(), segment_searcher, search_runtime_handle)
-                .await?;
-            points.append(&mut shard_points);
-        }
-        Ok(peek_top_scores_iterable(points, request.top))
+        let target_shards = self.target_shards(shard_selection)?;
+        let all_searches = target_shards
+            .iter()
+            .map(|shard| shard.search(request.clone(), segment_searcher, search_runtime_handle));
+
+        let all_search_results = try_join_all(all_searches).await?;
+        Ok(peek_top_scores_iterable(
+            all_search_results.into_iter().flatten(),
+            request.top,
+        ))
     }
 
     pub async fn scroll_by(
@@ -433,25 +436,26 @@ impl Collection {
         // Needed to return next page offset.
         let limit = limit + 1;
 
-        let mut points = Vec::new();
+        let target_shards = self.target_shards(shard_selection)?;
+        let scroll_futures = target_shards.iter().map(|shard| {
+            shard.scroll_by(
+                segment_searcher,
+                offset,
+                limit,
+                &with_payload_interface,
+                with_vector,
+                request.filter.as_ref(),
+            )
+        });
 
-        for shard in self.target_shards(shard_selection)? {
-            let mut shard_points = shard
-                .get()
-                .scroll_by(
-                    segment_searcher,
-                    offset,
-                    limit,
-                    &with_payload_interface,
-                    with_vector,
-                    request.filter.as_ref(),
-                )
-                .await?;
-            points.append(&mut shard_points);
-        }
+        let mut points: Vec<_> = try_join_all(scroll_futures)
+            .await?
+            .into_iter()
+            .flatten()
+            .sorted_by_key(|point| point.id)
+            .take(limit)
+            .collect();
 
-        points.sort_by_key(|point| point.id);
-        let mut points: Vec<_> = points.into_iter().take(limit).collect();
         let next_page_offset = if points.len() < limit {
             // This was the last page
             None
@@ -478,19 +482,18 @@ impl Collection {
         let with_payload = WithPayload::from(with_payload_interface);
         let with_vector = request.with_vector;
         let request = Arc::new(request);
-        let mut points = Vec::new();
-        for shard in self.target_shards(shard_selection)? {
-            let mut shard_points = shard
-                .get()
-                .retrieve(
-                    request.clone(),
-                    segment_searcher,
-                    &with_payload,
-                    with_vector,
-                )
-                .await?;
-            points.append(&mut shard_points);
-        }
+        let target_shards = self.target_shards(shard_selection)?;
+        let retrieve_futures = target_shards.iter().map(|shard| {
+            shard.retrieve(
+                request.clone(),
+                segment_searcher,
+                &with_payload,
+                with_vector,
+            )
+        });
+
+        let all_shard_collection_results = try_join_all(retrieve_futures).await?;
+        let points = all_shard_collection_results.into_iter().flatten().collect();
         Ok(points)
     }
 
@@ -531,24 +534,30 @@ impl Collection {
     }
 
     pub async fn info(&self, shard_selection: Option<ShardId>) -> CollectionResult<CollectionInfo> {
-        let mut shards = self.target_shards(shard_selection)?;
-        let mut info = shards
-            .next()
-            .expect("At least 1 shard expected")
-            .get()
-            .info()
-            .await?;
-        for shard in shards {
-            let mut shard_info = shard.get().info().await?;
-            info.status = max(info.status, shard_info.status);
-            info.optimizer_status = max(info.optimizer_status, shard_info.optimizer_status);
-            info.vectors_count += shard_info.vectors_count;
-            info.segments_count += shard_info.segments_count;
-            info.disk_data_size += shard_info.disk_data_size;
-            info.ram_data_size += shard_info.ram_data_size;
-            info.payload_schema
-                .extend(shard_info.payload_schema.drain());
-        }
+        let target_shards = self.target_shards(shard_selection)?;
+        let first_shard = target_shards
+            .first()
+            .ok_or_else(|| CollectionError::ServiceError {
+                error: "There are no shards for selected collection".to_string(),
+            })?;
+
+        let mut info = first_shard.info().await?;
+        let info_futures = target_shards.iter().skip(1).map(|shard| shard.info());
+
+        let all_shard_collection_results = try_join_all(info_futures).await?;
+        all_shard_collection_results
+            .into_iter()
+            .for_each(|mut shard_info| {
+                info.status = max(info.status, shard_info.status);
+                info.optimizer_status =
+                    max(info.optimizer_status.clone(), shard_info.optimizer_status);
+                info.vectors_count += shard_info.vectors_count;
+                info.segments_count += shard_info.segments_count;
+                info.disk_data_size += shard_info.disk_data_size;
+                info.ram_data_size += shard_info.ram_data_size;
+                info.payload_schema
+                    .extend(shard_info.payload_schema.drain());
+            });
         Ok(info)
     }
 
