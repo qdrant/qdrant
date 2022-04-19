@@ -1239,9 +1239,9 @@ dependencies = [
 
 [[package]]
 name = "geo"
-version = "0.19.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61faf6a68f9432b5287c393268e86a07e4dfed79e6e0962b0e6e59b2f70c77d8"
+checksum = "cd3c611ca95edaf52885cff04213c96fd70af9d298c3e061ac02141410dc95d6"
 dependencies = [
  "geo-types",
  "geographiclib-rs",
@@ -1253,9 +1253,9 @@ dependencies = [
 
 [[package]]
 name = "geo-types"
-version = "0.7.3"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "658ffd4025e593f0b64e8fa7a1afc4082e4471ac823034b9d4e338edc9adc6fb"
+checksum = "a9537881a3d2941ff3fe901e744c45f0fa4c142334f499f27d26be1d72299ba8"
 dependencies = [
  "approx",
  "num-traits",
@@ -2881,6 +2881,7 @@ dependencies = [
  "bit-vec",
  "criterion",
  "geo",
+ "geo-types",
  "geohash",
  "itertools 0.10.3",
  "json-patch",
