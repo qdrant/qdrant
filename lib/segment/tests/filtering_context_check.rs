@@ -11,8 +11,8 @@ mod tests {
     use segment::types::PointOffsetType;
     use tempdir::TempDir;
 
-    const NUM_POINTS: usize = 1000;
-    const ATTEMPTS: usize = 50;
+    const NUM_POINTS: usize = 2000;
+    const ATTEMPTS: usize = 100;
 
     #[test]
     fn test_filtering_context_consistency() {

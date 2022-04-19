@@ -46,7 +46,7 @@ fn create_segment(
         }
     };
 
-    let payload_storage = sp(SimplePayloadStorage::open(&payload_storage_path)?);
+    let payload_storage = sp(SimplePayloadStorage::open(&payload_storage_path)?.into());
 
     let condition_checker = Arc::new(SimpleConditionChecker::new(
         payload_storage.clone(),
@@ -61,7 +61,6 @@ fn create_segment(
                 &payload_index_path,
             )?),
             PayloadIndexType::Struct => sp(StructPayloadIndex::open(
-                condition_checker.clone(),
                 id_tracker.clone(),
                 payload_storage.clone(),
                 id_tracker.clone(),

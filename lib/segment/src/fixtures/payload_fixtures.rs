@@ -1,11 +1,12 @@
 use crate::types::{
-    Condition, FieldCondition, Filter, Payload, Range as RangeCondition, VectorElementType,
+    Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, IsEmptyCondition, Payload,
+    PayloadField, Range as RangeCondition, ValuesCount, VectorElementType,
 };
 use itertools::Itertools;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use serde_json::{json, Value};
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 
 const ADJECTIVE: &[&str] = &[
     "jobless",
@@ -52,10 +53,14 @@ pub fn random_keyword<R: Rng + ?Sized>(rnd_gen: &mut R) -> String {
     format!("{} {}", random_adj, random_noun)
 }
 
-pub fn random_keyword_payload<R: Rng + ?Sized>(rnd_gen: &mut R, num_values: usize) -> Value {
-    if num_values > 1 {
+pub fn random_keyword_payload<R: Rng + ?Sized>(
+    rnd_gen: &mut R,
+    num_values: RangeInclusive<usize>,
+) -> Value {
+    let sample_num_values = rnd_gen.gen_range(num_values);
+    if sample_num_values > 1 {
         Value::Array(
-            (0..num_values)
+            (0..sample_num_values)
                 .map(|_| Value::String(random_keyword(rnd_gen)))
                 .collect(),
         )
@@ -64,14 +69,20 @@ pub fn random_keyword_payload<R: Rng + ?Sized>(rnd_gen: &mut R, num_values: usiz
     }
 }
 
-pub fn random_int_payload<R: Rng + ?Sized>(rnd_gen: &mut R, num_values: usize) -> Vec<i64> {
-    (0..num_values)
+pub fn random_int_payload<R: Rng + ?Sized>(
+    rnd_gen: &mut R,
+    num_values: RangeInclusive<usize>,
+) -> Vec<i64> {
+    (0..rnd_gen.gen_range(num_values))
         .map(|_| rnd_gen.gen_range(INT_RANGE))
         .collect_vec()
 }
 
-pub fn random_geo_payload<R: Rng + ?Sized>(rnd_gen: &mut R, num_values: usize) -> Vec<Value> {
-    (0..num_values)
+pub fn random_geo_payload<R: Rng + ?Sized>(
+    rnd_gen: &mut R,
+    num_values: RangeInclusive<usize>,
+) -> Vec<Value> {
+    (0..rnd_gen.gen_range(num_values))
         .map(|_| {
             json!( {
                 "lon": rnd_gen.gen_range(LON_RANGE),
@@ -85,7 +96,42 @@ pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<Vecto
     (0..size).map(|_| rnd_gen.gen()).collect()
 }
 
-pub fn random_field_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition {
+pub fn random_uncommon_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition {
+    let switch = rnd_gen.gen_range(0..=3);
+    match switch {
+        0 => Condition::Field(FieldCondition::new_values_count(
+            STR_KEY.to_string(),
+            ValuesCount {
+                lt: None,
+                gt: None,
+                gte: Some(3),
+                lte: None,
+            },
+        )),
+        1 => Condition::Field(FieldCondition::new_values_count(
+            STR_KEY.to_string(),
+            ValuesCount {
+                lt: None,
+                gt: None,
+                gte: None,
+                lte: Some(2),
+            },
+        )),
+        2 => Condition::HasId(HasIdCondition {
+            has_id: (0..rnd_gen.gen_range(10..50))
+                .map(|_| ExtendedPointId::NumId(rnd_gen.gen_range(0..1000)))
+                .collect(),
+        }),
+        3 => Condition::IsEmpty(IsEmptyCondition {
+            is_empty: PayloadField {
+                key: FLICKING_KEY.to_string(),
+            },
+        }),
+        _ => unreachable!(),
+    }
+}
+
+pub fn random_simple_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition {
     let kv_or_int: bool = rnd_gen.gen();
     if kv_or_int {
         Condition::Field(FieldCondition::new_match(
@@ -105,9 +151,18 @@ pub fn random_field_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition {
     }
 }
 
+pub fn random_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition {
+    let is_simple: bool = rnd_gen.gen_range(0..100) < 80;
+    if is_simple {
+        random_simple_condition(rnd_gen)
+    } else {
+        random_uncommon_condition(rnd_gen)
+    }
+}
+
 pub fn random_must_filter<R: Rng + ?Sized>(rnd_gen: &mut R, num_conditions: usize) -> Filter {
     let must_conditions = (0..num_conditions)
-        .map(|_| random_field_condition(rnd_gen))
+        .map(|_| random_simple_condition(rnd_gen))
         .collect_vec();
 
     Filter {
@@ -122,7 +177,7 @@ pub fn random_filter<R: Rng + ?Sized>(rnd_gen: &mut R, total_conditions: usize) 
     let num_must = total_conditions - num_should;
 
     let should_conditions = (0..num_should)
-        .map(|_| random_field_condition(rnd_gen))
+        .map(|_| random_condition(rnd_gen))
         .collect_vec();
 
     let should_conditions_opt = if !should_conditions.is_empty() {
@@ -132,7 +187,7 @@ pub fn random_filter<R: Rng + ?Sized>(rnd_gen: &mut R, total_conditions: usize) 
     };
 
     let must_conditions = (0..num_must)
-        .map(|_| random_field_condition(rnd_gen))
+        .map(|_| random_condition(rnd_gen))
         .collect_vec();
 
     let must_conditions_opt = if !must_conditions.is_empty() {
@@ -151,19 +206,19 @@ pub fn random_filter<R: Rng + ?Sized>(rnd_gen: &mut R, total_conditions: usize) 
 pub fn generate_diverse_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
     let payload: Payload = if rnd_gen.gen_range(0.0..1.0) < 0.5 {
         json!({
-            STR_KEY: random_keyword_payload(rnd_gen, 2),
-            INT_KEY: random_int_payload(rnd_gen, 2),
+            STR_KEY: random_keyword_payload(rnd_gen, 1..=3),
+            INT_KEY: random_int_payload(rnd_gen, 1..=3),
             FLT_KEY: rnd_gen.gen_range(0.0..10.0),
-            GEO_KEY: random_geo_payload(rnd_gen, 2)
+            GEO_KEY: random_geo_payload(rnd_gen, 1..=3)
         })
         .into()
     } else {
         json!({
-            STR_KEY: random_keyword_payload(rnd_gen, 2),
-            INT_KEY: random_int_payload(rnd_gen, 2),
+            STR_KEY: random_keyword_payload(rnd_gen, 1..=2),
+            INT_KEY: random_int_payload(rnd_gen, 1..=3),
             FLT_KEY: rnd_gen.gen_range(0.0..10.0),
-            GEO_KEY: random_geo_payload(rnd_gen, 2),
-            FLICKING_KEY: random_int_payload(rnd_gen, 2)
+            GEO_KEY: random_geo_payload(rnd_gen, 1..=3),
+            FLICKING_KEY: random_int_payload(rnd_gen, 1..=3)
         })
         .into()
     };

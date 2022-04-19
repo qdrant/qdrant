@@ -118,7 +118,7 @@ mod tests {
         let (struct_segment, _) = build_test_segments(dir1.path(), dir2.path());
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
-            "int_key".to_owned(),
+            INT_KEY.to_owned(),
             Range {
                 lt: None,
                 gt: None,
@@ -132,11 +132,13 @@ mod tests {
             .borrow()
             .estimate_cardinality(&filter);
 
+        let payload_index = struct_segment.payload_index.borrow();
+        let filter_context = payload_index.filter_context(&filter);
         let exact = struct_segment
             .vector_storage
             .borrow()
             .iter_ids()
-            .filter(|x| struct_segment.condition_checker.check(*x, &filter))
+            .filter(|x| filter_context.check(*x))
             .collect_vec()
             .len();
 

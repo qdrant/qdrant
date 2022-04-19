@@ -4,7 +4,8 @@ use crate::entry::entry_point::{
 };
 use crate::id_tracker::IdTrackerSS;
 use crate::index::{PayloadIndexSS, VectorIndexSS};
-use crate::payload_storage::{ConditionCheckerSS, PayloadStorageSS};
+use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+use crate::payload_storage::{ConditionCheckerSS, PayloadStorage};
 use crate::spaces::tools::mertic_object;
 use crate::types::{
     infer_value_type, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
@@ -38,7 +39,7 @@ pub struct Segment {
     /// Component for mapping external ids to internal and also keeping track of point versions
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
-    pub payload_storage: Arc<AtomicRefCell<PayloadStorageSS>>,
+    pub payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
     pub payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
     pub condition_checker: Arc<ConditionCheckerSS>,
     pub vector_index: Arc<AtomicRefCell<VectorIndexSS>>,
@@ -463,7 +464,6 @@ impl SegmentEntry for Segment {
         limit: usize,
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType> {
-        let storage = self.vector_storage.borrow();
         match filter {
             None => self
                 .id_tracker
@@ -472,17 +472,17 @@ impl SegmentEntry for Segment {
                 .map(|x| x.0)
                 .take(limit)
                 .collect(),
-            Some(condition) => self
-                .id_tracker
-                .borrow()
-                .iter_from(offset)
-                .filter(move |(_, internal_id)| !storage.is_deleted(*internal_id))
-                .filter(move |(_, internal_id)| {
-                    self.condition_checker.check(*internal_id, condition)
-                })
-                .map(|x| x.0)
-                .take(limit)
-                .collect(),
+            Some(condition) => {
+                let payload_index = self.payload_index.borrow();
+                let filter_context = payload_index.filter_context(condition);
+                self.id_tracker
+                    .borrow()
+                    .iter_from(offset)
+                    .filter(move |(_, internal_id)| filter_context.check(*internal_id))
+                    .map(|x| x.0)
+                    .take(limit)
+                    .collect()
+            }
         }
     }
 

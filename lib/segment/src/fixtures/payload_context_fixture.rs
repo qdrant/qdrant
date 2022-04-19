@@ -7,9 +7,8 @@ use crate::id_tracker::IdTracker;
 use crate::index::plain_payload_index::PlainPayloadIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::PayloadIndex;
-use crate::payload_storage::in_memory_payload_storage::{
-    InMemoryConditionChecker, InMemoryPayloadStorage,
-};
+use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
+use crate::payload_storage::query_checker::SimpleConditionChecker;
 use crate::payload_storage::PayloadStorage;
 use crate::types::{PayloadSchemaType, PointIdType, PointOffsetType, SeqNumberType};
 use atomic_refcell::AtomicRefCell;
@@ -21,7 +20,7 @@ use std::sync::Arc;
 /// Warn: Use for tests only
 ///
 /// This struct mimics the interface of `PointsIterator` and `IdTracker` only for basic cases
-struct IdsIterator {
+pub struct IdsIterator {
     ids: Vec<PointOffsetType>,
 }
 
@@ -161,8 +160,8 @@ pub fn create_plain_payload_index(path: &Path, num_points: usize, seed: u64) -> 
     let payload_storage = create_payload_storage_fixture(num_points, seed);
     let ids_iterator = Arc::new(AtomicRefCell::new(IdsIterator::new(num_points)));
 
-    let condition_checker = Arc::new(InMemoryConditionChecker::new(
-        Arc::new(AtomicRefCell::new(payload_storage)),
+    let condition_checker = Arc::new(SimpleConditionChecker::new(
+        Arc::new(AtomicRefCell::new(payload_storage.into())),
         ids_iterator.clone(),
     ));
 
@@ -186,24 +185,14 @@ pub fn create_struct_payload_index(
     num_points: usize,
     seed: u64,
 ) -> StructPayloadIndex {
-    let payload_storage = Arc::new(AtomicRefCell::new(create_payload_storage_fixture(
-        num_points, seed,
-    )));
+    let payload_storage = Arc::new(AtomicRefCell::new(
+        create_payload_storage_fixture(num_points, seed).into(),
+    ));
     let ids_iterator = Arc::new(AtomicRefCell::new(IdsIterator::new(num_points)));
 
-    let condition_checker = Arc::new(InMemoryConditionChecker::new(
-        payload_storage.clone(),
-        ids_iterator.clone(),
-    ));
-
-    let mut index = StructPayloadIndex::open(
-        condition_checker,
-        ids_iterator.clone(),
-        payload_storage,
-        ids_iterator,
-        path,
-    )
-    .unwrap();
+    let mut index =
+        StructPayloadIndex::open(ids_iterator.clone(), payload_storage, ids_iterator, path)
+            .unwrap();
 
     index
         .set_indexed(STR_KEY, PayloadSchemaType::Keyword)

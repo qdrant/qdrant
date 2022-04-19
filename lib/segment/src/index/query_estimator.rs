@@ -8,7 +8,35 @@ use crate::types::{Condition, Filter};
 use itertools::Itertools;
 use std::cmp::{max, min};
 
-fn combine_must_estimations(
+pub fn combine_should_estimations(
+    estimations: &[CardinalityEstimation],
+    total: usize,
+) -> CardinalityEstimation {
+    let mut clauses: Vec<PrimaryCondition> = vec![];
+    for estimation in estimations {
+        if estimation.primary_clauses.is_empty() {
+            // If some branch is un-indexed - we can't make
+            // any assumptions about the whole `should` clause
+            clauses = vec![];
+            break;
+        }
+        clauses.append(&mut estimation.primary_clauses.clone());
+    }
+    let element_not_hit_prob: f64 = estimations
+        .iter()
+        .map(|x| (total - x.exp) as f64 / (total as f64))
+        .product();
+    let element_hit_prob = 1.0 - element_not_hit_prob;
+    let expected_count = (element_hit_prob * (total as f64)).round() as usize;
+    CardinalityEstimation {
+        primary_clauses: clauses,
+        min: estimations.iter().map(|x| x.min).max().unwrap_or(0),
+        exp: expected_count,
+        max: min(estimations.iter().map(|x| x.max).sum(), total),
+    }
+}
+
+pub fn combine_must_estimations(
     estimations: &[CardinalityEstimation],
     total: usize,
 ) -> CardinalityEstimation {
@@ -100,30 +128,8 @@ where
     F: Fn(&Condition) -> CardinalityEstimation,
 {
     let estimate = |x| estimate_condition(estimator, x, total);
-
     let should_estimations = conditions.iter().map(estimate).collect_vec();
-    let mut clauses: Vec<PrimaryCondition> = vec![];
-    for estimation in &should_estimations {
-        if estimation.primary_clauses.is_empty() {
-            // If some branch is un-indexed - we can't make
-            // any assumptions about the whole `should` clause
-            clauses = vec![];
-            break;
-        }
-        clauses.append(&mut estimation.primary_clauses.clone());
-    }
-    let element_not_hit_prob: f64 = should_estimations
-        .iter()
-        .map(|x| (total - x.exp) as f64 / (total as f64))
-        .product();
-    let element_hit_prob = 1.0 - element_not_hit_prob;
-    let expected_count = (element_hit_prob * (total as f64)).round() as usize;
-    CardinalityEstimation {
-        primary_clauses: clauses,
-        min: should_estimations.iter().map(|x| x.min).max().unwrap_or(0),
-        exp: expected_count,
-        max: min(should_estimations.iter().map(|x| x.max).sum(), total),
-    }
+    combine_should_estimations(&should_estimations, total)
 }
 
 fn estimate_must<F>(estimator: &F, conditions: &[Condition], total: usize) -> CardinalityEstimation
@@ -136,7 +142,10 @@ where
     combine_must_estimations(&must_estimations, total)
 }
 
-fn invert_estimation(estimation: &CardinalityEstimation, total: usize) -> CardinalityEstimation {
+pub fn invert_estimation(
+    estimation: &CardinalityEstimation,
+    total: usize,
+) -> CardinalityEstimation {
     CardinalityEstimation {
         primary_clauses: vec![],
         min: total - estimation.max,

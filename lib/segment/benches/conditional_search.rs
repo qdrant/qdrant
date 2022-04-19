@@ -58,25 +58,6 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
     let mut result_size = 0;
     let mut query_count = 0;
 
-    // Same benchmark, but with larger expected result
-    group.bench_function("conditional-search-query-points-callback", |b| {
-        b.iter(|| {
-            let filter = random_must_filter(&mut rng, 2);
-            plain_index.query_points_callback(&filter, |_id| {
-                result_size += 1;
-            });
-            query_count += 1;
-        })
-    });
-
-    eprintln!(
-        "result_size / query_count = {:#?}",
-        result_size / query_count
-    );
-
-    let mut result_size = 0;
-    let mut query_count = 0;
-
     group.bench_function("conditional-search-context-check", |b| {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
