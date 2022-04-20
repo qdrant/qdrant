@@ -90,7 +90,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         (start_from..(first_index + num_entries)).map(move |idx| {
             let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
             let record: R = serde_cbor::from_slice(&record_bin.to_vec())
-                .or_else(|_err| rmp_serde::from_read_ref(&record_bin.to_vec()))
+                .or_else(|_err| rmp_serde::from_slice(&record_bin.to_vec()))
                 .expect("Can't deserialize entry, probably corrupted WAL on version mismatch");
             (idx, record)
         })

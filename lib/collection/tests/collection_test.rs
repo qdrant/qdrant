@@ -233,7 +233,7 @@ fn test_deserialization() {
 
     let crob_bytes = rmp_serde::to_vec(&insert_points).unwrap();
 
-    let _read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&crob_bytes).unwrap();
+    let _read_obj2: CollectionUpdateOperations = rmp_serde::from_slice(&crob_bytes).unwrap();
 }
 
 #[test]
@@ -260,7 +260,7 @@ fn test_deserialization2() {
 
     let raw_bytes = rmp_serde::to_vec(&insert_points).unwrap();
 
-    let _read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&raw_bytes).unwrap();
+    let _read_obj2: CollectionUpdateOperations = rmp_serde::from_slice(&raw_bytes).unwrap();
 }
 
 // Request to find points sent to all shards but they might not have a particular id, so they will return an error
