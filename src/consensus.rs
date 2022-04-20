@@ -1,5 +1,5 @@
 use std::{
-    sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
+    sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
     time::{Duration, Instant},
 };
 
@@ -7,13 +7,13 @@ use storage::content_manager::toc::TableOfContentRef;
 
 use raft::{eraftpb::Message as RaftMessage, prelude::*};
 
+const CHANNEL_CAPACITY: usize = 100;
 const TICK_PERIOD_MS: u64 = 100;
 
 type Node = RawNode<TableOfContentRef>;
 
 pub enum Message {
     FromClient(Vec<u8>),
-    #[allow(dead_code)]
     FromPeer(Box<RaftMessage>),
 }
 
@@ -26,7 +26,7 @@ impl Consensus {
     pub fn new(
         logger: &slog::Logger,
         toc_ref: TableOfContentRef,
-    ) -> raft::Result<(Self, Sender<Message>)> {
+    ) -> raft::Result<(Self, SyncSender<Message>)> {
         let config = Config {
             id: 1,
             ..Default::default()
@@ -36,7 +36,7 @@ impl Consensus {
         // They might have not been applied due to unplanned Qdrant shutdown
         toc_ref.apply_entries()?;
         let node = Node::new(&config, toc_ref, logger)?;
-        let (sender, receiver) = mpsc::channel();
+        let (sender, receiver) = mpsc::sync_channel(CHANNEL_CAPACITY);
         Ok((Self { node, receiver }, sender))
     }
 

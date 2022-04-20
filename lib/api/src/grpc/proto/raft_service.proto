@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package qdrant;
+
+import "google/protobuf/empty.proto";
+
+service Raft {
+  /*
+  Send Raft message to another peer
+   */
+  rpc Send (RaftMessage) returns (google.protobuf.Empty) {}
+}
+
+message RaftMessage {
+    bytes message = 1;
+}

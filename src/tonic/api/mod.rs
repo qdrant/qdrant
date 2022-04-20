@@ -6,3 +6,5 @@ pub mod points_api;
 mod points_common;
 #[cfg(feature = "consensus")]
 pub mod points_internal_api;
+#[cfg(feature = "consensus")]
+pub mod raft_api;

@@ -74,7 +74,11 @@ pub fn init_internal(
     toc: Arc<TableOfContent>,
     host: String,
     internal_grpc_port: u16,
+    to_consensus: std::sync::mpsc::SyncSender<crate::consensus::Message>,
 ) -> std::io::Result<()> {
+    use crate::tonic::api::raft_api::RaftService;
+    use ::api::grpc::qdrant::raft_server::RaftServer;
+
     let tonic_runtime = runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
@@ -91,6 +95,7 @@ pub fn init_internal(
             let service = QdrantService::default();
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let points_internal_service = PointsInternalService::new(toc.clone());
+            let raft_service = RaftService::new(to_consensus);
 
             log::info!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
@@ -98,6 +103,7 @@ pub fn init_internal(
                 .add_service(QdrantServer::new(service))
                 .add_service(CollectionsInternalServer::new(collections_internal_service))
                 .add_service(PointsInternalServer::new(points_internal_service))
+                .add_service(RaftServer::new(raft_service))
                 .serve_with_shutdown(socket, async {
                     signal::ctrl_c().await.unwrap();
                     log::info!("Stopping internal gRPC");

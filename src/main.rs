@@ -62,11 +62,12 @@ fn main() -> std::io::Result<()> {
                 }
             })?;
 
+        let message_sender_moved = message_sender.clone();
         thread::Builder::new()
             .name("forward-proposals".to_string())
             .spawn(move || {
                 while let Ok(entry) = propose_receiver.recv() {
-                    if message_sender
+                    if message_sender_moved
                         .send(consensus::Message::FromClient(entry))
                         .is_err()
                     {
@@ -82,7 +83,12 @@ fn main() -> std::io::Result<()> {
             let handle = thread::Builder::new()
                 .name("grpc_internal".to_string())
                 .spawn(move || {
-                    tonic::init_internal(toc_arc, settings.service.host, internal_grpc_port)
+                    tonic::init_internal(
+                        toc_arc,
+                        settings.service.host,
+                        internal_grpc_port,
+                        message_sender,
+                    )
                 })
                 .unwrap();
             handles.push(handle);
