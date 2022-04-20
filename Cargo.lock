@@ -2881,7 +2881,6 @@ dependencies = [
  "bit-vec",
  "criterion",
  "geo",
- "geo-types",
  "geohash",
  "itertools 0.10.3",
  "json-patch",
