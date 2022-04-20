@@ -1,13 +1,13 @@
 use crate::consensus;
 use api::grpc::qdrant::{raft_server::Raft, RaftMessage as RaftMessageBytes};
 use raft::eraftpb::Message as RaftMessage;
-use std::sync::{mpsc::Sender, Mutex};
+use std::sync::{mpsc::SyncSender, Mutex};
 use tonic::{async_trait, Request, Response, Status};
 
-pub struct RaftService(Mutex<Sender<consensus::Message>>);
+pub struct RaftService(Mutex<SyncSender<consensus::Message>>);
 
 impl RaftService {
-    pub fn new(sender: Sender<consensus::Message>) -> Self {
+    pub fn new(sender: SyncSender<consensus::Message>) -> Self {
         Self(Mutex::new(sender))
     }
 }

@@ -74,7 +74,7 @@ pub fn init_internal(
     toc: Arc<TableOfContent>,
     host: String,
     internal_grpc_port: u16,
-    to_consensus: std::sync::mpsc::Sender<crate::consensus::Message>,
+    to_consensus: std::sync::mpsc::SyncSender<crate::consensus::Message>,
 ) -> std::io::Result<()> {
     use crate::tonic::api::raft_api::RaftService;
     use ::api::grpc::qdrant::raft_server::RaftServer;
