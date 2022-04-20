@@ -47,7 +47,7 @@ jobs:
       run: .github/scripts/protoc.sh
       shell: bash
     - name: Test with consensus feature
-      run: cargo test --package qdrant --bin qdrant --features consensus -- consensus::tests
+      run: cargo test --all --features consensus
 
 #   build:
 #     runs-on: ubuntu-latest

@@ -362,10 +362,7 @@ impl TableOfContent {
         let propose_sender = match &self.propose_sender {
             Some(sender) => sender,
             None => {
-                log::error!(
-                    "Cannot submit collection meta operation proposal: no sender supplied to ToC"
-                );
-                return Ok(true);
+                return Err(StorageError::ServiceError { description: "Cannot submit collection meta operation proposal: no sender supplied to ToC".to_string() });
             }
         };
         let serialized = serde_cbor::to_vec(&operation)?;
