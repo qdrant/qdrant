@@ -29,7 +29,7 @@ use crate::content_manager::{
     collections_ops::{Checker, Collections},
     errors::StorageError,
 };
-use crate::types::StorageConfig;
+use crate::types::{PeerAddressById, StorageConfig};
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 use collection::shard::ShardId;
@@ -744,6 +744,10 @@ impl TableOfContent {
         self.raft_state
             .lock()?
             .apply_state_update(|state| state.hard_state.commit = index)
+    }
+
+    pub fn peer_address_by_id(&self) -> &PeerAddressById {
+        &self.storage_config.peer_address_by_id
     }
 }
 
