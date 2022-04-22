@@ -6,13 +6,15 @@ use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     CollectionDescription, CollectionOperationResponse, Condition, FieldCondition, Filter,
     GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply, IsEmptyCondition,
-    ListCollectionsResponse, Match, PayloadSchemaInfo, PayloadSchemaType, PointId, Range,
-    ScoredPoint, SearchParams, ValuesCount, WithPayloadSelector,
+    ListCollectionsResponse, Match, PayloadExcludeSelector, PayloadIncludeSelector,
+    PayloadSchemaInfo, PayloadSchemaType, PointId, Range, ScoredPoint, SearchParams, ValuesCount,
+    WithPayloadSelector,
 };
 
 use prost_types::value::Kind;
 use prost_types::ListValue;
 
+use segment::types::{PayloadSelector, WithPayloadInterface};
 use serde_json::{Map, Number, Value};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
@@ -130,7 +132,20 @@ impl From<segment::types::PayloadIndexInfo> for PayloadSchemaInfo {
                 segment::types::PayloadSchemaType::Float => PayloadSchemaType::Float,
                 segment::types::PayloadSchemaType::Geo => PayloadSchemaType::Geo,
             }
-            .into(),
+            .into(), //TODO copy same approach?
+        }
+    }
+}
+
+impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
+    type Error = Status;
+
+    fn try_from(schema: PayloadSchemaInfo) -> Result<Self, Self::Error> {
+        match segment::types::PayloadSchemaType::from_index(schema.data_type) {
+            None => Err(Status::invalid_argument("No PayloadSelector".to_string())),
+            Some(payload_schema_type) => Ok(segment::types::PayloadIndexInfo {
+                data_type: payload_schema_type,
+            }),
         }
     }
 }
@@ -173,10 +188,40 @@ impl TryFrom<WithPayloadSelector> for segment::types::WithPayloadInterface {
     }
 }
 
+impl From<segment::types::WithPayloadInterface> for WithPayloadSelector {
+    fn from(value: segment::types::WithPayloadInterface) -> Self {
+        let selector_options = match value {
+            WithPayloadInterface::Bool(flag) => SelectorOptions::Enable(flag),
+            WithPayloadInterface::Fields(fields) => {
+                SelectorOptions::Include(PayloadIncludeSelector { include: fields })
+            }
+            WithPayloadInterface::Selector(selector) => match selector {
+                PayloadSelector::Include(s) => {
+                    SelectorOptions::Include(PayloadIncludeSelector { include: s.include })
+                }
+                PayloadSelector::Exclude(s) => {
+                    SelectorOptions::Exclude(PayloadExcludeSelector { exclude: s.exclude })
+                }
+            },
+        };
+        WithPayloadSelector {
+            selector_options: Some(selector_options),
+        }
+    }
+}
+
 impl From<SearchParams> for segment::types::SearchParams {
     fn from(params: SearchParams) -> Self {
         Self {
             hnsw_ef: params.hnsw_ef.map(|x| x as usize),
+        }
+    }
+}
+
+impl From<segment::types::SearchParams> for SearchParams {
+    fn from(params: segment::types::SearchParams) -> Self {
+        Self {
+            hnsw_ef: params.hnsw_ef.map(|x| x as u64),
         }
     }
 }
@@ -204,6 +249,23 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
     }
 }
 
+impl TryFrom<ScoredPoint> for segment::types::ScoredPoint {
+    type Error = Status;
+
+    fn try_from(point: ScoredPoint) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: match point.id {
+                None => return Err(Status::invalid_argument("Point does not have an ID")),
+                Some(id) => id.try_into()?,
+            },
+            payload: Some(proto_to_payloads(point.payload)?),
+            score: point.score,
+            vector: Some(point.vector),
+            version: point.version,
+        })
+    }
+}
+
 impl TryFrom<PointId> for segment::types::PointIdType {
     type Error = Status;
 
@@ -222,7 +284,7 @@ impl TryFrom<PointId> for segment::types::PointIdType {
     }
 }
 
-fn conditions_helper(
+fn conditions_helper_from_grpc(
     conditions: Vec<Condition>,
 ) -> Result<Option<Vec<segment::types::Condition>>, tonic::Status> {
     if conditions.is_empty() {
@@ -236,15 +298,38 @@ fn conditions_helper(
     }
 }
 
+fn conditions_helper_to_grpc(conditions: Option<Vec<segment::types::Condition>>) -> Vec<Condition> {
+    match conditions {
+        None => vec![],
+        Some(conditions) => {
+            if conditions.is_empty() {
+                vec![]
+            } else {
+                conditions.into_iter().map(|c| c.into()).collect()
+            }
+        }
+    }
+}
+
 impl TryFrom<Filter> for segment::types::Filter {
     type Error = Status;
 
     fn try_from(value: Filter) -> Result<Self, Self::Error> {
         Ok(Self {
-            should: conditions_helper(value.should)?,
-            must: conditions_helper(value.must)?,
-            must_not: conditions_helper(value.must_not)?,
+            should: conditions_helper_from_grpc(value.should)?,
+            must: conditions_helper_from_grpc(value.must)?,
+            must_not: conditions_helper_from_grpc(value.must_not)?,
         })
+    }
+}
+
+impl From<segment::types::Filter> for Filter {
+    fn from(value: segment::types::Filter) -> Self {
+        Self {
+            should: conditions_helper_to_grpc(value.should),
+            must: conditions_helper_to_grpc(value.must),
+            must_not: conditions_helper_to_grpc(value.must_not),
+        }
     }
 }
 
@@ -272,10 +357,35 @@ impl TryFrom<Condition> for segment::types::Condition {
     }
 }
 
+impl From<segment::types::Condition> for Condition {
+    fn from(value: segment::types::Condition) -> Self {
+        let condition_one_of = match value {
+            segment::types::Condition::Field(field) => ConditionOneOf::Field(field.into()),
+            segment::types::Condition::IsEmpty(is_empty) => {
+                ConditionOneOf::IsEmpty(is_empty.into())
+            }
+            segment::types::Condition::HasId(has_id) => ConditionOneOf::HasId(has_id.into()),
+            segment::types::Condition::Filter(filter) => ConditionOneOf::Filter(filter.into()),
+        };
+
+        Self {
+            condition_one_of: Some(condition_one_of),
+        }
+    }
+}
+
 impl From<IsEmptyCondition> for segment::types::IsEmptyCondition {
     fn from(value: IsEmptyCondition) -> Self {
         segment::types::IsEmptyCondition {
             is_empty: segment::types::PayloadField { key: value.key },
+        }
+    }
+}
+
+impl From<segment::types::IsEmptyCondition> for IsEmptyCondition {
+    fn from(value: segment::types::IsEmptyCondition) -> Self {
+        Self {
+            key: value.is_empty.key,
         }
     }
 }
@@ -290,6 +400,13 @@ impl TryFrom<HasIdCondition> for segment::types::HasIdCondition {
             .map(|p| p.try_into())
             .collect::<Result<_, _>>()?;
         Ok(Self { has_id: set })
+    }
+}
+
+impl From<segment::types::HasIdCondition> for HasIdCondition {
+    fn from(value: segment::types::HasIdCondition) -> Self {
+        let set: Vec<PointId> = value.has_id.into_iter().map(|p| p.into()).collect();
+        Self { has_id: set }
     }
 }
 
@@ -320,6 +437,30 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
     }
 }
 
+impl From<segment::types::FieldCondition> for FieldCondition {
+    fn from(value: segment::types::FieldCondition) -> Self {
+        let segment::types::FieldCondition {
+            key,
+            r#match,
+            range,
+            geo_bounding_box,
+            geo_radius,
+            values_count,
+        } = value;
+
+        let geo_bounding_box = geo_bounding_box.map(|g| g.into());
+        let geo_radius = geo_radius.map(|g| g.into());
+        Self {
+            key,
+            r#match: r#match.map(|m| m.into()),
+            range: range.map(|r| r.into()),
+            geo_bounding_box,
+            geo_radius,
+            values_count: values_count.map(|r| r.into()),
+        }
+    }
+}
+
 impl TryFrom<GeoBoundingBox> for segment::types::GeoBoundingBox {
     type Error = Status;
 
@@ -337,6 +478,15 @@ impl TryFrom<GeoBoundingBox> for segment::types::GeoBoundingBox {
     }
 }
 
+impl From<segment::types::GeoBoundingBox> for GeoBoundingBox {
+    fn from(value: segment::types::GeoBoundingBox) -> Self {
+        Self {
+            top_left: Some(value.top_left.into()),
+            bottom_right: Some(value.bottom_right.into()),
+        }
+    }
+}
+
 impl TryFrom<GeoRadius> for segment::types::GeoRadius {
     type Error = Status;
 
@@ -350,6 +500,15 @@ impl TryFrom<GeoRadius> for segment::types::GeoRadius {
                 radius: radius.into(),
             }),
             _ => Err(Status::invalid_argument("Malformed GeoRadius type")),
+        }
+    }
+}
+
+impl From<segment::types::GeoRadius> for GeoRadius {
+    fn from(value: segment::types::GeoRadius) -> Self {
+        Self {
+            center: Some(value.center.into()),
+            radius: value.radius as f32, // TODO lossy?
         }
     }
 }
@@ -374,6 +533,17 @@ impl From<Range> for segment::types::Range {
     }
 }
 
+impl From<segment::types::Range> for Range {
+    fn from(value: segment::types::Range) -> Self {
+        Self {
+            lt: value.lt,
+            gt: value.gt,
+            gte: value.gte,
+            lte: value.lte,
+        }
+    }
+}
+
 impl From<ValuesCount> for segment::types::ValuesCount {
     fn from(value: ValuesCount) -> Self {
         Self {
@@ -381,6 +551,17 @@ impl From<ValuesCount> for segment::types::ValuesCount {
             gt: value.gt.map(|x| x as usize),
             gte: value.gte.map(|x| x as usize),
             lte: value.lte.map(|x| x as usize),
+        }
+    }
+}
+
+impl From<segment::types::ValuesCount> for ValuesCount {
+    fn from(value: segment::types::ValuesCount) -> Self {
+        Self {
+            lt: value.lt.map(|x| x as u64),
+            gt: value.gt.map(|x| x as u64),
+            gte: value.gte.map(|x| x as u64),
+            lte: value.lte.map(|x| x as u64),
         }
     }
 }
@@ -396,6 +577,24 @@ impl TryFrom<Match> for segment::types::Match {
                 MatchValue::Boolean(flag) => flag.into(),
             }),
             _ => Err(Status::invalid_argument("Malformed Match condition")),
+        }
+    }
+}
+
+#[allow(deprecated)]
+impl From<segment::types::Match> for Match {
+    fn from(value: segment::types::Match) -> Self {
+        let match_value = match value {
+            segment::types::Match::Value(value) => match value.value {
+                segment::types::ValueVariants::Keyword(kw) => MatchValue::Keyword(kw),
+                segment::types::ValueVariants::Integer(int) => MatchValue::Integer(int),
+                segment::types::ValueVariants::Bool(flag) => MatchValue::Boolean(flag),
+            },
+            segment::types::Match::Keyword(kw) => MatchValue::Keyword(kw.keyword),
+            segment::types::Match::Integer(int) => MatchValue::Integer(int.integer),
+        };
+        Self {
+            match_value: Some(match_value),
         }
     }
 }

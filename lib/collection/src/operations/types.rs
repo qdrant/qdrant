@@ -301,6 +301,33 @@ impl From<io::Error> for CollectionError {
     }
 }
 
+impl From<tonic::transport::Error> for CollectionError {
+    fn from(err: tonic::transport::Error) -> Self {
+        CollectionError::ServiceError {
+            error: format!("Tonic transport error: {}", err),
+        }
+    }
+}
+
+impl From<tonic::Status> for CollectionError {
+    fn from(err: tonic::Status) -> Self {
+        match err.code() {
+            tonic::Code::InvalidArgument => CollectionError::BadInput {
+                description: "InvalidArgument".to_string(),
+            },
+            tonic::Code::NotFound => CollectionError::BadRequest {
+                description: "NotFound".to_string(),
+            },
+            tonic::Code::Internal => CollectionError::ServiceError {
+                error: "Internal error".to_string(),
+            },
+            other => CollectionError::ServiceError {
+                error: format!("Tonic status error: {}", other),
+            },
+        }
+    }
+}
+
 pub type CollectionResult<T> = result::Result<T, CollectionError>;
 
 pub fn is_service_error<T>(err: &CollectionResult<T>) -> bool {

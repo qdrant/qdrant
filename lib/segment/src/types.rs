@@ -456,6 +456,27 @@ pub enum PayloadSchemaType {
     Geo,
 }
 
+impl PayloadSchemaType {
+    pub fn from_index(index: i32) -> Option<Self> {
+        match index {
+            1 => Some(PayloadSchemaType::Keyword),
+            2 => Some(PayloadSchemaType::Integer),
+            3 => Some(PayloadSchemaType::Float),
+            4 => Some(PayloadSchemaType::Geo),
+            _ => None,
+        }
+    }
+
+    pub fn index(&self) -> i32 {
+        match self {
+            PayloadSchemaType::Keyword => 1,
+            PayloadSchemaType::Integer => 2,
+            PayloadSchemaType::Float => 3,
+            PayloadSchemaType::Geo => 4,
+        }
+    }
+}
+
 pub fn value_type(value: &Value) -> Option<PayloadSchemaType> {
     match value {
         Value::Null => None,
