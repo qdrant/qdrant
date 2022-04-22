@@ -46,19 +46,19 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 ---
 
 * :truck: Payload Processing
-  * [ ] Support storing any JSON as a Payload
+  * [x] Support storing any JSON as a Payload
   * [ ] Support more payload types, e.g.
     * Data-time
-  * [ ] Support for `Null` values
+  * [x] Support for `Null` values
   * [ ] Enable more types of filtering queries, e.g.
-    * Filter by Score
-    * Filter by number of stored elements
-    * `isNull` or `isEmpty` query conditions
+    * [ ] Filter by Score
+    * [x] Filter by number of stored elements
+    * [x] `isNull` or `isEmpty` query conditions
 
 ---
 
 * :racing_car: Performance improvements
-  * [ ] Indexing of geo-payload
+  * [x] Indexing of geo-payload
   * [ ] On the fly payload index
   * [x] Multiprocessing segment optimization
   * [ ] Fine-tuned HNSW index configuration

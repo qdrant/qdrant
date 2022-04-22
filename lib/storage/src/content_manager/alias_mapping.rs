@@ -26,6 +26,7 @@ impl AliasMapping {
 /// Persists mapping between alias and collection name. The data is assumed to be relatively small.
 /// - Reads are served from memory.
 /// - Writes are durably saved.
+#[derive(Debug)]
 pub struct AliasPersistence {
     data_path: PathBuf,
     alias_mapping: AliasMapping,

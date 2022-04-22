@@ -32,16 +32,15 @@ use crate::content_manager::{
     collections_ops::{Checker, Collections},
     errors::StorageError,
 };
-use crate::types::StorageConfig;
+use crate::types::{PeerAddressById, StorageConfig};
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 use collection::shard::ShardId;
 
 #[cfg(feature = "consensus")]
-use raft::{
-    eraftpb::{Entry as RaftEntry, Snapshot as RaftSnapshot},
-    RaftState,
-};
+use crate::content_manager::raft_state::Persistent as PersistentRaftState;
+#[cfg(feature = "consensus")]
+use raft::eraftpb::{Entry as RaftEntry, Snapshot as RaftSnapshot};
 #[cfg(feature = "consensus")]
 use tokio::sync::oneshot;
 #[cfg(feature = "consensus")]
@@ -70,7 +69,7 @@ pub struct TableOfContent {
     #[cfg(feature = "consensus")]
     collection_meta_wal: Arc<std::sync::Mutex<Wal>>,
     #[cfg(feature = "consensus")]
-    raft_state: Arc<std::sync::Mutex<RaftState>>,
+    raft_state: Arc<std::sync::Mutex<PersistentRaftState>>,
     #[cfg(feature = "consensus")]
     propose_sender: Option<std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>>,
     #[cfg(feature = "consensus")]
@@ -135,7 +134,10 @@ impl TableOfContent {
             #[cfg(feature = "consensus")]
             collection_meta_wal,
             #[cfg(feature = "consensus")]
-            raft_state: Arc::new(std::sync::Mutex::new(RaftState::default())),
+            raft_state: Arc::new(std::sync::Mutex::new(
+                PersistentRaftState::load_or_init(&storage_config.storage_path)
+                    .expect("Cannot initialize Raft persistent storage"),
+            )),
             #[cfg(feature = "consensus")]
             propose_sender: None,
             #[cfg(feature = "consensus")]
@@ -366,10 +368,7 @@ impl TableOfContent {
         let propose_sender = match &self.propose_sender {
             Some(sender) => sender,
             None => {
-                log::error!(
-                    "Cannot submit collection meta operation proposal: no sender supplied to ToC"
-                );
-                return Ok(true);
+                return Err(StorageError::ServiceError { description: "Cannot submit collection meta operation proposal: no sender supplied to ToC".to_string() });
             }
         };
         let serialized = serde_cbor::to_vec(&operation)?;
@@ -437,6 +436,7 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: RecommendRequest,
+        shard_selection: Option<ShardId>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
@@ -444,6 +444,7 @@ impl TableOfContent {
                 request,
                 self.segment_searcher.deref(),
                 self.search_runtime.handle(),
+                shard_selection,
             )
             .await
             .map_err(|err| err.into())
@@ -456,7 +457,7 @@ impl TableOfContent {
     ///
     /// * `collection_name` - in what collection do we search
     /// * `request` - [`SearchRequest`]
-    ///
+    /// * `shard_selection` - which local shard to use
     /// # Result
     ///
     /// Points with search score
@@ -464,6 +465,7 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: SearchRequest,
+        shard_selection: Option<ShardId>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
@@ -471,6 +473,7 @@ impl TableOfContent {
                 request,
                 self.segment_searcher.as_ref(),
                 self.search_runtime.handle(),
+                shard_selection,
             )
             .await
             .map_err(|err| err.into())
@@ -482,6 +485,7 @@ impl TableOfContent {
     ///
     /// * `collection_name` - select from this collection
     /// * `request` - [`PointRequest`]
+    /// * `shard_selection` - which local shard to use
     ///
     /// # Result
     ///
@@ -490,10 +494,11 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: PointRequest,
+        shard_selection: Option<ShardId>,
     ) -> Result<Vec<Record>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .retrieve(request, self.segment_searcher.as_ref())
+            .retrieve(request, self.segment_searcher.as_ref(), shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -531,6 +536,7 @@ impl TableOfContent {
     ///
     /// * `collection_name` - which collection to use
     /// * `request` - [`ScrollRequest`]
+    /// * `shard_selection` - which local shard to use
     ///
     /// # Result
     ///
@@ -539,10 +545,11 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         request: ScrollRequest,
+        shard_selection: Option<ShardId>,
     ) -> Result<ScrollResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .scroll_by(request, self.segment_searcher.deref())
+            .scroll_by(request, self.segment_searcher.deref(), shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -614,6 +621,54 @@ impl TableOfContent {
     }
 
     #[cfg(feature = "consensus")]
+    pub fn set_unapplied_entries(
+        &self,
+        first_index: u64,
+        last_index: u64,
+    ) -> Result<(), raft::Error> {
+        self.raft_state
+            .lock()
+            .map_err(consensus::raft_error_other)?
+            .set_unapplied_entries(first_index, last_index)
+            .map_err(consensus::raft_error_other)
+    }
+
+    #[cfg(feature = "consensus")]
+    pub fn apply_entries(&self) -> Result<(), raft::Error> {
+        use raft::eraftpb::EntryType;
+
+        let mut raft_state = self
+            .raft_state
+            .lock()
+            .map_err(consensus::raft_error_other)?;
+        while let Some(entry_index) = raft_state.current_unapplied_entry() {
+            log::info!("Applying committed entry with index {entry_index}");
+            let entry = self.collection_wal_entry(entry_index)?;
+            if entry.data.is_empty() {
+                // Empty entry, when the peer becomes Leader it will send an empty entry.
+            } else if entry.get_entry_type() == EntryType::EntryNormal {
+                let operation_result = self.apply_entry(&entry);
+                match operation_result {
+                    Ok(result) => log::info!(
+                        "Successfully applied collection meta operation entry. Index: {}. Result: {result}",
+                        entry.index
+                    ),
+                    Err(err) => {
+                        log::error!("Failed to apply collection meta operation entry with error: {err}")
+                    }
+                }
+            }
+
+            // TODO: handle EntryConfChange
+
+            raft_state
+                .entry_applied()
+                .map_err(consensus::raft_error_other)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "consensus")]
     pub fn append_entries(&self, entries: Vec<RaftEntry>) -> Result<(), StorageError> {
         use prost::Message;
 
@@ -679,20 +734,26 @@ impl TableOfContent {
     }
 
     #[cfg(feature = "consensus")]
-    pub fn set_hard_state(&self, state: raft::eraftpb::HardState) -> Result<(), StorageError> {
-        self.raft_state.lock()?.hard_state = state;
-        Ok(())
+    pub fn set_hard_state(&self, hard_state: raft::eraftpb::HardState) -> Result<(), StorageError> {
+        self.raft_state
+            .lock()?
+            .apply_state_update(|state| state.hard_state = hard_state)
     }
 
     #[cfg(feature = "consensus")]
     pub fn hard_state(&self) -> Result<raft::eraftpb::HardState, StorageError> {
-        Ok(self.raft_state.lock()?.hard_state.clone())
+        Ok(self.raft_state.lock()?.state().hard_state.clone())
     }
 
     #[cfg(feature = "consensus")]
     pub fn set_commit_index(&self, index: u64) -> Result<(), StorageError> {
-        self.raft_state.lock()?.hard_state.commit = index;
-        Ok(())
+        self.raft_state
+            .lock()?
+            .apply_state_update(|state| state.hard_state.commit = index)
+    }
+
+    pub fn peer_address_by_id(&self) -> &PeerAddressById {
+        &self.storage_config.peer_address_by_id
     }
 }
 
@@ -712,11 +773,7 @@ mod consensus {
     use std::{collections::HashMap, ops::Deref, sync::Arc};
 
     use collection::CollectionId;
-    use raft::{
-        eraftpb::{ConfState, Entry as RaftEntry, HardState},
-        storage::Storage as RaftStorage,
-        RaftState,
-    };
+    use raft::{eraftpb::Entry as RaftEntry, storage::Storage as RaftStorage, RaftState};
     use serde::{Deserialize, Serialize};
 
     use crate::content_manager::alias_mapping::AliasMapping;
@@ -737,11 +794,12 @@ mod consensus {
 
     impl RaftStorage for TableOfContent {
         fn initial_state(&self) -> raft::Result<RaftState> {
-            Ok(RaftState {
-                hard_state: HardState::default(),
-                // For network with 1 node, set it as learner. Node id is 1.
-                conf_state: ConfState::from((vec![1], vec![])),
-            })
+            Ok(self
+                .raft_state
+                .lock()
+                .map_err(raft_error_other)?
+                .state()
+                .clone())
         }
 
         fn entries(
@@ -757,8 +815,8 @@ mod consensus {
         fn term(&self, idx: u64) -> raft::Result<u64> {
             {
                 let raft_state = self.raft_state.lock().map_err(raft_error_other)?;
-                if idx == raft_state.hard_state.commit {
-                    return Ok(raft_state.hard_state.term);
+                if idx == raft_state.state().hard_state.commit {
+                    return Ok(raft_state.state().hard_state.term);
                 }
             }
             Ok(self.collection_wal_entry(idx)?.term)
@@ -785,7 +843,12 @@ mod consensus {
             let snapshot = self
                 .collection_management_runtime
                 .block_on(self.collection_meta_snapshot());
-            let raft_state = self.raft_state.lock().map_err(raft_error_other)?.clone();
+            let raft_state = self
+                .raft_state
+                .lock()
+                .map_err(raft_error_other)?
+                .state()
+                .clone();
             if raft_state.hard_state.commit >= request_index {
                 Ok(raft::eraftpb::Snapshot {
                     data: serde_cbor::to_vec(&snapshot).map_err(raft_error_other)?,

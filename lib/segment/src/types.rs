@@ -590,7 +590,7 @@ impl From<IntPayloadType> for Match {
 }
 
 /// Range filter request
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct Range {
     /// point.key < range.lt

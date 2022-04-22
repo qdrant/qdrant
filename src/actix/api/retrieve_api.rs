@@ -25,7 +25,7 @@ async fn do_get_point(
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: true,
     };
-    toc.retrieve(collection_name, request)
+    toc.retrieve(collection_name, request, None)
         .await
         .map(|points| points.into_iter().next())
 }
@@ -36,7 +36,7 @@ async fn scroll_get_points(
     collection_name: &str,
     request: ScrollRequest,
 ) -> Result<ScrollResult, StorageError> {
-    toc.scroll(collection_name, request).await
+    toc.scroll(collection_name, request, None).await
 }
 
 #[get("/collections/{name}/points/{id}")]
@@ -85,7 +85,13 @@ pub async fn get_points(
     let collection_name = path.into_inner();
     let timing = Instant::now();
 
-    let response = do_get_points(&toc.into_inner(), &collection_name, request.into_inner()).await;
+    let response = do_get_points(
+        &toc.into_inner(),
+        &collection_name,
+        request.into_inner(),
+        None,
+    )
+    .await;
     process_response(response, timing)
 }
 

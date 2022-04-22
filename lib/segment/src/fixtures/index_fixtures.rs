@@ -1,25 +1,17 @@
 extern crate profiler_proc_macro;
 use profiler_proc_macro::trace;
 
-use crate::payload_storage::{ConditionChecker, FilterContext};
+use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
-use crate::types::{Filter, PointOffsetType, VectorElementType};
+use crate::types::{PointOffsetType, VectorElementType};
+use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::simple_vector_storage::SimpleRawScorer;
 use bit_vec::BitVec;
-use itertools::Itertools;
 use rand::Rng;
 
 #[trace]
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
     (0..size).map(|_| rnd_gen.gen_range(0.0..1.0)).collect()
-}
-
-pub struct FakeConditionChecker {}
-
-impl ConditionChecker for FakeConditionChecker {
-    fn check(&self, _point_id: PointOffsetType, _query: &Filter) -> bool {
-        true
-    }
 }
 
 pub struct FakeFilterContext {}
@@ -31,7 +23,7 @@ impl FilterContext for FakeFilterContext {
 }
 
 pub struct TestRawScorerProducer<TMetric: Metric> {
-    pub vectors: Vec<Vec<VectorElementType>>,
+    pub vectors: ChunkedVectors,
     pub deleted: BitVec,
     pub metric: TMetric,
 }
@@ -45,12 +37,12 @@ where
     where
         R: Rng + ?Sized,
     {
-        let vectors = (0..num_vectors)
-            .map(|_x| {
-                let rnd_vec = random_vector(rng, dim);
-                metric.preprocess(&rnd_vec).unwrap_or(rnd_vec)
-            })
-            .collect_vec();
+        let mut vectors = ChunkedVectors::new(dim);
+        for _ in 0..num_vectors {
+            let rnd_vec = random_vector(rng, dim);
+            let rnd_vec = metric.preprocess(&rnd_vec).unwrap_or(rnd_vec);
+            vectors.push(&rnd_vec);
+        }
 
         TestRawScorerProducer {
             vectors,

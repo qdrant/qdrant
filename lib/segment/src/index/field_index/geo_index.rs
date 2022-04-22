@@ -438,7 +438,7 @@ mod tests {
         let mut index = PersistedGeoMapIndex::default();
 
         for idx in 0..num_points {
-            let geo_points = random_geo_payload(&mut rnd, num_geo_values);
+            let geo_points = random_geo_payload(&mut rnd, num_geo_values..=num_geo_values);
             index.add(idx as PointOffsetType, &Value::Array(geo_points))
         }
         assert_eq!(index.points_count, num_points);

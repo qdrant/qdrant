@@ -2,19 +2,75 @@ syntax = "proto3";
 
 import "points.proto";
 
-option java_multiple_files = true;
-option java_package = "tech.qdrant.grpc";
-option java_outer_classname = "QdrantProto";
-
 package qdrant;
 
 import "google/protobuf/struct.proto";
 
 service PointsInternal {
   rpc Upsert (UpsertPointsInternal) returns (PointsOperationResponse) {}
+  rpc Delete (DeletePointsInternal) returns (PointsOperationResponse) {}
+  rpc SetPayload (SetPayloadPointsInternal) returns (PointsOperationResponse) {}
+  rpc DeletePayload (DeletePayloadPointsInternal) returns (PointsOperationResponse) {}
+  rpc ClearPayload (ClearPayloadPointsInternal) returns (PointsOperationResponse) {}
+  rpc CreateFieldIndex (CreateFieldIndexCollectionInternal) returns (PointsOperationResponse) {}
+  rpc DeleteFieldIndex (DeleteFieldIndexCollectionInternal) returns (PointsOperationResponse) {}
+  rpc Search (SearchPointsInternal) returns (SearchResponse) {}
+  rpc Scroll (ScrollPointsInternal) returns (ScrollResponse) {}
+  rpc Recommend (RecommendPointsInternal) returns (RecommendResponse) {}
+  rpc Get (GetPointsInternal) returns (GetResponse) {}
 }
 
 message UpsertPointsInternal {
   UpsertPoints upsert_points = 1;
+  uint32 shard_id = 2;
+}
+
+message DeletePointsInternal {
+  DeletePoints delete_points = 1;
+  uint32 shard_id = 2;
+}
+
+message SetPayloadPointsInternal {
+  SetPayloadPoints set_payload_points = 1;
+  uint32 shard_id = 2;
+}
+
+message DeletePayloadPointsInternal {
+  DeletePayloadPoints delete_payload_points = 1;
+  uint32 shard_id = 2;
+}
+
+message ClearPayloadPointsInternal {
+  ClearPayloadPoints clear_payload_points = 1;
+  uint32 shard_id = 2;
+}
+
+message CreateFieldIndexCollectionInternal {
+  CreateFieldIndexCollection create_field_index_collection = 1;
+  uint32 shard_id = 2;
+}
+
+message DeleteFieldIndexCollectionInternal {
+  DeleteFieldIndexCollection delete_field_index_collection = 1;
+  uint32 shard_id = 2;
+}
+
+message SearchPointsInternal {
+  SearchPoints search_points = 1;
+  uint32 shard_id = 2;
+}
+
+message ScrollPointsInternal {
+  ScrollPoints scroll_points = 1;
+  uint32 shard_id = 2;
+}
+
+message RecommendPointsInternal {
+  RecommendPoints recommend_points = 1;
+  uint32 shard_id = 2;
+}
+
+message GetPointsInternal {
+  GetPoints get_points = 1;
   uint32 shard_id = 2;
 }

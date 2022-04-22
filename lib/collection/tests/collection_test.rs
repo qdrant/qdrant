@@ -70,7 +70,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
 
     let segment_searcher = SimpleCollectionSearcher::new();
     let search_res = collection
-        .search(search_request, &segment_searcher, &Handle::current())
+        .search(search_request, &segment_searcher, &Handle::current(), None)
         .await;
 
     match search_res {
@@ -127,7 +127,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
 
     let segment_searcher = SimpleCollectionSearcher::new();
     let search_res = collection
-        .search(search_request, &segment_searcher, &Handle::current())
+        .search(search_request, &segment_searcher, &Handle::current(), None)
         .await;
 
     match search_res {
@@ -200,7 +200,7 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         with_vector: true,
     };
     let retrieved = loaded_collection
-        .retrieve(request, &segment_searcher)
+        .retrieve(request, &segment_searcher, None)
         .await
         .unwrap();
 
@@ -233,7 +233,7 @@ fn test_deserialization() {
 
     let crob_bytes = rmp_serde::to_vec(&insert_points).unwrap();
 
-    let _read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&crob_bytes).unwrap();
+    let _read_obj2: CollectionUpdateOperations = rmp_serde::from_slice(&crob_bytes).unwrap();
 }
 
 #[test]
@@ -260,7 +260,7 @@ fn test_deserialization2() {
 
     let raw_bytes = rmp_serde::to_vec(&insert_points).unwrap();
 
-    let _read_obj2: CollectionUpdateOperations = rmp_serde::from_read_ref(&raw_bytes).unwrap();
+    let _read_obj2: CollectionUpdateOperations = rmp_serde::from_slice(&raw_bytes).unwrap();
 }
 
 // Request to find points sent to all shards but they might not have a particular id, so they will return an error
@@ -314,6 +314,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
             },
             &segment_searcher,
             &Handle::current(),
+            None,
         )
         .await
         .unwrap();
@@ -372,6 +373,7 @@ async fn test_read_api_with_shards(shard_number: u32) {
                 with_vector: false,
             },
             &segment_searcher,
+            None,
         )
         .await
         .unwrap();
@@ -451,6 +453,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
                 with_vector: false,
             },
             &segment_searcher,
+            None,
         )
         .await
         .unwrap();

@@ -250,8 +250,8 @@ checksum = "595d3cfa7a60d4555cb5067b99f07142a08ea778de5cf993f7b75c7d8fabc486"
 name = "api"
 version = "0.1.0"
 dependencies = [
- "prost 0.10.0",
- "prost-types 0.10.0",
+ "prost 0.10.1",
+ "prost-types 0.10.1",
  "schemars",
  "segment",
  "serde",
@@ -701,9 +701,9 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "0.13.0"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a623a46970097d353e2c8154fa527d8ce45cd0e02cc1812969b889c49b3728e8"
+checksum = "3ea917b74b6edfb5024e3b55d3c8f710b5f4ed92646429601a42e96f0812b31b"
 dependencies = [
  "async-trait",
  "json5",
@@ -1241,9 +1241,9 @@ dependencies = [
 
 [[package]]
 name = "geo"
-version = "0.19.0"
+version = "0.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61faf6a68f9432b5287c393268e86a07e4dfed79e6e0962b0e6e59b2f70c77d8"
+checksum = "d7e2e3be15682a45e9dfe9a04f84bff275390047204ab22f3c6b2312fcfb9e24"
 dependencies = [
  "geo-types",
  "geographiclib-rs",
@@ -1255,9 +1255,9 @@ dependencies = [
 
 [[package]]
 name = "geo-types"
-version = "0.7.3"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "658ffd4025e593f0b64e8fa7a1afc4082e4471ac823034b9d4e338edc9adc6fb"
+checksum = "a9537881a3d2941ff3fe901e744c45f0fa4c142334f499f27d26be1d72299ba8"
 dependencies = [
  "approx",
  "num-traits",
@@ -2216,9 +2216,9 @@ dependencies = [
 
 [[package]]
 name = "pprof"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c090facb9ab04a4fb15fe27f8861059f195dd0847e6f1042016244e129eddeb2"
+checksum = "f2324292407eab69d4ace0eed1524fe612ac37c98aa22b0d868355b17fada530"
 dependencies = [
  "backtrace",
  "cfg-if",
@@ -2229,9 +2229,9 @@ dependencies = [
  "nix",
  "once_cell",
  "parking_lot",
- "prost 0.9.0",
- "prost-build 0.9.0",
- "prost-derive 0.9.0",
+ "prost 0.10.1",
+ "prost-build 0.10.0",
+ "prost-derive 0.10.0",
  "smallvec",
  "symbolic-demangle",
  "tempfile",
@@ -2306,19 +2306,9 @@ dependencies = [
 
 [[package]]
 name = "prost"
-version = "0.9.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "444879275cb4fd84958b1a1d5420d15e6fcf7c235fe47f053c9c2a80aceb6001"
-dependencies = [
- "bytes",
- "prost-derive 0.9.0",
-]
-
-[[package]]
-name = "prost"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bd5316aa8f5c82add416dfbc25116b84b748a21153f512917e8143640a71bbd"
+checksum = "a07b0857a71a8cb765763950499cae2413c3f9cede1133478c43600d9e146890"
 dependencies = [
  "bytes",
  "prost-derive 0.10.0",
@@ -2344,26 +2334,6 @@ dependencies = [
 
 [[package]]
 name = "prost-build"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62941722fb675d463659e49c4f3fe1fe792ff24fe5bbaa9c08cd3b98a1c354f5"
-dependencies = [
- "bytes",
- "heck 0.3.3",
- "itertools 0.10.3",
- "lazy_static 1.4.0",
- "log 0.4.16",
- "multimap",
- "petgraph 0.6.0",
- "prost 0.9.0",
- "prost-types 0.9.0",
- "regex 1.5.5",
- "tempfile",
- "which",
-]
-
-[[package]]
-name = "prost-build"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "328f9f29b82409216decb172d81e936415d21245befa79cd34c3f29d87d1c50b"
@@ -2377,8 +2347,8 @@ dependencies = [
  "log 0.4.16",
  "multimap",
  "petgraph 0.6.0",
- "prost 0.10.0",
- "prost-types 0.10.0",
+ "prost 0.10.1",
+ "prost-types 0.10.1",
  "regex 1.5.5",
  "tempfile",
  "which",
@@ -2392,19 +2362,6 @@ checksum = "169a15f3008ecb5160cba7d37bcd690a7601b6d30cfb87a117d45e59d52af5d4"
 dependencies = [
  "anyhow",
  "itertools 0.9.0",
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "prost-derive"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9cc1a3263e07e0bf68e96268f37665207b49560d98739662cdfaae215c720fe"
-dependencies = [
- "anyhow",
- "itertools 0.10.3",
  "proc-macro2",
  "quote",
  "syn",
@@ -2435,22 +2392,12 @@ dependencies = [
 
 [[package]]
 name = "prost-types"
-version = "0.9.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "534b7a0e836e3c482d2693070f982e39e7611da9695d4d1f5a4b186b51faef0a"
+checksum = "2d0a014229361011dc8e69c8a1ec6c2e8d0f2af7c91e3ea3f5b2170298461e68"
 dependencies = [
  "bytes",
- "prost 0.9.0",
-]
-
-[[package]]
-name = "prost-types"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "926681c118ae6e512a3ccefd4abbe5521a14f4cc1e207356d4d00c0b7f2006fd"
-dependencies = [
- "bytes",
- "prost 0.10.0",
+ "prost 0.10.1",
 ]
 
 [[package]]
@@ -2474,7 +2421,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "actix-web",
  "api",
@@ -2486,9 +2433,7 @@ dependencies = [
  "num-traits",
  "num_cpus",
  "parking_lot",
- "profiler_proc_macro",
- "prost 0.10.0",
- "prost-types 0.10.0",
+ "prost 0.7.0",
  "raft",
  "rusty-hook",
  "schemars",
@@ -2723,19 +2668,20 @@ dependencies = [
 
 [[package]]
 name = "rmp"
-version = "0.8.10"
+version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f55e5fa1446c4d5dd1f5daeed2a4fe193071771a2636274d0d7a3b082aa7ad6"
+checksum = "44519172358fd6d58656c86ab8e7fbc9e1490c3e8f14d35ed78ca0dd07403c9f"
 dependencies = [
  "byteorder 1.4.3",
  "num-traits",
+ "paste",
 ]
 
 [[package]]
 name = "rmp-serde"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3eedffbfcc6a428f230c04baf8f59bd73c1781361e4286111fe900849aaddaf"
+checksum = "25786b0d276110195fa3d6f3f31299900cf71dfbd6c28450f3f58a0e7f7a347e"
 dependencies = [
  "byteorder 1.4.3",
  "rmp",
@@ -3105,6 +3051,7 @@ version = "0.2.0"
 dependencies = [
  "api",
  "async-trait",
+ "atomicwrites",
  "collection",
  "itertools 0.10.3",
  "log 0.4.16",
@@ -3450,7 +3397,7 @@ dependencies = [
  "hyper-timeout",
  "percent-encoding",
  "pin-project",
- "prost 0.10.0",
+ "prost 0.10.1",
  "prost-derive 0.10.0",
  "tokio",
  "tokio-stream",

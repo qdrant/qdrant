@@ -46,7 +46,6 @@ use std::fs::{read_dir, remove_dir_all};
 /// Holds all object, required for collection functioning
 pub struct LocalShard {
     segments: Arc<RwLock<SegmentHolder>>,
-    // TODO: Move config into Raft global state
     config: Arc<TokioRwLock<CollectionConfig>>,
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
     update_handler: Arc<Mutex<UpdateHandler>>,

@@ -1,17 +1,19 @@
-use collection::optimizers_builder::OptimizersConfig;
-use storage::content_manager::toc::TableOfContent;
-use storage::types::{PerformanceConfig, StorageConfig};
-use tempdir::TempDir;
-use tokio::runtime::Runtime;
-
-#[cfg(test)]
+#[cfg(all(test, not(feature = "consensus")))]
 mod tests {
-    use super::*;
+    use collection::optimizers_builder::OptimizersConfig;
     use segment::types::Distance;
-    use storage::content_manager::collection_meta_ops::{
-        ChangeAliasesOperation, CollectionMetaOperations, CreateAlias, CreateCollection,
-        CreateCollectionOperation, DeleteAlias, RenameAlias,
+    use storage::{
+        content_manager::{
+            collection_meta_ops::{
+                ChangeAliasesOperation, CollectionMetaOperations, CreateAlias, CreateCollection,
+                CreateCollectionOperation, DeleteAlias, RenameAlias,
+            },
+            toc::TableOfContent,
+        },
+        types::{PerformanceConfig, StorageConfig},
     };
+    use tempdir::TempDir;
+    use tokio::runtime::Runtime;
 
     #[test]
     fn test_alias_operation() {
@@ -35,6 +37,7 @@ mod tests {
                 max_search_threads: 1,
             },
             hnsw_index: Default::default(),
+            peer_address_by_id: Default::default(),
         };
 
         let runtime = Runtime::new().unwrap();

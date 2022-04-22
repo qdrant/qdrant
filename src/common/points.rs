@@ -144,22 +144,26 @@ pub async fn do_search_points(
     toc: &TableOfContent,
     collection_name: &str,
     request: SearchRequest,
+    shard_selection: Option<ShardId>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
-    toc.search(collection_name, request).await
+    toc.search(collection_name, request, shard_selection).await
 }
 
 pub async fn do_get_points(
     toc: &TableOfContent,
     collection_name: &str,
     request: PointRequest,
+    shard_selection: Option<ShardId>,
 ) -> Result<Vec<Record>, StorageError> {
-    toc.retrieve(collection_name, request).await
+    toc.retrieve(collection_name, request, shard_selection)
+        .await
 }
 
 pub async fn do_scroll_points(
     toc: &TableOfContent,
     collection_name: &str,
     request: ScrollRequest,
+    shard_selection: Option<ShardId>,
 ) -> Result<ScrollResult, StorageError> {
-    toc.scroll(collection_name, request).await
+    toc.scroll(collection_name, request, shard_selection).await
 }

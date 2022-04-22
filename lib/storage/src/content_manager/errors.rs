@@ -41,6 +41,9 @@ impl From<CollectionError> for StorageError {
             err @ CollectionError::InconsistentFailure { .. } => StorageError::ServiceError {
                 description: format!("{err}"),
             },
+            CollectionError::BadShardSelection { description } => {
+                StorageError::BadRequest { description }
+            }
         }
     }
 }
@@ -103,6 +106,24 @@ impl From<prost::EncodeError> for StorageError {
     fn from(err: prost::EncodeError) -> Self {
         StorageError::ServiceError {
             description: format!("prost encode error: {}", err),
+        }
+    }
+}
+
+#[cfg(feature = "consensus")]
+impl From<prost::DecodeError> for StorageError {
+    fn from(err: prost::DecodeError) -> Self {
+        StorageError::ServiceError {
+            description: format!("prost decode error: {}", err),
+        }
+    }
+}
+
+#[cfg(feature = "consensus")]
+impl<E: std::fmt::Display> From<atomicwrites::Error<E>> for StorageError {
+    fn from(err: atomicwrites::Error<E>) -> Self {
+        StorageError::ServiceError {
+            description: format!("Failed to write file: {}", err),
         }
     }
 }

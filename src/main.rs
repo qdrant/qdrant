@@ -49,6 +49,7 @@ fn main() -> std::io::Result<()> {
     toc.with_propose_sender(propose_sender);
 
     let toc_arc = Arc::new(toc);
+    let mut handles: Vec<JoinHandle<Result<(), Error>>> = vec![];
 
     #[cfg(feature = "consensus")]
     {
@@ -66,11 +67,12 @@ fn main() -> std::io::Result<()> {
                 }
             })?;
 
+        let message_sender_moved = message_sender.clone();
         thread::Builder::new()
             .name("forward-proposals".to_string())
             .spawn(move || {
                 while let Ok(entry) = propose_receiver.recv() {
-                    if message_sender
+                    if message_sender_moved
                         .send(consensus::Message::FromClient(entry))
                         .is_err()
                     {
@@ -79,9 +81,26 @@ fn main() -> std::io::Result<()> {
                     }
                 }
             })?;
-    }
 
-    let mut handles: Vec<JoinHandle<Result<(), Error>>> = vec![];
+        if let Some(internal_grpc_port) = settings.service.internal_grpc_port {
+            let toc_arc = toc_arc.clone();
+            let settings = settings.clone();
+            let handle = thread::Builder::new()
+                .name("grpc_internal".to_string())
+                .spawn(move || {
+                    tonic::init_internal(
+                        toc_arc,
+                        settings.service.host,
+                        internal_grpc_port,
+                        message_sender,
+                    )
+                })
+                .unwrap();
+            handles.push(handle);
+        } else {
+            log::info!("gRPC internal endpoint disabled");
+        }
+    }
 
     #[cfg(feature = "web")]
     {
