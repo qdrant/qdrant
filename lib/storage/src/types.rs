@@ -21,6 +21,4 @@ pub struct StorageConfig {
     pub wal: WalConfig,
     pub performance: PerformanceConfig,
     pub hnsw_index: HnswConfig,
-    #[serde(default)]
-    pub peer_address_by_id: PeerAddressById,
 }

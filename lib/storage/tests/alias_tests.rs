@@ -37,7 +37,6 @@ mod tests {
                 max_search_threads: 1,
             },
             hnsw_index: Default::default(),
-            peer_address_by_id: Default::default(),
         };
 
         let runtime = Runtime::new().unwrap();
