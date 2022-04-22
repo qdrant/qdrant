@@ -248,7 +248,7 @@ checksum = "595d3cfa7a60d4555cb5067b99f07142a08ea778de5cf993f7b75c7d8fabc486"
 
 [[package]]
 name = "api"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "prost 0.10.1",
  "prost-types 0.10.1",
