@@ -2433,6 +2433,7 @@ dependencies = [
  "num-traits",
  "num_cpus",
  "parking_lot",
+ "profiler_proc_macro",
  "prost 0.7.0",
  "raft",
  "rusty-hook",
