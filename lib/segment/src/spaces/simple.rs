@@ -26,6 +26,27 @@ impl Metric for EuclidMetric {
     }
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") && v1.len() >= 32 {
+                return unsafe { euclid_similarity_avx(v1, v2) };
+            }
+        }
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("sse") && v1.len() >= 16 {
+                return unsafe { euclid_similarity_sse(v1, v2) };
+            }
+        }
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= 16 {
+                return unsafe { euclid_similarity_neon(v1, v2) };
+            }
+        }
+
         euclid_similarity(v1, v2)
     }
 
@@ -40,6 +61,27 @@ impl Metric for DotProductMetric {
     }
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") && v1.len() >= 32 {
+                return unsafe { dot_similarity_avx(v1, v2) };
+            }
+        }
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("sse") && v1.len() >= 16 {
+                return unsafe { dot_similarity_sse(v1, v2) };
+            }
+        }
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= 16 {
+                return unsafe { dot_similarity_neon(v1, v2) };
+            }
+        }
+
         dot_similarity(v1, v2)
     }
 
@@ -54,10 +96,52 @@ impl Metric for CosineMetric {
     }
 
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") && v1.len() >= 32 {
+                return unsafe { dot_similarity_avx(v1, v2) };
+            }
+        }
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("sse") && v1.len() >= 16 {
+                return unsafe { dot_similarity_sse(v1, v2) };
+            }
+        }
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= 16 {
+                return unsafe { dot_similarity_neon(v1, v2) };
+            }
+        }
+
         dot_similarity(v1, v2)
     }
 
     fn preprocess(&self, vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") && vector.len() >= 32 {
+                return Some(unsafe { cosine_preprocess_avx(vector) });
+            }
+        }
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("sse") && vector.len() >= 16 {
+                return Some(unsafe { cosine_preprocess_sse(vector) });
+            }
+        }
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            if std::arch::is_aarch64_feature_detected!("neon") && vector.len() >= 16 {
+                return Some(unsafe { cosine_preprocess_neon(vector) });
+            }
+        }
+
         Some(cosine_preprocess(vector))
     }
 }
