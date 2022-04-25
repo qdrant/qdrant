@@ -57,10 +57,6 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
         self.heap.peek().map(|x| &x.0)
     }
 
-    pub fn pop(&mut self) -> Option<T> {
-        self.heap.pop().map(|x| x.0)
-    }
-
     /// Returns actual length of the queue
     pub fn len(&self) -> usize {
         self.heap.len()

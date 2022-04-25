@@ -483,17 +483,9 @@ impl GraphLayers {
             &mut points_scorer,
         );
 
-        let mut nearest =
-            self.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer, &[]);
-        while nearest.len() > top {
-            nearest.pop();
-        }
-        let mut nearest_vec = Vec::new();
-        while let Some(p) = nearest.pop() {
-            nearest_vec.push(p);
-        }
-        nearest_vec.reverse();
-        nearest_vec
+        let nearest =
+            self.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer, &[]).into_vec();
+        nearest.into_iter().take(top).collect_vec()
     }
 
     pub fn get_path(path: &Path) -> PathBuf {
