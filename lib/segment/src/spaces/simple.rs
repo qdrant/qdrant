@@ -11,6 +11,12 @@ use super::simple_avx::*;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use super::simple_neon::*;
 
+#[cfg(target_arch = "x86_64")]
+const MIN_DIM_SIZE_AVX: usize = 32;
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
+const MIN_DIM_SIZE_SIMD: usize = 16;
+
 #[derive(Clone)]
 pub struct DotProductMetric {}
 
@@ -28,21 +34,24 @@ impl Metric for EuclidMetric {
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
+            if is_x86_feature_detected!("avx")
+                && is_x86_feature_detected!("fma")
+                && v1.len() >= MIN_DIM_SIZE_AVX
+            {
                 return unsafe { euclid_similarity_avx(v1, v2) };
             }
         }
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
-            if is_x86_feature_detected!("sse") {
+            if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { euclid_similarity_sse(v1, v2) };
             }
         }
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
-            if std::arch::is_aarch64_feature_detected!("neon") {
+            if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { euclid_similarity_neon(v1, v2) };
             }
         }
@@ -63,21 +72,24 @@ impl Metric for DotProductMetric {
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
+            if is_x86_feature_detected!("avx")
+                && is_x86_feature_detected!("fma")
+                && v1.len() >= MIN_DIM_SIZE_AVX
+            {
                 return unsafe { dot_similarity_avx(v1, v2) };
             }
         }
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
-            if is_x86_feature_detected!("sse") {
+            if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { dot_similarity_sse(v1, v2) };
             }
         }
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
-            if std::arch::is_aarch64_feature_detected!("neon") {
+            if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { dot_similarity_neon(v1, v2) };
             }
         }
@@ -98,21 +110,24 @@ impl Metric for CosineMetric {
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
+            if is_x86_feature_detected!("avx")
+                && is_x86_feature_detected!("fma")
+                && v1.len() >= MIN_DIM_SIZE_AVX
+            {
                 return unsafe { dot_similarity_avx(v1, v2) };
             }
         }
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
-            if is_x86_feature_detected!("sse") {
+            if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { dot_similarity_sse(v1, v2) };
             }
         }
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
-            if std::arch::is_aarch64_feature_detected!("neon") {
+            if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { dot_similarity_neon(v1, v2) };
             }
         }
@@ -123,21 +138,25 @@ impl Metric for CosineMetric {
     fn preprocess(&self, vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
+            if is_x86_feature_detected!("avx")
+                && is_x86_feature_detected!("fma")
+                && vector.len() >= MIN_DIM_SIZE_AVX
+            {
                 return Some(unsafe { cosine_preprocess_avx(vector) });
             }
         }
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
-            if is_x86_feature_detected!("sse") {
+            if is_x86_feature_detected!("sse") && vector.len() >= MIN_DIM_SIZE_SIMD {
                 return Some(unsafe { cosine_preprocess_sse(vector) });
             }
         }
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
-            if std::arch::is_aarch64_feature_detected!("neon") {
+            if std::arch::is_aarch64_feature_detected!("neon") && vector.len() >= MIN_DIM_SIZE_SIMD
+            {
                 return Some(unsafe { cosine_preprocess_neon(vector) });
             }
         }
