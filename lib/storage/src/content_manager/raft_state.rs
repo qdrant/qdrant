@@ -1,10 +1,12 @@
 use std::{
+    collections::HashMap,
     fs::File,
     io::BufWriter,
     path::{Path, PathBuf},
 };
 
 use atomicwrites::{AtomicFile, OverwriteBehavior::AllowOverwrite};
+use itertools::Itertools;
 use prost::Message;
 use raft::{
     eraftpb::{ConfState, HardState},
@@ -53,7 +55,7 @@ impl UnappliedEntries {
 pub struct Persistent {
     state: RaftStateWrapper,
     unapplied_entries: UnappliedEntries,
-    peer_address_by_id: PeerAddressById,
+    peer_address_by_id: PeerAddressByIdWrapper,
     this_peer_id: u64,
     #[serde(skip)]
     path: PathBuf,
@@ -108,7 +110,7 @@ impl Persistent {
     }
 
     pub fn peer_address_by_id(&self) -> &PeerAddressById {
-        &self.peer_address_by_id
+        &self.peer_address_by_id.0
     }
 
     pub fn this_peer_id(&self) -> u64 {
@@ -144,6 +146,34 @@ impl Persistent {
             let writer = BufWriter::new(file);
             serde_cbor::to_writer(writer, self)
         })?)
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(try_from = "HashMap<u64, String>")]
+#[serde(into = "HashMap<u64, String>")]
+struct PeerAddressByIdWrapper(PeerAddressById);
+
+impl From<PeerAddressByIdWrapper> for HashMap<u64, String> {
+    fn from(wrapper: PeerAddressByIdWrapper) -> Self {
+        wrapper
+            .0
+            .into_iter()
+            .map(|(id, address)| (id, format!("{address}")))
+            .collect()
+    }
+}
+
+impl TryFrom<HashMap<u64, String>> for PeerAddressByIdWrapper {
+    type Error = http::uri::InvalidUri;
+
+    fn try_from(value: HashMap<u64, String>) -> Result<Self, Self::Error> {
+        Ok(PeerAddressByIdWrapper(
+            value
+                .into_iter()
+                .map(|(id, address)| address.parse().map(|address| (id, address)))
+                .try_collect()?,
+        ))
     }
 }
 
