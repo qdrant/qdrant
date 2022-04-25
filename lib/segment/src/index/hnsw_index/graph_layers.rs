@@ -483,8 +483,9 @@ impl GraphLayers {
             &mut points_scorer,
         );
 
-        let nearest =
-            self.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer, &[]).into_vec();
+        let nearest = self
+            .search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer, &[])
+            .into_vec();
         nearest.into_iter().take(top).collect_vec()
     }
 
