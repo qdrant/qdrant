@@ -29,13 +29,15 @@ use crate::content_manager::{
     collections_ops::{Checker, Collections},
     errors::StorageError,
 };
-use crate::types::{PeerAddressById, StorageConfig};
+use crate::types::StorageConfig;
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 use collection::shard::ShardId;
 
 #[cfg(feature = "consensus")]
-use crate::content_manager::raft_state::Persistent as PersistentRaftState;
+use crate::{
+    content_manager::raft_state::Persistent as PersistentRaftState, types::PeerAddressById,
+};
 #[cfg(feature = "consensus")]
 use raft::eraftpb::{Entry as RaftEntry, Snapshot as RaftSnapshot};
 #[cfg(feature = "consensus")]
@@ -73,6 +75,8 @@ pub struct TableOfContent {
     on_meta_op_apply: std::sync::Mutex<
         HashMap<CollectionMetaOperations, oneshot::Sender<Result<bool, StorageError>>>,
     >,
+    #[cfg(feature = "consensus")]
+    this_peer_id: u64,
 }
 
 impl TableOfContent {
@@ -119,6 +123,9 @@ impl TableOfContent {
                 Wal::open(collections_meta_wal_path).unwrap(),
             ))
         };
+        #[cfg(feature = "consensus")]
+        let raft_state = PersistentRaftState::load_or_init(&storage_config.storage_path)
+            .expect("Cannot initialize Raft persistent storage");
 
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
@@ -127,13 +134,13 @@ impl TableOfContent {
             alias_persistence: RwLock::new(alias_persistence),
             segment_searcher: Box::new(SimpleCollectionSearcher::new()),
             collection_management_runtime,
+            // PeerId does not change during execution so it is ok to copy it here.
+            #[cfg(feature = "consensus")]
+            this_peer_id: raft_state.this_peer_id(),
             #[cfg(feature = "consensus")]
             collection_meta_wal,
             #[cfg(feature = "consensus")]
-            raft_state: Arc::new(std::sync::Mutex::new(
-                PersistentRaftState::load_or_init(&storage_config.storage_path)
-                    .expect("Cannot initialize Raft persistent storage"),
-            )),
+            raft_state: Arc::new(std::sync::Mutex::new(raft_state)),
             #[cfg(feature = "consensus")]
             propose_sender: None,
             #[cfg(feature = "consensus")]
@@ -580,8 +587,9 @@ impl TableOfContent {
         .map_err(consensus::raft_error_other)
     }
 
-    pub fn this_peer_id(&self) -> u32 {
-        0
+    #[cfg(feature = "consensus")]
+    pub fn this_peer_id(&self) -> u64 {
+        self.this_peer_id
     }
 
     #[cfg(feature = "consensus")]
@@ -746,8 +754,9 @@ impl TableOfContent {
             .apply_state_update(|state| state.hard_state.commit = index)
     }
 
-    pub fn peer_address_by_id(&self) -> &PeerAddressById {
-        &self.storage_config.peer_address_by_id
+    #[cfg(feature = "consensus")]
+    pub fn peer_address_by_id(&self) -> Result<PeerAddressById, StorageError> {
+        Ok(self.raft_state.lock()?.peer_address_by_id().clone())
     }
 }
 

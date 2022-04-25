@@ -52,7 +52,7 @@ mod tests;
 
 pub type CollectionId = String;
 
-pub type PeerId = u32;
+pub type PeerId = u64;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct State {

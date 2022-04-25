@@ -28,7 +28,7 @@ impl Consensus {
         toc_ref: TableOfContentRef,
     ) -> raft::Result<(Self, SyncSender<Message>)> {
         let config = Config {
-            id: 1,
+            id: toc_ref.this_peer_id(),
             ..Default::default()
         };
         config.validate()?;
