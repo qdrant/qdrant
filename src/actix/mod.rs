@@ -66,3 +66,17 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
         .await
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use ::api::grpc::api_crate_version;
+
+    #[test]
+    fn test_version() {
+        assert_eq!(
+            api_crate_version(),
+            env!("CARGO_PKG_VERSION"),
+            "Qdrant and lib/api crate versions are not same"
+        );
+    }
+}
