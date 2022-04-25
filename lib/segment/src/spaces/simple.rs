@@ -28,7 +28,8 @@ impl Metric for EuclidMetric {
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") && v1.len() >= 32 {
+            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") && v1.len() >= 32
+            {
                 return unsafe { euclid_similarity_avx(v1, v2) };
             }
         }
@@ -63,7 +64,8 @@ impl Metric for DotProductMetric {
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") && v1.len() >= 32 {
+            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") && v1.len() >= 32
+            {
                 return unsafe { dot_similarity_avx(v1, v2) };
             }
         }
@@ -98,7 +100,8 @@ impl Metric for CosineMetric {
     fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") && v1.len() >= 32 {
+            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") && v1.len() >= 32
+            {
                 return unsafe { dot_similarity_avx(v1, v2) };
             }
         }
@@ -123,7 +126,10 @@ impl Metric for CosineMetric {
     fn preprocess(&self, vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") && vector.len() >= 32 {
+            if is_x86_feature_detected!("avx")
+                && is_x86_feature_detected!("fma")
+                && vector.len() >= 32
+            {
                 return Some(unsafe { cosine_preprocess_avx(vector) });
             }
         }
