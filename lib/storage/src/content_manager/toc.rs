@@ -433,7 +433,6 @@ impl TableOfContent {
     /// # Result
     ///
     /// Points with recommendation score
-    #[allow(unreachable_code)]
     pub async fn recommend(
         &self,
         collection_name: &str,
@@ -455,16 +454,20 @@ impl TableOfContent {
                 .await
                 .map_err(|err| err.into());
         }
-        collection
-            .recommend_by(
-                request,
-                self.segment_searcher.deref(),
-                self.search_runtime.handle(),
-                shard_selection,
-                &HashMap::new(),
-            )
-            .await
-            .map_err(|err| err.into())
+
+        #[cfg(not(feature = "consensus"))]
+        {
+            collection
+                .recommend_by(
+                    request,
+                    self.segment_searcher.deref(),
+                    self.search_runtime.handle(),
+                    shard_selection,
+                    &HashMap::new(),
+                )
+                .await
+                .map_err(|err| err.into())
+        }
     }
 
     /// Search for the closest points using vector similarity with given restrictions defined
@@ -478,7 +481,6 @@ impl TableOfContent {
     /// # Result
     ///
     /// Points with search score
-    #[allow(unreachable_code)]
     pub async fn search(
         &self,
         collection_name: &str,
@@ -501,16 +503,19 @@ impl TableOfContent {
                 .map_err(|err| err.into());
         }
 
-        collection
-            .search(
-                request,
-                self.segment_searcher.as_ref(),
-                self.search_runtime.handle(),
-                shard_selection,
-                &HashMap::new(),
-            )
-            .await
-            .map_err(|err| err.into())
+        #[cfg(not(feature = "consensus"))]
+        {
+            collection
+                .search(
+                    request,
+                    self.segment_searcher.as_ref(),
+                    self.search_runtime.handle(),
+                    shard_selection,
+                    &HashMap::new(),
+                )
+                .await
+                .map_err(|err| err.into())
+        }
     }
 
     /// Return specific points by IDs
@@ -524,7 +529,6 @@ impl TableOfContent {
     /// # Result
     ///
     /// List of points with specified information included
-    #[allow(unreachable_code)]
     pub async fn retrieve(
         &self,
         collection_name: &str,
@@ -546,15 +550,18 @@ impl TableOfContent {
                 .map_err(|err| err.into());
         }
 
-        collection
-            .retrieve(
-                request,
-                self.segment_searcher.as_ref(),
-                shard_selection,
-                &HashMap::new(),
-            )
-            .await
-            .map_err(|err| err.into())
+        #[cfg(not(feature = "consensus"))]
+        {
+            collection
+                .retrieve(
+                    request,
+                    self.segment_searcher.as_ref(),
+                    shard_selection,
+                    &HashMap::new(),
+                )
+                .await
+                .map_err(|err| err.into())
+        }
     }
 
     /// List of all collections
@@ -595,7 +602,6 @@ impl TableOfContent {
     /// # Result
     ///
     /// List of points with specified information included
-    #[allow(unreachable_code)]
     pub async fn scroll(
         &self,
         collection_name: &str,
@@ -617,18 +623,20 @@ impl TableOfContent {
                 .map_err(|err| err.into());
         }
 
-        collection
-            .scroll_by(
-                request,
-                self.segment_searcher.deref(),
-                shard_selection,
-                &HashMap::new(),
-            )
-            .await
-            .map_err(|err| err.into())
+        #[cfg(not(feature = "consensus"))]
+        {
+            collection
+                .scroll_by(
+                    request,
+                    self.segment_searcher.deref(),
+                    shard_selection,
+                    &HashMap::new(),
+                )
+                .await
+                .map_err(|err| err.into())
+        }
     }
 
-    #[allow(unreachable_code)]
     pub async fn update(
         &self,
         collection_name: &str,
@@ -657,22 +665,25 @@ impl TableOfContent {
                         .await
                 }
             };
-            return result.map_err(|err| err.into());
+            result.map_err(|err| err.into())
         }
 
-        let result = match shard_selection {
-            Some(shard_selection) => {
-                collection
-                    .update_from_peer(operation, shard_selection, wait, &HashMap::new())
-                    .await
-            }
-            None => {
-                collection
-                    .update_from_client(operation, wait, &HashMap::new())
-                    .await
-            }
-        };
-        result.map_err(|err| err.into())
+        #[cfg(not(feature = "consensus"))]
+        {
+            let result = match shard_selection {
+                Some(shard_selection) => {
+                    collection
+                        .update_from_peer(operation, shard_selection, wait, &HashMap::new())
+                        .await
+                }
+                None => {
+                    collection
+                        .update_from_client(operation, wait, &HashMap::new())
+                        .await
+                }
+            };
+            result.map_err(|err| err.into())
+        }
     }
 
     #[cfg(feature = "consensus")]

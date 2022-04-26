@@ -2,11 +2,9 @@ use api::grpc::models::{CollectionDescription, CollectionsResponse};
 use collection::operations::types::CollectionInfo;
 use collection::shard::ShardId;
 use itertools::Itertools;
-use std::collections::HashMap;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 
-#[allow(unreachable_code)]
 pub async fn do_get_collection(
     toc: &TableOfContent,
     name: &str,
@@ -19,7 +17,13 @@ pub async fn do_get_collection(
             .info(shard_selection, &toc.peer_address_by_id().unwrap())
             .await?);
     }
-    Ok(collection.info(shard_selection, &HashMap::new()).await?)
+
+    #[cfg(not(feature = "consensus"))]
+    {
+        Ok(collection
+            .info(shard_selection, &std::collections::HashMap::new())
+            .await?)
+    }
 }
 
 pub async fn do_list_collections(toc: &TableOfContent) -> CollectionsResponse {
