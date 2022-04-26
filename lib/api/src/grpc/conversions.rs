@@ -5,10 +5,10 @@ use crate::grpc::qdrant::r#match::MatchValue;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     CollectionDescription, CollectionOperationResponse, Condition, FieldCondition, Filter,
-    GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply, IsEmptyCondition,
-    ListCollectionsResponse, Match, PayloadExcludeSelector, PayloadIncludeSelector,
-    PayloadSchemaInfo, PayloadSchemaType, PointId, Range, ScoredPoint, SearchParams, ValuesCount,
-    WithPayloadSelector,
+    GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply, HnswConfigDiff,
+    IsEmptyCondition, ListCollectionsResponse, Match, PayloadExcludeSelector,
+    PayloadIncludeSelector, PayloadSchemaInfo, PayloadSchemaType, PointId, Range, ScoredPoint,
+    SearchParams, ValuesCount, WithPayloadSelector,
 };
 
 use prost_types::value::Kind;
@@ -132,7 +132,7 @@ impl From<segment::types::PayloadIndexInfo> for PayloadSchemaInfo {
                 segment::types::PayloadSchemaType::Float => PayloadSchemaType::Float,
                 segment::types::PayloadSchemaType::Geo => PayloadSchemaType::Geo,
             }
-            .into(), //TODO copy same approach?
+            .into(),
         }
     }
 }
@@ -508,7 +508,7 @@ impl From<segment::types::GeoRadius> for GeoRadius {
     fn from(value: segment::types::GeoRadius) -> Self {
         Self {
             center: Some(value.center.into()),
-            radius: value.radius as f32, // TODO lossy?
+            radius: value.radius as f32, // TODO lossy ok?
         }
     }
 }
@@ -595,6 +595,16 @@ impl From<segment::types::Match> for Match {
         };
         Self {
             match_value: Some(match_value),
+        }
+    }
+}
+
+impl From<HnswConfigDiff> for segment::types::HnswConfig {
+    fn from(hnsw_config: HnswConfigDiff) -> Self {
+        Self {
+            m: hnsw_config.m.unwrap_or_default() as usize,
+            ef_construct: hnsw_config.ef_construct.unwrap_or_default() as usize,
+            full_scan_threshold: hnsw_config.full_scan_threshold.unwrap_or_default() as usize,
         }
     }
 }

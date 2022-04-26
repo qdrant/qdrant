@@ -85,6 +85,25 @@ pub enum Distance {
     Dot,
 }
 
+impl Distance {
+    pub fn from_index(index: i32) -> Option<Self> {
+        match index {
+            1 => Some(Distance::Cosine),
+            2 => Some(Distance::Euclid),
+            3 => Some(Distance::Dot),
+            _ => None,
+        }
+    }
+
+    pub fn index(&self) -> i32 {
+        match self {
+            Distance::Cosine => 1,
+            Distance::Euclid => 2,
+            Distance::Dot => 3,
+        }
+    }
+}
+
 pub enum Order {
     LargeBetter,
     SmallBetter,

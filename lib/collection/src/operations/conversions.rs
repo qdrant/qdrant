@@ -7,7 +7,6 @@ use crate::{
     CollectionConfig, CollectionInfo, OptimizersConfig, OptimizersConfigDiff, Record, UpdateResult,
 };
 use api::grpc::conversions::{payload_to_proto, proto_to_payloads};
-use segment::types::HnswConfig;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use tonic::Status;
@@ -163,6 +162,74 @@ impl TryFrom<i32> for CollectionStatus {
     }
 }
 
+impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
+    fn from(optimizer_config: api::grpc::qdrant::OptimizersConfigDiff) -> Self {
+        Self {
+            deleted_threshold: optimizer_config.deleted_threshold.unwrap_or_default(),
+            vacuum_min_vector_number: optimizer_config
+                .vacuum_min_vector_number
+                .unwrap_or_default() as usize,
+            default_segment_number: optimizer_config.default_segment_number.unwrap_or_default()
+                as usize,
+            max_segment_size: optimizer_config.max_segment_size.unwrap_or_default() as usize,
+            memmap_threshold: optimizer_config.memmap_threshold.unwrap_or_default() as usize,
+            indexing_threshold: optimizer_config.indexing_threshold.unwrap_or_default() as usize,
+            payload_indexing_threshold: optimizer_config
+                .payload_indexing_threshold
+                .unwrap_or_default() as usize,
+            flush_interval_sec: optimizer_config.flush_interval_sec.unwrap_or_default(),
+            max_optimization_threads: optimizer_config
+                .max_optimization_threads
+                .unwrap_or_default() as usize,
+        }
+    }
+}
+
+impl From<api::grpc::qdrant::WalConfigDiff> for WalConfig {
+    fn from(wal_config: api::grpc::qdrant::WalConfigDiff) -> Self {
+        Self {
+            wal_capacity_mb: wal_config.wal_capacity_mb.unwrap_or_default() as usize,
+            wal_segments_ahead: wal_config.wal_segments_ahead.unwrap_or_default() as usize,
+        }
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
+    type Error = Status;
+
+    fn try_from(config: api::grpc::qdrant::CollectionConfig) -> Result<Self, Self::Error> {
+        Ok(Self {
+            params: match config.params {
+                None => return Err(Status::invalid_argument("Malformed CollectionParams type")),
+                Some(params) => CollectionParams {
+                    vector_size: params.vector_size as usize,
+                    distance: match segment::types::Distance::from_index(params.distance) {
+                        None => {
+                            return Err(Status::invalid_argument(
+                                "Malformed CollectionParams distance",
+                            ))
+                        }
+                        Some(distance) => distance,
+                    },
+                    shard_number: NonZeroU32::new(params.shard_number).unwrap(),
+                },
+            },
+            hnsw_config: match config.hnsw_config {
+                None => return Err(Status::invalid_argument("Malformed HnswConfig type")),
+                Some(hnsw_config) => hnsw_config.into(),
+            },
+            optimizer_config: match config.optimizer_config {
+                None => return Err(Status::invalid_argument("Malformed OptimizerConfig type")),
+                Some(optimizer_config) => optimizer_config.into(),
+            },
+            wal_config: match config.wal_config {
+                None => return Err(Status::invalid_argument("Malformed WalConfig type")),
+                Some(wal_config) => wal_config.into(),
+            },
+        })
+    }
+}
+
 impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
     type Error = Status;
 
@@ -194,103 +261,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                         None => {
                             return Err(Status::invalid_argument("Malformed CollectionConfig type"))
                         }
-                        Some(config) => CollectionConfig {
-                            params: match config.params {
-                                None => {
-                                    return Err(Status::invalid_argument(
-                                        "Malformed CollectionParams type",
-                                    ))
-                                }
-                                Some(params) => CollectionParams {
-                                    vector_size: params.vector_size as usize,
-                                    distance: match params.distance {
-                                        1 => segment::types::Distance::Cosine,
-                                        2 => segment::types::Distance::Euclid,
-                                        3 => segment::types::Distance::Dot,
-                                        _ => {
-                                            return Err(Status::invalid_argument(
-                                                "Malformed CollectionParams distance",
-                                            ))
-                                        }
-                                    },
-                                    shard_number: NonZeroU32::new(params.shard_number).unwrap(),
-                                },
-                            },
-                            hnsw_config: match config.hnsw_config {
-                                None => {
-                                    return Err(Status::invalid_argument(
-                                        "Malformed HnswConfig type",
-                                    ))
-                                }
-                                Some(hnsw_config) => HnswConfig {
-                                    m: hnsw_config.m.unwrap_or_default() as usize,
-                                    ef_construct: hnsw_config.ef_construct.unwrap_or_default()
-                                        as usize,
-                                    full_scan_threshold: hnsw_config
-                                        .full_scan_threshold
-                                        .unwrap_or_default()
-                                        as usize,
-                                },
-                            },
-                            optimizer_config: match config.optimizer_config {
-                                None => {
-                                    return Err(Status::invalid_argument(
-                                        "Malformed OptimizerConfig type",
-                                    ))
-                                }
-                                Some(optimizer_config) => OptimizersConfig {
-                                    deleted_threshold: optimizer_config
-                                        .deleted_threshold
-                                        .unwrap_or_default(),
-                                    vacuum_min_vector_number: optimizer_config
-                                        .vacuum_min_vector_number
-                                        .unwrap_or_default()
-                                        as usize,
-                                    default_segment_number: optimizer_config
-                                        .default_segment_number
-                                        .unwrap_or_default()
-                                        as usize,
-                                    max_segment_size: optimizer_config
-                                        .max_segment_size
-                                        .unwrap_or_default()
-                                        as usize,
-                                    memmap_threshold: optimizer_config
-                                        .memmap_threshold
-                                        .unwrap_or_default()
-                                        as usize,
-                                    indexing_threshold: optimizer_config
-                                        .indexing_threshold
-                                        .unwrap_or_default()
-                                        as usize,
-                                    payload_indexing_threshold: optimizer_config
-                                        .payload_indexing_threshold
-                                        .unwrap_or_default()
-                                        as usize,
-                                    flush_interval_sec: optimizer_config
-                                        .flush_interval_sec
-                                        .unwrap_or_default(),
-                                    max_optimization_threads: optimizer_config
-                                        .max_optimization_threads
-                                        .unwrap_or_default()
-                                        as usize,
-                                },
-                            },
-                            wal_config: match config.wal_config {
-                                None => {
-                                    return Err(Status::invalid_argument(
-                                        "Malformed WalConfig type",
-                                    ))
-                                }
-                                Some(wal_config) => WalConfig {
-                                    wal_capacity_mb: wal_config.wal_capacity_mb.unwrap_or_default()
-                                        as usize,
-                                    wal_segments_ahead: wal_config
-                                        .wal_segments_ahead
-                                        .unwrap_or_default()
-                                        as usize,
-                                },
-                            },
-                        },
+                        Some(config) => config.try_into()?,
                     },
                     payload_schema: collection_info_response
                         .payload_schema
