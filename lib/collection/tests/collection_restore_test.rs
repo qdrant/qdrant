@@ -1,5 +1,6 @@
 use itertools::Itertools;
 use serde_json::Value;
+use std::collections::HashMap;
 use tempdir::TempDir;
 
 use collection::{
@@ -42,14 +43,21 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
             })),
         );
         collection
-            .update_from_client(insert_points, true)
+            .update_from_client(insert_points, true, &HashMap::new())
             .await
             .unwrap();
         collection.before_drop().await;
     }
 
     let mut collection = Collection::load("test".to_string(), collection_dir.path()).await;
-    assert_eq!(collection.info(None).await.unwrap().vectors_count, 2);
+    assert_eq!(
+        collection
+            .info(None, &HashMap::new())
+            .await
+            .unwrap()
+            .vectors_count,
+        2
+    );
     collection.before_drop().await;
 }
 
@@ -73,7 +81,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
             })),
         );
         collection
-            .update_from_client(insert_points, true)
+            .update_from_client(insert_points, true, &HashMap::new())
             .await
             .unwrap();
         collection.before_drop().await;
@@ -93,6 +101,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
             },
             &searcher,
             None,
+            &HashMap::new(),
         )
         .await
         .unwrap();
@@ -140,7 +149,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
             })),
         );
         collection
-            .update_from_client(insert_points, true)
+            .update_from_client(insert_points, true, &HashMap::new())
             .await
             .unwrap();
         collection.before_drop().await;
@@ -161,6 +170,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
             },
             &searcher,
             None,
+            &HashMap::new(),
         )
         .await
         .unwrap();
@@ -193,6 +203,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
             },
             &searcher,
             None,
+            &HashMap::new(),
         )
         .await
         .unwrap();

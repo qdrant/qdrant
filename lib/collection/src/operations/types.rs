@@ -18,6 +18,7 @@ use segment::types::{
 
 use crate::{config::CollectionConfig, wal::WalError};
 use std::collections::HashMap;
+use tonic::codegen::http::uri::InvalidUri;
 
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
@@ -305,6 +306,14 @@ impl From<tonic::transport::Error> for CollectionError {
     fn from(err: tonic::transport::Error) -> Self {
         CollectionError::ServiceError {
             error: format!("Tonic transport error: {}", err),
+        }
+    }
+}
+
+impl From<InvalidUri> for CollectionError {
+    fn from(err: InvalidUri) -> Self {
+        CollectionError::ServiceError {
+            error: format!("Invalid URI error: {}", err),
         }
     }
 }

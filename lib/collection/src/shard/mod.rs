@@ -8,6 +8,8 @@ use crate::{
 };
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
+use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 
@@ -52,8 +54,10 @@ pub trait ShardOperation {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        ip_to_address: &HashMap<u64, SocketAddr>,
     ) -> CollectionResult<UpdateResult>;
 
+    #[allow(clippy::too_many_arguments)]
     async fn scroll_by(
         &self,
         segment_searcher: &(dyn CollectionSearcher + Sync),
@@ -62,15 +66,20 @@ pub trait ShardOperation {
         with_payload_interface: &WithPayloadInterface,
         with_vector: bool,
         filter: Option<&Filter>,
+        ip_to_address: &HashMap<u64, SocketAddr>,
     ) -> CollectionResult<Vec<Record>>;
 
-    async fn info(&self) -> CollectionResult<CollectionInfo>;
+    async fn info(
+        &self,
+        ip_to_address: &HashMap<u64, SocketAddr>,
+    ) -> CollectionResult<CollectionInfo>;
 
     async fn search(
         &self,
         request: Arc<SearchRequest>,
         segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
+        ip_to_address: &HashMap<u64, SocketAddr>,
     ) -> CollectionResult<Vec<ScoredPoint>>;
 
     async fn retrieve(
@@ -79,5 +88,6 @@ pub trait ShardOperation {
         segment_searcher: &(dyn CollectionSearcher + Sync),
         with_payload: &WithPayload,
         with_vector: bool,
+        ip_to_address: &HashMap<u64, SocketAddr>,
     ) -> CollectionResult<Vec<Record>>;
 }

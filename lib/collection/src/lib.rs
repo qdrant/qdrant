@@ -1,5 +1,6 @@
 //! Crate, which implements all functions required for operations with a single collection
 
+use std::net::SocketAddr;
 use std::{
     cmp::max,
     collections::HashMap,
@@ -238,15 +239,20 @@ impl Collection {
         operation: CollectionUpdateOperations,
         shard_selection: ShardId,
         wait: bool,
+        ip_to_address: &HashMap<u64, SocketAddr>,
     ) -> CollectionResult<UpdateResult> {
         let local_shard = self.local_shard_by_id(shard_selection)?;
-        local_shard.get().update(operation.clone(), wait).await
+        local_shard
+            .get()
+            .update(operation.clone(), wait, ip_to_address)
+            .await
     }
 
     pub async fn update_from_client(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        ip_to_address: &HashMap<u64, SocketAddr>,
     ) -> CollectionResult<UpdateResult> {
         operation.validate()?;
         let shard_ops: Vec<_> = match operation.split_by_shard(&self.ring) {
@@ -261,7 +267,7 @@ impl Collection {
         };
         let shard_requests = shard_ops
             .iter()
-            .map(|(shard, operation)| shard.update(operation.clone(), wait));
+            .map(move |(shard, operation)| shard.update(operation.clone(), wait, ip_to_address));
         let mut results = join_all(shard_requests).await;
         let with_error = results
             .iter()
@@ -294,6 +300,7 @@ impl Collection {
         segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
+        ip_to_address: &HashMap<u64, SocketAddr>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.positive.is_empty() {
             return Err(CollectionError::BadRequest {
@@ -317,6 +324,7 @@ impl Collection {
                 },
                 segment_searcher,
                 shard_selection,
+                ip_to_address,
             )
             .await?;
         let vectors_map: HashMap<ExtendedPointId, Vec<VectorElementType>> = vectors
@@ -380,6 +388,7 @@ impl Collection {
             segment_searcher,
             search_runtime_handle,
             shard_selection,
+            ip_to_address,
         )
         .await
     }
@@ -390,12 +399,18 @@ impl Collection {
         segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
+        ip_to_address: &HashMap<u64, SocketAddr>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let request = Arc::new(request);
         let target_shards = self.target_shards(shard_selection)?;
-        let all_searches = target_shards
-            .iter()
-            .map(|shard| shard.search(request.clone(), segment_searcher, search_runtime_handle));
+        let all_searches = target_shards.iter().map(|shard| {
+            shard.search(
+                request.clone(),
+                segment_searcher,
+                search_runtime_handle,
+                ip_to_address,
+            )
+        });
 
         let all_search_results = try_join_all(all_searches).await?;
         Ok(peek_top_scores_iterable(
@@ -409,6 +424,7 @@ impl Collection {
         request: ScrollRequest,
         segment_searcher: &(dyn CollectionSearcher + Sync),
         shard_selection: Option<ShardId>,
+        ip_to_address: &HashMap<u64, SocketAddr>,
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequest::default();
 
@@ -440,6 +456,7 @@ impl Collection {
                 &with_payload_interface,
                 with_vector,
                 request.filter.as_ref(),
+                ip_to_address,
             )
         });
 
@@ -469,6 +486,7 @@ impl Collection {
         request: PointRequest,
         segment_searcher: &(dyn CollectionSearcher + Sync),
         shard_selection: Option<ShardId>,
+        ip_to_address: &HashMap<u64, SocketAddr>,
     ) -> CollectionResult<Vec<Record>> {
         let with_payload_interface = request
             .with_payload
@@ -484,6 +502,7 @@ impl Collection {
                 segment_searcher,
                 &with_payload,
                 with_vector,
+                ip_to_address,
             )
         });
 
@@ -528,7 +547,11 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn info(&self, shard_selection: Option<ShardId>) -> CollectionResult<CollectionInfo> {
+    pub async fn info(
+        &self,
+        shard_selection: Option<ShardId>,
+        ip_to_address: &HashMap<u64, SocketAddr>,
+    ) -> CollectionResult<CollectionInfo> {
         let target_shards = self.target_shards(shard_selection)?;
         let first_shard = target_shards
             .first()
@@ -536,8 +559,11 @@ impl Collection {
                 error: "There are no shards for selected collection".to_string(),
             })?;
 
-        let mut info = first_shard.info().await?;
-        let info_futures = target_shards.iter().skip(1).map(|shard| shard.info());
+        let mut info = first_shard.info(ip_to_address).await?;
+        let info_futures = target_shards
+            .iter()
+            .skip(1)
+            .map(|shard| shard.info(ip_to_address));
 
         let all_shard_collection_results = try_join_all(info_futures).await?;
         all_shard_collection_results

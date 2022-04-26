@@ -38,6 +38,7 @@ use crate::wal::SerdeWal;
 use crate::{CollectionId, PointRequest, SearchRequest, ShardId};
 use segment::segment_constructor::load_segment;
 use std::fs::{read_dir, remove_dir_all};
+use std::net::SocketAddr;
 
 /// LocalShard
 ///
@@ -364,6 +365,7 @@ impl LocalShard {
 }
 
 #[async_trait]
+#[allow(unused_variables)]
 impl ShardOperation for &LocalShard {
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
@@ -372,6 +374,7 @@ impl ShardOperation for &LocalShard {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        ip_to_address: &HashMap<u64, SocketAddr>,
     ) -> CollectionResult<UpdateResult> {
         let (callback_sender, callback_receiver) = if wait {
             let (tx, rx) = oneshot::channel();
@@ -415,6 +418,7 @@ impl ShardOperation for &LocalShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: bool,
         filter: Option<&Filter>,
+        ip_to_address: &HashMap<u64, SocketAddr>,
     ) -> CollectionResult<Vec<Record>> {
         // ToDo: Make faster points selection with a set
         let segments = self.segments();
@@ -437,7 +441,10 @@ impl ShardOperation for &LocalShard {
     }
 
     /// Collect overview information about the shard
-    async fn info(&self) -> CollectionResult<CollectionInfo> {
+    async fn info(
+        &self,
+        ip_to_address: &HashMap<u64, SocketAddr>,
+    ) -> CollectionResult<CollectionInfo> {
         let collection_config = self.config.read().await.clone();
         let segments = self.segments.read();
         let mut vectors_count = 0;
@@ -485,6 +492,7 @@ impl ShardOperation for &LocalShard {
         request: Arc<SearchRequest>,
         segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
+        ip_to_address: &HashMap<u64, SocketAddr>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         segment_searcher
             .search(self.segments(), request.clone(), search_runtime_handle)
@@ -497,6 +505,7 @@ impl ShardOperation for &LocalShard {
         segment_searcher: &(dyn CollectionSearcher + Sync),
         with_payload: &WithPayload,
         with_vector: bool,
+        ip_to_address: &HashMap<u64, SocketAddr>,
     ) -> CollectionResult<Vec<Record>> {
         segment_searcher
             .retrieve(self.segments(), &request.ids, with_payload, with_vector)

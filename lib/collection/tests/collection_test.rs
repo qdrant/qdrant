@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use tempdir::TempDir;
 use tokio::runtime::Handle;
@@ -50,7 +50,9 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         .into(),
     );
 
-    let insert_result = collection.update_from_client(insert_points, true).await;
+    let insert_result = collection
+        .update_from_client(insert_points, true, &HashMap::new())
+        .await;
 
     match insert_result {
         Ok(res) => {
@@ -70,7 +72,13 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
 
     let segment_searcher = SimpleCollectionSearcher::new();
     let search_res = collection
-        .search(search_request, &segment_searcher, &Handle::current(), None)
+        .search(
+            search_request,
+            &segment_searcher,
+            &Handle::current(),
+            None,
+            &HashMap::new(),
+        )
         .await;
 
     match search_res {
@@ -107,7 +115,9 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         .into(),
     );
 
-    let insert_result = collection.update_from_client(insert_points, true).await;
+    let insert_result = collection
+        .update_from_client(insert_points, true, &HashMap::new())
+        .await;
 
     match insert_result {
         Ok(res) => {
@@ -127,7 +137,13 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
 
     let segment_searcher = SimpleCollectionSearcher::new();
     let search_res = collection
-        .search(search_request, &segment_searcher, &Handle::current(), None)
+        .search(
+            search_request,
+            &segment_searcher,
+            &Handle::current(),
+            None,
+            &HashMap::new(),
+        )
         .await;
 
     match search_res {
@@ -173,7 +189,7 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         );
 
         collection
-            .update_from_client(insert_points, true)
+            .update_from_client(insert_points, true, &HashMap::new())
             .await
             .unwrap();
 
@@ -186,7 +202,7 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
             }));
 
         collection
-            .update_from_client(assign_payload, true)
+            .update_from_client(assign_payload, true, &HashMap::new())
             .await
             .unwrap();
         collection.before_drop().await;
@@ -200,7 +216,7 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         with_vector: true,
     };
     let retrieved = loaded_collection
-        .retrieve(request, &segment_searcher, None)
+        .retrieve(request, &segment_searcher, None, &HashMap::new())
         .await
         .unwrap();
 
@@ -297,7 +313,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
     );
 
     collection
-        .update_from_client(insert_points, true)
+        .update_from_client(insert_points, true, &HashMap::new())
         .await
         .unwrap();
     let segment_searcher = SimpleCollectionSearcher::new();
@@ -315,6 +331,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
             &segment_searcher,
             &Handle::current(),
             None,
+            &HashMap::new(),
         )
         .await
         .unwrap();
@@ -358,7 +375,7 @@ async fn test_read_api_with_shards(shard_number: u32) {
     ));
 
     collection
-        .update_from_client(insert_points, true)
+        .update_from_client(insert_points, true, &HashMap::new())
         .await
         .unwrap();
 
@@ -374,6 +391,7 @@ async fn test_read_api_with_shards(shard_number: u32) {
             },
             &segment_searcher,
             None,
+            &HashMap::new(),
         )
         .await
         .unwrap();
@@ -412,7 +430,9 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
         .into(),
     );
 
-    let insert_result = collection.update_from_client(insert_points, true).await;
+    let insert_result = collection
+        .update_from_client(insert_points, true, &HashMap::new())
+        .await;
 
     match insert_result {
         Ok(res) => {
@@ -433,7 +453,9 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
         PointOperations::DeletePointsByFilter(delete_filter),
     );
 
-    let delete_result = collection.update_from_client(delete_points, true).await;
+    let delete_result = collection
+        .update_from_client(delete_points, true, &HashMap::new())
+        .await;
 
     match delete_result {
         Ok(res) => {
@@ -454,6 +476,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
             },
             &segment_searcher,
             None,
+            &HashMap::new(),
         )
         .await
         .unwrap();
