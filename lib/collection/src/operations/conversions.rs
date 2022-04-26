@@ -150,6 +150,19 @@ impl TryFrom<api::grpc::qdrant::RetrievedPoint> for Record {
     }
 }
 
+impl TryFrom<i32> for CollectionStatus {
+    type Error = Status;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(CollectionStatus::Green),
+            2 => Ok(CollectionStatus::Yellow),
+            3 => Ok(CollectionStatus::Red),
+            _ => Err(Status::invalid_argument("Malformed CollectionStatus type")),
+        }
+    }
+}
+
 impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
     type Error = Status;
 
@@ -160,14 +173,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
             None => Err(Status::invalid_argument("Malformed CollectionInfo type")),
             Some(collection_info_response) => {
                 Ok(Self {
-                    status: match collection_info_response.status {
-                        1 => CollectionStatus::Green,
-                        2 => CollectionStatus::Yellow,
-                        3 => CollectionStatus::Red,
-                        _ => {
-                            return Err(Status::invalid_argument("Malformed CollectionStatus type"))
-                        }
-                    },
+                    status: collection_info_response.status.try_into()?,
                     optimizer_status: match collection_info_response.optimizer_status {
                         None => {
                             return Err(Status::invalid_argument("Malformed OptimizerStatus type"))
