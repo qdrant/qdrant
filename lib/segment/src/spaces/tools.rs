@@ -30,13 +30,12 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
             return None;
         }
 
-        match self.heap.peek() {
-            Some(Reverse(x)) if x < &value => {
-                self.heap.push(Reverse(value));
-                self.heap.pop().map(|Reverse(x)| x)
-            }
-            _ => Some(value),
+        let mut x = self.heap.peek_mut().unwrap();
+        let mut value = Reverse(value);
+        if x.0 < value.0 {
+            std::mem::swap(&mut *x, &mut value);
         }
+        Some(value.0)
     }
 
     pub fn into_vec(self) -> Vec<T> {
