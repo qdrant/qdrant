@@ -36,7 +36,7 @@ futures = "0.3.21"
 
 config = "~0.13.1"
 
-tokio = { version = "~1.17", features = ["full"] }
+tokio = { version = "~1.18", features = ["full"] }
 
 actix-web = { version = "4.0.1", optional = true }
 tonic = "0.7.1"
