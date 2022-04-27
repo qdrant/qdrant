@@ -1,5 +1,8 @@
 use std::{
-    sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
+    },
     time::{Duration, Instant},
 };
 
@@ -51,7 +54,11 @@ impl Consensus {
                 node,
                 receiver,
                 runtime: tokio::runtime::Builder::new_multi_thread()
-                    .thread_name("consensus")
+                    .thread_name_fn(|| {
+                        static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+                        let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+                        format!("consensus-tokio-rt-{}", id)
+                    })
                     .enable_all()
                     .build()?,
             },
