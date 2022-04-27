@@ -3382,6 +3382,28 @@ pub struct RaftMessage {
     #[prost(bytes="vec", tag="1")]
     pub message: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AllPeers {
+    #[prost(message, repeated, tag="1")]
+    pub all_peers: ::prost::alloc::vec::Vec<Peer>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Peer {
+    #[prost(string, tag="1")]
+    pub uri: ::prost::alloc::string::String,
+    #[prost(uint64, tag="2")]
+    pub id: u64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PeerId {
+    #[prost(uint64, tag="1")]
+    pub id: u64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Uri {
+    #[prost(string, tag="1")]
+    pub uri: ::prost::alloc::string::String,
+}
 /// Generated client implementations.
 pub mod raft_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -3446,8 +3468,7 @@ pub mod raft_client {
             self.inner = self.inner.accept_gzip();
             self
         }
-        ///
-        ///Send Raft message to another peer
+        /// Send Raft message to another peer
         pub async fn send(
             &mut self,
             request: impl tonic::IntoRequest<super::RaftMessage>,
@@ -3465,6 +3486,67 @@ pub mod raft_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Raft/Send");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        /// Send to bootstrap
+        pub async fn who_is(
+            &mut self,
+            request: impl tonic::IntoRequest<super::PeerId>,
+        ) -> Result<tonic::Response<super::Uri>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Raft/WhoIs");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        /// Send to bootstrap
+        /// Proposes to add to known_peers list
+        /// Returns all peers
+        pub async fn add_peer_to_known(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Peer>,
+        ) -> Result<tonic::Response<super::AllPeers>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Raft/AddPeerToKnown",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        /// Send to bootstrap
+        /// Proposes to add to consensus as learner peer
+        pub async fn add_peer_as_participant(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Peer>,
+        ) -> Result<tonic::Response<()>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Raft/AddPeerAsParticipant",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -3474,11 +3556,28 @@ pub mod raft_server {
     ///Generated trait containing gRPC methods that should be implemented for use with RaftServer.
     #[async_trait]
     pub trait Raft: Send + Sync + 'static {
-        ///
-        ///Send Raft message to another peer
+        /// Send Raft message to another peer
         async fn send(
             &self,
             request: tonic::Request<super::RaftMessage>,
+        ) -> Result<tonic::Response<()>, tonic::Status>;
+        /// Send to bootstrap
+        async fn who_is(
+            &self,
+            request: tonic::Request<super::PeerId>,
+        ) -> Result<tonic::Response<super::Uri>, tonic::Status>;
+        /// Send to bootstrap
+        /// Proposes to add to known_peers list
+        /// Returns all peers
+        async fn add_peer_to_known(
+            &self,
+            request: tonic::Request<super::Peer>,
+        ) -> Result<tonic::Response<super::AllPeers>, tonic::Status>;
+        /// Send to bootstrap
+        /// Proposes to add to consensus as learner peer
+        async fn add_peer_as_participant(
+            &self,
+            request: tonic::Request<super::Peer>,
         ) -> Result<tonic::Response<()>, tonic::Status>;
     }
     #[derive(Debug)]
@@ -3553,6 +3652,118 @@ pub mod raft_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = SendSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Raft/WhoIs" => {
+                    #[allow(non_camel_case_types)]
+                    struct WhoIsSvc<T: Raft>(pub Arc<T>);
+                    impl<T: Raft> tonic::server::UnaryService<super::PeerId>
+                    for WhoIsSvc<T> {
+                        type Response = super::Uri;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::PeerId>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).who_is(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = WhoIsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Raft/AddPeerToKnown" => {
+                    #[allow(non_camel_case_types)]
+                    struct AddPeerToKnownSvc<T: Raft>(pub Arc<T>);
+                    impl<T: Raft> tonic::server::UnaryService<super::Peer>
+                    for AddPeerToKnownSvc<T> {
+                        type Response = super::AllPeers;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Peer>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).add_peer_to_known(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = AddPeerToKnownSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Raft/AddPeerAsParticipant" => {
+                    #[allow(non_camel_case_types)]
+                    struct AddPeerAsParticipantSvc<T: Raft>(pub Arc<T>);
+                    impl<T: Raft> tonic::server::UnaryService<super::Peer>
+                    for AddPeerAsParticipantSvc<T> {
+                        type Response = ();
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Peer>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move {
+                                (*inner).add_peer_as_participant(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = AddPeerAsParticipantSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

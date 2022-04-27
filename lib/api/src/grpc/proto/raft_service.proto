@@ -5,12 +5,36 @@ package qdrant;
 import "google/protobuf/empty.proto";
 
 service Raft {
-  /*
-  Send Raft message to another peer
-   */
-  rpc Send (RaftMessage) returns (google.protobuf.Empty) {}
+  // Send Raft message to another peer
+  rpc Send (RaftMessage) returns (google.protobuf.Empty);
+  // Send to bootstrap
+  rpc WhoIs (PeerId) returns (Uri);
+  // Send to bootstrap
+  // Proposes to add to known_peers list
+  // Returns all peers
+  rpc AddPeerToKnown (Peer) returns (AllPeers);
+  // Send to bootstrap
+  // Proposes to add to consensus as learner peer
+  rpc AddPeerAsParticipant (Peer) returns (google.protobuf.Empty);
 }
 
 message RaftMessage {
     bytes message = 1;
+}
+
+message AllPeers {
+    repeated Peer all_peers = 1;
+}
+
+message Peer {
+    string uri = 1;
+    uint64 id = 2;
+}
+
+message PeerId {
+  uint64 id = 1;
+}
+
+message Uri {
+  string uri = 1;
 }

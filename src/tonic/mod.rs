@@ -95,7 +95,7 @@ pub fn init_internal(
             let service = QdrantService::default();
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let points_internal_service = PointsInternalService::new(toc.clone());
-            let raft_service = RaftService::new(to_consensus);
+            let raft_service = RaftService::new(to_consensus, toc.clone());
 
             log::info!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
