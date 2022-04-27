@@ -1,22 +1,21 @@
 use crate::operations::payload_ops::PayloadOps;
-use crate::operations::point_ops::{PointInsertOperations, PointOperations};
+use crate::operations::point_ops::PointOperations;
 use crate::operations::FieldIndexOperations;
+use crate::shard::conversions::{
+    internal_clear_payload, internal_clear_payload_by_filter, internal_create_index,
+    internal_delete_index, internal_delete_payload, internal_delete_points,
+    internal_delete_points_by_filter, internal_set_payload, internal_upsert_points,
+};
 use crate::shard::{PeerId, ShardId, ShardOperation};
 use crate::{
     CollectionError, CollectionId, CollectionInfo, CollectionResult, CollectionSearcher,
     CollectionUpdateOperations, PointRequest, Record, SearchRequest, UpdateResult,
 };
-use api::grpc::conversions::payload_to_proto;
 use api::grpc::qdrant::{
     collections_internal_client::CollectionsInternalClient,
-    points_internal_client::PointsInternalClient, points_selector::PointsSelectorOneOf,
-    ClearPayloadPoints, ClearPayloadPointsInternal, CreateFieldIndexCollection,
-    CreateFieldIndexCollectionInternal, DeleteFieldIndexCollection,
-    DeleteFieldIndexCollectionInternal, DeletePayloadPoints, DeletePayloadPointsInternal,
-    DeletePoints, DeletePointsInternal, GetCollectionInfoRequest, GetCollectionInfoRequestInternal,
-    GetPoints, GetPointsInternal, PointsIdsList, PointsSelector, ScrollPoints,
-    ScrollPointsInternal, SearchPoints, SearchPointsInternal, SetPayloadPoints,
-    SetPayloadPointsInternal, UpsertPoints, UpsertPointsInternal,
+    points_internal_client::PointsInternalClient, GetCollectionInfoRequest,
+    GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal, ScrollPoints,
+    ScrollPointsInternal, SearchPoints, SearchPointsInternal,
 };
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
@@ -35,8 +34,8 @@ use tower::timeout::Timeout;
 /// Currently a placeholder implementation for later work.
 #[allow(dead_code)]
 pub struct RemoteShard {
-    id: ShardId,
-    collection_id: CollectionId,
+    pub(crate) id: ShardId,
+    pub(crate) collection_id: CollectionId,
     pub peer_id: PeerId,
 }
 
@@ -82,146 +81,49 @@ impl ShardOperation for &RemoteShard {
 
         let response = match operation {
             CollectionUpdateOperations::PointOperation(point_ops) => match point_ops {
-                PointOperations::UpsertPoints(upsert_points) => {
-                    let request = tonic::Request::new(UpsertPointsInternal {
-                        shard_id: self.id,
-                        upsert_points: Some(UpsertPoints {
-                            collection_name: self.collection_id.clone(),
-                            wait: Some(true),
-                            points: match upsert_points {
-                                PointInsertOperations::PointsBatch(batch) => {
-                                    return Err(CollectionError::service_error(
-                                        "Operation not supported".to_string(),
-                                    ))
-                                }
-                                PointInsertOperations::PointsList(list) => list
-                                    .points
-                                    .into_iter()
-                                    .map(|id| id.try_into())
-                                    .collect::<Result<Vec<_>, Status>>()?,
-                            },
-                        }),
-                    });
+                PointOperations::UpsertPoints(point_insert_operations) => {
+                    let request =
+                        tonic::Request::new(internal_upsert_points(point_insert_operations, self)?);
                     client.upsert(request).await?
                 }
                 PointOperations::DeletePoints { ids } => {
-                    let request = tonic::Request::new(DeletePointsInternal {
-                        shard_id: self.id,
-                        delete_points: Some(DeletePoints {
-                            collection_name: self.collection_id.clone(),
-                            wait: Some(true),
-                            points: Some(PointsSelector {
-                                points_selector_one_of: Some(PointsSelectorOneOf::Points(
-                                    PointsIdsList {
-                                        ids: ids.into_iter().map(|id| id.into()).collect(),
-                                    },
-                                )),
-                            }),
-                        }),
-                    });
+                    let request = tonic::Request::new(internal_delete_points(ids, self));
                     client.delete(request).await?
                 }
                 PointOperations::DeletePointsByFilter(filter) => {
-                    let request = tonic::Request::new(DeletePointsInternal {
-                        shard_id: self.id,
-                        delete_points: Some(DeletePoints {
-                            collection_name: self.collection_id.clone(),
-                            wait: Some(true),
-                            points: Some(PointsSelector {
-                                points_selector_one_of: Some(PointsSelectorOneOf::Filter(
-                                    filter.into(),
-                                )),
-                            }),
-                        }),
-                    });
+                    let request =
+                        tonic::Request::new(internal_delete_points_by_filter(filter, self));
                     client.delete(request).await?
                 }
             },
             CollectionUpdateOperations::PayloadOperation(payload_ops) => match payload_ops {
                 PayloadOps::SetPayload(set_payload) => {
-                    let request = tonic::Request::new(SetPayloadPointsInternal {
-                        shard_id: self.id,
-                        set_payload_points: Some(SetPayloadPoints {
-                            collection_name: self.collection_id.clone(),
-                            wait: Some(true),
-                            payload: payload_to_proto(set_payload.payload),
-                            points: set_payload.points.into_iter().map(|id| id.into()).collect(),
-                        }),
-                    });
+                    let request = tonic::Request::new(internal_set_payload(set_payload, self));
                     client.set_payload(request).await?
                 }
                 PayloadOps::DeletePayload(delete_payload) => {
-                    let request = tonic::Request::new(DeletePayloadPointsInternal {
-                        shard_id: self.id,
-                        delete_payload_points: Some(DeletePayloadPoints {
-                            collection_name: self.collection_id.clone(),
-                            wait: Some(true),
-                            keys: delete_payload.keys,
-                            points: delete_payload
-                                .points
-                                .into_iter()
-                                .map(|id| id.into())
-                                .collect(),
-                        }),
-                    });
+                    let request =
+                        tonic::Request::new(internal_delete_payload(delete_payload, self));
                     client.delete_payload(request).await?
                 }
                 PayloadOps::ClearPayload { points } => {
-                    let request = tonic::Request::new(ClearPayloadPointsInternal {
-                        shard_id: self.id,
-                        clear_payload_points: Some(ClearPayloadPoints {
-                            collection_name: self.collection_id.clone(),
-                            wait: Some(true),
-                            points: Some(PointsSelector {
-                                points_selector_one_of: Some(PointsSelectorOneOf::Points(
-                                    PointsIdsList {
-                                        ids: points.into_iter().map(|id| id.into()).collect(),
-                                    },
-                                )),
-                            }),
-                        }),
-                    });
+                    let request = tonic::Request::new(internal_clear_payload(points, self));
                     client.clear_payload(request).await?
                 }
                 PayloadOps::ClearPayloadByFilter(filter) => {
-                    let request = tonic::Request::new(ClearPayloadPointsInternal {
-                        shard_id: self.id,
-                        clear_payload_points: Some(ClearPayloadPoints {
-                            collection_name: self.collection_id.clone(),
-                            wait: Some(true),
-                            points: Some(PointsSelector {
-                                points_selector_one_of: Some(PointsSelectorOneOf::Filter(
-                                    filter.into(),
-                                )),
-                            }),
-                        }),
-                    });
+                    let request =
+                        tonic::Request::new(internal_clear_payload_by_filter(filter, self));
                     client.clear_payload(request).await?
                 }
             },
             CollectionUpdateOperations::FieldIndexOperation(field_index_op) => match field_index_op
             {
                 FieldIndexOperations::CreateIndex(create_index) => {
-                    let request = tonic::Request::new(CreateFieldIndexCollectionInternal {
-                        shard_id: self.id,
-                        create_field_index_collection: Some(CreateFieldIndexCollection {
-                            collection_name: self.collection_id.clone(),
-                            wait: Some(true),
-                            field_name: create_index.field_name,
-                            field_type: create_index.field_type.map(|ft| ft.index()),
-                        }),
-                    });
+                    let request = tonic::Request::new(internal_create_index(create_index, self));
                     client.create_field_index(request).await?
                 }
                 FieldIndexOperations::DeleteIndex(delete_index) => {
-                    let request = tonic::Request::new(DeleteFieldIndexCollectionInternal {
-                        shard_id: self.id,
-                        delete_field_index_collection: Some(DeleteFieldIndexCollection {
-                            collection_name: self.collection_id.clone(),
-                            wait: Some(true),
-                            field_name: delete_index,
-                        }),
-                    });
+                    let request = tonic::Request::new(internal_delete_index(delete_index, self));
                     client.delete_field_index(request).await?
                 }
             },
