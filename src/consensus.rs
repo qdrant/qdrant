@@ -1,14 +1,25 @@
 use std::{
-    sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
+    },
     time::{Duration, Instant},
 };
 
-use storage::content_manager::toc::TableOfContentRef;
+use anyhow::Context;
+use api::grpc::{
+    qdrant::{raft_client::RaftClient, RaftMessage as GrpcRaftMessage},
+    timeout_channel,
+};
+use storage::content_manager::{errors::StorageError, toc::TableOfContentRef};
 
 use raft::{eraftpb::Message as RaftMessage, prelude::*};
+use tokio::runtime::Runtime;
+use tonic::transport::Uri;
 
 const CHANNEL_CAPACITY: usize = 100;
 const TICK_PERIOD_MS: u64 = 100;
+const MESSAGE_TIMEOUT: Duration = Duration::from_millis(1000);
 
 type Node = RawNode<TableOfContentRef>;
 
@@ -20,6 +31,7 @@ pub enum Message {
 pub struct Consensus {
     node: Node,
     receiver: Receiver<Message>,
+    runtime: Runtime,
 }
 
 impl Consensus {
@@ -37,7 +49,21 @@ impl Consensus {
         toc_ref.apply_entries()?;
         let node = Node::new(&config, toc_ref, logger)?;
         let (sender, receiver) = mpsc::sync_channel(CHANNEL_CAPACITY);
-        Ok((Self { node, receiver }, sender))
+        Ok((
+            Self {
+                node,
+                receiver,
+                runtime: tokio::runtime::Builder::new_multi_thread()
+                    .thread_name_fn(|| {
+                        static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+                        let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+                        format!("consensus-tokio-rt-{}", id)
+                    })
+                    .enable_all()
+                    .build()?,
+            },
+            sender,
+        ))
     }
 
     pub fn start(&mut self) -> raft::Result<()> {
@@ -67,12 +93,12 @@ impl Consensus {
             } else {
                 timeout -= d;
             }
-            on_ready(&mut self.node);
+            on_ready(&mut self.node, &self.runtime);
         }
     }
 }
 
-fn on_ready(raft_group: &mut Node) {
+fn on_ready(raft_group: &mut Node, runtime: &Runtime) {
     if !raft_group.has_ready() {
         return;
     }
@@ -81,8 +107,9 @@ fn on_ready(raft_group: &mut Node) {
     // Get the `Ready` with `RawNode::ready` interface.
     let mut ready = raft_group.ready();
     if !ready.messages().is_empty() {
-        // Send out the messages come from the node.
-        handle_messages(ready.take_messages());
+        if let Err(err) = handle_messages(ready.take_messages(), &store, runtime) {
+            log::error!("Failed to send messages: {err}")
+        }
     }
     if !ready.snapshot().is_empty() {
         // This is a snapshot, we need to apply the snapshot at first.
@@ -109,8 +136,9 @@ fn on_ready(raft_group: &mut Node) {
         }
     }
     if !ready.persisted_messages().is_empty() {
-        // Send out the persisted messages come from the node.
-        handle_messages(ready.take_persisted_messages());
+        if let Err(err) = handle_messages(ready.take_persisted_messages(), &store, runtime) {
+            log::error!("Failed to send messages: {err}")
+        }
     }
 
     // Advance the Raft.
@@ -122,8 +150,9 @@ fn on_ready(raft_group: &mut Node) {
             log::error!("Failed to set commit index: {err}")
         }
     }
-    // Send out the messages.
-    handle_messages(light_rd.take_messages());
+    if let Err(err) = handle_messages(light_rd.take_messages(), &store, runtime) {
+        log::error!("Failed to send messages: {err}")
+    }
     // Apply all committed entries.
     if let Err(err) = handle_committed_entries(light_rd.take_committed_entries(), &store) {
         log::error!("Failed to apply committed entries: {err}")
@@ -140,10 +169,60 @@ fn handle_committed_entries(entries: Vec<Entry>, toc: &TableOfContentRef) -> raf
     Ok(())
 }
 
-fn handle_messages(messages: Vec<RaftMessage>) {
-    for _message in messages {
-        // TODO: send to other peers
-    }
+fn handle_messages(
+    messages: Vec<RaftMessage>,
+    toc: &TableOfContentRef,
+    runtime: &Runtime,
+) -> Result<(), StorageError> {
+    let peer_address_by_id = toc.peer_address_by_id()?;
+    let messages_with_address: Vec<_> = messages
+        .into_iter()
+        .map(|message| {
+            let address = peer_address_by_id.get(&message.to).cloned();
+            (message, address)
+        })
+        .collect();
+    let future = async move {
+        let mut send_futures = Vec::new();
+        for (message, address) in messages_with_address {
+            let address = match address {
+                Some(address) => address,
+                None => {
+                    log::warn!(
+                        "Address of peer with ID {} not found. Message was not sent to it.",
+                        message.to
+                    );
+                    continue;
+                }
+            };
+            send_futures.push(send_message(address, message));
+        }
+        for result in futures::future::join_all(send_futures).await {
+            if let Err(err) = result {
+                log::warn!("Failed to send message: {err}")
+            }
+        }
+    };
+    // Raft does not need the responses and should not wait for timeouts
+    // so sending messages in parallel should be ok
+    runtime.spawn(future);
+    Ok(())
+}
+
+async fn send_message(address: Uri, message: RaftMessage) -> anyhow::Result<()> {
+    let channel = timeout_channel(MESSAGE_TIMEOUT, address)
+        .await
+        .context("Failed to create timeout channel")?;
+    let mut client = RaftClient::new(channel);
+    let mut bytes = Vec::new();
+    <RaftMessage as prost::Message>::encode(&message, &mut bytes)
+        .context("Failed to serialize Raft message")?;
+    let message = GrpcRaftMessage { message: bytes };
+    client
+        .send(tonic::Request::new(message))
+        .await
+        .context("gRPC call failed")?;
+    Ok(())
 }
 
 #[cfg(test)]

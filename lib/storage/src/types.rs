@@ -1,12 +1,13 @@
-use std::{collections::HashMap, net::SocketAddr};
+use std::collections::HashMap;
 
 use collection::config::WalConfig;
 use collection::optimizers_builder::OptimizersConfig;
 use schemars::JsonSchema;
 use segment::types::HnswConfig;
 use serde::{Deserialize, Serialize};
+use tonic::transport::Uri;
 
-pub type PeerAddressById = HashMap<u64, SocketAddr>;
+pub type PeerAddressById = HashMap<u64, Uri>;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct PerformanceConfig {

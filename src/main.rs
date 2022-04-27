@@ -55,7 +55,7 @@ fn main() -> std::io::Result<()> {
         let (mut consensus, message_sender) = Consensus::new(&slog_logger, toc_arc.clone().into())
             .expect("Can't initialize consensus");
         thread::Builder::new()
-            .name("raft".to_string())
+            .name("consensus".to_string())
             .spawn(move || {
                 if let Err(err) = consensus.start() {
                     log::error!("Consensus stopped with error: {err}")
