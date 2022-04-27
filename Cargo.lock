@@ -2429,6 +2429,7 @@ dependencies = [
  "parking_lot",
  "prost 0.7.0",
  "raft",
+ "rand 0.8.5",
  "rusty-hook",
  "schemars",
  "segment",

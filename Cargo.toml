@@ -33,6 +33,7 @@ schemars = { version = "0.8.8", features = ["uuid"] }
 itertools = "0.10"
 anyhow = "1.0.57"
 futures = "0.3.21"
+rand = "0.8"
 
 config = "~0.13.1"
 
@@ -56,6 +57,18 @@ api = { path = "lib/api" }
 [[bin]]
 name = "schema_generator"
 path = "src/schema_generator.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "load_and_search"
+path = "src/load_and_search.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "generate_and_save"
+path = "src/generate_and_save.rs"
 test = false
 bench = false
 
