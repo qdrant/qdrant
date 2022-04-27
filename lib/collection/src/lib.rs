@@ -1,6 +1,5 @@
 //! Crate, which implements all functions required for operations with a single collection
 
-use std::net::SocketAddr;
 use std::{
     cmp::max,
     collections::HashMap,
@@ -38,6 +37,7 @@ use segment::{
 use serde::{Deserialize, Serialize};
 use shard::{local_shard::LocalShard, Shard, ShardId};
 use tokio::runtime::Handle;
+use tonic::transport::Uri;
 
 pub mod collection_manager;
 mod common;
@@ -239,7 +239,7 @@ impl Collection {
         operation: CollectionUpdateOperations,
         shard_selection: ShardId,
         wait: bool,
-        ip_to_address: &HashMap<u64, SocketAddr>,
+        ip_to_address: &HashMap<u64, Uri>,
     ) -> CollectionResult<UpdateResult> {
         let local_shard = self.local_shard_by_id(shard_selection)?;
         local_shard
@@ -252,7 +252,7 @@ impl Collection {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
-        ip_to_address: &HashMap<u64, SocketAddr>,
+        ip_to_address: &HashMap<u64, Uri>,
     ) -> CollectionResult<UpdateResult> {
         operation.validate()?;
         let shard_ops: Vec<_> = match operation.split_by_shard(&self.ring) {
@@ -300,7 +300,7 @@ impl Collection {
         segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
-        ip_to_address: &HashMap<u64, SocketAddr>,
+        ip_to_address: &HashMap<u64, Uri>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.positive.is_empty() {
             return Err(CollectionError::BadRequest {
@@ -399,7 +399,7 @@ impl Collection {
         segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
-        ip_to_address: &HashMap<u64, SocketAddr>,
+        ip_to_address: &HashMap<u64, Uri>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let request = Arc::new(request);
         let target_shards = self.target_shards(shard_selection)?;
@@ -424,7 +424,7 @@ impl Collection {
         request: ScrollRequest,
         segment_searcher: &(dyn CollectionSearcher + Sync),
         shard_selection: Option<ShardId>,
-        ip_to_address: &HashMap<u64, SocketAddr>,
+        ip_to_address: &HashMap<u64, Uri>,
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequest::default();
 
@@ -486,7 +486,7 @@ impl Collection {
         request: PointRequest,
         segment_searcher: &(dyn CollectionSearcher + Sync),
         shard_selection: Option<ShardId>,
-        ip_to_address: &HashMap<u64, SocketAddr>,
+        ip_to_address: &HashMap<u64, Uri>,
     ) -> CollectionResult<Vec<Record>> {
         let with_payload_interface = request
             .with_payload
@@ -550,7 +550,7 @@ impl Collection {
     pub async fn info(
         &self,
         shard_selection: Option<ShardId>,
-        ip_to_address: &HashMap<u64, SocketAddr>,
+        ip_to_address: &HashMap<u64, Uri>,
     ) -> CollectionResult<CollectionInfo> {
         let target_shards = self.target_shards(shard_selection)?;
         let first_shard = target_shards
