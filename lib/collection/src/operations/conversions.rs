@@ -7,6 +7,7 @@ use crate::{
     CollectionConfig, CollectionInfo, OptimizersConfig, OptimizersConfigDiff, Record, UpdateResult,
 };
 use api::grpc::conversions::{payload_to_proto, proto_to_payloads};
+use itertools::Itertools;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use tonic::Status;
@@ -238,38 +239,34 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
     ) -> Result<Self, Self::Error> {
         match collection_info_response.result {
             None => Err(Status::invalid_argument("Malformed CollectionInfo type")),
-            Some(collection_info_response) => {
-                Ok(Self {
-                    status: collection_info_response.status.try_into()?,
-                    optimizer_status: match collection_info_response.optimizer_status {
-                        None => {
-                            return Err(Status::invalid_argument("Malformed OptimizerStatus type"))
+            Some(collection_info_response) => Ok(Self {
+                status: collection_info_response.status.try_into()?,
+                optimizer_status: match collection_info_response.optimizer_status {
+                    None => return Err(Status::invalid_argument("Malformed OptimizerStatus type")),
+                    Some(api::grpc::qdrant::OptimizerStatus { ok, error }) => {
+                        if ok {
+                            OptimizersStatus::Ok
+                        } else {
+                            OptimizersStatus::Error(error)
                         }
-                        Some(api::grpc::qdrant::OptimizerStatus { ok, error }) => {
-                            if ok {
-                                OptimizersStatus::Ok
-                            } else {
-                                OptimizersStatus::Error(error)
-                            }
-                        }
-                    },
-                    vectors_count: collection_info_response.vectors_count as usize,
-                    segments_count: collection_info_response.segments_count as usize,
-                    disk_data_size: collection_info_response.disk_data_size as usize,
-                    ram_data_size: collection_info_response.ram_data_size as usize,
-                    config: match collection_info_response.config {
-                        None => {
-                            return Err(Status::invalid_argument("Malformed CollectionConfig type"))
-                        }
-                        Some(config) => config.try_into()?,
-                    },
-                    payload_schema: collection_info_response
-                        .payload_schema
-                        .into_iter()
-                        .map(|(k, v)| (k, v.try_into().unwrap())) //TODO unwrap
-                        .collect(),
-                })
-            }
+                    }
+                },
+                vectors_count: collection_info_response.vectors_count as usize,
+                segments_count: collection_info_response.segments_count as usize,
+                disk_data_size: collection_info_response.disk_data_size as usize,
+                ram_data_size: collection_info_response.ram_data_size as usize,
+                config: match collection_info_response.config {
+                    None => {
+                        return Err(Status::invalid_argument("Malformed CollectionConfig type"))
+                    }
+                    Some(config) => config.try_into()?,
+                },
+                payload_schema: collection_info_response
+                    .payload_schema
+                    .into_iter()
+                    .map(|(k, v)| v.try_into().map(|v| (k, v)))
+                    .try_collect()?,
+            }),
         }
     }
 }
