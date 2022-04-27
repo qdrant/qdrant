@@ -7,10 +7,9 @@ use crate::{
     CollectionUpdateOperations, PointRequest, Record, SearchRequest, UpdateResult,
 };
 use api::grpc::conversions::payload_to_proto;
-use api::grpc::qdrant::collections_internal_client::CollectionsInternalClient;
-use api::grpc::qdrant::points_internal_client::PointsInternalClient;
-use api::grpc::qdrant::points_selector::PointsSelectorOneOf;
 use api::grpc::qdrant::{
+    collections_internal_client::CollectionsInternalClient,
+    points_internal_client::PointsInternalClient, points_selector::PointsSelectorOneOf,
     ClearPayloadPoints, ClearPayloadPointsInternal, CreateFieldIndexCollection,
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollection,
     DeleteFieldIndexCollectionInternal, DeletePayloadPoints, DeletePayloadPointsInternal,
