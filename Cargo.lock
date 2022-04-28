@@ -3613,7 +3613,7 @@ checksum = "5fecdca9a5291cc2b8dcf7dc02453fee791a280f3743cb0905f8822ae463b3fe"
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/generall/wal.git#ac3a12382933bbb45db58091e3b84ec5838590b5"
+source = "git+https://github.com/qdrant/wal.git#ac3a12382933bbb45db58091e3b84ec5838590b5"
 dependencies = [
  "byteorder 0.4.2",
  "crc",
