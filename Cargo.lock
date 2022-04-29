@@ -1112,6 +1112,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi 0.3.9",
+]
+
+[[package]]
 name = "fsio"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1815,7 +1825,7 @@ version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f20f72ed93291a72e22e8b16bb18762183bb4943f0f483da5b8be1a9e8192752"
 dependencies = [
- "fs2",
+ "fs2 0.2.5",
  "kernel32-sys",
  "libc",
  "winapi 0.2.8",
@@ -3621,14 +3631,14 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/qdrant/wal.git#ac3a12382933bbb45db58091e3b84ec5838590b5"
+source = "git+https://github.com/qdrant/wal.git#242be88d61d64d2038a2ee47b7093110f81cb8c0"
 dependencies = [
  "byteorder 0.4.2",
  "crc",
  "docopt",
  "env_logger 0.3.5",
  "eventual",
- "fs2",
+ "fs2 0.4.3",
  "log 0.3.9",
  "memmap 0.2.3",
  "rand 0.3.23",
