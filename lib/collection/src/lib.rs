@@ -261,7 +261,7 @@ impl Collection {
         };
         let shard_requests = shard_ops
             .iter()
-            .map(|(shard, operation)| shard.update(operation.clone(), wait));
+            .map(move |(shard, operation)| shard.update(operation.clone(), wait));
         let mut results = join_all(shard_requests).await;
         let with_error = results
             .iter()

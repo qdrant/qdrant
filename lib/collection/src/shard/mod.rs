@@ -1,3 +1,4 @@
+mod conversions;
 pub mod local_shard;
 pub mod remote_shard;
 
@@ -54,6 +55,7 @@ pub trait ShardOperation {
         wait: bool,
     ) -> CollectionResult<UpdateResult>;
 
+    #[allow(clippy::too_many_arguments)]
     async fn scroll_by(
         &self,
         segment_searcher: &(dyn CollectionSearcher + Sync),

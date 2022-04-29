@@ -756,7 +756,7 @@ impl TableOfContent {
 
     #[cfg(feature = "consensus")]
     pub fn peer_address_by_id(&self) -> Result<PeerAddressById, StorageError> {
-        Ok(self.raft_state.lock()?.peer_address_by_id().clone())
+        self.raft_state.lock()?.peer_address_by_id()
     }
 }
 
