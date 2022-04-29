@@ -440,34 +440,15 @@ impl TableOfContent {
         shard_selection: Option<ShardId>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-
-        #[cfg(feature = "consensus")]
-        {
-            return collection
-                .recommend_by(
-                    request,
-                    self.segment_searcher.deref(),
-                    self.search_runtime.handle(),
-                    shard_selection,
-                    &self.peer_address_by_id()?,
-                )
-                .await
-                .map_err(|err| err.into());
-        }
-
-        #[cfg(not(feature = "consensus"))]
-        {
-            collection
-                .recommend_by(
-                    request,
-                    self.segment_searcher.deref(),
-                    self.search_runtime.handle(),
-                    shard_selection,
-                    &HashMap::new(),
-                )
-                .await
-                .map_err(|err| err.into())
-        }
+        collection
+            .recommend_by(
+                request,
+                self.segment_searcher.deref(),
+                self.search_runtime.handle(),
+                shard_selection,
+            )
+            .await
+            .map_err(|err| err.into())
     }
 
     /// Search for the closest points using vector similarity with given restrictions defined
@@ -488,34 +469,15 @@ impl TableOfContent {
         shard_selection: Option<ShardId>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-
-        #[cfg(feature = "consensus")]
-        {
-            return collection
-                .search(
-                    request,
-                    self.segment_searcher.as_ref(),
-                    self.search_runtime.handle(),
-                    shard_selection,
-                    &self.peer_address_by_id()?,
-                )
-                .await
-                .map_err(|err| err.into());
-        }
-
-        #[cfg(not(feature = "consensus"))]
-        {
-            collection
-                .search(
-                    request,
-                    self.segment_searcher.as_ref(),
-                    self.search_runtime.handle(),
-                    shard_selection,
-                    &HashMap::new(),
-                )
-                .await
-                .map_err(|err| err.into())
-        }
+        collection
+            .search(
+                request,
+                self.segment_searcher.as_ref(),
+                self.search_runtime.handle(),
+                shard_selection,
+            )
+            .await
+            .map_err(|err| err.into())
     }
 
     /// Return specific points by IDs
@@ -536,32 +498,10 @@ impl TableOfContent {
         shard_selection: Option<ShardId>,
     ) -> Result<Vec<Record>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-
-        #[cfg(feature = "consensus")]
-        {
-            return collection
-                .retrieve(
-                    request,
-                    self.segment_searcher.as_ref(),
-                    shard_selection,
-                    &self.peer_address_by_id()?,
-                )
-                .await
-                .map_err(|err| err.into());
-        }
-
-        #[cfg(not(feature = "consensus"))]
-        {
-            collection
-                .retrieve(
-                    request,
-                    self.segment_searcher.as_ref(),
-                    shard_selection,
-                    &HashMap::new(),
-                )
-                .await
-                .map_err(|err| err.into())
-        }
+        collection
+            .retrieve(request, self.segment_searcher.as_ref(), shard_selection)
+            .await
+            .map_err(|err| err.into())
     }
 
     /// List of all collections
@@ -609,32 +549,10 @@ impl TableOfContent {
         shard_selection: Option<ShardId>,
     ) -> Result<ScrollResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-
-        #[cfg(feature = "consensus")]
-        {
-            return collection
-                .scroll_by(
-                    request,
-                    self.segment_searcher.deref(),
-                    shard_selection,
-                    &self.peer_address_by_id()?,
-                )
-                .await
-                .map_err(|err| err.into());
-        }
-
-        #[cfg(not(feature = "consensus"))]
-        {
-            collection
-                .scroll_by(
-                    request,
-                    self.segment_searcher.deref(),
-                    shard_selection,
-                    &HashMap::new(),
-                )
-                .await
-                .map_err(|err| err.into())
-        }
+        collection
+            .scroll_by(request, self.segment_searcher.deref(), shard_selection)
+            .await
+            .map_err(|err| err.into())
     }
 
     pub async fn update(
@@ -645,45 +563,15 @@ impl TableOfContent {
         wait: bool,
     ) -> Result<UpdateResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
-
-        #[cfg(feature = "consensus")]
-        {
-            let result = match shard_selection {
-                Some(shard_selection) => {
-                    collection
-                        .update_from_peer(
-                            operation,
-                            shard_selection,
-                            wait,
-                            &self.peer_address_by_id()?,
-                        )
-                        .await
-                }
-                None => {
-                    collection
-                        .update_from_client(operation, wait, &self.peer_address_by_id()?)
-                        .await
-                }
-            };
-            result.map_err(|err| err.into())
-        }
-
-        #[cfg(not(feature = "consensus"))]
-        {
-            let result = match shard_selection {
-                Some(shard_selection) => {
-                    collection
-                        .update_from_peer(operation, shard_selection, wait, &HashMap::new())
-                        .await
-                }
-                None => {
-                    collection
-                        .update_from_client(operation, wait, &HashMap::new())
-                        .await
-                }
-            };
-            result.map_err(|err| err.into())
-        }
+        let result = match shard_selection {
+            Some(shard_selection) => {
+                collection
+                    .update_from_peer(operation, shard_selection, wait)
+                    .await
+            }
+            None => collection.update_from_client(operation, wait).await,
+        };
+        result.map_err(|err| err.into())
     }
 
     #[cfg(feature = "consensus")]
@@ -868,7 +756,7 @@ impl TableOfContent {
 
     #[cfg(feature = "consensus")]
     pub fn peer_address_by_id(&self) -> Result<PeerAddressById, StorageError> {
-        Ok(self.raft_state.lock()?.peer_address_by_id().clone())
+        self.raft_state.lock()?.peer_address_by_id()
     }
 }
 

@@ -38,6 +38,7 @@ pub struct RemoteShard {
     pub(crate) id: ShardId,
     pub(crate) collection_id: CollectionId,
     pub peer_id: PeerId,
+    ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
 }
 
 // TODO add to consensus config
@@ -45,36 +46,30 @@ const GRPC_TIMEOUT: Duration = Duration::from_millis(1000);
 
 // TODO pool channels
 impl RemoteShard {
-    async fn points_client(
-        &self,
-        ip_to_address: &HashMap<u64, Uri>,
-    ) -> CollectionResult<PointsInternalClient<Timeout<Channel>>> {
-        match ip_to_address.get(&self.peer_id) {
+    fn current_address(&self) -> CollectionResult<Uri> {
+        let guard_peer_address = self.ip_to_address.read()?;
+        let peer_address = guard_peer_address.get(&self.peer_id).cloned();
+        match peer_address {
             None => Err(CollectionError::service_error(format!(
                 "no address found for peer {}",
                 self.peer_id
             ))),
-            Some(peer_address) => {
-                let timeout_channel = timeout_channel(GRPC_TIMEOUT, peer_address.clone()).await?;
-                Ok(PointsInternalClient::new(timeout_channel))
-            }
+            Some(peer_address) => Ok(peer_address),
         }
+    }
+
+    async fn points_client(&self) -> CollectionResult<PointsInternalClient<Timeout<Channel>>> {
+        let current_address = self.current_address()?;
+        let timeout_channel = timeout_channel(GRPC_TIMEOUT, current_address).await?;
+        Ok(PointsInternalClient::new(timeout_channel))
     }
 
     async fn collections_client(
         &self,
-        ip_to_address: &HashMap<u64, Uri>,
     ) -> CollectionResult<CollectionsInternalClient<Timeout<Channel>>> {
-        match ip_to_address.get(&self.peer_id) {
-            None => Err(CollectionError::service_error(format!(
-                "no address found for peer {}",
-                self.peer_id
-            ))),
-            Some(peer_address) => {
-                let timeout_channel = timeout_channel(GRPC_TIMEOUT, peer_address.clone()).await?;
-                Ok(CollectionsInternalClient::new(timeout_channel))
-            }
-        }
+        let current_address = self.current_address()?;
+        let timeout_channel = timeout_channel(GRPC_TIMEOUT, current_address).await?;
+        Ok(CollectionsInternalClient::new(timeout_channel))
     }
 }
 
@@ -85,9 +80,8 @@ impl ShardOperation for &RemoteShard {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
-        ip_to_address: &HashMap<u64, Uri>,
     ) -> CollectionResult<UpdateResult> {
-        let mut client = self.points_client(ip_to_address).await?;
+        let mut client = self.points_client().await?;
 
         let response = match operation {
             CollectionUpdateOperations::PointOperation(point_ops) => match point_ops {
@@ -156,9 +150,8 @@ impl ShardOperation for &RemoteShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: bool,
         filter: Option<&Filter>,
-        ip_to_address: &HashMap<u64, Uri>,
     ) -> CollectionResult<Vec<Record>> {
-        let mut client = self.points_client(ip_to_address).await?;
+        let mut client = self.points_client().await?;
 
         let scroll_points = ScrollPoints {
             collection_name: self.collection_id.clone(),
@@ -182,8 +175,8 @@ impl ShardOperation for &RemoteShard {
         result.map_err(|e| e.into())
     }
 
-    async fn info(&self, ip_to_address: &HashMap<u64, Uri>) -> CollectionResult<CollectionInfo> {
-        let mut client = self.collections_client(ip_to_address).await?;
+    async fn info(&self) -> CollectionResult<CollectionInfo> {
+        let mut client = self.collections_client().await?;
 
         let get_collection_info_request = GetCollectionInfoRequest {
             collection_name: self.collection_id.clone(),
@@ -203,9 +196,8 @@ impl ShardOperation for &RemoteShard {
         request: Arc<SearchRequest>,
         segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
-        ip_to_address: &HashMap<u64, Uri>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        let mut client = self.points_client(ip_to_address).await?;
+        let mut client = self.points_client().await?;
 
         let search_points = SearchPoints {
             collection_name: self.collection_id.clone(),
@@ -236,9 +228,8 @@ impl ShardOperation for &RemoteShard {
         segment_searcher: &(dyn CollectionSearcher + Sync),
         with_payload: &WithPayload,
         with_vector: bool,
-        ip_to_address: &HashMap<u64, Uri>,
     ) -> CollectionResult<Vec<Record>> {
-        let mut client = self.points_client(ip_to_address).await?;
+        let mut client = self.points_client().await?;
 
         let get_points = GetPoints {
             collection_name: self.collection_id.clone(),

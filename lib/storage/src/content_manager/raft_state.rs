@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::{
     collections::HashMap,
     fs::File,
@@ -55,7 +56,7 @@ impl UnappliedEntries {
 pub struct Persistent {
     state: RaftStateWrapper,
     unapplied_entries: UnappliedEntries,
-    peer_address_by_id: PeerAddressByIdWrapper,
+    peer_address_by_id: Arc<std::sync::RwLock<PeerAddressByIdWrapper>>, // TODO pass to remote shard
     this_peer_id: u64,
     #[serde(skip)]
     path: PathBuf,
@@ -109,8 +110,9 @@ impl Persistent {
         self.save()
     }
 
-    pub fn peer_address_by_id(&self) -> &PeerAddressById {
-        &self.peer_address_by_id.0
+    pub fn peer_address_by_id(&self) -> Result<PeerAddressById, StorageError> {
+        let peer_address_by_id = &self.peer_address_by_id.read()?;
+        Ok(peer_address_by_id.0.clone())
     }
 
     pub fn this_peer_id(&self) -> u64 {

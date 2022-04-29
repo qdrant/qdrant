@@ -337,6 +337,14 @@ impl From<tonic::Status> for CollectionError {
     }
 }
 
+impl<Guard> From<std::sync::PoisonError<Guard>> for CollectionError {
+    fn from(err: std::sync::PoisonError<Guard>) -> Self {
+        CollectionError::ServiceError {
+            error: format!("Mutex lock poisoned: {}", err),
+        }
+    }
+}
+
 pub type CollectionResult<T> = result::Result<T, CollectionError>;
 
 pub fn is_service_error<T>(err: &CollectionResult<T>) -> bool {

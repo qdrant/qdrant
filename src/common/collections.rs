@@ -11,19 +11,7 @@ pub async fn do_get_collection(
     shard_selection: Option<ShardId>,
 ) -> Result<CollectionInfo, StorageError> {
     let collection = toc.get_collection(name).await?;
-    #[cfg(feature = "consensus")]
-    {
-        return Ok(collection
-            .info(shard_selection, &toc.peer_address_by_id().unwrap())
-            .await?);
-    }
-
-    #[cfg(not(feature = "consensus"))]
-    {
-        Ok(collection
-            .info(shard_selection, &std::collections::HashMap::new())
-            .await?)
-    }
+    Ok(collection.info(shard_selection).await?)
 }
 
 pub async fn do_list_collections(toc: &TableOfContent) -> CollectionsResponse {
