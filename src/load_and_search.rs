@@ -7,23 +7,18 @@ use segment::spaces::simple::DotProductMetric;
 use segment::types::PointOffsetType;
 use std::time::{Duration, Instant};
 
-const NUM_VECTORS: usize = 100_000;
-const DIM: usize = 10;
-const M: usize = 16;
+const SEARCH_VECTORS: usize = 10_000;
+const NUM_VECTORS: usize = 500_000;
+const DIM: usize = 32;
 const TOP: usize = 10;
-const EF_CONSTRUCT: usize = 100;
 const EF: usize = 100;
-const USE_HEURISTIC: bool = true;
 
 fn main() {
-    //println!("input");
-    //let mut input = String::new();
-    //std::io::stdin().read_line(&mut input);
     println!("Start {:?}", NUM_VECTORS);
     let mut rng = StdRng::seed_from_u64(42);
 
-    let mut search : Vec<Vec<f32>> = vec![];
-    for _ in 0..10000 {
+    let mut search: Vec<Vec<f32>> = vec![];
+    for _ in 0..SEARCH_VECTORS {
         search.push(random_vector(&mut rng, DIM));
     }
 
@@ -37,10 +32,13 @@ fn main() {
     for i in 0..search.len() {
         let raw_scorer = vector_holder.get_raw_scorer(search[i].clone());
         let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
-        graph_layers.search(TOP, EF, scorer);
+        graph_layers.search(TOP, EF, scorer).len();
     }
 
     let duration = start.elapsed();
-    println!("Search time: {:?}", duration.as_micros() / search.len() as u128);
+    println!(
+        "Search time: {:?}",
+        duration.as_micros() / search.len() as u128,
+    );
     println!("");
 }

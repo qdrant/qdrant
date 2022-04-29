@@ -61,6 +61,12 @@ test = false
 bench = false
 
 [[bin]]
+name = "load_only"
+path = "src/load_only.rs"
+test = false
+bench = false
+
+[[bin]]
 name = "load_and_search"
 path = "src/load_and_search.rs"
 test = false
@@ -69,6 +75,12 @@ bench = false
 [[bin]]
 name = "generate_and_save"
 path = "src/generate_and_save.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "generate_and_search"
+path = "src/generate_and_search.rs"
 test = false
 bench = false
 
