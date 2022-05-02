@@ -7,14 +7,15 @@ import "google/protobuf/empty.proto";
 service Raft {
   // Send Raft message to another peer
   rpc Send (RaftMessage) returns (google.protobuf.Empty);
-  // Send to bootstrap
+  // Send to bootstrap peer
+  // Returns uri by id if bootstrap knows this peer
   rpc WhoIs (PeerId) returns (Uri);
-  // Send to bootstrap
-  // Proposes to add to known_peers list
+  // Send to bootstrap peer
+  // Proposes to add this peer Uri and ID to a map of all peers
   // Returns all peers
   rpc AddPeerToKnown (Peer) returns (AllPeers);
-  // Send to bootstrap
-  // Proposes to add to consensus as learner peer
+  // Send to bootstrap peer
+  // Proposes to add this peer as participant of consensus
   rpc AddPeerAsParticipant (Peer) returns (google.protobuf.Empty);
 }
 

@@ -3486,7 +3486,8 @@ pub mod raft_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Raft/Send");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        /// Send to bootstrap
+        /// Send to bootstrap peer
+        /// Returns uri by id if bootstrap knows this peer
         pub async fn who_is(
             &mut self,
             request: impl tonic::IntoRequest<super::PeerId>,
@@ -3504,8 +3505,8 @@ pub mod raft_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Raft/WhoIs");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        /// Send to bootstrap
-        /// Proposes to add to known_peers list
+        /// Send to bootstrap peer
+        /// Proposes to add this peer Uri and ID to a map of all peers
         /// Returns all peers
         pub async fn add_peer_to_known(
             &mut self,
@@ -3526,8 +3527,8 @@ pub mod raft_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
-        /// Send to bootstrap
-        /// Proposes to add to consensus as learner peer
+        /// Send to bootstrap peer
+        /// Proposes to add this peer as participant of consensus
         pub async fn add_peer_as_participant(
             &mut self,
             request: impl tonic::IntoRequest<super::Peer>,
@@ -3561,20 +3562,21 @@ pub mod raft_server {
             &self,
             request: tonic::Request<super::RaftMessage>,
         ) -> Result<tonic::Response<()>, tonic::Status>;
-        /// Send to bootstrap
+        /// Send to bootstrap peer
+        /// Returns uri by id if bootstrap knows this peer
         async fn who_is(
             &self,
             request: tonic::Request<super::PeerId>,
         ) -> Result<tonic::Response<super::Uri>, tonic::Status>;
-        /// Send to bootstrap
-        /// Proposes to add to known_peers list
+        /// Send to bootstrap peer
+        /// Proposes to add this peer Uri and ID to a map of all peers
         /// Returns all peers
         async fn add_peer_to_known(
             &self,
             request: tonic::Request<super::Peer>,
         ) -> Result<tonic::Response<super::AllPeers>, tonic::Status>;
-        /// Send to bootstrap
-        /// Proposes to add to consensus as learner peer
+        /// Send to bootstrap peer
+        /// Proposes to add this peer as participant of consensus
         async fn add_peer_as_participant(
             &self,
             request: tonic::Request<super::Peer>,
