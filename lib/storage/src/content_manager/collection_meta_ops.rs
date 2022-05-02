@@ -1,6 +1,4 @@
 use collection::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
-#[cfg(feature = "consensus")]
-use raft::eraftpb::Entry as RaftEntry;
 use schemars::JsonSchema;
 use segment::types::Distance;
 use serde::{Deserialize, Serialize};
@@ -149,13 +147,4 @@ pub enum CollectionMetaOperations {
     UpdateCollection(UpdateCollectionOperation),
     DeleteCollection(DeleteCollectionOperation),
     ChangeAliases(ChangeAliasesOperation),
-}
-
-#[cfg(feature = "consensus")]
-impl TryFrom<&RaftEntry> for CollectionMetaOperations {
-    type Error = serde_cbor::Error;
-
-    fn try_from(entry: &RaftEntry) -> Result<Self, Self::Error> {
-        serde_cbor::from_slice(entry.get_data())
-    }
 }

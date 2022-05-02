@@ -7,6 +7,7 @@ use std::{
 };
 
 use atomicwrites::{AtomicFile, OverwriteBehavior::AllowOverwrite};
+use collection::PeerId;
 use itertools::Itertools;
 use prost::Message;
 use raft::{
@@ -14,6 +15,7 @@ use raft::{
     RaftState,
 };
 use serde::{Deserialize, Serialize};
+use tonic::transport::Uri;
 
 use crate::types::PeerAddressById;
 
@@ -110,6 +112,26 @@ impl Persistent {
         self.save()
     }
 
+    pub fn set_peer_address_by_id(
+        &mut self,
+        peer_address_by_id: PeerAddressById,
+    ) -> Result<(), StorageError> {
+        *self.peer_address_by_id.write()? = PeerAddressByIdWrapper(peer_address_by_id);
+        self.save()
+    }
+
+    pub fn insert_peer(&mut self, peer_id: PeerId, address: Uri) -> Result<(), StorageError> {
+        if let Some(prev_peer_address) = self
+            .peer_address_by_id
+            .write()?
+            .0
+            .insert(peer_id, address.clone())
+        {
+            log::warn!("Replaced address of peer {peer_id} from {prev_peer_address} to {address}");
+        }
+        self.save()
+    }
+
     pub fn peer_address_by_id(&self) -> Result<PeerAddressById, StorageError> {
         let peer_address_by_id = &self.peer_address_by_id.read()?;
         Ok(peer_address_by_id.0.clone())
@@ -151,10 +173,11 @@ impl Persistent {
     }
 }
 
+/// Serializable [`PeerAddressById`]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(try_from = "HashMap<u64, String>")]
 #[serde(into = "HashMap<u64, String>")]
-struct PeerAddressByIdWrapper(PeerAddressById);
+pub struct PeerAddressByIdWrapper(pub PeerAddressById);
 
 impl From<PeerAddressByIdWrapper> for HashMap<u64, String> {
     fn from(wrapper: PeerAddressByIdWrapper) -> Self {

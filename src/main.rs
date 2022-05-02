@@ -14,12 +14,35 @@ use std::io::Error;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
+
+use ::tonic::transport::Uri;
+use clap::Parser;
 use storage::content_manager::toc::TableOfContent;
 
 use crate::common::helpers::create_search_runtime;
 use crate::settings::Settings;
 
+/// Qdrant (read: quadrant ) is a vector similarity search engine.
+/// It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.
+///
+/// This CLI starts a Qdrant peer/server.
+#[derive(Parser, Debug)]
+#[clap(version, about)]
+struct Args {
+    /// Uri of the peer to bootstrap from in case of multi-peer deployment.
+    /// If not specified - this peer will be considered as a first in a new deployment.
+    #[clap(long, value_name = "URI")]
+    bootstrap: Option<Uri>,
+    /// Uri of this peer.
+    /// Other peers should be able to reach it by this uri.
+    /// Default is left for single peer deployments only.
+    #[clap(long, value_name = "URI", default_value_t=Uri::from_static("127.0.0.1:8080"))]
+    uri: Uri,
+}
+
 fn main() -> std::io::Result<()> {
+    #[cfg(feature = "consensus")]
+    let args = Args::parse();
     let settings = Settings::new().expect("Can't read config.");
     std::env::set_var("RUST_LOG", &settings.log_level);
     env_logger::init();
@@ -52,8 +75,13 @@ fn main() -> std::io::Result<()> {
         // logs from it to `log` crate
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
 
-        let (mut consensus, message_sender) = Consensus::new(&slog_logger, toc_arc.clone().into())
-            .expect("Can't initialize consensus");
+        let (mut consensus, message_sender) = Consensus::new(
+            &slog_logger,
+            toc_arc.clone().into(),
+            args.bootstrap,
+            args.uri,
+        )
+        .expect("Can't initialize consensus");
         thread::Builder::new()
             .name("consensus".to_string())
             .spawn(move || {

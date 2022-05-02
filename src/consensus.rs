@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::Context;
 use api::grpc::{
-    qdrant::{raft_client::RaftClient, RaftMessage as GrpcRaftMessage},
+    qdrant::{raft_client::RaftClient, PeerId, RaftMessage as GrpcRaftMessage},
     timeout_channel,
 };
 use storage::content_manager::{errors::StorageError, toc::TableOfContentRef};
@@ -20,6 +20,7 @@ use tonic::transport::Uri;
 const CHANNEL_CAPACITY: usize = 100;
 const TICK_PERIOD_MS: u64 = 100;
 const MESSAGE_TIMEOUT: Duration = Duration::from_millis(1000);
+const BOOTSTRAP_TIMEOUT: Duration = Duration::from_millis(5000);
 
 type Node = RawNode<TableOfContentRef>;
 
@@ -32,18 +33,32 @@ pub struct Consensus {
     node: Node,
     receiver: Receiver<Message>,
     runtime: Runtime,
+    bootstrap_uri: Option<Uri>,
 }
 
 impl Consensus {
     pub fn new(
         logger: &slog::Logger,
         toc_ref: TableOfContentRef,
-    ) -> raft::Result<(Self, SyncSender<Message>)> {
+        bootstrap_peer: Option<Uri>,
+        this_peer_uri: Uri,
+    ) -> anyhow::Result<(Self, SyncSender<Message>)> {
         let config = Config {
             id: toc_ref.this_peer_id(),
             ..Default::default()
         };
         config.validate()?;
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .thread_name_fn(|| {
+                static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+                let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+                format!("consensus-tokio-rt-{}", id)
+            })
+            .enable_all()
+            .build()?;
+        if let Some(bootstrap_peer) = bootstrap_peer.clone() {
+            runtime.block_on(Self::bootstrap(&toc_ref, bootstrap_peer, this_peer_uri))?;
+        }
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
         toc_ref.apply_entries()?;
@@ -53,20 +68,45 @@ impl Consensus {
             Self {
                 node,
                 receiver,
-                runtime: tokio::runtime::Builder::new_multi_thread()
-                    .thread_name_fn(|| {
-                        static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-                        let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                        format!("consensus-tokio-rt-{}", id)
-                    })
-                    .enable_all()
-                    .build()?,
+                runtime,
+                bootstrap_uri: bootstrap_peer,
             },
             sender,
         ))
     }
 
-    pub fn start(&mut self) -> raft::Result<()> {
+    pub async fn bootstrap(
+        toc_ref: &TableOfContentRef,
+        bootstrap_peer: Uri,
+        this_peer_uri: Uri,
+    ) -> anyhow::Result<()> {
+        let channel = timeout_channel(BOOTSTRAP_TIMEOUT, bootstrap_peer)
+            .await
+            .context("Failed to create timeout channel")?;
+        let mut client = RaftClient::new(channel);
+        let all_peers = client
+            .add_peer_to_known(tonic::Request::new(api::grpc::qdrant::Peer {
+                uri: this_peer_uri.to_string(),
+                id: toc_ref.this_peer_id(),
+            }))
+            .await?
+            .into_inner();
+        // Although peer addresses are synchronized with consensus, addresses need to be pre-fetched in the case of a new peer
+        // or it will not know how to answer the Raft leader
+        for peer in all_peers.all_peers {
+            toc_ref
+                .add_peer(
+                    peer.id,
+                    peer.uri
+                        .parse()
+                        .context(format!("Failed to parse peer URI: {}", peer.uri))?,
+                )
+                .context("Failed to add peer")?;
+        }
+        Ok(())
+    }
+
+    pub fn start(&mut self) -> anyhow::Result<()> {
         let mut t = Instant::now();
         let mut timeout = Duration::from_millis(TICK_PERIOD_MS);
 
@@ -93,12 +133,12 @@ impl Consensus {
             } else {
                 timeout -= d;
             }
-            on_ready(&mut self.node, &self.runtime);
+            on_ready(&mut self.node, &self.runtime, &self.bootstrap_uri);
         }
     }
 }
 
-fn on_ready(raft_group: &mut Node, runtime: &Runtime) {
+fn on_ready(raft_group: &mut Node, runtime: &Runtime, bootstrap_uri: &Option<Uri>) {
     if !raft_group.has_ready() {
         return;
     }
@@ -107,7 +147,7 @@ fn on_ready(raft_group: &mut Node, runtime: &Runtime) {
     // Get the `Ready` with `RawNode::ready` interface.
     let mut ready = raft_group.ready();
     if !ready.messages().is_empty() {
-        if let Err(err) = handle_messages(ready.take_messages(), &store, runtime) {
+        if let Err(err) = handle_messages(ready.take_messages(), &store, runtime, bootstrap_uri) {
             log::error!("Failed to send messages: {err}")
         }
     }
@@ -136,7 +176,12 @@ fn on_ready(raft_group: &mut Node, runtime: &Runtime) {
         }
     }
     if !ready.persisted_messages().is_empty() {
-        if let Err(err) = handle_messages(ready.take_persisted_messages(), &store, runtime) {
+        if let Err(err) = handle_messages(
+            ready.take_persisted_messages(),
+            &store,
+            runtime,
+            bootstrap_uri,
+        ) {
             log::error!("Failed to send messages: {err}")
         }
     }
@@ -150,7 +195,7 @@ fn on_ready(raft_group: &mut Node, runtime: &Runtime) {
             log::error!("Failed to set commit index: {err}")
         }
     }
-    if let Err(err) = handle_messages(light_rd.take_messages(), &store, runtime) {
+    if let Err(err) = handle_messages(light_rd.take_messages(), &store, runtime, bootstrap_uri) {
         log::error!("Failed to send messages: {err}")
     }
     // Apply all committed entries.
@@ -173,6 +218,7 @@ fn handle_messages(
     messages: Vec<RaftMessage>,
     toc: &TableOfContentRef,
     runtime: &Runtime,
+    bootstrap_uri: &Option<Uri>,
 ) -> Result<(), StorageError> {
     let peer_address_by_id = toc.peer_address_by_id()?;
     let messages_with_address: Vec<_> = messages
@@ -182,18 +228,22 @@ fn handle_messages(
             (message, address)
         })
         .collect();
+    let bootstrap_uri = bootstrap_uri.clone();
     let future = async move {
         let mut send_futures = Vec::new();
         for (message, address) in messages_with_address {
             let address = match address {
                 Some(address) => address,
-                None => {
-                    log::warn!(
-                        "Address of peer with ID {} not found. Message was not sent to it.",
-                        message.to
-                    );
-                    continue;
-                }
+                None => match who_is(message.to, bootstrap_uri.clone()).await {
+                    Ok(address) => address,
+                    Err(_) => {
+                        log::warn!(
+                            "Address of peer with ID {} not found. Message was not sent to it.",
+                            message.to
+                        );
+                        continue;
+                    }
+                },
             };
             send_futures.push(send_message(address, message));
         }
@@ -207,6 +257,21 @@ fn handle_messages(
     // so sending messages in parallel should be ok
     runtime.spawn(future);
     Ok(())
+}
+
+async fn who_is(peer_id: collection::PeerId, bootstrap_uri: Option<Uri>) -> anyhow::Result<Uri> {
+    let bootstrap_uri =
+        bootstrap_uri.ok_or_else(|| anyhow::anyhow!("No bootstrap uri supplied"))?;
+    let channel = timeout_channel(BOOTSTRAP_TIMEOUT, bootstrap_uri)
+        .await
+        .context("Failed to create timeout channel")?;
+    let mut client = RaftClient::new(channel);
+    Ok(client
+        .who_is(tonic::Request::new(PeerId { id: peer_id }))
+        .await?
+        .into_inner()
+        .uri
+        .parse()?)
 }
 
 async fn send_message(address: Uri, message: RaftMessage) -> anyhow::Result<()> {
@@ -238,6 +303,7 @@ mod tests {
         toc::TableOfContent,
     };
     use tempdir::TempDir;
+    use tonic::transport::Uri;
 
     use super::Consensus;
 
@@ -256,8 +322,13 @@ mod tests {
         toc.with_propose_sender(propose_sender);
         let toc_arc = Arc::new(toc);
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
-        let (mut consensus, message_sender) =
-            Consensus::new(&slog_logger, toc_arc.clone().into()).unwrap();
+        let (mut consensus, message_sender) = Consensus::new(
+            &slog_logger,
+            toc_arc.clone().into(),
+            None,
+            Uri::from_static("127.0.0.1:8080"),
+        )
+        .unwrap();
         thread::spawn(move || consensus.start().unwrap());
         thread::spawn(move || {
             while let Ok(entry) = propose_receiver.recv() {
