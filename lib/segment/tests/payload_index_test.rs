@@ -200,11 +200,12 @@ mod tests {
                 estimation
             );
 
+            // warning: report flakiness at https://github.com/qdrant/qdrant/issues/534
             plain_result
                 .iter()
                 .zip(struct_result.iter())
                 .for_each(|(r1, r2)| {
-                    assert_eq!(r1.id, r2.id);
+                    assert_eq!(r1.id, r2.id, "got different ScoredPoint {:?} and {:?} for\nquery vector {:?}\nquery filter {:?}\nplain result {:?}\nstruct result{:?}", r1, r2, query_vector, query_filter, plain_result, struct_result);
                     assert!((r1.score - r2.score) < 0.0001)
                 });
         }
