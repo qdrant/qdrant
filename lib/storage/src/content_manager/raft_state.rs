@@ -121,7 +121,14 @@ impl Persistent {
     }
 
     pub fn insert_peer(&mut self, peer_id: PeerId, address: Uri) -> Result<(), StorageError> {
-        self.peer_address_by_id.write()?.0.insert(peer_id, address);
+        if let Some(prev_peer_address) = self
+            .peer_address_by_id
+            .write()?
+            .0
+            .insert(peer_id, address.clone())
+        {
+            log::warn!("Replaced address of peer {peer_id} from {prev_peer_address} to {address}");
+        }
         self.save()
     }
 
