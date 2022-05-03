@@ -13,10 +13,10 @@ service Raft {
   // Send to bootstrap peer
   // Proposes to add this peer Uri and ID to a map of all peers
   // Returns all peers
-  rpc AddPeerToKnown (Peer) returns (AllPeers);
+  rpc AddPeerToKnown (AddPeerToKnownMessage) returns (AllPeers);
   // Send to bootstrap peer
   // Proposes to add this peer as participant of consensus
-  rpc AddPeerAsParticipant (Peer) returns (google.protobuf.Empty);
+  rpc AddPeerAsParticipant (PeerId) returns (google.protobuf.Empty);
 }
 
 message RaftMessage {
@@ -30,6 +30,12 @@ message AllPeers {
 message Peer {
     string uri = 1;
     uint64 id = 2;
+}
+
+message AddPeerToKnownMessage {
+  optional string uri = 1;
+  optional uint32 port = 2;
+  uint64 id = 3;
 }
 
 message PeerId {

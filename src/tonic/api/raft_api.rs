@@ -1,6 +1,7 @@
 use crate::consensus;
 use api::grpc::qdrant::{
-    raft_server::Raft, AllPeers, Peer, PeerId, RaftMessage as RaftMessageBytes, Uri as UriStr,
+    raft_server::Raft, AddPeerToKnownMessage, AllPeers, Peer, PeerId,
+    RaftMessage as RaftMessageBytes, Uri as UriStr,
 };
 use raft::eraftpb::Message as RaftMessage;
 use std::sync::{mpsc::SyncSender, Arc, Mutex};
@@ -54,11 +55,26 @@ impl Raft for RaftService {
 
     async fn add_peer_to_known(
         &self,
-        request: tonic::Request<Peer>,
+        request: tonic::Request<AddPeerToKnownMessage>,
     ) -> Result<tonic::Response<AllPeers>, tonic::Status> {
+        let peer = request.get_ref();
+        let uri = if let Some(uri) = &peer.uri {
+            uri.clone()
+        } else {
+            let ip = request
+                .remote_addr()
+                .ok_or_else(|| {
+                    Status::failed_precondition("Remote address unavailable due to the used IO")
+                })?
+                .ip();
+            let port = peer
+                .port
+                .ok_or_else(|| Status::invalid_argument("URI or port should be supplied"))?;
+            format!("{ip}:{port}")
+        };
         let peer = request.into_inner();
         self.toc
-            .propose_consensus_op(ConsensusOperations::AddPeer(peer.id, peer.uri), None)
+            .propose_consensus_op(ConsensusOperations::AddPeer(peer.id, uri), None)
             .await
             .map_err(|err| Status::internal(format!("Failed to add peer: {err}")))?;
         let addresses = self
@@ -78,7 +94,7 @@ impl Raft for RaftService {
 
     async fn add_peer_as_participant(
         &self,
-        _request: tonic::Request<Peer>,
+        _request: tonic::Request<PeerId>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
         todo!();
     }

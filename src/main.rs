@@ -35,9 +35,11 @@ struct Args {
     bootstrap: Option<Uri>,
     /// Uri of this peer.
     /// Other peers should be able to reach it by this uri.
-    /// Default is left for single peer deployments only.
-    #[clap(long, value_name = "URI", default_value_t=Uri::from_static("127.0.0.1:8080"))]
-    uri: Uri,
+    ///
+    /// If this value is not supplied and bootstrap is enabled
+    /// then qdrant will take internal grpc port from config and derive the IP address of this peer on bootstrap peer (receiving side)
+    #[clap(long, value_name = "URI")]
+    uri: Option<Uri>,
 }
 
 fn main() -> std::io::Result<()> {
@@ -79,7 +81,8 @@ fn main() -> std::io::Result<()> {
             &slog_logger,
             toc_arc.clone().into(),
             args.bootstrap,
-            args.uri,
+            args.uri.map(|uri| uri.to_string()),
+            settings.service.internal_grpc_port.map(|port| port as u32),
         )
         .expect("Can't initialize consensus");
         thread::Builder::new()
