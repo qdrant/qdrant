@@ -37,11 +37,13 @@ pub struct Consensus {
 }
 
 impl Consensus {
+    /// If `bootstrap_peer` peer is supplied, then either `uri` or `p2p_port` should be also supplied
     pub fn new(
         logger: &slog::Logger,
         toc_ref: TableOfContentRef,
         bootstrap_peer: Option<Uri>,
-        this_peer_uri: Uri,
+        uri: Option<String>,
+        p2p_port: Option<u32>,
     ) -> anyhow::Result<(Self, SyncSender<Message>)> {
         let config = Config {
             id: toc_ref.this_peer_id(),
@@ -57,7 +59,13 @@ impl Consensus {
             .enable_all()
             .build()?;
         if let Some(bootstrap_peer) = bootstrap_peer.clone() {
-            runtime.block_on(Self::bootstrap(&toc_ref, bootstrap_peer, this_peer_uri))?;
+            log::info!("Bootstrapping from peer with address: {bootstrap_peer}");
+            if uri.is_none() && p2p_port.is_none() {
+                return Err(anyhow::anyhow!("Failed to bootstrap peer as neither `internal rpc port` was configured nor `this peer uri` was supplied"));
+            }
+            runtime.block_on(Self::bootstrap(&toc_ref, bootstrap_peer, uri, p2p_port))?;
+        } else {
+            log::info!("Bootstrapping is disabled. Assuming this peer is the first in the network")
         }
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
@@ -78,17 +86,21 @@ impl Consensus {
     pub async fn bootstrap(
         toc_ref: &TableOfContentRef,
         bootstrap_peer: Uri,
-        this_peer_uri: Uri,
+        uri: Option<String>,
+        p2p_port: Option<u32>,
     ) -> anyhow::Result<()> {
         let channel = timeout_channel(BOOTSTRAP_TIMEOUT, bootstrap_peer)
             .await
             .context("Failed to create timeout channel")?;
         let mut client = RaftClient::new(channel);
         let all_peers = client
-            .add_peer_to_known(tonic::Request::new(api::grpc::qdrant::Peer {
-                uri: this_peer_uri.to_string(),
-                id: toc_ref.this_peer_id(),
-            }))
+            .add_peer_to_known(tonic::Request::new(
+                api::grpc::qdrant::AddPeerToKnownMessage {
+                    uri,
+                    port: p2p_port,
+                    id: toc_ref.this_peer_id(),
+                },
+            ))
             .await?
             .into_inner();
         // Although peer addresses are synchronized with consensus, addresses need to be pre-fetched in the case of a new peer
@@ -303,7 +315,6 @@ mod tests {
         toc::TableOfContent,
     };
     use tempdir::TempDir;
-    use tonic::transport::Uri;
 
     use super::Consensus;
 
@@ -322,13 +333,8 @@ mod tests {
         toc.with_propose_sender(propose_sender);
         let toc_arc = Arc::new(toc);
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
-        let (mut consensus, message_sender) = Consensus::new(
-            &slog_logger,
-            toc_arc.clone().into(),
-            None,
-            Uri::from_static("127.0.0.1:8080"),
-        )
-        .unwrap();
+        let (mut consensus, message_sender) =
+            Consensus::new(&slog_logger, toc_arc.clone().into(), None, None, None).unwrap();
         thread::spawn(move || consensus.start().unwrap());
         thread::spawn(move || {
             while let Ok(entry) = propose_receiver.recv() {

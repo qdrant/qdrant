@@ -3395,6 +3395,15 @@ pub struct Peer {
     pub id: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AddPeerToKnownMessage {
+    #[prost(string, optional, tag="1")]
+    pub uri: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(uint32, optional, tag="2")]
+    pub port: ::core::option::Option<u32>,
+    #[prost(uint64, tag="3")]
+    pub id: u64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PeerId {
     #[prost(uint64, tag="1")]
     pub id: u64,
@@ -3510,7 +3519,7 @@ pub mod raft_client {
         /// Returns all peers
         pub async fn add_peer_to_known(
             &mut self,
-            request: impl tonic::IntoRequest<super::Peer>,
+            request: impl tonic::IntoRequest<super::AddPeerToKnownMessage>,
         ) -> Result<tonic::Response<super::AllPeers>, tonic::Status> {
             self.inner
                 .ready()
@@ -3531,7 +3540,7 @@ pub mod raft_client {
         /// Proposes to add this peer as participant of consensus
         pub async fn add_peer_as_participant(
             &mut self,
-            request: impl tonic::IntoRequest<super::Peer>,
+            request: impl tonic::IntoRequest<super::PeerId>,
         ) -> Result<tonic::Response<()>, tonic::Status> {
             self.inner
                 .ready()
@@ -3573,13 +3582,13 @@ pub mod raft_server {
         /// Returns all peers
         async fn add_peer_to_known(
             &self,
-            request: tonic::Request<super::Peer>,
+            request: tonic::Request<super::AddPeerToKnownMessage>,
         ) -> Result<tonic::Response<super::AllPeers>, tonic::Status>;
         /// Send to bootstrap peer
         /// Proposes to add this peer as participant of consensus
         async fn add_peer_as_participant(
             &self,
-            request: tonic::Request<super::Peer>,
+            request: tonic::Request<super::PeerId>,
         ) -> Result<tonic::Response<()>, tonic::Status>;
     }
     #[derive(Debug)]
@@ -3704,7 +3713,9 @@ pub mod raft_server {
                 "/qdrant.Raft/AddPeerToKnown" => {
                     #[allow(non_camel_case_types)]
                     struct AddPeerToKnownSvc<T: Raft>(pub Arc<T>);
-                    impl<T: Raft> tonic::server::UnaryService<super::Peer>
+                    impl<
+                        T: Raft,
+                    > tonic::server::UnaryService<super::AddPeerToKnownMessage>
                     for AddPeerToKnownSvc<T> {
                         type Response = super::AllPeers;
                         type Future = BoxFuture<
@@ -3713,7 +3724,7 @@ pub mod raft_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::Peer>,
+                            request: tonic::Request<super::AddPeerToKnownMessage>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
                             let fut = async move {
@@ -3742,7 +3753,7 @@ pub mod raft_server {
                 "/qdrant.Raft/AddPeerAsParticipant" => {
                     #[allow(non_camel_case_types)]
                     struct AddPeerAsParticipantSvc<T: Raft>(pub Arc<T>);
-                    impl<T: Raft> tonic::server::UnaryService<super::Peer>
+                    impl<T: Raft> tonic::server::UnaryService<super::PeerId>
                     for AddPeerAsParticipantSvc<T> {
                         type Response = ();
                         type Future = BoxFuture<
@@ -3751,7 +3762,7 @@ pub mod raft_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::Peer>,
+                            request: tonic::Request<super::PeerId>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
                             let fut = async move {
