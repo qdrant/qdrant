@@ -39,10 +39,8 @@ pub struct RemoteShard {
     pub(crate) collection_id: CollectionId,
     pub peer_id: PeerId,
     ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
+    p2p_grpc_timeout: Duration,
 }
-
-// TODO add to consensus config
-const GRPC_TIMEOUT: Duration = Duration::from_millis(1000);
 
 // TODO pool channels
 impl RemoteShard {
@@ -60,7 +58,7 @@ impl RemoteShard {
 
     async fn points_client(&self) -> CollectionResult<PointsInternalClient<Timeout<Channel>>> {
         let current_address = self.current_address()?;
-        let timeout_channel = timeout_channel(GRPC_TIMEOUT, current_address).await?;
+        let timeout_channel = timeout_channel(self.p2p_grpc_timeout, current_address).await?;
         Ok(PointsInternalClient::new(timeout_channel))
     }
 
@@ -68,7 +66,7 @@ impl RemoteShard {
         &self,
     ) -> CollectionResult<CollectionsInternalClient<Timeout<Channel>>> {
         let current_address = self.current_address()?;
-        let timeout_channel = timeout_channel(GRPC_TIMEOUT, current_address).await?;
+        let timeout_channel = timeout_channel(self.p2p_grpc_timeout, current_address).await?;
         Ok(CollectionsInternalClient::new(timeout_channel))
     }
 }

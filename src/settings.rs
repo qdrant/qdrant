@@ -8,9 +8,39 @@ pub struct ServiceConfig {
     pub host: String,
     pub http_port: u16,
     pub grpc_port: Option<u16>, // None means that gRPC is disabled
-    pub internal_grpc_port: Option<u16>, // None means that the internal gRPC is disabled
     pub max_request_size_mb: usize,
     pub max_workers: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ClusterConfig {
+    pub p2p: P2pConfig,
+    pub consensus: ConsensusConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct P2pConfig {
+    pub p2p_port: Option<u16>,
+    pub p2p_grpc_timeout_ms: u64,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ConsensusConfig {
+    pub max_in_flight_messages: usize,
+    pub tick_period_ms: u64,
+    pub message_timeout_ms: u64,
+    pub bootstrap_timeout_sec: u64,
+}
+
+impl Default for ConsensusConfig {
+    fn default() -> Self {
+        ConsensusConfig {
+            max_in_flight_messages: 100,
+            tick_period_ms: 100,
+            message_timeout_ms: 1000,
+            bootstrap_timeout_sec: 5,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -19,6 +49,7 @@ pub struct Settings {
     pub log_level: String,
     pub storage: StorageConfig,
     pub service: ServiceConfig,
+    pub cluster: ClusterConfig,
 }
 
 impl Settings {
