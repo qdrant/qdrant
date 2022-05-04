@@ -21,6 +21,16 @@ pub struct ClusterConfig {
     pub consensus: ConsensusConfig,
 }
 
+impl Default for ClusterConfig {
+    fn default() -> Self {
+        ClusterConfig {
+            enabled: false, //disabled by default
+            p2p: P2pConfig::default(),
+            consensus: ConsensusConfig::default(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct P2pConfig {
     #[serde(default)]
@@ -40,8 +50,8 @@ impl Default for P2pConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ConsensusConfig {
-    #[serde(default = "default_max_in_flight_messages")]
-    pub max_in_flight_messages: usize,
+    #[serde(default = "default_max_message_queue_size")]
+    pub max_message_queue_size: usize, // controls the back-pressure at the Raft level
     #[serde(default = "default_tick_period_ms")]
     pub tick_period_ms: u64,
     #[serde(default = "default_timeout_ms")]
@@ -53,7 +63,7 @@ pub struct ConsensusConfig {
 impl Default for ConsensusConfig {
     fn default() -> Self {
         ConsensusConfig {
-            max_in_flight_messages: default_max_in_flight_messages(),
+            max_message_queue_size: default_max_message_queue_size(),
             tick_period_ms: default_tick_period_ms(),
             message_timeout_ms: default_timeout_ms(),
             bootstrap_timeout_sec: default_bootstrap_timeout_sec(),
@@ -67,16 +77,8 @@ pub struct Settings {
     pub log_level: String,
     pub storage: StorageConfig,
     pub service: ServiceConfig,
-    #[serde(default = "default_cluster_config")]
+    #[serde(default)]
     pub cluster: ClusterConfig,
-}
-
-fn default_cluster_config() -> ClusterConfig {
-    ClusterConfig {
-        enabled: false, //disabled by default
-        p2p: P2pConfig::default(),
-        consensus: ConsensusConfig::default(),
-    }
 }
 
 fn default_timeout_ms() -> u64 {
@@ -91,7 +93,7 @@ fn default_bootstrap_timeout_sec() -> u64 {
     5
 }
 
-fn default_max_in_flight_messages() -> usize {
+fn default_max_message_queue_size() -> usize {
     100
 }
 

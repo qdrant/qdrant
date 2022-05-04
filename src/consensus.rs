@@ -76,7 +76,7 @@ impl Consensus {
         // They might have not been applied due to unplanned Qdrant shutdown
         toc_ref.apply_entries()?;
         let node = Node::new(&raft_config, toc_ref, logger)?;
-        let (sender, receiver) = mpsc::sync_channel(config.max_in_flight_messages);
+        let (sender, receiver) = mpsc::sync_channel(config.max_message_queue_size);
         Ok((
             Self {
                 node,
