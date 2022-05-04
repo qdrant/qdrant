@@ -12,7 +12,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
- "log 0.4.16",
+ "log 0.4.17",
  "memchr",
  "pin-project-lite",
  "tokio",
@@ -46,7 +46,7 @@ dependencies = [
  "itoa 1.0.1",
  "language-tags",
  "local-channel",
- "log 0.4.16",
+ "log 0.4.17",
  "mime",
  "percent-encoding",
  "pin-project-lite",
@@ -75,7 +75,7 @@ dependencies = [
  "bytestring",
  "firestorm",
  "http",
- "log 0.4.16",
+ "log 0.4.17",
  "regex",
  "serde",
 ]
@@ -155,7 +155,7 @@ dependencies = [
  "futures-util",
  "itoa 1.0.1",
  "language-tags",
- "log 0.4.16",
+ "log 0.4.17",
  "mime",
  "once_cell",
  "pin-project-lite",
@@ -727,7 +727,7 @@ dependencies = [
  "hashring",
  "indicatif",
  "itertools 0.10.3",
- "log 0.4.16",
+ "log 0.4.17",
  "merge",
  "num_cpus",
  "ordered-float",
@@ -1051,7 +1051,7 @@ checksum = "0b2cf0344971ee6c64c31be0d530793fba457d322dfec2810c453d0ef228f9c3"
 dependencies = [
  "atty",
  "humantime",
- "log 0.4.16",
+ "log 0.4.17",
  "regex",
  "termcolor",
 ]
@@ -1306,7 +1306,7 @@ checksum = "d7e2e3be15682a45e9dfe9a04f84bff275390047204ab22f3c6b2312fcfb9e24"
 dependencies = [
  "geo-types",
  "geographiclib-rs",
- "log 0.4.16",
+ "log 0.4.17",
  "num-traits",
  "robust",
  "rstar",
@@ -1606,7 +1606,7 @@ dependencies = [
  "indexmap",
  "itoa 1.0.1",
  "lazy_static",
- "log 0.4.16",
+ "log 0.4.17",
  "num-format",
  "quick-xml",
  "rgb",
@@ -1807,14 +1807,14 @@ version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e19e8d5c34a3e0e2223db8e060f9e8264aeeb5c5fc64a4ee9965c062211c024b"
 dependencies = [
- "log 0.4.16",
+ "log 0.4.17",
 ]
 
 [[package]]
 name = "log"
-version = "0.4.16"
+version = "0.4.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6389c490849ff5bc16be905ae24bc913a9c8892e19b2341dbc175e14c341c2b8"
+checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
 dependencies = [
  "cfg-if",
 ]
@@ -1933,7 +1933,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52da4364ffb0e4fe33a9841a98a3f3014fb964045ce4f7a45a398243c8d6b0c9"
 dependencies = [
  "libc",
- "log 0.4.16",
+ "log 0.4.17",
  "miow",
  "ntapi",
  "wasi 0.11.0+wasi-snapshot-preview1",
@@ -2302,7 +2302,7 @@ dependencies = [
  "findshlibs",
  "inferno",
  "libc",
- "log 0.4.16",
+ "log 0.4.17",
  "nix",
  "once_cell",
  "parking_lot",
@@ -2399,7 +2399,7 @@ dependencies = [
  "bytes",
  "heck 0.3.3",
  "itertools 0.9.0",
- "log 0.4.16",
+ "log 0.4.17",
  "multimap",
  "petgraph 0.5.1",
  "prost 0.7.0",
@@ -2420,7 +2420,7 @@ dependencies = [
  "heck 0.4.0",
  "itertools 0.10.3",
  "lazy_static",
- "log 0.4.16",
+ "log 0.4.17",
  "multimap",
  "petgraph 0.6.0",
  "prost 0.10.1",
@@ -2508,7 +2508,7 @@ dependencies = [
  "env_logger",
  "futures",
  "itertools 0.10.3",
- "log 0.4.16",
+ "log 0.4.17",
  "num-traits",
  "num_cpus",
  "parking_lot",
@@ -2983,7 +2983,7 @@ dependencies = [
  "geohash",
  "itertools 0.10.3",
  "json-patch",
- "log 0.4.16",
+ "log 0.4.17",
  "memmap 0.7.0",
  "num-derive",
  "num-traits",
@@ -3176,7 +3176,7 @@ version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6706b2ace5bbae7291d3f8d2473e2bfab073ccd7d03670946197aec98471fa3e"
 dependencies = [
- "log 0.4.16",
+ "log 0.4.17",
  "slog",
  "slog-scope",
 ]
@@ -3271,7 +3271,7 @@ dependencies = [
  "collection",
  "http",
  "itertools 0.10.3",
- "log 0.4.16",
+ "log 0.4.17",
  "num_cpus",
  "prost 0.7.0",
  "raft",
@@ -3707,7 +3707,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d0ecdcb44a79f0fe9844f0c4f33a342cbcbb5117de8001e6ba0dc2351327d09"
 dependencies = [
  "cfg-if",
- "log 0.4.16",
+ "log 0.4.17",
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
@@ -3848,7 +3848,7 @@ dependencies = [
  "env_logger",
  "eventual",
  "fs2",
- "log 0.4.16",
+ "log 0.4.17",
  "memmap 0.5.2",
  "rand 0.6.5",
  "serde",
@@ -3872,7 +3872,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ce8a968cb1cd110d136ff8b819a556d6fb6d919363c61534f6860c7eb172ba0"
 dependencies = [
- "log 0.4.16",
+ "log 0.4.17",
  "try-lock",
 ]
 
@@ -3906,7 +3906,7 @@ checksum = "53e04185bfa3a779273da532f5025e33398409573f348985af9a1cbf3774d3f4"
 dependencies = [
  "bumpalo",
  "lazy_static",
- "log 0.4.16",
+ "log 0.4.17",
  "proc-macro2",
  "quote",
  "syn",
