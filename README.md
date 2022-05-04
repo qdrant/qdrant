@@ -12,7 +12,7 @@
     <a href="https://qdrant.github.io/qdrant/redoc/index.html"><img src="https://img.shields.io/badge/Docs-OpenAPI%203.0-success" alt="OpenAPI Docs"></a>
     <a href="https://github.com/qdrant/qdrant/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-success" alt="Apache 2.0 License"></a>
     <a href="https://discord.gg/tdtYvXjC4h"><img src="https://img.shields.io/badge/Discord-Qdrant-5865F2.svg?logo=discord" alt="Discord"></a>
-    <a href="./docs/roadmap/README.md"><img src="https://img.shields.io/badge/Roadmap-v1.0-bc1439.svg" alt="Roadmap v1.0"></a>
+    <a href="https://github.com/qdrant/qdrant/blob/master/docs/roadmap/README.md"><img src="https://img.shields.io/badge/Roadmap-v1.0-bc1439.svg" alt="Roadmap v1.0"></a>
 </p>
 
 Qdrant (read: _quadrant_ ) is a vector similarity search engine.
@@ -101,7 +101,7 @@ So you can [play with it online!](https://categories.qdrant.tech/)
 Online OpenAPI 3.0 documentation is available [here](https://qdrant.github.io/qdrant/redoc/index.html).
 OpenAPI makes it easy to generate a client for virtually any framework or programing language.
 
-You can also download raw OpenAPI [definitions](docs/redoc/master/openapi.json).
+You can also download raw OpenAPI [definitions](https://github.com/qdrant/qdrant/blob/master/docs/redoc/master/openapi.json).
 
 ## Features
 
@@ -161,17 +161,17 @@ docker run -p 6333:6333 \
 
 * `/qdrant/storage` - is a place where Qdrant persists all your data. 
 Make sure to mount it as a volume, otherwise docker will drop it with the container. 
-* `/qdrant/config/production.yaml` - is the file with engine configuration. You can override any value from the [reference config](config/config.yaml) 
+* `/qdrant/config/production.yaml` - is the file with engine configuration. You can override any value from the [reference config](https://github.com/qdrant/qdrant/blob/master/config/config.yaml) 
 
 Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/)
 
 ## Docs 📓
 
-* The best place to start is [Quick Start Guide](QUICK_START.md)
+* The best place to start is [Quick Start Guide](https://github.com/qdrant/qdrant/blob/master/QUICK_START.md)
 * The [Documentation](https://qdrant.tech/documentation/)
 * Use the [OpenAPI specification](https://qdrant.github.io/qdrant/redoc/index.html) as a reference
 * Follow our [Step-by-Step Tutorial](https://blog.qdrant.tech/neural-search-tutorial-3f034ab13adc) to create your first neural network project with Qdrant
-* Check out our further plans in [v1.0 Roadmap](./docs/roadmap/README.md)
+* Check out our further plans in [v1.0 Roadmap](https://github.com/qdrant/qdrant/blob/master/docs/roadmap/README.md)
 
 ## Contacts
 
@@ -224,4 +224,4 @@ Thanks to the people who contributed to Qdrant:
 
 ## License
 
-Qdrant is licensed under the Apache License, Version 2.0. View a copy of the [License file](LICENSE).
+Qdrant is licensed under the Apache License, Version 2.0. View a copy of the [License file](https://github.com/qdrant/qdrant/blob/master/LICENSE).
