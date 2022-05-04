@@ -963,7 +963,7 @@ pub struct WithPayload {
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct Filter {
-    /// At least one of thous conditions should match
+    /// At least one of those conditions should match
     pub should: Option<Vec<Condition>>,
     /// All conditions must match
     pub must: Option<Vec<Condition>>,
