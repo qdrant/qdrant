@@ -12,23 +12,13 @@ pub struct ServiceConfig {
     pub max_workers: Option<usize>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct ClusterConfig {
-    pub enabled: bool, // TODO use with https://github.com/qdrant/qdrant/issues/511
+    pub enabled: bool, // disabled by default - TODO use with https://github.com/qdrant/qdrant/issues/511
     #[serde(default)]
     pub p2p: P2pConfig,
     #[serde(default)]
     pub consensus: ConsensusConfig,
-}
-
-impl Default for ClusterConfig {
-    fn default() -> Self {
-        ClusterConfig {
-            enabled: false, //disabled by default
-            p2p: P2pConfig::default(),
-            consensus: ConsensusConfig::default(),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
