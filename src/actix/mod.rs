@@ -3,7 +3,7 @@ pub mod api;
 pub mod helpers;
 
 use crate::actix::api::collections_api::config_collections_api;
-use ::api::grpc::models::VersionInfo;
+use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_web::middleware::Logger;
 use actix_web::web::Data;
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
@@ -20,14 +20,19 @@ fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error
     use actix_web::error::JsonPayloadError;
 
     let detail = err.to_string();
-    let resp = match &err {
-        JsonPayloadError::ContentType => HttpResponse::UnsupportedMediaType().body(detail),
+    let mut resp_b = match &err {
+        JsonPayloadError::ContentType => HttpResponse::UnsupportedMediaType(),
         JsonPayloadError::Deserialize(json_err) if json_err.is_data() => {
-            HttpResponse::UnprocessableEntity().body(detail)
+            HttpResponse::UnprocessableEntity()
         }
-        _ => HttpResponse::BadRequest().body(detail),
+        _ => HttpResponse::BadRequest(),
     };
-    error::InternalError::from_response(err, resp).into()
+    let response = resp_b.json(ApiResponse::<()> {
+        result: None,
+        status: ApiStatus::Error(detail),
+        time: 0.0,
+    });
+    error::InternalError::from_response(err, response).into()
 }
 
 #[get("/")]
