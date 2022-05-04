@@ -364,6 +364,7 @@ impl LocalShard {
 }
 
 #[async_trait]
+#[allow(unused_variables)]
 impl ShardOperation for &LocalShard {
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.

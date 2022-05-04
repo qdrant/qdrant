@@ -32,17 +32,26 @@ use crate::content_manager::{
     collections_ops::{Checker, Collections},
     errors::StorageError,
 };
-use crate::types::{PeerAddressById, StorageConfig};
+use crate::types::StorageConfig;
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 use collection::shard::ShardId;
 
 #[cfg(feature = "consensus")]
-use crate::content_manager::raft_state::Persistent as PersistentRaftState;
+use crate::{
+    content_manager::{
+        consensus_ops::ConsensusOperations, raft_state::Persistent as PersistentRaftState,
+    },
+    types::PeerAddressById,
+};
+#[cfg(feature = "consensus")]
+use collection::PeerId;
 #[cfg(feature = "consensus")]
 use raft::eraftpb::{Entry as RaftEntry, Snapshot as RaftSnapshot};
 #[cfg(feature = "consensus")]
 use tokio::sync::oneshot;
+#[cfg(feature = "consensus")]
+use tonic::transport::Uri;
 #[cfg(feature = "consensus")]
 use wal::Wal;
 
@@ -73,9 +82,10 @@ pub struct TableOfContent {
     #[cfg(feature = "consensus")]
     propose_sender: Option<std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>>,
     #[cfg(feature = "consensus")]
-    on_meta_op_apply: std::sync::Mutex<
-        HashMap<CollectionMetaOperations, oneshot::Sender<Result<bool, StorageError>>>,
-    >,
+    on_consensus_op_apply:
+        std::sync::Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
+    #[cfg(feature = "consensus")]
+    this_peer_id: u64,
 }
 
 impl TableOfContent {
@@ -123,6 +133,9 @@ impl TableOfContent {
                 Wal::open(collections_meta_wal_path).unwrap(),
             ))
         };
+        #[cfg(feature = "consensus")]
+        let raft_state = PersistentRaftState::load_or_init(&storage_config.storage_path)
+            .expect("Cannot initialize Raft persistent storage");
 
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
@@ -131,17 +144,17 @@ impl TableOfContent {
             alias_persistence: RwLock::new(alias_persistence),
             segment_searcher: Box::new(SimpleCollectionSearcher::new()),
             collection_management_runtime,
+            // PeerId does not change during execution so it is ok to copy it here.
+            #[cfg(feature = "consensus")]
+            this_peer_id: raft_state.this_peer_id(),
             #[cfg(feature = "consensus")]
             collection_meta_wal,
             #[cfg(feature = "consensus")]
-            raft_state: Arc::new(std::sync::Mutex::new(
-                PersistentRaftState::load_or_init(&storage_config.storage_path)
-                    .expect("Cannot initialize Raft persistent storage"),
-            )),
+            raft_state: Arc::new(std::sync::Mutex::new(raft_state)),
             #[cfg(feature = "consensus")]
             propose_sender: None,
             #[cfg(feature = "consensus")]
-            on_meta_op_apply: std::sync::Mutex::new(HashMap::new()),
+            on_consensus_op_apply: std::sync::Mutex::new(HashMap::new()),
         }
     }
 
@@ -350,8 +363,11 @@ impl TableOfContent {
     ) -> Result<bool, StorageError> {
         #[cfg(feature = "consensus")]
         {
-            self.propose_collection_meta_op(operation, wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT))
-                .await
+            self.propose_consensus_op(
+                ConsensusOperations::CollectionMeta(Box::new(operation)),
+                wait_timeout,
+            )
+            .await
         }
         #[cfg(not(feature = "consensus"))]
         {
@@ -360,27 +376,32 @@ impl TableOfContent {
     }
 
     #[cfg(feature = "consensus")]
-    async fn propose_collection_meta_op(
+    pub async fn propose_consensus_op(
         &self,
-        operation: CollectionMetaOperations,
-        wait_timeout: Duration,
+        operation: ConsensusOperations,
+        wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
         let propose_sender = match &self.propose_sender {
             Some(sender) => sender,
             None => {
-                return Err(StorageError::ServiceError { description: "Cannot submit collection meta operation proposal: no sender supplied to ToC".to_string() });
+                return Err(StorageError::ServiceError {
+                    description:
+                        "Cannot submit consensus operation proposal: no sender supplied to ToC"
+                            .to_string(),
+                });
             }
         };
         let serialized = serde_cbor::to_vec(&operation)?;
         let (sender, receiver) = oneshot::channel();
-        self.on_meta_op_apply.lock()?.insert(operation, sender);
+        self.on_consensus_op_apply.lock()?.insert(operation, sender);
         propose_sender.lock()?.send(serialized)?;
+        let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
         tokio::time::timeout(wait_timeout, receiver)
             .await
             .map_err(
                 |_: tokio::time::error::Elapsed| StorageError::ServiceError {
                     description: format!(
-                        "Waiting for collection meta operation commit failed. Timeout set at: {} seconds",
+                        "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
                         wait_timeout.as_secs_f64()
                     ),
                 },
@@ -586,12 +607,15 @@ impl TableOfContent {
         .map_err(consensus::raft_error_other)
     }
 
-    pub fn this_peer_id(&self) -> u32 {
-        0
+    #[cfg(feature = "consensus")]
+    pub fn this_peer_id(&self) -> u64 {
+        self.this_peer_id
     }
 
     #[cfg(feature = "consensus")]
-    async fn collection_meta_snapshot(&self) -> consensus::CollectionMetaSnapshot {
+    async fn collection_meta_snapshot(&self) -> raft::Result<consensus::CollectionMetaSnapshot> {
+        use super::raft_state::PeerAddressByIdWrapper;
+
         let collections: HashMap<collection::CollectionId, collection::State> = self
             .collections
             .read()
@@ -599,19 +623,36 @@ impl TableOfContent {
             .iter()
             .map(|(id, collection)| (id.clone(), collection.state(self.this_peer_id())))
             .collect();
-        consensus::CollectionMetaSnapshot {
+        Ok(consensus::CollectionMetaSnapshot {
             collections,
             aliases: self.alias_persistence.read().await.state().clone(),
-        }
+            address_by_id: PeerAddressByIdWrapper(
+                self.raft_state
+                    .lock()
+                    .map_err(consensus::raft_error_other)?
+                    .peer_address_by_id()
+                    .map_err(consensus::raft_error_other)?,
+            ),
+        })
     }
 
     #[cfg(feature = "consensus")]
     pub fn apply_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
-        let operation: CollectionMetaOperations = entry.try_into()?;
-        let on_apply = self.on_meta_op_apply.lock()?.remove(&operation);
-        let result = self
-            .collection_management_runtime
-            .block_on(self.perform_collection_meta_op(operation));
+        let operation: ConsensusOperations = entry.try_into()?;
+        let on_apply = self.on_consensus_op_apply.lock()?.remove(&operation);
+        let result = match operation {
+            ConsensusOperations::CollectionMeta(operation) => self
+                .collection_management_runtime
+                .block_on(self.perform_collection_meta_op(*operation)),
+            ConsensusOperations::AddPeer(peer_id, uri) => self
+                .add_peer(
+                    peer_id,
+                    uri.parse().map_err(|err| StorageError::ServiceError {
+                        description: format!("Failed to parse Uri: {err}"),
+                    })?,
+                )
+                .map(|()| true),
+        };
         if let Some(on_apply) = on_apply {
             if on_apply.send(result.clone()).is_err() {
                 log::warn!("Failed to notify on collection meta operation completion.")
@@ -687,6 +728,11 @@ impl TableOfContent {
     pub fn apply_snapshot(&self, snapshot: &RaftSnapshot) -> Result<(), StorageError> {
         let snapshot: consensus::CollectionMetaSnapshot = snapshot.try_into()?;
 
+        // Apply peer addresses
+        self.raft_state
+            .lock()?
+            .set_peer_address_by_id(snapshot.address_by_id.0)?;
+
         self.collection_management_runtime.block_on(async {
             let mut collections = self.collections.write().await;
             for (id, state) in &snapshot.collections {
@@ -752,8 +798,14 @@ impl TableOfContent {
             .apply_state_update(|state| state.hard_state.commit = index)
     }
 
-    pub fn peer_address_by_id(&self) -> &PeerAddressById {
-        &self.storage_config.peer_address_by_id
+    #[cfg(feature = "consensus")]
+    pub fn peer_address_by_id(&self) -> Result<PeerAddressById, StorageError> {
+        self.raft_state.lock()?.peer_address_by_id()
+    }
+
+    #[cfg(feature = "consensus")]
+    pub fn add_peer(&self, peer_id: PeerId, uri: Uri) -> Result<(), StorageError> {
+        self.raft_state.lock()?.insert_peer(peer_id, uri)
     }
 }
 
@@ -776,7 +828,7 @@ mod consensus {
     use raft::{eraftpb::Entry as RaftEntry, storage::Storage as RaftStorage, RaftState};
     use serde::{Deserialize, Serialize};
 
-    use crate::content_manager::alias_mapping::AliasMapping;
+    use crate::content_manager::{alias_mapping::AliasMapping, raft_state::PeerAddressByIdWrapper};
 
     use super::TableOfContent;
 
@@ -842,7 +894,7 @@ mod consensus {
         fn snapshot(&self, request_index: u64) -> raft::Result<raft::eraftpb::Snapshot> {
             let snapshot = self
                 .collection_management_runtime
-                .block_on(self.collection_meta_snapshot());
+                .block_on(self.collection_meta_snapshot())?;
             let raft_state = self
                 .raft_state
                 .lock()
@@ -914,10 +966,11 @@ mod consensus {
         }
     }
 
-    #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+    #[derive(Debug, Serialize, Deserialize, Clone)]
     pub struct CollectionMetaSnapshot {
         pub collections: HashMap<CollectionId, collection::State>,
         pub aliases: AliasMapping,
+        pub address_by_id: PeerAddressByIdWrapper,
     }
 
     impl TryFrom<&raft::eraftpb::Snapshot> for CollectionMetaSnapshot {

@@ -18,6 +18,7 @@ use segment::types::{
 
 use crate::{config::CollectionConfig, wal::WalError};
 use std::collections::HashMap;
+use tonic::codegen::http::uri::InvalidUri;
 
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
@@ -297,6 +298,49 @@ impl From<io::Error> for CollectionError {
     fn from(err: io::Error) -> Self {
         CollectionError::ServiceError {
             error: format!("File IO error: {}", err),
+        }
+    }
+}
+
+impl From<tonic::transport::Error> for CollectionError {
+    fn from(err: tonic::transport::Error) -> Self {
+        CollectionError::ServiceError {
+            error: format!("Tonic transport error: {}", err),
+        }
+    }
+}
+
+impl From<InvalidUri> for CollectionError {
+    fn from(err: InvalidUri) -> Self {
+        CollectionError::ServiceError {
+            error: format!("Invalid URI error: {}", err),
+        }
+    }
+}
+
+impl From<tonic::Status> for CollectionError {
+    fn from(err: tonic::Status) -> Self {
+        match err.code() {
+            tonic::Code::InvalidArgument => CollectionError::BadInput {
+                description: "InvalidArgument".to_string(),
+            },
+            tonic::Code::NotFound => CollectionError::BadRequest {
+                description: "NotFound".to_string(),
+            },
+            tonic::Code::Internal => CollectionError::ServiceError {
+                error: "Internal error".to_string(),
+            },
+            other => CollectionError::ServiceError {
+                error: format!("Tonic status error: {}", other),
+            },
+        }
+    }
+}
+
+impl<Guard> From<std::sync::PoisonError<Guard>> for CollectionError {
+    fn from(err: std::sync::PoisonError<Guard>) -> Self {
+        CollectionError::ServiceError {
+            error: format!("Mutex lock poisoned: {}", err),
         }
     }
 }

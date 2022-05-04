@@ -14,6 +14,9 @@ use std::io::Error;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
+
+use ::tonic::transport::Uri;
+use clap::Parser;
 use storage::content_manager::toc::TableOfContent;
 
 use crate::common::helpers::create_search_runtime;
@@ -24,7 +27,29 @@ use crate::settings::Settings;
 static GLOBAL: tracy_client::ProfiledAllocator<std::alloc::System> =
     tracy_client::ProfiledAllocator::new(std::alloc::System, 100);
 
+/// Qdrant (read: quadrant ) is a vector similarity search engine.
+/// It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.
+///
+/// This CLI starts a Qdrant peer/server.
+#[derive(Parser, Debug)]
+#[clap(version, about)]
+struct Args {
+    /// Uri of the peer to bootstrap from in case of multi-peer deployment.
+    /// If not specified - this peer will be considered as a first in a new deployment.
+    #[clap(long, value_name = "URI")]
+    bootstrap: Option<Uri>,
+    /// Uri of this peer.
+    /// Other peers should be able to reach it by this uri.
+    ///
+    /// If this value is not supplied and bootstrap is enabled
+    /// then qdrant will take internal grpc port from config and derive the IP address of this peer on bootstrap peer (receiving side)
+    #[clap(long, value_name = "URI")]
+    uri: Option<Uri>,
+}
+
 fn main() -> std::io::Result<()> {
+    #[cfg(feature = "consensus")]
+    let args = Args::parse();
     let settings = Settings::new().expect("Can't read config.");
     std::env::set_var("RUST_LOG", &settings.log_level);
     env_logger::init();
@@ -57,10 +82,16 @@ fn main() -> std::io::Result<()> {
         // logs from it to `log` crate
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
 
-        let (mut consensus, message_sender) = Consensus::new(&slog_logger, toc_arc.clone().into())
-            .expect("Can't initialize consensus");
+        let (mut consensus, message_sender) = Consensus::new(
+            &slog_logger,
+            toc_arc.clone().into(),
+            args.bootstrap,
+            args.uri.map(|uri| uri.to_string()),
+            settings.service.internal_grpc_port.map(|port| port as u32),
+        )
+        .expect("Can't initialize consensus");
         thread::Builder::new()
-            .name("raft".to_string())
+            .name("consensus".to_string())
             .spawn(move || {
                 if let Err(err) = consensus.start() {
                     log::error!("Consensus stopped with error: {err}")
