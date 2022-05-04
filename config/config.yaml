@@ -87,21 +87,3 @@ service:
   grpc_port: null
   # Uncomment to enable gRPC:
   # grpc_port: 6334
-
-cluster:
-  p2p:
-    # gRPC port to bind the internal p2p service on.
-    p2p_port: 6335
-    # gRPC timeout to apply for p2p communication.
-    p2p_grpc_timeout_ms: 1000
-
-  # consensus related configuration
-  consensus:
-    # max number of Raft messages in-flight
-    max_in_flight_messages: 100
-    # ticking period to drive Raft
-    tick_period_ms: 100
-    # timeout to send Raft messages
-    message_timeout_ms: 1000
-    # timeout to retrieve existing peers
-    bootstrap_timeout_sec: 5

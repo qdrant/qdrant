@@ -14,31 +14,49 @@ pub struct ServiceConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ClusterConfig {
+    pub enabled: bool, // TODO use with https://github.com/qdrant/qdrant/issues/511
+    #[serde(default)]
     pub p2p: P2pConfig,
+    #[serde(default)]
     pub consensus: ConsensusConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct P2pConfig {
+    #[serde(default)]
     pub p2p_port: Option<u16>,
+    #[serde(default = "default_timeout_ms")]
     pub p2p_grpc_timeout_ms: u64,
+}
+
+impl Default for P2pConfig {
+    fn default() -> Self {
+        P2pConfig {
+            p2p_port: None,
+            p2p_grpc_timeout_ms: default_timeout_ms(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ConsensusConfig {
+    #[serde(default = "default_max_in_flight_messages")]
     pub max_in_flight_messages: usize,
+    #[serde(default = "default_tick_period_ms")]
     pub tick_period_ms: u64,
+    #[serde(default = "default_timeout_ms")]
     pub message_timeout_ms: u64,
+    #[serde(default = "default_bootstrap_timeout_sec")]
     pub bootstrap_timeout_sec: u64,
 }
 
 impl Default for ConsensusConfig {
     fn default() -> Self {
         ConsensusConfig {
-            max_in_flight_messages: 100,
-            tick_period_ms: 100,
-            message_timeout_ms: 1000,
-            bootstrap_timeout_sec: 5,
+            max_in_flight_messages: default_max_in_flight_messages(),
+            tick_period_ms: default_tick_period_ms(),
+            message_timeout_ms: default_timeout_ms(),
+            bootstrap_timeout_sec: default_bootstrap_timeout_sec(),
         }
     }
 }
@@ -49,7 +67,32 @@ pub struct Settings {
     pub log_level: String,
     pub storage: StorageConfig,
     pub service: ServiceConfig,
+    #[serde(default = "default_cluster_config")]
     pub cluster: ClusterConfig,
+}
+
+fn default_cluster_config() -> ClusterConfig {
+    ClusterConfig {
+        enabled: false, //disabled by default
+        p2p: P2pConfig::default(),
+        consensus: ConsensusConfig::default(),
+    }
+}
+
+fn default_timeout_ms() -> u64 {
+    1000
+}
+
+fn default_tick_period_ms() -> u64 {
+    100
+}
+
+fn default_bootstrap_timeout_sec() -> u64 {
+    5
+}
+
+fn default_max_in_flight_messages() -> usize {
+    100
 }
 
 impl Settings {
