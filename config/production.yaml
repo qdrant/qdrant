@@ -7,5 +7,3 @@ service:
   http_port: 6333
   # Uncomment to enable gRPC:
   #grpc_port: 6334
-  # Uncomment to enable internal gRPC:
-  #internal_grpc_port: 6335

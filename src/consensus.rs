@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::{
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -13,14 +14,10 @@ use api::grpc::{
 };
 use storage::content_manager::{errors::StorageError, toc::TableOfContentRef};
 
+use crate::settings::ConsensusConfig;
 use raft::{eraftpb::Message as RaftMessage, prelude::*};
 use tokio::runtime::Runtime;
 use tonic::transport::Uri;
-
-const CHANNEL_CAPACITY: usize = 100;
-const TICK_PERIOD_MS: u64 = 100;
-const MESSAGE_TIMEOUT: Duration = Duration::from_millis(1000);
-const BOOTSTRAP_TIMEOUT: Duration = Duration::from_millis(5000);
 
 type Node = RawNode<TableOfContentRef>;
 
@@ -34,6 +31,7 @@ pub struct Consensus {
     receiver: Receiver<Message>,
     runtime: Runtime,
     bootstrap_uri: Option<Uri>,
+    config: ConsensusConfig,
 }
 
 impl Consensus {
@@ -44,12 +42,13 @@ impl Consensus {
         bootstrap_peer: Option<Uri>,
         uri: Option<String>,
         p2p_port: Option<u32>,
+        config: ConsensusConfig,
     ) -> anyhow::Result<(Self, SyncSender<Message>)> {
-        let config = Config {
+        let raft_config = Config {
             id: toc_ref.this_peer_id(),
             ..Default::default()
         };
-        config.validate()?;
+        raft_config.validate()?;
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .thread_name_fn(|| {
                 static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
@@ -63,21 +62,28 @@ impl Consensus {
             if uri.is_none() && p2p_port.is_none() {
                 return Err(anyhow::anyhow!("Failed to bootstrap peer as neither `internal rpc port` was configured nor `this peer uri` was supplied"));
             }
-            runtime.block_on(Self::bootstrap(&toc_ref, bootstrap_peer, uri, p2p_port))?;
+            runtime.block_on(Self::bootstrap(
+                &toc_ref,
+                bootstrap_peer,
+                uri,
+                p2p_port,
+                &config,
+            ))?;
         } else {
             log::info!("Bootstrapping is disabled. Assuming this peer is the first in the network")
         }
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
         toc_ref.apply_entries()?;
-        let node = Node::new(&config, toc_ref, logger)?;
-        let (sender, receiver) = mpsc::sync_channel(CHANNEL_CAPACITY);
+        let node = Node::new(&raft_config, toc_ref, logger)?;
+        let (sender, receiver) = mpsc::sync_channel(config.max_message_queue_size);
         Ok((
             Self {
                 node,
                 receiver,
                 runtime,
                 bootstrap_uri: bootstrap_peer,
+                config,
             },
             sender,
         ))
@@ -88,10 +94,14 @@ impl Consensus {
         bootstrap_peer: Uri,
         uri: Option<String>,
         p2p_port: Option<u32>,
+        config: &ConsensusConfig,
     ) -> anyhow::Result<()> {
-        let channel = timeout_channel(BOOTSTRAP_TIMEOUT, bootstrap_peer)
-            .await
-            .context("Failed to create timeout channel")?;
+        let channel = timeout_channel(
+            Duration::from_secs(config.bootstrap_timeout_sec),
+            bootstrap_peer,
+        )
+        .await
+        .context("Failed to create timeout channel")?;
         let mut client = RaftClient::new(channel);
         let all_peers = client
             .add_peer_to_known(tonic::Request::new(
@@ -120,7 +130,7 @@ impl Consensus {
 
     pub fn start(&mut self) -> anyhow::Result<()> {
         let mut t = Instant::now();
-        let mut timeout = Duration::from_millis(TICK_PERIOD_MS);
+        let mut timeout = Duration::from_millis(self.config.tick_period_ms);
 
         loop {
             match self.receiver.recv_timeout(timeout) {
@@ -139,18 +149,28 @@ impl Consensus {
             let d = t.elapsed();
             t = Instant::now();
             if d >= timeout {
-                timeout = Duration::from_millis(TICK_PERIOD_MS);
-                // We drive Raft every 100ms.
+                timeout = Duration::from_millis(self.config.tick_period_ms);
+                // We drive Raft every `tick_period_ms`.
                 self.node.tick();
             } else {
                 timeout -= d;
             }
-            on_ready(&mut self.node, &self.runtime, &self.bootstrap_uri);
+            on_ready(
+                &mut self.node,
+                &self.runtime,
+                &self.bootstrap_uri,
+                &self.config,
+            );
         }
     }
 }
 
-fn on_ready(raft_group: &mut Node, runtime: &Runtime, bootstrap_uri: &Option<Uri>) {
+fn on_ready(
+    raft_group: &mut Node,
+    runtime: &Runtime,
+    bootstrap_uri: &Option<Uri>,
+    config: &ConsensusConfig,
+) {
     if !raft_group.has_ready() {
         return;
     }
@@ -159,7 +179,13 @@ fn on_ready(raft_group: &mut Node, runtime: &Runtime, bootstrap_uri: &Option<Uri
     // Get the `Ready` with `RawNode::ready` interface.
     let mut ready = raft_group.ready();
     if !ready.messages().is_empty() {
-        if let Err(err) = handle_messages(ready.take_messages(), &store, runtime, bootstrap_uri) {
+        if let Err(err) = handle_messages(
+            ready.take_messages(),
+            &store,
+            runtime,
+            bootstrap_uri,
+            config,
+        ) {
             log::error!("Failed to send messages: {err}")
         }
     }
@@ -193,6 +219,7 @@ fn on_ready(raft_group: &mut Node, runtime: &Runtime, bootstrap_uri: &Option<Uri
             &store,
             runtime,
             bootstrap_uri,
+            config,
         ) {
             log::error!("Failed to send messages: {err}")
         }
@@ -207,7 +234,13 @@ fn on_ready(raft_group: &mut Node, runtime: &Runtime, bootstrap_uri: &Option<Uri
             log::error!("Failed to set commit index: {err}")
         }
     }
-    if let Err(err) = handle_messages(light_rd.take_messages(), &store, runtime, bootstrap_uri) {
+    if let Err(err) = handle_messages(
+        light_rd.take_messages(),
+        &store,
+        runtime,
+        bootstrap_uri,
+        config,
+    ) {
         log::error!("Failed to send messages: {err}")
     }
     // Apply all committed entries.
@@ -231,6 +264,7 @@ fn handle_messages(
     toc: &TableOfContentRef,
     runtime: &Runtime,
     bootstrap_uri: &Option<Uri>,
+    config: &ConsensusConfig,
 ) -> Result<(), StorageError> {
     let peer_address_by_id = toc.peer_address_by_id()?;
     let messages_with_address: Vec<_> = messages
@@ -241,12 +275,19 @@ fn handle_messages(
         })
         .collect();
     let bootstrap_uri = bootstrap_uri.clone();
+    let consensus_config_arc = Arc::new(config.clone());
     let future = async move {
         let mut send_futures = Vec::new();
         for (message, address) in messages_with_address {
             let address = match address {
                 Some(address) => address,
-                None => match who_is(message.to, bootstrap_uri.clone()).await {
+                None => match who_is(
+                    message.to,
+                    bootstrap_uri.clone(),
+                    consensus_config_arc.clone(),
+                )
+                .await
+                {
                     Ok(address) => address,
                     Err(_) => {
                         log::warn!(
@@ -257,7 +298,7 @@ fn handle_messages(
                     }
                 },
             };
-            send_futures.push(send_message(address, message));
+            send_futures.push(send_message(address, message, consensus_config_arc.clone()));
         }
         for result in futures::future::join_all(send_futures).await {
             if let Err(err) = result {
@@ -271,10 +312,15 @@ fn handle_messages(
     Ok(())
 }
 
-async fn who_is(peer_id: collection::PeerId, bootstrap_uri: Option<Uri>) -> anyhow::Result<Uri> {
+async fn who_is(
+    peer_id: collection::PeerId,
+    bootstrap_uri: Option<Uri>,
+    config: Arc<ConsensusConfig>,
+) -> anyhow::Result<Uri> {
     let bootstrap_uri =
         bootstrap_uri.ok_or_else(|| anyhow::anyhow!("No bootstrap uri supplied"))?;
-    let channel = timeout_channel(BOOTSTRAP_TIMEOUT, bootstrap_uri)
+    let bootstrap_timeout = Duration::from_secs(config.bootstrap_timeout_sec);
+    let channel = timeout_channel(bootstrap_timeout, bootstrap_uri)
         .await
         .context("Failed to create timeout channel")?;
     let mut client = RaftClient::new(channel);
@@ -286,8 +332,13 @@ async fn who_is(peer_id: collection::PeerId, bootstrap_uri: Option<Uri>) -> anyh
         .parse()?)
 }
 
-async fn send_message(address: Uri, message: RaftMessage) -> anyhow::Result<()> {
-    let channel = timeout_channel(MESSAGE_TIMEOUT, address)
+async fn send_message(
+    address: Uri,
+    message: RaftMessage,
+    config: Arc<ConsensusConfig>,
+) -> anyhow::Result<()> {
+    let message_timeout = Duration::from_millis(config.message_timeout_ms);
+    let channel = timeout_channel(message_timeout, address)
         .await
         .context("Failed to create timeout channel")?;
     let mut client = RaftClient::new(channel);
@@ -306,6 +357,7 @@ async fn send_message(address: Uri, message: RaftMessage) -> anyhow::Result<()> 
 mod tests {
     use std::{sync::Arc, thread, time::Duration};
 
+    use crate::settings::ConsensusConfig;
     use segment::types::Distance;
     use slog::Drain;
     use storage::content_manager::{
@@ -333,8 +385,15 @@ mod tests {
         toc.with_propose_sender(propose_sender);
         let toc_arc = Arc::new(toc);
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
-        let (mut consensus, message_sender) =
-            Consensus::new(&slog_logger, toc_arc.clone().into(), None, None, None).unwrap();
+        let (mut consensus, message_sender) = Consensus::new(
+            &slog_logger,
+            toc_arc.clone().into(),
+            None,
+            None,
+            None,
+            ConsensusConfig::default(),
+        )
+        .unwrap();
         thread::spawn(move || consensus.start().unwrap());
         thread::spawn(move || {
             while let Ok(entry) = propose_receiver.recv() {
