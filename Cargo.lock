@@ -745,6 +745,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tower",
+ "tracy-client",
  "wal",
 ]
 
