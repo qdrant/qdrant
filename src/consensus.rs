@@ -4,6 +4,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
     },
+    thread,
     time::{Duration, Instant},
 };
 
@@ -12,7 +13,9 @@ use api::grpc::{
     qdrant::{raft_client::RaftClient, PeerId, RaftMessage as GrpcRaftMessage},
     timeout_channel,
 };
-use storage::content_manager::{errors::StorageError, toc::TableOfContentRef};
+use storage::content_manager::{
+    consensus_ops::ConsensusOperations, errors::StorageError, toc::TableOfContentRef,
+};
 
 use crate::settings::ConsensusConfig;
 use raft::{eraftpb::Message as RaftMessage, prelude::*};
@@ -24,6 +27,7 @@ type Node = RawNode<TableOfContentRef>;
 pub enum Message {
     FromClient(Vec<u8>),
     FromPeer(Box<RaftMessage>),
+    ConfChange(ConfChangeV2),
 }
 
 pub struct Consensus {
@@ -57,6 +61,7 @@ impl Consensus {
             })
             .enable_all()
             .build()?;
+        let (sender, receiver) = mpsc::sync_channel(config.max_message_queue_size);
         if let Some(bootstrap_peer) = bootstrap_peer.clone() {
             log::info!("Bootstrapping from peer with address: {bootstrap_peer}");
             if uri.is_none() && p2p_port.is_none() {
@@ -70,13 +75,27 @@ impl Consensus {
                 &config,
             ))?;
         } else {
-            log::info!("Bootstrapping is disabled. Assuming this peer is the first in the network")
+            log::info!("Bootstrapping is disabled. Assuming this peer is the first in the network");
+            // First peer needs to add its own address
+            let message = Message::FromClient(serde_cbor::to_vec(&ConsensusOperations::AddPeer(
+                toc_ref.this_peer_id(),
+                uri.ok_or_else(|| anyhow::anyhow!("First peer should specify its uri."))?,
+            ))?);
+            let sender_clone = sender.clone();
+            thread::spawn(move || {
+                // Wait for the leader to be established
+                // TODO: Is it possible to do it deterministically?
+                // TODO: Don't send message if this is a restart
+                thread::sleep(Duration::from_secs(5));
+                if let Err(err) = sender_clone.send(message) {
+                    log::error!("Failed to send message to add this peer to known peers: {err}")
+                }
+            });
         }
+        let mut node = Node::new(&raft_config, toc_ref.clone(), logger)?;
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
-        toc_ref.apply_entries()?;
-        let node = Node::new(&raft_config, toc_ref, logger)?;
-        let (sender, receiver) = mpsc::sync_channel(config.max_message_queue_size);
+        toc_ref.apply_entries(&mut node)?;
         Ok((
             Self {
                 node,
@@ -103,12 +122,13 @@ impl Consensus {
         .await
         .context("Failed to create timeout channel")?;
         let mut client = RaftClient::new(channel);
+        let id = toc_ref.this_peer_id();
         let all_peers = client
             .add_peer_to_known(tonic::Request::new(
                 api::grpc::qdrant::AddPeerToKnownMessage {
                     uri,
                     port: p2p_port,
-                    id: toc_ref.this_peer_id(),
+                    id,
                 },
             ))
             .await?
@@ -125,6 +145,9 @@ impl Consensus {
                 )
                 .context("Failed to add peer")?;
         }
+        client
+            .add_peer_as_participant(tonic::Request::new(api::grpc::qdrant::PeerId { id }))
+            .await?;
         Ok(())
     }
 
@@ -138,6 +161,10 @@ impl Consensus {
                 Ok(Message::FromClient(message)) => {
                     log::debug!("Proposing entry from client with length: {}", message.len());
                     self.node.propose(vec![], message)?
+                }
+                Ok(Message::ConfChange(change)) => {
+                    log::debug!("Proposing network configuration change: {:?}", change);
+                    self.node.propose_conf_change(vec![], change)?
                 }
                 Err(RecvTimeoutError::Timeout) => (),
                 Err(RecvTimeoutError::Disconnected) => {
@@ -196,7 +223,7 @@ fn on_ready(
             log::error!("Failed to apply snapshot: {err}")
         }
     }
-    if let Err(err) = handle_committed_entries(ready.take_committed_entries(), &store) {
+    if let Err(err) = handle_committed_entries(ready.take_committed_entries(), &store, raft_group) {
         log::error!("Failed to apply committed entries: {err}")
     }
     if !ready.entries().is_empty() {
@@ -244,17 +271,23 @@ fn on_ready(
         log::error!("Failed to send messages: {err}")
     }
     // Apply all committed entries.
-    if let Err(err) = handle_committed_entries(light_rd.take_committed_entries(), &store) {
+    if let Err(err) =
+        handle_committed_entries(light_rd.take_committed_entries(), &store, raft_group)
+    {
         log::error!("Failed to apply committed entries: {err}")
     }
     // Advance the apply index.
     raft_group.advance_apply();
 }
 
-fn handle_committed_entries(entries: Vec<Entry>, toc: &TableOfContentRef) -> raft::Result<()> {
+fn handle_committed_entries(
+    entries: Vec<Entry>,
+    toc: &TableOfContentRef,
+    raw_node: &mut RawNode<TableOfContentRef>,
+) -> raft::Result<()> {
     if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
         toc.set_unapplied_entries(first.index, last.index)?;
-        toc.apply_entries()?;
+        toc.apply_entries(raw_node)?;
     }
     Ok(())
 }
@@ -302,7 +335,7 @@ fn handle_messages(
         }
         for result in futures::future::join_all(send_futures).await {
             if let Err(err) = result {
-                log::warn!("Failed to send message: {err}")
+                log::warn!("Failed to send message: {err:#}")
             }
         }
     };
@@ -383,14 +416,14 @@ mod tests {
             .expect("Can't create runtime.");
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
         let consensus_enabled = ConsensusEnabled { propose_sender };
-        let toc = TableOfContent::new(&settings.storage, runtime, Some(consensus_enabled));
+        let toc = TableOfContent::new(&settings.storage, runtime, Some(consensus_enabled), true);
         let toc_arc = Arc::new(toc);
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
         let (mut consensus, message_sender) = Consensus::new(
             &slog_logger,
             toc_arc.clone().into(),
             None,
-            None,
+            Some("http://127.0.0.1:6335".parse().unwrap()),
             None,
             ConsensusConfig::default(),
         )
