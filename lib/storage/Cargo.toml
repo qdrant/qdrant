@@ -23,7 +23,7 @@ schemars = { version = "0.8.8", features = ["uuid"] }
 itertools = "0.10"
 async-trait = "0.1.53"
 log = "0.4"
-tonic = "0.7.1"
+tonic = "0.7.2"
 http = "0.2"
 
 # Consensus related
