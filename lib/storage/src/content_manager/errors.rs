@@ -92,7 +92,6 @@ impl From<tokio::sync::oneshot::error::RecvError> for StorageError {
     }
 }
 
-#[cfg(feature = "consensus")]
 impl From<serde_cbor::Error> for StorageError {
     fn from(err: serde_cbor::Error) -> Self {
         StorageError::ServiceError {
@@ -101,7 +100,6 @@ impl From<serde_cbor::Error> for StorageError {
     }
 }
 
-#[cfg(feature = "consensus")]
 impl From<prost::EncodeError> for StorageError {
     fn from(err: prost::EncodeError) -> Self {
         StorageError::ServiceError {
@@ -110,7 +108,6 @@ impl From<prost::EncodeError> for StorageError {
     }
 }
 
-#[cfg(feature = "consensus")]
 impl From<prost::DecodeError> for StorageError {
     fn from(err: prost::DecodeError) -> Self {
         StorageError::ServiceError {
@@ -119,7 +116,6 @@ impl From<prost::DecodeError> for StorageError {
     }
 }
 
-#[cfg(feature = "consensus")]
 impl<E: std::fmt::Display> From<atomicwrites::Error<E>> for StorageError {
     fn from(err: atomicwrites::Error<E>) -> Self {
         StorageError::ServiceError {

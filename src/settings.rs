@@ -14,7 +14,7 @@ pub struct ServiceConfig {
 
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct ClusterConfig {
-    pub enabled: bool, // disabled by default - TODO use with https://github.com/qdrant/qdrant/issues/511
+    pub enabled: bool, // disabled by default
     #[serde(default)]
     pub p2p: P2pConfig,
     #[serde(default)]

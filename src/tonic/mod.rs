@@ -1,16 +1,12 @@
 mod api;
 
 use crate::tonic::api::collections_api::CollectionsService;
-#[cfg(feature = "consensus")]
 use crate::tonic::api::collections_internal_api::CollectionsInternalService;
 use crate::tonic::api::points_api::PointsService;
-#[cfg(feature = "consensus")]
 use crate::tonic::api::points_internal_api::PointsInternalService;
 use ::api::grpc::models::VersionInfo;
-#[cfg(feature = "consensus")]
 use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
 use ::api::grpc::qdrant::collections_server::CollectionsServer;
-#[cfg(feature = "consensus")]
 use ::api::grpc::qdrant::points_internal_server::PointsInternalServer;
 use ::api::grpc::qdrant::points_server::PointsServer;
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
@@ -69,7 +65,6 @@ pub fn init(toc: Arc<TableOfContent>, host: String, grpc_port: u16) -> std::io::
     Ok(())
 }
 
-#[cfg(feature = "consensus")]
 pub fn init_internal(
     toc: Arc<TableOfContent>,
     host: String,

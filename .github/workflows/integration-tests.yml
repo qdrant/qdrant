@@ -51,7 +51,7 @@ jobs:
         run: .github/scripts/protoc.sh
         shell: bash
       - name: Build
-        run: cargo build --features consensus
+        run: cargo build
       - name: Run integration tests
-        run: ./tests/integration-tests.sh
+        run: ./tests/integration-tests.sh distributed
         shell: bash

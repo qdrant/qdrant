@@ -3,11 +3,9 @@ pub mod collection_meta_ops;
 mod collections_ops;
 pub mod conversions;
 pub mod errors;
-#[cfg(feature = "consensus")]
 pub mod raft_state;
 pub mod toc;
 
-#[cfg(feature = "consensus")]
 pub mod consensus_ops {
     use collection::PeerId;
     use raft::eraftpb::Entry as RaftEntry;
