@@ -8,7 +8,7 @@ use crate::grpc::qdrant::{
     GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply, HnswConfigDiff,
     IsEmptyCondition, ListCollectionsResponse, ListValue, Match, PayloadExcludeSelector,
     PayloadIncludeSelector, PayloadSchemaInfo, PayloadSchemaType, PointId, Range, ScoredPoint,
-    SearchParams, Value, Struct, ValuesCount, WithPayloadSelector,
+    SearchParams, Struct, Value, ValuesCount, WithPayloadSelector,
 };
 
 use crate::grpc::qdrant::value::Kind;
@@ -58,9 +58,7 @@ fn json_to_proto(json_value: serde_json::Value) -> Value {
     }
 }
 
-pub fn proto_to_payloads(
-    proto: HashMap<String, Value>,
-) -> Result<segment::types::Payload, Status> {
+pub fn proto_to_payloads(proto: HashMap<String, Value>) -> Result<segment::types::Payload, Status> {
     let mut map: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     for (k, v) in proto.into_iter() {
         map.insert(k, proto_to_json(v)?);
