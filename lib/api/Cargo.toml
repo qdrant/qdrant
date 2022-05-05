@@ -18,4 +18,4 @@ tower = "0.4.12"
 segment = {path = "../segment"}
 
 [build-dependencies]
-tonic-build = { version = "0.7.1", features = ["prost"] }
+tonic-build = { version = "0.7.2", features = ["prost"] }
