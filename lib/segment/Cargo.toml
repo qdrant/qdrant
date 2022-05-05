@@ -11,6 +11,7 @@ pprof = { version = "0.8", features = ["flamegraph", "prost-codec"] }
 tempdir = "0.3.7"
 criterion = "0.3"
 rmp-serde = "~1.1"
+rand_distr = "0.4.3"
 
 [dependencies]
 
