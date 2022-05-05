@@ -6,94 +6,96 @@ use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     CollectionDescription, CollectionOperationResponse, Condition, FieldCondition, Filter,
     GeoBoundingBox, GeoPoint, GeoRadius, HasIdCondition, HealthCheckReply, HnswConfigDiff,
-    IsEmptyCondition, ListCollectionsResponse, Match, PayloadExcludeSelector,
+    IsEmptyCondition, ListCollectionsResponse, ListValue, Match, PayloadExcludeSelector,
     PayloadIncludeSelector, PayloadSchemaInfo, PayloadSchemaType, PointId, Range, ScoredPoint,
-    SearchParams, ValuesCount, WithPayloadSelector,
+    SearchParams, Value, Struct, ValuesCount, WithPayloadSelector,
 };
 
-use prost_types::value::Kind;
-use prost_types::ListValue;
-
+use crate::grpc::qdrant::value::Kind;
 use segment::types::{PayloadSelector, WithPayloadInterface};
-use serde_json::{Map, Number, Value};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 use tonic::Status;
 use uuid::Uuid;
 
-pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, prost_types::Value> {
+pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
     payload
         .into_iter()
         .map(|(k, v)| (k, json_to_proto(v)))
         .collect()
 }
 
-fn json_to_proto(json_value: Value) -> prost_types::Value {
+fn json_to_proto(json_value: serde_json::Value) -> Value {
     match json_value {
-        Value::Null => prost_types::Value {
+        serde_json::Value::Null => Value {
             kind: Some(Kind::NullValue(0)),
         },
-        Value::Bool(v) => prost_types::Value {
+        serde_json::Value::Bool(v) => Value {
             kind: Some(Kind::BoolValue(v)),
         },
-        Value::Number(n) => prost_types::Value {
-            kind: Some(Kind::NumberValue(n.as_f64().unwrap())),
+        serde_json::Value::Number(n) => Value {
+            kind: if let Some(int) = n.as_i64() {
+                Some(Kind::IntegerValue(int))
+            } else {
+                Some(Kind::DoubleValue(n.as_f64().unwrap()))
+            },
         },
-        Value::String(s) => prost_types::Value {
+        serde_json::Value::String(s) => Value {
             kind: Some(Kind::StringValue(s)),
         },
-        Value::Array(v) => {
+        serde_json::Value::Array(v) => {
             let list = v.into_iter().map(json_to_proto).collect();
-            prost_types::Value {
+            Value {
                 kind: Some(Kind::ListValue(ListValue { values: list })),
             }
         }
-        Value::Object(m) => {
+        serde_json::Value::Object(m) => {
             let map = m.into_iter().map(|(k, v)| (k, json_to_proto(v))).collect();
-            prost_types::Value {
-                kind: Some(Kind::StructValue(prost_types::Struct { fields: map })),
+            Value {
+                kind: Some(Kind::StructValue(Struct { fields: map })),
             }
         }
     }
 }
 
 pub fn proto_to_payloads(
-    proto: HashMap<String, prost_types::Value>,
+    proto: HashMap<String, Value>,
 ) -> Result<segment::types::Payload, Status> {
-    let mut map: Map<String, Value> = Map::new();
+    let mut map: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     for (k, v) in proto.into_iter() {
         map.insert(k, proto_to_json(v)?);
     }
     Ok(map.into())
 }
 
-fn proto_to_json(proto: prost_types::Value) -> Result<Value, Status> {
+fn proto_to_json(proto: Value) -> Result<serde_json::Value, Status> {
     match proto.kind {
-        None => Ok(Value::default()),
+        None => Ok(serde_json::Value::default()),
         Some(kind) => match kind {
-            Kind::NullValue(_) => Ok(Value::Null),
-            Kind::NumberValue(n) => {
-                let v = match Number::from_f64(n) {
+            Kind::NullValue(_) => Ok(serde_json::Value::Null),
+            Kind::DoubleValue(n) => {
+                let v = match serde_json::Number::from_f64(n) {
                     Some(f) => f,
                     None => return Err(Status::invalid_argument("cannot convert to json number")),
                 };
-                Ok(Value::Number(v))
+                Ok(serde_json::Value::Number(v))
             }
-            Kind::StringValue(s) => Ok(Value::String(s)),
-            Kind::BoolValue(b) => Ok(Value::Bool(b)),
+            Kind::IntegerValue(i) => Ok(serde_json::Value::Number(i.into())),
+            Kind::StringValue(s) => Ok(serde_json::Value::String(s)),
+            Kind::BoolValue(b) => Ok(serde_json::Value::Bool(b)),
             Kind::StructValue(s) => {
-                let mut map = Map::new();
+                let mut map = serde_json::Map::new();
                 for (k, v) in s.fields.into_iter() {
                     map.insert(k, proto_to_json(v)?);
                 }
-                Ok(Value::Object(map))
+                Ok(serde_json::Value::Object(map))
             }
             Kind::ListValue(l) => {
                 let mut list = Vec::new();
                 for v in l.values.into_iter() {
                     list.push(proto_to_json(v)?);
                 }
-                Ok(Value::Array(list))
+                Ok(serde_json::Value::Array(list))
             }
         },
     }
@@ -177,10 +179,10 @@ impl TryFrom<WithPayloadSelector> for segment::types::WithPayloadInterface {
             Some(options) => Ok(match options {
                 SelectorOptions::Enable(flag) => segment::types::WithPayloadInterface::Bool(flag),
                 SelectorOptions::Exclude(s) => {
-                    segment::types::PayloadSelectorExclude::new(s.exclude).into()
+                    segment::types::PayloadSelectorExclude::new(s.fields).into()
                 }
                 SelectorOptions::Include(s) => {
-                    segment::types::PayloadSelectorInclude::new(s.include).into()
+                    segment::types::PayloadSelectorInclude::new(s.fields).into()
                 }
             }),
             _ => Err(Status::invalid_argument("No PayloadSelector".to_string())),
@@ -193,14 +195,14 @@ impl From<segment::types::WithPayloadInterface> for WithPayloadSelector {
         let selector_options = match value {
             WithPayloadInterface::Bool(flag) => SelectorOptions::Enable(flag),
             WithPayloadInterface::Fields(fields) => {
-                SelectorOptions::Include(PayloadIncludeSelector { include: fields })
+                SelectorOptions::Include(PayloadIncludeSelector { fields })
             }
             WithPayloadInterface::Selector(selector) => match selector {
                 PayloadSelector::Include(s) => {
-                    SelectorOptions::Include(PayloadIncludeSelector { include: s.include })
+                    SelectorOptions::Include(PayloadIncludeSelector { fields: s.include })
                 }
                 PayloadSelector::Exclude(s) => {
-                    SelectorOptions::Exclude(PayloadExcludeSelector { exclude: s.exclude })
+                    SelectorOptions::Exclude(PayloadExcludeSelector { fields: s.exclude })
                 }
             },
         };
