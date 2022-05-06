@@ -1,14 +1,11 @@
 #[cfg(feature = "web")]
 mod actix;
 pub mod common;
-#[cfg(feature = "consensus")]
 mod consensus;
 mod settings;
 mod tonic;
 
-#[cfg(feature = "consensus")]
 use consensus::Consensus;
-#[cfg(feature = "consensus")]
 use slog::Drain;
 use std::io::Error;
 use std::sync::Arc;
@@ -17,7 +14,7 @@ use std::thread::JoinHandle;
 
 use ::tonic::transport::Uri;
 use clap::Parser;
-use storage::content_manager::toc::TableOfContent;
+use storage::content_manager::toc::{ConsensusEnabled, TableOfContent};
 
 use crate::common::helpers::create_search_runtime;
 use crate::settings::Settings;
@@ -43,8 +40,6 @@ struct Args {
 }
 
 fn main() -> std::io::Result<()> {
-    #[cfg(feature = "consensus")]
-    let args = Args::parse();
     let settings = Settings::new().expect("Can't read config.");
     std::env::set_var("RUST_LOG", &settings.log_level);
     env_logger::init();
@@ -55,24 +50,25 @@ fn main() -> std::io::Result<()> {
         .expect("Can't create runtime.");
     let runtime_handle = runtime.handle().clone();
 
-    #[allow(unused_mut)]
-    let mut toc = TableOfContent::new(&settings.storage, runtime);
+    let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
+    let consensus_enabled = if settings.cluster.enabled {
+        Some(ConsensusEnabled { propose_sender })
+    } else {
+        None
+    };
+
+    let toc = TableOfContent::new(&settings.storage, runtime, consensus_enabled);
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {
             log::info!("Loaded collection: {}", collection);
         }
     });
 
-    #[cfg(feature = "consensus")]
-    let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
-    #[cfg(feature = "consensus")]
-    toc.with_propose_sender(propose_sender);
-
     let toc_arc = Arc::new(toc);
     let mut handles: Vec<JoinHandle<Result<(), Error>>> = vec![];
 
-    #[cfg(feature = "consensus")]
-    {
+    if settings.cluster.enabled {
+        let args = Args::parse();
         // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
         // logs from it to `log` crate
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
@@ -127,6 +123,8 @@ fn main() -> std::io::Result<()> {
         } else {
             log::info!("gRPC internal endpoint disabled");
         }
+    } else {
+        log::info!("Distributed mode disabled");
     }
 
     #[cfg(feature = "web")]

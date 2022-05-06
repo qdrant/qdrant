@@ -30,36 +30,29 @@ use crate::content_manager::{
     errors::StorageError,
 };
 use crate::types::StorageConfig;
-use collection::collection_manager::collection_managers::CollectionSearcher;
-use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
-use collection::shard::ShardId;
-
-#[cfg(feature = "consensus")]
 use crate::{
     content_manager::{
         consensus_ops::ConsensusOperations, raft_state::Persistent as PersistentRaftState,
     },
     types::PeerAddressById,
 };
-#[cfg(feature = "consensus")]
+use collection::collection_manager::collection_managers::CollectionSearcher;
+use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
+use collection::shard::ShardId;
 use collection::PeerId;
-#[cfg(feature = "consensus")]
+pub use consensus::TableOfContentRef;
 use raft::eraftpb::{Entry as RaftEntry, Snapshot as RaftSnapshot};
-#[cfg(feature = "consensus")]
 use tokio::sync::oneshot;
-#[cfg(feature = "consensus")]
 use tonic::transport::Uri;
-#[cfg(feature = "consensus")]
 use wal::Wal;
 
-#[cfg(feature = "consensus")]
-pub use consensus::TableOfContentRef;
-
 const COLLECTIONS_DIR: &str = "collections";
-#[cfg(feature = "consensus")]
 const COLLECTIONS_META_WAL_DIR: &str = "collections_meta_wal";
-#[cfg(feature = "consensus")]
 const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
+
+pub struct ConsensusEnabled {
+    pub propose_sender: std::sync::mpsc::Sender<Vec<u8>>,
+}
 
 /// The main object of the service. It holds all objects, required for proper functioning.
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
@@ -71,22 +64,20 @@ pub struct TableOfContent {
     collection_management_runtime: Runtime,
     alias_persistence: RwLock<AliasPersistence>,
     segment_searcher: Box<dyn CollectionSearcher + Sync + Send>,
-
-    #[cfg(feature = "consensus")]
     collection_meta_wal: Arc<std::sync::Mutex<Wal>>,
-    #[cfg(feature = "consensus")]
     raft_state: Arc<std::sync::Mutex<PersistentRaftState>>,
-    #[cfg(feature = "consensus")]
     propose_sender: Option<std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>>,
-    #[cfg(feature = "consensus")]
     on_consensus_op_apply:
         std::sync::Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
-    #[cfg(feature = "consensus")]
     this_peer_id: u64,
 }
 
 impl TableOfContent {
-    pub fn new(storage_config: &StorageConfig, search_runtime: Runtime) -> Self {
+    pub fn new(
+        storage_config: &StorageConfig,
+        search_runtime: Runtime,
+        consensus_enabled: Option<ConsensusEnabled>,
+    ) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
         let collection_management_runtime = Runtime::new().unwrap();
 
@@ -119,7 +110,6 @@ impl TableOfContent {
         let alias_persistence =
             AliasPersistence::open(alias_path).expect("Can't open database by the provided config");
 
-        #[cfg(feature = "consensus")]
         let collection_meta_wal = {
             let collections_meta_wal_path =
                 Path::new(&storage_config.storage_path).join(&COLLECTIONS_META_WAL_DIR);
@@ -129,7 +119,7 @@ impl TableOfContent {
                 Wal::open(collections_meta_wal_path).unwrap(),
             ))
         };
-        #[cfg(feature = "consensus")]
+
         let raft_state = PersistentRaftState::load_or_init(&storage_config.storage_path)
             .expect("Cannot initialize Raft persistent storage");
 
@@ -141,22 +131,12 @@ impl TableOfContent {
             segment_searcher: Box::new(SimpleCollectionSearcher::new()),
             collection_management_runtime,
             // PeerId does not change during execution so it is ok to copy it here.
-            #[cfg(feature = "consensus")]
             this_peer_id: raft_state.this_peer_id(),
-            #[cfg(feature = "consensus")]
             collection_meta_wal,
-            #[cfg(feature = "consensus")]
             raft_state: Arc::new(std::sync::Mutex::new(raft_state)),
-            #[cfg(feature = "consensus")]
-            propose_sender: None,
-            #[cfg(feature = "consensus")]
+            propose_sender: consensus_enabled.map(|ce| std::sync::Mutex::new(ce.propose_sender)),
             on_consensus_op_apply: std::sync::Mutex::new(HashMap::new()),
         }
-    }
-
-    #[cfg(feature = "consensus")]
-    pub fn with_propose_sender(&mut self, sender: std::sync::mpsc::Sender<Vec<u8>>) {
-        self.propose_sender = Some(std::sync::Mutex::new(sender))
     }
 
     fn get_collection_path(&self, collection_name: &str) -> PathBuf {
@@ -355,21 +335,17 @@ impl TableOfContent {
         operation: CollectionMetaOperations,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
-        #[cfg(feature = "consensus")]
-        {
+        if self.propose_sender.is_some() {
             self.propose_consensus_op(
                 ConsensusOperations::CollectionMeta(Box::new(operation)),
                 wait_timeout,
             )
             .await
-        }
-        #[cfg(not(feature = "consensus"))]
-        {
+        } else {
             self.perform_collection_meta_op(operation).await
         }
     }
 
-    #[cfg(feature = "consensus")]
     pub async fn propose_consensus_op(
         &self,
         operation: ConsensusOperations,
@@ -588,7 +564,6 @@ impl TableOfContent {
         result.map_err(|err| err.into())
     }
 
-    #[cfg(feature = "consensus")]
     pub fn collection_wal_entry(&self, id: u64) -> raft::Result<RaftEntry> {
         <RaftEntry as prost::Message>::decode(
             self.collection_meta_wal
@@ -601,12 +576,10 @@ impl TableOfContent {
         .map_err(consensus::raft_error_other)
     }
 
-    #[cfg(feature = "consensus")]
     pub fn this_peer_id(&self) -> u64 {
         self.this_peer_id
     }
 
-    #[cfg(feature = "consensus")]
     async fn collection_meta_snapshot(&self) -> raft::Result<consensus::CollectionMetaSnapshot> {
         use super::raft_state::PeerAddressByIdWrapper;
 
@@ -630,7 +603,6 @@ impl TableOfContent {
         })
     }
 
-    #[cfg(feature = "consensus")]
     pub fn apply_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
         let operation: ConsensusOperations = entry.try_into()?;
         let on_apply = self.on_consensus_op_apply.lock()?.remove(&operation);
@@ -655,7 +627,6 @@ impl TableOfContent {
         result
     }
 
-    #[cfg(feature = "consensus")]
     pub fn set_unapplied_entries(
         &self,
         first_index: u64,
@@ -668,7 +639,6 @@ impl TableOfContent {
             .map_err(consensus::raft_error_other)
     }
 
-    #[cfg(feature = "consensus")]
     pub fn apply_entries(&self) -> Result<(), raft::Error> {
         use raft::eraftpb::EntryType;
 
@@ -703,7 +673,6 @@ impl TableOfContent {
         Ok(())
     }
 
-    #[cfg(feature = "consensus")]
     pub fn append_entries(&self, entries: Vec<RaftEntry>) -> Result<(), StorageError> {
         use prost::Message;
 
@@ -718,7 +687,6 @@ impl TableOfContent {
         Ok(())
     }
 
-    #[cfg(feature = "consensus")]
     pub fn apply_snapshot(&self, snapshot: &RaftSnapshot) -> Result<(), StorageError> {
         let snapshot: consensus::CollectionMetaSnapshot = snapshot.try_into()?;
 
@@ -773,31 +741,26 @@ impl TableOfContent {
         })
     }
 
-    #[cfg(feature = "consensus")]
     pub fn set_hard_state(&self, hard_state: raft::eraftpb::HardState) -> Result<(), StorageError> {
         self.raft_state
             .lock()?
             .apply_state_update(|state| state.hard_state = hard_state)
     }
 
-    #[cfg(feature = "consensus")]
     pub fn hard_state(&self) -> Result<raft::eraftpb::HardState, StorageError> {
         Ok(self.raft_state.lock()?.state().hard_state.clone())
     }
 
-    #[cfg(feature = "consensus")]
     pub fn set_commit_index(&self, index: u64) -> Result<(), StorageError> {
         self.raft_state
             .lock()?
             .apply_state_update(|state| state.hard_state.commit = index)
     }
 
-    #[cfg(feature = "consensus")]
     pub fn peer_address_by_id(&self) -> Result<PeerAddressById, StorageError> {
         self.raft_state.lock()?.peer_address_by_id()
     }
 
-    #[cfg(feature = "consensus")]
     pub fn add_peer(&self, peer_id: PeerId, uri: Uri) -> Result<(), StorageError> {
         self.raft_state.lock()?.insert_peer(peer_id, uri)
     }
@@ -814,7 +777,6 @@ impl Drop for TableOfContent {
     }
 }
 
-#[cfg(feature = "consensus")]
 mod consensus {
     use std::{collections::HashMap, ops::Deref, sync::Arc};
 

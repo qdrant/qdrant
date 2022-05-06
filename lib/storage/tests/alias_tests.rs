@@ -1,4 +1,4 @@
-#[cfg(all(test, not(feature = "consensus")))]
+#[cfg(all(test))]
 mod tests {
     use collection::optimizers_builder::OptimizersConfig;
     use segment::types::Distance;
@@ -42,7 +42,7 @@ mod tests {
         let runtime = Runtime::new().unwrap();
         let handle = runtime.handle().clone();
 
-        let toc = TableOfContent::new(&config, runtime);
+        let toc = TableOfContent::new(&config, runtime, None);
 
         handle
             .block_on(toc.submit_collection_operation(
