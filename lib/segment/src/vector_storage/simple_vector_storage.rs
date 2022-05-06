@@ -93,10 +93,27 @@ pub fn open_simple_vector_storage(
     let mut deleted = BitVec::new();
     let mut deleted_count = 0;
 
+    if !path.exists() {
+        std::fs::create_dir(path)?;
+    }
+    if !path.join("CURRENT").exists() {
+        for entry in std::fs::read_dir(Path::new("./empty_dbs/vector_storage")).unwrap() {
+            let src_path = entry.unwrap().path();
+            if !src_path.is_dir() {
+                match src_path.file_name() {
+                    Some(filename) => {
+                        let dest_path = path.join(filename);
+                        std::fs::copy(&src_path, &dest_path)?;
+                    }
+                    None => {}
+                }
+            }
+        }
+    }
+
     let mut options: Options = Options::default();
     options.set_write_buffer_size(DB_CACHE_SIZE);
-    options.create_if_missing(true);
-
+    options.create_if_missing(false);
     let store = DB::open(&options, path)?;
 
     for (key, val) in store.iterator(IteratorMode::Start) {

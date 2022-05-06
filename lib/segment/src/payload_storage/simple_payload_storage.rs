@@ -18,9 +18,27 @@ pub struct SimplePayloadStorage {
 
 impl SimplePayloadStorage {
     pub fn open(path: &Path) -> OperationResult<Self> {
+        if !path.exists() {
+            std::fs::create_dir(path)?;
+        }
+        if !path.join("CURRENT").exists() {
+            for entry in std::fs::read_dir(Path::new("./empty_dbs/payload_storage")).unwrap() {
+                let src_path = entry.unwrap().path();
+                if !src_path.is_dir() {
+                    match src_path.file_name() {
+                        Some(filename) => {
+                            let dest_path = path.join(filename);
+                            std::fs::copy(&src_path, &dest_path)?;
+                        }
+                        None => {}
+                    }
+                }
+            }
+        }
+
         let mut options: Options = Options::default();
         options.set_write_buffer_size(DB_CACHE_SIZE);
-        options.create_if_missing(true);
+        options.create_if_missing(false);
         options.create_missing_column_families(true);
         let store = DB::open_cf(&options, path, [DB_NAME])?;
 
