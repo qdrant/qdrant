@@ -98,7 +98,7 @@ fn proto_to_json(proto: prost_types::Value) -> Result<Value, Status> {
             Kind::StringValue(s) => match parse_int(&s) {
                 Some(int) => Ok(Value::Number(int.into())),
                 None => Ok(Value::String(s)),
-            }
+            },
             Kind::BoolValue(b) => Ok(Value::Bool(b)),
             Kind::StructValue(s) => {
                 let mut map = Map::new();
