@@ -33,7 +33,7 @@ $docker_grpcurl -d '{
       "payload": {
         "city": "Berlin",
         "country": "Germany",
-        "population": 1000000,
+        "population": "1000000i",
         "square": 12.5,
         "coords": { "lat": 1.0, "lon": 2.0 }
       }

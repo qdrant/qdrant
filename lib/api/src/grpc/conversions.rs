@@ -28,6 +28,18 @@ pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, pro
         .collect()
 }
 
+fn parse_int(string: &str) -> Option<i64> {
+    if let Some(chr) = string.chars().last() {
+        if chr == 'i' {
+            string[..string.len() - 1].parse().ok()
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
 fn json_to_proto(json_value: Value) -> prost_types::Value {
     match json_value {
         Value::Null => prost_types::Value {
@@ -37,7 +49,11 @@ fn json_to_proto(json_value: Value) -> prost_types::Value {
             kind: Some(Kind::BoolValue(v)),
         },
         Value::Number(n) => prost_types::Value {
-            kind: Some(Kind::NumberValue(n.as_f64().unwrap())),
+            kind: if let Some(int) = n.as_i64() {
+                Some(Kind::StringValue(format!("{}i", int)))
+            } else {
+                Some(Kind::NumberValue(n.as_f64().unwrap()))
+            },
         },
         Value::String(s) => prost_types::Value {
             kind: Some(Kind::StringValue(s)),
@@ -79,7 +95,10 @@ fn proto_to_json(proto: prost_types::Value) -> Result<Value, Status> {
                 };
                 Ok(Value::Number(v))
             }
-            Kind::StringValue(s) => Ok(Value::String(s)),
+            Kind::StringValue(s) => match parse_int(&s) {
+                Some(int) => Ok(Value::Number(int.into())),
+                None => Ok(Value::String(s)),
+            }
             Kind::BoolValue(b) => Ok(Value::Bool(b)),
             Kind::StructValue(s) => {
                 let mut map = Map::new();
