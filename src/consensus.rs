@@ -380,9 +380,8 @@ mod tests {
         env_logger::init();
         let runtime = crate::create_search_runtime(settings.storage.performance.max_search_threads)
             .expect("Can't create runtime.");
-        let mut toc = TableOfContent::new(&settings.storage, runtime, true);
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
-        toc.with_propose_sender(propose_sender);
+        let toc = TableOfContent::new(&settings.storage, runtime, propose_sender, true);
         let toc_arc = Arc::new(toc);
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
         let (mut consensus, message_sender) = Consensus::new(

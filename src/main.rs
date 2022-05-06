@@ -50,15 +50,18 @@ fn main() -> std::io::Result<()> {
         .expect("Can't create runtime.");
     let runtime_handle = runtime.handle().clone();
 
-    let mut toc = TableOfContent::new(&settings.storage, runtime, settings.cluster.enabled);
+    let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
+    let toc = TableOfContent::new(
+        &settings.storage,
+        runtime,
+        propose_sender,
+        settings.cluster.enabled,
+    );
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {
             log::info!("Loaded collection: {}", collection);
         }
     });
-
-    let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
-    toc.with_propose_sender(propose_sender);
 
     let toc_arc = Arc::new(toc);
     let mut handles: Vec<JoinHandle<Result<(), Error>>> = vec![];

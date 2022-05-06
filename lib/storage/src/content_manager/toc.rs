@@ -62,7 +62,7 @@ pub struct TableOfContent {
     segment_searcher: Box<dyn CollectionSearcher + Sync + Send>,
     collection_meta_wal: Arc<std::sync::Mutex<Wal>>,
     raft_state: Arc<std::sync::Mutex<PersistentRaftState>>,
-    propose_sender: Option<std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>>,
+    propose_sender: std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>,
     on_consensus_op_apply:
         std::sync::Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
     distributed_mode: bool,
@@ -73,6 +73,7 @@ impl TableOfContent {
     pub fn new(
         storage_config: &StorageConfig,
         search_runtime: Runtime,
+        propose_sender: std::sync::mpsc::Sender<Vec<u8>>,
         distributed_mode: bool,
     ) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
@@ -131,14 +132,10 @@ impl TableOfContent {
             this_peer_id: raft_state.this_peer_id(),
             collection_meta_wal,
             raft_state: Arc::new(std::sync::Mutex::new(raft_state)),
-            propose_sender: None,
+            propose_sender: std::sync::Mutex::new(propose_sender),
             on_consensus_op_apply: std::sync::Mutex::new(HashMap::new()),
             distributed_mode,
         }
-    }
-
-    pub fn with_propose_sender(&mut self, sender: std::sync::mpsc::Sender<Vec<u8>>) {
-        self.propose_sender = Some(std::sync::Mutex::new(sender))
     }
 
     fn get_collection_path(&self, collection_name: &str) -> PathBuf {
@@ -353,20 +350,10 @@ impl TableOfContent {
         operation: ConsensusOperations,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
-        let propose_sender = match &self.propose_sender {
-            Some(sender) => sender,
-            None => {
-                return Err(StorageError::ServiceError {
-                    description:
-                        "Cannot submit consensus operation proposal: no sender supplied to ToC"
-                            .to_string(),
-                });
-            }
-        };
         let serialized = serde_cbor::to_vec(&operation)?;
         let (sender, receiver) = oneshot::channel();
         self.on_consensus_op_apply.lock()?.insert(operation, sender);
-        propose_sender.lock()?.send(serialized)?;
+        self.propose_sender.lock()?.send(serialized)?;
         let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
         tokio::time::timeout(wait_timeout, receiver)
             .await
