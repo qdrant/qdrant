@@ -14,7 +14,7 @@ use std::thread::JoinHandle;
 
 use ::tonic::transport::Uri;
 use clap::Parser;
-use storage::content_manager::toc::TableOfContent;
+use storage::content_manager::toc::{ConsensusEnabled, TableOfContent};
 
 use crate::common::helpers::create_search_runtime;
 use crate::settings::Settings;
@@ -51,12 +51,13 @@ fn main() -> std::io::Result<()> {
     let runtime_handle = runtime.handle().clone();
 
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
-    let toc = TableOfContent::new(
-        &settings.storage,
-        runtime,
-        propose_sender,
-        settings.cluster.enabled,
-    );
+    let consensus_enabled = if settings.cluster.enabled {
+        Some(ConsensusEnabled { propose_sender })
+    } else {
+        None
+    };
+
+    let toc = TableOfContent::new(&settings.storage, runtime, consensus_enabled);
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {
             log::info!("Loaded collection: {}", collection);

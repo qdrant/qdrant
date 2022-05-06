@@ -50,6 +50,10 @@ const COLLECTIONS_DIR: &str = "collections";
 const COLLECTIONS_META_WAL_DIR: &str = "collections_meta_wal";
 const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 
+pub struct ConsensusEnabled {
+    pub propose_sender: std::sync::mpsc::Sender<Vec<u8>>,
+}
+
 /// The main object of the service. It holds all objects, required for proper functioning.
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
 /// the launch of the service.
@@ -62,10 +66,9 @@ pub struct TableOfContent {
     segment_searcher: Box<dyn CollectionSearcher + Sync + Send>,
     collection_meta_wal: Arc<std::sync::Mutex<Wal>>,
     raft_state: Arc<std::sync::Mutex<PersistentRaftState>>,
-    propose_sender: std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>,
+    propose_sender: Option<std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>>,
     on_consensus_op_apply:
         std::sync::Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
-    distributed_mode: bool,
     this_peer_id: u64,
 }
 
@@ -73,8 +76,7 @@ impl TableOfContent {
     pub fn new(
         storage_config: &StorageConfig,
         search_runtime: Runtime,
-        propose_sender: std::sync::mpsc::Sender<Vec<u8>>,
-        distributed_mode: bool,
+        consensus_enabled: Option<ConsensusEnabled>,
     ) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
         let collection_management_runtime = Runtime::new().unwrap();
@@ -132,9 +134,8 @@ impl TableOfContent {
             this_peer_id: raft_state.this_peer_id(),
             collection_meta_wal,
             raft_state: Arc::new(std::sync::Mutex::new(raft_state)),
-            propose_sender: std::sync::Mutex::new(propose_sender),
+            propose_sender: consensus_enabled.map(|ce| std::sync::Mutex::new(ce.propose_sender)),
             on_consensus_op_apply: std::sync::Mutex::new(HashMap::new()),
-            distributed_mode,
         }
     }
 
@@ -334,7 +335,7 @@ impl TableOfContent {
         operation: CollectionMetaOperations,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
-        if self.distributed_mode {
+        if self.propose_sender.is_some() {
             self.propose_consensus_op(
                 ConsensusOperations::CollectionMeta(Box::new(operation)),
                 wait_timeout,
@@ -350,10 +351,20 @@ impl TableOfContent {
         operation: ConsensusOperations,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
+        let propose_sender = match &self.propose_sender {
+            Some(sender) => sender,
+            None => {
+                return Err(StorageError::ServiceError {
+                    description:
+                        "Cannot submit consensus operation proposal: no sender supplied to ToC"
+                            .to_string(),
+                });
+            }
+        };
         let serialized = serde_cbor::to_vec(&operation)?;
         let (sender, receiver) = oneshot::channel();
         self.on_consensus_op_apply.lock()?.insert(operation, sender);
-        self.propose_sender.lock()?.send(serialized)?;
+        propose_sender.lock()?.send(serialized)?;
         let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
         tokio::time::timeout(wait_timeout, receiver)
             .await

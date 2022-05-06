@@ -42,8 +42,7 @@ mod tests {
         let runtime = Runtime::new().unwrap();
         let handle = runtime.handle().clone();
 
-        let (propose_sender, _propose_receiver) = std::sync::mpsc::channel();
-        let toc = TableOfContent::new(&config, runtime, propose_sender, false);
+        let toc = TableOfContent::new(&config, runtime, None);
 
         handle
             .block_on(toc.submit_collection_operation(
