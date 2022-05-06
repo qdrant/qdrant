@@ -658,9 +658,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "3.1.15"
+version = "3.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85a35a599b11c089a7f49105658d089b8f2cf0882993c17daf6de15285c2c35d"
+checksum = "47582c09be7c8b32c0ab3a6181825ababb713fde6fff20fc573a3870dd45c6a0"
 dependencies = [
  "atty",
  "bitflags",
@@ -2503,7 +2503,7 @@ dependencies = [
  "actix-web",
  "anyhow",
  "api",
- "clap 3.1.15",
+ "clap 3.1.17",
  "collection",
  "config",
  "env_logger",
