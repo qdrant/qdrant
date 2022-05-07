@@ -82,11 +82,6 @@
     - [FieldType](#qdrant-FieldType)
     - [UpdateStatus](#qdrant-UpdateStatus)
   
-- [points_internal_service.proto](#points_internal_service-proto)
-    - [UpsertPointsInternal](#qdrant-UpsertPointsInternal)
-  
-    - [PointsInternal](#qdrant-PointsInternal)
-  
 - [points_service.proto](#points_service-proto)
     - [Points](#qdrant-Points)
   
@@ -1017,6 +1012,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | with_vector | [bool](#bool) | optional | Return point vector with the result. |
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
 | params | [SearchParams](#qdrant-SearchParams) |  | Search config |
+| score_threshold | [float](#float) | optional | If provided - cut off results with worse scores |
 
 
 
@@ -1174,6 +1170,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | with_vector | [bool](#bool) | optional | Return point vector with the result. |
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
 | params | [SearchParams](#qdrant-SearchParams) |  | Search config |
+| score_threshold | [float](#float) | optional | If provided - cut off results with worse scores |
 
 
 
@@ -1329,48 +1326,6 @@ If indexation speed have more priority for your - make this parameter lower. If 
  
 
  
-
- 
-
-
-
-<a name="points_internal_service-proto"></a>
-<p align="right"><a href="#top">Top</a></p>
-
-## points_internal_service.proto
-
-
-
-<a name="qdrant-UpsertPointsInternal"></a>
-
-### UpsertPointsInternal
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| upsert_points | [UpsertPoints](#qdrant-UpsertPoints) |  |  |
-| shard_id | [uint32](#uint32) |  |  |
-
-
-
-
-
- 
-
- 
-
- 
-
-
-<a name="qdrant-PointsInternal"></a>
-
-### PointsInternal
-
-
-| Method Name | Request Type | Response Type | Description |
-| ----------- | ------------ | ------------- | ------------|
-| Upsert | [UpsertPointsInternal](#qdrant-UpsertPointsInternal) | [PointsOperationResponse](#qdrant-PointsOperationResponse) |  |
 
  
 
