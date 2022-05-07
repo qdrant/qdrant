@@ -342,7 +342,7 @@ pub async fn recommend(
         top: top as usize,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
         with_vector: with_vector.unwrap_or(false),
-        score_threshold: score_threshold,
+        score_threshold,
     };
 
     let timing = Instant::now();

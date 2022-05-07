@@ -180,7 +180,6 @@ fn basic_scoring_vectors(c: &mut Criterion) {
     let mut rng = thread_rng();
     let points_per_cycle = 1000;
     let base_num_vectors = 10_000_000;
-    let metric = FakeMetric {};
 
     let num_vectors = base_num_vectors;
 
@@ -194,7 +193,7 @@ fn basic_scoring_vectors(c: &mut Criterion) {
             let points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
 
             let _s: f32 = points_to_score
-                .map(|x| metric.similarity(&vectors[x], &query))
+                .map(|x| FakeMetric::similarity(&vectors[x], &query))
                 .sum();
         })
     });
@@ -211,7 +210,7 @@ fn basic_scoring_vectors(c: &mut Criterion) {
             let points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
 
             let _s: f32 = points_to_score
-                .map(|x| metric.similarity(&vectors[x], &query))
+                .map(|x| FakeMetric::similarity(&vectors[x], &query))
                 .sum();
         })
     });
