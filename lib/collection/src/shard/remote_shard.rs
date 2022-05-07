@@ -205,6 +205,7 @@ impl ShardOperation for &RemoteShard {
             with_vector: Some(request.with_vector),
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
             params: request.params.map(|sp| sp.into()),
+            score_threshold: request.score_threshold,
         };
         let request = tonic::Request::new(SearchPointsInternal {
             search_points: Some(search_points),

@@ -66,6 +66,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         filter: None,
         params: None,
         top: 3,
+        score_threshold: None,
     };
 
     let segment_searcher = SimpleCollectionSearcher::new();
@@ -123,6 +124,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         filter: None,
         params: None,
         top: 3,
+        score_threshold: None,
     };
 
     let segment_searcher = SimpleCollectionSearcher::new();
@@ -311,6 +313,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
                 top: 5,
                 with_payload: None,
                 with_vector: false,
+                score_threshold: None,
             },
             &segment_searcher,
             &Handle::current(),

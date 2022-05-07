@@ -27,11 +27,11 @@ pub struct CosineMetric {}
 pub struct EuclidMetric {}
 
 impl Metric for EuclidMetric {
-    fn distance(&self) -> Distance {
+    fn distance() -> Distance {
         Distance::Euclid
     }
 
-    fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx")
@@ -59,17 +59,21 @@ impl Metric for EuclidMetric {
         euclid_similarity(v1, v2)
     }
 
-    fn preprocess(&self, _vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
+    fn preprocess(_vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
         None
+    }
+
+    fn postprocess(score: ScoreType) -> ScoreType {
+        score.abs().sqrt()
     }
 }
 
 impl Metric for DotProductMetric {
-    fn distance(&self) -> Distance {
+    fn distance() -> Distance {
         Distance::Dot
     }
 
-    fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx")
@@ -97,17 +101,21 @@ impl Metric for DotProductMetric {
         dot_similarity(v1, v2)
     }
 
-    fn preprocess(&self, _vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
+    fn preprocess(_vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
         None
+    }
+
+    fn postprocess(score: ScoreType) -> ScoreType {
+        score
     }
 }
 
 impl Metric for CosineMetric {
-    fn distance(&self) -> Distance {
+    fn distance() -> Distance {
         Distance::Cosine
     }
 
-    fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx")
@@ -135,7 +143,7 @@ impl Metric for CosineMetric {
         dot_similarity(v1, v2)
     }
 
-    fn preprocess(&self, vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
+    fn preprocess(vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx")
@@ -163,6 +171,10 @@ impl Metric for CosineMetric {
 
         Some(cosine_preprocess(vector))
     }
+
+    fn postprocess(score: ScoreType) -> ScoreType {
+        score
+    }
 }
 
 pub fn euclid_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
@@ -172,7 +184,7 @@ pub fn euclid_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> 
         .zip(v2.iter().copied())
         .map(|(a, b)| (a - b).powi(2))
         .sum();
-    -s.sqrt()
+    -s
 }
 
 pub fn cosine_preprocess(vector: &[VectorElementType]) -> Vec<VectorElementType> {
@@ -191,8 +203,7 @@ mod tests {
 
     #[test]
     fn test_cosine_preprocessing() {
-        let metric = CosineMetric {};
-        let res = metric.preprocess(&[0.0, 0.0, 0.0, 0.0]);
+        let res = CosineMetric::preprocess(&[0.0, 0.0, 0.0, 0.0]);
         eprintln!("res = {:#?}", res);
     }
 }

@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use segment::entry::entry_point::OperationError;
 use tokio::runtime::Handle;
 
-use segment::spaces::tools::peek_top_scores_iterable;
+use segment::spaces::tools::peek_top_largest_scores_iterable;
 use segment::types::{PointIdType, ScoredPoint, SeqNumberType, WithPayload, WithPayloadInterface};
 
 use crate::collection_manager::collection_managers::CollectionSearcher;
@@ -67,7 +67,7 @@ impl CollectionSearcher for SimpleCollectionSearcher {
 
         let mut seen_idx: HashSet<PointIdType> = HashSet::new();
 
-        let top_scores = peek_top_scores_iterable(
+        let top_scores = peek_top_largest_scores_iterable(
             all_search_results
                 .into_iter()
                 .flat_map(Result::unwrap) // already checked for errors
@@ -176,6 +176,7 @@ mod tests {
             filter: None,
             params: None,
             top: 5,
+            score_threshold: None,
         });
 
         let result = searcher

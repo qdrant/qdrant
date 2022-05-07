@@ -40,7 +40,7 @@ pub(crate) unsafe fn euclid_similarity_neon(
     for i in 0..n - m {
         result += (*ptr1.add(i) - *ptr2.add(i)).powi(2);
     }
-    -result.sqrt()
+    -result
 }
 
 #[cfg(target_feature = "neon")]

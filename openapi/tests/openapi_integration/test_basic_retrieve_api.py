@@ -1,7 +1,7 @@
 import pytest
 
-from openapi_integration.helpers.collection_setup import basic_collection_setup, drop_collection
-from openapi_integration.helpers.helpers import request_with_validation
+from .helpers.collection_setup import basic_collection_setup, drop_collection
+from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection'
 
@@ -156,6 +156,7 @@ def test_recommendation():
     assert len(response.json()['result']) == 3
     assert response.json()['result'][0]['payload'] is not None
     assert response.ok
+
 
 def test_query_nested():
     response = request_with_validation(
