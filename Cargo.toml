@@ -7,10 +7,16 @@ doctest = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+# Uncomment for memory profining:
+#[profile.release]
+#debug = 1
+
 [features]
 default = [ "web", "parking_lot" ]
 web = ["actix-web"]
 service_debug = ["parking_lot", "parking_lot/deadlock_detection"]
+dhat-heap = ["dhat"]    # if you are doing heap profiling
+dhat-ad-hoc = ["dhat"]  # if you are doing ad hoc profiling
 
 [dev-dependencies]
 tempdir = "0.3.7"
@@ -46,6 +52,7 @@ actix-web = { version = "4.1.0", optional = true }
 actix-cors = "0.6.1"
 tonic = "0.7.2"
 num-traits = "0.2.15"
+dhat =  { version = "0.3.0", optional = true }
 
 # Consensus related crates
 raft = { git = "https://github.com/tikv/raft-rs", rev = "52d84aac8734369d81c2d77413ea3ab8e58e0af9", features = ["prost-codec"], default-features = false }

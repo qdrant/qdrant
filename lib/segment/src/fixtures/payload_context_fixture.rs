@@ -113,7 +113,11 @@ impl IdTracker for FixtureIdTracker {
         self.ids.last().copied().unwrap()
     }
 
-    fn flush(&self) -> OperationResult<()> {
+    fn flush_mapping(&self) -> OperationResult<()> {
+        Ok(())
+    }
+
+    fn flush_versions(&self) -> OperationResult<()> {
         Ok(())
     }
 }

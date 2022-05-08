@@ -3,7 +3,7 @@ use crate::spaces::metric::Metric;
 use crate::types::{PointOffsetType, VectorElementType};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::simple_vector_storage::SimpleRawScorer;
-use bit_vec::BitVec;
+use bitvec::prelude::BitVec;
 use rand::Rng;
 use std::marker::PhantomData;
 
@@ -42,7 +42,7 @@ where
 
         TestRawScorerProducer::<TMetric> {
             vectors,
-            deleted: BitVec::from_elem(num_vectors, false),
+            deleted: BitVec::repeat(false, num_vectors),
             metric: PhantomData,
         }
     }

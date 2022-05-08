@@ -51,7 +51,7 @@ pub mod operations;
 pub mod optimizers_builder;
 pub mod shard;
 mod update_handler;
-mod wal;
+pub mod wal;
 
 #[cfg(test)]
 mod tests;
