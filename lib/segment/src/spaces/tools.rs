@@ -118,7 +118,7 @@ where
         return scores.into_iter().collect();
     }
 
-    // If big values is better - PQ should pop-out small values first.
+    // If small values is better - PQ should pop-out big values first.
     // Hence is should be min-heap
     let mut pq = FixedLengthPriorityQueue::new(top);
     for score_point in scores {
