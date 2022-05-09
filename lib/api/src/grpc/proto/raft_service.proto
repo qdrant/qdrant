@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package qdrant;
+
+import "google/protobuf/empty.proto";
+
+service Raft {
+  // Send Raft message to another peer
+  rpc Send (RaftMessage) returns (google.protobuf.Empty);
+  // Send to bootstrap peer
+  // Returns uri by id if bootstrap knows this peer
+  rpc WhoIs (PeerId) returns (Uri);
+  // Send to bootstrap peer
+  // Proposes to add this peer Uri and ID to a map of all peers
+  // Returns all peers
+  rpc AddPeerToKnown (AddPeerToKnownMessage) returns (AllPeers);
+  // Send to bootstrap peer
+  // Proposes to add this peer as participant of consensus
+  rpc AddPeerAsParticipant (PeerId) returns (google.protobuf.Empty);
+}
+
+message RaftMessage {
+    bytes message = 1;
+}
+
+message AllPeers {
+    repeated Peer all_peers = 1;
+}
+
+message Peer {
+    string uri = 1;
+    uint64 id = 2;
+}
+
+message AddPeerToKnownMessage {
+  optional string uri = 1;
+  optional uint32 port = 2;
+  uint64 id = 3;
+}
+
+message PeerId {
+  uint64 id = 1;
+}
+
+message Uri {
+  string uri = 1;
+}

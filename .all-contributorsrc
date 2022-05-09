@@ -175,6 +175,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "gvelo",
+      "name": "Gabriel Velo",
+      "avatar_url": "https://avatars.githubusercontent.com/u/943360?v=4",
+      "profile": "https://github.com/gvelo",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,

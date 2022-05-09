@@ -12,12 +12,79 @@ pub struct ServiceConfig {
     pub max_workers: Option<usize>,
 }
 
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct ClusterConfig {
+    pub enabled: bool, // disabled by default
+    #[serde(default)]
+    pub p2p: P2pConfig,
+    #[serde(default)]
+    pub consensus: ConsensusConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct P2pConfig {
+    #[serde(default)]
+    pub p2p_port: Option<u16>,
+    #[serde(default = "default_timeout_ms")]
+    pub p2p_grpc_timeout_ms: u64,
+}
+
+impl Default for P2pConfig {
+    fn default() -> Self {
+        P2pConfig {
+            p2p_port: None,
+            p2p_grpc_timeout_ms: default_timeout_ms(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ConsensusConfig {
+    #[serde(default = "default_max_message_queue_size")]
+    pub max_message_queue_size: usize, // controls the back-pressure at the Raft level
+    #[serde(default = "default_tick_period_ms")]
+    pub tick_period_ms: u64,
+    #[serde(default = "default_timeout_ms")]
+    pub message_timeout_ms: u64,
+    #[serde(default = "default_bootstrap_timeout_sec")]
+    pub bootstrap_timeout_sec: u64,
+}
+
+impl Default for ConsensusConfig {
+    fn default() -> Self {
+        ConsensusConfig {
+            max_message_queue_size: default_max_message_queue_size(),
+            tick_period_ms: default_tick_period_ms(),
+            message_timeout_ms: default_timeout_ms(),
+            bootstrap_timeout_sec: default_bootstrap_timeout_sec(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     pub debug: bool,
     pub log_level: String,
     pub storage: StorageConfig,
     pub service: ServiceConfig,
+    #[serde(default)]
+    pub cluster: ClusterConfig,
+}
+
+fn default_timeout_ms() -> u64 {
+    1000
+}
+
+fn default_tick_period_ms() -> u64 {
+    100
+}
+
+fn default_bootstrap_timeout_sec() -> u64 {
+    5
+}
+
+fn default_max_message_queue_size() -> usize {
+    100
 }
 
 impl Settings {

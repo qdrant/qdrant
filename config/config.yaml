@@ -83,7 +83,7 @@ service:
   http_port: 6333
 
   # gRPC port to bind the service on.
-  # If `null` - gRPC is disabed. Default: null
+  # If `null` - gRPC is disabled. Default: null
   grpc_port: null
   # Uncomment to enable gRPC:
   # grpc_port: 6334

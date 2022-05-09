@@ -85,6 +85,25 @@ pub enum Distance {
     Dot,
 }
 
+impl Distance {
+    pub fn from_index(index: i32) -> Option<Self> {
+        match index {
+            1 => Some(Distance::Cosine),
+            2 => Some(Distance::Euclid),
+            3 => Some(Distance::Dot),
+            _ => None,
+        }
+    }
+
+    pub fn index(&self) -> i32 {
+        match self {
+            Distance::Cosine => 1,
+            Distance::Euclid => 2,
+            Distance::Dot => 3,
+        }
+    }
+}
+
 pub enum Order {
     LargeBetter,
     SmallBetter,
@@ -456,6 +475,27 @@ pub enum PayloadSchemaType {
     Geo,
 }
 
+impl PayloadSchemaType {
+    pub fn from_index(index: i32) -> Option<Self> {
+        match index {
+            1 => Some(PayloadSchemaType::Keyword),
+            2 => Some(PayloadSchemaType::Integer),
+            3 => Some(PayloadSchemaType::Float),
+            4 => Some(PayloadSchemaType::Geo),
+            _ => None,
+        }
+    }
+
+    pub fn index(&self) -> i32 {
+        match self {
+            PayloadSchemaType::Keyword => 1,
+            PayloadSchemaType::Integer => 2,
+            PayloadSchemaType::Float => 3,
+            PayloadSchemaType::Geo => 4,
+        }
+    }
+}
+
 pub fn value_type(value: &Value) -> Option<PayloadSchemaType> {
     match value {
         Value::Null => None,
@@ -590,7 +630,7 @@ impl From<IntPayloadType> for Match {
 }
 
 /// Range filter request
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct Range {
     /// point.key < range.lt
@@ -923,7 +963,7 @@ pub struct WithPayload {
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct Filter {
-    /// At least one of thous conditions should match
+    /// At least one of those conditions should match
     pub should: Option<Vec<Condition>>,
     /// All conditions must match
     pub must: Option<Vec<Condition>>,

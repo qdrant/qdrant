@@ -41,6 +41,9 @@ impl From<CollectionError> for StorageError {
             err @ CollectionError::InconsistentFailure { .. } => StorageError::ServiceError {
                 description: format!("{err}"),
             },
+            CollectionError::BadShardSelection { description } => {
+                StorageError::BadRequest { description }
+            }
         }
     }
 }
@@ -89,7 +92,6 @@ impl From<tokio::sync::oneshot::error::RecvError> for StorageError {
     }
 }
 
-#[cfg(feature = "consensus")]
 impl From<serde_cbor::Error> for StorageError {
     fn from(err: serde_cbor::Error) -> Self {
         StorageError::ServiceError {
@@ -98,11 +100,26 @@ impl From<serde_cbor::Error> for StorageError {
     }
 }
 
-#[cfg(feature = "consensus")]
 impl From<prost::EncodeError> for StorageError {
     fn from(err: prost::EncodeError) -> Self {
         StorageError::ServiceError {
             description: format!("prost encode error: {}", err),
+        }
+    }
+}
+
+impl From<prost::DecodeError> for StorageError {
+    fn from(err: prost::DecodeError) -> Self {
+        StorageError::ServiceError {
+            description: format!("prost decode error: {}", err),
+        }
+    }
+}
+
+impl<E: std::fmt::Display> From<atomicwrites::Error<E>> for StorageError {
+    fn from(err: atomicwrites::Error<E>) -> Self {
+        StorageError::ServiceError {
+            description: format!("Failed to write file: {}", err),
         }
     }
 }

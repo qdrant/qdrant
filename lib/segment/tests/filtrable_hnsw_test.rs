@@ -14,6 +14,7 @@ mod tests {
         PayloadIndexType, PayloadSchemaType, Range, SearchParams, SegmentConfig, SeqNumberType,
         StorageType,
     };
+    use segment::vector_storage::storage_points_iterator::StoragePointsIterator;
     use serde_json::json;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
@@ -54,7 +55,7 @@ mod tests {
             let vector = random_vector(&mut rnd, dim);
 
             let payload: Payload =
-                json!({int_key:random_int_payload(&mut rnd, num_payload_values),}).into();
+                json!({int_key:random_int_payload(&mut rnd, num_payload_values..=num_payload_values),}).into();
 
             segment
                 .upsert_point(n as SeqNumberType, idx, &vector)
@@ -66,8 +67,9 @@ mod tests {
         // let opnum = num_vectors + 1;
 
         let payload_index = StructPayloadIndex::open(
-            segment.condition_checker.clone(),
-            segment.vector_storage.clone(),
+            Arc::new(AtomicRefCell::new(StoragePointsIterator(
+                segment.vector_storage.clone(),
+            ))),
             segment.payload_storage.clone(),
             segment.id_tracker.clone(),
             payload_index_dir.path(),

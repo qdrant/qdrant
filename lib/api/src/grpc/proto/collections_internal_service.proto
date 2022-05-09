@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+import "collections.proto";
+
+package qdrant;
+
+service CollectionsInternal {
+  rpc Get (GetCollectionInfoRequestInternal) returns (GetCollectionInfoResponse) {}
+}
+
+message GetCollectionInfoRequestInternal {
+  GetCollectionInfoRequest get_collectionInfoRequest = 1;
+  uint32 shard_id = 2;
+}

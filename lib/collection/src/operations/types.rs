@@ -18,12 +18,15 @@ use segment::types::{
 
 use crate::{config::CollectionConfig, wal::WalError};
 use std::collections::HashMap;
+use tonic::codegen::http::uri::InvalidUri;
 
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
 
 /// Current state of the collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionStatus {
     /// Collection if completely ready for requests
@@ -36,7 +39,7 @@ pub enum CollectionStatus {
 }
 
 /// Current state of the collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum OptimizersStatus {
     /// Optimizers are reporting as expected
@@ -208,6 +211,8 @@ pub enum CollectionError {
     BadRequest { description: String },
     #[error("Operation Cancelled: {description}")]
     Cancelled { description: String },
+    #[error("Bad shard selection: {description}")]
+    BadShardSelection { description: String },
     #[error(
     "{shards_failed} out of {shards_total} shards failed to apply operation. First error captured: {first_err}"
     )]
@@ -221,6 +226,10 @@ pub enum CollectionError {
 impl CollectionError {
     pub fn service_error(error: String) -> CollectionError {
         CollectionError::ServiceError { error }
+    }
+
+    pub fn bad_shard_selection(description: String) -> CollectionError {
+        CollectionError::BadShardSelection { description }
     }
 }
 
@@ -289,6 +298,49 @@ impl From<io::Error> for CollectionError {
     fn from(err: io::Error) -> Self {
         CollectionError::ServiceError {
             error: format!("File IO error: {}", err),
+        }
+    }
+}
+
+impl From<tonic::transport::Error> for CollectionError {
+    fn from(err: tonic::transport::Error) -> Self {
+        CollectionError::ServiceError {
+            error: format!("Tonic transport error: {}", err),
+        }
+    }
+}
+
+impl From<InvalidUri> for CollectionError {
+    fn from(err: InvalidUri) -> Self {
+        CollectionError::ServiceError {
+            error: format!("Invalid URI error: {}", err),
+        }
+    }
+}
+
+impl From<tonic::Status> for CollectionError {
+    fn from(err: tonic::Status) -> Self {
+        match err.code() {
+            tonic::Code::InvalidArgument => CollectionError::BadInput {
+                description: "InvalidArgument".to_string(),
+            },
+            tonic::Code::NotFound => CollectionError::BadRequest {
+                description: "NotFound".to_string(),
+            },
+            tonic::Code::Internal => CollectionError::ServiceError {
+                error: "Internal error".to_string(),
+            },
+            other => CollectionError::ServiceError {
+                error: format!("Tonic status error: {}", other),
+            },
+        }
+    }
+}
+
+impl<Guard> From<std::sync::PoisonError<Guard>> for CollectionError {
+    fn from(err: std::sync::PoisonError<Guard>) -> Self {
+        CollectionError::ServiceError {
+            error: format!("Mutex lock poisoned: {}", err),
         }
     }
 }

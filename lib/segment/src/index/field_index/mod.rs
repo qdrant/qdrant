@@ -2,13 +2,15 @@ use crate::types::{FieldCondition, IsEmptyCondition, PointOffsetType};
 use std::collections::HashSet;
 
 mod field_index_base;
-#[allow(dead_code)]
 pub mod geo_hash;
 mod geo_index;
 pub mod index_selector;
 pub mod map_index;
 pub mod numeric_index;
 mod stat_tools;
+
+#[allow(dead_code)]
+mod histogram;
 
 pub use field_index_base::*;
 
@@ -26,7 +28,7 @@ pub struct PayloadBlockCondition {
     pub cardinality: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CardinalityEstimation {
     /// Conditions that could be used to mane a primary point selection.
     pub primary_clauses: Vec<PrimaryCondition>,

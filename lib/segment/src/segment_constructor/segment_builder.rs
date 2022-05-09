@@ -3,6 +3,7 @@ use profiler_proc_macro::trace;
 
 use crate::common::error_logging::LogError;
 use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
+use crate::payload_storage::PayloadStorage;
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{PayloadKeyType, PayloadSchemaType, SegmentConfig};

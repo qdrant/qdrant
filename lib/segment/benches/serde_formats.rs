@@ -54,7 +54,7 @@ fn serde_formats_bench(c: &mut Criterion) {
     group.bench_function("serde-deserialize-rmp", |b| {
         b.iter(|| {
             for bytes in &rmp_bytes {
-                let _payload: Payload = rmp_serde::from_read_ref(bytes).unwrap();
+                let _payload: Payload = rmp_serde::from_slice(bytes).unwrap();
             }
         });
     });

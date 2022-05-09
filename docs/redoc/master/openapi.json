@@ -692,7 +692,7 @@
             "type": "array"
           },
           "should": {
-            "description": "At least one of thous conditions should match",
+            "description": "At least one of those conditions should match",
             "items": {
               "$ref": "#/components/schemas/Condition"
             },

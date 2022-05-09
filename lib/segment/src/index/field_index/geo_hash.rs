@@ -98,7 +98,8 @@ pub fn geo_hash_to_box(geo_hash: &GeoHash) -> GeoBoundingBox {
 struct GeohashBoundingBox {
     north_west: GeoHash,
     south_west: GeoHash,
-    south_east: GeoHash,
+    #[allow(dead_code)]
+    south_east: GeoHash, // field is not involved in the calculations, but is kept for symmetry
     north_east: GeoHash,
 }
 
@@ -278,13 +279,6 @@ fn minimum_bounding_rectangle_for_circle(circle: &GeoRadius) -> GeoBoundingBox {
         top_left,
         bottom_right,
     }
-}
-
-pub fn decompose_geo_hash(geo_hash: &GeoHash) -> impl Iterator<Item = &str> {
-    geo_hash
-        .chars()
-        .enumerate()
-        .map(|(i, _)| &geo_hash[..i + 1])
 }
 
 #[cfg(test)]
@@ -611,27 +605,6 @@ mod tests {
         assert_eq!(dist, 90.45422731917998);
         let dist = Point::new(0.99, 90.).haversine_distance(&Point::new(0.99, -90.0));
         assert_eq!(dist, 20015114.442035925);
-    }
-
-    #[test]
-    fn decompose_geo_hashes() {
-        let geo_hash = "dr5ruj4477kd".to_string();
-        let geo_hashes: Vec<_> = decompose_geo_hash(&geo_hash).collect();
-        let expected = vec![
-            "d",
-            "dr",
-            "dr5",
-            "dr5r",
-            "dr5ru",
-            "dr5ruj",
-            "dr5ruj4",
-            "dr5ruj44",
-            "dr5ruj447",
-            "dr5ruj4477",
-            "dr5ruj4477k",
-            "dr5ruj4477kd",
-        ];
-        assert_eq!(geo_hashes, expected)
     }
 
     #[test]

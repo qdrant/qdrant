@@ -81,7 +81,7 @@ def test_points_retrieve():
         body={"offset": 2, "limit": 2, "with_vector": True}
     )
     assert response.ok
-    assert len(response.json()['result']) == 2
+    assert len(response.json()['result']['points']) == 2
 
 
 def test_exclude_payload():
@@ -156,3 +156,49 @@ def test_recommendation():
     assert len(response.json()['result']) == 3
     assert response.json()['result'][0]['payload'] is not None
     assert response.ok
+
+def test_query_nested():
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 8,
+                    "vector": [0.15, 0.31, 0.76, 0.74],
+                    "payload": {
+                        "database_id": {
+                            "type": "keyword",
+                            "value": "8594ff5d-265f-4785-a9f5-b3b4b9665506"
+                        }
+                    }
+                }
+            ]
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "offset": None,
+            "limit": 10,
+            "with_vector": True,
+            "filter": {
+                "must": [
+                    {
+                        "key": "database_id.value",
+                        "match": {
+                            "value": "8594ff5d-265f-4785-a9f5-b3b4b9665506"
+                        }
+                    }
+                ]
+            }
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']['points']) == 1

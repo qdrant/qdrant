@@ -3,39 +3,43 @@ use profiler_proc_macro::trace;
 
 use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, remove_file, File};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
+
 use std::sync::Arc;
 
+use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
 use log::debug;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::id_tracker::points_iterator::PointsIteratorSS;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
+use crate::index::query_optimization::optimizer::IndexesMap;
+use crate::index::query_optimization::payload_provider::PayloadProvider;
+use crate::index::struct_filter_context::StructFilterContext;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
-use crate::payload_storage::{ConditionCheckerSS, FilterContext, PayloadStorageSS};
+use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+use crate::payload_storage::{FilterContext, PayloadStorage};
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType, PayloadKeyTypeRef,
     PayloadSchemaType, PointOffsetType,
 };
-use crate::vector_storage::VectorStorageSS;
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 
-type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
-
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
 pub struct StructPayloadIndex {
-    condition_checker: Arc<ConditionCheckerSS>,
-    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
+    points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
     /// Payload storage
-    payload: Arc<AtomicRefCell<PayloadStorageSS>>,
+    payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     /// Indexes, associated with fields
     field_indexes: IndexesMap,
@@ -163,9 +167,8 @@ impl StructPayloadIndex {
 
     #[trace]
     pub fn open(
-        condition_checker: Arc<ConditionCheckerSS>,
-        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
-        payload: Arc<AtomicRefCell<PayloadStorageSS>>,
+        points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
+        payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         path: &Path,
     ) -> OperationResult<Self> {
@@ -178,8 +181,7 @@ impl StructPayloadIndex {
         };
 
         let mut index = StructPayloadIndex {
-            condition_checker,
-            vector_storage,
+            points_iterator,
             payload,
             id_tracker,
             field_indexes: Default::default(),
@@ -241,55 +243,27 @@ impl StructPayloadIndex {
 
     #[trace]
     pub fn total_points(&self) -> usize {
-        self.vector_storage.borrow().vector_count()
-    }
-}
-
-impl PayloadIndex for StructPayloadIndex {
-    #[trace]
-    fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType> {
-        self.config.indexed_fields.clone()
+        self.points_iterator.borrow().points_count()
     }
 
     #[trace]
-    fn set_indexed(
-        &mut self,
-        field: PayloadKeyTypeRef,
-        payload_type: PayloadSchemaType,
-    ) -> OperationResult<()> {
-        if self
-            .config
-            .indexed_fields
-            .insert(field.to_owned(), payload_type)
-            .is_none()
-        {
-            self.save_config()?;
-            self.build_and_save(field, payload_type)?;
-        }
-
-        Ok(())
+    fn struct_filtered_context<'a>(&'a self, filter: &'a Filter) -> StructFilterContext<'a> {
+        let estimator = |condition: &Condition| self.condition_cardinality(condition);
+        let id_tracker = self.id_tracker.borrow();
+        let payload_provider = PayloadProvider::new(self.payload.clone());
+        StructFilterContext::new(
+            filter,
+            id_tracker.deref(),
+            payload_provider,
+            &self.field_indexes,
+            &estimator,
+            self.total_points(),
+        )
     }
 
     #[trace]
-    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        self.config.indexed_fields.remove(field);
-        self.save_config()?;
-        self.field_indexes.remove(field);
-
-        let field_index_path = Self::get_field_index_path(&self.path, field);
-
-        if field_index_path.exists() {
-            remove_file(&field_index_path)?;
-        }
-
-        Ok(())
-    }
-
-    #[trace]
-    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
-        let total_points = self.total_points();
-
-        let estimator = |condition: &Condition| match condition {
+    fn condition_cardinality(&self, condition: &Condition) -> CardinalityEstimation {
+        match condition {
             Condition::Filter(_) => panic!("Unexpected branching"),
             Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
                 let total_points = self.total_points();
@@ -336,7 +310,51 @@ impl PayloadIndex for StructPayloadIndex {
             Condition::Field(field_condition) => self
                 .estimate_field_condition(field_condition)
                 .unwrap_or_else(|| CardinalityEstimation::unknown(self.total_points())),
-        };
+        }
+    }
+}
+
+impl PayloadIndex for StructPayloadIndex {
+    fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadSchemaType> {
+        self.config.indexed_fields.clone()
+    }
+
+    fn set_indexed(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        payload_type: PayloadSchemaType,
+    ) -> OperationResult<()> {
+        if self
+            .config
+            .indexed_fields
+            .insert(field.to_owned(), payload_type)
+            .is_none()
+        {
+            self.save_config()?;
+            self.build_and_save(field, payload_type)?;
+        }
+
+        Ok(())
+    }
+
+    fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
+        self.config.indexed_fields.remove(field);
+        self.save_config()?;
+        self.field_indexes.remove(field);
+
+        let field_index_path = Self::get_field_index_path(&self.path, field);
+
+        if field_index_path.exists() {
+            remove_file(&field_index_path)?;
+        }
+
+        Ok(())
+    }
+
+    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
+        let total_points = self.total_points();
+
+        let estimator = |condition: &Condition| self.condition_cardinality(condition);
 
         estimate_filter(&estimator, query, total_points)
     }
@@ -347,23 +365,27 @@ impl PayloadIndex for StructPayloadIndex {
         query: &'a Filter,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
-        let vector_storage_ref = self.vector_storage.borrow();
 
         let query_cardinality = self.estimate_cardinality(query);
         return if query_cardinality.primary_clauses.is_empty() {
-            let full_scan_iterator = vector_storage_ref.iter_ids();
-            // Worst case: query expected to return few matches, but index can't be used
-            let matched_points = full_scan_iterator
-                .filter(|i| self.condition_checker.check(*i, query))
-                .collect_vec();
+            let full_scan_iterator =
+                ArcAtomicRefCellIterator::new(self.points_iterator.clone(), |points_iterator| {
+                    points_iterator.iter_ids()
+                });
 
-            Box::new(matched_points.into_iter())
+            let struct_filtered_context = self.struct_filtered_context(query);
+            // Worst case: query expected to return few matches, but index can't be used
+            let matched_points =
+                full_scan_iterator.filter(move |i| struct_filtered_context.check(*i));
+
+            Box::new(matched_points)
         } else {
+            let points_iterator_ref = self.points_iterator.borrow();
+            let struct_filtered_context = self.struct_filtered_context(query);
+
             // CPU-optimized strategy here: points are made unique before applying other filters.
             // ToDo: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
-            let mut visited_list = self
-                .visited_pool
-                .get(vector_storage_ref.total_vector_count());
+            let mut visited_list = self.visited_pool.get(points_iterator_ref.max_id() as usize);
 
             #[allow(clippy::needless_collect)]
                 let preselected: Vec<PointOffsetType> = query_cardinality
@@ -373,15 +395,15 @@ impl PayloadIndex for StructPayloadIndex {
                     match clause {
                         PrimaryCondition::Condition(field_condition) => {
                             self.query_field(field_condition).unwrap_or_else(
-                                || vector_storage_ref.iter_ids(), /* index is not built */
+                                || points_iterator_ref.iter_ids(), /* index is not built */
                             )
                         }
                         PrimaryCondition::Ids(ids) => Box::new(ids.iter().copied()),
-                        PrimaryCondition::IsEmpty(_) => vector_storage_ref.iter_ids() /* there are no fast index for IsEmpty */
+                        PrimaryCondition::IsEmpty(_) => points_iterator_ref.iter_ids() /* there are no fast index for IsEmpty */
                     }
                 })
                 .filter(|&id| !visited_list.check_and_update_visited(id))
-                .filter(move |&i| self.condition_checker.check(i, query))
+                .filter(move |&i| struct_filtered_context.check(i))
                 .collect();
 
             self.visited_pool.return_back(visited_list);
@@ -393,10 +415,7 @@ impl PayloadIndex for StructPayloadIndex {
 
     #[trace]
     fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
-        Box::new(StructFilterContext {
-            filter,
-            condition_checker: self.condition_checker.clone(),
-        })
+        Box::new(self.struct_filtered_context(filter))
     }
 
     #[trace]
@@ -414,16 +433,5 @@ impl PayloadIndex for StructPayloadIndex {
                 }))
             }
         }
-    }
-}
-
-pub struct StructFilterContext<'a> {
-    condition_checker: Arc<ConditionCheckerSS>,
-    filter: &'a Filter,
-}
-
-impl<'a> FilterContext for StructFilterContext<'a> {
-    fn check(&self, point_id: PointOffsetType) -> bool {
-        self.condition_checker.check(point_id, self.filter)
     }
 }

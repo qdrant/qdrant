@@ -15,7 +15,7 @@ async fn do_recommend_points(
     collection_name: &str,
     request: RecommendRequest,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
-    toc.recommend(collection_name, request).await
+    toc.recommend(collection_name, request, None).await
 }
 
 #[post("/collections/{name}/points/recommend")]
