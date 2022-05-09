@@ -45,13 +45,13 @@ use std::fs::{read_dir, remove_dir_all};
 ///
 /// Holds all object, required for collection functioning
 pub struct LocalShard {
-    segments: Arc<RwLock<SegmentHolder>>,
+    pub segments: Arc<RwLock<SegmentHolder>>,
     config: Arc<TokioRwLock<CollectionConfig>>,
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
     update_handler: Arc<Mutex<UpdateHandler>>,
     runtime_handle: Option<Runtime>,
     update_sender: ArcSwap<UnboundedSender<UpdateSignal>>,
-    path: PathBuf,
+    pub path: PathBuf,
     before_drop_called: bool,
 }
 

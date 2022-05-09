@@ -13,8 +13,10 @@ use log::info;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::thread;
+use std::thread::sleep;
 use std::time::Duration;
 use tokio::runtime::Runtime;
+use collection::config::CollectionParams;
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
@@ -53,6 +55,41 @@ fn main() -> std::io::Result<()> {
             let mut collection =
                 rt.block_on(Collection::load(collection_name.clone(), &collection_path));
             rt.block_on(collection.before_drop());
+
+            let shard = collection.shard_by_id(0);
+
+            match shard {
+                Shard::Local(local_shard) => {
+                    let segments_path = local_shard.path.join("segments");
+                    let temp_segments_path = local_shard.path.join("temp_segments");
+
+                    let optimizer = VacuumOptimizer::new(
+                        0.1,
+                        1,
+                        OptimizerThresholds {
+                            memmap_threshold: 10000000,
+                            indexing_threshold: 1000,
+                            payload_indexing_threshold: 10000000
+                        },
+                        segments_path,
+                        temp_segments_path,
+                        collection.config.params.clone(),
+                        collection.config.hnsw_config.clone()
+                    );
+
+                    sleep(Duration::from_secs(10));
+
+                    let (&sid, _) = local_shard.segments.read().iter().next().unwrap();
+                    optimizer.optimize(local_shard.segments.clone(), vec![sid], &AtomicBool::new(false));
+
+                    let (&sid, _) = local_shard.segments.read().iter().next().unwrap();
+                    optimizer.optimize(local_shard.segments.clone(), vec![sid], &AtomicBool::new(false));
+
+                    sleep(Duration::from_secs(10));
+                }
+                Shard::Remote(_) => {}
+            }
+
         }
     }
 

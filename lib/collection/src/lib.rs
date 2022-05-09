@@ -105,7 +105,7 @@ impl State {
 pub struct Collection {
     shards: HashMap<ShardId, Shard>,
     ring: HashRing<ShardId>,
-    config: CollectionConfig,
+    pub config: CollectionConfig,
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
 }
@@ -196,7 +196,7 @@ impl Collection {
         Ok(())
     }
 
-    fn shard_by_id(&self, id: ShardId) -> &Shard {
+    pub fn shard_by_id(&self, id: ShardId) -> &Shard {
         self.shards
             .get(&id)
             .expect("Shard is guaranteed to be added when id is added to the ring.")
@@ -229,7 +229,7 @@ impl Collection {
         }
     }
 
-    fn all_shards(&self) -> impl Iterator<Item = &Shard> {
+    pub fn all_shards(&self) -> impl Iterator<Item = &Shard> {
         self.shards.values()
     }
 
