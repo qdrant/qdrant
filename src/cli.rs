@@ -6,6 +6,7 @@ use collection::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use collection::collection_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
+use collection::config::CollectionParams;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shard::Shard;
 use collection::Collection;
@@ -16,7 +17,6 @@ use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
 use tokio::runtime::Runtime;
-use collection::config::CollectionParams;
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
@@ -69,27 +69,34 @@ fn main() -> std::io::Result<()> {
                         OptimizerThresholds {
                             memmap_threshold: 10000000,
                             indexing_threshold: 1000,
-                            payload_indexing_threshold: 10000000
+                            payload_indexing_threshold: 10000000,
                         },
                         segments_path,
                         temp_segments_path,
                         collection.config.params.clone(),
-                        collection.config.hnsw_config.clone()
+                        collection.config.hnsw_config.clone(),
                     );
 
                     sleep(Duration::from_secs(10));
 
                     let (&sid, _) = local_shard.segments.read().iter().next().unwrap();
-                    optimizer.optimize(local_shard.segments.clone(), vec![sid], &AtomicBool::new(false));
+                    optimizer.optimize(
+                        local_shard.segments.clone(),
+                        vec![sid],
+                        &AtomicBool::new(false),
+                    );
 
                     let (&sid, _) = local_shard.segments.read().iter().next().unwrap();
-                    optimizer.optimize(local_shard.segments.clone(), vec![sid], &AtomicBool::new(false));
+                    optimizer.optimize(
+                        local_shard.segments.clone(),
+                        vec![sid],
+                        &AtomicBool::new(false),
+                    );
 
                     sleep(Duration::from_secs(10));
                 }
                 Shard::Remote(_) => {}
             }
-
         }
     }
 
