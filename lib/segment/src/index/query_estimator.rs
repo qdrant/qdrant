@@ -150,7 +150,6 @@ where
     combine_must_estimations(&must_estimations, total)
 }
 
-#[trace]
 pub fn invert_estimation(
     estimation: &CardinalityEstimation,
     total: usize,

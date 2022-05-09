@@ -50,12 +50,14 @@ pub const FLT_KEY: &str = "flt";
 pub const FLICKING_KEY: &str = "flicking";
 pub const GEO_KEY: &str = "geo";
 
+#[trace]
 pub fn random_keyword<R: Rng + ?Sized>(rnd_gen: &mut R) -> String {
     let random_adj = ADJECTIVE.choose(rnd_gen).unwrap();
     let random_noun = NOUN.choose(rnd_gen).unwrap();
     format!("{} {}", random_adj, random_noun)
 }
 
+#[trace]
 pub fn random_keyword_payload<R: Rng + ?Sized>(
     rnd_gen: &mut R,
     num_values: RangeInclusive<usize>,
@@ -100,6 +102,7 @@ pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<Vecto
     (0..size).map(|_| rnd_gen.gen()).collect()
 }
 
+#[trace]
 pub fn random_uncommon_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition {
     let switch = rnd_gen.gen_range(0..=3);
     match switch {
