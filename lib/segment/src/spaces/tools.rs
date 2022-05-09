@@ -1,6 +1,3 @@
-use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
-use crate::types::Distance;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::binary_heap::Iter as BinaryHeapIter;
@@ -113,7 +110,24 @@ impl<T: Ord> IntoIterator for FixedLengthPriorityQueue<T> {
     }
 }
 
-pub fn peek_top_scores_iterable<I, E: Ord>(scores: I, top: usize) -> Vec<E>
+pub fn peek_top_smallest_scores_iterable<I, E: Ord>(scores: I, top: usize) -> Vec<E>
+where
+    I: IntoIterator<Item = E>,
+{
+    if top == 0 {
+        return scores.into_iter().collect();
+    }
+
+    // If small values is better - PQ should pop-out big values first.
+    // Hence is should be min-heap
+    let mut pq = FixedLengthPriorityQueue::new(top);
+    for score_point in scores {
+        pq.push(Reverse(score_point));
+    }
+    pq.into_vec().into_iter().map(|Reverse(x)| x).collect()
+}
+
+pub fn peek_top_largest_scores_iterable<I, E: Ord>(scores: I, top: usize) -> Vec<E>
 where
     I: IntoIterator<Item = E>,
 {
@@ -131,15 +145,7 @@ where
 }
 
 pub fn peek_top_scores<E: Ord + Clone>(scores: &[E], top: usize) -> Vec<E> {
-    peek_top_scores_iterable(scores.iter().cloned(), top)
-}
-
-pub fn mertic_object(distance: &Distance) -> Box<dyn Metric> {
-    match distance {
-        Distance::Cosine => Box::new(CosineMetric {}),
-        Distance::Euclid => Box::new(EuclidMetric {}),
-        Distance::Dot => Box::new(DotProductMetric {}),
-    }
+    peek_top_largest_scores_iterable(scores.iter().cloned(), top)
 }
 
 #[cfg(test)]
@@ -151,5 +157,12 @@ mod tests {
         let data = vec![10, 20, 40, 5, 100, 33, 84, 65, 20, 43, 44, 42];
         let res = peek_top_scores(&data, 3);
         assert_eq!(res, vec![100, 84, 65]);
+    }
+
+    #[test]
+    fn test_peek_top_rev() {
+        let data = vec![10, 20, 40, 5, 100, 33, 84, 65, 20, 43, 44, 42];
+        let res = peek_top_smallest_scores_iterable(data.into_iter(), 3);
+        assert_eq!(res, vec![5, 10, 20]);
     }
 }

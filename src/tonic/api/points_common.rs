@@ -282,6 +282,7 @@ pub async fn search(
         with_vector,
         with_payload,
         params,
+        score_threshold,
     } = search_points;
 
     let search_request = SearchRequest {
@@ -291,6 +292,7 @@ pub async fn search(
         top: top as usize,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
         with_vector: with_vector.unwrap_or(false),
+        score_threshold,
     };
 
     let timing = Instant::now();
@@ -323,6 +325,7 @@ pub async fn recommend(
         with_vector,
         with_payload,
         params,
+        score_threshold,
     } = recommend_points;
 
     let request = collection::operations::types::RecommendRequest {
@@ -339,6 +342,7 @@ pub async fn recommend(
         top: top as usize,
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
         with_vector: with_vector.unwrap_or(false),
+        score_threshold,
     };
 
     let timing = Instant::now();

@@ -6,7 +6,6 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::{PayloadIndexSS, VectorIndexSS};
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{ConditionCheckerSS, PayloadStorage};
-use crate::spaces::tools::mertic_object;
 use crate::types::{
     infer_value_type, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
     PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig,
@@ -330,9 +329,10 @@ impl SegmentEntry for Segment {
                 });
             }
 
-            let metric = mertic_object(&segment.segment_config.distance);
-            let processed_vector = metric
-                .preprocess(vector)
+            let processed_vector = segment
+                .segment_config
+                .distance
+                .preprocess_vector(vector)
                 .unwrap_or_else(|| vector.to_owned());
 
             let stored_internal_point = segment.id_tracker.borrow().internal_id(point_id);

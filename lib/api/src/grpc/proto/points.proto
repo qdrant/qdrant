@@ -113,6 +113,7 @@ message SearchPoints {
   optional bool with_vector = 5; // Return point vector with the result.
   WithPayloadSelector with_payload = 6; // Options for specifying which payload to include or not
   SearchParams params = 7; // Search config
+  optional float score_threshold = 8; // If provided - cut off results with worse scores
 }
 
 message ScrollPoints {
@@ -133,6 +134,7 @@ message RecommendPoints {
   optional bool with_vector = 6; // Return point vector with the result.
   WithPayloadSelector with_payload = 7; // Options for specifying which payload to include or not
   SearchParams params = 8; // Search config
+  optional float score_threshold = 9; // If provided - cut off results with worse scores
 }
 
 // ---------------------------------------------

@@ -1,3 +1,5 @@
+use crate::spaces::metric::Metric;
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use geo::prelude::HaversineDistance;
 use geo::Point;
 use itertools::Itertools;
@@ -102,6 +104,40 @@ impl Distance {
             Distance::Dot => 3,
         }
     }
+
+    pub fn preprocess_vector(
+        &self,
+        vector: &[VectorElementType],
+    ) -> Option<Vec<VectorElementType>> {
+        match self {
+            Distance::Cosine => CosineMetric::preprocess(vector),
+            Distance::Euclid => EuclidMetric::preprocess(vector),
+            Distance::Dot => DotProductMetric::preprocess(vector),
+        }
+    }
+
+    pub fn postprocess_score(&self, score: ScoreType) -> ScoreType {
+        match self {
+            Distance::Cosine => CosineMetric::postprocess(score),
+            Distance::Euclid => EuclidMetric::postprocess(score),
+            Distance::Dot => DotProductMetric::postprocess(score),
+        }
+    }
+
+    pub fn distance_order(&self) -> Order {
+        match self {
+            Distance::Cosine | Distance::Dot => Order::LargeBetter,
+            Distance::Euclid => Order::SmallBetter,
+        }
+    }
+
+    /// Checks if score satisfies threshold condition
+    pub fn check_threshold(&self, score: ScoreType, threshold: ScoreType) -> bool {
+        match self.distance_order() {
+            Order::LargeBetter => score > threshold,
+            Order::SmallBetter => score < threshold,
+        }
+    }
 }
 
 pub enum Order {
@@ -183,14 +219,6 @@ pub struct SearchParams {
     /// Params relevant to HNSW index
     /// /// Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.
     pub hnsw_ef: Option<usize>,
-}
-
-/// This function only stores mapping between distance and preferred result order
-pub fn distance_order(distance: &Distance) -> Order {
-    match distance {
-        Distance::Cosine | Distance::Dot => Order::LargeBetter,
-        Distance::Euclid => Order::SmallBetter,
-    }
 }
 
 /// Vector index configuration of the segment

@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::ops::Range;
 use std::path::Path;
 
@@ -6,7 +7,7 @@ use rocksdb::{IteratorMode, Options, DB};
 use serde::{Deserialize, Serialize};
 
 use crate::entry::entry_point::OperationResult;
-use crate::spaces::tools::peek_top_scores_iterable;
+use crate::spaces::tools::peek_top_largest_scores_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageSS};
 
@@ -24,7 +25,7 @@ const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 /// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleVectorStorage<TMetric: Metric> {
     dim: usize,
-    metric: TMetric,
+    metric: PhantomData<TMetric>,
     vectors: ChunkedVectors,
     deleted: BitVec,
     deleted_count: usize,
@@ -39,9 +40,9 @@ struct StoredRecord {
 
 pub struct SimpleRawScorer<'a, TMetric: Metric> {
     pub query: Vec<VectorElementType>,
-    pub metric: &'a TMetric,
     pub vectors: &'a ChunkedVectors,
     pub deleted: &'a BitVec,
+    pub metric: PhantomData<TMetric>,
 }
 
 impl<TMetric> RawScorer for SimpleRawScorer<'_, TMetric>
@@ -57,7 +58,7 @@ where
             let other_vector = self.vectors.get(point_id);
             scores[size] = ScoredPointOffset {
                 idx: point_id,
-                score: self.metric.similarity(&self.query, other_vector),
+                score: TMetric::similarity(&self.query, other_vector),
             };
 
             size += 1;
@@ -74,13 +75,13 @@ where
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
         let other_vector = self.vectors.get(point);
-        self.metric.similarity(&self.query, other_vector)
+        TMetric::similarity(&self.query, other_vector)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let vector_a = self.vectors.get(point_a);
         let vector_b = self.vectors.get(point_b);
-        self.metric.similarity(vector_a, vector_b)
+        TMetric::similarity(vector_a, vector_b)
     }
 }
 
@@ -121,25 +122,31 @@ pub fn open_simple_vector_storage(
     );
 
     match distance {
-        Distance::Cosine => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage {
+        Distance::Cosine => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
+            CosineMetric,
+        > {
             dim,
-            metric: CosineMetric {},
+            metric: PhantomData,
             vectors,
             deleted,
             deleted_count,
             store,
         }))),
-        Distance::Euclid => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage {
+        Distance::Euclid => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
+            EuclidMetric,
+        > {
             dim,
-            metric: EuclidMetric {},
+            metric: PhantomData,
             vectors,
             deleted,
             deleted_count,
             store,
         }))),
-        Distance::Dot => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage {
+        Distance::Dot => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
+            DotProductMetric,
+        > {
             dim,
-            metric: DotProductMetric {},
+            metric: PhantomData,
             vectors,
             deleted,
             deleted_count,
@@ -253,20 +260,20 @@ where
     }
 
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
-        Box::new(SimpleRawScorer {
-            query: self.metric.preprocess(&vector).unwrap_or(vector),
-            metric: &self.metric,
+        Box::new(SimpleRawScorer::<TMetric> {
+            query: TMetric::preprocess(&vector).unwrap_or(vector),
             vectors: &self.vectors,
             deleted: &self.deleted,
+            metric: PhantomData,
         })
     }
 
     fn raw_scorer_internal(&self, point_id: PointOffsetType) -> Box<dyn RawScorer + '_> {
-        Box::new(SimpleRawScorer {
+        Box::new(SimpleRawScorer::<TMetric> {
             query: self.vectors.get(point_id).to_vec(),
-            metric: &self.metric,
             vectors: &self.vectors,
             deleted: &self.deleted,
+            metric: PhantomData,
         })
     }
 
@@ -276,27 +283,21 @@ where
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector = self
-            .metric
-            .preprocess(vector)
-            .unwrap_or_else(|| vector.to_owned());
+        let preprocessed_vector = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
         let scores = points
             .filter(|point_id| !self.deleted[*point_id as usize])
             .map(|point_id| {
                 let other_vector = self.vectors.get(point_id);
                 ScoredPointOffset {
                     idx: point_id,
-                    score: self.metric.similarity(&preprocessed_vector, other_vector),
+                    score: TMetric::similarity(&preprocessed_vector, other_vector),
                 }
             });
-        peek_top_scores_iterable(scores, top)
+        peek_top_largest_scores_iterable(scores, top)
     }
 
     fn score_all(&self, vector: &[VectorElementType], top: usize) -> Vec<ScoredPointOffset> {
-        let preprocessed_vector = self
-            .metric
-            .preprocess(vector)
-            .unwrap_or_else(|| vector.to_owned());
+        let preprocessed_vector = TMetric::preprocess(vector).unwrap_or_else(|| vector.to_owned());
 
         let scores = (0..self.vectors.len())
             .filter(|point_id| !self.deleted[*point_id])
@@ -305,10 +306,10 @@ where
                 let other_vector = &self.vectors.get(point_id);
                 ScoredPointOffset {
                     idx: point_id,
-                    score: self.metric.similarity(&preprocessed_vector, other_vector),
+                    score: TMetric::similarity(&preprocessed_vector, other_vector),
                 }
             });
-        peek_top_scores_iterable(scores, top)
+        peek_top_largest_scores_iterable(scores, top)
     }
 
     fn score_internal(

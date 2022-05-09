@@ -1,7 +1,7 @@
 import pytest
 
-from openapi_integration.helpers.helpers import request_with_validation
-from openapi_integration.helpers.collection_setup import basic_collection_setup, drop_collection
+from .helpers.helpers import request_with_validation
+from .helpers.collection_setup import basic_collection_setup, drop_collection
 
 collection_name = 'test_collection_delete'
 

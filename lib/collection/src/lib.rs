@@ -27,8 +27,10 @@ use operations::{
     CollectionUpdateOperations, SplitByShard, Validate,
 };
 use optimizers_builder::OptimizersConfig;
+use segment::spaces::tools::peek_top_smallest_scores_iterable;
+use segment::types::Order;
 use segment::{
-    spaces::tools::peek_top_scores_iterable,
+    spaces::tools::peek_top_largest_scores_iterable,
     types::{
         Condition, ExtendedPointId, Filter, HasIdCondition, ScoredPoint, VectorElementType,
         WithPayload, WithPayloadInterface,
@@ -373,6 +375,7 @@ impl Collection {
             with_vector: request.with_vector,
             params: request.params,
             top: request.top,
+            score_threshold: request.score_threshold,
         };
 
         self.search(
@@ -397,11 +400,15 @@ impl Collection {
             .iter()
             .map(|shard| shard.search(request.clone(), segment_searcher, search_runtime_handle));
 
-        let all_search_results = try_join_all(all_searches).await?;
-        Ok(peek_top_scores_iterable(
-            all_search_results.into_iter().flatten(),
-            request.top,
-        ))
+        let all_searches_res = try_join_all(all_searches).await?.into_iter().flatten();
+        let distance = self.config.params.distance;
+
+        let top_result = match distance.distance_order() {
+            Order::LargeBetter => peek_top_largest_scores_iterable(all_searches_res, request.top),
+            Order::SmallBetter => peek_top_smallest_scores_iterable(all_searches_res, request.top),
+        };
+
+        Ok(top_result)
     }
 
     pub async fn scroll_by(

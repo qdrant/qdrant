@@ -591,12 +591,12 @@ mod tests {
 
     const M: usize = 8;
 
-    fn create_graph_layer<R>(
+    fn create_graph_layer<TMetric: Metric, R>(
         num_vectors: usize,
         dim: usize,
         use_heuristic: bool,
         rng: &mut R,
-    ) -> (TestRawScorerProducer<CosineMetric>, GraphLayers)
+    ) -> (TestRawScorerProducer<TMetric>, GraphLayers)
     where
         R: Rng + ?Sized,
     {
@@ -604,7 +604,7 @@ mod tests {
         let ef_construct = 16;
         let entry_points_num = 10;
 
-        let vector_holder = TestRawScorerProducer::new(dim, num_vectors, CosineMetric {}, rng);
+        let vector_holder = TestRawScorerProducer::<TMetric>::new(dim, num_vectors, rng);
 
         let mut graph_layers = GraphLayers::new(
             num_vectors,
@@ -638,7 +638,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         let vector_holder =
-            TestRawScorerProducer::new(dim, num_vectors, DotProductMetric {}, &mut rng);
+            TestRawScorerProducer::<DotProductMetric>::new(dim, num_vectors, &mut rng);
 
         let mut graph_layers =
             GraphLayers::new(num_vectors, m, m * 2, ef_construct, entry_points_num, false);
@@ -685,7 +685,8 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let (vector_holder, graph_layers) = create_graph_layer(num_vectors, dim, false, &mut rng);
+        let (vector_holder, graph_layers) =
+            create_graph_layer::<CosineMetric, _>(num_vectors, dim, false, &mut rng);
 
         let query = random_vector(&mut rng, dim);
 
@@ -710,7 +711,10 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let (vector_holder, graph_layers) = create_graph_layer(num_vectors, dim, false, &mut rng);
+        type M = CosineMetric;
+
+        let (vector_holder, graph_layers) =
+            create_graph_layer::<M, _>(num_vectors, dim, false, &mut rng);
 
         let main_entry = graph_layers
             .entry_points
@@ -735,16 +739,13 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
-        let processed_query = vector_holder
-            .metric
-            .preprocess(&query)
-            .unwrap_or_else(|| query.clone());
+        let processed_query = M::preprocess(&query).unwrap_or_else(|| query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.vectors.len() as PointOffsetType {
             let vec = &vector_holder.vectors.get(idx);
             reference_top.push(ScoredPointOffset {
                 idx,
-                score: vector_holder.metric.similarity(vec, &processed_query),
+                score: M::similarity(vec, &processed_query),
             });
         }
 
@@ -764,7 +765,7 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, CosineMetric {}, &mut rng);
+        let vector_holder = TestRawScorerProducer::<CosineMetric>::new(DIM, NUM_VECTORS, &mut rng);
         let mut graph_layers =
             GraphLayers::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
         let fake_filter_context = FakeFilterContext {};
@@ -801,7 +802,7 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let vector_holder = TestRawScorerProducer::new(DIM, NUM_VECTORS, EuclidMetric {}, &mut rng);
+        let vector_holder = TestRawScorerProducer::<EuclidMetric>::new(DIM, NUM_VECTORS, &mut rng);
 
         let mut candidates: FixedLengthPriorityQueue<ScoredPointOffset> =
             FixedLengthPriorityQueue::new(NUM_VECTORS);
@@ -842,7 +843,8 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let (vector_holder, graph_layers) = create_graph_layer(num_vectors, dim, true, &mut rng);
+        let (vector_holder, graph_layers) =
+            create_graph_layer::<CosineMetric, _>(num_vectors, dim, true, &mut rng);
 
         let graph_json = serde_json::to_string_pretty(&graph_layers).unwrap();
 
