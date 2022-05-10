@@ -6,7 +6,7 @@ use log::debug;
 use rocksdb::{IteratorMode, DB};
 use serde::{Deserialize, Serialize};
 
-use crate::common::rocksdb_operations::{ open_db, db_write_options };
+use crate::common::rocksdb_operations::{db_write_options, open_db};
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::tools::peek_top_largest_scores_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};

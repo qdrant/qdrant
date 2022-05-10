@@ -1,4 +1,4 @@
-use rocksdb::{LogLevel, Options, DB, Error, WriteOptions};
+use rocksdb::{Error, LogLevel, Options, WriteOptions, DB};
 use std::path::Path;
 
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb

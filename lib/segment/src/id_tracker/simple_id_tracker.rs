@@ -1,4 +1,4 @@
-use crate::common::rocksdb_operations::{open_db_with_cf, db_write_options};
+use crate::common::rocksdb_operations::{db_write_options, open_db_with_cf};
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::points_iterator::PointsIterator;
 use crate::id_tracker::IdTracker;

@@ -1,4 +1,4 @@
-use crate::common::rocksdb_operations::{open_db_with_cf,db_write_options};
+use crate::common::rocksdb_operations::{db_write_options, open_db_with_cf};
 use crate::types::{Payload, PointOffsetType};
 use std::collections::HashMap;
 use std::path::Path;
