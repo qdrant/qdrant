@@ -3,9 +3,10 @@ use std::ops::Range;
 use std::path::Path;
 
 use log::debug;
-use rocksdb::{IteratorMode, Options, DB};
+use rocksdb::{IteratorMode, DB};
 use serde::{Deserialize, Serialize};
 
+use crate::common::rocksdb_operations::open_db;
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::tools::peek_top_largest_scores_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
@@ -19,8 +20,6 @@ use atomic_refcell::AtomicRefCell;
 use bit_vec::BitVec;
 use std::mem::size_of;
 use std::sync::Arc;
-
-const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 
 /// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleVectorStorage<TMetric: Metric> {
@@ -94,11 +93,7 @@ pub fn open_simple_vector_storage(
     let mut deleted = BitVec::new();
     let mut deleted_count = 0;
 
-    let mut options: Options = Options::default();
-    options.set_write_buffer_size(DB_CACHE_SIZE);
-    options.create_if_missing(true);
-
-    let store = DB::open(&options, path)?;
+    let store = open_db(path)?;
 
     for (key, val) in store.iterator(IteratorMode::Start) {
         let point_id: PointOffsetType = bincode::deserialize(&key).unwrap();

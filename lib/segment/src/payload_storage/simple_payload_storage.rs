@@ -1,12 +1,12 @@
+use crate::common::rocksdb_operations::open_db_with_cf;
 use crate::types::{Payload, PointOffsetType};
 use std::collections::HashMap;
 use std::path::Path;
 
-use rocksdb::{IteratorMode, Options, DB};
+use rocksdb::{IteratorMode, DB};
 
 use crate::entry::entry_point::OperationResult;
 
-const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 const DB_NAME: &str = "payload";
 
 /// In-memory implementation of `PayloadStorage`.
@@ -18,12 +18,7 @@ pub struct SimplePayloadStorage {
 
 impl SimplePayloadStorage {
     pub fn open(path: &Path) -> OperationResult<Self> {
-        let mut options: Options = Options::default();
-        options.set_write_buffer_size(DB_CACHE_SIZE);
-        options.create_if_missing(true);
-        options.create_missing_column_families(true);
-        let store = DB::open_cf(&options, path, [DB_NAME])?;
-
+        let store = open_db_with_cf(path, &[DB_NAME])?;
         let mut payload_map: HashMap<PointOffsetType, Payload> = Default::default();
 
         let cf_handle = store.cf_handle(DB_NAME).unwrap();
