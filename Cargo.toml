@@ -32,6 +32,7 @@ itertools = "0.10"
 anyhow = "1.0.57"
 futures = "0.3.21"
 clap = { version = "3.1.17", features = ["derive"] }
+serde_cbor = { version = "0.11.2"}
 
 config = "~0.13.1"
 
@@ -43,9 +44,10 @@ num-traits = "0.2.15"
 
 # Consensus related crates
 raft = { version = "=0.6.0", features = ["prost-codec"], default-features = false }
-slog =  { version = "2.7.0" }
-slog-stdlog = { version = "4.1.1" }
-prost = { version = "=0.7.0" }
+slog = "2.7.0"
+slog-stdlog = "4.1.1"
+prost = "=0.7.0"
+raft-proto = { version = "=0.6.0", features = ["prost-codec"], default-features = false}
 
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }

@@ -41,7 +41,10 @@ use collection::collection_manager::simple_collection_searcher::SimpleCollection
 use collection::shard::ShardId;
 use collection::PeerId;
 pub use consensus::TableOfContentRef;
-use raft::eraftpb::{Entry as RaftEntry, Snapshot as RaftSnapshot};
+use raft::{
+    eraftpb::{ConfChangeV2, Entry as RaftEntry, Snapshot as RaftSnapshot},
+    RawNode,
+};
 use tokio::sync::oneshot;
 use tonic::transport::Uri;
 use wal::Wal;
@@ -52,6 +55,7 @@ const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 
 pub struct ConsensusEnabled {
     pub propose_sender: std::sync::mpsc::Sender<Vec<u8>>,
+    pub first_peer: bool,
 }
 
 /// The main object of the service. It holds all objects, required for proper functioning.
@@ -119,9 +123,11 @@ impl TableOfContent {
                 Wal::open(collections_meta_wal_path).unwrap(),
             ))
         };
-
-        let raft_state = PersistentRaftState::load_or_init(&storage_config.storage_path)
-            .expect("Cannot initialize Raft persistent storage");
+        let raft_state = PersistentRaftState::load_or_init(
+            &storage_config.storage_path,
+            consensus_enabled.as_ref().map(|ce| ce.first_peer),
+        )
+        .expect("Cannot initialize Raft persistent storage");
 
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
@@ -565,6 +571,9 @@ impl TableOfContent {
     }
 
     pub fn collection_wal_entry(&self, id: u64) -> raft::Result<RaftEntry> {
+        if id < 1 {
+            return Err(raft::Error::Store(raft::StorageError::Unavailable));
+        }
         <RaftEntry as prost::Message>::decode(
             self.collection_meta_wal
                 .lock()
@@ -580,7 +589,7 @@ impl TableOfContent {
         self.this_peer_id
     }
 
-    async fn collection_meta_snapshot(&self) -> raft::Result<consensus::CollectionMetaSnapshot> {
+    async fn collection_meta_snapshot(&self) -> raft::Result<consensus::StateSnapshot> {
         use super::raft_state::PeerAddressByIdWrapper;
 
         let collections: HashMap<collection::CollectionId, collection::State> = self
@@ -590,7 +599,7 @@ impl TableOfContent {
             .iter()
             .map(|(id, collection)| (id.clone(), collection.state(self.this_peer_id())))
             .collect();
-        Ok(consensus::CollectionMetaSnapshot {
+        Ok(consensus::StateSnapshot {
             collections,
             aliases: self.alias_persistence.read().await.state().clone(),
             address_by_id: PeerAddressByIdWrapper(
@@ -603,7 +612,7 @@ impl TableOfContent {
         })
     }
 
-    pub fn apply_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
+    pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
         let operation: ConsensusOperations = entry.try_into()?;
         let on_apply = self.on_consensus_op_apply.lock()?.remove(&operation);
         let result = match operation {
@@ -621,10 +630,20 @@ impl TableOfContent {
         };
         if let Some(on_apply) = on_apply {
             if on_apply.send(result.clone()).is_err() {
-                log::warn!("Failed to notify on collection meta operation completion.")
+                log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
             }
         }
         result
+    }
+
+    pub fn apply_conf_change_entry(
+        &self,
+        entry: &RaftEntry,
+        raw_node: &mut RawNode<TableOfContentRef>,
+    ) -> Result<(), StorageError> {
+        let change: ConfChangeV2 = prost::Message::decode(entry.get_data())?;
+        raw_node.apply_conf_change(&change)?;
+        Ok(())
     }
 
     pub fn set_unapplied_entries(
@@ -639,34 +658,60 @@ impl TableOfContent {
             .map_err(consensus::raft_error_other)
     }
 
-    pub fn apply_entries(&self) -> Result<(), raft::Error> {
+    pub fn apply_entries(
+        &self,
+        raw_node: &mut RawNode<TableOfContentRef>,
+    ) -> Result<(), raft::Error> {
         use raft::eraftpb::EntryType;
 
-        let mut raft_state = self
-            .raft_state
-            .lock()
-            .map_err(consensus::raft_error_other)?;
-        while let Some(entry_index) = raft_state.current_unapplied_entry() {
+        loop {
+            let unapplied_index = self
+                .raft_state
+                .lock()
+                .map_err(consensus::raft_error_other)?
+                .current_unapplied_entry();
+            let entry_index = match unapplied_index {
+                Some(index) => index,
+                None => break,
+            };
             log::info!("Applying committed entry with index {entry_index}");
             let entry = self.collection_wal_entry(entry_index)?;
             if entry.data.is_empty() {
                 // Empty entry, when the peer becomes Leader it will send an empty entry.
-            } else if entry.get_entry_type() == EntryType::EntryNormal {
-                let operation_result = self.apply_entry(&entry);
-                match operation_result {
-                    Ok(result) => log::info!(
-                        "Successfully applied collection meta operation entry. Index: {}. Result: {result}",
-                        entry.index
-                    ),
-                    Err(err) => {
-                        log::error!("Failed to apply collection meta operation entry with error: {err}")
+            } else {
+                match entry.get_entry_type() {
+                    EntryType::EntryNormal => {
+                        let operation_result = self.apply_normal_entry(&entry);
+                        match operation_result {
+                            Ok(result) => log::info!(
+                                "Successfully applied consensus operation entry. Index: {}. Result: {result}",
+                                entry.index
+                            ),
+                            Err(err) => {
+                                log::error!("Failed to apply collection meta operation entry with error: {err}")
+                            }
+                         }
                     }
+                    EntryType::EntryConfChangeV2 => {
+                        match self.apply_conf_change_entry(&entry, raw_node) {
+                            Ok(()) => log::info!(
+                                "Successfully applied configuration change entry. Index: {}.",
+                                entry.index
+                            ),
+                            Err(err) => {
+                                log::error!(
+                                    "Failed to apply configuration change entry with error: {err}"
+                                )
+                            }
+                        }
+                    }
+                    ty => log::error!("Failed to apply entry: unsupported entry type {ty:?}"),
                 }
             }
 
-            // TODO: handle EntryConfChange
-
-            raft_state
+            self.raft_state
+                .lock()
+                .map_err(consensus::raft_error_other)?
                 .entry_applied()
                 .map_err(consensus::raft_error_other)?;
         }
@@ -688,7 +733,7 @@ impl TableOfContent {
     }
 
     pub fn apply_snapshot(&self, snapshot: &RaftSnapshot) -> Result<(), StorageError> {
-        let snapshot: consensus::CollectionMetaSnapshot = snapshot.try_into()?;
+        let snapshot: consensus::StateSnapshot = snapshot.try_into()?;
 
         // Apply peer addresses
         self.raft_state
@@ -923,13 +968,13 @@ mod consensus {
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct CollectionMetaSnapshot {
+    pub struct StateSnapshot {
         pub collections: HashMap<CollectionId, collection::State>,
         pub aliases: AliasMapping,
         pub address_by_id: PeerAddressByIdWrapper,
     }
 
-    impl TryFrom<&raft::eraftpb::Snapshot> for CollectionMetaSnapshot {
+    impl TryFrom<&raft::eraftpb::Snapshot> for StateSnapshot {
         type Error = serde_cbor::Error;
 
         fn try_from(snapshot: &raft::eraftpb::Snapshot) -> Result<Self, Self::Error> {
