@@ -1,4 +1,4 @@
-use rocksdb::{LogLevel, Options, DB};
+use rocksdb::{Error, LogLevel, Options, WriteOptions, DB};
 use std::path::Path;
 
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
@@ -18,13 +18,20 @@ fn db_options() -> Options {
     options
 }
 
-pub fn open_db(path: &Path) -> Result<DB, rocksdb::Error> {
+pub fn open_db(path: &Path) -> Result<DB, Error> {
     let options = db_options();
     DB::open(&options, path)
 }
 
-pub fn open_db_with_cf(path: &Path, cf: &[&str]) -> Result<DB, rocksdb::Error> {
+pub fn open_db_with_cf(path: &Path, cf: &[&str]) -> Result<DB, Error> {
     let mut options = db_options();
     options.create_missing_column_families(true);
     DB::open_cf(&options, path, cf)
+}
+
+pub fn db_write_options() -> WriteOptions {
+    let mut write_options = WriteOptions::default();
+    write_options.set_sync(false);
+    write_options.disable_wal(true);
+    write_options
 }

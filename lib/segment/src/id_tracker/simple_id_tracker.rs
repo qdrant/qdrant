@@ -1,4 +1,4 @@
-use crate::common::rocksdb_operations::open_db_with_cf;
+use crate::common::rocksdb_operations::{db_write_options, open_db_with_cf};
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::points_iterator::PointsIterator;
 use crate::id_tracker::IdTracker;
@@ -116,10 +116,11 @@ impl IdTracker for SimpleIdTracker {
         version: SeqNumberType,
     ) -> OperationResult<()> {
         self.external_to_version.insert(external_id, version);
-        self.store.put_cf(
+        self.store.put_cf_opt(
             self.store.cf_handle(VERSIONS_CF).unwrap(),
             Self::store_key(&external_id),
             bincode::serialize(&version).unwrap(),
+            &db_write_options(),
         )?;
         Ok(())
     }
@@ -141,10 +142,11 @@ impl IdTracker for SimpleIdTracker {
         self.internal_to_external.insert(internal_id, external_id);
         self.max_internal_id = self.max_internal_id.max(internal_id);
 
-        self.store.put_cf(
+        self.store.put_cf_opt(
             self.store.cf_handle(MAPPING_CF).unwrap(),
             Self::store_key(&external_id),
             bincode::serialize(&internal_id).unwrap(),
+            &db_write_options(),
         )?;
         Ok(())
     }

@@ -1,4 +1,4 @@
-use crate::common::rocksdb_operations::open_db_with_cf;
+use crate::common::rocksdb_operations::{db_write_options, open_db_with_cf};
 use crate::types::{Payload, PointOffsetType};
 use std::collections::HashMap;
 use std::path::Path;
@@ -40,10 +40,11 @@ impl SimplePayloadStorage {
             None => self
                 .store
                 .delete_cf(cf_handle, serde_cbor::to_vec(&point_id).unwrap())?,
-            Some(payload) => self.store.put_cf(
+            Some(payload) => self.store.put_cf_opt(
                 cf_handle,
                 serde_cbor::to_vec(&point_id).unwrap(),
                 serde_cbor::to_vec(payload).unwrap(),
+                &db_write_options(),
             )?,
         };
         Ok(())
