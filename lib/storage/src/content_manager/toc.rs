@@ -628,7 +628,7 @@ impl TableOfContent {
         };
         if let Some(on_apply) = on_apply {
             if on_apply.send(result.clone()).is_err() {
-                log::warn!("Failed to notify on consensus operation completion.")
+                log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
             }
         }
         result
