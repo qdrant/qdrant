@@ -443,10 +443,11 @@ mod tests {
                 }
             }
         });
-        // Wait for Raft to establish the leader
-        thread::sleep(Duration::from_secs(5));
+        // Wait for Raft to establish the leader and commit its own address
+        thread::sleep(Duration::from_secs(10));
         // Leader election produces a raft log entry
-        assert_eq!(toc_arc.hard_state().unwrap().commit, 1);
+        // Address commit also produces a raft log entry
+        assert_eq!(toc_arc.hard_state().unwrap().commit, 2);
         // Initially there are 0 collections
         assert_eq!(toc_arc.all_collections_sync().len(), 0);
 
@@ -472,7 +473,7 @@ mod tests {
             .unwrap();
 
         // Then
-        assert_eq!(toc_arc.hard_state().unwrap().commit, 2);
+        assert_eq!(toc_arc.hard_state().unwrap().commit, 3);
         assert_eq!(toc_arc.all_collections_sync(), vec!["test"]);
     }
 }
