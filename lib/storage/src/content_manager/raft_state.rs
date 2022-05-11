@@ -71,7 +71,7 @@ impl Persistent {
 
     pub fn load_or_init(
         storage_path: impl AsRef<Path>,
-        first_peer: bool,
+        first_peer: Option<bool>,
     ) -> Result<Self, StorageError> {
         let path = storage_path.as_ref().join(STATE_FILE_NAME);
         if path.exists() {
@@ -144,17 +144,22 @@ impl Persistent {
         self.this_peer_id
     }
 
-    /// Arguments:
+    /// ## Arguments
     /// `path` - full name of the file where state will be saved
+    ///
     /// `first_peer` - if this is a first peer in a new deployment (e.g. it does not bootstrap from anyone)
-    fn init(path: PathBuf, first_peer: bool) -> Result<Self, StorageError> {
+    /// It is `None` if distributed deployment is disabled
+    fn init(path: PathBuf, first_peer: Option<bool>) -> Result<Self, StorageError> {
         let this_peer_id = rand::random();
-        let learners = if first_peer {
+        let learners = if let Some(true) = first_peer {
             vec![this_peer_id]
         } else {
-            // Leave empty the network topology for the peer, if it is not starting a network itself.
+            // `Some(false)` - Leave empty the network topology for the peer, if it is not starting a network itself.
             // This way it will not be able to become a leader and commit data
             // until it joins an existing network.
+            //
+            // `None` - in this case, as distributed deployment is disabled, it doesn't matter what the state is.
+            // But for general consistency reasons - better to leave it empty.
             vec![]
         };
         let state = Self {
@@ -267,7 +272,7 @@ mod tests {
     #[test]
     fn update_is_applied() {
         let dir = tempdir::TempDir::new("raft_state_test").unwrap();
-        let mut state = Persistent::load_or_init(dir.path(), true).unwrap();
+        let mut state = Persistent::load_or_init(dir.path(), None).unwrap();
         assert_eq!(state.state().hard_state.commit, 0);
         state
             .apply_state_update(|state| state.hard_state.commit = 1)
@@ -289,13 +294,13 @@ mod tests {
     #[test]
     fn state_is_loaded() {
         let dir = tempdir::TempDir::new("raft_state_test").unwrap();
-        let mut state = Persistent::load_or_init(dir.path(), true).unwrap();
+        let mut state = Persistent::load_or_init(dir.path(), None).unwrap();
         state
             .apply_state_update(|state| state.hard_state.commit = 1)
             .unwrap();
         assert_eq!(state.state().hard_state.commit, 1);
 
-        let state_loaded = Persistent::load_or_init(dir.path(), true).unwrap();
+        let state_loaded = Persistent::load_or_init(dir.path(), None).unwrap();
         assert_eq!(state_loaded.state().hard_state.commit, 1);
     }
 

@@ -55,6 +55,7 @@ const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 
 pub struct ConsensusEnabled {
     pub propose_sender: std::sync::mpsc::Sender<Vec<u8>>,
+    pub first_peer: bool,
 }
 
 /// The main object of the service. It holds all objects, required for proper functioning.
@@ -80,7 +81,6 @@ impl TableOfContent {
         storage_config: &StorageConfig,
         search_runtime: Runtime,
         consensus_enabled: Option<ConsensusEnabled>,
-        first_peer: bool,
     ) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
         let collection_management_runtime = Runtime::new().unwrap();
@@ -123,9 +123,11 @@ impl TableOfContent {
                 Wal::open(collections_meta_wal_path).unwrap(),
             ))
         };
-        let raft_state =
-            PersistentRaftState::load_or_init(&storage_config.storage_path, first_peer)
-                .expect("Cannot initialize Raft persistent storage");
+        let raft_state = PersistentRaftState::load_or_init(
+            &storage_config.storage_path,
+            consensus_enabled.as_ref().map(|ce| ce.first_peer),
+        )
+        .expect("Cannot initialize Raft persistent storage");
 
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),

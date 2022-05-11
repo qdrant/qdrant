@@ -54,19 +54,16 @@ fn main() -> std::io::Result<()> {
 
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
     let consensus_enabled = if settings.cluster.enabled {
-        Some(ConsensusEnabled { propose_sender })
+        let args = Args::parse();
+        Some(ConsensusEnabled {
+            propose_sender,
+            first_peer: args.bootstrap.is_none(),
+        })
     } else {
         None
     };
 
-    let first_peer = if settings.cluster.enabled {
-        let args = Args::parse();
-        args.bootstrap.is_none()
-    } else {
-        true
-    };
-
-    let toc = TableOfContent::new(&settings.storage, runtime, consensus_enabled, first_peer);
+    let toc = TableOfContent::new(&settings.storage, runtime, consensus_enabled);
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {
             log::info!("Loaded collection: {}", collection);

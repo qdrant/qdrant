@@ -42,7 +42,7 @@ mod tests {
         let runtime = Runtime::new().unwrap();
         let handle = runtime.handle().clone();
 
-        let toc = TableOfContent::new(&config, runtime, None, true);
+        let toc = TableOfContent::new(&config, runtime, None);
 
         handle
             .block_on(toc.submit_collection_operation(
