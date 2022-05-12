@@ -11,8 +11,10 @@ use std::io::Error;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use ::tonic::transport::Uri;
+use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
 use storage::content_manager::toc::{ConsensusEnabled, TableOfContent};
 
@@ -55,9 +57,14 @@ fn main() -> std::io::Result<()> {
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
     let consensus_enabled = if settings.cluster.enabled {
         let args = Args::parse();
+        let p2p_grpc_timeout = Duration::from_millis(settings.cluster.grpc_timeout_ms);
         Some(ConsensusEnabled {
             propose_sender,
             first_peer: args.bootstrap.is_none(),
+            transport_channel_pool: TransportChannelPool::new(
+                p2p_grpc_timeout,
+                settings.cluster.p2p.connection_pool_size,
+            ),
         })
     } else {
         None
@@ -159,7 +166,6 @@ fn main() -> std::io::Result<()> {
     #[cfg(feature = "service_debug")]
     {
         use parking_lot::deadlock;
-        use std::time::Duration;
 
         const DEADLOCK_CHECK_PERIOD: Duration = Duration::from_secs(10);
 

@@ -15,6 +15,8 @@ pub struct ServiceConfig {
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct ClusterConfig {
     pub enabled: bool, // disabled by default
+    #[serde(default = "default_timeout_ms")]
+    pub grpc_timeout_ms: u64,
     #[serde(default)]
     pub p2p: P2pConfig,
     #[serde(default)]
@@ -25,15 +27,15 @@ pub struct ClusterConfig {
 pub struct P2pConfig {
     #[serde(default)]
     pub p2p_port: Option<u16>,
-    #[serde(default = "default_timeout_ms")]
-    pub p2p_grpc_timeout_ms: u64,
+    #[serde(default = "default_connection_pool_size")]
+    pub connection_pool_size: usize,
 }
 
 impl Default for P2pConfig {
     fn default() -> Self {
         P2pConfig {
             p2p_port: None,
-            p2p_grpc_timeout_ms: default_timeout_ms(),
+            connection_pool_size: default_connection_pool_size(),
         }
     }
 }
@@ -44,8 +46,6 @@ pub struct ConsensusConfig {
     pub max_message_queue_size: usize, // controls the back-pressure at the Raft level
     #[serde(default = "default_tick_period_ms")]
     pub tick_period_ms: u64,
-    #[serde(default = "default_timeout_ms")]
-    pub message_timeout_ms: u64,
     #[serde(default = "default_bootstrap_timeout_sec")]
     pub bootstrap_timeout_sec: u64,
 }
@@ -55,7 +55,6 @@ impl Default for ConsensusConfig {
         ConsensusConfig {
             max_message_queue_size: default_max_message_queue_size(),
             tick_period_ms: default_tick_period_ms(),
-            message_timeout_ms: default_timeout_ms(),
             bootstrap_timeout_sec: default_bootstrap_timeout_sec(),
         }
     }
@@ -95,6 +94,10 @@ fn default_bootstrap_timeout_sec() -> u64 {
 
 fn default_max_message_queue_size() -> usize {
     100
+}
+
+fn default_connection_pool_size() -> usize {
+    2
 }
 
 impl Settings {
