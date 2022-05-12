@@ -308,7 +308,8 @@ fn handle_messages(
         .collect();
     let bootstrap_uri = bootstrap_uri.clone();
     let consensus_config_arc = Arc::new(config.clone());
-    let toc_arc = Arc::new(toc.clone());
+    // TableOfContentRef wraps a Arc<TableOfContent>
+    let toc_clone = toc.clone();
     let future = async move {
         let mut send_futures = Vec::new();
         for (message, address) in messages_with_address {
@@ -331,7 +332,7 @@ fn handle_messages(
                     }
                 },
             };
-            send_futures.push(send_message(toc_arc.clone(), address, message));
+            send_futures.push(send_message(toc_clone.clone(), address, message));
         }
         for result in futures::future::join_all(send_futures).await {
             if let Err(err) = result {
@@ -367,7 +368,7 @@ async fn who_is(
 }
 
 async fn send_message(
-    toc: Arc<TableOfContentRef>,
+    toc: TableOfContentRef,
     address: Uri,
     message: RaftMessage,
 ) -> anyhow::Result<()> {
