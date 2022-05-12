@@ -6,33 +6,6 @@ let rawdata = fs.readFileSync('schema.json');
 
 let schema = JSON.parse(rawdata);
 
-
-function replaceOneOfAnonymousObject(definitions) {
-    let newDefinitions = {};
-    for (let k in definitions) {
-        let definition = definitions[k];
-        if (definition['oneOf']) {
-            let newElements = [];
-            for (let elementId in definition['oneOf']) {
-                let element = definition['oneOf'][elementId]
-                if (typeof element === "object" && element['type'] === "object") {
-                    let newObjectName = element["required"][0];
-                    newDefinitions[newObjectName] = element;
-                    let newElement = {
-                        "$ref": "#/definitions/" + newObjectName,
-                    }
-                    newElements.push(newElement)
-                } else {
-                    newElements.push(element)
-                }
-            }
-            definition['oneOf'] = newElements;
-        }
-    }
-
-    return {...definitions, ...newDefinitions}
-}
-
 // Generated result contains usage of "allOf" directive with a single class.
 // It breaks client generator serves no function.
 // This function should replace "allOf" directives with simple class usages
@@ -65,7 +38,6 @@ function replaceAllOf(schema) {
     var convertedSchema = await toOpenApi(schema);
 
     convertedSchema = replaceAllOf(convertedSchema);
-    // convertedSchema['definitions'] = replaceOneOfAnonymousObject(convertedSchema['definitions']);
 
     for (var modelName in convertedSchema['definitions']) {
         convertedSchema['definitions'][modelName]["$schema"] = schema["$schema"];

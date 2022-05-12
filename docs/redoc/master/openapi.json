@@ -978,7 +978,7 @@
         "type": "object"
       },
       "PointInsertOperations": {
-        "anyOf": [
+        "oneOf": [
           {
             "$ref": "#/components/schemas/PointsBatch"
           },
@@ -1057,8 +1057,7 @@
         },
         "required": [
           "batch"
-        ],
-        "type": "object"
+        ]
       },
       "PointsList": {
         "properties": {
