@@ -82,7 +82,7 @@ impl JsonSchema for PointInsertOperations {
         let a_schema: Schema = Batch::json_schema(gen);
         let proxy_b_schema = PointsList::json_schema(gen);
         let definitions = gen.definitions_mut();
-        definitions.insert(Batch::schema_name(), a_schema.clone());
+        definitions.insert(Batch::schema_name(), a_schema);
 
         let field_a_name = "batch".to_string();
 
@@ -105,8 +105,8 @@ impl JsonSchema for PointInsertOperations {
 
         let proxy_a_name = "PointsBatch".to_string();
 
-        definitions.insert(proxy_a_name.clone(), proxy_a_schema.clone());
-        definitions.insert(PointsList::schema_name(), proxy_b_schema.clone());
+        definitions.insert(proxy_a_name.clone(), proxy_a_schema);
+        definitions.insert(PointsList::schema_name(), proxy_b_schema);
 
         let proxy_a_ref = Schema::Object(SchemaObject {
             reference: Some(format!("{}{}", def_path, proxy_a_name)),
