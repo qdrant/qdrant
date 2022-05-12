@@ -42,10 +42,3 @@ pub fn db_write_options() -> WriteOptions {
     write_options.disable_wal(true);
     write_options
 }
-
-pub fn db_write_options() -> WriteOptions {
-    let mut write_options = WriteOptions::default();
-    write_options.set_sync(false);
-    write_options.disable_wal(true);
-    write_options
-}
