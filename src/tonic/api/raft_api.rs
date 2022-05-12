@@ -3,7 +3,7 @@ use api::grpc::qdrant::{
     raft_server::Raft, AddPeerToKnownMessage, AllPeers, Peer, PeerId,
     RaftMessage as RaftMessageBytes, Uri as UriStr,
 };
-use raft::eraftpb::Message as RaftMessage;
+use raft::eraftpb::{ConfChangeType, ConfChangeV2, Message as RaftMessage};
 use std::sync::{mpsc::SyncSender, Arc, Mutex};
 use storage::content_manager::{consensus_ops::ConsensusOperations, toc::TableOfContent};
 use tonic::{async_trait, Request, Response, Status};
@@ -70,7 +70,7 @@ impl Raft for RaftService {
             let port = peer
                 .port
                 .ok_or_else(|| Status::invalid_argument("URI or port should be supplied"))?;
-            format!("{ip}:{port}")
+            format!("http://{ip}:{port}")
         };
         let peer = request.into_inner();
         self.toc
@@ -94,8 +94,18 @@ impl Raft for RaftService {
 
     async fn add_peer_as_participant(
         &self,
-        _request: tonic::Request<PeerId>,
+        request: tonic::Request<PeerId>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
-        todo!();
+        let mut change = ConfChangeV2::default();
+        change.set_changes(vec![raft_proto::new_conf_change_single(
+            request.get_ref().id,
+            ConfChangeType::AddNode,
+        )]);
+        self.message_sender
+            .lock()
+            .map_err(|_| Status::internal("Can't capture the Raft message sender lock"))?
+            .send(consensus::Message::ConfChange(change))
+            .map_err(|_| Status::internal("Can't send Raft message over channel"))?;
+        Ok(Response::new(()))
     }
 }

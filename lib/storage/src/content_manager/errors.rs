@@ -116,6 +116,14 @@ impl From<prost::DecodeError> for StorageError {
     }
 }
 
+impl From<raft::Error> for StorageError {
+    fn from(err: raft::Error) -> Self {
+        StorageError::ServiceError {
+            description: format!("Error in Raft consensus: {}", err),
+        }
+    }
+}
+
 impl<E: std::fmt::Display> From<atomicwrites::Error<E>> for StorageError {
     fn from(err: atomicwrites::Error<E>) -> Self {
         StorageError::ServiceError {
