@@ -1,123 +1,217 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "E4",
-  "type": "object",
-  "required": [
-    "opt1",
-    "opt2",
-    "opt3"
-  ],
-  "properties": {
-    "opt1": {
-      "$ref": "#/definitions/E1"
-    },
-    "opt2": {
-      "$ref": "#/definitions/E2"
-    },
-    "opt3": {
-      "$ref": "#/definitions/E3"
-    }
-  },
-  "definitions": {
-    "A": {
+  "title": "StorageOps",
+  "anyOf": [
+    {
+      "description": "Create new collection and (optionally) specify index params",
       "type": "object",
       "required": [
-        "f2"
+        "create_collection"
       ],
       "properties": {
-        "f2": {
-          "type": "string"
-        }
-      }
-    },
-    "B": {
-      "type": "object",
-      "required": [
-        "p3"
-      ],
-      "properties": {
-        "p3": {
-          "type": "string"
-        }
-      }
-    },
-    "E1": {
-      "oneOf": [
-        {
+        "create_collection": {
           "type": "object",
           "required": [
-            "opt1"
+            "distance",
+            "name",
+            "vector_size"
           ],
           "properties": {
-            "opt1": {
-              "$ref": "#/definitions/A"
+            "distance": {
+              "$ref": "#/definitions/Distance"
+            },
+            "index": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Indexes"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "vector_size": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0
             }
-          },
-          "additionalProperties": false
-        },
+          }
+        }
+      }
+    },
+    {
+      "description": "Delete collection with given name",
+      "type": "object",
+      "required": [
+        "delete_collection"
+      ],
+      "properties": {
+        "delete_collection": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "description": "Perform changes of collection aliases",
+      "type": "object",
+      "required": [
+        "change_aliases"
+      ],
+      "properties": {
+        "change_aliases": {
+          "type": "object",
+          "required": [
+            "actions"
+          ],
+          "properties": {
+            "actions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AliasOperations"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "AliasOperations": {
+      "anyOf": [
         {
           "type": "object",
           "required": [
-            "opt2"
+            "create_alias"
           ],
           "properties": {
-            "opt2": {
+            "create_alias": {
               "type": "object",
               "required": [
-                "opt2"
+                "alias_name",
+                "collection_name"
               ],
               "properties": {
-                "opt2": {
-                  "$ref": "#/definitions/B"
+                "alias_name": {
+                  "type": "string"
+                },
+                "collection_name": {
+                  "type": "string"
                 }
               }
             }
-          },
-          "additionalProperties": false
-        }
-      ]
-    },
-    "E2": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/A"
+          }
         },
         {
-          "$ref": "#/definitions/B"
-        }
-      ]
-    },
-    "E3": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/ProxyA"
+          "type": "object",
+          "required": [
+            "delete_alias"
+          ],
+          "properties": {
+            "delete_alias": {
+              "type": "object",
+              "required": [
+                "alias_name"
+              ],
+              "properties": {
+                "alias_name": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         },
         {
-          "$ref": "#/definitions/ProxyB"
+          "type": "object",
+          "required": [
+            "rename_alias"
+          ],
+          "properties": {
+            "rename_alias": {
+              "type": "object",
+              "required": [
+                "new_alias_name",
+                "old_alias_name"
+              ],
+              "properties": {
+                "new_alias_name": {
+                  "type": "string"
+                },
+                "old_alias_name": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       ]
     },
-    "ProxyA": {
-      "type": "object",
-      "required": [
-        "opt1"
-      ],
-      "properties": {
-        "opt1": {
-          "$ref": "#/definitions/A"
-        }
-      }
+    "Distance": {
+      "description": "Type of internal tags, build from payload",
+      "type": "string",
+      "enum": [
+        "Cosine",
+        "Euclid",
+        "Dot"
+      ]
     },
-    "ProxyB": {
-      "type": "object",
-      "required": [
-        "opt2"
-      ],
-      "properties": {
-        "opt2": {
-          "$ref": "#/definitions/B"
+    "Indexes": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "options",
+            "type"
+          ],
+          "properties": {
+            "options": {
+              "type": "object"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "plain"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "options",
+            "type"
+          ],
+          "properties": {
+            "options": {
+              "type": "object",
+              "required": [
+                "ef_construct",
+                "m"
+              ],
+              "properties": {
+                "ef_construct": {
+                  "type": "integer",
+                  "format": "uint",
+                  "minimum": 0.0
+                },
+                "m": {
+                  "type": "integer",
+                  "format": "uint",
+                  "minimum": 0.0
+                }
+              }
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "hnsw"
+              ]
+            }
+          }
         }
-      }
+      ]
     }
   }
 }
