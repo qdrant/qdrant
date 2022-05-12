@@ -80,14 +80,16 @@ impl PayloadStorage for PayloadStorageEnum {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::rocksdb_operations::open_db;
     use crate::types::Payload;
     use tempdir::TempDir;
 
     #[test]
     fn test_storage() {
         let dir = TempDir::new("storage_dir").unwrap();
-        let mut storage: PayloadStorageEnum =
-            SimplePayloadStorage::open(dir.path()).unwrap().into();
+        let db = open_db(dir.path()).unwrap();
+
+        let mut storage: PayloadStorageEnum = SimplePayloadStorage::open(db).unwrap().into();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
         storage.assign(100, &payload).unwrap();
         storage.wipe().unwrap();

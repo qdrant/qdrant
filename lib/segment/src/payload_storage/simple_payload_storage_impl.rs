@@ -1,15 +1,12 @@
 use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
 use std::collections::HashMap;
 
-use rocksdb::Options;
 use serde_json::Value;
 
+use crate::common::rocksdb_operations::{db_options, DB_PAYLOAD_CF};
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::PayloadStorage;
-
-const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
-const DB_NAME: &str = "payload";
 
 impl PayloadStorage for SimplePayloadStorage {
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
@@ -56,18 +53,17 @@ impl PayloadStorage for SimplePayloadStorage {
     }
 
     fn wipe(&mut self) -> OperationResult<()> {
+        let mut store_ref = self.store.borrow_mut();
         self.payload = HashMap::new();
-        self.store.drop_cf(DB_NAME)?;
-        let mut options: Options = Options::default();
-        options.set_write_buffer_size(DB_CACHE_SIZE);
-        options.create_if_missing(true);
-        self.store.create_cf(DB_NAME, &options)?;
+        store_ref.drop_cf(DB_PAYLOAD_CF)?;
+        store_ref.create_cf(DB_PAYLOAD_CF, &db_options())?;
         Ok(())
     }
 
     fn flush(&self) -> OperationResult<()> {
-        let cf_handle = self.store.cf_handle(DB_NAME).unwrap();
-        Ok(self.store.flush_cf(cf_handle)?)
+        let store_ref = self.store.borrow();
+        let cf_handle = store_ref.cf_handle(DB_PAYLOAD_CF).unwrap();
+        Ok(store_ref.flush_cf(cf_handle)?)
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
@@ -77,14 +73,17 @@ impl PayloadStorage for SimplePayloadStorage {
 
 #[cfg(test)]
 mod tests {
-    use tempdir::TempDir;
-
     use super::*;
+
+    use crate::common::rocksdb_operations::open_db;
+    use tempdir::TempDir;
 
     #[test]
     fn test_wipe() {
-        let dir = TempDir::new("storage_dir").unwrap();
-        let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
+        let dir = TempDir::new("db_dir").unwrap();
+        let db = open_db(dir.path()).unwrap();
+
+        let mut storage = SimplePayloadStorage::open(db).unwrap();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
         storage.assign(100, &payload).unwrap();
         storage.wipe().unwrap();
@@ -122,7 +121,8 @@ mod tests {
 
         let payload: Payload = serde_json::from_str(data).unwrap();
         let dir = TempDir::new("storage_dir").unwrap();
-        let mut storage = SimplePayloadStorage::open(dir.path()).unwrap();
+        let db = open_db(dir.path()).unwrap();
+        let mut storage = SimplePayloadStorage::open(db).unwrap();
         storage.assign(100, &payload).unwrap();
         let pload = storage.payload(100);
         assert_eq!(pload, payload);

@@ -308,6 +308,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::rocksdb_operations::open_db;
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
     use std::mem::transmute;
     use tempdir::TempDir;
@@ -316,6 +317,7 @@ mod tests {
     fn test_basic_persistence() {
         let dist = Distance::Dot;
         let dir = TempDir::new("storage_dir").unwrap();
+
         let storage = open_memmap_vector_storage(dir.path(), 4, dist).unwrap();
         let mut borrowed_storage = storage.borrow_mut();
 
@@ -326,8 +328,9 @@ mod tests {
         let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
         {
-            let dir2 = TempDir::new("storage_dir2").unwrap();
-            let storage2 = open_simple_vector_storage(dir2.path(), 4, dist).unwrap();
+            let dir2 = TempDir::new("db_dir").unwrap();
+            let db = open_db(dir2.path()).unwrap();
+            let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 borrowed_storage2.put_vector(vec1).unwrap();
@@ -348,8 +351,9 @@ mod tests {
         borrowed_storage.delete(2).unwrap();
 
         {
-            let dir2 = TempDir::new("storage_dir2").unwrap();
-            let storage2 = open_simple_vector_storage(dir2.path(), 4, dist).unwrap();
+            let dir2 = TempDir::new("db_dir").unwrap();
+            let db = open_db(dir2.path()).unwrap();
+            let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 borrowed_storage2.put_vector(vec4).unwrap();
@@ -390,8 +394,9 @@ mod tests {
         let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
         {
-            let dir2 = TempDir::new("storage_dir2").unwrap();
-            let storage2 = open_simple_vector_storage(dir2.path(), 4, dist).unwrap();
+            let dir2 = TempDir::new("db_dir").unwrap();
+            let db = open_db(dir2.path()).unwrap();
+            let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 borrowed_storage2.put_vector(vec1).unwrap();

@@ -185,6 +185,7 @@ mod tests {
     use serde_json::json;
     use tempdir::TempDir;
 
+    use crate::common::rocksdb_operations::open_db;
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
@@ -196,8 +197,8 @@ mod tests {
 
     #[test]
     fn test_condition_checker() {
-        let dir = TempDir::new("payload_dir").unwrap();
-        let dir_id_tracker = TempDir::new("id_tracker_dir").unwrap();
+        let dir = TempDir::new("db_dir").unwrap();
+        let db = open_db(dir.path()).unwrap();
 
         let payload: Payload = json!(
             {
@@ -214,8 +215,8 @@ mod tests {
         .into();
 
         let mut payload_storage: PayloadStorageEnum =
-            SimplePayloadStorage::open(dir.path()).unwrap().into();
-        let mut id_tracker = SimpleIdTracker::open(dir_id_tracker.path()).unwrap();
+            SimplePayloadStorage::open(db.clone()).unwrap().into();
+        let mut id_tracker = SimpleIdTracker::open(db).unwrap();
 
         id_tracker.set_link(0.into(), 0).unwrap();
         id_tracker.set_link(1.into(), 1).unwrap();
