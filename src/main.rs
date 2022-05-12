@@ -91,7 +91,7 @@ fn main() -> std::io::Result<()> {
             toc_arc.clone().into(),
             args.bootstrap,
             args.uri.map(|uri| uri.to_string()),
-            settings.cluster.p2p.p2p_port.map(|port| port as u32),
+            settings.cluster.p2p.port.map(|port| port as u32),
             settings.cluster.consensus.clone(),
         )
         .expect("Can't initialize consensus");
@@ -118,7 +118,7 @@ fn main() -> std::io::Result<()> {
                 }
             })?;
 
-        if let Some(internal_grpc_port) = settings.cluster.p2p.p2p_port {
+        if let Some(internal_grpc_port) = settings.cluster.p2p.port {
             let toc_arc = toc_arc.clone();
             let settings = settings.clone();
             let handle = thread::Builder::new()
