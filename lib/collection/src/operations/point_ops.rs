@@ -1,12 +1,12 @@
 use crate::operations::types::VectorType;
 use crate::ShardId;
 use hashring::HashRing;
+use schemars::gen::SchemaGenerator;
+use schemars::schema::{ObjectValidation, Schema, SchemaObject, SubschemaValidation};
 use schemars::JsonSchema;
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use schemars::gen::SchemaGenerator;
-use schemars::schema::{ObjectValidation, Schema, SchemaObject, SubschemaValidation};
 
 use super::{
     point_to_shard, split_iter_by_shard,
@@ -58,17 +58,17 @@ pub enum PointsSelector {
 // Structure used for deriving custom JsonSchema only
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 struct PointsList {
-    points: Vec<PointStruct>
+    points: Vec<PointStruct>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum PointInsertOperations {
     /// Inset points from a batch.
-    #[serde(rename="batch")]
+    #[serde(rename = "batch")]
     PointsBatch(Batch),
     /// Insert points from a list
-    #[serde(rename="points")]
+    #[serde(rename = "points")]
     PointsList(Vec<PointStruct>),
 }
 
@@ -94,9 +94,7 @@ impl JsonSchema for PointInsertOperations {
             Schema::Object(SchemaObject {
                 object: Some(Box::new(ObjectValidation {
                     required: vec![field.clone()].into_iter().collect(),
-                    properties: vec![(field, schema_ref)]
-                        .into_iter()
-                        .collect(),
+                    properties: vec![(field, schema_ref)].into_iter().collect(),
                     ..Default::default()
                 })),
                 ..Default::default()
@@ -121,17 +119,14 @@ impl JsonSchema for PointInsertOperations {
         });
 
         Schema::Object(SchemaObject {
-            subschemas: Some(Box::new(
-                SubschemaValidation {
-                    one_of: Some(vec![proxy_a_ref, proxy_b_ref]),
-                    ..Default::default()
-                }
-            )),
+            subschemas: Some(Box::new(SubschemaValidation {
+                one_of: Some(vec![proxy_a_ref, proxy_b_ref]),
+                ..Default::default()
+            })),
             ..Default::default()
         })
     }
 }
-
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]

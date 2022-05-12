@@ -5,7 +5,7 @@ use tempdir::TempDir;
 use collection::{
     collection_manager::simple_collection_searcher::SimpleCollectionSearcher,
     operations::{
-        point_ops::{PointInsertOperations, PointOperations, Batch},
+        point_ops::{Batch, PointInsertOperations, PointOperations},
         types::ScrollRequest,
         CollectionUpdateOperations,
     },

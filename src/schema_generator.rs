@@ -41,7 +41,6 @@ struct AllDefinitions {
     ai: PointInsertOperations,
     aj: SetPayload,
     ak: DeletePayload,
-
 }
 
 fn save_schema<T: JsonSchema>() {

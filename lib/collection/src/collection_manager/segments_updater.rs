@@ -9,9 +9,7 @@ use segment::types::{
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
-use crate::operations::point_ops::{
-    PointInsertOperations, PointOperations, Batch,
-};
+use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations};
 use crate::operations::types::{CollectionError, CollectionResult, VectorType};
 use crate::operations::FieldIndexOperations;
 use itertools::Itertools;
