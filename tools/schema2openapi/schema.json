@@ -1,217 +1,123 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "StorageOps",
-  "anyOf": [
-    {
-      "description": "Create new collection and (optionally) specify index params",
-      "type": "object",
-      "required": [
-        "create_collection"
-      ],
-      "properties": {
-        "create_collection": {
-          "type": "object",
-          "required": [
-            "distance",
-            "name",
-            "vector_size"
-          ],
-          "properties": {
-            "distance": {
-              "$ref": "#/definitions/Distance"
-            },
-            "index": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/Indexes"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "name": {
-              "type": "string"
-            },
-            "vector_size": {
-              "type": "integer",
-              "format": "uint",
-              "minimum": 0.0
-            }
-          }
-        }
-      }
+  "title": "E4",
+  "type": "object",
+  "required": [
+    "opt1",
+    "opt2",
+    "opt3"
+  ],
+  "properties": {
+    "opt1": {
+      "$ref": "#/definitions/E1"
     },
-    {
-      "description": "Delete collection with given name",
+    "opt2": {
+      "$ref": "#/definitions/E2"
+    },
+    "opt3": {
+      "$ref": "#/definitions/E3"
+    }
+  },
+  "definitions": {
+    "A": {
       "type": "object",
       "required": [
-        "delete_collection"
+        "f2"
       ],
       "properties": {
-        "delete_collection": {
+        "f2": {
           "type": "string"
         }
       }
     },
-    {
-      "description": "Perform changes of collection aliases",
+    "B": {
       "type": "object",
       "required": [
-        "change_aliases"
+        "p3"
       ],
       "properties": {
-        "change_aliases": {
-          "type": "object",
-          "required": [
-            "actions"
-          ],
-          "properties": {
-            "actions": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/AliasOperations"
-              }
-            }
-          }
+        "p3": {
+          "type": "string"
         }
       }
-    }
-  ],
-  "definitions": {
-    "AliasOperations": {
-      "anyOf": [
+    },
+    "E1": {
+      "oneOf": [
         {
           "type": "object",
           "required": [
-            "create_alias"
+            "opt1"
           ],
           "properties": {
-            "create_alias": {
-              "type": "object",
-              "required": [
-                "alias_name",
-                "collection_name"
-              ],
-              "properties": {
-                "alias_name": {
-                  "type": "string"
-                },
-                "collection_name": {
-                  "type": "string"
-                }
-              }
+            "opt1": {
+              "$ref": "#/definitions/A"
             }
-          }
+          },
+          "additionalProperties": false
         },
         {
           "type": "object",
           "required": [
-            "delete_alias"
+            "opt2"
           ],
           "properties": {
-            "delete_alias": {
+            "opt2": {
               "type": "object",
               "required": [
-                "alias_name"
+                "opt2"
               ],
               "properties": {
-                "alias_name": {
-                  "type": "string"
+                "opt2": {
+                  "$ref": "#/definitions/B"
                 }
               }
             }
-          }
-        },
-        {
-          "type": "object",
-          "required": [
-            "rename_alias"
-          ],
-          "properties": {
-            "rename_alias": {
-              "type": "object",
-              "required": [
-                "new_alias_name",
-                "old_alias_name"
-              ],
-              "properties": {
-                "new_alias_name": {
-                  "type": "string"
-                },
-                "old_alias_name": {
-                  "type": "string"
-                }
-              }
-            }
-          }
+          },
+          "additionalProperties": false
         }
       ]
     },
-    "Distance": {
-      "description": "Type of internal tags, build from payload",
-      "type": "string",
-      "enum": [
-        "Cosine",
-        "Euclid",
-        "Dot"
-      ]
-    },
-    "Indexes": {
+    "E2": {
       "anyOf": [
         {
-          "type": "object",
-          "required": [
-            "options",
-            "type"
-          ],
-          "properties": {
-            "options": {
-              "type": "object"
-            },
-            "type": {
-              "type": "string",
-              "enum": [
-                "plain"
-              ]
-            }
-          }
+          "$ref": "#/definitions/A"
         },
         {
-          "type": "object",
-          "required": [
-            "options",
-            "type"
-          ],
-          "properties": {
-            "options": {
-              "type": "object",
-              "required": [
-                "ef_construct",
-                "m"
-              ],
-              "properties": {
-                "ef_construct": {
-                  "type": "integer",
-                  "format": "uint",
-                  "minimum": 0.0
-                },
-                "m": {
-                  "type": "integer",
-                  "format": "uint",
-                  "minimum": 0.0
-                }
-              }
-            },
-            "type": {
-              "type": "string",
-              "enum": [
-                "hnsw"
-              ]
-            }
-          }
+          "$ref": "#/definitions/B"
         }
       ]
+    },
+    "E3": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ProxyA"
+        },
+        {
+          "$ref": "#/definitions/ProxyB"
+        }
+      ]
+    },
+    "ProxyA": {
+      "type": "object",
+      "required": [
+        "opt1"
+      ],
+      "properties": {
+        "opt1": {
+          "$ref": "#/definitions/A"
+        }
+      }
+    },
+    "ProxyB": {
+      "type": "object",
+      "required": [
+        "opt2"
+      ],
+      "properties": {
+        "opt2": {
+          "$ref": "#/definitions/B"
+        }
+      }
     }
   }
 }
