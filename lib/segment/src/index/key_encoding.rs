@@ -75,7 +75,7 @@ pub fn decode_f64_ascending(buf: &[u8]) -> f64 {
 }
 
 /// Encode a i64 into `buf` so that is sorts ascending.
-fn encode_i64_ascending(val: i64, buf: &mut Vec<u8>) {
+pub fn encode_i64_ascending(val: i64, buf: &mut Vec<u8>) {
     let i = val ^ i64::MIN;
     buf.extend(i.to_be_bytes());
 }
