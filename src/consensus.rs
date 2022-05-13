@@ -373,7 +373,7 @@ async fn send_message(
     message: RaftMessage,
 ) -> anyhow::Result<()> {
     let channel = toc
-        .get_grpc_pooled_channel(&address)
+        .get_or_create_pooled_channel(&address)
         .await
         .context("Failed to create timeout channel")?;
     let mut client = RaftClient::new(channel);

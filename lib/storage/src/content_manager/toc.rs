@@ -823,7 +823,7 @@ impl TableOfContent {
     }
 
     /// A pool will be created if no channels exist for this address.
-    pub async fn get_grpc_pooled_channel(&self, uri: &Uri) -> Result<Channel, StorageError> {
+    pub async fn get_or_create_pooled_channel(&self, uri: &Uri) -> Result<Channel, StorageError> {
         self.transport_channel_pool
             .get_or_create_pooled_channel(uri)
             .await

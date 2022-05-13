@@ -9,7 +9,7 @@ use tonic::transport::{Channel, Error, Uri};
 /// Make the `pool_size` larger to increase throughput.
 #[derive(Default)]
 pub struct TransportChannelPool {
-    ip_to_pool: tokio::sync::RwLock<HashMap<Uri, Vec<Channel>>>,
+    uri_to_pool: tokio::sync::RwLock<HashMap<Uri, Vec<Channel>>>,
     pool_size: usize,
     grpc_timeout: Duration,
 }
@@ -17,7 +17,7 @@ pub struct TransportChannelPool {
 impl TransportChannelPool {
     pub fn new(p2p_grpc_timeout: Duration, pool_size: usize) -> Self {
         Self {
-            ip_to_pool: Default::default(),
+            uri_to_pool: Default::default(),
             grpc_timeout: p2p_grpc_timeout,
             pool_size,
         }
@@ -35,7 +35,7 @@ impl TransportChannelPool {
     /// Initialize a pool for the URI and return a clone of the first channel.
     /// Does not fail if the pool already exist.
     async fn init_pool_for_uri(&self, uri: Uri) -> Result<Channel, Error> {
-        let mut guard = self.ip_to_pool.write().await;
+        let mut guard = self.uri_to_pool.write().await;
         match guard.get(&uri) {
             None => {
                 let mut channels = Vec::with_capacity(self.pool_size);
@@ -52,7 +52,7 @@ impl TransportChannelPool {
     }
 
     pub async fn get_pooled_channel(&self, uri: &Uri) -> Option<Channel> {
-        let guard = self.ip_to_pool.read().await;
+        let guard = self.uri_to_pool.read().await;
         guard
             .get(uri)
             .and_then(|channels| channels.choose(&mut rand::thread_rng()))
