@@ -38,8 +38,10 @@ struct Args {
     /// Uri of this peer.
     /// Other peers should be able to reach it by this uri.
     ///
-    /// If this value is not supplied and bootstrap is enabled
-    /// then qdrant will take internal grpc port from config and derive the IP address of this peer on bootstrap peer (receiving side)
+    /// This value has to be supplied if this is the first peer in a new deployment.
+    ///
+    /// In case this is not the first peer and it bootstraps the value is optional.
+    /// If not supplied then qdrant will take internal grpc port from config and derive the IP address of this peer on bootstrap peer (receiving side)
     #[clap(long, value_name = "URI")]
     uri: Option<Uri>,
 }
@@ -57,7 +59,11 @@ fn main() -> std::io::Result<()> {
 
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
     let consensus_enabled = if settings.cluster.enabled {
-        Some(ConsensusEnabled { propose_sender })
+        let args = Args::parse();
+        Some(ConsensusEnabled {
+            propose_sender,
+            first_peer: args.bootstrap.is_none(),
+        })
     } else {
         None
     };

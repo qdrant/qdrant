@@ -18,10 +18,12 @@ const EF_CONSTRUCT: usize = 64;
 const EF: usize = 64;
 const USE_HEURISTIC: bool = true;
 
-fn build_index(num_vectors: usize) -> (TestRawScorerProducer<CosineMetric>, GraphLayers) {
+fn build_index<TMetric: Metric>(
+    num_vectors: usize,
+) -> (TestRawScorerProducer<TMetric>, GraphLayers) {
     let mut rng = thread_rng();
 
-    let vector_holder = TestRawScorerProducer::new(DIM, num_vectors, CosineMetric {}, &mut rng);
+    let vector_holder = TestRawScorerProducer::<TMetric>::new(DIM, num_vectors, &mut rng);
     let mut graph_layers = GraphLayers::new(num_vectors, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
     let fake_filter_context = FakeFilterContext {};
     for idx in 0..(num_vectors as PointOffsetType) {
@@ -39,7 +41,7 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
 
     let mut rng = thread_rng();
 
-    let (vector_holder, graph_layers) = build_index(NUM_VECTORS);
+    let (vector_holder, graph_layers) = build_index::<CosineMetric>(NUM_VECTORS);
 
     group.bench_function("build-n-search-hnsw", |b| {
         b.iter(|| {
@@ -59,7 +61,7 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
         graph_layers.search(TOP, EF, scorer);
     }
 
-    let (vector_holder, graph_layers) = build_index(NUM_VECTORS * 10);
+    let (vector_holder, graph_layers) = build_index::<CosineMetric>(NUM_VECTORS * 10);
 
     group.bench_function("build-n-search-hnsw-10x", |b| {
         b.iter(|| {
@@ -98,16 +100,20 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
 struct FakeMetric {}
 
 impl Metric for FakeMetric {
-    fn distance(&self) -> Distance {
+    fn distance() -> Distance {
         todo!()
     }
 
-    fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         v1[0] + v2[0]
     }
 
-    fn preprocess(&self, _vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
+    fn preprocess(_vector: &[VectorElementType]) -> Option<Vec<VectorElementType>> {
         None
+    }
+
+    fn postprocess(score: ScoreType) -> ScoreType {
+        score
     }
 }
 
@@ -116,10 +122,9 @@ fn scoring_vectors(c: &mut Criterion) {
     let mut rng = thread_rng();
     let points_per_cycle = 1000;
     let base_num_vectors = 10_000;
-    let metric = FakeMetric {};
 
     let num_vectors = base_num_vectors;
-    let vector_holder = TestRawScorerProducer::new(DIM, num_vectors, metric.clone(), &mut rng);
+    let vector_holder = TestRawScorerProducer::<FakeMetric>::new(DIM, num_vectors, &mut rng);
 
     group.bench_function("score-point", |b| {
         b.iter(|| {
@@ -136,7 +141,7 @@ fn scoring_vectors(c: &mut Criterion) {
     });
 
     let num_vectors = base_num_vectors * 10;
-    let vector_holder = TestRawScorerProducer::new(DIM, num_vectors, metric.clone(), &mut rng);
+    let vector_holder = TestRawScorerProducer::<FakeMetric>::new(DIM, num_vectors, &mut rng);
 
     group.bench_function("score-point-10x", |b| {
         b.iter(|| {
@@ -153,7 +158,7 @@ fn scoring_vectors(c: &mut Criterion) {
     });
 
     let num_vectors = base_num_vectors * 50;
-    let vector_holder = TestRawScorerProducer::new(DIM, num_vectors, metric, &mut rng);
+    let vector_holder = TestRawScorerProducer::<FakeMetric>::new(DIM, num_vectors, &mut rng);
 
     group.bench_function("score-point-50x", |b| {
         b.iter(|| {
@@ -175,7 +180,6 @@ fn basic_scoring_vectors(c: &mut Criterion) {
     let mut rng = thread_rng();
     let points_per_cycle = 1000;
     let base_num_vectors = 10_000_000;
-    let metric = FakeMetric {};
 
     let num_vectors = base_num_vectors;
 
@@ -189,7 +193,7 @@ fn basic_scoring_vectors(c: &mut Criterion) {
             let points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
 
             let _s: f32 = points_to_score
-                .map(|x| metric.similarity(&vectors[x], &query))
+                .map(|x| FakeMetric::similarity(&vectors[x], &query))
                 .sum();
         })
     });
@@ -206,7 +210,7 @@ fn basic_scoring_vectors(c: &mut Criterion) {
             let points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
 
             let _s: f32 = points_to_score
-                .map(|x| metric.similarity(&vectors[x], &query))
+                .map(|x| FakeMetric::similarity(&vectors[x], &query))
                 .sum();
         })
     });

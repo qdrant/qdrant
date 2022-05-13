@@ -12,8 +12,8 @@ use tokio::{
 
 use segment::entry::entry_point::OperationError;
 use segment::types::{
-    Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, SearchParams, SeqNumberType,
-    VectorElementType, WithPayloadInterface,
+    Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, ScoreType, SearchParams,
+    SeqNumberType, VectorElementType, WithPayloadInterface,
 };
 
 use crate::{config::CollectionConfig, wal::WalError};
@@ -157,6 +157,11 @@ pub struct SearchRequest {
     /// Whether to return the point vector with the result?
     #[serde(default)]
     pub with_vector: bool,
+    /// Define a minimal score threshold for the result.
+    /// If defined, less similar results will not be returned.
+    /// Score of the returned result might be higher or smalled than the threshold depending on the
+    /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
+    pub score_threshold: Option<ScoreType>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -196,6 +201,11 @@ pub struct RecommendRequest {
     /// Whether to return the point vector with the result?
     #[serde(default)]
     pub with_vector: bool,
+    /// Define a minimal score threshold for the result.
+    /// If defined, less similar results will not be returned.
+    /// Score of the returned result might be higher or smalled than the threshold depending on the
+    /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
+    pub score_threshold: Option<ScoreType>,
 }
 
 #[derive(Error, Debug, Clone)]

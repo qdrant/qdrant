@@ -487,9 +487,23 @@ impl ShardOperation for &LocalShard {
         segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        segment_searcher
+        let res = segment_searcher
             .search(self.segments(), request.clone(), search_runtime_handle)
-            .await
+            .await?;
+        let distance = self.config.read().await.params.distance;
+        let processed_res = res.into_iter().map(|mut scored_point| {
+            scored_point.score = distance.postprocess_score(scored_point.score);
+            scored_point
+        });
+
+        let top_result = if let Some(threshold) = request.score_threshold {
+            processed_res
+                .take_while(|scored_point| distance.check_threshold(scored_point.score, threshold))
+                .collect()
+        } else {
+            processed_res.collect()
+        };
+        Ok(top_result)
     }
 
     async fn retrieve(

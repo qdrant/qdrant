@@ -63,12 +63,22 @@ impl Default for ConsensusConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
+    #[serde(default = "default_debug")]
     pub debug: bool,
+    #[serde(default = "default_log_level")]
     pub log_level: String,
     pub storage: StorageConfig,
     pub service: ServiceConfig,
     #[serde(default)]
     pub cluster: ClusterConfig,
+}
+
+fn default_debug() -> bool {
+    false
+}
+
+fn default_log_level() -> String {
+    "INFO".to_string()
 }
 
 fn default_timeout_ms() -> u64 {
@@ -124,5 +134,17 @@ pub fn max_web_workers(settings: &Settings) -> usize {
         settings.storage.performance.max_search_threads
     } else {
         max_workers.unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_read_default_config() {
+        let key = "RUN_MODE";
+        env::set_var(key, "TEST");
+        Settings::new().unwrap();
     }
 }

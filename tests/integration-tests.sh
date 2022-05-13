@@ -11,12 +11,16 @@ export QDRANT__SERVICE__GRPC_PORT="6334"
 
 MODE=$1
 # Enable distributed mode on demand
-if [ $1 == "distributed" ]; then
+if [ $MODE == "distributed" ]; then
   export QDRANT__CLUSTER__ENABLED="true"
+  # Run in background
+  $(./target/debug/qdrant --uri "http://127.0.0.1:6335") &
+else
+  # Run in background
+  $(./target/debug/qdrant) &
 fi
 
-# Run in background
-$(./target/debug/qdrant) &
+
 
 # Sleep to make sure the process has started (workaround for empty pidof)
 sleep 5
@@ -31,6 +35,11 @@ until $(curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collec
 done
 
 echo "server ready to serve traffic"
+
+# Wait for the peer to establish the leader and commit initial settings
+if [ $MODE == "distributed" ]; then
+  sleep 10
+fi
 
 ./tests/openapi_integration_test.sh
 

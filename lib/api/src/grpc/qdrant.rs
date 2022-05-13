@@ -1283,6 +1283,9 @@ pub struct SearchPoints {
     /// Search config
     #[prost(message, optional, tag="7")]
     pub params: ::core::option::Option<SearchParams>,
+    /// If provided - cut off results with worse scores
+    #[prost(float, optional, tag="8")]
+    pub score_threshold: ::core::option::Option<f32>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollPoints {
@@ -1330,6 +1333,9 @@ pub struct RecommendPoints {
     /// Search config
     #[prost(message, optional, tag="8")]
     pub params: ::core::option::Option<SearchParams>,
+    /// If provided - cut off results with worse scores
+    #[prost(float, optional, tag="9")]
+    pub score_threshold: ::core::option::Option<f32>,
 }
 // ---------------------------------------------
 // ---------------- RPC Response ---------------

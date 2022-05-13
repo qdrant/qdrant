@@ -1,12 +1,13 @@
 extern crate profiler_proc_macro;
 use profiler_proc_macro::trace;
 
+use crate::common::rocksdb_operations::{db_write_options, open_db_with_cf};
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::points_iterator::PointsIterator;
 use crate::id_tracker::IdTracker;
 use crate::types::{ExtendedPointId, PointIdType, PointOffsetType, SeqNumberType};
 use bincode;
-use rocksdb::{IteratorMode, Options, DB};
+use rocksdb::{IteratorMode, DB};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -50,8 +51,6 @@ fn external_to_stored_id(point_id: &PointIdType) -> StoredPointId {
     point_id.into()
 }
 
-const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
-
 const MAPPING_CF: &str = "mapping";
 const VERSIONS_CF: &str = "versions";
 
@@ -66,11 +65,7 @@ pub struct SimpleIdTracker {
 impl SimpleIdTracker {
     #[trace]
     pub fn open(path: &Path) -> OperationResult<Self> {
-        let mut options: Options = Options::default();
-        options.set_write_buffer_size(DB_CACHE_SIZE);
-        options.create_if_missing(true);
-        options.create_missing_column_families(true);
-        let store = DB::open_cf(&options, path, [MAPPING_CF, VERSIONS_CF])?;
+        let store = open_db_with_cf(path, &[MAPPING_CF, VERSIONS_CF])?;
 
         let mut internal_to_external: HashMap<PointOffsetType, PointIdType> = Default::default();
         let mut external_to_internal: BTreeMap<PointIdType, PointOffsetType> = Default::default();
@@ -126,10 +121,11 @@ impl IdTracker for SimpleIdTracker {
         version: SeqNumberType,
     ) -> OperationResult<()> {
         self.external_to_version.insert(external_id, version);
-        self.store.put_cf(
+        self.store.put_cf_opt(
             self.store.cf_handle(VERSIONS_CF).unwrap(),
             Self::store_key(&external_id),
             bincode::serialize(&version).unwrap(),
+            &db_write_options(),
         )?;
         Ok(())
     }
@@ -152,10 +148,11 @@ impl IdTracker for SimpleIdTracker {
         self.internal_to_external.insert(internal_id, external_id);
         self.max_internal_id = self.max_internal_id.max(internal_id);
 
-        self.store.put_cf(
+        self.store.put_cf_opt(
             self.store.cf_handle(MAPPING_CF).unwrap(),
             Self::store_key(&external_id),
             bincode::serialize(&internal_id).unwrap(),
+            &db_write_options(),
         )?;
         Ok(())
     }
