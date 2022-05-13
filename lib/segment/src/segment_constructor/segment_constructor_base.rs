@@ -1,3 +1,4 @@
+use crate::common::rocksdb_operations::open_db;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::index::hnsw_index::hnsw::HNSWIndex;
@@ -29,24 +30,24 @@ fn create_segment(
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<Segment> {
-    let tracker_path = segment_path.join("id_tracker");
-    let payload_storage_path = segment_path.join("payload_storage");
+    let database = open_db(segment_path)?;
+
     let payload_index_path = segment_path.join("payload_index");
     let vector_storage_path = segment_path.join("vector_storage");
     let vector_index_path = segment_path.join("vector_index");
 
-    let id_tracker = sp(SimpleIdTracker::open(&tracker_path)?);
+    let id_tracker = sp(SimpleIdTracker::open(database.clone())?);
 
     let vector_storage: Arc<AtomicRefCell<VectorStorageSS>> = match config.storage_type {
         StorageType::InMemory => {
-            open_simple_vector_storage(&vector_storage_path, config.vector_size, config.distance)?
+            open_simple_vector_storage(database.clone(), config.vector_size, config.distance)?
         }
         StorageType::Mmap => {
             open_memmap_vector_storage(&vector_storage_path, config.vector_size, config.distance)?
         }
     };
 
-    let payload_storage = sp(SimplePayloadStorage::open(&payload_storage_path)?.into());
+    let payload_storage = sp(SimplePayloadStorage::open(database.clone())?.into());
 
     let condition_checker = Arc::new(SimpleConditionChecker::new(
         payload_storage.clone(),
@@ -106,6 +107,7 @@ fn create_segment(
         segment_type,
         segment_config: config.clone(),
         error_status: None,
+        database,
     })
 }
 

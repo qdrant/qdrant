@@ -14,6 +14,7 @@ use crate::types::{
 use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
 use atomicwrites::{AllowOverwrite, AtomicFile};
+use rocksdb::DB;
 use std::collections::HashMap;
 use std::fs::{remove_dir_all, rename};
 use std::io::Write;
@@ -50,6 +51,7 @@ pub struct Segment {
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
     pub error_status: Option<SegmentFailedState>,
+    pub database: Arc<AtomicRefCell<DB>>,
 }
 
 impl Segment {

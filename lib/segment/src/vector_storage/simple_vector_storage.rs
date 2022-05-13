@@ -1,12 +1,11 @@
 use std::marker::PhantomData;
 use std::ops::Range;
-use std::path::Path;
 
 use log::debug;
 use rocksdb::{IteratorMode, DB};
 use serde::{Deserialize, Serialize};
 
-use crate::common::rocksdb_operations::{db_write_options, open_db};
+use crate::common::rocksdb_operations::{db_write_options, DB_VECTOR_CF};
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::tools::peek_top_largest_scores_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
@@ -28,7 +27,7 @@ pub struct SimpleVectorStorage<TMetric: Metric> {
     vectors: ChunkedVectors,
     deleted: BitVec,
     deleted_count: usize,
-    store: DB,
+    store: Arc<AtomicRefCell<DB>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -85,7 +84,7 @@ where
 }
 
 pub fn open_simple_vector_storage(
-    path: &Path,
+    store: Arc<AtomicRefCell<DB>>,
     dim: usize,
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageSS>>> {
@@ -93,21 +92,23 @@ pub fn open_simple_vector_storage(
     let mut deleted = BitVec::new();
     let mut deleted_count = 0;
 
-    let store = open_db(path)?;
+    {
+        let store_ref = store.borrow();
+        let cf_handle = store_ref.cf_handle(DB_VECTOR_CF).unwrap();
+        for (key, val) in store_ref.iterator_cf(cf_handle, IteratorMode::Start) {
+            let point_id: PointOffsetType = bincode::deserialize(&key).unwrap();
+            let stored_record: StoredRecord = bincode::deserialize(&val).unwrap();
+            if stored_record.deleted {
+                deleted_count += 1;
+            }
 
-    for (key, val) in store.iterator(IteratorMode::Start) {
-        let point_id: PointOffsetType = bincode::deserialize(&key).unwrap();
-        let stored_record: StoredRecord = bincode::deserialize(&val).unwrap();
-        if stored_record.deleted {
-            deleted_count += 1;
+            while deleted.len() <= (point_id as usize) {
+                deleted.push(false);
+            }
+
+            deleted.set(point_id as usize, stored_record.deleted);
+            vectors.insert(point_id, &stored_record.vector);
         }
-
-        while deleted.len() <= (point_id as usize) {
-            deleted.push(false);
-        }
-
-        deleted.set(point_id as usize, stored_record.deleted);
-        vectors.insert(point_id, &stored_record.vector);
     }
 
     debug!("Segment vectors: {}", vectors.len());
@@ -161,7 +162,11 @@ where
             deleted: self.deleted[point_id as usize],
             vector: v.to_vec(), // ToDo: try to reduce number of vector copies
         };
-        self.store.put_opt(
+
+        let store_ref = self.store.borrow();
+        let cf_handle = store_ref.cf_handle(DB_VECTOR_CF).unwrap();
+        store_ref.put_cf_opt(
+            cf_handle,
             bincode::serialize(&point_id).unwrap(),
             bincode::serialize(&record).unwrap(),
             &db_write_options(),
@@ -252,7 +257,9 @@ where
     }
 
     fn flush(&self) -> OperationResult<()> {
-        Ok(self.store.flush()?)
+        let store_ref = self.store.borrow();
+        let cf_handle = store_ref.cf_handle(DB_VECTOR_CF).unwrap();
+        Ok(store_ref.flush_cf(cf_handle)?)
     }
 
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
@@ -324,13 +331,15 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
+    use crate::common::rocksdb_operations::open_db;
 
     #[test]
     fn test_score_points() {
         let dir = TempDir::new("storage_dir").unwrap();
+        let db = open_db(dir.path()).unwrap();
         let distance = Distance::Dot;
         let dim = 4;
-        let storage = open_simple_vector_storage(dir.path(), dim, distance).unwrap();
+        let storage = open_simple_vector_storage(db, dim, distance).unwrap();
         let mut borrowed_storage = storage.borrow_mut();
 
         let vec0 = vec![1.0, 0.0, 1.0, 1.0];
