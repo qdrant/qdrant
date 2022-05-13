@@ -243,10 +243,12 @@ version = "0.7.0"
 dependencies = [
  "prost 0.10.1",
  "prost-types 0.10.1",
+ "rand 0.8.5",
  "schemars",
  "segment",
  "serde",
  "serde_json",
+ "tokio",
  "tonic",
  "tonic-build",
  "tower",

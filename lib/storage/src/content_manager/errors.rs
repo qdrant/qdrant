@@ -131,3 +131,11 @@ impl<E: std::fmt::Display> From<atomicwrites::Error<E>> for StorageError {
         }
     }
 }
+
+impl From<tonic::transport::Error> for StorageError {
+    fn from(err: tonic::transport::Error) -> Self {
+        StorageError::ServiceError {
+            description: format!("Tonic transport error: {}", err),
+        }
+    }
+}

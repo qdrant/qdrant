@@ -36,6 +36,7 @@ use crate::{
     },
     types::PeerAddressById,
 };
+use api::grpc::transport_channel_pool::TransportChannelPool;
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 use collection::shard::ShardId;
@@ -46,7 +47,7 @@ use raft::{
     RawNode,
 };
 use tokio::sync::oneshot;
-use tonic::transport::Uri;
+use tonic::transport::{Channel, Uri};
 use wal::Wal;
 
 const COLLECTIONS_DIR: &str = "collections";
@@ -56,6 +57,7 @@ const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 pub struct ConsensusEnabled {
     pub propose_sender: std::sync::mpsc::Sender<Vec<u8>>,
     pub first_peer: bool,
+    pub transport_channel_pool: TransportChannelPool,
 }
 
 /// The main object of the service. It holds all objects, required for proper functioning.
@@ -73,6 +75,7 @@ pub struct TableOfContent {
     propose_sender: Option<std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>>,
     on_consensus_op_apply:
         std::sync::Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
+    transport_channel_pool: TransportChannelPool,
     this_peer_id: u64,
 }
 
@@ -129,6 +132,14 @@ impl TableOfContent {
         )
         .expect("Cannot initialize Raft persistent storage");
 
+        let (propose_sender, transport_channel_pool) = match consensus_enabled {
+            None => (None, TransportChannelPool::default()), // use a default empty pool as consensus is disabled
+            Some(ce) => (
+                Some(std::sync::Mutex::new(ce.propose_sender)),
+                ce.transport_channel_pool,
+            ),
+        };
+
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: storage_config.clone(),
@@ -140,8 +151,9 @@ impl TableOfContent {
             this_peer_id: raft_state.this_peer_id(),
             collection_meta_wal,
             raft_state: Arc::new(std::sync::Mutex::new(raft_state)),
-            propose_sender: consensus_enabled.map(|ce| std::sync::Mutex::new(ce.propose_sender)),
+            propose_sender,
             on_consensus_op_apply: std::sync::Mutex::new(HashMap::new()),
+            transport_channel_pool,
         }
     }
 
@@ -808,6 +820,19 @@ impl TableOfContent {
 
     pub fn add_peer(&self, peer_id: PeerId, uri: Uri) -> Result<(), StorageError> {
         self.raft_state.lock()?.insert_peer(peer_id, uri)
+    }
+
+    /// A pool will be created if no channels exist for this address.
+    pub async fn get_or_create_pooled_channel(&self, uri: &Uri) -> Result<Channel, StorageError> {
+        self.transport_channel_pool
+            .get_or_create_pooled_channel(uri)
+            .await
+            .map_err(|err| StorageError::ServiceError {
+                description: format!(
+                    "Can't create pooled transport channel for {}. Error: {}",
+                    uri, err
+                ),
+            })
     }
 }
 

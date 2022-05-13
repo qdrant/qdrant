@@ -9,15 +9,13 @@ use std::{
 };
 
 use anyhow::Context;
-use api::grpc::{
-    qdrant::{raft_client::RaftClient, PeerId, RaftMessage as GrpcRaftMessage},
-    timeout_channel,
-};
+use api::grpc::qdrant::{raft_client::RaftClient, PeerId, RaftMessage as GrpcRaftMessage};
 use storage::content_manager::{
     consensus_ops::ConsensusOperations, errors::StorageError, toc::TableOfContentRef,
 };
 
 use crate::settings::ConsensusConfig;
+use api::grpc::transport_channel_pool::TransportChannelPool;
 use raft::{eraftpb::Message as RaftMessage, prelude::*};
 use tokio::runtime::Runtime;
 use tonic::transport::Uri;
@@ -115,7 +113,8 @@ impl Consensus {
         p2p_port: Option<u32>,
         config: &ConsensusConfig,
     ) -> anyhow::Result<()> {
-        let channel = timeout_channel(
+        // Use dedicated transport channel for bootstrapping because of specific timeout
+        let channel = TransportChannelPool::make_channel(
             Duration::from_secs(config.bootstrap_timeout_sec),
             bootstrap_peer,
         )
@@ -309,6 +308,8 @@ fn handle_messages(
         .collect();
     let bootstrap_uri = bootstrap_uri.clone();
     let consensus_config_arc = Arc::new(config.clone());
+    // TableOfContentRef wraps a Arc<TableOfContent>
+    let toc_clone = toc.clone();
     let future = async move {
         let mut send_futures = Vec::new();
         for (message, address) in messages_with_address {
@@ -331,7 +332,7 @@ fn handle_messages(
                     }
                 },
             };
-            send_futures.push(send_message(address, message, consensus_config_arc.clone()));
+            send_futures.push(send_message(toc_clone.clone(), address, message));
         }
         for result in futures::future::join_all(send_futures).await {
             if let Err(err) = result {
@@ -353,7 +354,8 @@ async fn who_is(
     let bootstrap_uri =
         bootstrap_uri.ok_or_else(|| anyhow::anyhow!("No bootstrap uri supplied"))?;
     let bootstrap_timeout = Duration::from_secs(config.bootstrap_timeout_sec);
-    let channel = timeout_channel(bootstrap_timeout, bootstrap_uri)
+    // Use dedicated transport channel for who_is because of specific timeout
+    let channel = TransportChannelPool::make_channel(bootstrap_timeout, bootstrap_uri)
         .await
         .context("Failed to create timeout channel")?;
     let mut client = RaftClient::new(channel);
@@ -366,12 +368,12 @@ async fn who_is(
 }
 
 async fn send_message(
+    toc: TableOfContentRef,
     address: Uri,
     message: RaftMessage,
-    config: Arc<ConsensusConfig>,
 ) -> anyhow::Result<()> {
-    let message_timeout = Duration::from_millis(config.message_timeout_ms);
-    let channel = timeout_channel(message_timeout, address)
+    let channel = toc
+        .get_or_create_pooled_channel(&address)
         .await
         .context("Failed to create timeout channel")?;
     let mut client = RaftClient::new(channel);
@@ -391,6 +393,7 @@ mod tests {
     use std::{sync::Arc, thread, time::Duration};
 
     use crate::settings::ConsensusConfig;
+    use api::grpc::transport_channel_pool::TransportChannelPool;
     use segment::types::Distance;
     use slog::Drain;
     use storage::content_manager::toc::ConsensusEnabled;
@@ -418,6 +421,7 @@ mod tests {
         let consensus_enabled = ConsensusEnabled {
             propose_sender,
             first_peer: true,
+            transport_channel_pool: TransportChannelPool::default(),
         };
         let toc = TableOfContent::new(&settings.storage, runtime, Some(consensus_enabled));
         let toc_arc = Arc::new(toc);

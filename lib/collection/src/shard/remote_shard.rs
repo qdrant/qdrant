@@ -17,17 +17,15 @@ use api::grpc::qdrant::{
     GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal, ScrollPoints,
     ScrollPointsInternal, SearchPoints, SearchPointsInternal,
 };
-use api::grpc::timeout_channel;
+use api::grpc::transport_channel_pool::TransportChannelPool;
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::runtime::Handle;
 use tonic::transport::Channel;
 use tonic::transport::Uri;
 use tonic::Status;
-use tower::timeout::Timeout;
 
 /// RemoteShard
 ///
@@ -39,10 +37,9 @@ pub struct RemoteShard {
     pub(crate) collection_id: CollectionId,
     pub peer_id: PeerId,
     ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
-    p2p_grpc_timeout: Duration,
+    channel_pool: Arc<TransportChannelPool>,
 }
 
-// TODO pool channels
 impl RemoteShard {
     fn current_address(&self) -> CollectionResult<Uri> {
         let guard_peer_address = self.ip_to_address.read()?;
@@ -56,18 +53,22 @@ impl RemoteShard {
         }
     }
 
-    async fn points_client(&self) -> CollectionResult<PointsInternalClient<Timeout<Channel>>> {
+    async fn points_client(&self) -> CollectionResult<PointsInternalClient<Channel>> {
         let current_address = self.current_address()?;
-        let timeout_channel = timeout_channel(self.p2p_grpc_timeout, current_address).await?;
-        Ok(PointsInternalClient::new(timeout_channel))
+        let pooled_channel = self
+            .channel_pool
+            .get_or_create_pooled_channel(&current_address)
+            .await?;
+        Ok(PointsInternalClient::new(pooled_channel))
     }
 
-    async fn collections_client(
-        &self,
-    ) -> CollectionResult<CollectionsInternalClient<Timeout<Channel>>> {
+    async fn collections_client(&self) -> CollectionResult<CollectionsInternalClient<Channel>> {
         let current_address = self.current_address()?;
-        let timeout_channel = timeout_channel(self.p2p_grpc_timeout, current_address).await?;
-        Ok(CollectionsInternalClient::new(timeout_channel))
+        let pooled_channel = self
+            .channel_pool
+            .get_or_create_pooled_channel(&current_address)
+            .await?;
+        Ok(CollectionsInternalClient::new(pooled_channel))
     }
 }
 
