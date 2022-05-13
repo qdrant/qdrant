@@ -18,6 +18,7 @@ pub fn db_options() -> Options {
     options.set_log_level(LogLevel::Error);
     options.set_recycle_log_file_num(2);
     options.set_max_log_file_size(DB_MAX_LOG_SIZE);
+    options.create_missing_column_families(true);
     #[cfg(debug_assertions)]
     {
         options.set_paranoid_checks(true);
@@ -26,10 +27,8 @@ pub fn db_options() -> Options {
 }
 
 pub fn open_db(path: &Path) -> Result<Arc<AtomicRefCell<DB>>, Error> {
-    let mut options = db_options();
-    options.create_missing_column_families(true);
     let db = DB::open_cf(
-        &options,
+        &db_options(),
         path,
         &[DB_VECTOR_CF, DB_PAYLOAD_CF, DB_MAPPING_CF, DB_VERSIONS_CF],
     )?;
