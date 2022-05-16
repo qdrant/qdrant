@@ -221,13 +221,8 @@ impl LocalShard {
         let distance = config.params.distance;
         for _sid in 0..config.optimizer_config.default_segment_number {
             let path_clone = segments_path.clone();
-            let segment = thread::spawn(move || {
-                build_simple_segment(
-                    &path_clone,
-                    vector_size,
-                    distance,
-                )
-            });
+            let segment =
+                thread::spawn(move || build_simple_segment(&path_clone, vector_size, distance));
             build_handlers.push(segment);
         }
 
