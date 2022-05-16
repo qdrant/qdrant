@@ -215,13 +215,33 @@ impl LocalShard {
             })?;
 
         let mut segment_holder = SegmentHolder::default();
+        let mut build_handlers = vec![];
 
+        let vector_size = config.params.vector_size;
+        let distance = config.params.distance;
         for _sid in 0..config.optimizer_config.default_segment_number {
-            let segment = build_simple_segment(
-                &segments_path,
-                config.params.vector_size,
-                config.params.distance,
-            )?;
+            let path_clone = segments_path.clone();
+            let segment =
+                thread::spawn(move || build_simple_segment(&path_clone, vector_size, distance));
+            build_handlers.push(segment);
+        }
+
+        let join_results = build_handlers
+            .into_iter()
+            .map(|handler| handler.join())
+            .collect_vec();
+
+        for join_result in join_results {
+            let segment = join_result.map_err(|e| {
+                let error_msg = if let Some(s) = e.downcast_ref::<&str>() {
+                    format!("Segment DB create panicked with:\n{}", s)
+                } else if let Some(s) = e.downcast_ref::<String>() {
+                    format!("Segment DB create panicked with:\n{}", s)
+                } else {
+                    "Segment DB create failed with unknown reason".to_string()
+                };
+                CollectionError::ServiceError { error: error_msg }
+            })??;
             segment_holder.add(segment);
         }
 
