@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::types::PeerAddressById;
 use atomicwrites::{AtomicFile, OverwriteBehavior::AllowOverwrite};
 use collection::PeerId;
 use raft::{
@@ -13,8 +14,6 @@ use raft::{
 };
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
-
-use crate::types::PeerAddressById;
 
 use super::errors::StorageError;
 
@@ -57,7 +56,7 @@ pub struct Persistent {
     state: RaftState,
     unapplied_entries: UnappliedEntries,
     #[serde(with = "serialize_peer_addresses")]
-    peer_address_by_id: Arc<std::sync::RwLock<PeerAddressById>>,
+    pub peer_address_by_id: Arc<std::sync::RwLock<PeerAddressById>>,
     this_peer_id: u64,
     #[serde(skip)]
     path: PathBuf,

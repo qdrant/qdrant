@@ -11,7 +11,9 @@ use std::{
 
 use crate::operations::types::PointRequest;
 use crate::operations::OperationToShard;
+use crate::shard::remote_shard::RemoteShard;
 use crate::shard::ShardOperation;
+use api::grpc::transport_channel_pool::TransportChannelPool;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
 use futures::future::{join_all, try_join_all};
@@ -39,6 +41,7 @@ use segment::{
 use serde::{Deserialize, Serialize};
 use shard::{local_shard::LocalShard, Shard, ShardId};
 use tokio::runtime::Handle;
+use tonic::transport::Uri;
 
 pub mod collection_manager;
 mod common;
@@ -103,6 +106,56 @@ impl State {
     }
 }
 
+#[derive(Debug)]
+pub enum CollectionShardDistribution {
+    AllLocal,
+    Distribution {
+        local: Vec<ShardId>,
+        remote: Vec<(ShardId, PeerId)>,
+    },
+}
+
+impl CollectionShardDistribution {
+    /// Unpack the distribution into separate local and remote peers.
+    /// If `AllLocal`, it default to assigning `config_shard_number` locally.
+    fn unpack_or_default(self, config_shard_number: u32) -> (Vec<ShardId>, Vec<(ShardId, PeerId)>) {
+        match self {
+            CollectionShardDistribution::AllLocal => (
+                (0..config_shard_number).collect::<Vec<ShardId>>(),
+                Vec::new(),
+            ),
+            CollectionShardDistribution::Distribution { local, remote } => (local, remote),
+        }
+    }
+
+    pub fn from_shard_to_peer(this_peer: PeerId, shard_to_peer: &HashMap<ShardId, PeerId>) -> Self {
+        let local = shard_to_peer
+            .iter()
+            .filter_map(|(shard, peer)| {
+                if peer == &this_peer {
+                    Some(*shard)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let remote = shard_to_peer
+            .iter()
+            .filter_map(|(&shard, &peer)| {
+                if peer != this_peer {
+                    Some((shard, peer))
+                } else {
+                    None
+                }
+            })
+            .clone()
+            .collect();
+
+        CollectionShardDistribution::Distribution { local, remote }
+    }
+}
+
 /// Collection's data is split into several shards.
 pub struct Collection {
     shards: HashMap<ShardId, Shard>,
@@ -117,11 +170,16 @@ impl Collection {
         id: CollectionId,
         path: &Path,
         config: &CollectionConfig,
+        shard_distribution: CollectionShardDistribution,
+        ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
+        channel_pool: Arc<TransportChannelPool>,
     ) -> Result<Self, CollectionError> {
         config.save(path)?;
         let mut ring = HashRing::new();
         let mut shards: HashMap<ShardId, Shard> = HashMap::new();
-        for shard_id in 0..config.params.shard_number.get() {
+        let (local_shards, remote_shards) =
+            shard_distribution.unpack_or_default(config.params.shard_number.get());
+        for shard_id in local_shards {
             let shard_path = shard_path(path, shard_id);
             let shard = tokio::fs::create_dir_all(&shard_path).await.map_err(|err| {
                 CollectionError::ServiceError {
@@ -148,6 +206,19 @@ impl Collection {
             shards.insert(shard_id, Shard::Local(shard));
             ring.add(shard_id);
         }
+
+        for (shard_id, peer_id) in remote_shards {
+            let shard = RemoteShard::build(
+                shard_id,
+                id.clone(),
+                peer_id,
+                ip_to_address.clone(),
+                channel_pool.clone(),
+            );
+            shards.insert(shard_id, Shard::Remote(shard));
+            ring.add(shard_id);
+        }
+
         Ok(Self {
             shards,
             ring,
@@ -156,7 +227,13 @@ impl Collection {
         })
     }
 
-    pub async fn load(id: CollectionId, path: &Path) -> Self {
+    pub async fn load(
+        id: CollectionId,
+        path: &Path,
+        shard_distribution: CollectionShardDistribution,
+        ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
+        channel_pool: Arc<TransportChannelPool>,
+    ) -> Self {
         let config = CollectionConfig::load(path).unwrap_or_else(|err| {
             panic!(
                 "Can't read collection config due to {}\nat {}",
@@ -170,7 +247,9 @@ impl Collection {
         Self::try_migrate_legacy_one_shard(path)
             .expect("Failed to migrate legacy collection format.");
 
-        for shard_id in 0..config.params.shard_number.get() {
+        let (local_shards, remote_shards) =
+            shard_distribution.unpack_or_default(config.params.shard_number.get());
+        for shard_id in local_shards {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
                 shard_id,
@@ -178,6 +257,19 @@ impl Collection {
             );
             ring.add(shard_id);
         }
+
+        for (shard_id, peer_id) in remote_shards {
+            let shard = RemoteShard::build(
+                shard_id,
+                id.clone(),
+                peer_id,
+                ip_to_address.clone(),
+                channel_pool.clone(),
+            );
+            shards.insert(shard_id, Shard::Remote(shard));
+            ring.add(shard_id);
+        }
+
         Self {
             shards,
             ring,
@@ -237,7 +329,7 @@ impl Collection {
         }
     }
 
-    fn all_shards(&self) -> impl Iterator<Item = &Shard> {
+    pub fn all_shards(&self) -> impl Iterator<Item = &Shard> {
         self.shards.values()
     }
 

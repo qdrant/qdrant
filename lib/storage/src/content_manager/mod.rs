@@ -4,19 +4,23 @@ mod collections_ops;
 pub mod conversions;
 pub mod errors;
 pub mod raft_state;
+mod shard_distribution;
 pub mod toc;
 
 pub mod consensus_ops {
+    use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
+    use crate::content_manager::shard_distribution::ShardDistributionProposal;
     use collection::PeerId;
     use raft::eraftpb::Entry as RaftEntry;
     use serde::{Deserialize, Serialize};
 
-    use super::collection_meta_ops::CollectionMetaOperations;
-
     /// Operation that should pass consensus
     #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
     pub enum ConsensusOperations {
-        CollectionMeta(Box<CollectionMetaOperations>),
+        CollectionMeta(
+            Box<CollectionMetaOperations>,
+            Option<ShardDistributionProposal>,
+        ),
         AddPeer(PeerId, String),
     }
 

@@ -41,6 +41,22 @@ pub struct RemoteShard {
 }
 
 impl RemoteShard {
+    pub fn build(
+        id: ShardId,
+        collection_id: CollectionId,
+        peer_id: PeerId,
+        ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
+        channel_pool: Arc<TransportChannelPool>,
+    ) -> Self {
+        Self {
+            id,
+            collection_id,
+            peer_id,
+            ip_to_address,
+            channel_pool,
+        }
+    }
+
     fn current_address(&self) -> CollectionResult<Uri> {
         let guard_peer_address = self.ip_to_address.read()?;
         let peer_address = guard_peer_address.get(&self.peer_id).cloned();

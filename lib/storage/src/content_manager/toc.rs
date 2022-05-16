@@ -17,9 +17,10 @@ use collection::operations::types::{
     UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
-use collection::Collection;
+use collection::{Collection, CollectionShardDistribution};
 use segment::types::ScoredPoint;
 
+use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::content_manager::{
     alias_mapping::AliasPersistence,
     collection_meta_ops::{
@@ -76,7 +77,7 @@ pub struct TableOfContent {
     propose_sender: Option<std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>>,
     on_consensus_op_apply:
         std::sync::Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
-    transport_channel_pool: TransportChannelPool,
+    transport_channel_pool: Arc<TransportChannelPool>,
     this_peer_id: u64,
 }
 
@@ -90,6 +91,20 @@ impl TableOfContent {
         let collection_management_runtime = Runtime::new().unwrap();
 
         create_dir_all(&collections_path).expect("Can't create Collections directory");
+
+        let raft_state = PersistentRaftState::load_or_init(
+            &storage_config.storage_path,
+            consensus_enabled.as_ref().map(|ce| ce.first_peer),
+        )
+        .expect("Cannot initialize Raft persistent storage");
+
+        let (propose_sender, transport_channel_pool) = match consensus_enabled {
+            None => (None, Arc::new(TransportChannelPool::default())), // use a default empty pool as consensus is disabled
+            Some(ce) => (
+                Some(std::sync::Mutex::new(ce.propose_sender)),
+                Arc::new(ce.transport_channel_pool),
+            ),
+        };
 
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");
@@ -107,8 +122,13 @@ impl TableOfContent {
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
 
-            let collection = collection_management_runtime
-                .block_on(Collection::load(collection_name.clone(), &collection_path));
+            let collection = collection_management_runtime.block_on(Collection::load(
+                collection_name.clone(),
+                &collection_path,
+                CollectionShardDistribution::AllLocal, //TODO read remote info from local file system
+                raft_state.peer_address_by_id.clone(),
+                transport_channel_pool.clone(),
+            ));
 
             collections.insert(collection_name, collection);
         }
@@ -126,19 +146,6 @@ impl TableOfContent {
             Arc::new(std::sync::Mutex::new(
                 Wal::open(collections_meta_wal_path).unwrap(),
             ))
-        };
-        let raft_state = PersistentRaftState::load_or_init(
-            &storage_config.storage_path,
-            consensus_enabled.as_ref().map(|ce| ce.first_peer),
-        )
-        .expect("Cannot initialize Raft persistent storage");
-
-        let (propose_sender, transport_channel_pool) = match consensus_enabled {
-            None => (None, TransportChannelPool::default()), // use a default empty pool as consensus is disabled
-            Some(ce) => (
-                Some(std::sync::Mutex::new(ce.propose_sender)),
-                ce.transport_channel_pool,
-            ),
         };
 
         TableOfContent {
@@ -205,10 +212,18 @@ impl TableOfContent {
         Ok(resolved_name)
     }
 
+    fn share_ip_to_address(&self) -> Result<Arc<std::sync::RwLock<PeerAddressById>>, StorageError> {
+        // Done within a non-async function as the std::sync::Mutex is not Send
+        let raft_state_guard = self.raft_state.lock()?;
+        let ip_to_address = raft_state_guard.peer_address_by_id.clone();
+        Ok(ip_to_address)
+    }
+
     async fn create_collection(
         &self,
         collection_name: &str,
         operation: CreateCollection,
+        collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
         let CreateCollection {
             vector_size,
@@ -249,15 +264,20 @@ impl TableOfContent {
             Some(diff) => diff.update(&self.storage_config.hnsw_index)?,
         };
 
+        let collection_config = CollectionConfig {
+            wal_config,
+            params: collection_params,
+            optimizer_config: optimizers_config,
+            hnsw_config,
+        };
+        let ip_to_address = self.share_ip_to_address()?;
         let collection = Collection::new(
             collection_name.to_string(),
             Path::new(&collection_path),
-            &CollectionConfig {
-                wal_config,
-                params: collection_params,
-                optimizer_config: optimizers_config,
-                hnsw_config,
-            },
+            &collection_config,
+            collection_shard_distribution,
+            ip_to_address,
+            self.transport_channel_pool.clone(),
         )
         .await?;
 
@@ -356,14 +376,42 @@ impl TableOfContent {
         operation: CollectionMetaOperations,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
+        // if distributed deployment is enabled
         if self.propose_sender.is_some() {
+            let shard_distribution = match &operation {
+                CollectionMetaOperations::CreateCollection(op) => {
+                    let shard_number = op.create_collection.shard_number;
+                    let known_peers: Vec<_> = self
+                        .raft_state
+                        .lock()?
+                        .peer_address_by_id
+                        .read()?
+                        .keys()
+                        .cloned()
+                        .collect();
+                    let known_collections = self.collections.read().await;
+                    let known_shards: Vec<_> = known_collections
+                        .iter()
+                        .flat_map(|(_, col)| col.all_shards())
+                        .collect();
+                    let shard_distribution = ShardDistributionProposal::build(
+                        shard_number,
+                        self.this_peer_id,
+                        &known_peers,
+                        known_shards,
+                    );
+                    log::info!("Proposing distribution for {} shards for collection '{}' among {} peers {:?}", shard_number, op.collection_name, known_peers.len(), shard_distribution.distribution);
+                    Some(shard_distribution)
+                }
+                _ => None,
+            };
             self.propose_consensus_op(
-                ConsensusOperations::CollectionMeta(Box::new(operation)),
+                ConsensusOperations::CollectionMeta(Box::new(operation), shard_distribution),
                 wait_timeout,
             )
             .await
         } else {
-            self.perform_collection_meta_op(operation).await
+            self.perform_collection_meta_op(operation, None).await
         }
     }
 
@@ -403,11 +451,24 @@ impl TableOfContent {
     async fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
+        shard_distribution_proposal: Option<ShardDistributionProposal>,
     ) -> Result<bool, StorageError> {
         match operation {
             CollectionMetaOperations::CreateCollection(operation) => {
-                self.create_collection(&operation.collection_name, operation.create_collection)
-                    .await
+                let collection_shard_distribution = match shard_distribution_proposal {
+                    None => CollectionShardDistribution::AllLocal,
+                    Some(distribution) => {
+                        let local = distribution.local_shards_for_peer(self.this_peer_id);
+                        let remote = distribution.remote_shards_for_peer(self.this_peer_id);
+                        CollectionShardDistribution::Distribution { local, remote }
+                    }
+                };
+                self.create_collection(
+                    &operation.collection_name,
+                    operation.create_collection,
+                    collection_shard_distribution,
+                )
+                .await
             }
             CollectionMetaOperations::UpdateCollection(operation) => {
                 self.update_collection(&operation.collection_name, operation.update_collection)
@@ -640,9 +701,9 @@ impl TableOfContent {
         let operation: ConsensusOperations = entry.try_into()?;
         let on_apply = self.on_consensus_op_apply.lock()?.remove(&operation);
         let result = match operation {
-            ConsensusOperations::CollectionMeta(operation) => self
+            ConsensusOperations::CollectionMeta(operation, shard_distribution) => self
                 .collection_management_runtime
-                .block_on(self.perform_collection_meta_op(*operation)),
+                .block_on(self.perform_collection_meta_op(*operation, shard_distribution)),
             ConsensusOperations::AddPeer(peer_id, uri) => self
                 .add_peer(
                     peer_id,
@@ -814,11 +875,18 @@ impl TableOfContent {
                     // Create collection if not present locally
                     None => {
                         let collection_path = self.create_collection_path(id).await?;
+                        let ip_to_address = self.share_ip_to_address()?;
+                        let shard_distribution = CollectionShardDistribution::from_shard_to_peer(
+                            self.this_peer_id,
+                            &state.shard_to_peer,
+                        );
                         let collection = Collection::new(
                             id.to_string(),
                             Path::new(&collection_path),
-                            // TODO: Apply shard_to_peer when non local peers are allowed
                             &state.config,
+                            shard_distribution,
+                            ip_to_address,
+                            self.transport_channel_pool.clone(),
                         )
                         .await?;
                         collections.validate_collection_not_exists(id).await?;
@@ -830,6 +898,10 @@ impl TableOfContent {
             // Remove collections that are present locally but are not in the snapshot state
             for collection_name in collections.keys() {
                 if !data.collections.contains_key(collection_name) {
+                    log::info!(
+                        "Deleting collection {} because it is not part of the consensus snapshot",
+                        collection_name
+                    );
                     self.delete_collection(collection_name).await?;
                 }
             }
