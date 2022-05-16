@@ -11,8 +11,8 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use std::cmp::max;
-use std::fs::create_dir_all;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use tokio::fs::create_dir_all;
 use tokio::runtime::{self, Handle, Runtime};
 use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot, Mutex, RwLock as TokioRwLock};
 
@@ -192,7 +192,7 @@ impl LocalShard {
     }
 
     /// Creates new empty shard with given configuration, initializing all storages, optimizers and directories.
-    pub fn build(
+    pub async fn build(
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
@@ -200,15 +200,19 @@ impl LocalShard {
     ) -> CollectionResult<LocalShard> {
         let wal_path = shard_path.join("wal");
 
-        create_dir_all(&wal_path).map_err(|err| CollectionError::ServiceError {
-            error: format!("Can't create shard wal directory. Error: {}", err),
-        })?;
+        create_dir_all(&wal_path)
+            .await
+            .map_err(|err| CollectionError::ServiceError {
+                error: format!("Can't create shard wal directory. Error: {}", err),
+            })?;
 
         let segments_path = shard_path.join("segments");
 
-        create_dir_all(&segments_path).map_err(|err| CollectionError::ServiceError {
-            error: format!("Can't create shard segments directory. Error: {}", err),
-        })?;
+        create_dir_all(&segments_path)
+            .await
+            .map_err(|err| CollectionError::ServiceError {
+                error: format!("Can't create shard segments directory. Error: {}", err),
+            })?;
 
         let mut segment_holder = SegmentHolder::default();
 
