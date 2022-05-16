@@ -226,8 +226,10 @@ impl LocalShard {
             build_handlers.push(segment);
         }
 
-        for handler in build_handlers {
-            let segment = handler.join().map_err(|e| {
+        let join_results = build_handlers.into_iter().map(|handler| handler.join()).collect_vec();
+
+        for join_result in join_results {
+            let segment = join_result.map_err(|e| {
                 let error_msg = if let Some(s) = e.downcast_ref::<&str>() {
                     format!("Segment DB create panicked with:\n{}", s)
                 } else if let Some(s) = e.downcast_ref::<String>() {
