@@ -226,7 +226,10 @@ impl LocalShard {
             build_handlers.push(segment);
         }
 
-        let join_results = build_handlers.into_iter().map(|handler| handler.join()).collect_vec();
+        let join_results = build_handlers
+            .into_iter()
+            .map(|handler| handler.join())
+            .collect_vec();
 
         for join_result in join_results {
             let segment = join_result.map_err(|e| {
