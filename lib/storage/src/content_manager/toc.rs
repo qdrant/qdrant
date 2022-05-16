@@ -163,15 +163,17 @@ impl TableOfContent {
             .join(collection_name)
     }
 
-    fn create_collection_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
+    async fn create_collection_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
         let path = self.get_collection_path(collection_name);
 
-        create_dir_all(&path).map_err(|err| StorageError::ServiceError {
-            description: format!(
-                "Can't create directory for collection {}. Error: {}",
-                collection_name, err
-            ),
-        })?;
+        tokio::fs::create_dir_all(&path)
+            .await
+            .map_err(|err| StorageError::ServiceError {
+                description: format!(
+                    "Can't create directory for collection {}. Error: {}",
+                    collection_name, err
+                ),
+            })?;
 
         Ok(path)
     }
@@ -222,7 +224,7 @@ impl TableOfContent {
             .validate_collection_not_exists(collection_name)
             .await?;
 
-        let collection_path = self.create_collection_path(collection_name)?;
+        let collection_path = self.create_collection_path(collection_name).await?;
 
         let collection_params = CollectionParams {
             vector_size,
@@ -767,7 +769,7 @@ impl TableOfContent {
                     }
                     // Create collection if not present locally
                     None => {
-                        let collection_path = self.create_collection_path(id)?;
+                        let collection_path = self.create_collection_path(id).await?;
                         let collection = Collection::new(
                             id.to_string(),
                             Path::new(&collection_path),
