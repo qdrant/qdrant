@@ -123,11 +123,17 @@ impl Collection {
         let mut shards: HashMap<ShardId, Shard> = HashMap::new();
         for shard_id in 0..config.params.shard_number.get() {
             let shard_path = shard_path(path, shard_id);
-            let shard = create_dir_all(&shard_path)
-                .map_err(|err| CollectionError::ServiceError {
+            let shard = tokio::fs::create_dir_all(&shard_path).await.map_err(|err| {
+                CollectionError::ServiceError {
                     error: format!("Can't create shard {shard_id} directory. Error: {}", err),
-                })
-                .and_then(|()| LocalShard::build(shard_id, id.clone(), &shard_path, config));
+                }
+            });
+
+            let shard = match shard {
+                Ok(_) => LocalShard::build(shard_id, id.clone(), &shard_path, config).await,
+                Err(err) => Err(err),
+            };
+
             let shard = match shard {
                 Ok(shard) => shard,
                 Err(err) => {
