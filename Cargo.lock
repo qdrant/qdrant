@@ -252,7 +252,7 @@ dependencies = [
  "tonic",
  "tonic-build",
  "tower",
- "uuid",
+ "uuid 1.0.0",
 ]
 
 [[package]]
@@ -959,7 +959,7 @@ version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6ee87af31d84ef885378aebca32be3d682b0e0dc119d5b4860a2c5bb5046730"
 dependencies = [
- "uuid",
+ "uuid 0.8.2",
 ]
 
 [[package]]
@@ -2948,22 +2948,22 @@ dependencies = [
 
 [[package]]
 name = "schemars"
-version = "0.8.8"
+version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6b5a3c80cea1ab61f4260238409510e814e38b4b563c06044edf91e7dc070e3"
+checksum = "7d21ecb263bf75fc69d5e74b0f2a60b6dd80cfd9fb0eba15c4b9d1104ceffc77"
 dependencies = [
  "dyn-clone",
  "schemars_derive",
  "serde",
  "serde_json",
- "uuid",
+ "uuid 1.0.0",
 ]
 
 [[package]]
 name = "schemars_derive"
-version = "0.8.8"
+version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41ae4dce13e8614c46ac3c38ef1c0d668b101df6ac39817aebdaa26642ddae9b"
+checksum = "219b924f5b39f25b7d7c9203873a2698fdac8db2b396aaea6fa099b699cc40e9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3014,7 +3014,7 @@ dependencies = [
  "serde_json",
  "tempdir",
  "thiserror",
- "uuid",
+ "uuid 1.0.0",
 ]
 
 [[package]]
@@ -3070,9 +3070,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive_internals"
-version = "0.25.0"
+version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1dbab34ca63057a1f15280bdf3c39f2b1eb1b54c17e98360e511637aef7418c6"
+checksum = "85bf8229e7920a9f636479437026331ce11aa132b4dde37d121944a44d6e5f3c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3322,7 +3322,7 @@ dependencies = [
  "debugid",
  "memmap2",
  "stable_deref_trait",
- "uuid",
+ "uuid 0.8.2",
 ]
 
 [[package]]
@@ -3834,6 +3834,12 @@ name = "uuid"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
+
+[[package]]
+name = "uuid"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8cfcd319456c4d6ea10087ed423473267e1a071f3bc0aa89f80d60997843c6f0"
 dependencies = [
  "getrandom",
  "serde",
