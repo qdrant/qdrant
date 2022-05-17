@@ -9,6 +9,7 @@ use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
 use log::debug;
+use rocksdb::DB;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::points_iterator::PointsIteratorSS;
@@ -44,6 +45,7 @@ pub struct StructPayloadIndex {
     /// Root of index persistence dir
     path: PathBuf,
     visited_pool: VisitedPool,
+    store: Arc<AtomicRefCell<DB>>,
 }
 
 impl StructPayloadIndex {
@@ -95,6 +97,10 @@ impl StructPayloadIndex {
 
     fn get_field_index_path(path: &Path, field: PayloadKeyTypeRef) -> PathBuf {
         Self::get_field_index_dir(path).join(format!("{}.idx", field))
+    }
+
+    fn get_field_cf_name(field: PayloadKeyTypeRef) -> String {
+        format!("{}.idx", field)
     }
 
     fn save_field_index(&self, field: PayloadKeyTypeRef) -> OperationResult<()> {
@@ -159,6 +165,7 @@ impl StructPayloadIndex {
         payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         path: &Path,
+        store: Arc<AtomicRefCell<DB>>,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
         let config_path = PayloadConfig::get_config_path(path);
@@ -176,6 +183,7 @@ impl StructPayloadIndex {
             config,
             path: path.to_owned(),
             visited_pool: Default::default(),
+            store,
         };
 
         if !index.config_path().exists() {
@@ -195,7 +203,8 @@ impl StructPayloadIndex {
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
 
-        let mut builders = index_selector(&field_type);
+        let store_cf_name = Self::get_field_cf_name(field);
+        let mut builders = index_selector(&field_type, &store_cf_name, self.store.clone());
         for point_id in payload_storage.iter_ids() {
             let point_payload = payload_storage.payload(point_id);
             let field_value_opt = point_payload.get_value(field);

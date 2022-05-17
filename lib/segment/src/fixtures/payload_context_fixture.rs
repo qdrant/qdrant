@@ -14,6 +14,7 @@ use crate::types::{PayloadSchemaType, PointIdType, PointOffsetType, SeqNumberTyp
 use atomic_refcell::AtomicRefCell;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
+use rocksdb::DB;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -182,6 +183,7 @@ pub fn create_plain_payload_index(path: &Path, num_points: usize, seed: u64) -> 
 ///
 pub fn create_struct_payload_index(
     path: &Path,
+    store: Arc<AtomicRefCell<DB>>,
     num_points: usize,
     seed: u64,
 ) -> StructPayloadIndex {
@@ -190,9 +192,14 @@ pub fn create_struct_payload_index(
     ));
     let ids_iterator = Arc::new(AtomicRefCell::new(IdsIterator::new(num_points)));
 
-    let mut index =
-        StructPayloadIndex::open(ids_iterator.clone(), payload_storage, ids_iterator, path)
-            .unwrap();
+    let mut index = StructPayloadIndex::open(
+        ids_iterator.clone(),
+        payload_storage,
+        ids_iterator,
+        path,
+        store,
+    )
+    .unwrap();
 
     index
         .set_indexed(STR_KEY, PayloadSchemaType::Keyword)

@@ -3,6 +3,7 @@ mod tests {
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
+    use segment::common::rocksdb_operations::open_db;
     use segment::fixtures::payload_context_fixture::{
         create_plain_payload_index, create_struct_payload_index,
     };
@@ -20,8 +21,9 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(seed);
 
         let dir = TempDir::new("storage_dir").unwrap();
+        let db = open_db(dir.path()).unwrap();
         let plain_index = create_plain_payload_index(dir.path(), NUM_POINTS, seed);
-        let struct_index = create_struct_payload_index(dir.path(), NUM_POINTS, seed);
+        let struct_index = create_struct_payload_index(dir.path(), db, NUM_POINTS, seed);
 
         for _ in 0..ATTEMPTS {
             let filter = random_filter(&mut rng, 3);

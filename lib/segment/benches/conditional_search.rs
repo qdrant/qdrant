@@ -4,6 +4,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use segment::common::rocksdb_operations::open_db;
 use segment::fixtures::payload_context_fixture::{
     create_plain_payload_index, create_struct_payload_index,
 };
@@ -90,7 +91,8 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
     let seed = 42;
 
     let dir = TempDir::new("storage_dir").unwrap();
-    let struct_index = create_struct_payload_index(dir.path(), NUM_POINTS, seed);
+    let db = open_db(dir.path()).unwrap();
+    let struct_index = create_struct_payload_index(dir.path(), db, NUM_POINTS, seed);
 
     let mut result_size = 0;
     let mut query_count = 0;

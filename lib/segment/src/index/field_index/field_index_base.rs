@@ -1,6 +1,8 @@
+use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::geo_index::PersistedGeoMapIndex;
 use crate::index::field_index::map_index::PersistedMapIndex;
 use crate::index::field_index::numeric_index::PersistedNumericIndex;
+use crate::index::field_index::on_disk_map_index::OnDiskMapIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType,
@@ -28,6 +30,10 @@ pub trait PayloadFieldIndex {
 
     /// Returns an amount of unique indexed points
     fn count_indexed_points(&self) -> usize;
+
+    fn flush(&self) -> OperationResult<()> {
+        Ok(())
+    }
 }
 
 pub trait ValueIndexer<T> {
@@ -65,9 +71,11 @@ pub trait PayloadFieldIndexBuilder {
 #[derive(Serialize, Deserialize)]
 pub enum FieldIndex {
     IntIndex(PersistedNumericIndex<IntPayloadType>),
+    FloatIndex(PersistedNumericIndex<FloatPayloadType>),
     IntMapIndex(PersistedMapIndex<IntPayloadType>),
     KeywordIndex(PersistedMapIndex<String>),
-    FloatIndex(PersistedNumericIndex<FloatPayloadType>),
+    IntMapDiskIndex(OnDiskMapIndex<IntPayloadType>),
+    KeywordDiskIndex(OnDiskMapIndex<String>),
     GeoIndex(PersistedGeoMapIndex),
 }
 
@@ -75,9 +83,11 @@ impl FieldIndex {
     pub fn get_payload_field_index(&self) -> &dyn PayloadFieldIndex {
         match self {
             FieldIndex::IntIndex(payload_field_index) => payload_field_index,
+            FieldIndex::FloatIndex(payload_field_index) => payload_field_index,
             FieldIndex::IntMapIndex(payload_field_index) => payload_field_index,
             FieldIndex::KeywordIndex(payload_field_index) => payload_field_index,
-            FieldIndex::FloatIndex(payload_field_index) => payload_field_index,
+            FieldIndex::IntMapDiskIndex(payload_field_index) => payload_field_index,
+            FieldIndex::KeywordDiskIndex(payload_field_index) => payload_field_index,
             FieldIndex::GeoIndex(payload_field_index) => payload_field_index,
         }
     }
