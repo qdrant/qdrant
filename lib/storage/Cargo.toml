@@ -16,7 +16,7 @@ rand = "0.8.5"
 wal = { git = "https://github.com/qdrant/wal.git" }
 tokio = {version = "~1.18", features = ["rt-multi-thread"]}
 serde = { version = "~1.0", features = ["derive"] }
-schemars = { version = "0.8.8", features = ["uuid"] }
+schemars = { version = "0.8.9", features = ["uuid1"] }
 itertools = "0.10"
 async-trait = "0.1.53"
 log = "0.4"

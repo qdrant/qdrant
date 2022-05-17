@@ -41,5 +41,5 @@ api = {path = "../api"}
 
 itertools = "0.10"
 indicatif = "0.16.2"
-schemars = { version = "0.8.8", features = ["uuid"] }
+schemars = { version = "0.8.9", features = ["uuid1"] }
 num_cpus = "1.13.1"
