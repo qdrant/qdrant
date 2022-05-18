@@ -1,2 +1,7 @@
+tests/
 target/
 storage/
+lib/segment/target
+lib/api/target
+lib/collection/target
+lib/storage/target

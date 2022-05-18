@@ -61,4 +61,4 @@ jobs:
         run: ./tests/integration-tests.sh distributed
         shell: bash
       - name: Run integration tests - multiple peers
-        run: pytest ./tests/python_tests/multipeer_test.py
+        run: pytest ./tests/consensus_tests/multipeer_test.py
