@@ -302,13 +302,13 @@ mod tests {
     }
 
     fn save_map_index<N: Hash + Eq + Clone + Display + FromStr + Debug>(
-        data: &Vec<Vec<N>>,
+        data: &[Vec<N>],
         path: &Path,
     ) {
         let mut index = OnDiskMapIndex::<N>::new(open_db(path), CF_NAME);
-        for idx in 0..data.len() {
+        for (idx, values) in data.iter().enumerate() {
             index
-                .add_many_to_map(idx as PointOffsetType, data[idx].clone())
+                .add_many_to_map(idx as PointOffsetType, values.clone())
                 .unwrap();
         }
         index.flush().unwrap();
@@ -320,7 +320,7 @@ mod tests {
     ) {
         let mut index = OnDiskMapIndex::<N>::new(open_db(path), CF_NAME);
         index.load().unwrap();
-        for idx in 0..data.len() {
+        for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<N> = HashSet::from_iter(
                 index
                     .get_values(idx as PointOffsetType)
@@ -328,7 +328,7 @@ mod tests {
                     .iter()
                     .cloned(),
             );
-            let check_values: HashSet<N> = HashSet::from_iter(data[idx].iter().cloned());
+            let check_values: HashSet<N> = HashSet::from_iter(values.iter().cloned());
             assert_eq!(index_values, check_values);
         }
     }
