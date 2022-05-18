@@ -55,6 +55,9 @@ impl<T: KeyEncoder> NumericIndex<T> {
     pub fn add_value(&mut self, id: PointOffsetType, value: T) {
         let key = value.encode_key(id);
         let db_ref = self.db.borrow();
+        //TODO(gvelo): currently all the methods on the ValueIndexer trait are infallible so we
+        // cannot propagate error from here. We need to remove the unwrap() and handle the
+        // cf_handle() result when ValueIndexer is refactored to return OperationResult<>
         let cf_handle = db_ref.cf_handle(&self.store_cf_name).unwrap();
         db_ref
             .put_cf_opt(cf_handle, &key, id.to_be_bytes(), &db_write_options())
