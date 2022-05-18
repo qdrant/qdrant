@@ -46,7 +46,9 @@ jobs:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v1
       - name: Install dependencies
-        run: sudo apt-get install clang python3-pytest
+        run: sudo apt-get install clang python3-pip
+      - name: Install pytest
+        run: pip3 install pytest
       - name: Install protoc
         run: .github/scripts/protoc.sh
         shell: bash
