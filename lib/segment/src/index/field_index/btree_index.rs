@@ -69,9 +69,14 @@ impl<T: KeyEncoder> NumericIndex<T> {
     }
 
     #[allow(dead_code)] // TODO(gvelo): remove when this index is integrated in `StructPayloadIndex`
-    fn load(&mut self) {
+    fn load(&mut self) -> OperationResult<()> {
         let db_ref = self.db.borrow();
-        let cf_handle = db_ref.cf_handle(&self.store_cf_name).unwrap();
+        let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
+            OperationError::service_error(&format!(
+                "Index flush error: column family {} not found",
+                self.store_cf_name
+            ))
+        })?;
         let mut iter = db_ref.raw_iterator_cf(&cf_handle);
         iter.seek_to_first();
         while iter.valid() {
@@ -85,6 +90,7 @@ impl<T: KeyEncoder> NumericIndex<T> {
             self.map.insert(key, value);
             iter.next();
         }
+        Ok(())
     }
 
     #[allow(dead_code)] // TODO(gvelo): remove when this index is integrated in `StructPayloadIndex`
@@ -241,7 +247,7 @@ mod tests {
         index.flush().unwrap();
 
         let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, CF_NAME.to_string());
-        new_index.load();
+        new_index.load().unwrap();
 
         test_cond(
             &new_index,
