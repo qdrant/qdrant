@@ -315,7 +315,7 @@ mod tests {
     }
 
     fn load_map_index<N: Hash + Eq + Clone + Display + FromStr + Debug>(
-        data: &Vec<Vec<N>>,
+        data: &[Vec<N>],
         path: &Path,
     ) {
         let mut index = OnDiskMapIndex::<N>::new(open_db(path), CF_NAME);
