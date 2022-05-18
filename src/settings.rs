@@ -26,7 +26,7 @@ pub struct ClusterConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct P2pConfig {
     #[serde(default)]
-    pub p2p_port: Option<u16>,
+    pub port: Option<u16>,
     #[serde(default = "default_connection_pool_size")]
     pub connection_pool_size: usize,
 }
@@ -34,7 +34,7 @@ pub struct P2pConfig {
 impl Default for P2pConfig {
     fn default() -> Self {
         P2pConfig {
-            p2p_port: None,
+            port: None,
             connection_pool_size: default_connection_pool_size(),
         }
     }

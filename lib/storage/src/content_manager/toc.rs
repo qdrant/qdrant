@@ -1,3 +1,4 @@
+use std::cmp;
 use std::collections::HashMap;
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::num::NonZeroU32;
@@ -70,7 +71,7 @@ pub struct TableOfContent {
     collection_management_runtime: Runtime,
     alias_persistence: RwLock<AliasPersistence>,
     segment_searcher: Box<dyn CollectionSearcher + Sync + Send>,
-    collection_meta_wal: Arc<std::sync::Mutex<Wal>>,
+    consensus_op_wal: Arc<std::sync::Mutex<Wal>>,
     raft_state: Arc<std::sync::Mutex<PersistentRaftState>>,
     propose_sender: Option<std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>>,
     on_consensus_op_apply:
@@ -149,7 +150,7 @@ impl TableOfContent {
             collection_management_runtime,
             // PeerId does not change during execution so it is ok to copy it here.
             this_peer_id: raft_state.this_peer_id(),
-            collection_meta_wal,
+            consensus_op_wal: collection_meta_wal,
             raft_state: Arc::new(std::sync::Mutex::new(raft_state)),
             propose_sender,
             on_consensus_op_apply: std::sync::Mutex::new(HashMap::new()),
@@ -584,15 +585,27 @@ impl TableOfContent {
         result.map_err(|err| err.into())
     }
 
-    pub fn collection_wal_entry(&self, id: u64) -> raft::Result<RaftEntry> {
-        if id < 1 {
+    pub fn consensus_op_entry(&self, raft_entry_id: u64) -> raft::Result<RaftEntry> {
+        // Raft entries are expected to have index starting from 1
+        if raft_entry_id < 1 {
             return Err(raft::Error::Store(raft::StorageError::Unavailable));
         }
+        let first_entry = self
+            .first_consensus_op_wal_entry()
+            .map_err(consensus::raft_error_other)?
+            .ok_or(raft::Error::Store(raft::StorageError::Unavailable))?;
+        let first_wal_index = self
+            .consensus_op_wal
+            .lock()
+            .map_err(consensus::raft_error_other)?
+            .first_index();
+        // Due to snapshots there might be different offsets between wal index and raft entry index
+        let offset = first_entry.index - first_wal_index;
         <RaftEntry as prost::Message>::decode(
-            self.collection_meta_wal
+            self.consensus_op_wal
                 .lock()
                 .map_err(consensus::raft_error_other)?
-                .entry(id - 1)
+                .entry(raft_entry_id - offset)
                 .ok_or(raft::Error::Store(raft::StorageError::Unavailable))?
                 .as_ref(),
         )
@@ -603,7 +616,7 @@ impl TableOfContent {
         self.this_peer_id
     }
 
-    async fn collection_meta_snapshot(&self) -> raft::Result<consensus::StateSnapshot> {
+    async fn state_snapshot(&self) -> raft::Result<consensus::SnapshotData> {
         use super::raft_state::PeerAddressByIdWrapper;
 
         let collections: HashMap<collection::CollectionId, collection::State> = self
@@ -613,7 +626,7 @@ impl TableOfContent {
             .iter()
             .map(|(id, collection)| (id.clone(), collection.state(self.this_peer_id())))
             .collect();
-        Ok(consensus::StateSnapshot {
+        Ok(consensus::SnapshotData {
             collections,
             aliases: self.alias_persistence.read().await.state().clone(),
             address_by_id: PeerAddressByIdWrapper(
@@ -656,7 +669,10 @@ impl TableOfContent {
         raw_node: &mut RawNode<TableOfContentRef>,
     ) -> Result<(), StorageError> {
         let change: ConfChangeV2 = prost::Message::decode(entry.get_data())?;
-        raw_node.apply_conf_change(&change)?;
+        let conf_state = raw_node.apply_conf_change(&change)?;
+        self.raft_state
+            .lock()?
+            .apply_state_update(|state| state.conf_state = conf_state)?;
         Ok(())
     }
 
@@ -689,7 +705,7 @@ impl TableOfContent {
                 None => break,
             };
             log::info!("Applying committed entry with index {entry_index}");
-            let entry = self.collection_wal_entry(entry_index)?;
+            let entry = self.consensus_op_entry(entry_index)?;
             if entry.data.is_empty() {
                 // Empty entry, when the peer becomes Leader it will send an empty entry.
             } else {
@@ -735,28 +751,59 @@ impl TableOfContent {
     pub fn append_entries(&self, entries: Vec<RaftEntry>) -> Result<(), StorageError> {
         use prost::Message;
 
-        let mut wal_guard = self.collection_meta_wal.lock()?;
+        let mut wal_guard = self.consensus_op_wal.lock()?;
         for entry in entries {
             log::debug!("Appending entry: {entry:?}");
             let mut buf = vec![];
             entry.encode(&mut buf)?;
-            let index = wal_guard.append(&buf)?;
-            assert_eq!(index + 1, entry.index)
+            wal_guard.append(&buf)?;
         }
         Ok(())
     }
 
-    pub fn apply_snapshot(&self, snapshot: &RaftSnapshot) -> Result<(), StorageError> {
-        let snapshot: consensus::StateSnapshot = snapshot.try_into()?;
+    pub fn first_consensus_op_wal_entry(&self) -> Result<Option<RaftEntry>, StorageError> {
+        let wal_guard = self.consensus_op_wal.lock()?;
+        let first_index = wal_guard.first_index();
+        let entry = wal_guard
+            .entry(first_index)
+            .map(|entry| <RaftEntry as prost::Message>::decode(entry.as_ref()));
+        Ok(entry.transpose()?)
+    }
 
+    pub fn last_consensus_op_wal_entry(&self) -> Result<Option<RaftEntry>, StorageError> {
+        let wal_guard = self.consensus_op_wal.lock()?;
+        let last_index = wal_guard.last_index();
+        let entry = wal_guard
+            .entry(last_index)
+            .map(|entry| <RaftEntry as prost::Message>::decode(entry.as_ref()));
+        Ok(entry.transpose()?)
+    }
+
+    pub fn apply_snapshot(&self, snapshot: &RaftSnapshot) -> Result<(), StorageError> {
+        let meta = snapshot.get_metadata();
+        if raft::Storage::first_index(self)? > meta.index {
+            return Err(StorageError::ServiceError {
+                description: "Snapshot out of date".to_string(),
+            });
+        }
+        self.consensus_op_wal.lock()?.clear()?;
+        self.raft_state.lock()?.apply_state_update(move |state| {
+            state.conf_state = meta.get_conf_state().clone();
+            state.hard_state.term = cmp::max(state.hard_state.term, meta.term);
+            state.hard_state.commit = meta.index
+        })?;
+        self.apply_snapshot_data(snapshot.get_data().try_into()?)
+    }
+
+    fn apply_snapshot_data(&self, data: consensus::SnapshotData) -> Result<(), StorageError> {
         // Apply peer addresses
         self.raft_state
             .lock()?
-            .set_peer_address_by_id(snapshot.address_by_id.0)?;
+            .set_peer_address_by_id(data.address_by_id.0)?;
 
         self.collection_management_runtime.block_on(async {
             let mut collections = self.collections.write().await;
-            for (id, state) in &snapshot.collections {
+            for (id, state) in &data.collections {
                 let collection = collections.get_mut(id);
                 match collection {
                     // Update state if collection present locally
@@ -786,7 +833,7 @@ impl TableOfContent {
 
             // Remove collections that are present locally but are not in the snapshot state
             for collection_name in collections.keys() {
-                if !snapshot.collections.contains_key(collection_name) {
+                if !data.collections.contains_key(collection_name) {
                     self.delete_collection(collection_name).await?;
                 }
             }
@@ -795,7 +842,7 @@ impl TableOfContent {
             self.alias_persistence
                 .write()
                 .await
-                .apply_state(snapshot.aliases)?;
+                .apply_state(data.aliases)?;
             Ok(())
         })
     }
@@ -803,7 +850,7 @@ impl TableOfContent {
     pub fn set_hard_state(&self, hard_state: raft::eraftpb::HardState) -> Result<(), StorageError> {
         self.raft_state
             .lock()?
-            .apply_state_update(|state| state.hard_state = hard_state)
+            .apply_state_update(move |state| state.hard_state = hard_state)
     }
 
     pub fn hard_state(&self) -> Result<raft::eraftpb::HardState, StorageError> {
@@ -868,7 +915,7 @@ mod consensus {
     ) -> raft::Result<Vec<RaftEntry>> {
         (low..high)
             .take(max_size.unwrap_or(high - low + 1) as usize)
-            .map(|id| toc.collection_wal_entry(id))
+            .map(|id| toc.consensus_op_entry(id))
             .collect()
     }
 
@@ -899,30 +946,50 @@ mod consensus {
                     return Ok(raft_state.state().hard_state.term);
                 }
             }
-            Ok(self.collection_wal_entry(idx)?.term)
+            Ok(self.consensus_op_entry(idx)?.term)
         }
 
         fn first_index(&self) -> raft::Result<u64> {
-            Ok(self
-                .collection_meta_wal
-                .lock()
+            let index = match self
+                .first_consensus_op_wal_entry()
                 .map_err(raft_error_other)?
-                .first_index()
-                + 1)
+            {
+                Some(entry) => entry.index,
+                None => {
+                    self.raft_state
+                        .lock()
+                        .map_err(raft_error_other)?
+                        .state()
+                        .hard_state
+                        .commit
+                        + 1
+                }
+            };
+            Ok(index)
         }
 
         fn last_index(&self) -> raft::Result<u64> {
-            Ok(self
-                .collection_meta_wal
-                .lock()
+            let index = match self
+                .last_consensus_op_wal_entry()
                 .map_err(raft_error_other)?
-                .num_entries())
+            {
+                Some(entry) => entry.index,
+                None => {
+                    self.raft_state
+                        .lock()
+                        .map_err(raft_error_other)?
+                        .state()
+                        .hard_state
+                        .commit
+                }
+            };
+            Ok(index)
         }
 
         fn snapshot(&self, request_index: u64) -> raft::Result<raft::eraftpb::Snapshot> {
             let snapshot = self
                 .collection_management_runtime
-                .block_on(self.collection_meta_snapshot())?;
+                .block_on(self.state_snapshot())?;
             let raft_state = self
                 .raft_state
                 .lock()
@@ -995,17 +1062,17 @@ mod consensus {
     }
 
     #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct StateSnapshot {
+    pub struct SnapshotData {
         pub collections: HashMap<CollectionId, collection::State>,
         pub aliases: AliasMapping,
         pub address_by_id: PeerAddressByIdWrapper,
     }
 
-    impl TryFrom<&raft::eraftpb::Snapshot> for StateSnapshot {
+    impl TryFrom<&[u8]> for SnapshotData {
         type Error = serde_cbor::Error;
 
-        fn try_from(snapshot: &raft::eraftpb::Snapshot) -> Result<Self, Self::Error> {
-            serde_cbor::from_slice(snapshot.get_data())
+        fn try_from(bytes: &[u8]) -> Result<SnapshotData, Self::Error> {
+            serde_cbor::from_slice(bytes)
         }
     }
 

@@ -47,11 +47,18 @@ jobs:
       - uses: Swatinem/rust-cache@v1
       - name: Install dependencies
         run: sudo apt-get install clang
+      - uses: actions/setup-python@v3
+        with:
+          python-version: '3.10'
+      - name: Install pytest
+        run: pip install pytest requests
       - name: Install protoc
         run: .github/scripts/protoc.sh
         shell: bash
       - name: Build
         run: cargo build
-      - name: Run integration tests
+      - name: Run integration tests - 1 peer
         run: ./tests/integration-tests.sh distributed
         shell: bash
+      - name: Run integration tests - multiple peers
+        run: pytest ./tests/python_tests/multipeer_test.py
