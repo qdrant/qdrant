@@ -7,7 +7,7 @@ import requests
 from . import conftest
 from subprocess import Popen
 
-N_PEERS = 2
+N_PEERS = 5
 
 
 def get_http_port(peer_index: int) -> int:
@@ -75,6 +75,7 @@ def test_multipeer_deployment(tmp_path: pathlib.Path):
         log_file = open(f"peer{i}.log", "w")
         conftest.processes.append(
             Popen([qdrant_exec, "--bootstrap", bootstrap_uri], env=env, cwd=peer_dirs[i], stderr=log_file))
+        time.sleep(3)
 
     # Wait
     time.sleep(3)
