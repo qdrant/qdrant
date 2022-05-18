@@ -8,6 +8,7 @@ use rocksdb::DB;
 use serde_json::Value;
 
 use crate::common::rocksdb_operations::db_write_options;
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
     PayloadFieldIndexBuilder, ValueIndexer,
@@ -84,6 +85,18 @@ impl<T: KeyEncoder> NumericIndex<T> {
             self.map.insert(key, value);
             iter.next();
         }
+    }
+
+    #[allow(dead_code)] // TODO(gvelo): remove when this index is integrated in `StructPayloadIndex`
+    pub fn flush(&self) -> OperationResult<()> {
+        let db_ref = self.db.borrow();
+        let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
+            OperationError::service_error(&format!(
+                "Index flush error: column family {} not found",
+                self.store_cf_name
+            ))
+        })?;
+        Ok(db_ref.flush_cf(cf_handle)?)
     }
 }
 
@@ -224,6 +237,8 @@ mod tests {
             .into_iter()
             .enumerate()
             .for_each(|(idx, values)| index.add_many_to_list(idx as PointOffsetType + 1, values));
+
+        index.flush().unwrap();
 
         let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, CF_NAME.to_string());
         new_index.load();
