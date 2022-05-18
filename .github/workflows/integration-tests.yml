@@ -51,7 +51,7 @@ jobs:
         with:
           python-version: '3.10'
       - name: Install pytest
-        run: pip install pytest
+        run: pip install pytest requests
       - name: Install protoc
         run: .github/scripts/protoc.sh
         shell: bash
