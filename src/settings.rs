@@ -10,6 +10,8 @@ pub struct ServiceConfig {
     pub grpc_port: Option<u16>, // None means that gRPC is disabled
     pub max_request_size_mb: usize,
     pub max_workers: Option<usize>,
+    #[serde(default = "default_cors")]
+    pub enable_cors: bool,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -70,6 +72,10 @@ pub struct Settings {
     pub service: ServiceConfig,
     #[serde(default)]
     pub cluster: ClusterConfig,
+}
+
+fn default_cors() -> bool {
+    true
 }
 
 fn default_debug() -> bool {
