@@ -87,3 +87,9 @@ service:
   grpc_port: null
   # Uncomment to enable gRPC:
   # grpc_port: 6334
+
+  # Enable CORS headers in REST API.
+  # If enabled, browsers would be allowed to query REST endpoints regardless of query origin.
+  # More info: https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS
+  # Default: true
+  enable_cors: true

@@ -4,7 +4,8 @@ pub mod helpers;
 
 use crate::actix::api::collections_api::config_collections_api;
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
-use actix_web::middleware::Logger;
+use actix_cors::Cors;
+use actix_web::middleware::{Condition, Logger};
 use actix_web::web::Data;
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use std::sync::Arc;
@@ -45,7 +46,10 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
     actix_web::rt::System::new().block_on(async {
         let toc_data = web::Data::new(toc);
         HttpServer::new(move || {
+            let cors = Cors::default().allow_any_origin().allow_any_origin();
+
             App::new()
+                .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(Logger::default())
                 .app_data(toc_data.clone())
                 .app_data(Data::new(
