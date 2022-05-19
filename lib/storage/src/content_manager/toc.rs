@@ -617,8 +617,6 @@ impl TableOfContent {
     }
 
     async fn state_snapshot(&self) -> raft::Result<consensus::SnapshotData> {
-        use super::raft_state::PeerAddressByIdWrapper;
-
         let collections: HashMap<collection::CollectionId, collection::State> = self
             .collections
             .read()
@@ -629,13 +627,12 @@ impl TableOfContent {
         Ok(consensus::SnapshotData {
             collections,
             aliases: self.alias_persistence.read().await.state().clone(),
-            address_by_id: PeerAddressByIdWrapper(
-                self.raft_state
-                    .lock()
-                    .map_err(consensus::raft_error_other)?
-                    .peer_address_by_id()
-                    .map_err(consensus::raft_error_other)?,
-            ),
+            address_by_id: self
+                .raft_state
+                .lock()
+                .map_err(consensus::raft_error_other)?
+                .peer_address_by_id()
+                .map_err(consensus::raft_error_other)?,
         })
     }
 
@@ -799,7 +796,7 @@ impl TableOfContent {
         // Apply peer addresses
         self.raft_state
             .lock()?
-            .set_peer_address_by_id(data.address_by_id.0)?;
+            .set_peer_address_by_id(data.address_by_id)?;
 
         self.collection_management_runtime.block_on(async {
             let mut collections = self.collections.write().await;
@@ -903,7 +900,7 @@ mod consensus {
     use raft::{eraftpb::Entry as RaftEntry, storage::Storage as RaftStorage, RaftState};
     use serde::{Deserialize, Serialize};
 
-    use crate::content_manager::{alias_mapping::AliasMapping, raft_state::PeerAddressByIdWrapper};
+    use crate::{content_manager::alias_mapping::AliasMapping, types::PeerAddressById};
 
     use super::TableOfContent;
 
@@ -1065,7 +1062,8 @@ mod consensus {
     pub struct SnapshotData {
         pub collections: HashMap<CollectionId, collection::State>,
         pub aliases: AliasMapping,
-        pub address_by_id: PeerAddressByIdWrapper,
+        #[serde(with = "crate::serialize_peer_addresses")]
+        pub address_by_id: PeerAddressById,
     }
 
     impl TryFrom<&[u8]> for SnapshotData {
