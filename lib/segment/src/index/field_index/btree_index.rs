@@ -1,9 +1,14 @@
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
 use std::ops::Bound::{Excluded, Included, Unbounded};
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
+use rocksdb::DB;
 use serde_json::Value;
 
+use crate::common::rocksdb_operations::db_write_options;
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
     PayloadFieldIndexBuilder, ValueIndexer,
@@ -29,15 +34,34 @@ impl KeyEncoder for FloatPayloadType {
     }
 }
 
-#[derive(Default)]
 struct NumericIndex<T: KeyEncoder> {
     map: BTreeMap<Vec<u8>, u32>,
+    db: Arc<AtomicRefCell<DB>>,
+    store_cf_name: String,
     phantom: PhantomData<T>,
 }
 
 impl<T: KeyEncoder> NumericIndex<T> {
+    #[allow(dead_code)] // TODO(gvelo): remove when this index is integrated in `StructPayloadIndex`
+    pub fn new(db: Arc<AtomicRefCell<DB>>, store_cf_name: String) -> Self {
+        Self {
+            map: BTreeMap::new(),
+            db,
+            store_cf_name,
+            phantom: PhantomData::default(),
+        }
+    }
+
     pub fn add_value(&mut self, id: PointOffsetType, value: T) {
         let key = value.encode_key(id);
+        let db_ref = self.db.borrow();
+        //TODO(gvelo): currently all the methods on the ValueIndexer trait are infallible so we
+        // cannot propagate error from here. We need to remove the unwrap() and handle the
+        // cf_handle() result when ValueIndexer is refactored to return OperationResult<>
+        let cf_handle = db_ref.cf_handle(&self.store_cf_name).unwrap();
+        db_ref
+            .put_cf_opt(cf_handle, &key, id.to_be_bytes(), &db_write_options())
+            .unwrap();
         self.map.insert(key, id);
     }
 
@@ -45,6 +69,43 @@ impl<T: KeyEncoder> NumericIndex<T> {
         for value in values {
             self.add_value(idx, value);
         }
+    }
+
+    #[allow(dead_code)] // TODO(gvelo): remove when this index is integrated in `StructPayloadIndex`
+    fn load(&mut self) -> OperationResult<()> {
+        let db_ref = self.db.borrow();
+        let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
+            OperationError::service_error(&format!(
+                "Index flush error: column family {} not found",
+                self.store_cf_name
+            ))
+        })?;
+        let mut iter = db_ref.raw_iterator_cf(&cf_handle);
+        iter.seek_to_first();
+        while iter.valid() {
+            let key = iter.key().unwrap().to_owned();
+            let value = u32::from_be_bytes(
+                iter.value()
+                    .unwrap()
+                    .try_into()
+                    .expect("key with incorrect length"),
+            );
+            self.map.insert(key, value);
+            iter.next();
+        }
+        Ok(())
+    }
+
+    #[allow(dead_code)] // TODO(gvelo): remove when this index is integrated in `StructPayloadIndex`
+    pub fn flush(&self) -> OperationResult<()> {
+        let db_ref = self.db.borrow();
+        let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
+            OperationError::service_error(&format!(
+                "Index flush error: column family {} not found",
+                self.store_cf_name
+            ))
+        })?;
+        Ok(db_ref.flush_cf(cf_handle)?)
     }
 }
 
@@ -152,12 +213,23 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
 
 #[cfg(test)]
 mod tests {
+    use crate::common::rocksdb_operations::db_options;
     use itertools::Itertools;
+    use tempdir::TempDir;
 
     use super::*;
 
+    const CF_NAME: &str = "test_cf";
+
     #[test]
-    fn test_numeric_index() {
+    fn test_numeric_index_load_from_disk() {
+        let tmp_dir = TempDir::new("test_numeric_index_load").unwrap();
+        let file_path = tmp_dir.path().join("index");
+        let mut db = DB::open_default(file_path).unwrap();
+        db.create_cf(CF_NAME, &db_options()).unwrap();
+        let db_ref = Arc::new(AtomicRefCell::new(db));
+        let mut index: NumericIndex<_> = NumericIndex::new(db_ref.clone(), CF_NAME.to_string());
+
         let values = vec![
             vec![1.0],
             vec![1.0],
@@ -170,7 +242,49 @@ mod tests {
             vec![3.0],
         ];
 
-        let mut index: NumericIndex<_> = Default::default();
+        values
+            .into_iter()
+            .enumerate()
+            .for_each(|(idx, values)| index.add_many_to_list(idx as PointOffsetType + 1, values));
+
+        index.flush().unwrap();
+
+        let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, CF_NAME.to_string());
+        new_index.load().unwrap();
+
+        test_cond(
+            &new_index,
+            Range {
+                gt: None,
+                gte: None,
+                lt: None,
+                lte: Some(2.6),
+            },
+            vec![1, 2, 3, 4, 5, 6, 7, 8],
+        );
+    }
+
+    #[test]
+    fn test_numeric_index() {
+        let tmp_dir = TempDir::new("test_numeric_index").unwrap();
+        let file_path = tmp_dir.path().join("index");
+        let mut db = DB::open_default(file_path).unwrap();
+        db.create_cf(CF_NAME, &db_options()).unwrap();
+        let db_ref = Arc::new(AtomicRefCell::new(db));
+
+        let values = vec![
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![2.0],
+            vec![2.5],
+            vec![2.6],
+            vec![3.0],
+        ];
+
+        let mut index: NumericIndex<_> = NumericIndex::new(db_ref, CF_NAME.to_string());
 
         values
             .into_iter()
