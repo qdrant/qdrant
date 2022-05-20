@@ -821,9 +821,8 @@ impl TableOfContent {
                             &state.config,
                         )
                         .await?;
-                        let mut write_collections = self.collections.write().await;
-                        write_collections.validate_collection_not_exists(id).await?;
-                        write_collections.insert(id.to_string(), collection);
+                        collections.validate_collection_not_exists(id).await?;
+                        collections.insert(id.to_string(), collection);
                     }
                 }
             }
