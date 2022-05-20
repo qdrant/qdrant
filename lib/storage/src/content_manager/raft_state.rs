@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use std::{
-    collections::HashMap,
     fs::File,
     io::BufWriter,
     path::{Path, PathBuf},
@@ -8,8 +7,6 @@ use std::{
 
 use atomicwrites::{AtomicFile, OverwriteBehavior::AllowOverwrite};
 use collection::PeerId;
-use itertools::Itertools;
-use prost::Message;
 use raft::{
     eraftpb::{ConfState, HardState},
     RaftState,
@@ -56,9 +53,11 @@ impl UnappliedEntries {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Persistent {
-    state: RaftStateWrapper,
+    #[serde(with = "RaftStateDef")]
+    state: RaftState,
     unapplied_entries: UnappliedEntries,
-    peer_address_by_id: Arc<std::sync::RwLock<PeerAddressByIdWrapper>>, // TODO pass to remote shard
+    #[serde(with = "serialize_peer_addresses")]
+    peer_address_by_id: Arc<std::sync::RwLock<PeerAddressById>>,
     this_peer_id: u64,
     #[serde(skip)]
     path: PathBuf,
@@ -66,7 +65,7 @@ pub struct Persistent {
 
 impl Persistent {
     pub fn state(&self) -> &RaftState {
-        &self.state.0
+        &self.state
     }
 
     pub fn load_or_init(
@@ -91,9 +90,9 @@ impl Persistent {
         &mut self,
         update: impl FnOnce(&mut RaftState),
     ) -> Result<(), StorageError> {
-        let mut state = self.state.0.clone();
+        let mut state = self.state.clone();
         update(&mut state);
-        self.state = RaftStateWrapper(state);
+        self.state = state;
         self.save()
     }
 
@@ -119,7 +118,7 @@ impl Persistent {
         &mut self,
         peer_address_by_id: PeerAddressById,
     ) -> Result<(), StorageError> {
-        *self.peer_address_by_id.write()? = PeerAddressByIdWrapper(peer_address_by_id);
+        *self.peer_address_by_id.write()? = peer_address_by_id;
         self.save()
     }
 
@@ -127,7 +126,6 @@ impl Persistent {
         if let Some(prev_peer_address) = self
             .peer_address_by_id
             .write()?
-            .0
             .insert(peer_id, address.clone())
         {
             log::warn!("Replaced address of peer {peer_id} from {prev_peer_address} to {address}");
@@ -137,7 +135,7 @@ impl Persistent {
 
     pub fn peer_address_by_id(&self) -> Result<PeerAddressById, StorageError> {
         let peer_address_by_id = &self.peer_address_by_id.read()?;
-        Ok(peer_address_by_id.0.clone())
+        Ok((*peer_address_by_id).clone())
     }
 
     pub fn this_peer_id(&self) -> u64 {
@@ -163,12 +161,12 @@ impl Persistent {
             vec![]
         };
         let state = Self {
-            state: RaftStateWrapper(RaftState {
+            state: RaftState {
                 hard_state: HardState::default(),
                 // For network with 1 node, set it as voter.
                 // First vec is voters, second is learners.
                 conf_state: ConfState::from((learners, vec![])),
-            }),
+            },
             unapplied_entries: Default::default(),
             peer_address_by_id: Default::default(),
             this_peer_id,
@@ -193,74 +191,70 @@ impl Persistent {
     }
 }
 
-/// Serializable [`PeerAddressById`]
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(try_from = "HashMap<u64, String>")]
-#[serde(into = "HashMap<u64, String>")]
-pub struct PeerAddressByIdWrapper(pub PeerAddressById);
+mod serialize_peer_addresses {
+    use http::Uri;
+    use serde::{self, ser, Deserializer, Serializer};
+    use std::{
+        collections::HashMap,
+        sync::{Arc, RwLock},
+    };
 
-impl From<PeerAddressByIdWrapper> for HashMap<u64, String> {
-    fn from(wrapper: PeerAddressByIdWrapper) -> Self {
-        wrapper
-            .0
-            .into_iter()
-            .map(|(id, address)| (id, format!("{address}")))
-            .collect()
+    use crate::{serialize_peer_addresses, types::PeerAddressById};
+
+    pub fn serialize<S>(
+        addresses: &Arc<RwLock<PeerAddressById>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let addresses: HashMap<u64, Uri> = addresses
+            .read()
+            .map_err(|_| ser::Error::custom("RwLock is poisoned"))?
+            .clone();
+        serialize_peer_addresses::serialize(&addresses, serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Arc<RwLock<PeerAddressById>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let addresses: HashMap<u64, Uri> = serialize_peer_addresses::deserialize(deserializer)?;
+        Ok(Arc::new(RwLock::new(addresses)))
     }
 }
 
-impl TryFrom<HashMap<u64, String>> for PeerAddressByIdWrapper {
-    type Error = http::uri::InvalidUri;
-
-    fn try_from(value: HashMap<u64, String>) -> Result<Self, Self::Error> {
-        Ok(PeerAddressByIdWrapper(
-            value
-                .into_iter()
-                .map(|(id, address)| address.parse().map(|address| (id, address)))
-                .try_collect()?,
-        ))
-    }
+/// Definition of struct to help with serde serialization.
+/// Should be used only in `[serde(with=...)]`
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "RaftState")]
+struct RaftStateDef {
+    #[serde(with = "HardStateDef")]
+    hard_state: HardState,
+    #[serde(with = "ConfStateDef")]
+    conf_state: ConfState,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-#[serde(try_from = "SerializableRaftState")]
-#[serde(into = "SerializableRaftState")]
-struct RaftStateWrapper(RaftState);
-
-#[derive(Debug, Serialize, Deserialize)]
-struct SerializableRaftState {
-    hard_state: Vec<u8>,
-    conf_state: Vec<u8>,
+/// Definition of struct to help with serde serialization.
+/// Should be used only in `[serde(with=...)]`
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "HardState")]
+struct HardStateDef {
+    term: u64,
+    vote: u64,
+    commit: u64,
 }
 
-impl From<RaftStateWrapper> for SerializableRaftState {
-    fn from(RaftStateWrapper(state): RaftStateWrapper) -> Self {
-        let mut hard_state = vec![];
-        state
-            .hard_state
-            .encode(&mut hard_state)
-            .expect("Buffer always has sufficient capacity");
-        let mut conf_state = vec![];
-        state
-            .conf_state
-            .encode(&mut conf_state)
-            .expect("Buffer always has sufficient capacity");
-        Self {
-            hard_state,
-            conf_state,
-        }
-    }
-}
-
-impl TryFrom<SerializableRaftState> for RaftStateWrapper {
-    type Error = prost::DecodeError;
-
-    fn try_from(value: SerializableRaftState) -> Result<Self, Self::Error> {
-        Ok(RaftStateWrapper(RaftState {
-            hard_state: HardState::decode(value.hard_state.as_slice())?,
-            conf_state: ConfState::decode(value.conf_state.as_slice())?,
-        }))
-    }
+/// Definition of struct to help with serde serialization.
+/// Should be used only in `[serde(with=...)]`
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "ConfState")]
+struct ConfStateDef {
+    voters: Vec<u64>,
+    learners: Vec<u64>,
+    voters_outgoing: Vec<u64>,
+    learners_next: Vec<u64>,
+    auto_leave: bool,
 }
 
 #[cfg(test)]
