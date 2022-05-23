@@ -7,7 +7,7 @@ use tokio::runtime::Handle;
 use collection::{
     operations::{
         payload_ops::{PayloadOps, SetPayload},
-        point_ops::{Batch, PointOperations, PointStruct},
+        point_ops::{PointOperations, PointStruct},
         types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus},
         CollectionUpdateOperations,
     },
@@ -17,6 +17,7 @@ use segment::types::{Condition, HasIdCondition, Payload, PointIdType, WithPayloa
 
 use crate::common::{simple_collection_fixture, N_SHARDS};
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
+use collection::operations::point_ops::Batch;
 use collection::operations::types::PointRequest;
 
 mod common;

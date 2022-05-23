@@ -1,36 +1,6 @@
 #@ load("openapi.lib.yml", "response", "reference", "type", "array")
 
 paths:
-  /collections/{collection_name}:
-    post:
-      tags:
-        - points
-      summary: Update points
-      description: Perform point update operation (vectors, payloads, indexes) in collection
-      operationId: update_points
-      deprecated: true
-      requestBody:
-        description: Collection update operations
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CollectionUpdateOperations"
-
-      parameters:
-        - name: collection_name
-          in: path
-          description: Name of the collection to search in
-          required: true
-          schema:
-            type: string
-        - name: wait
-          in: query
-          description: "If true, wait for changes to actually happen"
-          required: false
-          schema:
-            type: boolean
-      responses: #@ response(reference("UpdateResult"))
-
   /collections/{collection_name}/points/{id}:
     get:
       tags:

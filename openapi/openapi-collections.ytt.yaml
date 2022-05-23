@@ -10,21 +10,6 @@ paths:
       operationId: get_collections
       responses: #@ response(reference("CollectionsResponse"))
 
-    post:
-      tags:
-        - collections
-      summary: Update collection
-      description: Perform update, create, remove or alias change operations on collections
-      operationId: update_collections
-      deprecated: true
-      requestBody:
-        description: Operation to perform on collections
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CollectionMetaOperations"
-      responses: #@ response(type("boolean"))
-
   /collections/{collection_name}:
     get:
       tags:

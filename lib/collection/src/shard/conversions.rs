@@ -31,7 +31,6 @@ pub fn internal_upsert_points(
                     ))
                 }
                 PointInsertOperations::PointsList(list) => list
-                    .points
                     .into_iter()
                     .map(|id| id.try_into())
                     .collect::<Result<Vec<_>, Status>>()?,
