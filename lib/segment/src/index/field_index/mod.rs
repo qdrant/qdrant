@@ -10,6 +10,7 @@ mod histogram;
 pub mod index_selector;
 pub mod map_index;
 pub mod numeric_index;
+mod on_disk_geo_index;
 pub mod on_disk_map_index;
 mod stat_tools;
 
