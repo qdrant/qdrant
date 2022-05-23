@@ -1,3 +1,4 @@
+use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use collection::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
 use schemars::JsonSchema;
 use segment::types::Distance;
@@ -144,6 +145,7 @@ pub struct DeleteCollectionOperation(pub String);
 #[serde(rename_all = "snake_case")]
 pub enum CollectionMetaOperations {
     CreateCollection(CreateCollectionOperation),
+    CreateCollectionDistributed(CreateCollectionOperation, ShardDistributionProposal),
     UpdateCollection(UpdateCollectionOperation),
     DeleteCollection(DeleteCollectionOperation),
     ChangeAliases(ChangeAliasesOperation),

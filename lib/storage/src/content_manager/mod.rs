@@ -9,7 +9,6 @@ pub mod toc;
 
 pub mod consensus_ops {
     use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
-    use crate::content_manager::shard_distribution::ShardDistributionProposal;
     use collection::PeerId;
     use raft::eraftpb::Entry as RaftEntry;
     use serde::{Deserialize, Serialize};
@@ -17,10 +16,7 @@ pub mod consensus_ops {
     /// Operation that should pass consensus
     #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
     pub enum ConsensusOperations {
-        CollectionMeta(
-            Box<CollectionMetaOperations>,
-            Option<ShardDistributionProposal>,
-        ),
+        CollectionMeta(Box<CollectionMetaOperations>),
         AddPeer(PeerId, String),
     }
 

@@ -1,5 +1,6 @@
 use collection::shard::{Shard, ShardId};
 use collection::PeerId;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -23,7 +24,7 @@ impl PeerShardCount {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 pub struct ShardDistributionProposal {
     pub distribution: Vec<(ShardId, PeerId)>,
 }

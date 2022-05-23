@@ -20,6 +20,7 @@ use collection::operations::CollectionUpdateOperations;
 use collection::{ChannelService, Collection, CollectionShardDistribution};
 use segment::types::ScoredPoint;
 
+use crate::content_manager::collection_meta_ops::CollectionMetaOperations::CreateCollectionDistributed;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::content_manager::{
     alias_mapping::AliasPersistence,
@@ -381,7 +382,7 @@ impl TableOfContent {
     ) -> Result<bool, StorageError> {
         // if distributed deployment is enabled
         if self.propose_sender.is_some() {
-            let shard_distribution = match &operation {
+            let op = match operation {
                 CollectionMetaOperations::CreateCollection(op) => {
                     let shard_number = op.create_collection.shard_number;
                     let known_peers: Vec<_> = self
@@ -404,17 +405,17 @@ impl TableOfContent {
                         known_shards,
                     );
                     log::info!("Proposing distribution for {} shards for collection '{}' among {} peers {:?}", shard_number, op.collection_name, known_peers.len(), shard_distribution.distribution);
-                    Some(shard_distribution)
+                    CreateCollectionDistributed(op, shard_distribution)
                 }
-                _ => None,
+                op => op,
             };
             self.propose_consensus_op(
-                ConsensusOperations::CollectionMeta(Box::new(operation), shard_distribution),
+                ConsensusOperations::CollectionMeta(Box::new(op)),
                 wait_timeout,
             )
             .await
         } else {
-            self.perform_collection_meta_op(operation, None).await
+            self.perform_collection_meta_op(operation).await
         }
     }
 
@@ -454,22 +455,25 @@ impl TableOfContent {
     async fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
-        shard_distribution_proposal: Option<ShardDistributionProposal>,
     ) -> Result<bool, StorageError> {
         match operation {
-            CollectionMetaOperations::CreateCollection(operation) => {
-                let collection_shard_distribution = match shard_distribution_proposal {
-                    None => CollectionShardDistribution::AllLocal,
-                    Some(distribution) => {
-                        let local = distribution.local_shards_for(self.this_peer_id);
-                        let remote = distribution.remote_shards_for(self.this_peer_id);
-                        CollectionShardDistribution::Distribution { local, remote }
-                    }
-                };
+            CollectionMetaOperations::CreateCollectionDistributed(operation, distribution) => {
+                let local = distribution.local_shards_for(self.this_peer_id);
+                let remote = distribution.remote_shards_for(self.this_peer_id);
+                let collection_shard_distribution =
+                    CollectionShardDistribution::Distribution { local, remote };
                 self.create_collection(
                     &operation.collection_name,
                     operation.create_collection,
                     collection_shard_distribution,
+                )
+                .await
+            }
+            CollectionMetaOperations::CreateCollection(operation) => {
+                self.create_collection(
+                    &operation.collection_name,
+                    operation.create_collection,
+                    CollectionShardDistribution::AllLocal,
                 )
                 .await
             }
@@ -704,9 +708,9 @@ impl TableOfContent {
         let operation: ConsensusOperations = entry.try_into()?;
         let on_apply = self.on_consensus_op_apply.lock()?.remove(&operation);
         let result = match operation {
-            ConsensusOperations::CollectionMeta(operation, shard_distribution) => self
+            ConsensusOperations::CollectionMeta(operation) => self
                 .collection_management_runtime
-                .block_on(self.perform_collection_meta_op(*operation, shard_distribution)),
+                .block_on(self.perform_collection_meta_op(*operation)),
             ConsensusOperations::AddPeer(peer_id, uri) => self
                 .add_peer(
                     peer_id,
