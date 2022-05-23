@@ -5,15 +5,40 @@ use std::collections::BTreeSet;
 use std::collections::Bound::{Excluded, Included, Unbounded};
 use std::ops::Bound;
 
+pub trait HistogramValue:
+    num_traits::Num
+    + num_traits::bounds::Bounded
+    + num_traits::identities::Zero
+    + num_traits::sign::Signed
+    + std::cmp::PartialOrd
+    + Clone
+    + Copy
+{
+    // add custom convert method because f64 doesn't implement From<i64> trait (only From<i32>)
+    fn to_f64(self) -> f64;
+}
+
+impl HistogramValue for f64 {
+    fn to_f64(self) -> f64 {
+        self
+    }
+}
+
+impl HistogramValue for i64 {
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+}
+
 #[derive(Debug, Clone)]
-struct Node {
-    center: Point,
+struct Node<T: HistogramValue> {
+    center: Point<T>,
     left_count: Cell<usize>,
     right_count: Cell<usize>,
 }
 
-impl Node {
-    pub fn new(point: Point) -> Self {
+impl<T: HistogramValue> Node<T> {
+    pub fn new(point: Point<T>) -> Self {
         Node {
             center: point,
             left_count: Cell::new(0),
@@ -21,7 +46,7 @@ impl Node {
         }
     }
 
-    pub fn empty(center: f64) -> Self {
+    pub fn empty(center: T) -> Self {
         Node {
             center: Point {
                 val: center,
@@ -34,47 +59,47 @@ impl Node {
 }
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
-struct Point {
-    val: f64,
-    idx: usize,
+pub struct Point<T: HistogramValue> {
+    pub val: T,
+    pub idx: usize,
 }
 
-impl Eq for Point {}
+impl<T: HistogramValue> Eq for Point<T> {}
 
 #[allow(clippy::derive_ord_xor_partial_ord)]
-impl Ord for Point {
+impl<T: HistogramValue> Ord for Point<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(other).unwrap()
     }
 }
 
-impl Eq for Node {}
+impl<T: HistogramValue> Eq for Node<T> {}
 
-impl PartialEq<Self> for Node {
+impl<T: HistogramValue> PartialEq<Self> for Node<T> {
     fn eq(&self, other: &Self) -> bool {
         other.center.idx.eq(&other.center.idx)
     }
 }
 
-impl PartialOrd<Self> for Node {
+impl<T: HistogramValue> PartialOrd<Self> for Node<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.center.partial_cmp(&other.center)
     }
 }
 
-impl Ord for Node {
+impl<T: HistogramValue> Ord for Node<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.center.partial_cmp(&other.center).unwrap()
     }
 }
 
 #[derive(Debug)]
-struct Histogram {
+pub struct Histogram<T: HistogramValue> {
     bucket_size: usize,
-    borders: BTreeSet<Node>,
+    borders: BTreeSet<Node<T>>,
 }
 
-impl Histogram {
+impl<T: HistogramValue> Histogram<T> {
     pub fn new(bucket_size: usize) -> Self {
         Self {
             bucket_size,
@@ -82,7 +107,7 @@ impl Histogram {
         }
     }
 
-    pub fn estimate(&self, from: Bound<f64>, to: Bound<f64>) -> usize {
+    pub fn estimate(&self, from: Bound<T>, to: Bound<T>) -> usize {
         let from_ = match &from {
             Included(val) => Included(Node::new(Point {
                 val: *val,
@@ -111,13 +136,13 @@ impl Histogram {
         let from_val = match from {
             Included(val) => val,
             Excluded(val) => val,
-            Unbounded => f64::MIN,
+            Unbounded => T::min_value(),
         };
 
         let to_val = match to {
             Included(val) => val,
             Excluded(val) => val,
-            Unbounded => f64::MAX,
+            Unbounded => T::max_value(),
         };
 
         if from_val > to_val {
@@ -145,10 +170,10 @@ impl Histogram {
             .chain(self.borders.range((from_, to_)))
             .chain(right_border.into_iter())
             .tuple_windows()
-            .map(|(a, b): (&Node, &Node)| {
+            .map(|(a, b): (&Node<T>, &Node<T>)| {
                 let val_range = b.center.val - a.center.val;
 
-                if val_range == 0. {
+                if val_range == T::zero() {
                     return a.right_count.get() + 1;
                 }
 
@@ -156,24 +181,24 @@ impl Histogram {
                     return 1;
                 }
 
-                let cover_range = to_val.min(b.center.val) - from_val.max(a.center.val);
+                let cover_range = num_traits::clamp_max(to_val, b.center.val)
+                    - num_traits::clamp_min(from_val, a.center.val);
+                let covered_frac = cover_range.to_f64() / val_range.to_f64();
 
-                let covered_frac = cover_range / val_range;
-
-                (a.right_count.get() as f64 * covered_frac).round() as usize + 1
+                ((a.right_count.get() as f64) * covered_frac).round() as usize + 1
             })
             .sum();
 
         estimation
     }
 
-    pub fn insert<F, G>(&mut self, val: Point, left_neighbour: F, right_neighbour: G)
+    pub fn insert<F, G>(&mut self, val: Point<T>, left_neighbour: F, right_neighbour: G)
     where
-        F: Fn(&Point) -> Option<Point>,
-        G: Fn(&Point) -> Option<Point>,
+        F: Fn(&Point<T>) -> Option<Point<T>>,
+        G: Fn(&Point<T>) -> Option<Point<T>>,
     {
         if self.borders.len() < 2 {
-            self.borders.insert(Node {
+            self.borders.insert(Node::<T> {
                 center: val,
                 left_count: Cell::new(0),
                 right_count: Cell::new(0),
@@ -331,7 +356,11 @@ mod tests {
     use rand_distr::StandardNormal;
 
     #[allow(dead_code)]
-    fn print_results(points_index: &BTreeSet<Point>, histogram: &Histogram, pnt: Option<Point>) {
+    fn print_results(
+        points_index: &BTreeSet<Point<f64>>,
+        histogram: &Histogram<f64>,
+        pnt: Option<Point<f64>>,
+    ) {
         for point in points_index.iter() {
             if let Some(border) = histogram.borders.get(&Node {
                 center: point.clone(),
@@ -348,7 +377,7 @@ mod tests {
         println!();
     }
 
-    fn count_range(points_index: &BTreeSet<Point>, a: f64, b: f64) -> usize {
+    fn count_range(points_index: &BTreeSet<Point<f64>>, a: f64, b: f64) -> usize {
         points_index
             .iter()
             .filter(|x| a <= x.val && x.val <= b)
@@ -363,15 +392,15 @@ mod tests {
 
         // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
         let points = (0..num_samples)
-            .map(|i| Point {
+            .map(|i| Point::<f64> {
                 val: rnd.sample(StandardNormal),
                 idx: i,
             })
             .collect_vec();
 
-        let mut points_index: BTreeSet<Point> = Default::default();
+        let mut points_index: BTreeSet<Point<f64>> = Default::default();
 
-        let mut histogram = Histogram::new(bucket_size);
+        let mut histogram = Histogram::<f64>::new(bucket_size);
 
         let read_counter = Cell::new(0);
         for point in points {
