@@ -41,7 +41,7 @@ pub struct RemoteShard {
 }
 
 impl RemoteShard {
-    pub fn build(
+    pub fn new(
         id: ShardId,
         collection_id: CollectionId,
         peer_id: PeerId,

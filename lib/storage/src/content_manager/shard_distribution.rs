@@ -31,7 +31,7 @@ pub struct ShardDistributionProposal {
 impl ShardDistributionProposal {
     /// Builds a proposal for the distribution of shards.
     /// It will propose to allocate shards so that all peers have the same number of shards at the end.
-    pub fn build(
+    pub fn new(
         config_shard_number: u32,
         this_peer_id: PeerId,
         known_peers: &[PeerId],
@@ -73,7 +73,7 @@ impl ShardDistributionProposal {
         Self { distribution }
     }
 
-    pub fn local_shards_for_peer(&self, peer_id: PeerId) -> Vec<ShardId> {
+    pub fn local_shards_for(&self, peer_id: PeerId) -> Vec<ShardId> {
         self.distribution
             .iter()
             .filter_map(
@@ -88,7 +88,7 @@ impl ShardDistributionProposal {
             .collect()
     }
 
-    pub fn remote_shards_for_peer(&self, peer_id: PeerId) -> Vec<(ShardId, PeerId)> {
+    pub fn remote_shards_for(&self, peer_id: PeerId) -> Vec<(ShardId, PeerId)> {
         self.distribution
             .iter()
             .filter(|(_shard, peer)| peer != &peer_id)

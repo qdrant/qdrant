@@ -394,7 +394,7 @@ impl TableOfContent {
                         .iter()
                         .flat_map(|(_, col)| col.all_shards())
                         .collect();
-                    let shard_distribution = ShardDistributionProposal::build(
+                    let shard_distribution = ShardDistributionProposal::new(
                         shard_number,
                         self.this_peer_id,
                         &known_peers,
@@ -458,8 +458,8 @@ impl TableOfContent {
                 let collection_shard_distribution = match shard_distribution_proposal {
                     None => CollectionShardDistribution::AllLocal,
                     Some(distribution) => {
-                        let local = distribution.local_shards_for_peer(self.this_peer_id);
-                        let remote = distribution.remote_shards_for_peer(self.this_peer_id);
+                        let local = distribution.local_shards_for(self.this_peer_id);
+                        let remote = distribution.remote_shards_for(self.this_peer_id);
                         CollectionShardDistribution::Distribution { local, remote }
                     }
                 };

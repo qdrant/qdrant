@@ -117,7 +117,7 @@ pub enum CollectionShardDistribution {
 
 impl CollectionShardDistribution {
     /// Unpack the distribution into separate local and remote peers.
-    /// If `AllLocal`, it default to assigning `config_shard_number` locally.
+    /// If `AllLocal`, it defaults to assigning `config_shard_number` locally.
     fn unpack_or_default(self, config_shard_number: u32) -> (Vec<ShardId>, Vec<(ShardId, PeerId)>) {
         match self {
             CollectionShardDistribution::AllLocal => (
@@ -208,7 +208,7 @@ impl Collection {
         }
 
         for (shard_id, peer_id) in remote_shards {
-            let shard = RemoteShard::build(
+            let shard = RemoteShard::new(
                 shard_id,
                 id.clone(),
                 peer_id,
@@ -259,7 +259,7 @@ impl Collection {
         }
 
         for (shard_id, peer_id) in remote_shards {
-            let shard = RemoteShard::build(
+            let shard = RemoteShard::new(
                 shard_id,
                 id.clone(),
                 peer_id,
