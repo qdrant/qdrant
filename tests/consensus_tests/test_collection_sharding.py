@@ -12,7 +12,7 @@ from subprocess import Popen
 N_PEERS = 5
 N_SHARDS = 6
 
-def test_collection_after_peers_added(tmp_path: pathlib.Path):
+def test_collection_sharding(tmp_path: pathlib.Path):
     # Ensure current path is project root
     directory_path = os.getcwd()
     folder_name = os.path.basename(directory_path)
