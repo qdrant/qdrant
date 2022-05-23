@@ -1,4 +1,4 @@
-FROM rust:1.60.0 as builder
+FROM rust:1.61.0 as builder
 
 RUN apt-get update ; apt-get install -y clang cmake ; rustup component add rustfmt
 
