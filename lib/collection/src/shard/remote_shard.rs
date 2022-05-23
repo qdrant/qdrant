@@ -8,8 +8,9 @@ use crate::shard::conversions::{
 };
 use crate::shard::{PeerId, ShardId, ShardOperation};
 use crate::{
-    CollectionError, CollectionId, CollectionInfo, CollectionResult, CollectionSearcher,
-    CollectionUpdateOperations, PointRequest, Record, SearchRequest, UpdateResult,
+    ChannelService, CollectionError, CollectionId, CollectionInfo, CollectionResult,
+    CollectionSearcher, CollectionUpdateOperations, PointRequest, Record, SearchRequest,
+    UpdateResult,
 };
 use api::grpc::qdrant::{
     collections_internal_client::CollectionsInternalClient,
@@ -17,10 +18,8 @@ use api::grpc::qdrant::{
     GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal, ScrollPoints,
     ScrollPointsInternal, SearchPoints, SearchPointsInternal,
 };
-use api::grpc::transport_channel_pool::TransportChannelPool;
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tonic::transport::Channel;
@@ -31,13 +30,11 @@ use tonic::Status;
 ///
 /// Remote Shard is a representation of a shard that is located on a remote peer.
 /// Currently a placeholder implementation for later work.
-#[allow(dead_code)]
 pub struct RemoteShard {
     pub(crate) id: ShardId,
     pub(crate) collection_id: CollectionId,
     pub peer_id: PeerId,
-    ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
-    channel_pool: Arc<TransportChannelPool>,
+    channel_service: ChannelService,
 }
 
 impl RemoteShard {
@@ -45,20 +42,18 @@ impl RemoteShard {
         id: ShardId,
         collection_id: CollectionId,
         peer_id: PeerId,
-        ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
-        channel_pool: Arc<TransportChannelPool>,
+        channel_service: ChannelService,
     ) -> Self {
         Self {
             id,
             collection_id,
             peer_id,
-            ip_to_address,
-            channel_pool,
+            channel_service,
         }
     }
 
     fn current_address(&self) -> CollectionResult<Uri> {
-        let guard_peer_address = self.ip_to_address.read()?;
+        let guard_peer_address = self.channel_service.ip_to_address.read()?;
         let peer_address = guard_peer_address.get(&self.peer_id).cloned();
         match peer_address {
             None => Err(CollectionError::service_error(format!(
@@ -72,6 +67,7 @@ impl RemoteShard {
     async fn points_client(&self) -> CollectionResult<PointsInternalClient<Channel>> {
         let current_address = self.current_address()?;
         let pooled_channel = self
+            .channel_service
             .channel_pool
             .get_or_create_pooled_channel(&current_address)
             .await?;
@@ -81,6 +77,7 @@ impl RemoteShard {
     async fn collections_client(&self) -> CollectionResult<CollectionsInternalClient<Channel>> {
         let current_address = self.current_address()?;
         let pooled_channel = self
+            .channel_service
             .channel_pool
             .get_or_create_pooled_channel(&current_address)
             .await?;

@@ -156,6 +156,33 @@ impl CollectionShardDistribution {
     }
 }
 
+#[derive(Clone)]
+pub struct ChannelService {
+    ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
+    channel_pool: Arc<TransportChannelPool>,
+}
+
+impl ChannelService {
+    pub fn new(
+        ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
+        channel_pool: Arc<TransportChannelPool>,
+    ) -> Self {
+        Self {
+            ip_to_address,
+            channel_pool,
+        }
+    }
+}
+
+impl Default for ChannelService {
+    fn default() -> Self {
+        Self {
+            ip_to_address: Arc::new(Default::default()),
+            channel_pool: Arc::new(Default::default()),
+        }
+    }
+}
+
 /// Collection's data is split into several shards.
 pub struct Collection {
     shards: HashMap<ShardId, Shard>,
@@ -171,8 +198,7 @@ impl Collection {
         path: &Path,
         config: &CollectionConfig,
         shard_distribution: CollectionShardDistribution,
-        ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
-        channel_pool: Arc<TransportChannelPool>,
+        channel_service: ChannelService,
     ) -> Result<Self, CollectionError> {
         config.save(path)?;
         let mut ring = HashRing::new();
@@ -208,13 +234,7 @@ impl Collection {
         }
 
         for (shard_id, peer_id) in remote_shards {
-            let shard = RemoteShard::new(
-                shard_id,
-                id.clone(),
-                peer_id,
-                ip_to_address.clone(),
-                channel_pool.clone(),
-            );
+            let shard = RemoteShard::new(shard_id, id.clone(), peer_id, channel_service.clone());
             shards.insert(shard_id, Shard::Remote(shard));
             ring.add(shard_id);
         }
@@ -231,8 +251,7 @@ impl Collection {
         id: CollectionId,
         path: &Path,
         shard_distribution: CollectionShardDistribution,
-        ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
-        channel_pool: Arc<TransportChannelPool>,
+        channel_service: ChannelService,
     ) -> Self {
         let config = CollectionConfig::load(path).unwrap_or_else(|err| {
             panic!(
@@ -259,13 +278,7 @@ impl Collection {
         }
 
         for (shard_id, peer_id) in remote_shards {
-            let shard = RemoteShard::new(
-                shard_id,
-                id.clone(),
-                peer_id,
-                ip_to_address.clone(),
-                channel_pool.clone(),
-            );
+            let shard = RemoteShard::new(shard_id, id.clone(), peer_id, channel_service.clone());
             shards.insert(shard_id, Shard::Remote(shard));
             ring.add(shard_id);
         }

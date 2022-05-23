@@ -17,7 +17,7 @@ use collection::operations::types::{
     UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
-use collection::{Collection, CollectionShardDistribution};
+use collection::{ChannelService, Collection, CollectionShardDistribution};
 use segment::types::ScoredPoint;
 
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
@@ -110,7 +110,10 @@ impl TableOfContent {
             read_dir(&collections_path).expect("Can't read Collections directory");
 
         let mut collections: HashMap<String, Collection> = Default::default();
-
+        let channel_service = ChannelService::new(
+            raft_state.peer_address_by_id.clone(),
+            transport_channel_pool.clone(),
+        );
         for entry in collection_paths {
             let collection_path = entry
                 .expect("Can't access of one of the collection files")
@@ -126,8 +129,7 @@ impl TableOfContent {
                 collection_name.clone(),
                 &collection_path,
                 CollectionShardDistribution::AllLocal, //TODO read remote info from local file system
-                raft_state.peer_address_by_id.clone(),
-                transport_channel_pool.clone(),
+                channel_service.clone(),
             ));
 
             collections.insert(collection_name, collection);
@@ -271,13 +273,14 @@ impl TableOfContent {
             hnsw_config,
         };
         let ip_to_address = self.share_ip_to_address()?;
+        let channel_service =
+            ChannelService::new(ip_to_address, self.transport_channel_pool.clone());
         let collection = Collection::new(
             collection_name.to_string(),
             Path::new(&collection_path),
             &collection_config,
             collection_shard_distribution,
-            ip_to_address,
-            self.transport_channel_pool.clone(),
+            channel_service,
         )
         .await?;
 
@@ -876,6 +879,8 @@ impl TableOfContent {
                     None => {
                         let collection_path = self.create_collection_path(id).await?;
                         let ip_to_address = self.share_ip_to_address()?;
+                        let channel_service =
+                            ChannelService::new(ip_to_address, self.transport_channel_pool.clone());
                         let shard_distribution = CollectionShardDistribution::from_shard_to_peer(
                             self.this_peer_id,
                             &state.shard_to_peer,
@@ -885,8 +890,7 @@ impl TableOfContent {
                             Path::new(&collection_path),
                             &state.config,
                             shard_distribution,
-                            ip_to_address,
-                            self.transport_channel_pool.clone(),
+                            channel_service,
                         )
                         .await?;
                         collections.validate_collection_not_exists(id).await?;

@@ -1,11 +1,10 @@
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::types::CollectionError;
 use collection::optimizers_builder::OptimizersConfig;
-use collection::{Collection, CollectionId, CollectionShardDistribution};
+use collection::{ChannelService, Collection, CollectionId, CollectionShardDistribution};
 use segment::types::Distance;
 use std::num::NonZeroU32;
 use std::path::Path;
-use std::sync::Arc;
 
 /// Test collections for this upper bound of shards.
 /// Testing with more shards is problematic due to `number of open files problem`
@@ -62,8 +61,7 @@ pub async fn new_local_collection(
         path,
         config,
         CollectionShardDistribution::AllLocal,
-        Arc::new(Default::default()),
-        Arc::new(Default::default()),
+        ChannelService::default(),
     )
     .await
 }
@@ -74,8 +72,7 @@ pub async fn load_local_collection(id: CollectionId, path: &Path) -> Collection 
         id,
         path,
         CollectionShardDistribution::AllLocal,
-        Arc::new(Default::default()),
-        Arc::new(Default::default()),
+        ChannelService::default(),
     )
     .await
 }
