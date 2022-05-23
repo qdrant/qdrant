@@ -46,7 +46,10 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
     actix_web::rt::System::new().block_on(async {
         let toc_data = web::Data::new(toc);
         HttpServer::new(move || {
-            let cors = Cors::default().allow_any_origin().allow_any_origin();
+            let cors = Cors::default()
+                .allow_any_origin()
+                .allow_any_method()
+                .allow_any_header();
 
             App::new()
                 .wrap(Condition::new(settings.service.enable_cors, cors))
