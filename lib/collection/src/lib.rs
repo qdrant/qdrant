@@ -70,9 +70,15 @@ impl State {
         self,
         this_peer_id: PeerId,
         collection: &mut Collection,
+        channel_service: ChannelService,
     ) -> CollectionResult<()> {
         Self::apply_config(self.config, collection).await?;
-        Self::apply_shard_to_peer(self.shard_to_peer, this_peer_id, collection);
+        Self::apply_shard_to_peer(
+            self.shard_to_peer,
+            this_peer_id,
+            collection,
+            channel_service,
+        );
         Ok(())
     }
 
@@ -90,17 +96,33 @@ impl State {
         shard_to_peer: HashMap<ShardId, PeerId>,
         this_peer_id: PeerId,
         collection: &mut Collection,
+        channel_service: ChannelService,
     ) {
         for (shard_id, peer_id) in shard_to_peer {
             match collection.shards.get(&shard_id) {
                 Some(shard) => {
                     if shard.peer_id(this_peer_id) != peer_id {
+                        // shard registered on a different peer
                         log::warn!("Shard movement between peers is not yet implemented. Failed to move shard {shard_id} to peer {peer_id}")
                     }
                 }
-                None => log::warn!(
-                    "Shard addition is not yet implemented. Failed to add shard {shard_id}"
-                ),
+                None => {
+                    if peer_id == this_peer_id {
+                        // missing local shard
+                        log::warn!("Shard addition is not yet implemented. Failed to add local shard {shard_id}");
+                    } else {
+                        // missing remote shard
+                        let collection_id = collection.id.clone();
+                        let shard = RemoteShard::new(
+                            shard_id,
+                            collection_id,
+                            peer_id,
+                            channel_service.clone(),
+                        );
+                        collection.shards.insert(shard_id, Shard::Remote(shard));
+                        collection.ring.add(shard_id);
+                    }
+                }
             }
         }
     }
@@ -185,6 +207,7 @@ impl Default for ChannelService {
 
 /// Collection's data is split into several shards.
 pub struct Collection {
+    id: CollectionId,
     shards: HashMap<ShardId, Shard>,
     ring: HashRing<ShardId>,
     config: CollectionConfig,
@@ -240,6 +263,7 @@ impl Collection {
         }
 
         Ok(Self {
+            id,
             shards,
             ring,
             config: config.clone(),
@@ -284,6 +308,7 @@ impl Collection {
         }
 
         Self {
+            id,
             shards,
             ring,
             config,
@@ -699,8 +724,9 @@ impl Collection {
         &mut self,
         state: State,
         this_peer_id: PeerId,
+        channel_service: ChannelService,
     ) -> CollectionResult<()> {
-        state.apply(this_peer_id, self).await
+        state.apply(this_peer_id, self, channel_service).await
     }
 }
 

@@ -868,6 +868,9 @@ impl TableOfContent {
 
         self.collection_management_runtime.block_on(async {
             let mut collections = self.collections.write().await;
+            let ip_to_address = self.share_ip_to_address()?;
+            let channel_service =
+                ChannelService::new(ip_to_address, self.transport_channel_pool.clone());
             for (id, state) in &data.collections {
                 let collection = collections.get_mut(id);
                 match collection {
@@ -875,16 +878,17 @@ impl TableOfContent {
                     Some(collection) => {
                         if &collection.state(self.this_peer_id()) != state {
                             collection
-                                .apply_state(state.clone(), self.this_peer_id())
+                                .apply_state(
+                                    state.clone(),
+                                    self.this_peer_id(),
+                                    channel_service.clone(),
+                                )
                                 .await?;
                         }
                     }
                     // Create collection if not present locally
                     None => {
                         let collection_path = self.create_collection_path(id).await?;
-                        let ip_to_address = self.share_ip_to_address()?;
-                        let channel_service =
-                            ChannelService::new(ip_to_address, self.transport_channel_pool.clone());
                         let shard_distribution = CollectionShardDistribution::from_shard_to_peer(
                             self.this_peer_id,
                             &state.shard_to_peer,
@@ -894,7 +898,7 @@ impl TableOfContent {
                             Path::new(&collection_path),
                             &state.config,
                             shard_distribution,
-                            channel_service,
+                            channel_service.clone(),
                         )
                         .await?;
                         collections.validate_collection_not_exists(id).await?;
