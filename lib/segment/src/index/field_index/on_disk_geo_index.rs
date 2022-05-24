@@ -220,7 +220,7 @@ impl OnDiskGeoMapIndex {
 
         let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
             OperationError::service_error(&format!(
-                "Index load error: column family {} not found",
+                "point remove error: column family {} not found",
                 self.store_cf_name
             ))
         })?;
@@ -246,7 +246,7 @@ impl OnDiskGeoMapIndex {
                 for point_offset in offsets.iter() {
                     let key = Self::encode_db_key(removed_geo_hash, *point_offset);
                     store_ref.delete_cf(cf_handle, &key).map_err(|e| {
-                        OperationError::service_error(&format!("Index db update error: {}", e))
+                        OperationError::service_error(&format!("Index db remove error: {}", e))
                     })?;
                 }
             }
