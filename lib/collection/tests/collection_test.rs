@@ -4,18 +4,15 @@ use std::collections::HashSet;
 use tempdir::TempDir;
 use tokio::runtime::Handle;
 
-use collection::{
-    operations::{
-        payload_ops::{PayloadOps, SetPayload},
-        point_ops::{PointOperations, PointStruct},
-        types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus},
-        CollectionUpdateOperations,
-    },
-    Collection,
+use collection::operations::{
+    payload_ops::{PayloadOps, SetPayload},
+    point_ops::{PointOperations, PointStruct},
+    types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus},
+    CollectionUpdateOperations,
 };
 use segment::types::{Condition, HasIdCondition, Payload, PointIdType, WithPayloadInterface};
 
-use crate::common::{simple_collection_fixture, N_SHARDS};
+use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 use collection::operations::point_ops::Batch;
 use collection::operations::types::PointRequest;
@@ -195,7 +192,8 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         collection.before_drop().await;
     }
 
-    let mut loaded_collection = Collection::load("test".to_string(), collection_dir.path()).await;
+    let mut loaded_collection =
+        load_local_collection("test".to_string(), collection_dir.path()).await;
     let segment_searcher = SimpleCollectionSearcher::new();
     let request = PointRequest {
         ids: vec![1.into(), 2.into()],

@@ -11,7 +11,9 @@ use std::{
 
 use crate::operations::types::PointRequest;
 use crate::operations::OperationToShard;
+use crate::shard::remote_shard::RemoteShard;
 use crate::shard::ShardOperation;
+use api::grpc::transport_channel_pool::TransportChannelPool;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
 use futures::future::{join_all, try_join_all};
@@ -39,6 +41,7 @@ use segment::{
 use serde::{Deserialize, Serialize};
 use shard::{local_shard::LocalShard, Shard, ShardId};
 use tokio::runtime::Handle;
+use tonic::transport::Uri;
 
 pub mod collection_manager;
 mod common;
@@ -67,9 +70,15 @@ impl State {
         self,
         this_peer_id: PeerId,
         collection: &mut Collection,
+        channel_service: ChannelService,
     ) -> CollectionResult<()> {
         Self::apply_config(self.config, collection).await?;
-        Self::apply_shard_to_peer(self.shard_to_peer, this_peer_id, collection);
+        Self::apply_shard_to_peer(
+            self.shard_to_peer,
+            this_peer_id,
+            collection,
+            channel_service,
+        );
         Ok(())
     }
 
@@ -87,24 +96,118 @@ impl State {
         shard_to_peer: HashMap<ShardId, PeerId>,
         this_peer_id: PeerId,
         collection: &mut Collection,
+        channel_service: ChannelService,
     ) {
         for (shard_id, peer_id) in shard_to_peer {
             match collection.shards.get(&shard_id) {
                 Some(shard) => {
                     if shard.peer_id(this_peer_id) != peer_id {
+                        // shard registered on a different peer
                         log::warn!("Shard movement between peers is not yet implemented. Failed to move shard {shard_id} to peer {peer_id}")
                     }
                 }
-                None => log::warn!(
-                    "Shard addition is not yet implemented. Failed to add shard {shard_id}"
-                ),
+                None => {
+                    if peer_id == this_peer_id {
+                        // missing local shard
+                        log::warn!("Shard addition is not yet implemented. Failed to add local shard {shard_id}");
+                    } else {
+                        // missing remote shard
+                        let collection_id = collection.id.clone();
+                        let shard = RemoteShard::new(
+                            shard_id,
+                            collection_id,
+                            peer_id,
+                            channel_service.clone(),
+                        );
+                        collection.shards.insert(shard_id, Shard::Remote(shard));
+                        collection.ring.add(shard_id);
+                    }
+                }
             }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum CollectionShardDistribution {
+    AllLocal,
+    Distribution {
+        local: Vec<ShardId>,
+        remote: Vec<(ShardId, PeerId)>,
+    },
+}
+
+impl CollectionShardDistribution {
+    /// Unpack the distribution into separate local and remote peers.
+    /// If `AllLocal`, it defaults to assigning `config_shard_number` locally.
+    fn unpack_or_default(self, config_shard_number: u32) -> (Vec<ShardId>, Vec<(ShardId, PeerId)>) {
+        match self {
+            CollectionShardDistribution::AllLocal => (
+                (0..config_shard_number).collect::<Vec<ShardId>>(),
+                Vec::new(),
+            ),
+            CollectionShardDistribution::Distribution { local, remote } => (local, remote),
+        }
+    }
+
+    pub fn from_shard_to_peer(this_peer: PeerId, shard_to_peer: &HashMap<ShardId, PeerId>) -> Self {
+        let local = shard_to_peer
+            .iter()
+            .filter_map(|(shard, peer)| {
+                if peer == &this_peer {
+                    Some(*shard)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let remote = shard_to_peer
+            .iter()
+            .filter_map(|(&shard, &peer)| {
+                if peer != this_peer {
+                    Some((shard, peer))
+                } else {
+                    None
+                }
+            })
+            .clone()
+            .collect();
+
+        CollectionShardDistribution::Distribution { local, remote }
+    }
+}
+
+#[derive(Clone)]
+pub struct ChannelService {
+    ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
+    channel_pool: Arc<TransportChannelPool>,
+}
+
+impl ChannelService {
+    pub fn new(
+        ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
+        channel_pool: Arc<TransportChannelPool>,
+    ) -> Self {
+        Self {
+            ip_to_address,
+            channel_pool,
+        }
+    }
+}
+
+impl Default for ChannelService {
+    fn default() -> Self {
+        Self {
+            ip_to_address: Arc::new(Default::default()),
+            channel_pool: Arc::new(Default::default()),
         }
     }
 }
 
 /// Collection's data is split into several shards.
 pub struct Collection {
+    id: CollectionId,
     shards: HashMap<ShardId, Shard>,
     ring: HashRing<ShardId>,
     config: CollectionConfig,
@@ -117,11 +220,15 @@ impl Collection {
         id: CollectionId,
         path: &Path,
         config: &CollectionConfig,
+        shard_distribution: CollectionShardDistribution,
+        channel_service: ChannelService,
     ) -> Result<Self, CollectionError> {
         config.save(path)?;
         let mut ring = HashRing::new();
         let mut shards: HashMap<ShardId, Shard> = HashMap::new();
-        for shard_id in 0..config.params.shard_number.get() {
+        let (local_shards, remote_shards) =
+            shard_distribution.unpack_or_default(config.params.shard_number.get());
+        for shard_id in local_shards {
             let shard_path = shard_path(path, shard_id);
             let shard = tokio::fs::create_dir_all(&shard_path).await.map_err(|err| {
                 CollectionError::ServiceError {
@@ -148,7 +255,15 @@ impl Collection {
             shards.insert(shard_id, Shard::Local(shard));
             ring.add(shard_id);
         }
+
+        for (shard_id, peer_id) in remote_shards {
+            let shard = RemoteShard::new(shard_id, id.clone(), peer_id, channel_service.clone());
+            shards.insert(shard_id, Shard::Remote(shard));
+            ring.add(shard_id);
+        }
+
         Ok(Self {
+            id,
             shards,
             ring,
             config: config.clone(),
@@ -156,7 +271,12 @@ impl Collection {
         })
     }
 
-    pub async fn load(id: CollectionId, path: &Path) -> Self {
+    pub async fn load(
+        id: CollectionId,
+        path: &Path,
+        shard_distribution: CollectionShardDistribution,
+        channel_service: ChannelService,
+    ) -> Self {
         let config = CollectionConfig::load(path).unwrap_or_else(|err| {
             panic!(
                 "Can't read collection config due to {}\nat {}",
@@ -170,7 +290,9 @@ impl Collection {
         Self::try_migrate_legacy_one_shard(path)
             .expect("Failed to migrate legacy collection format.");
 
-        for shard_id in 0..config.params.shard_number.get() {
+        let (local_shards, remote_shards) =
+            shard_distribution.unpack_or_default(config.params.shard_number.get());
+        for shard_id in local_shards {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
                 shard_id,
@@ -178,7 +300,15 @@ impl Collection {
             );
             ring.add(shard_id);
         }
+
+        for (shard_id, peer_id) in remote_shards {
+            let shard = RemoteShard::new(shard_id, id.clone(), peer_id, channel_service.clone());
+            shards.insert(shard_id, Shard::Remote(shard));
+            ring.add(shard_id);
+        }
+
         Self {
+            id,
             shards,
             ring,
             config,
@@ -237,7 +367,7 @@ impl Collection {
         }
     }
 
-    fn all_shards(&self) -> impl Iterator<Item = &Shard> {
+    pub fn all_shards(&self) -> impl Iterator<Item = &Shard> {
         self.shards.values()
     }
 
@@ -594,8 +724,9 @@ impl Collection {
         &mut self,
         state: State,
         this_peer_id: PeerId,
+        channel_service: ChannelService,
     ) -> CollectionResult<()> {
-        state.apply(this_peer_id, self).await
+        state.apply(this_peer_id, self, channel_service).await
     }
 }
 

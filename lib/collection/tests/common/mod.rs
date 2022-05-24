@@ -1,6 +1,7 @@
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
+use collection::operations::types::CollectionError;
 use collection::optimizers_builder::OptimizersConfig;
-use collection::Collection;
+use collection::{ChannelService, Collection, CollectionId, CollectionShardDistribution};
 use segment::types::Distance;
 use std::num::NonZeroU32;
 use std::path::Path;
@@ -36,16 +37,42 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
         shard_number: NonZeroU32::new(shard_number).expect("Shard number can not be zero"),
     };
 
+    let collection_config = CollectionConfig {
+        params: collection_params,
+        optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
+        wal_config,
+        hnsw_config: Default::default(),
+    };
+
+    // Default to a collection with all the shards local
+    new_local_collection("test".to_string(), collection_path, &collection_config)
+        .await
+        .unwrap()
+}
+
+/// Default to a collection with all the shards local
+pub async fn new_local_collection(
+    id: CollectionId,
+    path: &Path,
+    config: &CollectionConfig,
+) -> Result<Collection, CollectionError> {
     Collection::new(
-        "test".to_string(),
-        collection_path,
-        &CollectionConfig {
-            params: collection_params,
-            optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
-            wal_config,
-            hnsw_config: Default::default(),
-        },
+        id,
+        path,
+        config,
+        CollectionShardDistribution::AllLocal,
+        ChannelService::default(),
     )
     .await
-    .unwrap()
+}
+
+/// Default to a collection with all the shards local
+pub async fn load_local_collection(id: CollectionId, path: &Path) -> Collection {
+    Collection::load(
+        id,
+        path,
+        CollectionShardDistribution::AllLocal,
+        ChannelService::default(),
+    )
+    .await
 }
