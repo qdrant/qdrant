@@ -64,7 +64,7 @@ def test_collection_before_peers_added(tmp_path: pathlib.Path):
         time.sleep(3)
 
     # Wait
-    time.sleep(3)
+    time.sleep(5)
 
     # Check that it exists on all peers
     for uri in peer_api_uris:
