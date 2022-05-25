@@ -159,59 +159,6 @@
         ],
         "type": "object"
       },
-      "CollectionMetaOperations": {
-        "description": "Enumeration of all possible collection update operations",
-        "oneOf": [
-          {
-            "additionalProperties": false,
-            "properties": {
-              "create_collection": {
-                "$ref": "#/components/schemas/CreateCollectionOperation"
-              }
-            },
-            "required": [
-              "create_collection"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "properties": {
-              "update_collection": {
-                "$ref": "#/components/schemas/UpdateCollectionOperation"
-              }
-            },
-            "required": [
-              "update_collection"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "properties": {
-              "delete_collection": {
-                "$ref": "#/components/schemas/DeleteCollectionOperation"
-              }
-            },
-            "required": [
-              "delete_collection"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "properties": {
-              "change_aliases": {
-                "$ref": "#/components/schemas/ChangeAliasesOperation"
-              }
-            },
-            "required": [
-              "change_aliases"
-            ],
-            "type": "object"
-          }
-        ]
-      },
       "CollectionParams": {
         "properties": {
           "distance": {
@@ -245,19 +192,6 @@
           "red"
         ],
         "type": "string"
-      },
-      "CollectionUpdateOperations": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/PointOperations"
-          },
-          {
-            "$ref": "#/components/schemas/PayloadOps"
-          },
-          {
-            "$ref": "#/components/schemas/FieldIndexOperations"
-          }
-        ]
       },
       "CollectionsResponse": {
         "properties": {
@@ -374,90 +308,7 @@
         ],
         "type": "object"
       },
-      "CreateCollectionOperation": {
-        "description": "Operation for creating new collection and (optionally) specify index params",
-        "properties": {
-          "collection_name": {
-            "type": "string"
-          },
-          "distance": {
-            "$ref": "#/components/schemas/Distance"
-          },
-          "hnsw_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/HnswConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ],
-            "description": "Custom params for HNSW index. If none - values from service configuration file are used."
-          },
-          "optimizers_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OptimizersConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ],
-            "description": "Custom params for Optimizers.  If none - values from service configuration file are used."
-          },
-          "shard_number": {
-            "default": 1,
-            "description": "Number of shards in collection. Default is 1, minimum is 1.",
-            "format": "uint32",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "vector_size": {
-            "format": "uint",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "wal_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WalConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ],
-            "description": "Custom params for WAL. If none - values from service configuration file are used."
-          }
-        },
-        "required": [
-          "collection_name",
-          "distance",
-          "vector_size"
-        ],
-        "type": "object"
-      },
       "CreateFieldIndex": {
-        "properties": {
-          "field_name": {
-            "type": "string"
-          },
-          "field_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PayloadSchemaType"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          }
-        },
-        "required": [
-          "field_name"
-        ],
-        "type": "object"
-      },
-      "CreateIndex": {
         "properties": {
           "field_name": {
             "type": "string"
@@ -501,10 +352,6 @@
           "delete_alias"
         ],
         "type": "object"
-      },
-      "DeleteCollectionOperation": {
-        "description": "Operation for deleting collection with given name",
-        "type": "string"
       },
       "DeletePayload": {
         "properties": {
@@ -641,36 +488,6 @@
           "key"
         ],
         "type": "object"
-      },
-      "FieldIndexOperations": {
-        "oneOf": [
-          {
-            "additionalProperties": false,
-            "description": "Create index for payload field",
-            "properties": {
-              "create_index": {
-                "$ref": "#/components/schemas/CreateIndex"
-              }
-            },
-            "required": [
-              "create_index"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "description": "Delete index for the field",
-            "properties": {
-              "delete_index": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "delete_index"
-            ],
-            "type": "object"
-          }
-        ]
       },
       "Filter": {
         "additionalProperties": false,
@@ -1093,74 +910,6 @@
         ],
         "type": "object"
       },
-      "PayloadOps": {
-        "description": "Define operations description for point payloads manipulation",
-        "oneOf": [
-          {
-            "additionalProperties": false,
-            "description": "Set payload value, overrides if it is already exists",
-            "properties": {
-              "set_payload": {
-                "$ref": "#/components/schemas/SetPayload"
-              }
-            },
-            "required": [
-              "set_payload"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "description": "Deletes specified payload values if they are assigned",
-            "properties": {
-              "delete_payload": {
-                "$ref": "#/components/schemas/DeletePayload"
-              }
-            },
-            "required": [
-              "delete_payload"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "description": "Drops all Payload values associated with given points.",
-            "properties": {
-              "clear_payload": {
-                "properties": {
-                  "points": {
-                    "items": {
-                      "$ref": "#/components/schemas/ExtendedPointId"
-                    },
-                    "type": "array"
-                  }
-                },
-                "required": [
-                  "points"
-                ],
-                "type": "object"
-              }
-            },
-            "required": [
-              "clear_payload"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "description": "Clear all Payload values by given filter criteria.",
-            "properties": {
-              "clear_payload_by_filter": {
-                "$ref": "#/components/schemas/Filter"
-              }
-            },
-            "required": [
-              "clear_payload_by_filter"
-            ],
-            "type": "object"
-          }
-        ]
-      },
       "PayloadSchemaType": {
         "description": "All possible names of payload types",
         "enum": [
@@ -1229,66 +978,12 @@
         "type": "object"
       },
       "PointInsertOperations": {
-        "anyOf": [
+        "oneOf": [
           {
             "$ref": "#/components/schemas/PointsBatch"
           },
           {
             "$ref": "#/components/schemas/PointsList"
-          }
-        ]
-      },
-      "PointOperations": {
-        "oneOf": [
-          {
-            "additionalProperties": false,
-            "description": "Insert or update points",
-            "properties": {
-              "upsert_points": {
-                "$ref": "#/components/schemas/PointInsertOperations"
-              }
-            },
-            "required": [
-              "upsert_points"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "description": "Delete point if exists",
-            "properties": {
-              "delete_points": {
-                "properties": {
-                  "ids": {
-                    "items": {
-                      "$ref": "#/components/schemas/ExtendedPointId"
-                    },
-                    "type": "array"
-                  }
-                },
-                "required": [
-                  "ids"
-                ],
-                "type": "object"
-              }
-            },
-            "required": [
-              "delete_points"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "description": "Delete points by given filter criteria",
-            "properties": {
-              "delete_points_by_filter": {
-                "$ref": "#/components/schemas/Filter"
-              }
-            },
-            "required": [
-              "delete_points_by_filter"
-            ],
-            "type": "object"
           }
         ]
       },
@@ -1362,8 +1057,7 @@
         },
         "required": [
           "batch"
-        ],
-        "type": "object"
+        ]
       },
       "PointsList": {
         "properties": {
@@ -1794,29 +1488,6 @@
         },
         "type": "object"
       },
-      "UpdateCollectionOperation": {
-        "description": "Operation for updating parameters of the existing collection",
-        "properties": {
-          "collection_name": {
-            "type": "string"
-          },
-          "optimizers_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OptimizersConfigDiff"
-              },
-              {
-                "nullable": true
-              }
-            ],
-            "description": "Custom params for Optimizers.  If none - values from service configuration file are used. This operation is blocking, it will only proceed ones all current optimizations are complete"
-          }
-        },
-        "required": [
-          "collection_name"
-        ],
-        "type": "object"
-      },
       "UpdateResult": {
         "properties": {
           "operation_id": {
@@ -2022,73 +1693,6 @@
           }
         },
         "summary": "List collections",
-        "tags": [
-          "collections"
-        ]
-      },
-      "post": {
-        "deprecated": true,
-        "description": "Perform update, create, remove or alias change operations on collections",
-        "operationId": "update_collections",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CollectionMetaOperations"
-              }
-            }
-          },
-          "description": "Operation to perform on collections"
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "type": "boolean"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Update collection",
         "tags": [
           "collections"
         ]
@@ -2397,93 +2001,6 @@
         "summary": "Update collection parameters",
         "tags": [
           "collections"
-        ]
-      },
-      "post": {
-        "deprecated": true,
-        "description": "Perform point update operation (vectors, payloads, indexes) in collection",
-        "operationId": "update_points",
-        "parameters": [
-          {
-            "description": "Name of the collection to search in",
-            "in": "path",
-            "name": "collection_name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "If true, wait for changes to actually happen",
-            "in": "query",
-            "name": "wait",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CollectionUpdateOperations"
-              }
-            }
-          },
-          "description": "Collection update operations"
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "result": {
-                      "$ref": "#/components/schemas/UpdateResult"
-                    },
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string"
-                    },
-                    "time": {
-                      "description": "Time spent to process this request",
-                      "format": "float",
-                      "type": "number"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error"
-          }
-        },
-        "summary": "Update points",
-        "tags": [
-          "points"
         ]
       },
       "put": {

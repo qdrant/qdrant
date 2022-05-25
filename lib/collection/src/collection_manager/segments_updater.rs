@@ -9,9 +9,7 @@ use segment::types::{
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
-use crate::operations::point_ops::{
-    Batch, PointInsertOperations, PointOperations, PointsBatch, PointsList,
-};
+use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations};
 use crate::operations::types::{CollectionError, CollectionResult, VectorType};
 use crate::operations::FieldIndexOperations;
 use itertools::Itertools;
@@ -236,16 +234,13 @@ pub(crate) fn process_point_operation(
         PointOperations::DeletePoints { ids, .. } => delete_points(&segments.read(), op_num, &ids),
         PointOperations::UpsertPoints(operation) => {
             let (ids, vectors, payloads) = match operation {
-                PointInsertOperations::PointsBatch(PointsBatch {
-                    batch:
-                        Batch {
-                            ids,
-                            vectors,
-                            payloads,
-                            ..
-                        },
+                PointInsertOperations::PointsBatch(Batch {
+                    ids,
+                    vectors,
+                    payloads,
+                    ..
                 }) => (ids, vectors, payloads),
-                PointInsertOperations::PointsList(PointsList { points }) => {
+                PointInsertOperations::PointsList(points) => {
                     let mut ids = vec![];
                     let mut vectors = vec![];
                     let mut payloads = vec![];

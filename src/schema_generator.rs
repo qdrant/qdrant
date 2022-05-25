@@ -6,14 +6,14 @@ use collection::operations::types::{
     CollectionInfo, PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult,
     SearchRequest, UpdateResult,
 };
-use collection::operations::CollectionUpdateOperations;
 use segment::types::ScoredPoint;
 use storage::content_manager::collection_meta_ops::{
-    ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, UpdateCollection,
+    ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };
 
 use crate::common::points::CreateFieldIndex;
 use api::grpc::models::CollectionsResponse;
+use collection::operations::payload_ops::{DeletePayload, SetPayload};
 
 mod actix;
 mod common;
@@ -23,13 +23,13 @@ mod settings;
 struct AllDefinitions {
     a1: CollectionsResponse,
     a2: CollectionInfo,
-    a3: CollectionMetaOperations,
+    // a3: CollectionMetaOperations,
     a4: PointRequest,
     a5: Record,
     a6: SearchRequest,
     a7: ScoredPoint,
     a8: UpdateResult,
-    a9: CollectionUpdateOperations,
+    // a9: CollectionUpdateOperations,
     aa: RecommendRequest,
     ab: ScrollRequest,
     ac: ScrollResult,
@@ -39,6 +39,8 @@ struct AllDefinitions {
     ag: CreateFieldIndex,
     ah: PointsSelector,
     ai: PointInsertOperations,
+    aj: SetPayload,
+    ak: DeletePayload,
 }
 
 fn save_schema<T: JsonSchema>() {

@@ -153,9 +153,7 @@ mod tests {
     use crate::collection_manager::segments_updater::{
         process_field_index_operation, process_point_operation,
     };
-    use crate::operations::point_ops::{
-        Batch, PointInsertOperations, PointOperations, PointsBatch,
-    };
+    use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations};
     use crate::operations::{CreateIndex, FieldIndexOperations};
 
     use super::*;
@@ -205,7 +203,7 @@ mod tests {
             Default::default(),
         );
 
-        let locked_holder = Arc::new(RwLock::new(holder));
+        let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
 
         let excluded_ids = Default::default();
 
@@ -311,20 +309,18 @@ mod tests {
 
         let point_payload: Payload = json!({"number":10000i64}).into();
         let insert_point_ops =
-            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
-                batch: Batch {
-                    ids: vec![501.into(), 502.into(), 503.into()],
-                    vectors: vec![
-                        vec![1.0, 0.0, 0.5, 0.0],
-                        vec![1.0, 0.0, 0.5, 0.5],
-                        vec![1.0, 0.0, 0.5, 1.0],
-                    ],
-                    payloads: Some(vec![
-                        Some(point_payload.clone()),
-                        Some(point_payload.clone()),
-                        Some(point_payload),
-                    ]),
-                },
+            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
+                ids: vec![501.into(), 502.into(), 503.into()],
+                vectors: vec![
+                    vec![1.0, 0.0, 0.5, 0.0],
+                    vec![1.0, 0.0, 0.5, 0.5],
+                    vec![1.0, 0.0, 0.5, 1.0],
+                ],
+                payloads: Some(vec![
+                    Some(point_payload.clone()),
+                    Some(point_payload.clone()),
+                    Some(point_payload),
+                ]),
             }));
 
         let smallest_size = infos
@@ -380,16 +376,14 @@ mod tests {
         );
 
         let insert_point_ops =
-            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(PointsBatch {
-                batch: Batch {
-                    ids: vec![601.into(), 602.into(), 603.into()],
-                    vectors: vec![
-                        vec![0.0, 1.0, 0.5, 0.0],
-                        vec![0.0, 1.0, 0.5, 0.5],
-                        vec![0.0, 1.0, 0.5, 1.0],
-                    ],
-                    payloads: None,
-                },
+            PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
+                ids: vec![601.into(), 602.into(), 603.into()],
+                vectors: vec![
+                    vec![0.0, 1.0, 0.5, 0.0],
+                    vec![0.0, 1.0, 0.5, 0.5],
+                    vec![0.0, 1.0, 0.5, 1.0],
+                ],
+                payloads: None,
             }));
 
         process_point_operation(

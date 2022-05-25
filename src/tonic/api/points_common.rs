@@ -11,7 +11,7 @@ use api::grpc::qdrant::{
     SetPayloadPoints, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
-use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsList};
+use collection::operations::point_ops::{PointInsertOperations, PointOperations};
 use collection::operations::types::{PointRequest, ScrollRequest, SearchRequest};
 use collection::operations::CollectionUpdateOperations;
 use collection::shard::ShardId;
@@ -48,7 +48,7 @@ pub async fn upsert(
         .collect::<Result<_, _>>()?;
 
     let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperations::PointsList(PointsList { points }),
+        PointInsertOperations::PointsList(points),
     ));
 
     let timing = Instant::now();
