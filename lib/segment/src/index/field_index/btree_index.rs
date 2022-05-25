@@ -22,7 +22,7 @@ use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType, Range,
 };
 
-const HISTOGRAM_BUCKET_SIZE : usize = 64;
+const HISTOGRAM_BUCKET_SIZE: usize = 64;
 
 trait KeyEncoder: HistogramValue {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
