@@ -71,7 +71,6 @@ impl<T: KeyEncoder> NumericIndex<T> {
         }
     }
 
-    #[allow(dead_code)] // TODO(gvelo): remove when this index is integrated in `StructPayloadIndex`
     fn load(&mut self) -> OperationResult<()> {
         let db_ref = self.db.borrow();
         let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
@@ -96,7 +95,6 @@ impl<T: KeyEncoder> NumericIndex<T> {
         Ok(())
     }
 
-    #[allow(dead_code)] // TODO(gvelo): remove when this index is integrated in `StructPayloadIndex`
     pub fn flush(&self) -> OperationResult<()> {
         let db_ref = self.db.borrow();
         let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
@@ -110,6 +108,14 @@ impl<T: KeyEncoder> NumericIndex<T> {
 }
 
 impl<T: KeyEncoder + From<f64>> PayloadFieldIndex for NumericIndex<T> {
+    fn load(&mut self) -> OperationResult<()> {
+        NumericIndex::load(self)
+    }
+
+    fn flush(&self) -> OperationResult<()> {
+        NumericIndex::flush(self)
+    }
+
     fn filter(
         &self,
         condition: &FieldCondition,

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::{iter, mem};
 
+use crate::entry::entry_point::OperationResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -72,6 +73,14 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
 }
 
 impl PayloadFieldIndex for PersistedMapIndex<String> {
+    fn load(&mut self) -> OperationResult<()> {
+        panic!("cannot load from disk in PersistedMapIndex");
+    }
+
+    fn flush(&self) -> OperationResult<()> {
+        panic!("cannot flush to disk in PersistedMapIndex");
+    }
+
     fn filter(
         &self,
         condition: &FieldCondition,
@@ -121,6 +130,14 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
 }
 
 impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
+    fn load(&mut self) -> OperationResult<()> {
+        panic!("cannot load from disk in PersistedMapIndex");
+    }
+
+    fn flush(&self) -> OperationResult<()> {
+        panic!("cannot flush to disk in PersistedMapIndex");
+    }
+
     fn filter(
         &self,
         condition: &FieldCondition,

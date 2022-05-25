@@ -160,6 +160,14 @@ impl<N: Hash + Eq + Clone + Display + FromStr> OnDiskMapIndex<N> {
 }
 
 impl PayloadFieldIndex for OnDiskMapIndex<String> {
+    fn load(&mut self) -> OperationResult<()> {
+        OnDiskMapIndex::load(self)
+    }
+
+    fn flush(&self) -> OperationResult<()> {
+        OnDiskMapIndex::flush(self)
+    }
+
     fn filter(
         &self,
         condition: &FieldCondition,
@@ -209,6 +217,14 @@ impl PayloadFieldIndex for OnDiskMapIndex<String> {
 }
 
 impl PayloadFieldIndex for OnDiskMapIndex<IntPayloadType> {
+    fn load(&mut self) -> OperationResult<()> {
+        OnDiskMapIndex::load(self)
+    }
+
+    fn flush(&self) -> OperationResult<()> {
+        OnDiskMapIndex::flush(self)
+    }
+
     fn filter(
         &self,
         condition: &FieldCondition,

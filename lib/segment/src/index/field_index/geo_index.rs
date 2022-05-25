@@ -1,3 +1,4 @@
+use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::geo_hash::{
     circle_hashes, common_hash_prefix, encode_max_precision, geo_hash_to_box, rectangle_hashes,
     GeoHash,
@@ -320,6 +321,14 @@ impl PayloadFieldIndexBuilder for PersistedGeoMapIndex {
 }
 
 impl PayloadFieldIndex for PersistedGeoMapIndex {
+    fn load(&mut self) -> OperationResult<()> {
+        panic!("cannot load from disk in PersistedGeoMapIndex");
+    }
+
+    fn flush(&self) -> OperationResult<()> {
+        panic!("cannot flush to disk in PersistedGeoMapIndex");
+    }
+
     fn filter(
         &self,
         condition: &FieldCondition,

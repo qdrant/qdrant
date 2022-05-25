@@ -6,6 +6,7 @@ use num_traits::ToPrimitive;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
+use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
@@ -193,6 +194,14 @@ impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
 }
 
 impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
+    fn load(&mut self) -> OperationResult<()> {
+        panic!("cannot load from disk in PersistedNumericIndex");
+    }
+
+    fn flush(&self) -> OperationResult<()> {
+        panic!("cannot flush to disk in PersistedNumericIndex");
+    }
+
     fn filter(
         &self,
         condition: &FieldCondition,

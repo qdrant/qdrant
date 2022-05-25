@@ -437,6 +437,14 @@ impl ValueIndexer<GeoPoint> for OnDiskGeoMapIndex {
 }
 
 impl PayloadFieldIndex for OnDiskGeoMapIndex {
+    fn load(&mut self) -> OperationResult<()> {
+        OnDiskGeoMapIndex::load(self)
+    }
+
+    fn flush(&self) -> OperationResult<()> {
+        OnDiskGeoMapIndex::flush(self)
+    }
+
     fn filter(
         &self,
         condition: &FieldCondition,

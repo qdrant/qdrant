@@ -1,3 +1,4 @@
+use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::geo_index::PersistedGeoMapIndex;
 use crate::index::field_index::map_index::PersistedMapIndex;
 use crate::index::field_index::numeric_index::PersistedNumericIndex;
@@ -9,6 +10,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub trait PayloadFieldIndex {
+    /// Load index from disk.
+    fn load(&mut self) -> OperationResult<()>;
+
+    /// Flush all pending updates to disk.
+    fn flush(&self) -> OperationResult<()>;
+
     /// Get iterator over points fitting given `condition`
     fn filter(
         &self,
@@ -81,9 +88,26 @@ impl FieldIndex {
             FieldIndex::GeoIndex(payload_field_index) => payload_field_index,
         }
     }
+    pub fn get_payload_field_index_mut(&mut self) -> &mut dyn PayloadFieldIndex {
+        match self {
+            FieldIndex::IntIndex(ref mut payload_field_index) => payload_field_index,
+            FieldIndex::IntMapIndex(ref mut payload_field_index) => payload_field_index,
+            FieldIndex::KeywordIndex(ref mut payload_field_index) => payload_field_index,
+            FieldIndex::FloatIndex(ref mut payload_field_index) => payload_field_index,
+            FieldIndex::GeoIndex(ref mut payload_field_index) => payload_field_index,
+        }
+    }
 }
 
 impl PayloadFieldIndex for FieldIndex {
+    fn load(&mut self) -> OperationResult<()> {
+        self.get_payload_field_index_mut().load()
+    }
+
+    fn flush(&self) -> OperationResult<()> {
+        self.get_payload_field_index().flush()
+    }
+
     fn filter(
         &self,
         condition: &FieldCondition,
