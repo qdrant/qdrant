@@ -32,6 +32,7 @@ use crate::operations::types::{
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::{build_optimizers, OptimizersConfig};
+use crate::shard::shard_config::ShardConfig;
 use crate::shard::ShardOperation;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
@@ -198,6 +199,11 @@ impl LocalShard {
         shard_path: &Path,
         config: &CollectionConfig,
     ) -> CollectionResult<LocalShard> {
+        // initialize local shard config file
+        ShardConfig::init_file(shard_path)?;
+        let shard_config = ShardConfig::new_local();
+        shard_config.save(shard_path)?;
+
         let wal_path = shard_path.join("wal");
 
         create_dir_all(&wal_path)

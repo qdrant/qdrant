@@ -126,10 +126,14 @@ impl TableOfContent {
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
 
+            let shard_distribution =
+                CollectionShardDistribution::from_local_state(&collection_path)
+                    .expect("Can't infer shard distribution from local shard configurations");
+
             let collection = collection_management_runtime.block_on(Collection::load(
                 collection_name.clone(),
                 &collection_path,
-                CollectionShardDistribution::AllLocal, //TODO read remote info from local file system
+                shard_distribution,
                 channel_service.clone(),
             ));
 
@@ -916,6 +920,7 @@ impl TableOfContent {
                                 .apply_state(
                                     state.clone(),
                                     self.this_peer_id(),
+                                    &self.get_collection_path(&collection.name()),
                                     channel_service.clone(),
                                 )
                                 .await?;

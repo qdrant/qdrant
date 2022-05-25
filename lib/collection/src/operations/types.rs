@@ -17,6 +17,7 @@ use segment::types::{
 };
 
 use crate::{config::CollectionConfig, wal::WalError};
+use segment::common::file_operations::FileStorageError;
 use std::collections::HashMap;
 use tonic::codegen::http::uri::InvalidUri;
 
@@ -351,6 +352,22 @@ impl<Guard> From<std::sync::PoisonError<Guard>> for CollectionError {
     fn from(err: std::sync::PoisonError<Guard>) -> Self {
         CollectionError::ServiceError {
             error: format!("Mutex lock poisoned: {}", err),
+        }
+    }
+}
+
+impl From<FileStorageError> for CollectionError {
+    fn from(err: FileStorageError) -> Self {
+        match err {
+            FileStorageError::IoError { description } => {
+                CollectionError::service_error(description)
+            }
+            FileStorageError::UserAtomicIoError => {
+                CollectionError::service_error("Unknown atomic write error".to_string())
+            }
+            FileStorageError::GenericError { description } => {
+                CollectionError::service_error(description)
+            }
         }
     }
 }

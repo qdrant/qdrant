@@ -12,7 +12,9 @@ use std::{
 use crate::operations::types::PointRequest;
 use crate::operations::OperationToShard;
 use crate::shard::remote_shard::RemoteShard;
+use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::ShardOperation;
+use crate::CollectionShardDistribution::Distribution;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
@@ -70,6 +72,7 @@ impl State {
         self,
         this_peer_id: PeerId,
         collection: &mut Collection,
+        collection_path: &Path,
         channel_service: ChannelService,
     ) -> CollectionResult<()> {
         Self::apply_config(self.config, collection).await?;
@@ -77,9 +80,10 @@ impl State {
             self.shard_to_peer,
             this_peer_id,
             collection,
+            collection_path,
             channel_service,
-        );
-        Ok(())
+        )
+        .await
     }
 
     async fn apply_config(
@@ -92,12 +96,13 @@ impl State {
             .await
     }
 
-    fn apply_shard_to_peer(
+    async fn apply_shard_to_peer(
         shard_to_peer: HashMap<ShardId, PeerId>,
         this_peer_id: PeerId,
         collection: &mut Collection,
+        collection_path: &Path,
         channel_service: ChannelService,
-    ) {
+    ) -> CollectionResult<()> {
         for (shard_id, peer_id) in shard_to_peer {
             match collection.shards.get(&shard_id) {
                 Some(shard) => {
@@ -113,18 +118,21 @@ impl State {
                     } else {
                         // missing remote shard
                         let collection_id = collection.id.clone();
-                        let shard = RemoteShard::new(
+                        let shard_path = create_shard_dir(collection_path, shard_id).await?;
+                        let shard = RemoteShard::init(
                             shard_id,
                             collection_id,
                             peer_id,
+                            shard_path,
                             channel_service.clone(),
-                        );
+                        )?;
                         collection.shards.insert(shard_id, Shard::Remote(shard));
                         collection.ring.add(shard_id);
                     }
                 }
             }
         }
+        Ok(())
     }
 }
 
@@ -138,6 +146,10 @@ pub enum CollectionShardDistribution {
 }
 
 impl CollectionShardDistribution {
+    fn from_collections(local: Vec<ShardId>, remote: Vec<(ShardId, PeerId)>) -> Self {
+        Distribution { local, remote }
+    }
+
     /// Unpack the distribution into separate local and remote peers.
     /// If `AllLocal`, it defaults to assigning `config_shard_number` locally.
     fn unpack_or_default(self, config_shard_number: u32) -> (Vec<ShardId>, Vec<(ShardId, PeerId)>) {
@@ -175,6 +187,31 @@ impl CollectionShardDistribution {
             .collect();
 
         CollectionShardDistribution::Distribution { local, remote }
+    }
+
+    /// Read remote & local shard info from file system
+    pub fn from_local_state(collection_path: &Path) -> CollectionResult<Self> {
+        let config = CollectionConfig::load(collection_path).unwrap_or_else(|err| {
+            panic!(
+                "Can't read collection config due to {}\nat {}",
+                err,
+                collection_path.to_str().unwrap()
+            )
+        });
+        let shard_number = config.params.shard_number.get();
+        let mut local_shards = Vec::new();
+        let mut remote_shards = Vec::new();
+
+        for shard_id in 0..shard_number {
+            let shard_path = shard_path(collection_path, shard_id);
+            let shard_config = ShardConfig::load(&shard_path)?;
+            match shard_config.r#type {
+                ShardType::Local => local_shards.push(shard_id),
+                ShardType::Remote { peer_id } => remote_shards.push((shard_id, peer_id)),
+            }
+        }
+
+        Ok(Self::from_collections(local_shards, remote_shards))
     }
 }
 
@@ -216,6 +253,10 @@ pub struct Collection {
 }
 
 impl Collection {
+    pub fn name(&self) -> String {
+        self.id.clone()
+    }
+
     pub async fn new(
         id: CollectionId,
         path: &Path,
@@ -229,18 +270,8 @@ impl Collection {
         let (local_shards, remote_shards) =
             shard_distribution.unpack_or_default(config.params.shard_number.get());
         for shard_id in local_shards {
-            let shard_path = shard_path(path, shard_id);
-            let shard = tokio::fs::create_dir_all(&shard_path).await.map_err(|err| {
-                CollectionError::ServiceError {
-                    error: format!("Can't create shard {shard_id} directory. Error: {}", err),
-                }
-            });
-
-            let shard = match shard {
-                Ok(_) => LocalShard::build(shard_id, id.clone(), &shard_path, config).await,
-                Err(err) => Err(err),
-            };
-
+            let shard_path = create_shard_dir(path, shard_id).await?;
+            let shard = LocalShard::build(shard_id, id.clone(), &shard_path, config).await;
             let shard = match shard {
                 Ok(shard) => shard,
                 Err(err) => {
@@ -257,7 +288,14 @@ impl Collection {
         }
 
         for (shard_id, peer_id) in remote_shards {
-            let shard = RemoteShard::new(shard_id, id.clone(), peer_id, channel_service.clone());
+            let shard_path = create_shard_dir(path, shard_id).await?;
+            let shard = RemoteShard::init(
+                shard_id,
+                id.clone(),
+                peer_id,
+                shard_path,
+                channel_service.clone(),
+            )?;
             shards.insert(shard_id, Shard::Remote(shard));
             ring.add(shard_id);
         }
@@ -724,14 +762,30 @@ impl Collection {
         &mut self,
         state: State,
         this_peer_id: PeerId,
+        collection_path: &Path,
         channel_service: ChannelService,
     ) -> CollectionResult<()> {
-        state.apply(this_peer_id, self, channel_service).await
+        state
+            .apply(this_peer_id, self, collection_path, channel_service)
+            .await
     }
 }
 
 pub fn shard_path(collection_path: &Path, shard_id: ShardId) -> PathBuf {
     collection_path.join(format!("{shard_id}"))
+}
+
+pub async fn create_shard_dir(
+    collection_path: &Path,
+    shard_id: ShardId,
+) -> CollectionResult<PathBuf> {
+    let shard_path = shard_path(collection_path, shard_id);
+    tokio::fs::create_dir_all(&shard_path)
+        .await
+        .map_err(|err| CollectionError::ServiceError {
+            error: format!("Can't create shard {shard_id} directory. Error: {}", err),
+        })?;
+    Ok(shard_path)
 }
 
 pub fn avg_vectors<'a>(
