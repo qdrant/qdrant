@@ -20,8 +20,8 @@ pub struct ShardConfig {
 }
 
 impl ShardConfig {
-    fn get_config_path(path: &Path) -> PathBuf {
-        path.join(SHARD_CONFIG_FILE)
+    fn get_config_path(shard_path: &Path) -> PathBuf {
+        shard_path.join(SHARD_CONFIG_FILE)
     }
 
     /// Initialize an empty config. file if it does not already exist.
@@ -48,6 +48,14 @@ impl ShardConfig {
 
     pub fn load(shard_path: &Path) -> CollectionResult<Self> {
         let config_path = Self::get_config_path(shard_path);
+        // shard config was introduced in 0.8.0
+        // therefore we need to generate a shard config for existing local shards
+        if !config_path.exists() {
+            log::info!("Detected missing shard config file in {:?}", shard_path);
+            Self::init_file(shard_path)?;
+            let shard_config = Self::new_local();
+            shard_config.save(shard_path)?;
+        }
         Ok(read_json(&config_path)?)
     }
 
