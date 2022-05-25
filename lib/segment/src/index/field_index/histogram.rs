@@ -16,17 +16,27 @@ pub trait HistogramValue:
 {
     // add custom convert method because f64 doesn't implement From<i64> trait (only From<i32>)
     fn to_f64(self) -> f64;
+
+    fn from_f64(f: f64) -> Self;
 }
 
 impl HistogramValue for f64 {
     fn to_f64(self) -> f64 {
         self
     }
+
+    fn from_f64(f: f64) -> Self {
+        f
+    }
 }
 
 impl HistogramValue for i64 {
     fn to_f64(self) -> f64 {
         self as f64
+    }
+
+    fn from_f64(f: f64) -> Self {
+        f as Self
     }
 }
 

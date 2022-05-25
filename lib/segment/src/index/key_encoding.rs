@@ -3,8 +3,8 @@ const FLOAT_NEG: u8 = 0x01;
 const FLOAT_ZERO: u8 = 0x02;
 const FLOAT_POS: u8 = 0x03;
 
-const F64_KEY_LEN: usize = 13;
-const I64_KEY_LEN: usize = 12;
+pub const F64_KEY_LEN: usize = 13;
+pub const I64_KEY_LEN: usize = 12;
 
 /// Encode a f64 into `buf`
 ///
@@ -81,8 +81,7 @@ pub fn encode_i64_ascending(val: i64, buf: &mut Vec<u8>) {
 }
 
 /// Decode a i64 from a slice
-#[allow(dead_code)]
-fn decode_i64_ascending(buf: &[u8]) -> i64 {
+pub fn decode_i64_ascending(buf: &[u8]) -> i64 {
     let i = i64::from_be_bytes(buf[0..8].try_into().expect("cannot decode i64"));
     i ^ i64::MIN
 }
@@ -104,7 +103,6 @@ fn decode_i64_ascending(buf: &[u8]) -> i64 {
 /// └───────────────────┴─────────────────┴──────────────┘
 /// ```
 ///
-#[allow(dead_code)]
 pub fn encode_f64_key_ascending(key_val: f64, point_offset: u32) -> Vec<u8> {
     let mut buf = Vec::with_capacity(F64_KEY_LEN);
     encode_f64_ascending(key_val, &mut buf);
@@ -127,7 +125,6 @@ pub fn encode_f64_key_ascending(key_val: f64, point_offset: u32) -> Vec<u8> {
 /// │    (big-endian)    │ (big-endian) │
 /// └────────────────────┴──────────────┘
 ///```
-#[allow(dead_code)]
 pub fn encode_i64_key_ascending(key_val: i64, point_offset: u32) -> Vec<u8> {
     let mut buf = Vec::with_capacity(I64_KEY_LEN);
     encode_i64_ascending(key_val, &mut buf);
