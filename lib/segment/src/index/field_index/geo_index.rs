@@ -325,7 +325,7 @@ impl PayloadFieldIndex for PersistedGeoMapIndex {
         panic!("cannot load from disk in PersistedGeoMapIndex");
     }
 
-    fn flush(&mut self) -> OperationResult<()> {
+    fn flush(&self) -> OperationResult<()> {
         panic!("cannot flush to disk in PersistedGeoMapIndex");
     }
 

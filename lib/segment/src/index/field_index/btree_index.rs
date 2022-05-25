@@ -112,7 +112,7 @@ impl<T: KeyEncoder + From<f64>> PayloadFieldIndex for NumericIndex<T> {
         NumericIndex::load(self)
     }
 
-    fn flush(&mut self) -> OperationResult<()> {
+    fn flush(&self) -> OperationResult<()> {
         NumericIndex::flush(self)
     }
 

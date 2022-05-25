@@ -14,7 +14,7 @@ pub trait PayloadFieldIndex {
     fn load(&mut self) -> OperationResult<()>;
 
     /// Flush all pending updates to disk.
-    fn flush(&mut self) -> OperationResult<()>;
+    fn flush(&self) -> OperationResult<()>;
 
     /// Get iterator over points fitting given `condition`
     fn filter(
@@ -104,8 +104,8 @@ impl PayloadFieldIndex for FieldIndex {
         self.get_payload_field_index_mut().load()
     }
 
-    fn flush(&mut self) -> OperationResult<()> {
-        self.get_payload_field_index_mut().flush()
+    fn flush(&self) -> OperationResult<()> {
+        self.get_payload_field_index().flush()
     }
 
     fn filter(

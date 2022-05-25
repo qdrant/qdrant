@@ -77,7 +77,7 @@ impl PayloadFieldIndex for PersistedMapIndex<String> {
         panic!("cannot load from disk in PersistedMapIndex");
     }
 
-    fn flush(&mut self) -> OperationResult<()> {
+    fn flush(&self) -> OperationResult<()> {
         panic!("cannot flush to disk in PersistedMapIndex");
     }
 
@@ -134,7 +134,7 @@ impl PayloadFieldIndex for PersistedMapIndex<IntPayloadType> {
         panic!("cannot load from disk in PersistedMapIndex");
     }
 
-    fn flush(&mut self) -> OperationResult<()> {
+    fn flush(&self) -> OperationResult<()> {
         panic!("cannot flush to disk in PersistedMapIndex");
     }
 

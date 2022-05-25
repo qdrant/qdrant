@@ -164,7 +164,7 @@ impl PayloadFieldIndex for OnDiskMapIndex<String> {
         OnDiskMapIndex::load(self)
     }
 
-    fn flush(&mut self) -> OperationResult<()> {
+    fn flush(&self) -> OperationResult<()> {
         OnDiskMapIndex::flush(self)
     }
 
@@ -221,7 +221,7 @@ impl PayloadFieldIndex for OnDiskMapIndex<IntPayloadType> {
         OnDiskMapIndex::load(self)
     }
 
-    fn flush(&mut self) -> OperationResult<()> {
+    fn flush(&self) -> OperationResult<()> {
         OnDiskMapIndex::flush(self)
     }
 

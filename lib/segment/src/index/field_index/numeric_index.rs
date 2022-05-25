@@ -198,7 +198,7 @@ impl<N: ToPrimitive + Clone> PayloadFieldIndex for PersistedNumericIndex<N> {
         panic!("cannot load from disk in PersistedNumericIndex");
     }
 
-    fn flush(&mut self) -> OperationResult<()> {
+    fn flush(&self) -> OperationResult<()> {
         panic!("cannot flush to disk in PersistedNumericIndex");
     }
 

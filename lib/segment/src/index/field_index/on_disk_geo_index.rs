@@ -441,7 +441,7 @@ impl PayloadFieldIndex for OnDiskGeoMapIndex {
         OnDiskGeoMapIndex::load(self)
     }
 
-    fn flush(&mut self) -> OperationResult<()> {
+    fn flush(&self) -> OperationResult<()> {
         OnDiskGeoMapIndex::flush(self)
     }
 
