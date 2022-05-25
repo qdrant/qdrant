@@ -22,6 +22,8 @@ use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType, Range,
 };
 
+const HISTOGRAM_BUCKET_SIZE : usize = 64;
+
 trait KeyEncoder: HistogramValue {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
 
@@ -62,7 +64,7 @@ impl<T: KeyEncoder> NumericIndex<T> {
             map: BTreeMap::new(),
             db,
             store_cf_name,
-            histogram: Histogram::new(64),
+            histogram: Histogram::new(HISTOGRAM_BUCKET_SIZE),
         }
     }
 
