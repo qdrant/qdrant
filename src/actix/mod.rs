@@ -2,6 +2,7 @@ pub mod api;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
 
+use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_cors::Cors;
@@ -63,6 +64,7 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
                 .service(index)
                 .configure(config_collections_api)
                 .configure(config_update_api)
+                .configure(config_cluster_api)
                 .service(get_point)
                 .service(get_points)
                 .service(scroll_points)
