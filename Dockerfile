@@ -1,10 +1,25 @@
-FROM rust:1.61.0 as builder
+# Leveraging the pre-built Docker images with
+# cargo-chef and the Rust toolchain
+# https://www.lpalmieri.com/posts/fast-rust-docker-builds/
+FROM lukemathwalker/cargo-chef:latest-rust-1.61.0 AS chef
+WORKDIR /qdrant
+
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef as builder
+
+WORKDIR /qdrant
+
+COPY --from=planner /qdrant/recipe.json recipe.json
 
 RUN apt-get update ; apt-get install -y clang cmake ; rustup component add rustfmt
 
-COPY . ./qdrant
-WORKDIR ./qdrant
+# Build dependencies - this is the caching Docker layer!
+RUN cargo chef cook --release --recipe-path recipe.json
 
+COPY . .
 
 # Build actual target here
 RUN cargo build --release --bin qdrant
