@@ -69,6 +69,59 @@
         ],
         "type": "object"
       },
+      "ClusterStatus": {
+        "description": "Information about current cluster status and structure",
+        "oneOf": [
+          {
+            "properties": {
+              "status": {
+                "enum": [
+                  "ClusterStatusDisabled"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Description of enabled cluster",
+            "properties": {
+              "peer_id": {
+                "description": "ID of this peer",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "peers": {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/PeerInfo"
+                },
+                "description": "Peers composition of the cluster with main information",
+                "type": "object"
+              },
+              "raft_info": {
+                "$ref": "#/components/schemas/RaftInfo"
+              },
+              "status": {
+                "enum": [
+                  "enabled"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "peer_id",
+              "peers",
+              "raft_info",
+              "status"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "CollectionConfig": {
         "properties": {
           "hnsw_config": {
@@ -963,6 +1016,18 @@
         ],
         "type": "object"
       },
+      "PeerInfo": {
+        "description": "Information of a peer in the cluster",
+        "properties": {
+          "uri": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uri"
+        ],
+        "type": "object"
+      },
       "PointIdsList": {
         "properties": {
           "points": {
@@ -1082,6 +1147,34 @@
             "$ref": "#/components/schemas/FilterSelector"
           }
         ]
+      },
+      "RaftInfo": {
+        "description": "Summary information about the current raft state",
+        "properties": {
+          "commit": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pending_operations": {
+            "description": "Number of consensus operations pending to be applied on this peer",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "term": {
+            "description": "Raft divides time into terms of arbitrary length, each beginning with an election. If a candidate wins the election, it remains the leader for the rest of the term. The term number increases monotonically. Each server stores the current term number which is also exchanged in every communication.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "commit",
+          "pending_operations",
+          "term"
+        ],
+        "type": "object"
       },
       "Range": {
         "description": "Range filter request",
@@ -1623,7 +1716,7 @@
     }
   },
   "externalDocs": {
-    "description": "Find out more about Qdrant aplications and demo",
+    "description": "Find out more about Qdrant applications and demo",
     "url": "https://qdrant.tech/documentation/"
   },
   "info": {
@@ -1640,6 +1733,64 @@
   },
   "openapi": "3.0.1",
   "paths": {
+    "/cluster": {
+      "get": {
+        "description": "Get information about the current state and composition of the cluster",
+        "operationId": "cluster_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/ClusterStatus"
+                    },
+                    "status": {
+                      "enum": [
+                        "ok"
+                      ],
+                      "type": "string"
+                    },
+                    "time": {
+                      "description": "Time spent to process this request",
+                      "format": "float",
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error"
+          }
+        },
+        "summary": "Get cluster status info",
+        "tags": [
+          "cluster"
+        ]
+      }
+    },
     "/collections": {
       "get": {
         "description": "Get list name of all existing collections",
@@ -3119,6 +3270,10 @@
     {
       "description": "Float-point vectors with payload.",
       "name": "points"
+    },
+    {
+      "description": "Service distributed setup",
+      "name": "cluster"
     }
   ]
 }

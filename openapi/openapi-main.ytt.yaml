@@ -218,6 +218,8 @@ tags:
     description: Searchable collections of points.
   - name: points
     description: Float-point vectors with payload.
+  - name: cluster
+    description: Service distributed setup
 
 paths:
 
