@@ -32,7 +32,7 @@ use crate::content_manager::{
     collections_ops::{Checker, Collections},
     errors::StorageError,
 };
-use crate::types::StorageConfig;
+use crate::types::{ClusterInfo, ClusterStatus, PeerInfo, RaftInfo, StorageConfig};
 use crate::{
     content_manager::{
         consensus_ops::ConsensusOperations, raft_state::Persistent as PersistentRaftState,
@@ -79,7 +79,7 @@ pub struct TableOfContent {
     on_consensus_op_apply:
         std::sync::Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
     transport_channel_pool: Arc<TransportChannelPool>,
-    this_peer_id: u64,
+    this_peer_id: PeerId,
 }
 
 impl TableOfContent {
@@ -381,7 +381,7 @@ impl TableOfContent {
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
         // if distributed deployment is enabled
-        if self.propose_sender.is_some() {
+        if self.is_consensus_enabled() {
             let op = match operation {
                 CollectionMetaOperations::CreateCollection(op) => {
                     let shard_number = op.create_collection.shard_number;
@@ -653,6 +653,41 @@ impl TableOfContent {
         result.map_err(|err| err.into())
     }
 
+    fn is_consensus_enabled(&self) -> bool {
+        self.propose_sender.is_some()
+    }
+
+    pub async fn cluster_status(&self) -> Result<ClusterStatus, StorageError> {
+        match self.is_consensus_enabled() {
+            true => {
+                let hard_state = self.hard_state()?;
+                let peers = self
+                    .peer_address_by_id()?
+                    .into_iter()
+                    .map(|(peer_id, uri)| {
+                        (
+                            peer_id,
+                            PeerInfo {
+                                uri: uri.to_string(),
+                            },
+                        )
+                    })
+                    .collect();
+                let pending_operations = self.raft_state.lock()?.unapplied_entities_count();
+                Ok(ClusterStatus::Enabled(ClusterInfo {
+                    peer_id: self.this_peer_id,
+                    peers,
+                    raft_info: RaftInfo {
+                        term: hard_state.term,
+                        commit: hard_state.commit,
+                        pending_operations,
+                    },
+                }))
+            }
+            false => Ok(ClusterStatus::Disabled),
+        }
+    }
+
     pub fn consensus_op_entry(&self, raft_entry_id: u64) -> raft::Result<RaftEntry> {
         // Raft entries are expected to have index starting from 1
         if raft_entry_id < 1 {
@@ -680,7 +715,7 @@ impl TableOfContent {
         .map_err(consensus::raft_error_other)
     }
 
-    pub fn this_peer_id(&self) -> u64 {
+    pub fn this_peer_id(&self) -> PeerId {
         self.this_peer_id
     }
 

@@ -8,6 +8,8 @@ cd "$(dirname "$0")/../"
 
 # Apply `ytt` template engine to obtain OpenAPI definitions for REST endpoints
 
+docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-cluster.ytt.yaml > ./openapi/openapi-cluster.yaml
+
 docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-collections.ytt.yaml > ./openapi/openapi-collections.yaml
 
 docker run --rm -v "${PWD}":/workspace gerritk/ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-points.ytt.yaml > ./openapi/openapi-points.yaml
@@ -30,6 +32,7 @@ docker run --rm -i simplealpine/json2yaml <./openapi/models.json > ./openapi/mod
 
 # Merge all *.yaml files together into a single-file OpenAPI definition
 docker run --rm -v "${PWD}":/workdir mikefarah/yq eval-all '. as $item ireduce ({}; . *+ $item)' \
+  ./openapi/openapi-cluster.yaml \
   ./openapi/openapi-collections.yaml \
   ./openapi/openapi-points.yaml \
   ./openapi/openapi-main.yaml \
