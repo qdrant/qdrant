@@ -71,7 +71,6 @@ pub async fn load_local_collection(id: CollectionId, path: &Path) -> Collection 
     Collection::load(
         id,
         path,
-        CollectionShardDistribution::AllLocal,
         ChannelService::default(),
     )
     .await

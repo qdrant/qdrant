@@ -3,8 +3,6 @@
 use std::{
     cmp::max,
     collections::HashMap,
-    fs::{create_dir_all, rename},
-    io,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -14,7 +12,6 @@ use crate::operations::OperationToShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::ShardOperation;
-use crate::CollectionShardDistribution::Distribution;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
@@ -147,7 +144,7 @@ pub enum CollectionShardDistribution {
 
 impl CollectionShardDistribution {
     fn from_collections(local: Vec<ShardId>, remote: Vec<(ShardId, PeerId)>) -> Self {
-        Distribution { local, remote }
+        Self::Distribution { local, remote }
     }
 
     /// Unpack the distribution into separate local and remote peers.
@@ -312,7 +309,6 @@ impl Collection {
     pub async fn load(
         id: CollectionId,
         path: &Path,
-        shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
     ) -> Self {
         let config = CollectionConfig::load(path).unwrap_or_else(|err| {
@@ -322,14 +318,24 @@ impl Collection {
                 path.to_str().unwrap()
             )
         });
+
         let mut ring = HashRing::new();
         let mut shards = HashMap::new();
 
-        Self::try_migrate_legacy_one_shard(path)
-            .expect("Failed to migrate legacy collection format.");
+        let shard_distribution =
+            CollectionShardDistribution::from_local_state(&path)
+                .expect("Can't infer shard distribution from local shard configurations");
 
-        let (local_shards, remote_shards) =
-            shard_distribution.unpack_or_default(config.params.shard_number.get());
+        let (local_shards, remote_shards) = match shard_distribution {
+            CollectionShardDistribution::AllLocal => unreachable!("Expected shard distribution on load"),
+            CollectionShardDistribution::Distribution { local, remote } => (local, remote)
+        };
+
+        let total_shards = local_shards.len() + remote_shards.len();
+        let configured_shards = config.params.shard_number.get() as usize;
+
+        assert_eq!(total_shards, configured_shards, "Expected {} shards, found {}", configured_shards, total_shards);
+
         for shard_id in local_shards {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
@@ -352,24 +358,6 @@ impl Collection {
             config,
             before_drop_called: false,
         }
-    }
-
-    fn try_migrate_legacy_one_shard(collection_path: &Path) -> io::Result<()> {
-        if LocalShard::segments_path(collection_path).is_dir() {
-            log::warn!("Migrating legacy collection storage to 1 shard.");
-            let shard_path = shard_path(collection_path, 0);
-            let new_segmnents_path = LocalShard::segments_path(&shard_path);
-            let new_wal_path = LocalShard::wal_path(&shard_path);
-            create_dir_all(&new_segmnents_path)?;
-            create_dir_all(&new_wal_path)?;
-            rename(
-                LocalShard::segments_path(collection_path),
-                &new_segmnents_path,
-            )?;
-            rename(LocalShard::wal_path(collection_path), &new_wal_path)?;
-            log::info!("Migration finished.");
-        }
-        Ok(())
     }
 
     fn shard_by_id(&self, id: ShardId) -> &Shard {
