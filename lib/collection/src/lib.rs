@@ -306,11 +306,7 @@ impl Collection {
         })
     }
 
-    pub async fn load(
-        id: CollectionId,
-        path: &Path,
-        channel_service: ChannelService,
-    ) -> Self {
+    pub async fn load(id: CollectionId, path: &Path, channel_service: ChannelService) -> Self {
         let config = CollectionConfig::load(path).unwrap_or_else(|err| {
             panic!(
                 "Can't read collection config due to {}\nat {}",
@@ -322,19 +318,24 @@ impl Collection {
         let mut ring = HashRing::new();
         let mut shards = HashMap::new();
 
-        let shard_distribution =
-            CollectionShardDistribution::from_local_state(&path)
-                .expect("Can't infer shard distribution from local shard configurations");
+        let shard_distribution = CollectionShardDistribution::from_local_state(path)
+            .expect("Can't infer shard distribution from local shard configurations");
 
         let (local_shards, remote_shards) = match shard_distribution {
-            CollectionShardDistribution::AllLocal => unreachable!("Expected shard distribution on load"),
-            CollectionShardDistribution::Distribution { local, remote } => (local, remote)
+            CollectionShardDistribution::AllLocal => {
+                unreachable!("Expected shard distribution on load")
+            }
+            CollectionShardDistribution::Distribution { local, remote } => (local, remote),
         };
 
         let total_shards = local_shards.len() + remote_shards.len();
         let configured_shards = config.params.shard_number.get() as usize;
 
-        assert_eq!(total_shards, configured_shards, "Expected {} shards, found {}", configured_shards, total_shards);
+        assert_eq!(
+            total_shards, configured_shards,
+            "Expected {} shards, found {}",
+            configured_shards, total_shards
+        );
 
         for shard_id in local_shards {
             let shard_path = shard_path(path, shard_id);
