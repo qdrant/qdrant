@@ -104,7 +104,7 @@ mod tests {
                 if payload.borrow().is_none() {
                     payload.replace(Some(get_payload().into()));
                 }
-                payload.borrow().as_ref().map(|x| x.clone()).unwrap()
+                payload.borrow().as_ref().cloned().unwrap()
             },
             &id_tracker,
             &query,
