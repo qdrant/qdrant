@@ -121,15 +121,16 @@ mod tests {
         assert_eq!(storage.payload(100).unwrap(), Default::default());
     }
 
-
     #[test]
     fn test_on_disk_storage() {
         let dir = TempDir::new("storage_dir").unwrap();
         let db = open_db(dir.path()).unwrap();
 
         {
-            let mut storage: PayloadStorageEnum = SimplePayloadStorage::open(db.clone()).unwrap().into();
-            let payload: Payload = serde_json::from_str(r#"{
+            let mut storage: PayloadStorageEnum =
+                SimplePayloadStorage::open(db.clone()).unwrap().into();
+            let payload: Payload = serde_json::from_str(
+                r#"{
                 "name": "John Doe",
                 "age": 52,
                 "location": {
@@ -139,7 +140,9 @@ mod tests {
                         "lat": 37.8136
                     }
                 }
-            }"#).unwrap();
+            }"#,
+            )
+            .unwrap();
 
             storage.assign_all(100, &payload).unwrap();
 
@@ -166,7 +169,8 @@ mod tests {
 
             eprintln!("res = {:#?}", res);
 
-            let partial_payload: Payload = serde_json::from_str(r#"{ "hobby": "vector search" }"#).unwrap();
+            let partial_payload: Payload =
+                serde_json::from_str(r#"{ "hobby": "vector search" }"#).unwrap();
             storage.assign(100, &partial_payload).unwrap();
 
             storage.delete(100, "location.city").unwrap();

@@ -24,8 +24,12 @@ impl PayloadProvider {
     {
         let payload_storage_guard = self.payload_storage.borrow();
         let payload_ptr_opt = match payload_storage_guard.deref() {
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.payload_ptr(point_id).map(|x| x.into()),
-            PayloadStorageEnum::SimplePayloadStorage(s) => s.payload_ptr(point_id).map(|x| x.into()),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => {
+                s.payload_ptr(point_id).map(|x| x.into())
+            }
+            PayloadStorageEnum::SimplePayloadStorage(s) => {
+                s.payload_ptr(point_id).map(|x| x.into())
+            }
             // Warn: Possible panic here
             // Currently, it is possible that `read_payload` fails with Err,
             // but it seems like a very rare possibility which might only happen

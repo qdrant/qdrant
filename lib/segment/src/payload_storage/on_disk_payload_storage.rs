@@ -55,7 +55,8 @@ impl OnDiskPayloadStorage {
             .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
         let payload = store_ref
             .get_pinned_cf(cf_handle, key)?
-            .map(|raw| serde_cbor::from_slice(raw.as_ref())).transpose()?;
+            .map(|raw| serde_cbor::from_slice(raw.as_ref()))
+            .transpose()?;
         Ok(payload)
     }
 
@@ -101,7 +102,7 @@ impl PayloadStorage for OnDiskPayloadStorage {
     fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
         let payload = self.read_payload(point_id)?;
         match payload {
-            Some(payload) => Ok(payload.to_owned()),
+            Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
     }

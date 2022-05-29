@@ -214,14 +214,17 @@ impl Segment {
     /// Retrieve payload by internal ID
     #[inline]
     fn payload_by_offset(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
-        Ok(self.payload_storage.borrow().payload(point_offset)?)
+        self.payload_storage.borrow().payload(point_offset)
     }
 
     pub fn save_current_state(&self) -> OperationResult<()> {
         self.save_state(&self.get_state())
     }
 
-    fn infer_from_payload_data(&self, key: PayloadKeyTypeRef) -> OperationResult<Option<PayloadSchemaType>> {
+    fn infer_from_payload_data(
+        &self,
+        key: PayloadKeyTypeRef,
+    ) -> OperationResult<Option<PayloadSchemaType>> {
         let payload_store = self.payload_storage.borrow();
 
         let mut schema = None;

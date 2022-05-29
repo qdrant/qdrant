@@ -1,6 +1,6 @@
+use crate::entry::entry_point::OperationResult;
 use crate::types::{Payload, PointOffsetType};
 use std::collections::HashMap;
-use crate::entry::entry_point::OperationResult;
 
 /// Same as `SimplePayloadStorage` but without persistence
 /// Warn: for tests only
@@ -15,7 +15,8 @@ impl InMemoryPayloadStorage {
     }
 
     pub fn iter<F>(&self, mut callback: F) -> OperationResult<()>
-        where F: FnMut(PointOffsetType, &Payload) -> bool
+    where
+        F: FnMut(PointOffsetType, &Payload) -> bool,
     {
         for (key, val) in self.payload.iter() {
             let do_continue = callback(*key, val);

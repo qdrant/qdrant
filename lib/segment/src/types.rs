@@ -1290,7 +1290,8 @@ mod tests {
 
     #[test]
     fn test_remove_key() {
-        let mut payload: Payload = serde_json::from_str(r#"
+        let mut payload: Payload = serde_json::from_str(
+            r#"
         {
             "a": 1,
             "b": {
@@ -1302,7 +1303,9 @@ mod tests {
                 }
             }
         }
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         remove_value("b.c", &mut payload.0);
         assert_ne!(payload, Default::default());
         remove_value("b.e.f", &mut payload.0);
@@ -1320,7 +1323,6 @@ mod tests {
         remove_value("b", &mut payload.0);
         assert_eq!(payload, Default::default());
     }
-
 }
 
 pub type TheMap<K, V> = BTreeMap<K, V>;

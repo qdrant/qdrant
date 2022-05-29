@@ -185,7 +185,9 @@ impl ConditionChecker for SimpleConditionChecker {
                             // Rewrite condition checking code to support error reporting.
                             // Which may lead to slowdown and assumes a lot of changes.
                             s.read_payload(point_id)
-                                .unwrap_or_else(|err| panic!("Payload storage is corrupted: {}", err))
+                                .unwrap_or_else(|err| {
+                                    panic!("Payload storage is corrupted: {}", err)
+                                })
                                 .map(|x| x.into())
                         }
                     };
@@ -195,11 +197,7 @@ impl ConditionChecker for SimpleConditionChecker {
                         Some(x) => x,
                     }));
                 }
-                payload_ref_cell
-                    .borrow()
-                    .as_ref()
-                    .map(|x| x.clone())
-                    .unwrap()
+                payload_ref_cell.borrow().as_ref().cloned().unwrap()
             },
             self.id_tracker.borrow().deref(),
             query,
