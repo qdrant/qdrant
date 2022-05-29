@@ -28,7 +28,7 @@ pub fn condition_converter<'a>(
             .unwrap_or_else(|| {
                 Box::new(move |point_id| {
                     payload_provider.with_payload(point_id, |payload| {
-                        check_field_condition(field_condition, payload)
+                        check_field_condition(field_condition, &payload)
                     })
                 })
             }),
@@ -37,7 +37,7 @@ pub fn condition_converter<'a>(
         //       it does not mean that there are no values in payload
         Condition::IsEmpty(is_empty) => Box::new(move |point_id| {
             payload_provider.with_payload(point_id, |payload| {
-                check_is_empty_condition(is_empty, payload)
+                check_is_empty_condition(is_empty, &payload)
             })
         }),
         // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet

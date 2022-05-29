@@ -6,5 +6,6 @@ pub mod payload_storage_enum;
 pub mod query_checker;
 pub mod simple_payload_storage;
 pub mod simple_payload_storage_impl;
+pub mod on_disk_payload_storage;
 
 pub use payload_storage_base::*;

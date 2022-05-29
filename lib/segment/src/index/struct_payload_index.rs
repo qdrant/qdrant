@@ -24,7 +24,7 @@ use crate::index::struct_filter_context::StructFilterContext;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::payload_storage::{FilterContext, PayloadStorage};
+use crate::payload_storage::FilterContext;
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType, PayloadKeyTypeRef,
     PayloadSchemaType, PointOffsetType,
@@ -196,15 +196,15 @@ impl StructPayloadIndex {
         let payload_storage = self.payload.borrow();
 
         let mut builders = index_selector(&field_type);
-        for point_id in payload_storage.iter_ids() {
-            let point_payload = payload_storage.payload(point_id);
+        payload_storage.iter(|point_id, point_payload| {
             let field_value_opt = point_payload.get_value(field);
             if let Some(field_value) = field_value_opt {
                 for builder in &mut builders {
                     builder.add(point_id, field_value);
                 }
             }
-        }
+            true
+        })?;
 
         let field_indexes = builders
             .iter_mut()

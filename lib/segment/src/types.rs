@@ -10,6 +10,8 @@ use serde_json::{Map, Value};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Formatter;
+use std::ops::Deref;
+use std::rc::Rc;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -374,7 +376,7 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-pub struct Payload(Map<String, Value>);
+pub struct Payload(pub Map<String, Value>);
 
 impl Payload {
     pub fn merge(&mut self, value: &Payload) {
@@ -391,7 +393,7 @@ impl Payload {
     }
 
     pub fn remove(&mut self, path: &str) -> Option<Value> {
-        self.0.remove(path)
+        remove_value(path, &mut self.0)
     }
 
     pub fn len(&self) -> usize {
@@ -441,6 +443,44 @@ impl From<Map<String, Value>> for Payload {
     }
 }
 
+#[derive(Clone)]
+pub enum OwnedPayloadRef<'a> {
+    Ref(&'a Payload),
+    Owned(Rc<Payload>),
+}
+
+impl<'a> Deref for OwnedPayloadRef<'a> {
+    type Target = Payload;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            OwnedPayloadRef::Ref(reference) => *reference,
+            OwnedPayloadRef::Owned(owned) => owned.deref(),
+        }
+    }
+}
+
+impl<'a> AsRef<Payload> for OwnedPayloadRef<'a> {
+    fn as_ref(&self) -> &Payload {
+        match self {
+            OwnedPayloadRef::Ref(reference) => *reference,
+            OwnedPayloadRef::Owned(owned) => owned.deref(),
+        }
+    }
+}
+
+impl<'a> From<Payload> for OwnedPayloadRef<'a> {
+    fn from(payload: Payload) -> Self {
+        OwnedPayloadRef::Owned(Rc::new(payload))
+    }
+}
+
+impl<'a> From<&'a Payload> for OwnedPayloadRef<'a> {
+    fn from(payload: &'a Payload) -> Self {
+        OwnedPayloadRef::Ref(payload)
+    }
+}
+
 fn get_value<'a>(path: &str, value: &'a serde_json::Map<String, Value>) -> Option<&'a Value> {
     match path.split_once('.') {
         Some((element, path)) => match value.get(element) {
@@ -452,6 +492,23 @@ fn get_value<'a>(path: &str, value: &'a serde_json::Map<String, Value>) -> Optio
             None => None,
         },
         None => value.get(path),
+    }
+}
+
+fn remove_value(path: &str, value: &mut serde_json::Map<String, Value>) -> Option<Value> {
+    match path.split_once('.') {
+        Some((element, new_path)) => {
+            if new_path.is_empty() {
+                value.remove(element)
+            } else {
+                match value.get_mut(element) {
+                    None => None,
+                    Some(Value::Object(map)) => remove_value(new_path, map),
+                    Some(_value) => None,
+                }
+            }
+        }
+        None => value.remove(path),
     }
 }
 
@@ -1230,6 +1287,40 @@ mod tests {
 
         assert!(filter.is_err());
     }
+
+    #[test]
+    fn test_remove_key() {
+        let mut payload: Payload = serde_json::from_str(r#"
+        {
+            "a": 1,
+            "b": {
+                "c": 123,
+                "e": {
+                    "f": [1,2,3],
+                    "g": 7,
+                    "h": "text"
+                }
+            }
+        }
+        "#).unwrap();
+        remove_value("b.c", &mut payload.0);
+        assert_ne!(payload, Default::default());
+        remove_value("b.e.f", &mut payload.0);
+        assert_ne!(payload, Default::default());
+        remove_value("k", &mut payload.0);
+        assert_ne!(payload, Default::default());
+        remove_value("", &mut payload.0);
+        assert_ne!(payload, Default::default());
+        remove_value("b.e.l", &mut payload.0);
+        assert_ne!(payload, Default::default());
+        remove_value("a", &mut payload.0);
+        assert_ne!(payload, Default::default());
+        remove_value("b.e", &mut payload.0);
+        assert_ne!(payload, Default::default());
+        remove_value("b", &mut payload.0);
+        assert_eq!(payload, Default::default());
+    }
+
 }
 
 pub type TheMap<K, V> = BTreeMap<K, V>;

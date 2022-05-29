@@ -22,10 +22,10 @@ impl PayloadStorage for SimplePayloadStorage {
         Ok(())
     }
 
-    fn payload(&self, point_id: PointOffsetType) -> Payload {
+    fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
         match self.payload.get(&point_id) {
-            Some(payload) => payload.to_owned(),
-            None => Default::default(),
+            Some(payload) => Ok(payload.to_owned()),
+            None => Ok(Default::default()),
         }
     }
 
@@ -65,10 +65,6 @@ impl PayloadStorage for SimplePayloadStorage {
         let cf_handle = store_ref.cf_handle(DB_PAYLOAD_CF).unwrap();
         Ok(store_ref.flush_cf(cf_handle)?)
     }
-
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(self.payload.keys().copied())
-    }
 }
 
 #[cfg(test)]
@@ -90,9 +86,9 @@ mod tests {
         storage.assign(100, &payload).unwrap();
         storage.wipe().unwrap();
         storage.assign(100, &payload).unwrap();
-        assert!(!storage.payload(100).is_empty());
+        assert!(!storage.payload(100).unwrap().is_empty());
         storage.wipe().unwrap();
-        assert_eq!(storage.payload(100), Default::default());
+        assert_eq!(storage.payload(100).unwrap(), Default::default());
     }
 
     #[test]
@@ -124,7 +120,7 @@ mod tests {
         let db = open_db(dir.path()).unwrap();
         let mut storage = SimplePayloadStorage::open(db).unwrap();
         storage.assign(100, &payload).unwrap();
-        let pload = storage.payload(100);
+        let pload = storage.payload(100).unwrap();
         assert_eq!(pload, payload);
     }
 }
