@@ -2,6 +2,12 @@ storage:
   # Where to store all the data
   storage_path: ./storage
 
+  # If true - point's payload will not be stored in memory.
+  # It will be read from the disk every time it is requested.
+  # This setting saves RAM by (slightly) increasing the response time.
+  # Note: those payload values that are involved in filtering and are indexed - remain in RAM.
+  on_disk_payload: false
+
   # Write-ahead-log related configuration
   wal:
     # Size of a single WAL segment

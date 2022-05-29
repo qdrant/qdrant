@@ -184,7 +184,7 @@ mod tests {
                 .unwrap();
         }
 
-        let locked_holder = Arc::new(RwLock::new(holder));
+        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
 
         let vacuum_optimizer = VacuumOptimizer::new(
             0.2,
@@ -200,6 +200,7 @@ mod tests {
                 vector_size: 4,
                 distance: Distance::Dot,
                 shard_number: NonZeroU32::new(1).unwrap(),
+                on_disk_payload: false,
             },
             Default::default(),
         );

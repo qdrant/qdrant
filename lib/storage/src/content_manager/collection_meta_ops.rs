@@ -87,6 +87,12 @@ pub struct CreateCollection {
     /// Number of shards in collection. Default is 1, minimum is 1.
     #[serde(default = "default_shard_number")]
     pub shard_number: u32,
+    /// If true - point's payload will not be stored in memory.
+    /// It will be read from the disk every time it is requested.
+    /// This setting saves RAM by (slightly) increasing the response time.
+    /// Note: those payload values that are involved in filtering and are indexed - remain in RAM.
+    #[serde(default = "default_on_disk_payload")]
+    pub on_disk_payload: Option<bool>,
     /// Custom params for HNSW index. If none - values from service configuration file are used.
     pub hnsw_config: Option<HnswConfigDiff>,
     /// Custom params for WAL. If none - values from service configuration file are used.
@@ -97,6 +103,10 @@ pub struct CreateCollection {
 
 pub const fn default_shard_number() -> u32 {
     1
+}
+
+pub const fn default_on_disk_payload() -> Option<bool> {
+    None
 }
 
 /// Operation for creating new collection and (optionally) specify index params

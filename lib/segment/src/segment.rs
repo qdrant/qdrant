@@ -692,6 +692,7 @@ mod tests {
             payload_index: Some(PayloadIndexType::Plain),
             storage_type: StorageType::InMemory,
             distance: Distance::Dot,
+            payload_storage_type: Default::default(),
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();

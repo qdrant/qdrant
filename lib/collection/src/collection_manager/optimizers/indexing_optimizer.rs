@@ -199,6 +199,7 @@ mod tests {
                 vector_size: segment_config.vector_size,
                 distance: segment_config.distance,
                 shard_number: NonZeroU32::new(1).unwrap(),
+                on_disk_payload: false,
             },
             Default::default(),
         );

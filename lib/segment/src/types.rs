@@ -306,6 +306,23 @@ impl Default for StorageType {
     }
 }
 
+/// Type of payload storage
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type", content = "options")]
+pub enum PayloadStorageType {
+    /// Store payload in memory and use persistence storage only if vectors are changed
+    InMemory,
+    /// Store payload on disk only, read each time it is requested
+    OnDisk,
+}
+
+impl Default for PayloadStorageType {
+    fn default() -> Self {
+        PayloadStorageType::InMemory
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
@@ -319,6 +336,9 @@ pub struct SegmentConfig {
     pub payload_index: Option<PayloadIndexType>,
     /// Type of vector storage
     pub storage_type: StorageType,
+    /// Defines payload storage type
+    #[serde(default)]
+    pub payload_storage_type: PayloadStorageType,
 }
 
 /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
