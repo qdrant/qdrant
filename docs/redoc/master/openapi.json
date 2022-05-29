@@ -76,7 +76,7 @@
             "properties": {
               "status": {
                 "enum": [
-                  "ClusterStatusDisabled"
+                  "disabled"
                 ],
                 "type": "string"
               }
@@ -217,6 +217,11 @@
           "distance": {
             "$ref": "#/components/schemas/Distance"
           },
+          "on_disk_payload": {
+            "default": false,
+            "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
+            "type": "boolean"
+          },
           "shard_number": {
             "default": 1,
             "description": "Number of shards the collection has",
@@ -319,6 +324,12 @@
               }
             ],
             "description": "Custom params for HNSW index. If none - values from service configuration file are used."
+          },
+          "on_disk_payload": {
+            "default": null,
+            "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
+            "nullable": true,
+            "type": "boolean"
           },
           "optimizers_config": {
             "anyOf": [
