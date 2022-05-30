@@ -195,6 +195,8 @@ pub trait SegmentEntry {
     /// Return number of vectors in this segment
     fn vectors_count(&self) -> usize;
 
+    fn vector_dim(&self) -> usize;
+
     /// Number of vectors, marked as deleted
     fn deleted_count(&self) -> usize;
 
