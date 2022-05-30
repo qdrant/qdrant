@@ -962,6 +962,10 @@ impl TableOfContent {
         })
     }
 
+    pub fn is_raft_state_new(&self) -> Result<bool, StorageError> {
+        Ok(self.raft_state.lock()?.is_new())
+    }
+
     pub fn set_hard_state(&self, hard_state: raft::eraftpb::HardState) -> Result<(), StorageError> {
         self.raft_state
             .lock()?
