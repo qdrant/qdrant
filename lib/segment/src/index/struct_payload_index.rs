@@ -9,13 +9,14 @@ use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
 use log::debug;
+use schemars::_serde_json::Value;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::points_iterator::PointsIteratorSS;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;
+use crate::index::field_index::FieldIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
-use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
 use crate::index::query_optimization::optimizer::IndexesMap;
@@ -26,8 +27,8 @@ use crate::index::PayloadIndex;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{FilterContext, PayloadStorage};
 use crate::types::{
-    Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType, PayloadKeyTypeRef,
-    PayloadSchemaType, PointOffsetType,
+    Condition, FieldCondition, Filter, IsEmptyCondition, Payload, PayloadKeyType,
+    PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
 };
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
@@ -413,5 +414,59 @@ impl PayloadIndex for StructPayloadIndex {
                 }))
             }
         }
+    }
+
+    fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+        for (field, field_index) in &mut self.field_indexes {
+            match payload.get_value(field) {
+                Some(field_value) => {
+                    for index in field_index {
+                        index.add_point(point_id, field_value)
+                    }
+                }
+                None => {}
+            }
+        }
+        self.payload.borrow_mut().assign(point_id, payload)
+    }
+
+    fn payload(&self, point_id: PointOffsetType) -> Payload {
+        self.payload.borrow().payload(point_id)
+    }
+
+    fn delete(
+        &mut self,
+        point_id: PointOffsetType,
+        key: PayloadKeyTypeRef,
+    ) -> OperationResult<Option<Value>> {
+        if let Some(indexes) = self.field_indexes.get_mut(key) {
+            for index in indexes {
+                index.remove_point(point_id);
+            }
+        }
+        self.payload.borrow_mut().delete(point_id, key)
+    }
+
+    fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
+        for (_, field_indexes) in self.field_indexes.iter_mut() {
+            for index in field_indexes {
+                index.remove_point(point_id);
+            }
+        }
+        self.payload.borrow_mut().drop(point_id)
+    }
+
+    fn wipe(&mut self) -> OperationResult<()> {
+        //TODO(gvelo): remove all index
+        self.payload.borrow_mut().wipe()
+    }
+
+    fn flush(&self) -> OperationResult<()> {
+        for field_indexes in self.field_indexes.values() {
+            for index in field_indexes {
+                index.flush()?;
+            }
+        }
+        self.payload.borrow().flush()
     }
 }

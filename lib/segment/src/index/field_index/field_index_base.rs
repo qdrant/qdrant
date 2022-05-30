@@ -79,7 +79,7 @@ pub enum FieldIndex {
 }
 
 impl FieldIndex {
-    pub fn get_payload_field_index(&self) -> &dyn PayloadFieldIndex {
+    fn get_payload_field_index(&self) -> &dyn PayloadFieldIndex {
         match self {
             FieldIndex::IntIndex(payload_field_index) => payload_field_index,
             FieldIndex::IntMapIndex(payload_field_index) => payload_field_index,
@@ -88,7 +88,7 @@ impl FieldIndex {
             FieldIndex::GeoIndex(payload_field_index) => payload_field_index,
         }
     }
-    pub fn get_payload_field_index_mut(&mut self) -> &mut dyn PayloadFieldIndex {
+    fn get_payload_field_index_mut(&mut self) -> &mut dyn PayloadFieldIndex {
         match self {
             FieldIndex::IntIndex(ref mut payload_field_index) => payload_field_index,
             FieldIndex::IntMapIndex(ref mut payload_field_index) => payload_field_index,
@@ -97,30 +97,31 @@ impl FieldIndex {
             FieldIndex::GeoIndex(ref mut payload_field_index) => payload_field_index,
         }
     }
-}
 
-impl PayloadFieldIndex for FieldIndex {
-    fn load(&mut self) -> OperationResult<()> {
+    pub fn load(&mut self) -> OperationResult<()> {
         self.get_payload_field_index_mut().load()
     }
 
-    fn flush(&self) -> OperationResult<()> {
+    pub fn flush(&self) -> OperationResult<()> {
         self.get_payload_field_index().flush()
     }
 
-    fn filter(
+    pub fn filter(
         &self,
         condition: &FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         self.get_payload_field_index().filter(condition)
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    pub fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+    ) -> Option<CardinalityEstimation> {
         self.get_payload_field_index()
             .estimate_cardinality(condition)
     }
 
-    fn payload_blocks(
+    pub fn payload_blocks(
         &self,
         threshold: usize,
         key: PayloadKeyType,
@@ -129,7 +130,32 @@ impl PayloadFieldIndex for FieldIndex {
             .payload_blocks(threshold, key)
     }
 
-    fn count_indexed_points(&self) -> usize {
+    pub fn count_indexed_points(&self) -> usize {
         self.get_payload_field_index().count_indexed_points()
+    }
+
+    pub fn add_point(&mut self, id: PointOffsetType, payload: &Value) {
+        match self {
+            FieldIndex::IntIndex(ref mut payload_field_index) => {
+                payload_field_index.add_point(id, payload)
+            }
+            FieldIndex::IntMapIndex(ref mut payload_field_index) => {
+                payload_field_index.add_point(id, payload)
+            }
+            FieldIndex::KeywordIndex(ref mut payload_field_index) => {
+                payload_field_index.add_point(id, payload)
+            }
+            FieldIndex::FloatIndex(ref mut payload_field_index) => {
+                payload_field_index.add_point(id, payload)
+            }
+            FieldIndex::GeoIndex(ref mut payload_field_index) => {
+                payload_field_index.add_point(id, payload)
+            }
+        }
+    }
+
+    pub fn remove_point(&mut self, _point_id: PointOffsetType) {
+        // TODO(gvelo): implement remove_point on FieldIndex Trait.
+        todo!()
     }
 }

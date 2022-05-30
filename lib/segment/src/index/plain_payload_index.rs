@@ -1,8 +1,8 @@
 use crate::index::{PayloadIndex, PayloadIndexSS, VectorIndex};
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::types::{
-    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType, SearchParams,
-    VectorElementType,
+    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
+    SearchParams, VectorElementType,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 use std::collections::HashMap;
@@ -13,6 +13,7 @@ use crate::id_tracker::points_iterator::PointsIteratorSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
 use atomic_refcell::AtomicRefCell;
+use schemars::_serde_json::Value;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -133,6 +134,34 @@ impl PayloadIndex for PlainPayloadIndex {
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         // No blocks for un-indexed payload
         Box::new(vec![].into_iter())
+    }
+
+    fn assign(&mut self, _point_id: PointOffsetType, _payload: &Payload) -> OperationResult<()> {
+        todo!()
+    }
+
+    fn payload(&self, _point_id: PointOffsetType) -> Payload {
+        todo!()
+    }
+
+    fn delete(
+        &mut self,
+        _point_id: PointOffsetType,
+        _key: PayloadKeyTypeRef,
+    ) -> OperationResult<Option<Value>> {
+        todo!()
+    }
+
+    fn drop(&mut self, _point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
+        todo!()
+    }
+
+    fn wipe(&mut self) -> OperationResult<()> {
+        todo!()
+    }
+
+    fn flush(&self) -> OperationResult<()> {
+        todo!()
     }
 }
 
