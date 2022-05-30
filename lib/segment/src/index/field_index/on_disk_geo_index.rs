@@ -415,7 +415,7 @@ impl OnDiskGeoMapIndex {
 
 impl ValueIndexer<GeoPoint> for OnDiskGeoMapIndex {
     fn add_many(&mut self, id: PointOffsetType, values: Vec<GeoPoint>) {
-        //TODO(gvelo): refactor `ValueIndexer` to return `OperationResult<()>` and
+        // TODO(gvelo): refactor `ValueIndexer` to return `OperationResult<()>` and
         // remove unwrap()
         self.add_many_geo_points(id, &values).unwrap()
     }
@@ -433,6 +433,10 @@ impl ValueIndexer<GeoPoint> for OnDiskGeoMapIndex {
             }
             _ => None,
         }
+    }
+
+    fn remove_point(&mut self, id: PointOffsetType) {
+        self.remove_point(id).unwrap()
     }
 }
 

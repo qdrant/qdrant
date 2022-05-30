@@ -105,6 +105,36 @@ impl<T: KeyEncoder> NumericIndex<T> {
         })?;
         Ok(db_ref.flush_cf(cf_handle)?)
     }
+
+    pub fn remove_point(&self, id: PointOffsetType) -> OperationResult<()> {
+        let db_ref = self.db.borrow();
+        let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
+            OperationError::service_error(&format!(
+                "Index flush error: column family {} not found",
+                self.store_cf_name
+            ))
+        })?;
+
+        let mut iter = db_ref.raw_iterator_cf(&cf_handle);
+
+        iter.seek_to_first();
+
+        while iter.valid() {
+            let key = iter.key().unwrap();
+            let value = u32::from_be_bytes(
+                iter.value()
+                    .unwrap() // safe because previous call to .valid()
+                    .try_into()
+                    .expect("key with incorrect length"),
+            );
+            if id == value {
+                db_ref.delete_cf(cf_handle, key)?;
+            }
+            iter.next();
+        }
+
+        Ok(())
+    }
 }
 
 impl<T: KeyEncoder + From<f64>> PayloadFieldIndex for NumericIndex<T> {
@@ -202,6 +232,12 @@ impl ValueIndexer<IntPayloadType> for NumericIndex<IntPayloadType> {
         }
         None
     }
+
+    fn remove_point(&mut self, id: PointOffsetType) {
+        // TODO(gvelo): remove unwrap once we have refactored
+        // ValueIndexer to return OperationResult
+        NumericIndex::remove_point(self, id).unwrap()
+    }
 }
 
 impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
@@ -214,6 +250,12 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
             return num.as_f64();
         }
         None
+    }
+
+    fn remove_point(&mut self, id: PointOffsetType) {
+        // TODO(gvelo): remove unwrap once we have refactored
+        // ValueIndexer to return OperationResult
+        NumericIndex::remove_point(self, id).unwrap()
     }
 }
 

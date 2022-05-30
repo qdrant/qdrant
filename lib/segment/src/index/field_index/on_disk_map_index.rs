@@ -157,6 +157,32 @@ impl<N: Hash + Eq + Clone + Display + FromStr> OnDiskMapIndex<N> {
             .map_err(|_| OperationError::service_error(DECODE_ERR))?;
         Ok((value, idx))
     }
+
+    #[allow(dead_code)]
+    fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+        let store_ref = self.store.borrow();
+
+        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
+            OperationError::service_error(&format!(
+                "point remove error: column family {} not found",
+                self.store_cf_name
+            ))
+        })?;
+
+        if self.point_to_values.len() <= idx as usize {
+            return Ok(());
+        }
+
+        let removed_values = std::mem::take(&mut self.point_to_values[idx as usize]);
+
+        for value in &removed_values {
+            let key = OnDiskMapIndex::encode_db_record(value, idx);
+            self.map.remove(value);
+            store_ref.delete_cf(cf_handle, key)?;
+        }
+
+        Ok(())
+    }
 }
 
 impl PayloadFieldIndex for OnDiskMapIndex<String> {
@@ -284,6 +310,10 @@ impl ValueIndexer<String> for OnDiskMapIndex<String> {
         }
         None
     }
+
+    fn remove_point(&mut self, id: PointOffsetType) {
+        self.remove_point(id).unwrap()
+    }
 }
 
 impl ValueIndexer<IntPayloadType> for OnDiskMapIndex<IntPayloadType> {
@@ -296,6 +326,10 @@ impl ValueIndexer<IntPayloadType> for OnDiskMapIndex<IntPayloadType> {
             return num.as_i64();
         }
         None
+    }
+
+    fn remove_point(&mut self, id: PointOffsetType) {
+        self.remove_point(id).unwrap()
     }
 }
 

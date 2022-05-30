@@ -57,6 +57,11 @@ pub trait ValueIndexer<T> {
             }
         }
     }
+
+    /// remove a point from the index
+    // TODO(gvelo): instead of using only PointOffsetType use the full key ( value + offset )
+    // to avoid a index full-scan
+    fn remove_point(&mut self, id: PointOffsetType);
 }
 
 pub trait PayloadFieldIndexBuilder {
@@ -155,7 +160,12 @@ impl FieldIndex {
     }
 
     pub fn remove_point(&mut self, _point_id: PointOffsetType) {
-        // TODO(gvelo): implement remove_point on FieldIndex Trait.
-        todo!()
+        match self {
+            FieldIndex::IntIndex(_) => {}
+            FieldIndex::IntMapIndex(_) => {}
+            FieldIndex::KeywordIndex(_) => {}
+            FieldIndex::FloatIndex(_) => {}
+            FieldIndex::GeoIndex(_) => {}
+        }
     }
 }

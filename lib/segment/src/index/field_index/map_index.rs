@@ -197,6 +197,10 @@ impl ValueIndexer<String> for PersistedMapIndex<String> {
         }
         None
     }
+
+    fn remove_point(&mut self, _id: PointOffsetType) {
+        panic!("cannot remove points from PersistedMapIndex")
+    }
 }
 
 impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
@@ -225,6 +229,9 @@ impl ValueIndexer<IntPayloadType> for PersistedMapIndex<IntPayloadType> {
             return num.as_i64();
         }
         None
+    }
+    fn remove_point(&mut self, _id: PointOffsetType) {
+        panic!("cannot remove point from PersistedMapIndex")
     }
 }
 

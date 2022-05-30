@@ -282,6 +282,10 @@ impl ValueIndexer<GeoPoint> for PersistedGeoMapIndex {
             _ => None,
         }
     }
+
+    fn remove_point(&mut self, id: PointOffsetType) {
+        self.remove_point(id)
+    }
 }
 
 impl PayloadFieldIndexBuilder for PersistedGeoMapIndex {

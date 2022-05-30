@@ -279,6 +279,10 @@ impl ValueIndexer<FloatPayloadType> for PersistedNumericIndex<FloatPayloadType> 
         }
         None
     }
+
+    fn remove_point(&mut self, _id: PointOffsetType) {
+        panic!("cannot remove points from PersistedNumericIndex")
+    }
 }
 
 impl PayloadFieldIndexBuilder for PersistedNumericIndex<FloatPayloadType> {
@@ -309,6 +313,10 @@ impl ValueIndexer<IntPayloadType> for PersistedNumericIndex<IntPayloadType> {
             return num.as_i64();
         }
         None
+    }
+
+    fn remove_point(&mut self, _id: PointOffsetType) {
+        panic!("cannot remove point from PersistedNumericIndex")
     }
 }
 
