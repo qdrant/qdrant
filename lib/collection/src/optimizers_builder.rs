@@ -1,3 +1,4 @@
+use std::cmp::{max, min};
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
 use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
@@ -45,6 +46,19 @@ pub struct OptimizersConfig {
     pub max_optimization_threads: usize,
 }
 
+impl OptimizersConfig {
+    pub fn get_number_segments(&self) -> usize {
+        if self.default_segment_number == 0 {
+            let num_cpus = num_cpus::get();
+            // Do not configure less than 2 and more than 8 segments
+            // until it is not explicitly requested
+            min(max(2, num_cpus), 8)
+        } else {
+            self.default_segment_number
+        }
+    }
+}
+
 pub fn build_optimizers(
     shard_path: &Path,
     collection_params: &CollectionParams,
@@ -62,7 +76,7 @@ pub fn build_optimizers(
 
     Arc::new(vec![
         Arc::new(MergeOptimizer::new(
-            optimizers_config.default_segment_number,
+            optimizers_config.get_number_segments(),
             optimizers_config.max_segment_size,
             threshold_config.clone(),
             segments_path.clone(),
