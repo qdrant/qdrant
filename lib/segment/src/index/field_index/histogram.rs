@@ -154,14 +154,14 @@ impl Histogram {
                 let estimate = (a.right_count.get() as f64 * covered_frac).round() as usize + 1;
 
                 let min_estimate = if cover_range == val_range {
-                    a.right_count.get()
+                    a.right_count.get() + 1
                 } else {
                     0
                 };
-                let max_estimate = a.right_count.get();
+                let max_estimate = a.right_count.get() + 1;
                 (min_estimate, estimate, max_estimate)
             })
-            .reduce(|a, b| (a.0 + b.0, a.1 + b.1, a.1 + b.1))
+            .reduce(|a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2))
             .unwrap_or((0, 0, 0));
 
         estimation
