@@ -129,7 +129,6 @@ impl TableOfContent {
             let collection = collection_management_runtime.block_on(Collection::load(
                 collection_name.clone(),
                 &collection_path,
-                CollectionShardDistribution::AllLocal, //TODO read remote info from local file system
                 channel_service.clone(),
             ));
 
@@ -916,6 +915,7 @@ impl TableOfContent {
                                 .apply_state(
                                     state.clone(),
                                     self.this_peer_id(),
+                                    &self.get_collection_path(&collection.name()),
                                     channel_service.clone(),
                                 )
                                 .await?;
