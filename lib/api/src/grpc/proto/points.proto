@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package qdrant;
 
-import "google/protobuf/struct.proto";
+import "json_with_int.proto";
 
 // ---------------------------------------------
 // ------------- Point Id Requests -------------
@@ -42,7 +42,7 @@ message GetPoints {
 message SetPayloadPoints {
   string collection_name = 1; // name of the collection
   optional bool wait = 2; // Wait until the changes have been applied?
-  map<string, google.protobuf.Value> payload = 3; // New payload values
+  map<string, Value> payload = 3; // New payload values
   repeated PointId points = 4; // List of point to modify
 }
 
@@ -80,11 +80,11 @@ message DeleteFieldIndexCollection {
 }
 
 message PayloadIncludeSelector {
-  repeated string include = 1; // List of payload keys to include into result
+  repeated string fields = 1; // List of payload keys to include into result
 }
 
 message PayloadExcludeSelector {
-  repeated string exclude = 1; // List of payload keys to exclude from the result
+  repeated string fields = 1; // List of payload keys to exclude from the result
 }
 
 message WithPayloadSelector {
@@ -159,7 +159,7 @@ enum UpdateStatus {
 
 message ScoredPoint {
   PointId id = 1; // Point id
-  map<string, google.protobuf.Value> payload = 2; // Payload
+  map<string, Value> payload = 2; // Payload
   float score = 3; // Similarity score
   repeated float vector = 4; // Vector
   uint64 version = 5; // Last update operation applied to this point
@@ -178,7 +178,7 @@ message ScrollResponse {
 
 message RetrievedPoint {
   PointId id = 1;
-  map<string, google.protobuf.Value> payload = 2;
+  map<string, Value> payload = 2;
   repeated float vector = 3;
 }
 
@@ -283,7 +283,7 @@ message PointsIdsList {
 message PointStruct {
   PointId id = 1;
   repeated float vector = 2;
-  map<string, google.protobuf.Value> payload = 3;
+  map<string, Value> payload = 3;
 }
 
 

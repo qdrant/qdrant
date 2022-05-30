@@ -1090,6 +1090,79 @@ pub mod collections_internal_server {
         const NAME: &'static str = "qdrant.CollectionsInternal";
     }
 }
+/// `Struct` represents a structured data value, consisting of fields
+/// which map to dynamically typed values. In some languages, `Struct`
+/// might be supported by a native representation. For example, in
+/// scripting languages like JS a struct is represented as an
+/// object. The details of that representation are described together
+/// with the proto support for the language.
+///
+/// The JSON representation for `Struct` is JSON object.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Struct {
+    /// Unordered map of dynamically typed values.
+    #[prost(map="string, message", tag="1")]
+    pub fields: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+}
+/// `Value` represents a dynamically typed value which can be either
+/// null, a number, a string, a boolean, a recursive struct value, or a
+/// list of values. A producer of value is expected to set one of that
+/// variants, absence of any variant indicates an error.
+///
+/// The JSON representation for `Value` is JSON value.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Value {
+    /// The kind of value.
+    #[prost(oneof="value::Kind", tags="1, 2, 3, 4, 5, 6, 7")]
+    pub kind: ::core::option::Option<value::Kind>,
+}
+/// Nested message and enum types in `Value`.
+pub mod value {
+    /// The kind of value.
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Kind {
+        /// Represents a null value.
+        #[prost(enumeration="super::NullValue", tag="1")]
+        NullValue(i32),
+        /// Represents a double value.
+        #[prost(double, tag="2")]
+        DoubleValue(f64),
+        /// Represents an integer value
+        #[prost(int64, tag="3")]
+        IntegerValue(i64),
+        /// Represents a string value.
+        #[prost(string, tag="4")]
+        StringValue(::prost::alloc::string::String),
+        /// Represents a boolean value.
+        #[prost(bool, tag="5")]
+        BoolValue(bool),
+        /// Represents a structured value.
+        #[prost(message, tag="6")]
+        StructValue(super::Struct),
+        /// Represents a repeated `Value`.
+        #[prost(message, tag="7")]
+        ListValue(super::ListValue),
+    }
+}
+/// `ListValue` is a wrapper around a repeated field of values.
+///
+/// The JSON representation for `ListValue` is JSON array.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListValue {
+    /// Repeated field of dynamically typed values.
+    #[prost(message, repeated, tag="1")]
+    pub values: ::prost::alloc::vec::Vec<Value>,
+}
+/// `NullValue` is a singleton enumeration to represent the null value for the
+/// `Value` type union.
+///
+///  The JSON representation for `NullValue` is JSON `null`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum NullValue {
+    /// Null value.
+    NullValue = 0,
+}
 // ---------------------------------------------
 // ------------- Point Id Requests -------------
 // ---------------------------------------------
@@ -1163,7 +1236,7 @@ pub struct SetPayloadPoints {
     pub wait: ::core::option::Option<bool>,
     /// New payload values
     #[prost(map="string, message", tag="3")]
-    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, ::prost_types::Value>,
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
     /// List of point to modify
     #[prost(message, repeated, tag="4")]
     pub points: ::prost::alloc::vec::Vec<PointId>,
@@ -1226,13 +1299,13 @@ pub struct DeleteFieldIndexCollection {
 pub struct PayloadIncludeSelector {
     /// List of payload keys to include into result
     #[prost(string, repeated, tag="1")]
-    pub include: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadExcludeSelector {
     /// List of payload keys to exclude from the result
     #[prost(string, repeated, tag="1")]
-    pub exclude: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WithPayloadSelector {
@@ -1365,7 +1438,7 @@ pub struct ScoredPoint {
     pub id: ::core::option::Option<PointId>,
     /// Payload
     #[prost(map="string, message", tag="2")]
-    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, ::prost_types::Value>,
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
     /// Similarity score
     #[prost(float, tag="3")]
     pub score: f32,
@@ -1400,7 +1473,7 @@ pub struct RetrievedPoint {
     #[prost(message, optional, tag="1")]
     pub id: ::core::option::Option<PointId>,
     #[prost(map="string, message", tag="2")]
-    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, ::prost_types::Value>,
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
     #[prost(float, repeated, tag="3")]
     pub vector: ::prost::alloc::vec::Vec<f32>,
 }
@@ -1580,7 +1653,7 @@ pub struct PointStruct {
     #[prost(float, repeated, tag="2")]
     pub vector: ::prost::alloc::vec::Vec<f32>,
     #[prost(map="string, message", tag="3")]
-    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, ::prost_types::Value>,
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoPoint {
