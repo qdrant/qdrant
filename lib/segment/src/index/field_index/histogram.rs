@@ -323,18 +323,6 @@ impl Histogram {
             self.borders.insert(new_border);
         }
     }
-
-    pub fn check(&self) {
-        let _: usize = self
-            .borders
-            .iter()
-            .tuple_windows()
-            .map(|(left_border, right_border): (&Node, &Node)| {
-                assert_eq!(left_border.right_count.get(), right_border.left_count.get());
-                left_border.right_count.get() + right_border.left_count.get()
-            })
-            .sum();
-    }
 }
 
 #[cfg(test)]
