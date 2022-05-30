@@ -100,7 +100,9 @@ impl SegmentOptimizer for MergeOptimizer {
                 match read_segment.segment_type() != SegmentType::Special {
                     true => Some((
                         *idx,
-                        read_segment.vectors_count() * read_segment.vector_dim() * VECTOR_ELEMENT_SIZE
+                        read_segment.vectors_count()
+                            * read_segment.vector_dim()
+                            * VECTOR_ELEMENT_SIZE,
                     )),
                     false => None,
                 }

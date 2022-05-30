@@ -132,7 +132,7 @@ pub(crate) fn get_merge_optimizer(
 pub(crate) fn get_indexing_optimizer(
     segment_path: &Path,
     collection_temp_dir: &Path,
-    dim: usize
+    dim: usize,
 ) -> IndexingOptimizer {
     IndexingOptimizer::new(
         OptimizerThresholds {

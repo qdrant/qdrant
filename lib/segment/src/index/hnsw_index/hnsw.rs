@@ -6,7 +6,9 @@ use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::index::{PayloadIndexSS, VectorIndex};
 use crate::types::Condition::Field;
-use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VECTOR_ELEMENT_SIZE, VectorElementType};
+use crate::types::{
+    FieldCondition, Filter, HnswConfig, SearchParams, VectorElementType, VECTOR_ELEMENT_SIZE,
+};
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 use atomic_refcell::AtomicRefCell;
 use log::debug;
@@ -45,11 +47,7 @@ impl HNSWIndex {
             let indexing_threshold = hnsw_config.full_scan_threshold * BYTES_IN_KB
                 / (vector_storage.borrow().vector_dim() * VECTOR_ELEMENT_SIZE);
 
-            HnswGraphConfig::new(
-                hnsw_config.m,
-                hnsw_config.ef_construct,
-                indexing_threshold,
-            )
+            HnswGraphConfig::new(hnsw_config.m, hnsw_config.ef_construct, indexing_threshold)
         };
 
         let graph_path = GraphLayers::get_path(path);

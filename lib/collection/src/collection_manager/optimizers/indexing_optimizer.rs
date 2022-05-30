@@ -1,7 +1,9 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use segment::types::{HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType, VECTOR_ELEMENT_SIZE};
+use segment::types::{
+    HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType, VECTOR_ELEMENT_SIZE,
+};
 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
@@ -83,8 +85,10 @@ impl IndexingOptimizer {
                     StorageType::Mmap => true,
                 };
 
-                let big_for_mmap = vector_size >= self.thresholds_config.memmap_threshold * BYTES_IN_KB;
-                let big_for_index = vector_size >= self.thresholds_config.indexing_threshold * BYTES_IN_KB;
+                let big_for_mmap =
+                    vector_size >= self.thresholds_config.memmap_threshold * BYTES_IN_KB;
+                let big_for_index =
+                    vector_size >= self.thresholds_config.indexing_threshold * BYTES_IN_KB;
 
                 // ToDo: remove deprecated
                 let big_for_payload_index =
@@ -149,9 +153,9 @@ mod tests {
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
     use rand::thread_rng;
+    use segment::fixtures::index_fixtures::random_vector;
     use serde_json::json;
     use tempdir::TempDir;
-    use segment::fixtures::index_fixtures::random_vector;
 
     use segment::types::{Payload, PayloadSchemaType, StorageType};
 
