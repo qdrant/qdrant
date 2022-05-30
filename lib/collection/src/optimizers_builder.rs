@@ -24,6 +24,7 @@ pub struct OptimizersConfig {
     ///
     /// It is recommended to select default number of segments as a factor of the number of search threads,
     /// so that each segment would be handled evenly by one of the threads
+    /// If `default_segment_number = 0`, will be automatically selected by the number of available CPUs
     pub default_segment_number: usize,
     /// Do not create segments larger this number of points.
     /// Large segments might require disproportionately long indexation times,
