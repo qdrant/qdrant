@@ -13,15 +13,7 @@ struct Node {
 }
 
 impl Node {
-    pub fn new(point: Point) -> Self {
-        Node {
-            center: point,
-            left_count: Cell::new(0),
-            right_count: Cell::new(0),
-        }
-    }
-
-    pub fn empty(center: Point) -> Self {
+    pub fn new(center: Point) -> Self {
         Node {
             center,
             left_count: Cell::new(0),
@@ -192,10 +184,10 @@ impl Histogram {
         let (close_neighbors, (far_left_neighbor, far_right_neighbor)) = {
             let mut left_iterator = self
                 .borders
-                .range((Unbounded, Excluded(Node::empty(val.clone()))));
+                .range((Unbounded, Excluded(Node::new(val.clone()))));
             let mut right_iterator = self
                 .borders
-                .range((Excluded(Node::empty(val.clone())), Unbounded));
+                .range((Excluded(Node::new(val.clone())), Unbounded));
             (
                 (left_iterator.next_back(), right_iterator.next()),
                 (left_iterator.next_back(), right_iterator.next()),
