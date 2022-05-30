@@ -190,8 +190,12 @@ impl Histogram {
         }
 
         let (close_neighbors, (far_left_neighbor, far_right_neighbor)) = {
-            let mut left_iterator = self.borders.range((Unbounded, Excluded(Node::empty(val.clone()))));
-            let mut right_iterator = self.borders.range((Excluded(Node::empty(val.clone())), Unbounded));
+            let mut left_iterator = self
+                .borders
+                .range((Unbounded, Excluded(Node::empty(val.clone()))));
+            let mut right_iterator = self
+                .borders
+                .range((Excluded(Node::empty(val.clone())), Unbounded));
             (
                 (left_iterator.next_back(), right_iterator.next()),
                 (left_iterator.next_back(), right_iterator.next()),
