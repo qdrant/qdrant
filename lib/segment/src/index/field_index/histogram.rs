@@ -23,9 +23,9 @@ impl Node {
 }
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
-struct Point {
-    val: f64,
-    idx: usize,
+pub struct Point {
+    pub val: f64,
+    pub idx: usize,
 }
 
 impl Eq for Point {}
@@ -58,7 +58,7 @@ impl Ord for Node {
 }
 
 #[derive(Debug)]
-struct Histogram {
+pub struct Histogram {
     bucket_size: usize,
     borders: BTreeSet<Node>,
 }
