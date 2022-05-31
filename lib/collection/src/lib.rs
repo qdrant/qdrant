@@ -244,7 +244,7 @@ impl Default for ChannelService {
 struct CollectionVersion;
 
 impl StorageVersion for CollectionVersion {
-    fn current(&self) -> String {
+    fn current() -> String {
         env!("CARGO_PKG_VERSION").to_string()
     }
 }
@@ -271,7 +271,7 @@ impl Collection {
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
     ) -> Result<Self, CollectionError> {
-        CollectionVersion().save(path)?;
+        CollectionVersion::save(path)?;
         config.save(path)?;
         let mut ring = HashRing::new();
         let mut shards: HashMap<ShardId, Shard> = HashMap::new();
@@ -318,20 +318,17 @@ impl Collection {
     }
 
     pub async fn load(id: CollectionId, path: &Path, channel_service: ChannelService) -> Self {
-        let version = CollectionVersion();
-        let stored_version_opt = version
-            .load(path)
+        let stored_version_opt = CollectionVersion::load(path)
             .unwrap_or_else(|err| panic!("Can't read collection version {}", err));
 
         if let Some(stored_version) = stored_version_opt {
-            if stored_version != version.current() {
+            if stored_version != CollectionVersion::current() {
                 info!(
                     "Migrating collection {} -> {}",
                     stored_version,
-                    version.current()
+                    CollectionVersion::current()
                 );
-                version
-                    .save(path)
+                CollectionVersion::save(path)
                     .unwrap_or_else(|err| panic!("Can't save collection version {}", err));
             }
         }

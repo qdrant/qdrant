@@ -114,17 +114,16 @@ fn create_segment(
 }
 
 pub fn load_segment(path: &Path) -> OperationResult<Segment> {
-    let version = SegmentVersion();
-    let stored_version_opt = version.load(path)?;
+    let stored_version_opt = SegmentVersion::load(path)?;
 
     if let Some(stored_version) = stored_version_opt {
-        if stored_version != version.current() {
+        if stored_version != SegmentVersion::current() {
             info!(
                 "Migrating segment {} -> {}",
                 stored_version,
-                version.current()
+                SegmentVersion::current()
             );
-            version.save(path)?
+            SegmentVersion::save(path)?
         }
     }
 
@@ -162,8 +161,7 @@ pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Seg
     let segment = create_segment(0, &segment_path, config)?;
     segment.save_current_state()?;
 
-    let version = SegmentVersion();
-    version.save(&segment_path)?;
+    SegmentVersion::save(&segment_path)?;
 
     Ok(segment)
 }

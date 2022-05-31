@@ -27,7 +27,7 @@ pub const SEGMENT_STATE_FILE: &str = "segment.json";
 pub struct SegmentVersion;
 
 impl StorageVersion for SegmentVersion {
-    fn current(&self) -> String {
+    fn current() -> String {
         env!("CARGO_PKG_VERSION").to_string()
     }
 }
