@@ -186,7 +186,7 @@ impl Histogram {
         };
 
         let (to_remove, to_create) = match close_neighbors {
-            (None, None) => (None, None),  // histogram is empty
+            (None, None) => (None, None), // histogram is empty
             (Some(left_border), None) => {
                 if left_border.center == *val {
                     // ....|
@@ -247,28 +247,30 @@ impl Histogram {
                         // ... |...
                         right_border.left_count.set(left_border.left_count.get());
                         (Some(left_border.clone()), None)
-                    } else {
-                        if right_border.left_count.get() + left_border.left_count.get() <= self.bucket_size && far_left_neighbor.is_some() {
-                            // ...|.l..r...
-                            // ...|. ..r...
-                            if let Some(frn) = far_left_neighbor {
-                                frn.right_count.set(frn.right_count.get() + right_border.left_count.get());
-                                right_border.left_count.set(frn.right_count.get());
-                            }
-                            (Some(left_border.clone()), None)
-                        } else {
-                            // ...|..|...
-                            // ... |.|...
-                            right_border
-                                .left_count
-                                .set(right_border.left_count.get() - 1);
-                            let new_border = Node {
-                                center: right_neighbour(&left_border.center).unwrap(),
-                                left_count: Cell::new(left_border.left_count.get()),
-                                right_count: Cell::new(left_border.right_count.get() - 1),
-                            };
-                            (Some(left_border.clone()), Some(new_border))
+                    } else if right_border.left_count.get() + left_border.left_count.get()
+                        <= self.bucket_size
+                        && far_left_neighbor.is_some()
+                    {
+                        // ...|.l..r...
+                        // ...|. ..r...
+                        if let Some(frn) = far_left_neighbor {
+                            frn.right_count
+                                .set(frn.right_count.get() + right_border.left_count.get());
+                            right_border.left_count.set(frn.right_count.get());
                         }
+                        (Some(left_border.clone()), None)
+                    } else {
+                        // ...|..|...
+                        // ... |.|...
+                        right_border
+                            .left_count
+                            .set(right_border.left_count.get() - 1);
+                        let new_border = Node {
+                            center: right_neighbour(&left_border.center).unwrap(),
+                            left_count: Cell::new(left_border.left_count.get()),
+                            right_count: Cell::new(left_border.right_count.get() - 1),
+                        };
+                        (Some(left_border.clone()), Some(new_border))
                     }
                 } else if right_border.center == *val {
                     // ...|....|...
@@ -278,45 +280,45 @@ impl Histogram {
                         // ...| ...
                         left_border.right_count.set(right_border.left_count.get());
                         (Some(right_border.clone()), None)
-                    } else {
-                        if left_border.right_count.get() + right_border.right_count.get() <= self.bucket_size && far_right_neighbor.is_some() {
-                            // ...l..r.|...
-                            // ...l.. .|...
-                            if let Some(frn) = far_right_neighbor {
-                                frn.left_count.set(frn.left_count.get() + left_border.right_count.get());
-                                left_border.right_count.set(frn.left_count.get());
-                            }
-                            (Some(right_border.clone()), None)
-                        } else {
-                            // ...|..|...
-                            // ...|.| ...
-                            left_border
-                                .right_count
-                                .set(left_border.right_count.get() - 1);
-                            let new_border = Node {
-                                center: left_neighbour(&right_border.center).unwrap(),
-                                left_count: Cell::new(right_border.right_count.get()),
-                                right_count: Cell::new(right_border.left_count.get() - 1),
-                            };
-                            (Some(right_border.clone()), Some(new_border))
+                    } else if left_border.right_count.get() + right_border.right_count.get()
+                        <= self.bucket_size
+                        && far_right_neighbor.is_some()
+                    {
+                        // ...l..r.|...
+                        // ...l.. .|...
+                        if let Some(frn) = far_right_neighbor {
+                            frn.left_count
+                                .set(frn.left_count.get() + left_border.right_count.get());
+                            left_border.right_count.set(frn.left_count.get());
                         }
-                    }
-                } else {
-                    if right_border.left_count.get() == 0 {
-                        // ...||...
-                        // ...||...
-                        (None, None)
+                        (Some(right_border.clone()), None)
                     } else {
-                        // ...|...|...
-                        // ...|. .|...
-                        right_border
-                            .left_count
-                            .set(right_border.left_count.get() - 1);
+                        // ...|..|...
+                        // ...|.| ...
                         left_border
                             .right_count
                             .set(left_border.right_count.get() - 1);
-                        (None, None)
+                        let new_border = Node {
+                            center: left_neighbour(&right_border.center).unwrap(),
+                            left_count: Cell::new(right_border.right_count.get()),
+                            right_count: Cell::new(right_border.left_count.get() - 1),
+                        };
+                        (Some(right_border.clone()), Some(new_border))
                     }
+                } else if right_border.left_count.get() == 0 {
+                    // ...||...
+                    // ...||...
+                    (None, None)
+                } else {
+                    // ...|...|...
+                    // ...|. .|...
+                    right_border
+                        .left_count
+                        .set(right_border.left_count.get() - 1);
+                    left_border
+                        .right_count
+                        .set(left_border.right_count.get() - 1);
+                    (None, None)
                 }
             }
         };
@@ -489,13 +491,13 @@ impl Histogram {
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-    use std::io::Write;
     use super::*;
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
     use rand_distr::StandardNormal;
+    use std::io;
+    use std::io::Write;
 
     #[allow(dead_code)]
     fn print_results(points_index: &BTreeSet<Point>, histogram: &Histogram, pnt: Option<Point>) {
@@ -562,7 +564,7 @@ mod tests {
 
         for point in &points {
             // print_results(&points_index, &histogram, Some(point.clone()));
-            points_index.remove(&point);
+            points_index.remove(point);
             histogram.remove(
                 point,
                 |x| {
