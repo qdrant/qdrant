@@ -35,11 +35,13 @@ const I64_KEY_LEN: usize = 12;
 pub fn encode_f64_ascending(val: f64, buf: &mut Vec<u8>) {
     if val.is_nan() {
         buf.push(FLOAT_NAN);
+        buf.extend(&[0_u8; std::mem::size_of::<f64>()]);
         return;
     }
 
     if val == 0f64 {
         buf.push(FLOAT_ZERO);
+        buf.extend(&[0_u8; std::mem::size_of::<f64>()]);
         return;
     }
 
@@ -56,7 +58,6 @@ pub fn encode_f64_ascending(val: f64, buf: &mut Vec<u8>) {
 }
 
 /// Decode a f64 from a slice.
-#[allow(dead_code)]
 pub fn decode_f64_ascending(buf: &[u8]) -> f64 {
     match buf[0] {
         FLOAT_NAN => f64::NAN,
@@ -81,7 +82,6 @@ pub fn encode_i64_ascending(val: i64, buf: &mut Vec<u8>) {
 }
 
 /// Decode a i64 from a slice
-#[allow(dead_code)]
 fn decode_i64_ascending(buf: &[u8]) -> i64 {
     let i = i64::from_be_bytes(buf[0..8].try_into().expect("cannot decode i64"));
     i ^ i64::MIN
@@ -104,12 +104,22 @@ fn decode_i64_ascending(buf: &[u8]) -> i64 {
 /// └───────────────────┴─────────────────┴──────────────┘
 /// ```
 ///
-#[allow(dead_code)]
 pub fn encode_f64_key_ascending(key_val: f64, point_offset: u32) -> Vec<u8> {
     let mut buf = Vec::with_capacity(F64_KEY_LEN);
     encode_f64_ascending(key_val, &mut buf);
     buf.extend(point_offset.to_be_bytes());
     buf
+}
+
+pub fn decode_f64_key_ascending(buf: &[u8]) -> (u32, f64) {
+    (
+        u32::from_be_bytes(
+            (&buf[F64_KEY_LEN - std::mem::size_of::<u32>()..])
+                .try_into()
+                .unwrap(),
+        ),
+        decode_f64_ascending(buf),
+    )
 }
 
 /// Encodes a i64 key so that it sort in ascending order.
@@ -127,12 +137,22 @@ pub fn encode_f64_key_ascending(key_val: f64, point_offset: u32) -> Vec<u8> {
 /// │    (big-endian)    │ (big-endian) │
 /// └────────────────────┴──────────────┘
 ///```
-#[allow(dead_code)]
 pub fn encode_i64_key_ascending(key_val: i64, point_offset: u32) -> Vec<u8> {
     let mut buf = Vec::with_capacity(I64_KEY_LEN);
     encode_i64_ascending(key_val, &mut buf);
     buf.extend(point_offset.to_be_bytes());
     buf
+}
+
+pub fn decode_i64_key_ascending(buf: &[u8]) -> (u32, i64) {
+    (
+        u32::from_be_bytes(
+            (&buf[I64_KEY_LEN - std::mem::size_of::<u32>()..])
+                .try_into()
+                .unwrap(),
+        ),
+        decode_i64_ascending(buf),
+    )
 }
 
 #[cfg(test)]
