@@ -85,15 +85,6 @@ grpcurl -plaintext -import-path ./lib/api/src/grpc/proto/ -proto qdrant.proto -d
 0.0.0.0:6334 qdrant.Collections/Update
 ```
 
-### Delete collection
-The qdrant.Collections/UpdateCollections rpc could also be used to delete a collection:
-```bash
-grpcurl -plaintext -import-path ./lib/api/src/grpc/proto/ -proto qdrant.proto -d '{
-          "collection_name": "test_collection"
-    }' \
-0.0.0.0:6334 qdrant.Collections/Delete
-```
-
 ## Add points
 Let's now add vectors with some payload:
 
@@ -134,4 +125,11 @@ Expected response:
 }
 ```
 
-
+### Delete collection
+The qdrant.Collections/UpdateCollections rpc could also be used to delete a collection:
+```bash
+grpcurl -plaintext -import-path ./lib/api/src/grpc/proto/ -proto qdrant.proto -d '{
+          "collection_name": "test_collection"
+    }' \
+0.0.0.0:6334 qdrant.Collections/Delete
+```
