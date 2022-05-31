@@ -28,7 +28,7 @@ trait KeyEncoder: Clone {
 
     fn decode_key(v: &[u8]) -> (PointOffsetType, Self);
 
-    fn as_f64(self) -> f64;
+    fn as_f64(&self) -> f64;
 
     fn from_f64(val: f64) -> Self;
 }
@@ -42,8 +42,8 @@ impl KeyEncoder for IntPayloadType {
         decode_i64_key_ascending(v)
     }
 
-    fn as_f64(self) -> f64 {
-        self as f64
+    fn as_f64(&self) -> f64 {
+        *self as f64
     }
 
     fn from_f64(val: f64) -> Self {
@@ -60,8 +60,8 @@ impl KeyEncoder for FloatPayloadType {
         decode_f64_key_ascending(v)
     }
 
-    fn as_f64(self) -> f64 {
-        self
+    fn as_f64(&self) -> f64 {
+        *self
     }
 
     fn from_f64(val: f64) -> Self {
@@ -212,7 +212,7 @@ impl<T: KeyEncoder> NumericIndex<T> {
         let to_histogram_point = |key| {
             let (decoded_idx, decoded_val) = T::decode_key(key);
             Point {
-                val: T::as_f64(decoded_val),
+                val: T::as_f64(&decoded_val),
                 idx: decoded_idx as usize,
             }
         };
