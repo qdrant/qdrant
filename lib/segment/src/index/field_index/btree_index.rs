@@ -9,6 +9,7 @@ use serde_json::Value;
 use crate::common::rocksdb_operations::db_write_options;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Point};
+use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
     PayloadFieldIndexBuilder, PrimaryCondition, ValueIndexer,
@@ -193,13 +194,23 @@ impl<T: KeyEncoder> NumericIndex<T> {
             Unbounded
         };
 
-        let estimation = self.histogram.estimate(gbound, lbound);
+        let histogram_estimation = self.histogram.estimate(gbound, lbound);
+        let min_estimation = histogram_estimation.0 / self.max_values_per_point;
+        let max_estimation = histogram_estimation.2;
+
+        let total_values = self.map.len();
+        let estimation = estimate_multi_value_selection_cardinality(
+            self.points_count,
+            total_values,
+            histogram_estimation.1,
+        )
+        .round() as usize;
 
         CardinalityEstimation {
             primary_clauses: vec![],
-            min: estimation.0 / self.max_values_per_point,
-            exp: estimation.1,
-            max: estimation.2,
+            min: min_estimation,
+            exp: std::cmp::min(max_estimation, std::cmp::max(estimation, min_estimation)),
+            max: max_estimation,
         }
     }
 
