@@ -8,6 +8,8 @@ pub const VERSION_FILE: &str = "version.info";
 
 /// Structure to save and load version with which the storage was create
 pub trait StorageVersion {
+    // Current crate version needs to be defined in each crate separately,
+    // since the package version is provided at compile time
     fn current() -> String;
 
     fn load(path: &Path) -> FileOperationResult<Option<String>> {
