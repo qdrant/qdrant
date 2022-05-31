@@ -241,7 +241,7 @@ impl Default for ChannelService {
     }
 }
 
-struct CollectionVersion();
+struct CollectionVersion;
 
 impl StorageVersion for CollectionVersion {
     fn current(&self) -> String {
