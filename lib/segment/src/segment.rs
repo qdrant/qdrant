@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
-pub struct SegmentVersion();
+pub struct SegmentVersion;
 
 impl StorageVersion for SegmentVersion {
     fn current(&self) -> String {
