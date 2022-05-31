@@ -19,6 +19,7 @@ use futures::future::{join_all, try_join_all};
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
 use hashring::HashRing;
 use itertools::Itertools;
+use log::info;
 use operations::{
     config_diff::OptimizersConfigDiff,
     types::{
@@ -28,6 +29,7 @@ use operations::{
     CollectionUpdateOperations, SplitByShard, Validate,
 };
 use optimizers_builder::OptimizersConfig;
+use segment::common::version::StorageVersion;
 use segment::spaces::tools::peek_top_smallest_scores_iterable;
 use segment::types::Order;
 use segment::{
@@ -239,6 +241,14 @@ impl Default for ChannelService {
     }
 }
 
+struct CollectionVersion;
+
+impl StorageVersion for CollectionVersion {
+    fn current() -> String {
+        env!("CARGO_PKG_VERSION").to_string()
+    }
+}
+
 /// Collection's data is split into several shards.
 pub struct Collection {
     id: CollectionId,
@@ -261,6 +271,7 @@ impl Collection {
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
     ) -> Result<Self, CollectionError> {
+        CollectionVersion::save(path)?;
         config.save(path)?;
         let mut ring = HashRing::new();
         let mut shards: HashMap<ShardId, Shard> = HashMap::new();
@@ -307,6 +318,21 @@ impl Collection {
     }
 
     pub async fn load(id: CollectionId, path: &Path, channel_service: ChannelService) -> Self {
+        let stored_version_opt = CollectionVersion::load(path)
+            .unwrap_or_else(|err| panic!("Can't read collection version {}", err));
+
+        if let Some(stored_version) = stored_version_opt {
+            if stored_version != CollectionVersion::current() {
+                info!(
+                    "Migrating collection {} -> {}",
+                    stored_version,
+                    CollectionVersion::current()
+                );
+                CollectionVersion::save(path)
+                    .unwrap_or_else(|err| panic!("Can't save collection version {}", err));
+            }
+        }
+
         let config = CollectionConfig::load(path).unwrap_or_else(|err| {
             panic!(
                 "Can't read collection config due to {}\nat {}",

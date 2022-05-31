@@ -3,3 +3,4 @@ pub mod error_logging;
 pub mod file_operations;
 pub mod rocksdb_operations;
 pub mod utils;
+pub mod version;

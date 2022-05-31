@@ -1,4 +1,5 @@
 use crate::common::rocksdb_operations::open_db;
+use crate::common::version::StorageVersion;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::index::hnsw_index::hnsw::HNSWIndex;
@@ -7,7 +8,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndexSS, VectorIndexSS};
 use crate::payload_storage::query_checker::SimpleConditionChecker;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
-use crate::segment::{Segment, SEGMENT_STATE_FILE};
+use crate::segment::{Segment, SegmentVersion, SEGMENT_STATE_FILE};
 use crate::types::{
     Indexes, PayloadIndexType, SegmentConfig, SegmentState, SegmentType, SeqNumberType, StorageType,
 };
@@ -15,6 +16,7 @@ use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
+use log::info;
 use std::fs::{create_dir_all, File};
 use std::io::Read;
 use std::path::Path;
@@ -112,6 +114,19 @@ fn create_segment(
 }
 
 pub fn load_segment(path: &Path) -> OperationResult<Segment> {
+    let stored_version_opt = SegmentVersion::load(path)?;
+
+    if let Some(stored_version) = stored_version_opt {
+        if stored_version != SegmentVersion::current() {
+            info!(
+                "Migrating segment {} -> {}",
+                stored_version,
+                SegmentVersion::current()
+            );
+            SegmentVersion::save(path)?
+        }
+    }
+
     let segment_config_path = path.join(SEGMENT_STATE_FILE);
     let mut contents = String::new();
 
@@ -145,6 +160,8 @@ pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Seg
 
     let segment = create_segment(0, &segment_path, config)?;
     segment.save_current_state()?;
+
+    SegmentVersion::save(&segment_path)?;
 
     Ok(segment)
 }
