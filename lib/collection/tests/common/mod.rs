@@ -68,11 +68,5 @@ pub async fn new_local_collection(
 
 /// Default to a collection with all the shards local
 pub async fn load_local_collection(id: CollectionId, path: &Path) -> Collection {
-    Collection::load(
-        id,
-        path,
-        CollectionShardDistribution::AllLocal,
-        ChannelService::default(),
-    )
-    .await
+    Collection::load(id, path, ChannelService::default()).await
 }

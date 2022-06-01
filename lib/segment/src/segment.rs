@@ -1,3 +1,4 @@
+use crate::common::version::StorageVersion;
 use crate::entry::entry_point::OperationError::ServiceError;
 use crate::entry::entry_point::{
     get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
@@ -22,6 +23,14 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
+
+pub struct SegmentVersion;
+
+impl StorageVersion for SegmentVersion {
+    fn current() -> String {
+        env!("CARGO_PKG_VERSION").to_string()
+    }
+}
 
 /// Segment - an object which manages an independent group of points.
 ///

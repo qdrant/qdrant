@@ -1,0 +1,11 @@
+#@ load("openapi.lib.yml", "response", "reference", "type", "array")
+
+paths:
+  /cluster:
+    get:
+      tags:
+        - cluster
+      summary: Get cluster status info
+      description: Get information about the current state and composition of the cluster
+      operationId: cluster_status
+      responses: #@ response(reference("ClusterStatus"))

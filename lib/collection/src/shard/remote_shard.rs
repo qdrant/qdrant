@@ -6,6 +6,7 @@ use crate::shard::conversions::{
     internal_delete_index, internal_delete_payload, internal_delete_points,
     internal_delete_points_by_filter, internal_set_payload, internal_upsert_points,
 };
+use crate::shard::shard_config::ShardConfig;
 use crate::shard::{PeerId, ShardId, ShardOperation};
 use crate::{
     ChannelService, CollectionError, CollectionId, CollectionInfo, CollectionResult,
@@ -20,6 +21,7 @@ use api::grpc::qdrant::{
 };
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tonic::transport::Channel;
@@ -29,7 +31,6 @@ use tonic::Status;
 /// RemoteShard
 ///
 /// Remote Shard is a representation of a shard that is located on a remote peer.
-/// Currently a placeholder implementation for later work.
 pub struct RemoteShard {
     pub(crate) id: ShardId,
     pub(crate) collection_id: CollectionId,
@@ -38,6 +39,7 @@ pub struct RemoteShard {
 }
 
 impl RemoteShard {
+    /// Instantiate a new remote shard in memory
     pub fn new(
         id: ShardId,
         collection_id: CollectionId,
@@ -50,6 +52,26 @@ impl RemoteShard {
             peer_id,
             channel_service,
         }
+    }
+
+    /// Initialize remote shard by persisting its info on the file system.
+    pub fn init(
+        id: ShardId,
+        collection_id: CollectionId,
+        peer_id: PeerId,
+        shard_path: PathBuf,
+        channel_service: ChannelService,
+    ) -> CollectionResult<Self> {
+        // initialize remote shard config file
+        ShardConfig::init_file(&shard_path)?;
+        let shard_config = ShardConfig::new_remote(peer_id);
+        shard_config.save(&shard_path)?;
+        Ok(RemoteShard::new(
+            id,
+            collection_id,
+            peer_id,
+            channel_service,
+        ))
     }
 
     fn current_address(&self) -> CollectionResult<Uri> {

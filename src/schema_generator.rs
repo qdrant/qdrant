@@ -14,6 +14,7 @@ use storage::content_manager::collection_meta_ops::{
 use crate::common::points::CreateFieldIndex;
 use api::grpc::models::CollectionsResponse;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
+use storage::types::ClusterStatus;
 
 mod actix;
 mod common;
@@ -41,6 +42,7 @@ struct AllDefinitions {
     ai: PointInsertOperations,
     aj: SetPayload,
     ak: DeletePayload,
+    al: ClusterStatus,
 }
 
 fn save_schema<T: JsonSchema>() {

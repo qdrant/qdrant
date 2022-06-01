@@ -48,6 +48,13 @@ impl UnappliedEntries {
             None => (),
         }
     }
+
+    pub fn len(&self) -> usize {
+        match self.0 {
+            None => 0,
+            Some((current, last)) => (last.saturating_sub(current) + 1) as usize,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -83,6 +90,10 @@ impl Persistent {
             log::info!("State: {:?}", state.state());
             Ok(state)
         }
+    }
+
+    pub fn unapplied_entities_count(&self) -> usize {
+        self.unapplied_entries.len()
     }
 
     pub fn apply_state_update(

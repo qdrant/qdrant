@@ -13,20 +13,9 @@ struct Node {
 }
 
 impl Node {
-    pub fn new(point: Point) -> Self {
+    pub fn new(center: Point) -> Self {
         Node {
-            center: point,
-            left_count: Cell::new(0),
-            right_count: Cell::new(0),
-        }
-    }
-
-    pub fn empty(center: f64) -> Self {
-        Node {
-            center: Point {
-                val: center,
-                idx: 0,
-            },
+            center,
             left_count: Cell::new(0),
             right_count: Cell::new(0),
         }
@@ -34,9 +23,9 @@ impl Node {
 }
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
-struct Point {
-    val: f64,
-    idx: usize,
+pub struct Point {
+    pub val: f64,
+    pub idx: usize,
 }
 
 impl Eq for Point {}
@@ -52,7 +41,7 @@ impl Eq for Node {}
 
 impl PartialEq<Self> for Node {
     fn eq(&self, other: &Self) -> bool {
-        other.center.idx.eq(&other.center.idx)
+        self.center.idx.eq(&other.center.idx)
     }
 }
 
@@ -69,7 +58,7 @@ impl Ord for Node {
 }
 
 #[derive(Debug)]
-struct Histogram {
+pub struct Histogram {
     bucket_size: usize,
     borders: BTreeSet<Node>,
 }
@@ -82,7 +71,7 @@ impl Histogram {
         }
     }
 
-    pub fn estimate(&self, from: Bound<f64>, to: Bound<f64>) -> usize {
+    pub fn estimate(&self, from: Bound<f64>, to: Bound<f64>) -> (usize, usize, usize) {
         let from_ = match &from {
             Included(val) => Included(Node::new(Point {
                 val: *val,
@@ -121,7 +110,7 @@ impl Histogram {
         };
 
         if from_val > to_val {
-            return 0;
+            return (0, 0, 0);
         }
 
         let left_border = {
@@ -149,22 +138,197 @@ impl Histogram {
                 let val_range = b.center.val - a.center.val;
 
                 if val_range == 0. {
-                    return a.right_count.get() + 1;
+                    // Zero-length range is always covered
+                    let estimates = a.right_count.get() + 1;
+                    return (estimates, estimates, estimates);
                 }
 
                 if a.right_count.get() == 0 {
-                    return 1;
+                    // Range covers most-right border
+                    return (1, 1, 1);
                 }
 
                 let cover_range = to_val.min(b.center.val) - from_val.max(a.center.val);
 
                 let covered_frac = cover_range / val_range;
+                let estimate = (a.right_count.get() as f64 * covered_frac).round() as usize + 1;
 
-                (a.right_count.get() as f64 * covered_frac).round() as usize + 1
+                let min_estimate = if cover_range == val_range {
+                    a.right_count.get() + 1
+                } else {
+                    0
+                };
+                let max_estimate = a.right_count.get() + 1;
+                (min_estimate, estimate, max_estimate)
             })
-            .sum();
+            .reduce(|a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2))
+            .unwrap_or((0, 0, 0));
 
         estimation
+    }
+
+    pub fn remove<F, G>(&mut self, val: &Point, left_neighbour: F, right_neighbour: G)
+    where
+        F: Fn(&Point) -> Option<Point>,
+        G: Fn(&Point) -> Option<Point>,
+    {
+        let (close_neighbors, (far_left_neighbor, far_right_neighbor)) = {
+            let mut left_iterator = self
+                .borders
+                .range((Unbounded, Included(Node::new(val.clone()))));
+            let mut right_iterator = self
+                .borders
+                .range((Excluded(Node::new(val.clone())), Unbounded));
+            (
+                (left_iterator.next_back(), right_iterator.next()),
+                (left_iterator.next_back(), right_iterator.next()),
+            )
+        };
+
+        let (to_remove, to_create) = match close_neighbors {
+            (None, None) => (None, None), // histogram is empty
+            (Some(left_border), None) => {
+                if left_border.center == *val {
+                    // ....|
+                    // ...|
+                    if left_border.left_count.get() == 0 {
+                        // ...||
+                        // ...|
+                        (Some(left_border.clone()), None)
+                    } else {
+                        // ...|..|
+                        // ...|.|
+                        if let Some(fln) = far_left_neighbor {
+                            fln.right_count.set(fln.right_count.get() - 1)
+                        }
+                        let new_border = Node {
+                            center: left_neighbour(&left_border.center).unwrap(),
+                            left_count: Cell::new(left_border.left_count.get() - 1),
+                            right_count: Cell::new(0),
+                        };
+                        (Some(left_border.clone()), Some(new_border))
+                    }
+                } else {
+                    (None, None)
+                }
+            }
+            (None, Some(right_border)) => {
+                if right_border.center == *val {
+                    // |...
+                    //  |..
+                    if right_border.right_count.get() == 0 {
+                        // ||...
+                        //  |...
+                        (Some(right_border.clone()), None)
+                    } else {
+                        // |..|...
+                        //  |.|...
+                        if let Some(frn) = far_right_neighbor {
+                            frn.left_count.set(frn.left_count.get() - 1)
+                        }
+                        let new_border = Node {
+                            center: right_neighbour(&right_border.center).unwrap(),
+                            left_count: Cell::new(0),
+                            right_count: Cell::new(right_border.right_count.get() - 1),
+                        };
+                        (Some(right_border.clone()), Some(new_border))
+                    }
+                } else {
+                    (None, None)
+                }
+            }
+            (Some(left_border), Some(right_border)) => {
+                // ...|...x.|...
+                if left_border.center == *val {
+                    // ...|....|...
+                    // ... |...|...
+                    if left_border.right_count.get() == 0 {
+                        // ...||...
+                        // ... |...
+                        right_border.left_count.set(left_border.left_count.get());
+                        (Some(left_border.clone()), None)
+                    } else if right_border.left_count.get() + left_border.left_count.get()
+                        <= self.bucket_size
+                        && far_left_neighbor.is_some()
+                    {
+                        // ...|.l..r...
+                        // ...|. ..r...
+                        if let Some(frn) = far_left_neighbor {
+                            frn.right_count
+                                .set(frn.right_count.get() + right_border.left_count.get());
+                            right_border.left_count.set(frn.right_count.get());
+                        }
+                        (Some(left_border.clone()), None)
+                    } else {
+                        // ...|..|...
+                        // ... |.|...
+                        right_border
+                            .left_count
+                            .set(right_border.left_count.get() - 1);
+                        let new_border = Node {
+                            center: right_neighbour(&left_border.center).unwrap(),
+                            left_count: Cell::new(left_border.left_count.get()),
+                            right_count: Cell::new(left_border.right_count.get() - 1),
+                        };
+                        (Some(left_border.clone()), Some(new_border))
+                    }
+                } else if right_border.center == *val {
+                    // ...|....|...
+                    // ...|...| ...
+                    if right_border.left_count.get() == 0 {
+                        // ...||...
+                        // ...| ...
+                        left_border.right_count.set(right_border.left_count.get());
+                        (Some(right_border.clone()), None)
+                    } else if left_border.right_count.get() + right_border.right_count.get()
+                        <= self.bucket_size
+                        && far_right_neighbor.is_some()
+                    {
+                        // ...l..r.|...
+                        // ...l.. .|...
+                        if let Some(frn) = far_right_neighbor {
+                            frn.left_count
+                                .set(frn.left_count.get() + left_border.right_count.get());
+                            left_border.right_count.set(frn.left_count.get());
+                        }
+                        (Some(right_border.clone()), None)
+                    } else {
+                        // ...|..|...
+                        // ...|.| ...
+                        left_border
+                            .right_count
+                            .set(left_border.right_count.get() - 1);
+                        let new_border = Node {
+                            center: left_neighbour(&right_border.center).unwrap(),
+                            left_count: Cell::new(right_border.right_count.get()),
+                            right_count: Cell::new(right_border.left_count.get() - 1),
+                        };
+                        (Some(right_border.clone()), Some(new_border))
+                    }
+                } else if right_border.left_count.get() == 0 {
+                    // ...||...
+                    // ...||...
+                    (None, None)
+                } else {
+                    // ...|...|...
+                    // ...|. .|...
+                    right_border
+                        .left_count
+                        .set(right_border.left_count.get() - 1);
+                    left_border
+                        .right_count
+                        .set(left_border.right_count.get() - 1);
+                    (None, None)
+                }
+            }
+        };
+        if let Some(remove_border) = to_remove {
+            self.borders.remove(&remove_border);
+        }
+
+        if let Some(new_border) = to_create {
+            self.borders.insert(new_border);
+        }
     }
 
     pub fn insert<F, G>(&mut self, val: Point, left_neighbour: F, right_neighbour: G)
@@ -184,10 +348,10 @@ impl Histogram {
         let (close_neighbors, (far_left_neighbor, far_right_neighbor)) = {
             let mut left_iterator = self
                 .borders
-                .range((Unbounded, Excluded(Node::empty(val.val))));
+                .range((Unbounded, Excluded(Node::new(val.clone()))));
             let mut right_iterator = self
                 .borders
-                .range((Excluded(Node::empty(val.val)), Unbounded));
+                .range((Excluded(Node::new(val.clone())), Unbounded));
             (
                 (left_iterator.next_back(), right_iterator.next()),
                 (left_iterator.next_back(), right_iterator.next()),
@@ -239,6 +403,9 @@ impl Histogram {
                 }
             }
             (Some(left_border), Some(right_border)) => {
+                if left_border.right_count.get() != right_border.left_count.get() {
+                    eprintln!("error");
+                }
                 assert_eq!(left_border.right_count.get(), right_border.left_count.get());
                 let new_count = left_border.right_count.get() + 1;
 
@@ -329,6 +496,8 @@ mod tests {
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
     use rand_distr::StandardNormal;
+    use std::io;
+    use std::io::Write;
 
     #[allow(dead_code)]
     fn print_results(points_index: &BTreeSet<Point>, histogram: &Histogram, pnt: Option<Point>) {
@@ -338,14 +507,19 @@ mod tests {
                 left_count: Cell::new(0),
                 right_count: Cell::new(0),
             }) {
-                print!(" {}|{} ", border.left_count.get(), border.right_count.get());
+                if pnt.is_some() && pnt.as_ref().unwrap().idx == point.idx {
+                    eprint!(" {}x{} ", border.left_count.get(), border.right_count.get());
+                } else {
+                    eprint!(" {}|{} ", border.left_count.get(), border.right_count.get());
+                }
             } else if pnt.is_some() && pnt.as_ref().unwrap().idx == point.idx {
-                print!("x");
+                eprint!("x");
             } else {
-                print!(".");
+                eprint!(".");
             }
         }
-        println!();
+        eprintln!();
+        io::stdout().flush().unwrap();
     }
 
     fn count_range(points_index: &BTreeSet<Point>, a: f64, b: f64) -> usize {
@@ -353,6 +527,188 @@ mod tests {
             .iter()
             .filter(|x| a <= x.val && x.val <= b)
             .count()
+    }
+
+    #[test]
+    fn test_build_histogram_small() {
+        let bucket_size = 5;
+        let num_samples = 1000;
+        let mut rnd = StdRng::seed_from_u64(42);
+
+        // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
+        let points = (0..num_samples)
+            .map(|i| Point {
+                val: f64::round(rnd.sample::<f64, _>(StandardNormal) * 10.0),
+                idx: i,
+            })
+            .collect_vec();
+
+        let mut points_index: BTreeSet<Point> = Default::default();
+
+        let mut histogram = Histogram::new(bucket_size);
+
+        for point in &points {
+            points_index.insert(point.clone());
+            // print_results(&points_index, &histogram, Some(point.clone()));
+            histogram.insert(
+                point.clone(),
+                |x| {
+                    points_index
+                        .range((Unbounded, Excluded(x)))
+                        .next_back()
+                        .cloned()
+                },
+                |x| points_index.range((Excluded(x), Unbounded)).next().cloned(),
+            );
+        }
+
+        for point in &points {
+            // print_results(&points_index, &histogram, Some(point.clone()));
+            points_index.remove(point);
+            histogram.remove(
+                point,
+                |x| {
+                    points_index
+                        .range((Unbounded, Excluded(x)))
+                        .next_back()
+                        .cloned()
+                },
+                |x| points_index.range((Excluded(x), Unbounded)).next().cloned(),
+            );
+        }
+    }
+
+    #[test]
+    fn test_build_histogram_round() {
+        let bucket_size = 10;
+        let num_samples = 100_000;
+        let mut rnd = StdRng::seed_from_u64(42);
+
+        // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
+        let points = (0..num_samples).map(|i| Point {
+            val: f64::round(rnd.sample::<f64, _>(StandardNormal) * 100.0),
+            idx: i,
+        });
+
+        let mut points_index: BTreeSet<Point> = Default::default();
+
+        let mut histogram = Histogram::new(bucket_size);
+
+        let read_counter = Cell::new(0);
+        for point in points {
+            points_index.insert(point.clone());
+            // print_results(&points_index, &histogram, Some(point.clone()));
+            histogram.insert(
+                point,
+                |x| {
+                    read_counter.set(read_counter.get() + 1);
+                    points_index
+                        .range((Unbounded, Excluded(x)))
+                        .next_back()
+                        .cloned()
+                },
+                |x| {
+                    read_counter.set(read_counter.get() + 1);
+                    points_index.range((Excluded(x), Unbounded)).next().cloned()
+                },
+            );
+        }
+        eprintln!("read_counter.get() = {:#?}", read_counter.get());
+        eprintln!("histogram.borders.len() = {:#?}", histogram.borders.len());
+        for border in histogram.borders.iter().take(2) {
+            eprintln!("border = {:#?}", border);
+        }
+
+        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.0));
+        let real = count_range(&points_index, 0., 0.);
+
+        eprintln!(
+            "{} / ({}, {}, {}) = {}",
+            real,
+            est_min,
+            estimation,
+            est_max,
+            estimation as f64 / real as f64
+        );
+        assert!(real.abs_diff(estimation) < 2 * bucket_size);
+
+        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.0001));
+        let real = count_range(&points_index, 0., 0.0001);
+
+        eprintln!(
+            "{} / ({}, {}, {}) = {}",
+            real,
+            est_min,
+            estimation,
+            est_max,
+            estimation as f64 / real as f64
+        );
+        assert!(real.abs_diff(estimation) < 2 * bucket_size);
+
+        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.01));
+        let real = count_range(&points_index, 0., 0.01);
+
+        eprintln!(
+            "{} / ({}, {}, {}) = {}",
+            real,
+            est_min,
+            estimation,
+            est_max,
+            estimation as f64 / real as f64
+        );
+        assert!(real.abs_diff(estimation) < 2 * bucket_size);
+
+        let (est_min, estimation, est_max) = histogram.estimate(Included(0.), Included(1.));
+        let real = count_range(&points_index, 0., 1.);
+
+        eprintln!(
+            "{} / ({}, {}, {}) = {}",
+            real,
+            est_min,
+            estimation,
+            est_max,
+            estimation as f64 / real as f64
+        );
+        assert!(real.abs_diff(estimation) < 2 * bucket_size);
+
+        let (est_min, estimation, est_max) = histogram.estimate(Included(0.), Included(100.));
+        let real = count_range(&points_index, 0., 100.);
+
+        eprintln!(
+            "{} / ({}, {}, {}) = {}",
+            real,
+            est_min,
+            estimation,
+            est_max,
+            estimation as f64 / real as f64
+        );
+        assert!(real.abs_diff(estimation) < 2 * bucket_size);
+
+        let (est_min, estimation, est_max) = histogram.estimate(Included(-100.), Included(100.));
+        let real = count_range(&points_index, -100., 100.);
+
+        eprintln!(
+            "{} / ({}, {}, {}) = {}",
+            real,
+            est_min,
+            estimation,
+            est_max,
+            estimation as f64 / real as f64
+        );
+        assert!(real.abs_diff(estimation) < 2 * bucket_size);
+
+        let (est_min, estimation, est_max) = histogram.estimate(Included(20.), Included(100.));
+        let real = count_range(&points_index, 20., 100.);
+
+        eprintln!(
+            "{} / ({}, {}, {}) = {}",
+            real,
+            est_min,
+            estimation,
+            est_max,
+            estimation as f64 / real as f64
+        );
+        assert!(real.abs_diff(estimation) < 2 * bucket_size);
     }
 
     #[test]
@@ -398,79 +754,93 @@ mod tests {
             eprintln!("border = {:#?}", border);
         }
 
-        let estimation = histogram.estimate(Included(0.0), Included(0.0));
+        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.0));
         let real = count_range(&points_index, 0., 0.);
 
         eprintln!(
-            "{} / {} = {}",
-            estimation,
+            "{} / ({}, {}, {}) = {}",
             real,
+            est_min,
+            estimation,
+            est_max,
             estimation as f64 / real as f64
         );
         assert!(real.abs_diff(estimation) < bucket_size);
 
-        let estimation = histogram.estimate(Included(0.0), Included(0.0001));
+        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.0001));
         let real = count_range(&points_index, 0., 0.0001);
 
         eprintln!(
-            "{} / {} = {}",
-            estimation,
+            "{} / ({}, {}, {}) = {}",
             real,
+            est_min,
+            estimation,
+            est_max,
             estimation as f64 / real as f64
         );
         assert!(real.abs_diff(estimation) < bucket_size);
 
-        let estimation = histogram.estimate(Included(0.0), Included(0.01));
+        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.01));
         let real = count_range(&points_index, 0., 0.01);
 
         eprintln!(
-            "{} / {} = {}",
-            estimation,
+            "{} / ({}, {}, {}) = {}",
             real,
+            est_min,
+            estimation,
+            est_max,
             estimation as f64 / real as f64
         );
         assert!(real.abs_diff(estimation) < bucket_size);
 
-        let estimation = histogram.estimate(Included(0.), Included(1.));
+        let (est_min, estimation, est_max) = histogram.estimate(Included(0.), Included(1.));
         let real = count_range(&points_index, 0., 1.);
 
         eprintln!(
-            "{} / {} = {}",
-            estimation,
+            "{} / ({}, {}, {}) = {}",
             real,
+            est_min,
+            estimation,
+            est_max,
             estimation as f64 / real as f64
         );
         assert!(real.abs_diff(estimation) < bucket_size);
 
-        let estimation = histogram.estimate(Included(0.), Included(100.));
+        let (est_min, estimation, est_max) = histogram.estimate(Included(0.), Included(100.));
         let real = count_range(&points_index, 0., 100.);
 
         eprintln!(
-            "{} / {} = {}",
-            estimation,
+            "{} / ({}, {}, {}) = {}",
             real,
+            est_min,
+            estimation,
+            est_max,
             estimation as f64 / real as f64
         );
         assert!(real.abs_diff(estimation) < bucket_size);
 
-        let estimation = histogram.estimate(Included(-100.), Included(100.));
+        let (est_min, estimation, est_max) = histogram.estimate(Included(-100.), Included(100.));
         let real = count_range(&points_index, -100., 100.);
 
         eprintln!(
-            "{} / {} = {}",
-            estimation,
+            "{} / ({}, {}, {}) = {}",
             real,
+            est_min,
+            estimation,
+            est_max,
             estimation as f64 / real as f64
         );
         assert!(real.abs_diff(estimation) < bucket_size);
 
-        let estimation = histogram.estimate(Included(20.), Included(100.));
+        let (est_min, estimation, est_max) = histogram.estimate(Included(20.), Included(100.));
         let real = count_range(&points_index, 20., 100.);
 
         eprintln!(
-            "{} / {} = {}",
-            estimation,
+            "{} / ({}, {}, {}) = {}",
             real,
+            est_min,
+            estimation,
+            est_max,
             estimation as f64 / real as f64
         );
         assert!(real.abs_diff(estimation) < bucket_size);

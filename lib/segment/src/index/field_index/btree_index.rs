@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::marker::PhantomData;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::sync::Arc;
 
@@ -9,6 +8,8 @@ use serde_json::Value;
 
 use crate::common::rocksdb_operations::db_write_options;
 use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::index::field_index::histogram::{Histogram, Point};
+use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexBuilder,
     ValueIndexer,
@@ -20,19 +21,51 @@ use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType, Range,
 };
 
-pub trait KeyEncoder {
+const HISTOGRAM_BUCKET_SIZE: usize = 100;
+
+pub trait KeyEncoder : Clone {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
+
+    fn decode_key(v: &[u8]) -> (PointOffsetType, Self);
+
+    fn as_f64(&self) -> f64;
+
+    fn from_f64(val: f64) -> Self;
 }
 
 impl KeyEncoder for IntPayloadType {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
         encode_i64_key_ascending(*self, id)
     }
+
+    fn decode_key(v: &[u8]) -> (PointOffsetType, Self) {
+        decode_i64_key_ascending(v)
+    }
+
+    fn as_f64(&self) -> f64 {
+        *self as f64
+    }
+
+    fn from_f64(val: f64) -> Self {
+        val as Self
+    }
 }
 
 impl KeyEncoder for FloatPayloadType {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
         encode_f64_key_ascending(*self, id)
+    }
+
+    fn decode_key(v: &[u8]) -> (PointOffsetType, Self) {
+        decode_f64_key_ascending(v)
+    }
+
+    fn as_f64(&self) -> f64 {
+        *self
+    }
+
+    fn from_f64(val: f64) -> Self {
+        val
     }
 }
 
@@ -72,7 +105,9 @@ pub struct NumericIndex<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> {
     map: BTreeMap<Vec<u8>, u32>,
     db: Arc<AtomicRefCell<DB>>,
     store_cf_name: String,
-    phantom: PhantomData<T>,
+    histogram: Histogram,
+    points_count: usize,
+    max_values_per_point: usize,
     point_to_values: Vec<Vec<T>>,
 }
 
@@ -83,12 +118,14 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> NumericIndex<T> {
             map: BTreeMap::new(),
             db,
             store_cf_name,
-            phantom: PhantomData::default(),
+            histogram: Histogram::new(HISTOGRAM_BUCKET_SIZE),
+            points_count: 0,
+            max_values_per_point: 0,
             point_to_values: Default::default(),
         }
     }
 
-    pub fn add_value(&mut self, id: PointOffsetType, value: T) {
+    fn add_value(&mut self, id: PointOffsetType, value: T) {
         let key = value.encode_key(id);
         let db_ref = self.db.borrow();
         //TODO(gvelo): currently all the methods on the ValueIndexer trait are infallible so we
@@ -98,13 +135,22 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> NumericIndex<T> {
         db_ref
             .put_cf_opt(cf_handle, &key, id.to_be_bytes(), &db_write_options())
             .unwrap();
-        self.map.insert(key, id);
+        Self::add_to_map(&mut self.map, &mut self.histogram, key, id);
     }
 
-    fn add_many_to_list(&mut self, idx: PointOffsetType, values: impl IntoIterator<Item = T>) {
-        for value in values {
-            self.add_value(idx, value);
+    pub fn add_many_to_list(&mut self, idx: PointOffsetType, values: impl IntoIterator<Item = T>) {
+        if self.point_to_values.len() <= idx as usize {
+            self.point_to_values.resize(idx as usize + 1, Vec::new())
         }
+        let values: Vec<T> = values.into_iter().collect();
+        for value in &values {
+            self.add_value(idx, value.clone());
+        }
+        if !values.is_empty() {
+            self.points_count += 1;
+            self.max_values_per_point = self.max_values_per_point.max(values.len());
+        }
+        self.point_to_values[idx as usize] = values;
     }
 
     pub fn load(&mut self) -> OperationResult<()> {
@@ -124,9 +170,9 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> NumericIndex<T> {
             let key_bytes = iter.key().unwrap().to_owned();
             let value = u32::from_be_bytes(
                 iter.value()
-                    .unwrap()
+                    .ok_or_else(|| OperationError::service_error("cannot take value iteratror"))?
                     .try_into()
-                    .expect("key with incorrect length"),
+                    .map_err(|_| OperationError::service_error("key with incorrect length"))?,
             );
             let key: T = T::decode_key(key_bytes.as_slice());
             self.map.insert(key_bytes, value);
@@ -182,6 +228,74 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> NumericIndex<T> {
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<T>> {
         self.point_to_values.get(idx as usize)
     }
+
+    fn range_cardinality(&self, range: &Range) -> CardinalityEstimation {
+        let lbound = if let Some(lte) = range.lte {
+            Included(lte)
+        } else if let Some(lt) = range.lt {
+            Excluded(lt)
+        } else {
+            Unbounded
+        };
+
+        let gbound = if let Some(gte) = range.gte {
+            Included(gte)
+        } else if let Some(gt) = range.gt {
+            Excluded(gt)
+        } else {
+            Unbounded
+        };
+
+        let histogram_estimation = self.histogram.estimate(gbound, lbound);
+        let min_estimation = histogram_estimation.0 / self.max_values_per_point;
+        let max_estimation = histogram_estimation.2;
+
+        let total_values = self.map.len();
+        let estimation = estimate_multi_value_selection_cardinality(
+            self.points_count,
+            total_values,
+            histogram_estimation.1,
+        )
+        .round() as usize;
+
+        CardinalityEstimation {
+            primary_clauses: vec![],
+            min: min_estimation,
+            exp: std::cmp::min(max_estimation, std::cmp::max(estimation, min_estimation)),
+            max: max_estimation,
+        }
+    }
+
+    fn add_to_map(
+        map: &mut BTreeMap<Vec<u8>, PointOffsetType>,
+        histogram: &mut Histogram,
+        key: Vec<u8>,
+        id: PointOffsetType,
+    ) {
+        let to_histogram_point = |key| {
+            let (decoded_idx, decoded_val) = T::decode_key(key);
+            Point {
+                val: T::as_f64(&decoded_val),
+                idx: decoded_idx as usize,
+            }
+        };
+        map.insert(key.clone(), id);
+        histogram.insert(
+            to_histogram_point(&key),
+            |x| {
+                let key = T::from_f64(x.val).encode_key(x.idx as PointOffsetType);
+                map.range((Unbounded, Excluded(key)))
+                    .next_back()
+                    .map(|(key, _)| to_histogram_point(key))
+            },
+            |x| {
+                let key = T::from_f64(x.val).encode_key(x.idx as PointOffsetType);
+                map.range((Excluded(key), Unbounded))
+                    .next()
+                    .map(|(key, _)| to_histogram_point(key))
+            },
+        );
+    }
 }
 
 impl<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> PayloadFieldIndex for NumericIndex<T> {
@@ -228,9 +342,14 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> PayloadFieldIndex for 
         ))
     }
 
-    fn estimate_cardinality(&self, _condition: &FieldCondition) -> Option<CardinalityEstimation> {
-        //TODO(gvelo): add histogram.
-        todo!()
+    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+        condition.range.as_ref().map(|range| {
+            let mut cardinality = self.range_cardinality(range);
+            cardinality
+                .primary_clauses
+                .push(PrimaryCondition::Condition(condition.clone()));
+            cardinality
+        })
     }
 
     fn payload_blocks(

@@ -1,6 +1,7 @@
 mod conversions;
 pub mod local_shard;
 pub mod remote_shard;
+pub mod shard_config;
 
 use crate::shard::remote_shard::RemoteShard;
 use crate::{
