@@ -10,12 +10,13 @@ use crate::common::rocksdb_operations::db_write_options;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
-use crate::index::field_index::{PrimaryCondition,
+use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexBuilder,
-    ValueIndexer,
+    PrimaryCondition, ValueIndexer,
 };
 use crate::index::key_encoding::{
-    encode_f64_key_ascending, encode_i64_key_ascending, decode_i64_key_ascending, decode_f64_key_ascending
+    decode_f64_key_ascending, decode_i64_key_ascending, encode_f64_key_ascending,
+    encode_i64_key_ascending,
 };
 use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType, Range,
@@ -23,7 +24,7 @@ use crate::types::{
 
 const HISTOGRAM_BUCKET_SIZE: usize = 100;
 
-pub trait KeyEncoder : Clone {
+pub trait KeyEncoder: Clone {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
 }
 
@@ -284,7 +285,9 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 }
 
-impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> PayloadFieldIndex for NumericIndex<T> {
+impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> PayloadFieldIndex
+    for NumericIndex<T>
+{
     fn load(&mut self) -> OperationResult<()> {
         NumericIndex::load(self)
     }
