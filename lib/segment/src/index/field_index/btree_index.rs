@@ -213,9 +213,8 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
 
         for value in &removed_values {
             let key = value.encode_key(idx);
-            self.map.remove(&key);
             db_ref.delete_cf(cf_handle, &key)?;
-            // todo: remove from histogram
+            Self::remove_from_map(&mut self.map, &mut self.histogram, key);
         }
 
         if !removed_values.is_empty() {
@@ -288,6 +287,36 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         map.insert(key.clone(), id);
         histogram.insert(
             to_histogram_point(&key),
+            |x| {
+                let key = T::from_range(x.val).encode_key(x.idx as PointOffsetType);
+                map.range((Unbounded, Excluded(key)))
+                    .next_back()
+                    .map(|(key, _)| to_histogram_point(key))
+            },
+            |x| {
+                let key = T::from_range(x.val).encode_key(x.idx as PointOffsetType);
+                map.range((Excluded(key), Unbounded))
+                    .next()
+                    .map(|(key, _)| to_histogram_point(key))
+            },
+        );
+    }
+
+    pub fn remove_from_map(
+        map: &mut BTreeMap<Vec<u8>, PointOffsetType>,
+        histogram: &mut Histogram,
+        key: Vec<u8>,
+    ) {
+        let to_histogram_point = |key| {
+            let (decoded_idx, decoded_val) = T::decode_key(key);
+            Point {
+                val: T::to_range(decoded_val),
+                idx: decoded_idx as usize,
+            }
+        };
+        map.remove(&key);
+        histogram.remove(
+            &to_histogram_point(&key),
             |x| {
                 let key = T::from_range(x.val).encode_key(x.idx as PointOffsetType);
                 map.range((Unbounded, Excluded(key)))
