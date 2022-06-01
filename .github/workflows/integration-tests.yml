@@ -60,5 +60,20 @@ jobs:
       - name: Run integration tests - 1 peer
         run: ./tests/integration-tests.sh distributed
         shell: bash
-      - name: Run integration tests - multiple peers
+      - name: Run integration tests - multiple peers - pytest
         run: pytest ./tests/consensus_tests
+      
+  test-consensus-compose:
+    
+    runs-on: ubuntu-latest
+  
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v3
+        with:
+          python-version: '3.10'
+      - name: Install requests python lib
+        run: pip install requests
+      - name: Run integration tests - multiple peers - compose
+        run: ./test_restart.sh
+        working-directory: ./tests/consensus_tests

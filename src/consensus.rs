@@ -60,35 +60,21 @@ impl Consensus {
             .enable_all()
             .build()?;
         let (sender, receiver) = mpsc::sync_channel(config.max_message_queue_size);
-        if let Some(bootstrap_peer) = bootstrap_peer.clone() {
-            log::info!("Bootstrapping from peer with address: {bootstrap_peer}");
-            if uri.is_none() && p2p_port.is_none() {
-                return Err(anyhow::anyhow!("Failed to bootstrap peer as neither `internal rpc port` was configured nor `this peer uri` was supplied"));
-            }
-            runtime.block_on(Self::bootstrap(
+        if toc_ref.is_raft_state_new()? {
+            Self::init(
                 &toc_ref,
-                bootstrap_peer,
+                bootstrap_peer.clone(),
                 uri,
                 p2p_port,
                 &config,
-            ))?;
+                &runtime,
+                sender.clone(),
+            )?;
         } else {
-            log::info!("Bootstrapping is disabled. Assuming this peer is the first in the network");
-            // First peer needs to add its own address
-            let message = Message::FromClient(serde_cbor::to_vec(&ConsensusOperations::AddPeer(
-                toc_ref.this_peer_id(),
-                uri.ok_or_else(|| anyhow::anyhow!("First peer should specify its uri."))?,
-            ))?);
-            let sender_clone = sender.clone();
-            thread::spawn(move || {
-                // Wait for the leader to be established
-                // TODO: Is it possible to do it deterministically?
-                // TODO: Don't send message if this is a restart
-                thread::sleep(Duration::from_secs(5));
-                if let Err(err) = sender_clone.send(message) {
-                    log::error!("Failed to send message to add this peer to known peers: {err}")
-                }
-            });
+            if bootstrap_peer.is_some() || uri.is_some() {
+                log::warn!("Local raft state found - bootstrap and uri cli arguments were ignored")
+            }
+            log::info!("Local raft state found - skipping initialization")
         }
         let mut node = Node::new(&raft_config, toc_ref.clone(), logger)?;
         // Before consensus has started apply any unapplied committed entries
@@ -106,7 +92,47 @@ impl Consensus {
         ))
     }
 
-    pub async fn bootstrap(
+    fn init(
+        toc_ref: &TableOfContentRef,
+        bootstrap_peer: Option<Uri>,
+        uri: Option<String>,
+        p2p_port: Option<u32>,
+        config: &ConsensusConfig,
+        runtime: &Runtime,
+        sender: SyncSender<Message>,
+    ) -> anyhow::Result<()> {
+        if let Some(bootstrap_peer) = bootstrap_peer {
+            log::info!("Bootstrapping from peer with address: {bootstrap_peer}");
+            if uri.is_none() && p2p_port.is_none() {
+                return Err(anyhow::anyhow!("Failed to bootstrap peer as neither `internal rpc port` was configured nor `this peer uri` was supplied"));
+            }
+            runtime.block_on(Self::bootstrap(
+                toc_ref,
+                bootstrap_peer,
+                uri,
+                p2p_port,
+                config,
+            ))?;
+        } else {
+            log::info!("Bootstrapping is disabled. Assuming this peer is the first in the network");
+            // First peer needs to add its own address
+            let message = Message::FromClient(serde_cbor::to_vec(&ConsensusOperations::AddPeer(
+                toc_ref.this_peer_id(),
+                uri.ok_or_else(|| anyhow::anyhow!("First peer should specify its uri."))?,
+            ))?);
+            thread::spawn(move || {
+                // Wait for the leader to be established
+                // TODO: Is it possible to do it deterministically?
+                thread::sleep(Duration::from_secs(5));
+                if let Err(err) = sender.send(message) {
+                    log::error!("Failed to send message to add this peer to known peers: {err}")
+                }
+            });
+        }
+        Ok(())
+    }
+
+    async fn bootstrap(
         toc_ref: &TableOfContentRef,
         bootstrap_peer: Uri,
         uri: Option<String>,
