@@ -10,7 +10,7 @@ def drop_collection(collection_name='test_collection'):
     assert response.ok
 
 
-def basic_collection_setup(collection_name='test_collection'):
+def basic_collection_setup(collection_name='test_collection', on_disk_payload=False):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
@@ -24,7 +24,8 @@ def basic_collection_setup(collection_name='test_collection'):
         path_params={'collection_name': collection_name},
         body={
             "vector_size": 4,
-            "distance": "Dot"
+            "distance": "Dot",
+            "on_disk_payload": on_disk_payload
         }
     )
     assert response.ok

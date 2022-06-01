@@ -496,6 +496,7 @@ mod tests {
                         wal_config: None,
                         optimizers_config: None,
                         shard_number: 2,
+                        on_disk_payload: None,
                     },
                 }),
                 None,

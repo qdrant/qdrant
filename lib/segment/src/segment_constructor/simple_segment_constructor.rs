@@ -25,6 +25,7 @@ pub fn build_simple_segment(
             payload_index: None,
             distance,
             storage_type: Default::default(),
+            payload_storage_type: Default::default(),
         },
     )
 }

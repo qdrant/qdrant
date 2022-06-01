@@ -1,6 +1,7 @@
 pub mod condition_checker;
 pub mod in_memory_payload_storage;
 pub mod in_memory_payload_storage_impl;
+pub mod on_disk_payload_storage;
 mod payload_storage_base;
 pub mod payload_storage_enum;
 pub mod query_checker;

@@ -122,6 +122,7 @@ pub(crate) fn get_merge_optimizer(
             vector_size: 4,
             distance: Distance::Dot,
             shard_number: NonZeroU32::new(1).unwrap(),
+            on_disk_payload: false,
         },
         Default::default(),
     )
@@ -143,6 +144,7 @@ pub(crate) fn get_indexing_optimizer(
             vector_size: 4,
             distance: Distance::Dot,
             shard_number: NonZeroU32::new(1).unwrap(),
+            on_disk_payload: false,
         },
         Default::default(),
     )

@@ -15,7 +15,7 @@ pub trait PayloadStorage {
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
 
     /// Get payload for point
-    fn payload(&self, point_id: PointOffsetType) -> Payload;
+    fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
 
     /// Delete payload by key
     fn delete(
@@ -32,9 +32,6 @@ pub trait PayloadStorage {
 
     /// Force persistence of current storage state.
     fn flush(&self) -> OperationResult<()>;
-
-    /// Iterate all point ids with payload
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
 }
 
 pub trait ConditionChecker {

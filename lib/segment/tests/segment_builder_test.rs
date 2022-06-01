@@ -80,6 +80,7 @@ mod tests {
             index: Indexes::Hnsw(Default::default()),
             payload_index: None,
             storage_type: Default::default(),
+            payload_storage_type: Default::default(),
         };
 
         let mut builder =

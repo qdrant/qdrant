@@ -8,11 +8,11 @@ use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
+use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
-    HnswConfig, Indexes, PayloadIndexType, PayloadKeyType, PayloadSchemaType, PointIdType,
-    SegmentConfig, StorageType,
+    HnswConfig, Indexes, PayloadIndexType, PayloadKeyType, PayloadSchemaType, PayloadStorageType,
+    PointIdType, SegmentConfig, StorageType,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -69,11 +69,14 @@ pub trait SegmentOptimizer {
             index: Indexes::Plain {},
             payload_index: Some(PayloadIndexType::Plain),
             storage_type: StorageType::InMemory,
+            payload_storage_type: match collection_params.on_disk_payload {
+                true => PayloadStorageType::OnDisk,
+                false => PayloadStorageType::InMemory,
+            },
         };
-        Ok(LockedSegment::new(build_simple_segment(
+        Ok(LockedSegment::new(build_segment(
             self.collection_path(),
-            config.vector_size,
-            config.distance,
+            &config,
         )?))
     }
 
@@ -119,6 +122,10 @@ pub trait SegmentOptimizer {
                 StorageType::Mmap
             } else {
                 StorageType::InMemory
+            },
+            payload_storage_type: match collection_params.on_disk_payload {
+                true => PayloadStorageType::OnDisk,
+                false => PayloadStorageType::InMemory,
             },
         };
 

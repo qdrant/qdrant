@@ -223,24 +223,26 @@ impl Segment {
     /// Retrieve payload by internal ID
     #[inline]
     fn payload_by_offset(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
-        Ok(self.payload_storage.borrow().payload(point_offset))
+        self.payload_storage.borrow().payload(point_offset)
     }
 
     pub fn save_current_state(&self) -> OperationResult<()> {
         self.save_state(&self.get_state())
     }
 
-    fn infer_from_payload_data(&self, key: PayloadKeyTypeRef) -> Option<PayloadSchemaType> {
+    fn infer_from_payload_data(
+        &self,
+        key: PayloadKeyTypeRef,
+    ) -> OperationResult<Option<PayloadSchemaType>> {
         let payload_store = self.payload_storage.borrow();
-        let id = payload_store.iter_ids().next();
-        match id {
-            Some(id) => {
-                let payload = payload_store.payload(id);
-                let field_value = payload.get_value(key);
-                field_value.and_then(infer_value_type)
-            }
-            None => None,
-        }
+
+        let mut schema = None;
+        payload_store.iter(|_id, payload| {
+            let field_value = payload.get_value(key);
+            schema = field_value.and_then(infer_value_type);
+            false
+        })?;
+        Ok(schema)
     }
 }
 
@@ -600,7 +602,7 @@ impl SegmentEntry for Segment {
                     .set_indexed(key, *schema_type)?;
                 Ok(true)
             }
-            None => match segment.infer_from_payload_data(key) {
+            None => match segment.infer_from_payload_data(key)? {
                 None => Err(ServiceError {
                     description: "cannot infer field data type".to_string(),
                 }),
@@ -699,6 +701,7 @@ mod tests {
             payload_index: Some(PayloadIndexType::Plain),
             storage_type: StorageType::InMemory,
             distance: Distance::Dot,
+            payload_storage_type: Default::default(),
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();

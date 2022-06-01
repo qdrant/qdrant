@@ -231,6 +231,7 @@ impl TableOfContent {
             vector_size,
             distance,
             shard_number,
+            on_disk_payload,
             hnsw_config: hnsw_config_diff,
             wal_config: wal_config_diff,
             optimizers_config: optimizers_config_diff,
@@ -250,6 +251,7 @@ impl TableOfContent {
             shard_number: NonZeroU32::new(shard_number).ok_or(StorageError::BadInput {
                 description: "`shard_number` cannot be 0".to_string(),
             })?,
+            on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
         };
         let wal_config = match wal_config_diff {
             None => self.storage_config.wal.clone(),

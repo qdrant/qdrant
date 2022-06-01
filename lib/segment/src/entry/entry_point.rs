@@ -68,6 +68,12 @@ impl From<FileStorageError> for OperationError {
     }
 }
 
+impl From<serde_cbor::Error> for OperationError {
+    fn from(err: serde_cbor::Error) -> Self {
+        OperationError::service_error(&format!("Failed to parse data: {}", err))
+    }
+}
+
 impl<E> From<AtomicIoError<E>> for OperationError {
     fn from(err: AtomicIoError<E>) -> Self {
         match err {

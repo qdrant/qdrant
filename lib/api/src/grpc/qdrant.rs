@@ -138,8 +138,11 @@ pub struct CreateCollection {
     /// Number of shards in the collection, default = 1
     #[prost(uint32, optional, tag="7")]
     pub shard_number: ::core::option::Option<u32>,
+    /// If `true` keep payload on disk, if `false` - in RAM
+    #[prost(bool, optional, tag="8")]
+    pub on_disk_payload: ::core::option::Option<bool>,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
-    #[prost(uint64, optional, tag="8")]
+    #[prost(uint64, optional, tag="9")]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -183,6 +186,9 @@ pub struct CollectionParams {
     /// Number of shards in collection
     #[prost(uint32, tag="3")]
     pub shard_number: u32,
+    /// Read payload directly from disk?
+    #[prost(bool, tag="4")]
+    pub on_disk_payload: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionConfig {

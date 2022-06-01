@@ -9,7 +9,6 @@ use async_trait::async_trait;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use std::cmp::max;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::fs::create_dir_all;
@@ -17,8 +16,8 @@ use tokio::runtime::{self, Handle, Runtime};
 use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot, Mutex, RwLock as TokioRwLock};
 
 use segment::types::{
-    ExtendedPointId, Filter, PayloadIndexInfo, PayloadKeyType, ScoredPoint, SegmentType,
-    WithPayload, WithPayloadInterface,
+    ExtendedPointId, Filter, PayloadIndexInfo, PayloadKeyType, PayloadStorageType, ScoredPoint,
+    SegmentConfig, SegmentType, WithPayload, WithPayloadInterface,
 };
 
 use crate::collection_manager::collection_managers::CollectionSearcher;
@@ -37,7 +36,7 @@ use crate::shard::ShardOperation;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 use crate::{CollectionId, PointRequest, SearchRequest, ShardId};
-use segment::segment_constructor::load_segment;
+use segment::segment_constructor::{build_segment, load_segment};
 use std::fs::{read_dir, remove_dir_all};
 
 /// LocalShard
@@ -227,8 +226,18 @@ impl LocalShard {
         let distance = config.params.distance;
         for _sid in 0..config.optimizer_config.default_segment_number {
             let path_clone = segments_path.clone();
-            let segment =
-                thread::spawn(move || build_simple_segment(&path_clone, vector_size, distance));
+            let segment_config = SegmentConfig {
+                vector_size,
+                distance,
+                index: Default::default(),
+                payload_index: Default::default(),
+                storage_type: Default::default(),
+                payload_storage_type: match config.params.on_disk_payload {
+                    true => PayloadStorageType::OnDisk,
+                    false => PayloadStorageType::InMemory,
+                },
+            };
+            let segment = thread::spawn(move || build_segment(&path_clone, &segment_config));
             build_handlers.push(segment);
         }
 

@@ -90,6 +90,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     }
                     .into(),
                     shard_number: config.params.shard_number.get(),
+                    on_disk_payload: config.params.on_disk_payload,
                 }),
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
                     m: Some(config.hnsw_config.m as u64),
@@ -213,6 +214,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                         Some(distance) => distance,
                     },
                     shard_number: NonZeroU32::new(params.shard_number).unwrap(),
+                    on_disk_payload: params.on_disk_payload,
                 },
             },
             hnsw_config: match config.hnsw_config {

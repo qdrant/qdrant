@@ -18,10 +18,10 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(())
     }
 
-    fn payload(&self, point_id: PointOffsetType) -> Payload {
+    fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
         match self.payload.get(&point_id) {
-            Some(payload) => payload.to_owned(),
-            None => Default::default(),
+            Some(payload) => Ok(payload.to_owned()),
+            None => Ok(Default::default()),
         }
     }
 
@@ -52,10 +52,6 @@ impl PayloadStorage for InMemoryPayloadStorage {
     fn flush(&self) -> OperationResult<()> {
         Ok(())
     }
-
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(self.payload.keys().copied())
-    }
 }
 
 #[cfg(test)]
@@ -63,7 +59,7 @@ mod tests {
     use super::*;
     use crate::fixtures::payload_context_fixture::IdsIterator;
     use crate::payload_storage::query_checker::check_payload;
-    use crate::types::{Condition, FieldCondition, Filter};
+    use crate::types::{Condition, FieldCondition, Filter, OwnedPayloadRef};
     use serde_json::json;
     use std::cell::RefCell;
 
@@ -101,14 +97,14 @@ mod tests {
         // How to check for payload in case if Payload is stored on disk
         // and it is preferred to only load the Payload once and if it is strictly required.
 
-        let payload: RefCell<Option<Payload>> = RefCell::new(None);
+        let payload: RefCell<Option<OwnedPayloadRef>> = RefCell::new(None);
         check_payload(
             || {
                 eprintln!("request payload");
                 if payload.borrow().is_none() {
-                    payload.replace(Some(get_payload()));
+                    payload.replace(Some(get_payload().into()));
                 }
-                unsafe { payload.try_borrow_unguarded().unwrap().as_ref().unwrap() }
+                payload.borrow().as_ref().cloned().unwrap()
             },
             &id_tracker,
             &query,
@@ -125,9 +121,9 @@ mod tests {
         storage.assign(100, &payload).unwrap();
         storage.wipe().unwrap();
         storage.assign(100, &payload).unwrap();
-        assert!(!storage.payload(100).is_empty());
+        assert!(!storage.payload(100).unwrap().is_empty());
         storage.wipe().unwrap();
-        assert_eq!(storage.payload(100), Default::default());
+        assert_eq!(storage.payload(100).unwrap(), Default::default());
     }
 
     #[test]
@@ -157,7 +153,7 @@ mod tests {
         let payload: Payload = serde_json::from_str(data).unwrap();
         let mut storage = InMemoryPayloadStorage::default();
         storage.assign(100, &payload).unwrap();
-        let pload = storage.payload(100);
+        let pload = storage.payload(100).unwrap();
         assert_eq!(pload, payload);
     }
 }

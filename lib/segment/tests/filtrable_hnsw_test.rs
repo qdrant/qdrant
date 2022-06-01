@@ -45,6 +45,7 @@ mod tests {
             payload_index: Some(PayloadIndexType::Plain),
             storage_type: StorageType::InMemory,
             distance,
+            payload_storage_type: Default::default(),
         };
 
         let int_key = "int";

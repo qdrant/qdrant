@@ -9,7 +9,9 @@ use crate::id_tracker::IdTrackerSS;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::ConditionChecker;
-use crate::types::{Condition, FieldCondition, Filter, IsEmptyCondition, Payload, PointOffsetType};
+use crate::types::{
+    Condition, FieldCondition, Filter, IsEmptyCondition, OwnedPayloadRef, Payload, PointOffsetType,
+};
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool
 where
@@ -70,11 +72,13 @@ pub fn check_payload<'a, F>(
     point_id: PointOffsetType,
 ) -> bool
 where
-    F: Fn() -> &'a Payload,
+    F: Fn() -> OwnedPayloadRef<'a>,
 {
     let checker = |condition: &Condition| match condition {
-        Condition::Field(field_condition) => check_field_condition(field_condition, get_payload()),
-        Condition::IsEmpty(is_empty) => check_is_empty_condition(is_empty, get_payload()),
+        Condition::Field(field_condition) => {
+            check_field_condition(field_condition, get_payload().deref())
+        }
+        Condition::IsEmpty(is_empty) => check_is_empty_condition(is_empty, get_payload().deref()),
         Condition::HasId(has_id) => {
             let external_id = match id_tracker.external_id(point_id) {
                 None => return false,
@@ -155,21 +159,45 @@ impl ConditionChecker for SimpleConditionChecker {
     fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
         let payload_storage_guard = self.payload_storage.borrow();
 
-        let payload_cell: RefCell<Option<&Payload>> = RefCell::new(None);
+        let payload_ref_cell: RefCell<Option<OwnedPayloadRef>> = RefCell::new(None);
         check_payload(
             || {
-                if payload_cell.borrow().is_none() {
+                if payload_ref_cell.borrow().is_none() {
                     let payload_ptr = match payload_storage_guard.deref() {
-                        PayloadStorageEnum::InMemoryPayloadStorage(s) => s.payload_ptr(point_id),
-                        PayloadStorageEnum::SimplePayloadStorage(s) => s.payload_ptr(point_id),
+                        PayloadStorageEnum::InMemoryPayloadStorage(s) => {
+                            s.payload_ptr(point_id).map(|x| x.into())
+                        }
+                        PayloadStorageEnum::SimplePayloadStorage(s) => {
+                            s.payload_ptr(point_id).map(|x| x.into())
+                        }
+                        PayloadStorageEnum::OnDiskPayloadStorage(s) => {
+                            // Warn: Possible panic here
+                            // Currently, it is possible that `read_payload` fails with Err,
+                            // but it seems like a very rare possibility which might only happen
+                            // if something is wrong with disk or storage is corrupted.
+                            //
+                            // In both cases it means that service can't be of use any longer.
+                            // It is as good as dead. Therefore it is tolerable to just panic here.
+                            // Downside is - API user won't be notified of the failure.
+                            // It will just timeout.
+                            //
+                            // The alternative:
+                            // Rewrite condition checking code to support error reporting.
+                            // Which may lead to slowdown and assumes a lot of changes.
+                            s.read_payload(point_id)
+                                .unwrap_or_else(|err| {
+                                    panic!("Payload storage is corrupted: {}", err)
+                                })
+                                .map(|x| x.into())
+                        }
                     };
 
-                    payload_cell.replace(Some(match payload_ptr {
-                        None => &self.empty_payload,
+                    payload_ref_cell.replace(Some(match payload_ptr {
+                        None => (&self.empty_payload).into(),
                         Some(x) => x,
                     }));
                 }
-                payload_cell.borrow().unwrap()
+                payload_ref_cell.borrow().as_ref().cloned().unwrap()
             },
             self.id_tracker.borrow().deref(),
             query,
