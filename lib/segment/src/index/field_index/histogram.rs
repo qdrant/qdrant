@@ -1,25 +1,13 @@
 use itertools::Itertools;
-use std::cell::Cell;
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::collections::Bound::{Excluded, Included, Unbounded};
 use std::ops::Bound;
 
 #[derive(Debug, Clone)]
-struct Node {
-    center: Point,
-    left_count: Cell<usize>,
-    right_count: Cell<usize>,
-}
-
-impl Node {
-    pub fn new(center: Point) -> Self {
-        Node {
-            center,
-            left_count: Cell::new(0),
-            right_count: Cell::new(0),
-        }
-    }
+struct Counts {
+    pub left: usize,
+    pub right: usize,
 }
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
@@ -37,62 +25,42 @@ impl Ord for Point {
     }
 }
 
-impl Eq for Node {}
-
-impl PartialEq<Self> for Node {
-    fn eq(&self, other: &Self) -> bool {
-        self.center.idx.eq(&other.center.idx)
-    }
-}
-
-impl PartialOrd<Self> for Node {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.center.partial_cmp(&other.center)
-    }
-}
-
-impl Ord for Node {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.center.partial_cmp(&other.center).unwrap()
-    }
-}
-
 #[derive(Debug)]
 pub struct Histogram {
     bucket_size: usize,
-    borders: BTreeSet<Node>,
+    borders: BTreeMap<Point, Counts>,
 }
 
 impl Histogram {
     pub fn new(bucket_size: usize) -> Self {
         Self {
             bucket_size,
-            borders: BTreeSet::default(),
+            borders: BTreeMap::default(),
         }
     }
 
     pub fn estimate(&self, from: Bound<f64>, to: Bound<f64>) -> (usize, usize, usize) {
         let from_ = match &from {
-            Included(val) => Included(Node::new(Point {
+            Included(val) => Included(Point {
                 val: *val,
                 idx: usize::MIN,
-            })),
-            Excluded(val) => Excluded(Node::new(Point {
+            }),
+            Excluded(val) => Excluded(Point {
                 val: *val,
                 idx: usize::MAX,
-            })),
+            }),
             Unbounded => Unbounded,
         };
 
         let to_ = match &to {
-            Included(val) => Included(Node::new(Point {
+            Included(val) => Included(Point {
                 val: *val,
                 idx: usize::MAX,
-            })),
-            Excluded(val) => Excluded(Node::new(Point {
+            }),
+            Excluded(val) => Excluded(Point {
                 val: *val,
                 idx: usize::MIN,
-            })),
+            }),
             Unbounded => Unbounded,
         };
 
@@ -134,33 +102,35 @@ impl Histogram {
             .chain(self.borders.range((from_, to_)))
             .chain(right_border.into_iter())
             .tuple_windows()
-            .map(|(a, b): (&Node, &Node)| {
-                let val_range = b.center.val - a.center.val;
+            .map(
+                |((a, a_count), (b, _b_count)): ((&Point, &Counts), (&Point, &Counts))| {
+                    let val_range = b.val - a.val;
 
-                if val_range == 0. {
-                    // Zero-length range is always covered
-                    let estimates = a.right_count.get() + 1;
-                    return (estimates, estimates, estimates);
-                }
+                    if val_range == 0. {
+                        // Zero-length range is always covered
+                        let estimates = a_count.right + 1;
+                        return (estimates, estimates, estimates);
+                    }
 
-                if a.right_count.get() == 0 {
-                    // Range covers most-right border
-                    return (1, 1, 1);
-                }
+                    if a_count.right == 0 {
+                        // Range covers most-right border
+                        return (1, 1, 1);
+                    }
 
-                let cover_range = to_val.min(b.center.val) - from_val.max(a.center.val);
+                    let cover_range = to_val.min(b.val) - from_val.max(a.val);
 
-                let covered_frac = cover_range / val_range;
-                let estimate = (a.right_count.get() as f64 * covered_frac).round() as usize + 1;
+                    let covered_frac = cover_range / val_range;
+                    let estimate = (a_count.right as f64 * covered_frac).round() as usize + 1;
 
-                let min_estimate = if cover_range == val_range {
-                    a.right_count.get() + 1
-                } else {
-                    0
-                };
-                let max_estimate = a.right_count.get() + 1;
-                (min_estimate, estimate, max_estimate)
-            })
+                    let min_estimate = if cover_range == val_range {
+                        a_count.right + 1
+                    } else {
+                        0
+                    };
+                    let max_estimate = a_count.right + 1;
+                    (min_estimate, estimate, max_estimate)
+                },
+            )
             .reduce(|a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2))
             .unwrap_or((0, 0, 0));
 
@@ -172,162 +142,202 @@ impl Histogram {
         F: Fn(&Point) -> Option<Point>,
         G: Fn(&Point) -> Option<Point>,
     {
-        let (close_neighbors, (far_left_neighbor, far_right_neighbor)) = {
+        let (mut close_neighbors, (mut far_left_neighbor, mut far_right_neighbor)) = {
             let mut left_iterator = self
                 .borders
-                .range((Unbounded, Included(Node::new(val.clone()))));
+                .range((Unbounded, Included(val.clone())))
+                .map(|(k, v)| (k.clone(), v.clone()));
             let mut right_iterator = self
                 .borders
-                .range((Excluded(Node::new(val.clone())), Unbounded));
+                .range((Excluded(val.clone()), Unbounded))
+                .map(|(k, v)| (k.clone(), v.clone()));
             (
                 (left_iterator.next_back(), right_iterator.next()),
                 (left_iterator.next_back(), right_iterator.next()),
             )
         };
 
-        let (to_remove, to_create) = match close_neighbors {
+        let (to_remove, to_create) = match &mut close_neighbors {
             (None, None) => (None, None), // histogram is empty
-            (Some(left_border), None) => {
-                if left_border.center == *val {
+            (Some((left_border, ref mut left_border_count)), None) => {
+                if left_border == val {
                     // ....|
                     // ...|
-                    if left_border.left_count.get() == 0 {
+                    if left_border_count.left == 0 {
                         // ...||
                         // ...|
                         (Some(left_border.clone()), None)
                     } else {
                         // ...|..|
                         // ...|.|
-                        if let Some(fln) = far_left_neighbor {
-                            fln.right_count.set(fln.right_count.get() - 1)
+                        match &mut far_left_neighbor {
+                            Some((_fln, ref mut fln_count)) => fln_count.right -= 1,
+                            None => {}
                         }
-                        let new_border = Node {
-                            center: left_neighbour(&left_border.center).unwrap(),
-                            left_count: Cell::new(left_border.left_count.get() - 1),
-                            right_count: Cell::new(0),
-                        };
-                        (Some(left_border.clone()), Some(new_border))
+                        let (new_border, new_border_count) = (
+                            left_neighbour(left_border).unwrap(),
+                            Counts {
+                                left: left_border_count.left - 1,
+                                right: 0,
+                            },
+                        );
+                        (
+                            Some(left_border.clone()),
+                            Some((new_border, new_border_count)),
+                        )
                     }
                 } else {
                     (None, None)
                 }
             }
-            (None, Some(right_border)) => {
-                if right_border.center == *val {
+            (None, Some((right_border, ref mut right_border_count))) => {
+                if right_border == val {
                     // |...
                     //  |..
-                    if right_border.right_count.get() == 0 {
+                    if right_border_count.right == 0 {
                         // ||...
                         //  |...
                         (Some(right_border.clone()), None)
                     } else {
                         // |..|...
                         //  |.|...
-                        if let Some(frn) = far_right_neighbor {
-                            frn.left_count.set(frn.left_count.get() - 1)
+                        match &mut far_right_neighbor {
+                            Some((_frn, ref mut frn_count)) => frn_count.left -= 1,
+                            None => {}
                         }
-                        let new_border = Node {
-                            center: right_neighbour(&right_border.center).unwrap(),
-                            left_count: Cell::new(0),
-                            right_count: Cell::new(right_border.right_count.get() - 1),
-                        };
-                        (Some(right_border.clone()), Some(new_border))
+                        let (new_border, new_border_count) = (
+                            right_neighbour(right_border).unwrap(),
+                            Counts {
+                                left: 0,
+                                right: right_border_count.right - 1,
+                            },
+                        );
+                        (
+                            Some(right_border.clone()),
+                            Some((new_border, new_border_count)),
+                        )
                     }
                 } else {
                     (None, None)
                 }
             }
-            (Some(left_border), Some(right_border)) => {
+            (
+                Some((left_border, ref mut left_border_count)),
+                Some((right_border, ref mut right_border_count)),
+            ) => {
                 // ...|...x.|...
-                if left_border.center == *val {
+                if left_border == val {
                     // ...|....|...
                     // ... |...|...
-                    if left_border.right_count.get() == 0 {
+                    if left_border_count.right == 0 {
                         // ...||...
                         // ... |...
-                        right_border.left_count.set(left_border.left_count.get());
+                        right_border_count.left = left_border_count.left;
                         (Some(left_border.clone()), None)
-                    } else if right_border.left_count.get() + left_border.left_count.get()
-                        <= self.bucket_size
+                    } else if right_border_count.left + left_border_count.left <= self.bucket_size
                         && far_left_neighbor.is_some()
                     {
                         // ...|.l..r...
                         // ...|. ..r...
-                        if let Some(frn) = far_left_neighbor {
-                            frn.right_count
-                                .set(frn.right_count.get() + right_border.left_count.get());
-                            right_border.left_count.set(frn.right_count.get());
+                        match &mut far_left_neighbor {
+                            Some((_fln, ref mut fln_count)) => {
+                                fln_count.right += right_border_count.left;
+                                right_border_count.left = fln_count.right;
+                            }
+                            None => {}
                         }
                         (Some(left_border.clone()), None)
                     } else {
                         // ...|..|...
                         // ... |.|...
-                        right_border
-                            .left_count
-                            .set(right_border.left_count.get() - 1);
-                        let new_border = Node {
-                            center: right_neighbour(&left_border.center).unwrap(),
-                            left_count: Cell::new(left_border.left_count.get()),
-                            right_count: Cell::new(left_border.right_count.get() - 1),
-                        };
-                        (Some(left_border.clone()), Some(new_border))
+                        right_border_count.left -= 1;
+                        let (new_border, new_border_count) = (
+                            right_neighbour(left_border).unwrap(),
+                            Counts {
+                                left: left_border_count.left,
+                                right: left_border_count.right - 1,
+                            },
+                        );
+                        (
+                            Some(left_border.clone()),
+                            Some((new_border, new_border_count)),
+                        )
                     }
-                } else if right_border.center == *val {
+                } else if right_border == val {
                     // ...|....|...
                     // ...|...| ...
-                    if right_border.left_count.get() == 0 {
+                    if right_border_count.left == 0 {
                         // ...||...
                         // ...| ...
-                        left_border.right_count.set(right_border.left_count.get());
+                        left_border_count.right = right_border_count.left;
                         (Some(right_border.clone()), None)
-                    } else if left_border.right_count.get() + right_border.right_count.get()
-                        <= self.bucket_size
+                    } else if left_border_count.right + right_border_count.right <= self.bucket_size
                         && far_right_neighbor.is_some()
                     {
                         // ...l..r.|...
                         // ...l.. .|...
-                        if let Some(frn) = far_right_neighbor {
-                            frn.left_count
-                                .set(frn.left_count.get() + left_border.right_count.get());
-                            left_border.right_count.set(frn.left_count.get());
+                        match &mut far_right_neighbor {
+                            Some((_frn, ref mut frn_count)) => {
+                                frn_count.left += left_border_count.right;
+                                left_border_count.right = frn_count.left;
+                            }
+                            None => {}
                         }
                         (Some(right_border.clone()), None)
                     } else {
                         // ...|..|...
                         // ...|.| ...
-                        left_border
-                            .right_count
-                            .set(left_border.right_count.get() - 1);
-                        let new_border = Node {
-                            center: left_neighbour(&right_border.center).unwrap(),
-                            left_count: Cell::new(right_border.right_count.get()),
-                            right_count: Cell::new(right_border.left_count.get() - 1),
-                        };
-                        (Some(right_border.clone()), Some(new_border))
+                        left_border_count.right -= 1;
+                        let (new_border, new_border_count) = (
+                            left_neighbour(right_border).unwrap(),
+                            Counts {
+                                left: right_border_count.right,
+                                right: right_border_count.left - 1,
+                            },
+                        );
+                        (
+                            Some(right_border.clone()),
+                            Some((new_border, new_border_count)),
+                        )
                     }
-                } else if right_border.left_count.get() == 0 {
+                } else if right_border_count.left == 0 {
                     // ...||...
                     // ...||...
                     (None, None)
                 } else {
                     // ...|...|...
                     // ...|. .|...
-                    right_border
-                        .left_count
-                        .set(right_border.left_count.get() - 1);
-                    left_border
-                        .right_count
-                        .set(left_border.right_count.get() - 1);
+                    right_border_count.left -= 1;
+                    left_border_count.right -= 1;
                     (None, None)
                 }
             }
         };
+
+        let (left_border_opt, right_border_opt) = close_neighbors;
+
+        if let Some((k, v)) = left_border_opt {
+            self.borders.insert(k, v);
+        }
+
+        if let Some((k, v)) = right_border_opt {
+            self.borders.insert(k, v);
+        }
+
+        if let Some((k, v)) = far_left_neighbor {
+            self.borders.insert(k, v);
+        }
+
+        if let Some((k, v)) = far_right_neighbor {
+            self.borders.insert(k, v);
+        }
+
         if let Some(remove_border) = to_remove {
             self.borders.remove(&remove_border);
         }
 
-        if let Some(new_border) = to_create {
-            self.borders.insert(new_border);
+        if let Some((new_border, new_border_count)) = to_create {
+            self.borders.insert(new_border, new_border_count);
         }
     }
 
@@ -337,154 +347,202 @@ impl Histogram {
         G: Fn(&Point) -> Option<Point>,
     {
         if self.borders.len() < 2 {
-            self.borders.insert(Node {
-                center: val,
-                left_count: Cell::new(0),
-                right_count: Cell::new(0),
-            });
+            self.borders.insert(val, Counts { left: 0, right: 0 });
             return;
         }
 
-        let (close_neighbors, (far_left_neighbor, far_right_neighbor)) = {
+        let (mut close_neighbors, (mut far_left_neighbor, mut far_right_neighbor)) = {
             let mut left_iterator = self
                 .borders
-                .range((Unbounded, Excluded(Node::new(val.clone()))));
+                .range((Unbounded, Included(val.clone())))
+                .map(|(k, v)| (k.clone(), v.clone()));
             let mut right_iterator = self
                 .borders
-                .range((Excluded(Node::new(val.clone())), Unbounded));
+                .range((Excluded(val.clone()), Unbounded))
+                .map(|(k, v)| (k.clone(), v.clone()));
             (
                 (left_iterator.next_back(), right_iterator.next()),
                 (left_iterator.next_back(), right_iterator.next()),
             )
         };
 
-        let (to_remove, to_create) = match close_neighbors {
-            (None, Some(right_border)) => {
+        let (to_remove, to_create) = match &mut close_neighbors {
+            (None, Some((right_border, right_border_count))) => {
                 // x|.....|...
-                let new_count = right_border.right_count.get() + 1;
-                let new_border = Node {
-                    center: val,
-                    left_count: Cell::new(0),
-                    right_count: Cell::new(new_count),
-                };
+                let new_count = right_border_count.right + 1;
+                let (new_border, mut new_border_count) = (
+                    val,
+                    Counts {
+                        left: 0,
+                        right: new_count,
+                    },
+                );
 
                 if new_count > self.bucket_size {
                     // Too many values, can't move the border
                     // x|.....|...
                     // ||.....|...
-                    new_border.right_count.set(0);
-                    (None, Some(new_border))
+                    new_border_count.right = 0;
+                    (None, Some((new_border, new_border_count)))
                 } else {
                     // x|.....|...
                     // |......|...
-                    far_right_neighbor.unwrap().left_count.set(new_count);
-                    (Some(right_border.clone()), Some(new_border))
+                    match &mut far_right_neighbor {
+                        Some((_frn, frn_count)) => {
+                            frn_count.left = new_count;
+                        }
+                        None => {}
+                    }
+                    (
+                        Some(right_border.clone()),
+                        Some((new_border, new_border_count)),
+                    )
                 }
             }
-            (Some(left_border), None) => {
+            (Some((left_border, left_border_count)), None) => {
                 // ...|.....|x
-                let new_count = left_border.left_count.get() + 1;
-                let new_border = Node {
-                    center: val,
-                    left_count: Cell::new(new_count),
-                    right_count: Cell::new(0),
-                };
+                let new_count = left_border_count.left + 1;
+                let (new_border, mut new_border_count) = (
+                    val,
+                    Counts {
+                        left: new_count,
+                        right: 0,
+                    },
+                );
                 if new_count > self.bucket_size {
                     // Too many values, can't move the border
                     // ...|.....|x
                     // ...|.....||
-                    new_border.left_count.set(0);
-                    (None, Some(new_border))
+                    new_border_count.left = 0;
+                    (None, Some((new_border, new_border_count)))
                 } else {
                     // ...|.....|x
                     // ...|......|
-                    far_left_neighbor.unwrap().right_count.set(new_count);
-                    (Some(left_border.clone()), Some(new_border))
+                    match &mut far_left_neighbor {
+                        Some((_fln, ref mut fln_count)) => fln_count.right = new_count,
+                        None => {}
+                    }
+                    (
+                        Some(left_border.clone()),
+                        Some((new_border, new_border_count)),
+                    )
                 }
             }
-            (Some(left_border), Some(right_border)) => {
-                if left_border.right_count.get() != right_border.left_count.get() {
+            (Some((left_border, left_border_count)), Some((right_border, right_border_count))) => {
+                if left_border_count.right != right_border_count.left {
                     eprintln!("error");
                 }
-                assert_eq!(left_border.right_count.get(), right_border.left_count.get());
-                let new_count = left_border.right_count.get() + 1;
+                assert_eq!(left_border_count.right, right_border_count.left);
+                let new_count = left_border_count.right + 1;
 
                 if new_count > self.bucket_size {
                     // Too many values, let's adjust
                     // Decide which border to move
 
-                    let left_dist = (val.val - left_border.center.val).abs();
-                    let right_dist = (val.val - right_border.center.val).abs();
+                    let left_dist = (val.val - left_border.val).abs();
+                    let right_dist = (val.val - right_border.val).abs();
                     if left_dist < right_dist {
                         // left border closer:
                         //  ...|..x.........|...
-                        let new_border = Node {
-                            center: right_neighbour(&left_border.center).unwrap(),
-                            left_count: Cell::new(left_border.left_count.get() + 1),
-                            right_count: Cell::new(left_border.right_count.get()),
-                        };
+                        let (new_border, mut new_border_count) = (
+                            right_neighbour(left_border).unwrap(),
+                            Counts {
+                                left: left_border_count.left + 1,
+                                right: left_border_count.right,
+                            },
+                        );
 
-                        if left_border.left_count.get() < self.bucket_size
-                            && far_left_neighbor.is_some()
+                        if left_border_count.left < self.bucket_size && far_left_neighbor.is_some()
                         {
                             //we can move
                             //  ...|..x.........|...
                             //  ....|.x.........|...
-                            if let Some(x) = far_left_neighbor {
-                                x.right_count.set(new_border.left_count.get())
-                            };
-                            (Some(left_border.clone()), Some(new_border))
+                            match &mut far_left_neighbor {
+                                Some((_fln, ref mut fln_count)) => {
+                                    fln_count.right = new_border_count.left
+                                }
+                                None => {}
+                            }
+
+                            (
+                                Some(left_border.clone()),
+                                Some((new_border, new_border_count)),
+                            )
                         } else {
                             // Can't be moved anymore, create an additional one
                             //  ...|..x.........|...
                             //  ...||.x.........|...
-                            new_border.left_count.set(0);
-                            left_border.right_count.set(0);
-                            (None, Some(new_border))
+                            new_border_count.left = 0;
+                            left_border_count.right = 0;
+                            (None, Some((new_border, new_border_count)))
                         }
                     } else {
                         // right border closer
                         //  ...|........x...|...
-                        let new_border = Node {
-                            center: left_neighbour(&right_border.center).unwrap(),
-                            left_count: Cell::new(right_border.left_count.get()),
-                            right_count: Cell::new(right_border.right_count.get() + 1),
-                        };
+                        let (new_border, mut new_border_count) = (
+                            left_neighbour(right_border).unwrap(),
+                            Counts {
+                                left: right_border_count.left,
+                                right: right_border_count.right + 1,
+                            },
+                        );
 
-                        if right_border.right_count.get() < self.bucket_size
+                        if right_border_count.right < self.bucket_size
                             && far_right_neighbor.is_some()
                         {
                             // it's ok, we can move
                             //  1: ...|........x...|...
                             //  2: ...|........x..|....
-                            if let Some(x) = far_right_neighbor {
-                                x.left_count.set(new_border.right_count.get())
+                            match &mut far_right_neighbor {
+                                Some((_frn, frn_count)) => frn_count.left = new_border_count.right,
+                                None => {}
                             }
-                            (Some(right_border.clone()), Some(new_border))
+                            (
+                                Some(right_border.clone()),
+                                Some((new_border, new_border_count)),
+                            )
                         } else {
                             // Can't be moved anymore, create a new one
                             //  1: ...|........x...|...
                             //  2: ...|........x..||...
-                            new_border.right_count.set(0);
-                            right_border.left_count.set(0);
-                            (None, Some(new_border))
+                            new_border_count.right = 0;
+                            right_border_count.left = 0;
+                            (None, Some((new_border, new_border_count)))
                         }
                     }
                 } else {
-                    left_border.right_count.set(new_count);
-                    right_border.left_count.set(new_count);
+                    left_border_count.right = new_count;
+                    right_border_count.left = new_count;
                     (None, None)
                 }
             }
             (None, None) => unreachable!(),
         };
 
+        let (left_border_opt, right_border_opt) = close_neighbors;
+
+        if let Some((k, v)) = left_border_opt {
+            self.borders.insert(k, v);
+        }
+
+        if let Some((k, v)) = right_border_opt {
+            self.borders.insert(k, v);
+        }
+
+        if let Some((k, v)) = far_left_neighbor {
+            self.borders.insert(k, v);
+        }
+
+        if let Some((k, v)) = far_right_neighbor {
+            self.borders.insert(k, v);
+        }
+
         if let Some(remove_border) = to_remove {
             self.borders.remove(&remove_border);
         }
 
-        if let Some(new_border) = to_create {
-            self.borders.insert(new_border);
+        if let Some((new_border, new_border_count)) = to_create {
+            self.borders.insert(new_border, new_border_count);
         }
     }
 }
@@ -496,21 +554,19 @@ mod tests {
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
     use rand_distr::StandardNormal;
+    use std::cell::Cell;
+    use std::collections::BTreeSet;
     use std::io;
     use std::io::Write;
 
     #[allow(dead_code)]
     fn print_results(points_index: &BTreeSet<Point>, histogram: &Histogram, pnt: Option<Point>) {
         for point in points_index.iter() {
-            if let Some(border) = histogram.borders.get(&Node {
-                center: point.clone(),
-                left_count: Cell::new(0),
-                right_count: Cell::new(0),
-            }) {
+            if let Some(border_count) = histogram.borders.get(point) {
                 if pnt.is_some() && pnt.as_ref().unwrap().idx == point.idx {
-                    eprint!(" {}x{} ", border.left_count.get(), border.right_count.get());
+                    eprint!(" {}x{} ", border_count.left, border_count.right);
                 } else {
-                    eprint!(" {}|{} ", border.left_count.get(), border.right_count.get());
+                    eprint!(" {}|{} ", border_count.left, border_count.right);
                 }
             } else if pnt.is_some() && pnt.as_ref().unwrap().idx == point.idx {
                 eprint!("x");
