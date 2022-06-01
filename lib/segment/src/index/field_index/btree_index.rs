@@ -155,24 +155,32 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
 
         while iter.valid() {
             let key_bytes = iter.key().unwrap().to_owned();
-            let value = u32::from_be_bytes(
+            let value_idx = u32::from_be_bytes(
                 iter.value()
                     .ok_or_else(|| OperationError::service_error("cannot take value iteratror"))?
                     .try_into()
                     .map_err(|_| OperationError::service_error("key with incorrect length"))?,
             );
-            let key: T = T::decode_key(key_bytes.as_slice()).1;
-            self.map.insert(key_bytes, value);
-
-            if self.point_to_values.len() <= value as usize {
-                self.point_to_values.resize(value as usize + 1, Vec::new())
+            let (idx, value) = T::decode_key(&key_bytes);
+            if idx != value_idx {
+                return Err(OperationError::service_error("incorrect key value"));
             }
 
-            self.point_to_values[value as usize].push(key);
+            if self.point_to_values.len() <= idx as usize {
+                self.point_to_values.resize(idx as usize + 1, Vec::new())
+            }
 
+            self.point_to_values[idx as usize].push(value);
+
+            Self::add_to_map(&mut self.map, &mut self.histogram, key_bytes, idx);
             iter.next();
         }
-
+        for values in &self.point_to_values {
+            if !values.is_empty() {
+                self.points_count += 1;
+                self.max_values_per_point = self.max_values_per_point.max(values.len());
+            }
+        }
         Ok(())
     }
 
@@ -207,6 +215,15 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
             let key = value.encode_key(idx);
             self.map.remove(&key);
             db_ref.delete_cf(cf_handle, &key)?;
+            // todo: remove from histogram
+        }
+
+        self.points_count += 1;
+        if removed_values.len() == self.max_values_per_point {
+            self.max_values_per_point = 0;
+            for values in &self.point_to_values {
+                self.max_values_per_point = self.max_values_per_point.max(values.len());
+            }
         }
 
         Ok(())
