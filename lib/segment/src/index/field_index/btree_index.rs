@@ -557,7 +557,7 @@ mod tests {
         );
     }
 
-    fn test_cond<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone>(
+    fn test_cond<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone>(
         index: &NumericIndex<T>,
         rng: Range,
         result: Vec<u32>,
