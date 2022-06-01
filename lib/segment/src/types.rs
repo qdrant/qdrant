@@ -14,6 +14,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
 use uuid::Uuid;
+use crate::common::utils;
 
 /// Type of point index inside a segment
 pub type PointOffsetType = u32;
@@ -409,11 +410,11 @@ impl Payload {
     }
 
     pub fn get_value(&self, path: &str) -> Option<&Value> {
-        get_value(path, &self.0)
+        utils::get_value_from_json_map(path, &self.0)
     }
 
     pub fn remove(&mut self, path: &str) -> Option<Value> {
-        remove_value(path, &mut self.0)
+        utils::remove_value_from_json_map(path, &mut self.0)
     }
 
     pub fn len(&self) -> usize {
@@ -498,37 +499,6 @@ impl<'a> From<Payload> for OwnedPayloadRef<'a> {
 impl<'a> From<&'a Payload> for OwnedPayloadRef<'a> {
     fn from(payload: &'a Payload) -> Self {
         OwnedPayloadRef::Ref(payload)
-    }
-}
-
-fn get_value<'a>(path: &str, value: &'a serde_json::Map<String, Value>) -> Option<&'a Value> {
-    match path.split_once('.') {
-        Some((element, path)) => match value.get(element) {
-            Some(Value::Object(map)) => get_value(path, map),
-            Some(value) => match path.is_empty() {
-                true => Some(value),
-                false => None,
-            },
-            None => None,
-        },
-        None => value.get(path),
-    }
-}
-
-fn remove_value(path: &str, value: &mut serde_json::Map<String, Value>) -> Option<Value> {
-    match path.split_once('.') {
-        Some((element, new_path)) => {
-            if new_path.is_empty() {
-                value.remove(element)
-            } else {
-                match value.get_mut(element) {
-                    None => None,
-                    Some(Value::Object(map)) => remove_value(new_path, map),
-                    Some(_value) => None,
-                }
-            }
-        }
-        None => value.remove(path),
     }
 }
 
@@ -1109,6 +1079,7 @@ mod tests {
     use serde::de::DeserializeOwned;
     use serde_json;
     use serde_json::json;
+    use crate::common::utils::remove_value_from_json_map;
 
     #[allow(dead_code)]
     fn check_rms_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(
@@ -1326,21 +1297,21 @@ mod tests {
         "#,
         )
         .unwrap();
-        remove_value("b.c", &mut payload.0);
+        remove_value_from_json_map("b.c", &mut payload.0);
         assert_ne!(payload, Default::default());
-        remove_value("b.e.f", &mut payload.0);
+        remove_value_from_json_map("b.e.f", &mut payload.0);
         assert_ne!(payload, Default::default());
-        remove_value("k", &mut payload.0);
+        remove_value_from_json_map("k", &mut payload.0);
         assert_ne!(payload, Default::default());
-        remove_value("", &mut payload.0);
+        remove_value_from_json_map("", &mut payload.0);
         assert_ne!(payload, Default::default());
-        remove_value("b.e.l", &mut payload.0);
+        remove_value_from_json_map("b.e.l", &mut payload.0);
         assert_ne!(payload, Default::default());
-        remove_value("a", &mut payload.0);
+        remove_value_from_json_map("a", &mut payload.0);
         assert_ne!(payload, Default::default());
-        remove_value("b.e", &mut payload.0);
+        remove_value_from_json_map("b.e", &mut payload.0);
         assert_ne!(payload, Default::default());
-        remove_value("b", &mut payload.0);
+        remove_value_from_json_map("b", &mut payload.0);
         assert_eq!(payload, Default::default());
     }
 }
