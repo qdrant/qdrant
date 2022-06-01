@@ -1,3 +1,4 @@
+use crate::common::utils;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use geo::prelude::HaversineDistance;
@@ -14,7 +15,6 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
 use uuid::Uuid;
-use crate::common::utils;
 
 /// Type of point index inside a segment
 pub type PointOffsetType = u32;
@@ -1076,10 +1076,10 @@ impl Filter {
 mod tests {
     use super::*;
 
+    use crate::common::utils::remove_value_from_json_map;
     use serde::de::DeserializeOwned;
     use serde_json;
     use serde_json::json;
-    use crate::common::utils::remove_value_from_json_map;
 
     #[allow(dead_code)]
     fn check_rms_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(

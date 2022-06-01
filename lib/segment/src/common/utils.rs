@@ -4,7 +4,10 @@ pub fn rev_range(a: usize, b: usize) -> impl Iterator<Item = usize> {
     (b + 1..=a).rev()
 }
 
-pub fn get_value_from_json_map<'a>(path: &str, value: &'a serde_json::Map<String, Value>) -> Option<&'a Value> {
+pub fn get_value_from_json_map<'a>(
+    path: &str,
+    value: &'a serde_json::Map<String, Value>,
+) -> Option<&'a Value> {
     match path.split_once('.') {
         Some((element, path)) => match value.get(element) {
             Some(Value::Object(map)) => get_value_from_json_map(path, map),
@@ -18,7 +21,10 @@ pub fn get_value_from_json_map<'a>(path: &str, value: &'a serde_json::Map<String
     }
 }
 
-pub fn remove_value_from_json_map(path: &str, value: &mut serde_json::Map<String, Value>) -> Option<Value> {
+pub fn remove_value_from_json_map(
+    path: &str,
+    value: &mut serde_json::Map<String, Value>,
+) -> Option<Value> {
     match path.split_once('.') {
         Some((element, new_path)) => {
             if new_path.is_empty() {
