@@ -12,7 +12,7 @@ use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
     HnswConfig, Indexes, PayloadIndexType, PayloadKeyType, PayloadSchemaType, PayloadStorageType,
-    PointIdType, SegmentConfig, StorageType,
+    PointIdType, SegmentConfig, StorageType, VECTOR_ELEMENT_SIZE,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -21,6 +21,8 @@ use crate::collection_manager::holders::segment_holder::{
 };
 use crate::config::CollectionParams;
 use crate::operations::types::{CollectionError, CollectionResult};
+
+const BYTES_IN_KB: usize = 1024;
 
 #[derive(Debug, Clone)]
 pub struct OptimizerThresholds {
@@ -85,9 +87,13 @@ pub trait SegmentOptimizer {
         &self,
         optimizing_segments: &[LockedSegment],
     ) -> CollectionResult<SegmentBuilder> {
-        let total_vectors: usize = optimizing_segments
+        let total_vectors_size: usize = optimizing_segments
             .iter()
-            .map(|s| s.get().read().vectors_count())
+            .map(|s| {
+                let segment = s.get();
+                let locked_segment = segment.read();
+                locked_segment.vectors_count() * locked_segment.vector_dim() * VECTOR_ELEMENT_SIZE
+            })
             .sum();
 
         let have_indexed_fields = optimizing_segments
@@ -97,13 +103,15 @@ pub trait SegmentOptimizer {
         let thresholds = self.threshold_config();
         let collection_params = self.collection_params();
 
-        let is_indexed = total_vectors >= thresholds.indexing_threshold;
+        let is_indexed = total_vectors_size >= thresholds.indexing_threshold * BYTES_IN_KB;
 
         // Create structure index only if there is something to index
-        let is_payload_indexed =
-            total_vectors >= thresholds.payload_indexing_threshold && have_indexed_fields;
+        // ToDo: remove deprecated
+        let is_payload_indexed = total_vectors_size
+            >= thresholds.payload_indexing_threshold * BYTES_IN_KB
+            && have_indexed_fields;
 
-        let is_on_disk = total_vectors >= thresholds.memmap_threshold;
+        let is_on_disk = total_vectors_size >= thresholds.memmap_threshold * BYTES_IN_KB;
 
         let optimized_config = SegmentConfig {
             vector_size: collection_params.vector_size,

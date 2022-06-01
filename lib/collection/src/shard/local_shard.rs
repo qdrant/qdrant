@@ -224,7 +224,9 @@ impl LocalShard {
 
         let vector_size = config.params.vector_size;
         let distance = config.params.distance;
-        for _sid in 0..config.optimizer_config.default_segment_number {
+        let segment_number = config.optimizer_config.get_number_segments();
+
+        for _sid in 0..segment_number {
             let path_clone = segments_path.clone();
             let segment_config = SegmentConfig {
                 vector_size,

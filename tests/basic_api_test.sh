@@ -16,7 +16,10 @@ curl -X PUT "http://$QDRANT_HOST/collections/test_collection" \
   --fail -s \
   --data-raw '{
       "vector_size": 4,
-      "distance": "Dot"
+      "distance": "Dot",
+      "optimizers_config": {
+        "default_segment_number": 2
+      }
     }' | jq
 
 # fail to decode payload

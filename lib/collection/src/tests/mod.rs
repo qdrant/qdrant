@@ -16,29 +16,30 @@ async fn test_optimization_process() {
     let dir = TempDir::new("segment_dir").unwrap();
     let temp_dir = TempDir::new("segment_temp_dir").unwrap();
 
+    let dim = 256;
     let mut holder = SegmentHolder::default();
 
     let segments_to_merge = vec![
-        holder.add(random_segment(dir.path(), 100, 3, 4)),
-        holder.add(random_segment(dir.path(), 100, 3, 4)),
-        holder.add(random_segment(dir.path(), 100, 3, 4)),
+        holder.add(random_segment(dir.path(), 100, 3, dim)),
+        holder.add(random_segment(dir.path(), 100, 3, dim)),
+        holder.add(random_segment(dir.path(), 100, 3, dim)),
     ];
 
-    let segment_to_index = holder.add(random_segment(dir.path(), 100, 110, 4));
+    let segment_to_index = holder.add(random_segment(dir.path(), 100, 110, dim));
 
     let _other_segment_ids: Vec<SegmentId> = vec![
-        holder.add(random_segment(dir.path(), 100, 20, 4)),
-        holder.add(random_segment(dir.path(), 100, 20, 4)),
+        holder.add(random_segment(dir.path(), 100, 20, dim)),
+        holder.add(random_segment(dir.path(), 100, 20, dim)),
     ];
 
     let merge_optimizer: Arc<Optimizer> =
-        Arc::new(get_merge_optimizer(dir.path(), temp_dir.path()));
+        Arc::new(get_merge_optimizer(dir.path(), temp_dir.path(), dim));
     let indexing_optimizer: Arc<Optimizer> =
-        Arc::new(get_indexing_optimizer(dir.path(), temp_dir.path()));
+        Arc::new(get_indexing_optimizer(dir.path(), temp_dir.path(), dim));
 
     let optimizers = Arc::new(vec![merge_optimizer, indexing_optimizer]);
 
-    let segments = Arc::new(RwLock::new(holder));
+    let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
     let handles = UpdateHandler::launch_optimization(optimizers.clone(), segments.clone(), |_| {});
 
     assert_eq!(handles.len(), 2);
@@ -70,19 +71,20 @@ async fn test_cancel_optimization() {
     let temp_dir = TempDir::new("segment_temp_dir").unwrap();
 
     let mut holder = SegmentHolder::default();
+    let dim = 256;
 
     for _ in 0..5 {
-        holder.add(random_segment(dir.path(), 100, 1000, 4));
+        holder.add(random_segment(dir.path(), 100, 1000, dim));
     }
 
     let indexing_optimizer: Arc<Optimizer> =
-        Arc::new(get_indexing_optimizer(dir.path(), temp_dir.path()));
+        Arc::new(get_indexing_optimizer(dir.path(), temp_dir.path(), dim));
 
     let optimizers = Arc::new(vec![indexing_optimizer]);
 
     let now = Instant::now();
 
-    let segments = Arc::new(RwLock::new(holder));
+    let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
     let handles = UpdateHandler::launch_optimization(optimizers.clone(), segments.clone(), |_| {});
 
     sleep(Duration::from_millis(100)).await;

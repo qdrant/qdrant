@@ -59,9 +59,10 @@ message HnswConfigDiff {
   */
   optional uint64 ef_construct = 2;
   /*
-  Minimal amount of points for additional payload-based indexing.
+  Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
   If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
   in this case full-scan search should be preferred by query planner and additional indexing is not required.
+  Note: 1Kb = 1 vector of size 256
   */
   optional uint64 full_scan_threshold = 3;
 }
@@ -92,22 +93,26 @@ message OptimizersConfigDiff {
   */
   optional uint64 default_segment_number = 3;
   /*
-  Do not create segments larger this number of points.
+  Do not create segments larger this size (in KiloBytes).
   Large segments might require disproportionately long indexation times,
   therefore it makes sense to limit the size of segments.
 
   If indexation speed have more priority for your - make this parameter lower.
   If search speed is more important - make this parameter higher.
+  Note: 1Kb = 1 vector of size 256
   */
   optional uint64 max_segment_size = 4;
   /*
-  Maximum number of vectors to store in-memory per segment.
+  Maximum size (in KiloBytes) of vectors to store in-memory per segment.
   Segments larger than this threshold will be stored as read-only memmaped file.
+  To enable memmap storage, lower the threshold
+  Note: 1Kb = 1 vector of size 256
   */
   optional uint64 memmap_threshold = 5;
   /*
-  Maximum number of vectors allowed for plain index.
+  Maximum size (in KiloBytes) of vectors allowed for plain index.
   Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
+  Note: 1Kb = 1 vector of size 256
   */
   optional uint64 indexing_threshold = 6;
   /*

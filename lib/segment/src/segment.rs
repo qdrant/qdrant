@@ -637,6 +637,10 @@ impl SegmentEntry for Segment {
 
         Ok(deleted_points)
     }
+
+    fn vector_dim(&self) -> usize {
+        self.segment_config.vector_size
+    }
 }
 
 #[cfg(test)]

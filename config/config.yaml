@@ -34,24 +34,29 @@ storage:
     #  - Current write RPS
     #
     # It is recommended to select default number of segments as a factor of the number of search threads,
-    # so that each segment would be handled evenly by one of the threads
-    default_segment_number: 5
+    # so that each segment would be handled evenly by one of the threads.
+    # If `default_segment_number = 0`, will be automatically selected by the number of available CPUs
+    default_segment_number: 0
 
-    # Do not create segments larger this number of points.
+    # Do not create segments larger this size (in KiloBytes).
     # Large segments might require disproportionately long indexation times,
     # therefore it makes sense to limit the size of segments.
     #
     # If indexation speed have more priority for your - make this parameter lower.
     # If search speed is more important - make this parameter higher.
-    max_segment_size: 200000
+    # Note: 1Kb = 1 vector of size 256
+    max_segment_size_kb: 200000
 
-    # Maximum number of vectors to store in-memory per segment.
+    # Maximum size (in KiloBytes) of vectors to store in-memory per segment.
     # Segments larger than this threshold will be stored as read-only memmaped file.
-    memmap_threshold: 50000
+    # To enable memmap storage, lower the threshold
+    # Note: 1Kb = 1 vector of size 256
+    memmap_threshold_kb: 200000
 
-    # Maximum number of vectors allowed for plain index.
+    # Maximum size (in KiloBytes) of vectors allowed for plain index.
     # Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
-    indexing_threshold: 20000
+    # Note: 1Kb = 1 vector of size 256
+    indexing_threshold_kb: 20000
 
     # Starting from this amount of vectors per-segment the engine will start building index for payload.
     payload_indexing_threshold: 10000
@@ -68,10 +73,11 @@ storage:
     m: 16
     # Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
     ef_construct: 100
-    # Minimal amount of points for additional payload-based indexing.
-    # If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
+    # Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
+    # If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used -
     # in this case full-scan search should be preferred by query planner and additional indexing is not required.
-    full_scan_threshold: 10000
+    # Note: 1Kb = 1 vector of size 256
+    full_scan_threshold_kb: 10000
 
 service:
 

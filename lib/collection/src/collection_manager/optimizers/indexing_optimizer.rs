@@ -1,7 +1,9 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use segment::types::{HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType};
+use segment::types::{
+    HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType, VECTOR_ELEMENT_SIZE,
+};
 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
@@ -10,6 +12,8 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
+
+const BYTES_IN_KB: usize = 1024;
 
 /// Looks for the segments, which require to be indexed.
 /// If segment is too large, but still does not have indexes - it is time to create some indexes.
@@ -57,6 +61,7 @@ impl IndexingOptimizer {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let vector_count = read_segment.vectors_count();
+                let vector_size = vector_count * read_segment.vector_dim() * VECTOR_ELEMENT_SIZE;
 
                 let segment_config = read_segment.config();
 
@@ -80,10 +85,14 @@ impl IndexingOptimizer {
                     StorageType::Mmap => true,
                 };
 
-                let big_for_mmap = vector_count >= self.thresholds_config.memmap_threshold;
-                let big_for_index = vector_count >= self.thresholds_config.indexing_threshold;
+                let big_for_mmap =
+                    vector_size >= self.thresholds_config.memmap_threshold * BYTES_IN_KB;
+                let big_for_index =
+                    vector_size >= self.thresholds_config.indexing_threshold * BYTES_IN_KB;
+
+                // ToDo: remove deprecated
                 let big_for_payload_index =
-                    vector_count >= self.thresholds_config.payload_indexing_threshold;
+                    vector_size >= self.thresholds_config.payload_indexing_threshold * BYTES_IN_KB;
 
                 let has_payload = !read_segment.get_indexed_fields().is_empty();
 
@@ -92,11 +101,11 @@ impl IndexingOptimizer {
                     || (has_payload && big_for_payload_index && !is_payload_indexed);
 
                 match require_indexing {
-                    true => Some((*idx, vector_count)),
+                    true => Some((*idx, vector_size)),
                     false => None,
                 }
             })
-            .max_by_key(|(_, num_vectors)| *num_vectors)
+            .max_by_key(|(_, vector_size)| *vector_size)
             .map(|(idx, _)| (idx, segments_read_guard.get(idx).unwrap().clone()))
     }
 }
@@ -143,6 +152,8 @@ mod tests {
 
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
+    use rand::thread_rng;
+    use segment::fixtures::index_fixtures::random_vector;
     use serde_json::json;
     use tempdir::TempDir;
 
@@ -166,12 +177,13 @@ mod tests {
     fn test_indexing_optimizer() {
         init();
 
+        let mut rng = thread_rng();
         let mut holder = SegmentHolder::default();
 
         let payload_field = "number".to_owned();
 
         let stopped = AtomicBool::new(false);
-        let dim = 4;
+        let dim = 256;
 
         let segments_dir = TempDir::new("segments_dir").unwrap();
         let segments_temp_dir = TempDir::new("segments_temp_dir").unwrap();
@@ -313,9 +325,9 @@ mod tests {
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![501.into(), 502.into(), 503.into()],
                 vectors: vec![
-                    vec![1.0, 0.0, 0.5, 0.0],
-                    vec![1.0, 0.0, 0.5, 0.5],
-                    vec![1.0, 0.0, 0.5, 1.0],
+                    random_vector(&mut rng, dim),
+                    random_vector(&mut rng, dim),
+                    random_vector(&mut rng, dim),
                 ],
                 payloads: Some(vec![
                     Some(point_payload.clone()),
@@ -380,9 +392,9 @@ mod tests {
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![601.into(), 602.into(), 603.into()],
                 vectors: vec![
-                    vec![0.0, 1.0, 0.5, 0.0],
-                    vec![0.0, 1.0, 0.5, 0.5],
-                    vec![0.0, 1.0, 0.5, 1.0],
+                    random_vector(&mut rng, dim),
+                    random_vector(&mut rng, dim),
+                    random_vector(&mut rng, dim),
                 ],
                 payloads: None,
             }));

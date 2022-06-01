@@ -7,6 +7,7 @@ use crate::update_handler::Optimizer;
 use schemars::JsonSchema;
 use segment::types::HnswConfig;
 use serde::{Deserialize, Serialize};
+use std::cmp::{max, min};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -23,19 +24,27 @@ pub struct OptimizersConfig {
     ///
     /// It is recommended to select default number of segments as a factor of the number of search threads,
     /// so that each segment would be handled evenly by one of the threads
+    /// If `default_segment_number = 0`, will be automatically selected by the number of available CPUs
     pub default_segment_number: usize,
-    /// Do not create segments larger this number of points.
+    /// Do not create segments larger this size (in KiloBytes).
     /// Large segments might require disproportionately long indexation times,
     /// therefore it makes sense to limit the size of segments.
     ///
     /// If indexation speed have more priority for your - make this parameter lower.
     /// If search speed is more important - make this parameter higher.
+    /// Note: 1Kb = 1 vector of size 256
+    #[serde(alias = "max_segment_size_kb")]
     pub max_segment_size: usize,
-    /// Maximum number of vectors to store in-memory per segment.
+    /// Maximum size (in KiloBytes) of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmaped file.
+    /// To enable memmap storage, lower the threshold
+    /// Note: 1Kb = 1 vector of size 256
+    #[serde(alias = "memmap_threshold_kb")]
     pub memmap_threshold: usize,
-    /// Maximum number of vectors allowed for plain index.
+    /// Maximum size (in KiloBytes) of vectors allowed for plain index.
     /// Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
+    /// Note: 1Kb = 1 vector of size 256
+    #[serde(alias = "indexing_threshold_kb")]
     pub indexing_threshold: usize,
     /// Starting from this amount of vectors per-segment the engine will start building index for payload.
     pub payload_indexing_threshold: usize,
@@ -43,6 +52,19 @@ pub struct OptimizersConfig {
     pub flush_interval_sec: u64,
     /// Maximum available threads for optimization workers
     pub max_optimization_threads: usize,
+}
+
+impl OptimizersConfig {
+    pub fn get_number_segments(&self) -> usize {
+        if self.default_segment_number == 0 {
+            let num_cpus = num_cpus::get();
+            // Do not configure less than 2 and more than 8 segments
+            // until it is not explicitly requested
+            min(max(2, num_cpus), 8)
+        } else {
+            self.default_segment_number
+        }
+    }
 }
 
 pub fn build_optimizers(
@@ -62,7 +84,7 @@ pub fn build_optimizers(
 
     Arc::new(vec![
         Arc::new(MergeOptimizer::new(
-            optimizers_config.default_segment_number,
+            optimizers_config.get_number_segments(),
             optimizers_config.max_segment_size,
             threshold_config.clone(),
             segments_path.clone(),

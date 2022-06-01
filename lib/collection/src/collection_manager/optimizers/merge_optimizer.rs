@@ -6,9 +6,11 @@ use crate::collection_manager::optimizers::segment_optimizer::{
 };
 use crate::config::CollectionParams;
 use itertools::Itertools;
-use segment::types::{HnswConfig, SegmentType};
+use segment::types::{HnswConfig, SegmentType, VECTOR_ELEMENT_SIZE};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+
+const BYTES_IN_KB: usize = 1024;
 
 /// Optimizer that tries to reduce number of segments until it fits configured value.
 /// It merges 3 smallest segments into a single large segment.
@@ -96,7 +98,12 @@ impl SegmentOptimizer for MergeOptimizer {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 match read_segment.segment_type() != SegmentType::Special {
-                    true => Some((*idx, read_segment.vectors_count())),
+                    true => Some((
+                        *idx,
+                        read_segment.vectors_count()
+                            * read_segment.vector_dim()
+                            * VECTOR_ELEMENT_SIZE,
+                    )),
                     false => None,
                 }
             })
@@ -105,7 +112,7 @@ impl SegmentOptimizer for MergeOptimizer {
                 *size_sum += size; // produce a cumulative sum of segment sizes starting from smallest
                 Some((sid, *size_sum))
             })
-            .take_while(|(_, size)| *size < self.max_segment_size)
+            .take_while(|(_, size)| *size < self.max_segment_size * BYTES_IN_KB)
             .take(3)
             .map(|x| x.0)
             .collect();
@@ -134,14 +141,15 @@ mod tests {
         let temp_dir = TempDir::new("segment_temp_dir").unwrap();
 
         let mut holder = SegmentHolder::default();
+        let dim = 256;
 
         let _segments_to_merge = vec![
-            holder.add(random_segment(dir.path(), 100, 40, 4)),
-            holder.add(random_segment(dir.path(), 100, 50, 4)),
-            holder.add(random_segment(dir.path(), 100, 60, 4)),
+            holder.add(random_segment(dir.path(), 100, 40, dim)),
+            holder.add(random_segment(dir.path(), 100, 50, dim)),
+            holder.add(random_segment(dir.path(), 100, 60, dim)),
         ];
 
-        let mut merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path());
+        let mut merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim);
 
         let locked_holder = Arc::new(RwLock::new(holder));
 
@@ -167,23 +175,24 @@ mod tests {
         let temp_dir = TempDir::new("segment_temp_dir").unwrap();
 
         let mut holder = SegmentHolder::default();
+        let dim = 256;
 
         let segments_to_merge = vec![
-            holder.add(random_segment(dir.path(), 100, 3, 4)),
-            holder.add(random_segment(dir.path(), 100, 3, 4)),
-            holder.add(random_segment(dir.path(), 100, 3, 4)),
+            holder.add(random_segment(dir.path(), 100, 3, dim)),
+            holder.add(random_segment(dir.path(), 100, 3, dim)),
+            holder.add(random_segment(dir.path(), 100, 3, dim)),
         ];
 
         let other_segment_ids: Vec<SegmentId> = vec![
-            holder.add(random_segment(dir.path(), 100, 20, 4)),
-            holder.add(random_segment(dir.path(), 100, 20, 4)),
-            holder.add(random_segment(dir.path(), 100, 20, 4)),
-            holder.add(random_segment(dir.path(), 100, 20, 4)),
+            holder.add(random_segment(dir.path(), 100, 20, dim)),
+            holder.add(random_segment(dir.path(), 100, 20, dim)),
+            holder.add(random_segment(dir.path(), 100, 20, dim)),
+            holder.add(random_segment(dir.path(), 100, 20, dim)),
         ];
 
-        let merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path());
+        let merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim);
 
-        let locked_holder = Arc::new(RwLock::new(holder));
+        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
 
         let suggested_for_merge =
             merge_optimizer.check_condition(locked_holder.clone(), &Default::default());
