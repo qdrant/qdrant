@@ -138,7 +138,7 @@ pub struct CreateCollection {
     /// Number of shards in the collection, default = 1
     #[prost(uint32, optional, tag="7")]
     pub shard_number: ::core::option::Option<u32>,
-    /// If `true` keep payload on disk, if `false` - in RAM
+    /// If true - point's payload will not be stored in memory
     #[prost(bool, optional, tag="8")]
     pub on_disk_payload: ::core::option::Option<bool>,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
@@ -186,7 +186,7 @@ pub struct CollectionParams {
     /// Number of shards in collection
     #[prost(uint32, tag="3")]
     pub shard_number: u32,
-    /// Read payload directly from disk?
+    /// If true - point's payload will not be stored in memory
     #[prost(bool, tag="4")]
     pub on_disk_payload: bool,
 }
