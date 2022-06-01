@@ -1,16 +1,14 @@
 use std::cmp::Ordering::{Greater, Less};
 use std::cmp::{max, min};
-use std::mem;
 
 use num_traits::ToPrimitive;
-use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
-    CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
-    PayloadFieldIndexBuilder, PrimaryCondition, ValueIndexer,
+    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexBuilder,
+    PrimaryCondition, ValueIndexer,
 };
 use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType, Range,
@@ -289,18 +287,6 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<FloatPayloadType> {
     fn add(&mut self, id: PointOffsetType, value: &Value) {
         self.add_point(id, value)
     }
-
-    fn build(&mut self) -> FieldIndex {
-        let mut elements = mem::take(&mut self.elements);
-        let point_to_values = mem::take(&mut self.point_to_values);
-        elements.sort_by_key(|el| OrderedFloat(el.value));
-        FieldIndex::FloatIndex(PersistedNumericIndex {
-            points_count: self.points_count,
-            max_values_per_point: self.max_values_per_point,
-            elements,
-            point_to_values,
-        })
-    }
 }
 
 impl ValueIndexer<IntPayloadType> for PersistedNumericIndex<IntPayloadType> {
@@ -323,18 +309,6 @@ impl ValueIndexer<IntPayloadType> for PersistedNumericIndex<IntPayloadType> {
 impl PayloadFieldIndexBuilder for PersistedNumericIndex<IntPayloadType> {
     fn add(&mut self, id: PointOffsetType, value: &Value) {
         self.add_point(id, value)
-    }
-
-    fn build(&mut self) -> FieldIndex {
-        let mut elements = mem::take(&mut self.elements);
-        let point_to_values = mem::take(&mut self.point_to_values);
-        elements.sort_by_key(|el| el.value);
-        FieldIndex::IntIndex(PersistedNumericIndex {
-            points_count: self.points_count,
-            max_values_per_point: self.max_values_per_point,
-            elements,
-            point_to_values,
-        })
     }
 }
 

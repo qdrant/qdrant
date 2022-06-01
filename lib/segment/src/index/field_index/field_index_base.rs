@@ -1,12 +1,11 @@
 use crate::entry::entry_point::OperationResult;
-use crate::index::field_index::geo_index::PersistedGeoMapIndex;
-use crate::index::field_index::map_index::PersistedMapIndex;
-use crate::index::field_index::numeric_index::PersistedNumericIndex;
+use crate::index::field_index::btree_index::NumericIndex;
+use crate::index::field_index::on_disk_geo_index::OnDiskGeoMapIndex;
+use crate::index::field_index::on_disk_map_index::OnDiskMapIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub trait PayloadFieldIndex {
@@ -66,21 +65,18 @@ pub trait ValueIndexer<T> {
 
 pub trait PayloadFieldIndexBuilder {
     fn add(&mut self, id: PointOffsetType, value: &Value);
-
-    fn build(&mut self) -> FieldIndex;
 }
 
 /// Common interface for all possible types of field indexes
 /// Enables polymorphism on field indexes
 /// TODO: Rename with major release
 #[allow(clippy::enum_variant_names)]
-#[derive(Serialize, Deserialize)]
 pub enum FieldIndex {
-    IntIndex(PersistedNumericIndex<IntPayloadType>),
-    IntMapIndex(PersistedMapIndex<IntPayloadType>),
-    KeywordIndex(PersistedMapIndex<String>),
-    FloatIndex(PersistedNumericIndex<FloatPayloadType>),
-    GeoIndex(PersistedGeoMapIndex),
+    IntIndex(NumericIndex<IntPayloadType>),
+    IntMapIndex(OnDiskMapIndex<IntPayloadType>),
+    KeywordIndex(OnDiskMapIndex<String>),
+    FloatIndex(NumericIndex<FloatPayloadType>),
+    GeoIndex(OnDiskGeoMapIndex),
 }
 
 impl FieldIndex {
@@ -159,13 +155,14 @@ impl FieldIndex {
         }
     }
 
-    pub fn remove_point(&mut self, _point_id: PointOffsetType) {
+    pub fn remove_point(&mut self, point_id: PointOffsetType) {
+        // TODO(gvelo): refactor remove_point and remove unwrap()
         match self {
-            FieldIndex::IntIndex(_) => {}
-            FieldIndex::IntMapIndex(_) => {}
-            FieldIndex::KeywordIndex(_) => {}
-            FieldIndex::FloatIndex(_) => {}
-            FieldIndex::GeoIndex(_) => {}
+            FieldIndex::IntIndex(index) => index.remove_point(point_id).unwrap(),
+            FieldIndex::IntMapIndex(index) => index.remove_point(point_id),
+            FieldIndex::KeywordIndex(index) => index.remove_point(point_id),
+            FieldIndex::FloatIndex(index) => index.remove_point(point_id).unwrap(),
+            FieldIndex::GeoIndex(index) => index.remove_point(point_id),
         }
     }
 }

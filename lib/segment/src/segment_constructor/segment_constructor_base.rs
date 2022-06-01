@@ -66,6 +66,7 @@ fn create_segment(
                 payload_storage.clone(),
                 id_tracker.clone(),
                 &payload_index_path,
+                database.clone(),
             )?),
         };
 

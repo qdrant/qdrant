@@ -1,3 +1,4 @@
+use crate::common::rocksdb_operations::db_options;
 use crate::entry::entry_point::OperationResult;
 use crate::fixtures::payload_fixtures::{
     generate_diverse_payload, FLT_KEY, GEO_KEY, INT_KEY, STR_KEY,
@@ -14,6 +15,7 @@ use crate::types::{PayloadSchemaType, PointIdType, PointOffsetType, SeqNumberTyp
 use atomic_refcell::AtomicRefCell;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
+use rocksdb::DB;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -190,9 +192,16 @@ pub fn create_struct_payload_index(
     ));
     let ids_iterator = Arc::new(AtomicRefCell::new(IdsIterator::new(num_points)));
 
-    let mut index =
-        StructPayloadIndex::open(ids_iterator.clone(), payload_storage, ids_iterator, path)
-            .unwrap();
+    let db = DB::open(&db_options(), path).unwrap();
+
+    let mut index = StructPayloadIndex::open(
+        ids_iterator.clone(),
+        payload_storage,
+        ids_iterator,
+        path,
+        Arc::new(AtomicRefCell::new(db)),
+    )
+    .unwrap();
 
     index
         .set_indexed(STR_KEY, PayloadSchemaType::Keyword)

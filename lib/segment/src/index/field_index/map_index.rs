@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::{iter, mem};
+use std::iter;
 
 use crate::entry::entry_point::OperationResult;
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PrimaryCondition, ValueIndexer,
 };
-use crate::index::field_index::{FieldIndex, PayloadFieldIndex, PayloadFieldIndexBuilder};
+use crate::index::field_index::{PayloadFieldIndex, PayloadFieldIndexBuilder};
 use crate::types::{
     FieldCondition, IntPayloadType, Match, MatchValue, PayloadKeyType, PointOffsetType,
     ValueVariants,
@@ -207,16 +207,6 @@ impl PayloadFieldIndexBuilder for PersistedMapIndex<String> {
     fn add(&mut self, id: PointOffsetType, value: &Value) {
         self.add_point(id, value)
     }
-
-    fn build(&mut self) -> FieldIndex {
-        let map = mem::take(&mut self.map);
-        let column = mem::take(&mut self.point_to_values);
-        FieldIndex::KeywordIndex(PersistedMapIndex {
-            map,
-            point_to_values: column,
-            total_points: self.total_points,
-        })
-    }
 }
 
 impl ValueIndexer<IntPayloadType> for PersistedMapIndex<IntPayloadType> {
@@ -238,15 +228,5 @@ impl ValueIndexer<IntPayloadType> for PersistedMapIndex<IntPayloadType> {
 impl PayloadFieldIndexBuilder for PersistedMapIndex<IntPayloadType> {
     fn add(&mut self, id: PointOffsetType, value: &Value) {
         self.add_point(id, value)
-    }
-
-    fn build(&mut self) -> FieldIndex {
-        let map = mem::take(&mut self.map);
-        let column = mem::take(&mut self.point_to_values);
-        FieldIndex::IntMapIndex(PersistedMapIndex {
-            map,
-            point_to_values: column,
-            total_points: self.total_points,
-        })
     }
 }

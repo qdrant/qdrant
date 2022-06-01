@@ -10,15 +10,17 @@ use serde_json::Value;
 use crate::common::rocksdb_operations::db_write_options;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::{
-    CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
-    PayloadFieldIndexBuilder, ValueIndexer,
+    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexBuilder,
+    ValueIndexer,
 };
-use crate::index::key_encoding::{encode_f64_key_ascending, encode_i64_key_ascending};
+use crate::index::key_encoding::{
+    decode_f64_ascending, decode_i64_ascending, encode_f64_key_ascending, encode_i64_key_ascending,
+};
 use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType, Range,
 };
 
-trait KeyEncoder {
+pub trait KeyEncoder {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
 }
 
@@ -34,14 +36,47 @@ impl KeyEncoder for FloatPayloadType {
     }
 }
 
-struct NumericIndex<T: KeyEncoder> {
+pub trait KeyDecoder {
+    fn decode_key(key: &[u8]) -> Self;
+}
+
+impl KeyDecoder for IntPayloadType {
+    fn decode_key(key: &[u8]) -> Self {
+        decode_i64_ascending(key)
+    }
+}
+
+impl KeyDecoder for FloatPayloadType {
+    fn decode_key(key: &[u8]) -> FloatPayloadType {
+        decode_f64_ascending(key)
+    }
+}
+
+pub trait FromRangeValue {
+    fn from_range(range_value: f64) -> Self;
+}
+
+impl FromRangeValue for FloatPayloadType {
+    fn from_range(range_value: f64) -> Self {
+        range_value
+    }
+}
+
+impl FromRangeValue for IntPayloadType {
+    fn from_range(range_value: f64) -> Self {
+        range_value as IntPayloadType
+    }
+}
+
+pub struct NumericIndex<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> {
     map: BTreeMap<Vec<u8>, u32>,
     db: Arc<AtomicRefCell<DB>>,
     store_cf_name: String,
     phantom: PhantomData<T>,
+    point_to_values: Vec<Vec<T>>,
 }
 
-impl<T: KeyEncoder> NumericIndex<T> {
+impl<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> NumericIndex<T> {
     #[allow(dead_code)] // TODO(gvelo): remove when this index is integrated in `StructPayloadIndex`
     pub fn new(db: Arc<AtomicRefCell<DB>>, store_cf_name: String) -> Self {
         Self {
@@ -49,6 +84,7 @@ impl<T: KeyEncoder> NumericIndex<T> {
             db,
             store_cf_name,
             phantom: PhantomData::default(),
+            point_to_values: Default::default(),
         }
     }
 
@@ -71,7 +107,7 @@ impl<T: KeyEncoder> NumericIndex<T> {
         }
     }
 
-    fn load(&mut self) -> OperationResult<()> {
+    pub fn load(&mut self) -> OperationResult<()> {
         let db_ref = self.db.borrow();
         let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
             OperationError::service_error(&format!(
@@ -79,19 +115,31 @@ impl<T: KeyEncoder> NumericIndex<T> {
                 self.store_cf_name
             ))
         })?;
+
         let mut iter = db_ref.raw_iterator_cf(&cf_handle);
+
         iter.seek_to_first();
+
         while iter.valid() {
-            let key = iter.key().unwrap().to_owned();
+            let key_bytes = iter.key().unwrap().to_owned();
             let value = u32::from_be_bytes(
                 iter.value()
                     .unwrap()
                     .try_into()
                     .expect("key with incorrect length"),
             );
-            self.map.insert(key, value);
+            let key: T = T::decode_key(key_bytes.as_slice());
+            self.map.insert(key_bytes, value);
+
+            if self.point_to_values.len() <= value as usize {
+                self.point_to_values.resize(value as usize + 1, Vec::new())
+            }
+
+            self.point_to_values[value as usize].push(key);
+
             iter.next();
         }
+
         Ok(())
     }
 
@@ -106,8 +154,9 @@ impl<T: KeyEncoder> NumericIndex<T> {
         Ok(db_ref.flush_cf(cf_handle)?)
     }
 
-    pub fn remove_point(&self, id: PointOffsetType) -> OperationResult<()> {
+    pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         let db_ref = self.db.borrow();
+
         let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
             OperationError::service_error(&format!(
                 "Index flush error: column family {} not found",
@@ -115,29 +164,27 @@ impl<T: KeyEncoder> NumericIndex<T> {
             ))
         })?;
 
-        let mut iter = db_ref.raw_iterator_cf(&cf_handle);
+        if self.point_to_values.len() <= idx as usize {
+            return Ok(());
+        }
 
-        iter.seek_to_first();
+        let removed_values = std::mem::take(&mut self.point_to_values[idx as usize]);
 
-        while iter.valid() {
-            let key = iter.key().unwrap();
-            let value = u32::from_be_bytes(
-                iter.value()
-                    .unwrap() // safe because previous call to .valid()
-                    .try_into()
-                    .expect("key with incorrect length"),
-            );
-            if id == value {
-                db_ref.delete_cf(cf_handle, key)?;
-            }
-            iter.next();
+        for value in &removed_values {
+            let key = value.encode_key(idx);
+            self.map.remove(&key);
+            db_ref.delete_cf(cf_handle, &key)?;
         }
 
         Ok(())
     }
+
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<T>> {
+        self.point_to_values.get(idx as usize)
+    }
 }
 
-impl<T: KeyEncoder + From<f64>> PayloadFieldIndex for NumericIndex<T> {
+impl<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> PayloadFieldIndex for NumericIndex<T> {
     fn load(&mut self) -> OperationResult<()> {
         NumericIndex::load(self)
     }
@@ -154,11 +201,11 @@ impl<T: KeyEncoder + From<f64>> PayloadFieldIndex for NumericIndex<T> {
 
         let start_bound = match cond_range {
             Range { gt: Some(gt), .. } => {
-                let v: T = gt.to_owned().into();
+                let v: T = T::from_range(gt.to_owned());
                 Excluded(v.encode_key(u32::MAX))
             }
             Range { gte: Some(gte), .. } => {
-                let v: T = gte.to_owned().into();
+                let v: T = T::from_range(gte.to_owned());
                 Included(v.encode_key(u32::MIN))
             }
             _ => Unbounded,
@@ -166,11 +213,11 @@ impl<T: KeyEncoder + From<f64>> PayloadFieldIndex for NumericIndex<T> {
 
         let end_bound = match cond_range {
             Range { lt: Some(lt), .. } => {
-                let v: T = lt.to_owned().into();
+                let v: T = T::from_range(lt.to_owned());
                 Excluded(v.encode_key(u32::MIN))
             }
             Range { lte: Some(lte), .. } => {
-                let v: T = lte.to_owned().into();
+                let v: T = T::from_range(lte.to_owned());
                 Included(v.encode_key(u32::MAX))
             }
             _ => Unbounded,
@@ -203,21 +250,11 @@ impl PayloadFieldIndexBuilder for NumericIndex<IntPayloadType> {
     fn add(&mut self, id: PointOffsetType, value: &Value) {
         self.add_point(id, value);
     }
-
-    fn build(&mut self) -> FieldIndex {
-        //TODO(gvelo): handle this properly
-        panic!("cannot build");
-    }
 }
 
 impl PayloadFieldIndexBuilder for NumericIndex<FloatPayloadType> {
     fn add(&mut self, id: PointOffsetType, value: &Value) {
         self.add_point(id, value);
-    }
-
-    fn build(&mut self) -> FieldIndex {
-        //TODO(gvelo): handle this properly
-        panic!("cannot build");
     }
 }
 
@@ -395,7 +432,11 @@ mod tests {
         );
     }
 
-    fn test_cond<T: KeyEncoder + From<f64>>(index: &NumericIndex<T>, rng: Range, result: Vec<u32>) {
+    fn test_cond<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone>(
+        index: &NumericIndex<T>,
+        rng: Range,
+        result: Vec<u32>,
+    ) {
         let condition = FieldCondition {
             key: "".to_string(),
             r#match: None,

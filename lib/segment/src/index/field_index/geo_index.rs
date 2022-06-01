@@ -5,8 +5,8 @@ use crate::index::field_index::geo_hash::{
 };
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
-    CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
-    PayloadFieldIndexBuilder, PrimaryCondition, ValueIndexer,
+    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexBuilder,
+    PrimaryCondition, ValueIndexer,
 };
 use crate::types::{
     FieldCondition, GeoBoundingBox, GeoPoint, GeoRadius, PayloadKeyType, PointOffsetType,
@@ -16,7 +16,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, HashSet};
-use std::mem;
 
 /// Max number of sub-regions computed for an input geo query
 // TODO discuss value, should it be dynamically computed?
@@ -291,36 +290,6 @@ impl ValueIndexer<GeoPoint> for PersistedGeoMapIndex {
 impl PayloadFieldIndexBuilder for PersistedGeoMapIndex {
     fn add(&mut self, id: PointOffsetType, value: &Value) {
         self.add_point(id, value)
-    }
-
-    fn build(&mut self) -> FieldIndex {
-        /*
-        points_map contains full hashes:
-        {
-            "dr5ruj4477ku": [1,2,3],
-            "dr5ruj4477kk": [1,2,4],
-            "dr5ruj4477k7": [1,2,5],
-            ...
-        }
-         */
-        let points_map = mem::take(&mut self.points_map);
-        let point_to_values = mem::take(&mut self.point_to_values);
-        let points_per_hash = mem::take(&mut self.points_per_hash);
-        let values_per_hash = mem::take(&mut self.values_per_hash);
-
-        let values_count = self.values_count;
-        let points_count = self.points_count;
-        let max_values_per_point = self.max_values_per_point;
-
-        FieldIndex::GeoIndex(PersistedGeoMapIndex {
-            points_per_hash,
-            values_per_hash,
-            points_map,
-            point_to_values,
-            values_count,
-            points_count,
-            max_values_per_point,
-        })
     }
 }
 
