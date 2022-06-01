@@ -218,7 +218,9 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
             // todo: remove from histogram
         }
 
-        self.points_count += 1;
+        if !removed_values.is_empty() {
+            self.points_count -= 1;
+        }
         if removed_values.len() == self.max_values_per_point {
             self.max_values_per_point = 0;
             for values in &self.point_to_values {
