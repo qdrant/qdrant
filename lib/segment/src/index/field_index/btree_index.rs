@@ -10,12 +10,12 @@ use crate::common::rocksdb_operations::db_write_options;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
-use crate::index::field_index::{
+use crate::index::field_index::{PrimaryCondition,
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexBuilder,
     ValueIndexer,
 };
 use crate::index::key_encoding::{
-    decode_f64_ascending, decode_i64_ascending, encode_f64_key_ascending, encode_i64_key_ascending,
+    encode_f64_key_ascending, encode_i64_key_ascending, decode_i64_key_ascending, decode_f64_key_ascending
 };
 use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType, Range,
@@ -25,29 +25,11 @@ const HISTOGRAM_BUCKET_SIZE: usize = 100;
 
 pub trait KeyEncoder : Clone {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
-
-    fn decode_key(v: &[u8]) -> (PointOffsetType, Self);
-
-    fn as_f64(&self) -> f64;
-
-    fn from_f64(val: f64) -> Self;
 }
 
 impl KeyEncoder for IntPayloadType {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
         encode_i64_key_ascending(*self, id)
-    }
-
-    fn decode_key(v: &[u8]) -> (PointOffsetType, Self) {
-        decode_i64_key_ascending(v)
-    }
-
-    fn as_f64(&self) -> f64 {
-        *self as f64
-    }
-
-    fn from_f64(val: f64) -> Self {
-        val as Self
     }
 }
 
@@ -55,33 +37,21 @@ impl KeyEncoder for FloatPayloadType {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
         encode_f64_key_ascending(*self, id)
     }
-
-    fn decode_key(v: &[u8]) -> (PointOffsetType, Self) {
-        decode_f64_key_ascending(v)
-    }
-
-    fn as_f64(&self) -> f64 {
-        *self
-    }
-
-    fn from_f64(val: f64) -> Self {
-        val
-    }
 }
 
 pub trait KeyDecoder {
-    fn decode_key(key: &[u8]) -> Self;
+    fn decode_key(key: &[u8]) -> (PointOffsetType, Self);
 }
 
 impl KeyDecoder for IntPayloadType {
-    fn decode_key(key: &[u8]) -> Self {
-        decode_i64_ascending(key)
+    fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
+        decode_i64_key_ascending(key)
     }
 }
 
 impl KeyDecoder for FloatPayloadType {
-    fn decode_key(key: &[u8]) -> FloatPayloadType {
-        decode_f64_ascending(key)
+    fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
+        decode_f64_key_ascending(key)
     }
 }
 
@@ -97,7 +67,23 @@ impl FromRangeValue for FloatPayloadType {
 
 impl FromRangeValue for IntPayloadType {
     fn from_range(range_value: f64) -> Self {
-        range_value as IntPayloadType
+        range_value as Self
+    }
+}
+
+pub trait ToRangeValue {
+    fn to_range(value: Self) -> f64;
+}
+
+impl ToRangeValue for FloatPayloadType {
+    fn to_range(value: Self) -> f64 {
+        value
+    }
+}
+
+impl ToRangeValue for IntPayloadType {
+    fn to_range(value: Self) -> f64 {
+        value as f64
     }
 }
 
@@ -111,7 +97,7 @@ pub struct NumericIndex<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> {
     point_to_values: Vec<Vec<T>>,
 }
 
-impl<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> NumericIndex<T> {
+impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> NumericIndex<T> {
     #[allow(dead_code)] // TODO(gvelo): remove when this index is integrated in `StructPayloadIndex`
     pub fn new(db: Arc<AtomicRefCell<DB>>, store_cf_name: String) -> Self {
         Self {
@@ -174,7 +160,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> NumericIndex<T> {
                     .try_into()
                     .map_err(|_| OperationError::service_error("key with incorrect length"))?,
             );
-            let key: T = T::decode_key(key_bytes.as_slice());
+            let key: T = T::decode_key(key_bytes.as_slice()).1;
             self.map.insert(key_bytes, value);
 
             if self.point_to_values.len() <= value as usize {
@@ -275,7 +261,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> NumericIndex<T> {
         let to_histogram_point = |key| {
             let (decoded_idx, decoded_val) = T::decode_key(key);
             Point {
-                val: T::as_f64(&decoded_val),
+                val: T::to_range(decoded_val),
                 idx: decoded_idx as usize,
             }
         };
@@ -283,13 +269,13 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> NumericIndex<T> {
         histogram.insert(
             to_histogram_point(&key),
             |x| {
-                let key = T::from_f64(x.val).encode_key(x.idx as PointOffsetType);
+                let key = T::from_range(x.val).encode_key(x.idx as PointOffsetType);
                 map.range((Unbounded, Excluded(key)))
                     .next_back()
                     .map(|(key, _)| to_histogram_point(key))
             },
             |x| {
-                let key = T::from_f64(x.val).encode_key(x.idx as PointOffsetType);
+                let key = T::from_range(x.val).encode_key(x.idx as PointOffsetType);
                 map.range((Excluded(key), Unbounded))
                     .next()
                     .map(|(key, _)| to_histogram_point(key))
@@ -298,7 +284,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> NumericIndex<T> {
     }
 }
 
-impl<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> PayloadFieldIndex for NumericIndex<T> {
+impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> PayloadFieldIndex for NumericIndex<T> {
     fn load(&mut self) -> OperationResult<()> {
         NumericIndex::load(self)
     }
