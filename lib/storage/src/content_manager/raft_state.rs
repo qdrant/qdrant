@@ -67,6 +67,8 @@ pub struct Persistent {
     this_peer_id: u64,
     #[serde(skip)]
     path: PathBuf,
+    #[serde(skip)]
+    r#new: bool,
 }
 
 impl Persistent {
@@ -79,17 +81,19 @@ impl Persistent {
         first_peer: Option<bool>,
     ) -> Result<Self, StorageError> {
         let path = storage_path.as_ref().join(STATE_FILE_NAME);
-        if path.exists() {
+        let state = if path.exists() {
             log::info!("Loading raft state from {}", path.display());
-            let state = Self::load(path)?;
-            log::info!("State: {:?}", state.state());
-            Ok(state)
+            Self::load(path)?
         } else {
             log::info!("Initializing new raft state at {}", path.display());
-            let state = Self::init(path, first_peer)?;
-            log::info!("State: {:?}", state.state());
-            Ok(state)
-        }
+            Self::init(path, first_peer)?
+        };
+        log::info!("State: {:?}", state.state());
+        Ok(state)
+    }
+
+    pub fn is_new(&self) -> bool {
+        self.r#new
     }
 
     pub fn unapplied_entities_count(&self) -> usize {
@@ -179,6 +183,7 @@ impl Persistent {
             },
             unapplied_entries: Default::default(),
             peer_address_by_id: Default::default(),
+            r#new: true,
             this_peer_id,
             path,
         };
@@ -190,6 +195,7 @@ impl Persistent {
         let file = File::open(&path)?;
         let mut state: Self = serde_cbor::from_reader(&file)?;
         state.path = path;
+        state.r#new = false;
         Ok(state)
     }
 
