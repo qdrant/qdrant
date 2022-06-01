@@ -277,28 +277,11 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         key: Vec<u8>,
         id: PointOffsetType,
     ) {
-        let to_histogram_point = |key| {
-            let (decoded_idx, decoded_val) = T::decode_key(key);
-            Point {
-                val: T::to_range(decoded_val),
-                idx: decoded_idx as usize,
-            }
-        };
         map.insert(key.clone(), id);
         histogram.insert(
-            to_histogram_point(&key),
-            |x| {
-                let key = T::from_range(x.val).encode_key(x.idx as PointOffsetType);
-                map.range((Unbounded, Excluded(key)))
-                    .next_back()
-                    .map(|(key, _)| to_histogram_point(key))
-            },
-            |x| {
-                let key = T::from_range(x.val).encode_key(x.idx as PointOffsetType);
-                map.range((Excluded(key), Unbounded))
-                    .next()
-                    .map(|(key, _)| to_histogram_point(key))
-            },
+            Self::key_to_histogram_point(&key),
+            |x| Self::get_histogram_left_neighbor(map, x),
+            |x| Self::get_histogram_right_neighbor(map, x),
         );
     }
 
@@ -307,29 +290,40 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         histogram: &mut Histogram,
         key: Vec<u8>,
     ) {
-        let to_histogram_point = |key| {
-            let (decoded_idx, decoded_val) = T::decode_key(key);
-            Point {
-                val: T::to_range(decoded_val),
-                idx: decoded_idx as usize,
-            }
-        };
         map.remove(&key);
         histogram.remove(
-            &to_histogram_point(&key),
-            |x| {
-                let key = T::from_range(x.val).encode_key(x.idx as PointOffsetType);
-                map.range((Unbounded, Excluded(key)))
-                    .next_back()
-                    .map(|(key, _)| to_histogram_point(key))
-            },
-            |x| {
-                let key = T::from_range(x.val).encode_key(x.idx as PointOffsetType);
-                map.range((Excluded(key), Unbounded))
-                    .next()
-                    .map(|(key, _)| to_histogram_point(key))
-            },
+            &Self::key_to_histogram_point(&key),
+            |x| Self::get_histogram_left_neighbor(map, x),
+            |x| Self::get_histogram_right_neighbor(map, x),
         );
+    }
+
+    fn key_to_histogram_point(key: &[u8]) -> Point {
+        let (decoded_idx, decoded_val) = T::decode_key(key);
+        Point {
+            val: T::to_range(decoded_val),
+            idx: decoded_idx as usize,
+        }
+    }
+
+    fn get_histogram_left_neighbor(
+        map: &BTreeMap<Vec<u8>, PointOffsetType>,
+        point: &Point,
+    ) -> Option<Point> {
+        let key = T::from_range(point.val).encode_key(point.idx as PointOffsetType);
+        map.range((Unbounded, Excluded(key)))
+            .next_back()
+            .map(|(key, _)| Self::key_to_histogram_point(key))
+    }
+
+    fn get_histogram_right_neighbor(
+        map: &BTreeMap<Vec<u8>, PointOffsetType>,
+        point: &Point,
+    ) -> Option<Point> {
+        let key = T::from_range(point.val).encode_key(point.idx as PointOffsetType);
+        map.range((Excluded(key), Unbounded))
+            .next()
+            .map(|(key, _)| Self::key_to_histogram_point(key))
     }
 }
 
