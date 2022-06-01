@@ -24,3 +24,4 @@ services:
       - "6433:6333"
       - "6434:6334"
     command: bash -c "sleep 20 && ./qdrant --bootstrap 'http://qdrant_node_1:6335'"
+
