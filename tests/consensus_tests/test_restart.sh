@@ -12,6 +12,7 @@ function clear_after_tests()
 
 # Prevent double building in docker-compose
 docker build ../../ --tag=qdrant_consensus
+docker compose down --volumes
 docker compose up -d --force-recreate
 trap clear_after_tests EXIT
 
@@ -21,9 +22,11 @@ while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost:6433)" != "200" ]
 done
 
 python3 create_collection_and_check.py test_collection 6433 6333
+python3 insert_points.py test_collection 6333
+python3 check_points.py test_collection 6433 6333
 
 # Restarting
-docker compose down
+docker compose stop
 docker compose up -d
 
 # Wait for service to start
@@ -31,5 +34,9 @@ while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost:6433)" != "200" ]
   sleep 1;
 done
 
+# After restart peers reellect the leader and it takes some time
+sleep 5;
 # Able to create collection after restart
 python3 create_collection_and_check.py test_collection_1 6433 6333
+# Points from the 1st collection can be retrieved
+python3 check_points.py test_collection 6433 6333
