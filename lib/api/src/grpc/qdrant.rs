@@ -47,9 +47,10 @@ pub struct HnswConfigDiff {
     #[prost(uint64, optional, tag="2")]
     pub ef_construct: ::core::option::Option<u64>,
     ///
-    ///Minimal amount of points for additional payload-based indexing.
+    ///Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
     ///If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
     ///in this case full-scan search should be preferred by query planner and additional indexing is not required.
+    ///Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag="3")]
     pub full_scan_threshold: ::core::option::Option<u64>,
 }
@@ -84,22 +85,26 @@ pub struct OptimizersConfigDiff {
     #[prost(uint64, optional, tag="3")]
     pub default_segment_number: ::core::option::Option<u64>,
     ///
-    ///Do not create segments larger this number of points.
+    ///Do not create segments larger this size (in KiloBytes).
     ///Large segments might require disproportionately long indexation times,
     ///therefore it makes sense to limit the size of segments.
     ///
     ///If indexation speed have more priority for your - make this parameter lower.
     ///If search speed is more important - make this parameter higher.
+    ///Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag="4")]
     pub max_segment_size: ::core::option::Option<u64>,
     ///
-    ///Maximum number of vectors to store in-memory per segment.
+    ///Maximum size (in KiloBytes) of vectors to store in-memory per segment.
     ///Segments larger than this threshold will be stored as read-only memmaped file.
+    ///To enable memmap storage, lower the threshold
+    ///Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag="5")]
     pub memmap_threshold: ::core::option::Option<u64>,
     ///
-    ///Maximum number of vectors allowed for plain index.
+    ///Maximum size (in KiloBytes) of vectors allowed for plain index.
     ///Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
+    ///Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag="6")]
     pub indexing_threshold: ::core::option::Option<u64>,
     ///
