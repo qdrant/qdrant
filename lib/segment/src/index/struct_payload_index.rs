@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
+use crate::common::rocksdb_operations::db_options;
 use atomic_refcell::AtomicRefCell;
 use log::debug;
 use rocksdb::DB;
@@ -121,8 +122,7 @@ impl StructPayloadIndex {
     ) -> OperationResult<Vec<FieldIndex>> {
         let index = match payload_type {
             PayloadSchemaType::Keyword => {
-                let mut index: OnDiskMapIndex<String> =
-                    OnDiskMapIndex::new(self.db.clone(), field.into());
+                let mut index: OnDiskMapIndex<String> = OnDiskMapIndex::new(self.db.clone(), field);
                 index.load()?;
                 FieldIndex::KeywordIndex(index)
             }
@@ -139,7 +139,7 @@ impl StructPayloadIndex {
                 FieldIndex::FloatIndex(index)
             }
             PayloadSchemaType::Geo => {
-                let mut index = OnDiskGeoMapIndex::new(self.db.clone(), field.into());
+                let mut index = OnDiskGeoMapIndex::new(self.db.clone(), field);
                 index.load()?;
                 FieldIndex::GeoIndex(index)
             }
@@ -170,7 +170,7 @@ impl StructPayloadIndex {
             config,
             path: path.to_owned(),
             visited_pool: Default::default(),
-            db: db.clone(),
+            db,
         };
 
         if !index.config_path().exists() {
@@ -189,7 +189,7 @@ impl StructPayloadIndex {
         field_type: PayloadSchemaType,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
-
+        self.db.borrow_mut().create_cf(field, &db_options())?;
         let mut field_indexes = index_selector(field, &field_type, self.db.clone());
         for point_id in payload_storage.iter_ids() {
             let point_payload = payload_storage.payload(point_id);

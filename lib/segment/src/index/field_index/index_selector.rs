@@ -14,25 +14,18 @@ pub fn index_selector(
     db: Arc<AtomicRefCell<DB>>,
 ) -> Vec<FieldIndex> {
     match payload_type {
-        PayloadSchemaType::Keyword => vec![FieldIndex::KeywordIndex(OnDiskMapIndex::new(
-            db.clone(),
-            field,
-        ))],
+        PayloadSchemaType::Keyword => {
+            vec![FieldIndex::KeywordIndex(OnDiskMapIndex::new(db, field))]
+        }
         PayloadSchemaType::Integer => vec![
             FieldIndex::IntMapIndex(OnDiskMapIndex::<IntPayloadType>::new(db.clone(), field)),
-            FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(
-                db.clone(),
-                field.to_string(),
-            )),
+            FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(db, field.to_string())),
         ],
         PayloadSchemaType::Float => {
             vec![FieldIndex::FloatIndex(
-                NumericIndex::<FloatPayloadType>::new(db.clone(), field.to_string()),
+                NumericIndex::<FloatPayloadType>::new(db, field.to_string()),
             )]
         }
-        PayloadSchemaType::Geo => vec![FieldIndex::GeoIndex(OnDiskGeoMapIndex::new(
-            db.clone(),
-            field,
-        ))],
+        PayloadSchemaType::Geo => vec![FieldIndex::GeoIndex(OnDiskGeoMapIndex::new(db, field))],
     }
 }

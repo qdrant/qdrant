@@ -34,10 +34,12 @@ pub struct PersistedNumericIndex<N: ToPrimitive + Clone> {
 }
 
 impl<N: ToPrimitive + Clone> PersistedNumericIndex<N> {
+    #[allow(dead_code)]
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<N>> {
         self.point_to_values.get(idx as usize)
     }
 
+    #[allow(dead_code)]
     pub fn check_value(&self, idx: PointOffsetType, range: &Range) -> bool {
         self.get_values(idx)
             .map(|values| {
@@ -315,6 +317,7 @@ impl PayloadFieldIndexBuilder for PersistedNumericIndex<IntPayloadType> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ordered_float::OrderedFloat;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
 

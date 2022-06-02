@@ -37,11 +37,12 @@ impl<N: Hash + Eq + Clone> PersistedMapIndex<N> {
             max: values_count,
         }
     }
-
+    #[allow(dead_code)]
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<N>> {
         self.point_to_values.get(idx as usize)
     }
 
+    #[allow(dead_code)]
     pub fn check_value(&self, idx: PointOffsetType, reference: &N) -> bool {
         self.get_values(idx)
             .map(|values| values.iter().any(|x| x == reference))

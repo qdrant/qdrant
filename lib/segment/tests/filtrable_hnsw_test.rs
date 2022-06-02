@@ -3,6 +3,7 @@ mod tests {
     use atomic_refcell::AtomicRefCell;
     use itertools::Itertools;
     use rand::{thread_rng, Rng};
+    use segment::common::rocksdb_operations::open_db;
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
     use segment::index::hnsw_index::hnsw::HNSWIndex;
@@ -38,6 +39,7 @@ mod tests {
         let dir = TempDir::new("segment_dir").unwrap();
         let payload_index_dir = TempDir::new("payload_index_dir").unwrap();
         let hnsw_dir = TempDir::new("hnsw_dir").unwrap();
+        let db = open_db(dir.path()).unwrap();
 
         let config = SegmentConfig {
             vector_size: dim,
@@ -73,6 +75,7 @@ mod tests {
             segment.payload_storage.clone(),
             segment.id_tracker.clone(),
             payload_index_dir.path(),
+            db,
         )
         .unwrap();
 
