@@ -1,5 +1,6 @@
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
+use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::PayloadStorage;
 use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
@@ -8,6 +9,7 @@ use serde_json::Value;
 pub enum PayloadStorageEnum {
     InMemoryPayloadStorage(InMemoryPayloadStorage),
     SimplePayloadStorage(SimplePayloadStorage),
+    OnDiskPayloadStorage(OnDiskPayloadStorage),
 }
 
 impl From<InMemoryPayloadStorage> for PayloadStorageEnum {
@@ -22,18 +24,39 @@ impl From<SimplePayloadStorage> for PayloadStorageEnum {
     }
 }
 
+impl From<OnDiskPayloadStorage> for PayloadStorageEnum {
+    fn from(a: OnDiskPayloadStorage) -> Self {
+        PayloadStorageEnum::OnDiskPayloadStorage(a)
+    }
+}
+
+impl PayloadStorageEnum {
+    pub fn iter<F>(&self, callback: F) -> OperationResult<()>
+    where
+        F: FnMut(PointOffsetType, &Payload) -> bool,
+    {
+        match self {
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.iter(callback),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.iter(callback),
+        }
+    }
+}
+
 impl PayloadStorage for PayloadStorageEnum {
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         match self {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.assign(point_id, payload),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.assign(point_id, payload),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.assign(point_id, payload),
         }
     }
 
-    fn payload(&self, point_id: PointOffsetType) -> Payload {
+    fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
         match self {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.payload(point_id),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.payload(point_id),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.payload(point_id),
         }
     }
 
@@ -45,6 +68,7 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.delete(point_id, key),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.delete(point_id, key),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.delete(point_id, key),
         }
     }
 
@@ -52,6 +76,7 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.drop(point_id),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.drop(point_id),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.drop(point_id),
         }
     }
 
@@ -59,6 +84,7 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.wipe(),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.wipe(),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.wipe(),
         }
     }
 
@@ -66,13 +92,7 @@ impl PayloadStorage for PayloadStorageEnum {
         match self {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.flush(),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.flush(),
-        }
-    }
-
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        match self {
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter_ids(),
-            PayloadStorageEnum::SimplePayloadStorage(s) => s.iter_ids(),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.flush(),
         }
     }
 }
@@ -96,8 +116,73 @@ mod tests {
         storage.assign(100, &payload).unwrap();
         storage.wipe().unwrap();
         storage.assign(100, &payload).unwrap();
-        assert!(!storage.payload(100).is_empty());
+        assert!(!storage.payload(100).unwrap().is_empty());
         storage.wipe().unwrap();
-        assert_eq!(storage.payload(100), Default::default());
+        assert_eq!(storage.payload(100).unwrap(), Default::default());
+    }
+
+    #[test]
+    fn test_on_disk_storage() {
+        let dir = TempDir::new("storage_dir").unwrap();
+        let db = open_db(dir.path()).unwrap();
+
+        {
+            let mut storage: PayloadStorageEnum =
+                SimplePayloadStorage::open(db.clone()).unwrap().into();
+            let payload: Payload = serde_json::from_str(
+                r#"{
+                "name": "John Doe",
+                "age": 52,
+                "location": {
+                    "city": "Melbourne",
+                    "geo": {
+                        "lon": 144.9631,
+                        "lat": 37.8136
+                    }
+                }
+            }"#,
+            )
+            .unwrap();
+
+            storage.assign_all(100, &payload).unwrap();
+
+            let partial_payload: Payload = serde_json::from_str(r#"{ "age": 53 }"#).unwrap();
+            storage.assign(100, &partial_payload).unwrap();
+
+            storage.delete(100, "location.geo").unwrap();
+
+            let res = storage.payload(100).unwrap();
+
+            assert!(res.0.contains_key("age"));
+            assert!(res.0.contains_key("location"));
+            assert!(res.0.contains_key("name"));
+        }
+
+        {
+            let mut storage: PayloadStorageEnum = OnDiskPayloadStorage::open(db).unwrap().into();
+
+            let res = storage.payload(100).unwrap();
+
+            assert!(res.0.contains_key("age"));
+            assert!(res.0.contains_key("location"));
+            assert!(res.0.contains_key("name"));
+
+            eprintln!("res = {:#?}", res);
+
+            let partial_payload: Payload =
+                serde_json::from_str(r#"{ "hobby": "vector search" }"#).unwrap();
+            storage.assign(100, &partial_payload).unwrap();
+
+            storage.delete(100, "location.city").unwrap();
+            storage.delete(100, "location").unwrap();
+
+            let res = storage.payload(100).unwrap();
+
+            assert!(res.0.contains_key("age"));
+            assert!(res.0.contains_key("hobby"));
+            assert!(res.0.contains_key("name"));
+
+            eprintln!("res = {:#?}", res);
+        }
     }
 }

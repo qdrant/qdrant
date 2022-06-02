@@ -21,6 +21,7 @@ mod tests {
 
         let config = StorageConfig {
             storage_path: storage_dir.path().to_str().unwrap().to_string(),
+            on_disk_payload: false,
             optimizers: OptimizersConfig {
                 deleted_threshold: 0.5,
                 vacuum_min_vector_number: 100,
@@ -55,6 +56,7 @@ mod tests {
                         wal_config: None,
                         optimizers_config: None,
                         shard_number: 1,
+                        on_disk_payload: None,
                     },
                 }),
                 None,

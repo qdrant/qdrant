@@ -68,6 +68,12 @@ impl From<FileStorageError> for OperationError {
     }
 }
 
+impl From<serde_cbor::Error> for OperationError {
+    fn from(err: serde_cbor::Error) -> Self {
+        OperationError::service_error(&format!("Failed to parse data: {}", err))
+    }
+}
+
 impl<E> From<AtomicIoError<E>> for OperationError {
     fn from(err: AtomicIoError<E>) -> Self {
         match err {
@@ -188,6 +194,8 @@ pub trait SegmentEntry {
 
     /// Return number of vectors in this segment
     fn vectors_count(&self) -> usize;
+
+    fn vector_dim(&self) -> usize;
 
     /// Number of vectors, marked as deleted
     fn deleted_count(&self) -> usize;

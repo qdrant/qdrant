@@ -233,6 +233,7 @@
 | vector_size | [uint64](#uint64) |  | Size of the vectors |
 | distance | [Distance](#qdrant-Distance) |  | Distance function used for comparing vectors |
 | shard_number | [uint32](#uint32) |  | Number of shards in collection |
+| on_disk_payload | [bool](#bool) |  | Read payload directly from disk? |
 
 
 
@@ -270,6 +271,7 @@
 | wal_config | [WalConfigDiff](#qdrant-WalConfigDiff) | optional | Configuration of the Write-Ahead-Log |
 | optimizers_config | [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff) | optional | Configuration of the optimizers |
 | shard_number | [uint32](#uint32) | optional | Number of shards in the collection, default = 1 |
+| on_disk_payload | [bool](#bool) | optional | If `true` keep payload on disk, if `false` - in RAM |
 | timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
 
 

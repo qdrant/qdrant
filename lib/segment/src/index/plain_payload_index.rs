@@ -140,7 +140,7 @@ impl PayloadIndex for PlainPayloadIndex {
         todo!()
     }
 
-    fn payload(&self, _point_id: PointOffsetType) -> Payload {
+    fn payload(&self, _point_id: PointOffsetType) -> OperationResult<Payload> {
         todo!()
     }
 

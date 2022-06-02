@@ -29,9 +29,11 @@ pub struct HnswConfigDiff {
     pub m: Option<usize>,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
     pub ef_construct: Option<usize>,
-    /// Minimal amount of points for additional payload-based indexing.
-    /// If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
+    /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
+    /// If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used -
     /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
+    /// Note: 1Kb = 1 vector of size 256
+    #[serde(alias = "full_scan_threshold_kb")]
     pub full_scan_threshold: Option<usize>,
 }
 
@@ -56,19 +58,27 @@ pub struct OptimizersConfigDiff {
     ///
     /// It is recommended to select default number of segments as a factor of the number of search threads,
     /// so that each segment would be handled evenly by one of the threads
+    /// If `default_segment_number = 0`, will be automatically selected by the number of available CPUs
     pub default_segment_number: Option<usize>,
-    /// Do not create segments larger this number of points.
+    /// Do not create segments larger this size (in KiloBytes).
     /// Large segments might require disproportionately long indexation times,
     /// therefore it makes sense to limit the size of segments.
     ///
     /// If indexation speed have more priority for your - make this parameter lower.
     /// If search speed is more important - make this parameter higher.
+    /// Note: 1Kb = 1 vector of size 256
+    #[serde(alias = "max_segment_size_kb")]
     pub max_segment_size: Option<usize>,
-    /// Maximum number of vectors to store in-memory per segment.
+    /// Maximum size (in KiloBytes) of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmaped file.
+    /// To enable memmap storage, lower the threshold
+    /// Note: 1Kb = 1 vector of size 256
+    #[serde(alias = "memmap_threshold_kb")]
     pub memmap_threshold: Option<usize>,
-    /// Maximum number of vectors allowed for plain index.
+    /// Maximum size (in KiloBytes) of vectors allowed for plain index.
     /// Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
+    /// Note: 1Kb = 1 vector of size 256
+    #[serde(alias = "indexing_threshold_kb")]
     pub indexing_threshold: Option<usize>,
     /// Starting from this amount of vectors per-segment the engine will start building index for payload.
     pub payload_indexing_threshold: Option<usize>,

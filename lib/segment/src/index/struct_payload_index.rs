@@ -191,15 +191,15 @@ impl StructPayloadIndex {
         let payload_storage = self.payload.borrow();
         self.db.borrow_mut().create_cf(field, &db_options())?;
         let mut field_indexes = index_selector(field, &field_type, self.db.clone());
-        for point_id in payload_storage.iter_ids() {
-            let point_payload = payload_storage.payload(point_id);
+        payload_storage.iter(|point_id, point_payload| {
             let field_value_opt = point_payload.get_value(field);
             if let Some(field_value) = field_value_opt {
                 for field_index in &mut field_indexes {
                     field_index.add_point(point_id, field_value);
                 }
             }
-        }
+            true
+        })?;
         Ok(field_indexes)
     }
 
@@ -415,7 +415,7 @@ impl PayloadIndex for StructPayloadIndex {
         self.payload.borrow_mut().assign(point_id, payload)
     }
 
-    fn payload(&self, point_id: PointOffsetType) -> Payload {
+    fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
         self.payload.borrow().payload(point_id)
     }
 

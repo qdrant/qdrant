@@ -6,7 +6,9 @@ use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::index::{PayloadIndexSS, VectorIndex};
 use crate::types::Condition::Field;
-use crate::types::{FieldCondition, Filter, HnswConfig, SearchParams, VectorElementType};
+use crate::types::{
+    FieldCondition, Filter, HnswConfig, SearchParams, VectorElementType, VECTOR_ELEMENT_SIZE,
+};
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 use atomic_refcell::AtomicRefCell;
 use log::debug;
@@ -19,6 +21,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 const HNSW_USE_HEURISTIC: bool = true;
+const BYTES_IN_KB: usize = 1024;
 
 pub struct HNSWIndex {
     vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
@@ -41,24 +44,26 @@ impl HNSWIndex {
         let config = if config_path.exists() {
             HnswGraphConfig::load(&config_path)?
         } else {
-            HnswGraphConfig::new(
-                hnsw_config.m,
-                hnsw_config.ef_construct,
-                hnsw_config.full_scan_threshold,
-            )
+            let indexing_threshold = hnsw_config.full_scan_threshold * BYTES_IN_KB
+                / (vector_storage.borrow().vector_dim() * VECTOR_ELEMENT_SIZE);
+
+            HnswGraphConfig::new(hnsw_config.m, hnsw_config.ef_construct, indexing_threshold)
         };
 
         let graph_path = GraphLayers::get_path(path);
         let graph = if graph_path.exists() {
             GraphLayers::load(&graph_path)?
         } else {
-            let total_points = vector_storage.borrow().total_vector_count();
+            let borrowed_vector_storage = vector_storage.borrow();
+            let total_points = borrowed_vector_storage.total_vector_count();
+            let vector_per_threshold = hnsw_config.full_scan_threshold * BYTES_IN_KB
+                / (borrowed_vector_storage.vector_dim() * VECTOR_ELEMENT_SIZE);
             GraphLayers::new(
-                vector_storage.borrow().total_vector_count(),
+                borrowed_vector_storage.total_vector_count(),
                 config.m,
                 config.m0,
                 config.ef_construct,
-                max(1, total_points / hnsw_config.full_scan_threshold * 10),
+                max(1, total_points / vector_per_threshold * 10),
                 HNSW_USE_HEURISTIC,
             )
         };

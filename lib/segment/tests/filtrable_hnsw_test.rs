@@ -31,7 +31,8 @@ mod tests {
         let ef = 32;
         let ef_construct = 16;
         let distance = Distance::Cosine;
-        let indexing_threshold = 500;
+        let full_scan_threshold = 16; // KB
+        let indexing_threshold = 500; // num vectors
         let num_payload_values = 2;
 
         let mut rnd = thread_rng();
@@ -47,6 +48,7 @@ mod tests {
             payload_index: Some(PayloadIndexType::Plain),
             storage_type: StorageType::InMemory,
             distance,
+            payload_storage_type: Default::default(),
         };
 
         let int_key = "int";
@@ -84,7 +86,7 @@ mod tests {
         let hnsw_config = HnswConfig {
             m,
             ef_construct,
-            full_scan_threshold: indexing_threshold,
+            full_scan_threshold,
         };
 
         let mut hnsw_index = HNSWIndex::open(

@@ -69,7 +69,7 @@ pub trait PayloadIndex {
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
 
     /// Get payload for point
-    fn payload(&self, point_id: PointOffsetType) -> Payload;
+    fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
 
     /// Delete payload by key
     fn delete(

@@ -1,3 +1,4 @@
+use crate::common::utils;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use geo::prelude::HaversineDistance;
@@ -10,6 +11,9 @@ use serde_json::{Map, Value};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Formatter;
+use std::mem::size_of;
+use std::ops::Deref;
+use std::rc::Rc;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -28,6 +32,8 @@ pub type VectorElementType = f32;
 pub type FloatPayloadType = f64;
 /// Type of integer point payload
 pub type IntPayloadType = i64;
+
+pub const VECTOR_ELEMENT_SIZE: usize = size_of::<VectorElementType>();
 
 /// Type, used for specifying point ID in user interface
 #[derive(
@@ -242,9 +248,11 @@ pub struct HnswConfig {
     pub m: usize,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
     pub ef_construct: usize,
-    /// Minimal amount of points for additional payload-based indexing.
-    /// If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
+    /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
+    /// If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used -
     /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
+    /// Note: 1Kb = 1 vector of size 256
+    #[serde(alias = "full_scan_threshold_kb")]
     pub full_scan_threshold: usize,
 }
 
@@ -304,6 +312,23 @@ impl Default for StorageType {
     }
 }
 
+/// Type of payload storage
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type", content = "options")]
+pub enum PayloadStorageType {
+    /// Store payload in memory and use persistence storage only if vectors are changed
+    InMemory,
+    /// Store payload on disk only, read each time it is requested
+    OnDisk,
+}
+
+impl Default for PayloadStorageType {
+    fn default() -> Self {
+        PayloadStorageType::InMemory
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
@@ -317,6 +342,9 @@ pub struct SegmentConfig {
     pub payload_index: Option<PayloadIndexType>,
     /// Type of vector storage
     pub storage_type: StorageType,
+    /// Defines payload storage type
+    #[serde(default)]
+    pub payload_storage_type: PayloadStorageType,
 }
 
 /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
@@ -374,7 +402,7 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-pub struct Payload(Map<String, Value>);
+pub struct Payload(pub Map<String, Value>);
 
 impl Payload {
     pub fn merge(&mut self, value: &Payload) {
@@ -387,11 +415,11 @@ impl Payload {
     }
 
     pub fn get_value(&self, path: &str) -> Option<&Value> {
-        get_value(path, &self.0)
+        utils::get_value_from_json_map(path, &self.0)
     }
 
     pub fn remove(&mut self, path: &str) -> Option<Value> {
-        self.0.remove(path)
+        utils::remove_value_from_json_map(path, &mut self.0)
     }
 
     pub fn len(&self) -> usize {
@@ -441,17 +469,41 @@ impl From<Map<String, Value>> for Payload {
     }
 }
 
-fn get_value<'a>(path: &str, value: &'a serde_json::Map<String, Value>) -> Option<&'a Value> {
-    match path.split_once('.') {
-        Some((element, path)) => match value.get(element) {
-            Some(Value::Object(map)) => get_value(path, map),
-            Some(value) => match path.is_empty() {
-                true => Some(value),
-                false => None,
-            },
-            None => None,
-        },
-        None => value.get(path),
+#[derive(Clone)]
+pub enum OwnedPayloadRef<'a> {
+    Ref(&'a Payload),
+    Owned(Rc<Payload>),
+}
+
+impl<'a> Deref for OwnedPayloadRef<'a> {
+    type Target = Payload;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            OwnedPayloadRef::Ref(reference) => *reference,
+            OwnedPayloadRef::Owned(owned) => owned.deref(),
+        }
+    }
+}
+
+impl<'a> AsRef<Payload> for OwnedPayloadRef<'a> {
+    fn as_ref(&self) -> &Payload {
+        match self {
+            OwnedPayloadRef::Ref(reference) => *reference,
+            OwnedPayloadRef::Owned(owned) => owned.deref(),
+        }
+    }
+}
+
+impl<'a> From<Payload> for OwnedPayloadRef<'a> {
+    fn from(payload: Payload) -> Self {
+        OwnedPayloadRef::Owned(Rc::new(payload))
+    }
+}
+
+impl<'a> From<&'a Payload> for OwnedPayloadRef<'a> {
+    fn from(payload: &'a Payload) -> Self {
+        OwnedPayloadRef::Ref(payload)
     }
 }
 
@@ -1029,6 +1081,7 @@ impl Filter {
 mod tests {
     use super::*;
 
+    use crate::common::utils::remove_value_from_json_map;
     use serde::de::DeserializeOwned;
     use serde_json;
     use serde_json::json;
@@ -1229,6 +1282,42 @@ mod tests {
         let filter: Result<Filter, _> = serde_json::from_str(query1);
 
         assert!(filter.is_err());
+    }
+
+    #[test]
+    fn test_remove_key() {
+        let mut payload: Payload = serde_json::from_str(
+            r#"
+        {
+            "a": 1,
+            "b": {
+                "c": 123,
+                "e": {
+                    "f": [1,2,3],
+                    "g": 7,
+                    "h": "text"
+                }
+            }
+        }
+        "#,
+        )
+        .unwrap();
+        remove_value_from_json_map("b.c", &mut payload.0);
+        assert_ne!(payload, Default::default());
+        remove_value_from_json_map("b.e.f", &mut payload.0);
+        assert_ne!(payload, Default::default());
+        remove_value_from_json_map("k", &mut payload.0);
+        assert_ne!(payload, Default::default());
+        remove_value_from_json_map("", &mut payload.0);
+        assert_ne!(payload, Default::default());
+        remove_value_from_json_map("b.e.l", &mut payload.0);
+        assert_ne!(payload, Default::default());
+        remove_value_from_json_map("a", &mut payload.0);
+        assert_ne!(payload, Default::default());
+        remove_value_from_json_map("b.e", &mut payload.0);
+        assert_ne!(payload, Default::default());
+        remove_value_from_json_map("b", &mut payload.0);
+        assert_eq!(payload, Default::default());
     }
 }
 

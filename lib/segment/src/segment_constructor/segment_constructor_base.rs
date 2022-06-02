@@ -6,11 +6,13 @@ use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::plain_payload_index::{PlainIndex, PlainPayloadIndex};
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndexSS, VectorIndexSS};
+use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::query_checker::SimpleConditionChecker;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SegmentVersion, SEGMENT_STATE_FILE};
 use crate::types::{
-    Indexes, PayloadIndexType, SegmentConfig, SegmentState, SegmentType, SeqNumberType, StorageType,
+    Indexes, PayloadIndexType, PayloadStorageType, SegmentConfig, SegmentState, SegmentType,
+    SeqNumberType, StorageType,
 };
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
@@ -49,7 +51,10 @@ fn create_segment(
         }
     };
 
-    let payload_storage = sp(SimplePayloadStorage::open(database.clone())?.into());
+    let payload_storage = match config.payload_storage_type {
+        PayloadStorageType::InMemory => sp(SimplePayloadStorage::open(database.clone())?.into()),
+        PayloadStorageType::OnDisk => sp(OnDiskPayloadStorage::open(database.clone())?.into()),
+    };
 
     let condition_checker = Arc::new(SimpleConditionChecker::new(
         payload_storage.clone(),

@@ -38,6 +38,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 wal_config: value.wal_config.map(|v| v.into()),
                 optimizers_config: value.optimizers_config.map(|v| v.into()),
                 shard_number: value.shard_number.unwrap_or_else(default_shard_number),
+                on_disk_payload: value.on_disk_payload,
             },
         }))
     }

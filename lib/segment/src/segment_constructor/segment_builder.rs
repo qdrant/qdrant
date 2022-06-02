@@ -84,7 +84,7 @@ impl SegmentBuilder {
                             id_tracker.set_version(external_id, other_version)?;
                             payload_storage.assign(
                                 new_internal_id,
-                                &other_payload_storage.payload(old_internal_id),
+                                &other_payload_storage.payload(old_internal_id)?,
                             )?;
                         }
                         Some(existing_version) => {
@@ -98,7 +98,7 @@ impl SegmentBuilder {
                                 id_tracker.set_version(external_id, other_version)?;
                                 payload_storage.assign(
                                     new_internal_id,
-                                    &other_payload_storage.payload(old_internal_id),
+                                    &other_payload_storage.payload(old_internal_id)?,
                                 )?;
                             } else {
                                 // Old version is still good, do not move anything else

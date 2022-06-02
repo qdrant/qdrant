@@ -107,6 +107,7 @@ pub fn build_test_holder(path: &Path) -> RwLock<SegmentHolder> {
 pub(crate) fn get_merge_optimizer(
     segment_path: &Path,
     collection_temp_dir: &Path,
+    dim: usize,
 ) -> MergeOptimizer {
     MergeOptimizer::new(
         5,
@@ -119,9 +120,10 @@ pub(crate) fn get_merge_optimizer(
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         CollectionParams {
-            vector_size: 4,
+            vector_size: dim,
             distance: Distance::Dot,
             shard_number: NonZeroU32::new(1).unwrap(),
+            on_disk_payload: false,
         },
         Default::default(),
     )
@@ -130,6 +132,7 @@ pub(crate) fn get_merge_optimizer(
 pub(crate) fn get_indexing_optimizer(
     segment_path: &Path,
     collection_temp_dir: &Path,
+    dim: usize,
 ) -> IndexingOptimizer {
     IndexingOptimizer::new(
         OptimizerThresholds {
@@ -140,9 +143,10 @@ pub(crate) fn get_indexing_optimizer(
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         CollectionParams {
-            vector_size: 4,
+            vector_size: dim,
             distance: Distance::Dot,
             shard_number: NonZeroU32::new(1).unwrap(),
+            on_disk_payload: false,
         },
         Default::default(),
     )
