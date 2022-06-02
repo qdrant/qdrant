@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::{
     sync::{
         atomic::{AtomicUsize, Ordering},
-        mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender},
+        mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
     },
     thread,
     time::{Duration, Instant},
@@ -14,15 +14,14 @@ use storage::content_manager::{
     consensus_ops::ConsensusOperations, errors::StorageError, toc::TableOfContentRef,
 };
 
+use crate::common::helpers::IsReady;
 use crate::settings::ConsensusConfig;
 use api::grpc::transport_channel_pool::TransportChannelPool;
-use raft::{eraftpb::Message as RaftMessage, prelude::*, StateRole};
+use raft::{eraftpb::Message as RaftMessage, prelude::*, SoftState, StateRole};
 use tokio::runtime::Runtime;
 use tonic::transport::Uri;
 
 type Node = RawNode<TableOfContentRef>;
-
-type NotifyWhenLeader = Sender<()>;
 
 pub enum Message {
     FromClient(Vec<u8>),
@@ -36,7 +35,7 @@ pub struct Consensus {
     runtime: Runtime,
     bootstrap_uri: Option<Uri>,
     config: ConsensusConfig,
-    notify_when_leader: Option<NotifyWhenLeader>,
+    pub is_leader_established: Arc<IsReady>,
 }
 
 impl Consensus {
@@ -62,8 +61,9 @@ impl Consensus {
             })
             .enable_all()
             .build()?;
+        let is_leader_established = Arc::new(IsReady::default());
         let (sender, receiver) = mpsc::sync_channel(config.max_message_queue_size);
-        let notify_when_leader = if toc_ref.is_raft_state_new()? {
+        if toc_ref.is_raft_state_new()? {
             Self::init(
                 &toc_ref,
                 bootstrap_peer.clone(),
@@ -72,13 +72,13 @@ impl Consensus {
                 &config,
                 &runtime,
                 sender.clone(),
-            )?
+                is_leader_established.clone(),
+            )?;
         } else {
             if bootstrap_peer.is_some() || uri.is_some() {
                 log::warn!("Local raft state found - bootstrap and uri cli arguments were ignored")
             }
             log::info!("Local raft state found - skipping initialization");
-            None
         };
         let mut node = Node::new(&raft_config, toc_ref.clone(), logger)?;
         // Before consensus has started apply any unapplied committed entries
@@ -91,12 +91,13 @@ impl Consensus {
                 runtime,
                 bootstrap_uri: bootstrap_peer,
                 config,
-                notify_when_leader,
+                is_leader_established,
             },
             sender,
         ))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn init(
         toc_ref: &TableOfContentRef,
         bootstrap_peer: Option<Uri>,
@@ -105,7 +106,8 @@ impl Consensus {
         config: &ConsensusConfig,
         runtime: &Runtime,
         sender: SyncSender<Message>,
-    ) -> anyhow::Result<Option<NotifyWhenLeader>> {
+        is_leader_established: Arc<IsReady>,
+    ) -> anyhow::Result<()> {
         if let Some(bootstrap_peer) = bootstrap_peer {
             log::info!("Bootstrapping from peer with address: {bootstrap_peer}");
             if uri.is_none() && p2p_port.is_none() {
@@ -118,7 +120,7 @@ impl Consensus {
                 p2p_port,
                 config,
             ))?;
-            Ok(None)
+            Ok(())
         } else {
             log::info!("Bootstrapping is disabled. Assuming this peer is the first in the network");
             // First peer needs to add its own address
@@ -126,16 +128,14 @@ impl Consensus {
                 toc_ref.this_peer_id(),
                 uri.ok_or_else(|| anyhow::anyhow!("First peer should specify its uri."))?,
             ))?);
-            let (tx, rx) = mpsc::channel();
             thread::spawn(move || {
                 // Wait for the leader to be established
-                if let Err(err) = rx.recv() {
-                    log::error!("Failed await for leader to be established: {err}")
-                } else if let Err(err) = sender.send(message) {
+                is_leader_established.await_ready();
+                if let Err(err) = sender.send(message) {
                     log::error!("Failed to send message to add this peer to known peers: {err}")
                 }
             });
-            Ok(Some(tx))
+            Ok(())
         }
     }
 
@@ -263,6 +263,9 @@ impl Consensus {
                 log::error!("Failed to set hard state: {err}")
             }
         }
+        if let Some(ss) = ready.ss() {
+            self.handle_soft_state(ss);
+        }
         if !ready.persisted_messages().is_empty() {
             if let Err(err) = handle_messages(
                 ready.take_persisted_messages(),
@@ -301,12 +304,13 @@ impl Consensus {
         }
         // Advance the apply index.
         self.node.advance_apply();
-        if self.node.status().ss.raft_state == StateRole::Leader {
-            if let Some(tx) = self.notify_when_leader.take() {
-                if let Err(err) = tx.send(()) {
-                    log::error!("Failed to notify init thread of this peer becoming leader: {err}")
-                }
-            }
+    }
+
+    fn handle_soft_state(&self, state: &SoftState) {
+        if state.raft_state == StateRole::Leader || state.raft_state == StateRole::Follower {
+            self.is_leader_established.make_ready()
+        } else {
+            self.is_leader_established.make_not_ready()
         }
     }
 }
@@ -467,6 +471,7 @@ mod tests {
             ConsensusConfig::default(),
         )
         .unwrap();
+        let is_leader_established = consensus.is_leader_established.clone();
         thread::spawn(move || consensus.start().unwrap());
         thread::spawn(move || {
             while let Ok(entry) = propose_receiver.recv() {
@@ -479,7 +484,9 @@ mod tests {
                 }
             }
         });
-        // Wait for Raft to establish the leader and commit its own address
+        // Wait for Raft to establish the leader
+        is_leader_established.await_ready();
+        // And also wait for it to commit its own address
         thread::sleep(Duration::from_secs(10));
         // Leader election produces a raft log entry
         // Address commit also produces a raft log entry
