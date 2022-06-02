@@ -21,7 +21,9 @@ impl Eq for Point {}
 #[allow(clippy::derive_ord_xor_partial_ord)]
 impl Ord for Point {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap()
+        (self.val, self.idx)
+            .partial_cmp(&(other.val, other.idx))
+            .unwrap()
     }
 }
 
@@ -37,6 +39,52 @@ impl Histogram {
             bucket_size,
             borders: BTreeMap::default(),
         }
+    }
+
+    /// Infers boundaries for bucket of given size and staring point.
+    /// Returns `to` range of values starting provided `from`value which is expected to contain
+    /// `range_size` values
+    ///
+    /// Returns None if there are no points stored
+    pub fn get_range_by_size(&self, from: Bound<f64>, range_size: usize) -> Bound<f64> {
+        let from_val = match &from {
+            Included(val) => *val,
+            Excluded(val) => *val,
+            Unbounded => f64::NEG_INFINITY,
+        };
+
+        // bound_map is unstable, but can be used here
+        // let from_ = from.map(|val| Point { val, idx: usize::MIN });
+
+        let from_ = match from {
+            Included(val) => Included(Point {
+                val,
+                idx: usize::MIN,
+            }),
+            Excluded(val) => Excluded(Point {
+                val,
+                idx: usize::MIN,
+            }),
+            Unbounded => Unbounded,
+        };
+
+        let mut reached_count = 0;
+        let mut reached_value = from_val;
+        for (border, counts) in self.borders.range((from_, Unbounded)) {
+            if reached_count + counts.left > range_size {
+                // required size reached
+                let required_delta = range_size - reached_count;
+                let fraction = required_delta as f64 / counts.left as f64;
+                reached_value = reached_value + (border.val - reached_value) * fraction;
+                return Included(reached_value);
+            } else {
+                // Size not yet reached
+                reached_value = border.val;
+                reached_count += counts.left;
+            }
+        }
+
+        Unbounded
     }
 
     pub fn estimate(&self, from: Bound<f64>, to: Bound<f64>) -> (usize, usize, usize) {
@@ -90,7 +138,7 @@ impl Histogram {
         };
 
         let right_border = {
-            if matches!(from_, Unbounded) {
+            if matches!(to_, Unbounded) {
                 None
             } else {
                 self.borders.range((to_.clone(), Unbounded)).next()
@@ -634,20 +682,142 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_build_histogram_round() {
-        let bucket_size = 10;
-        let num_samples = 100_000;
-        let mut rnd = StdRng::seed_from_u64(42);
+    fn test_range_by_cardinality(histogram: &Histogram) {
+        let from = Unbounded;
+        let range_size = 100;
+        let to = histogram.get_range_by_size(from, range_size);
+        let estimation = histogram.estimate(from, to);
+        eprintln!("({from:?} - {to:?}) -> {estimation:?} / {range_size}");
+        assert!(estimation.0 <= range_size);
+        assert!(estimation.2 >= range_size);
 
-        // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
-        let points = (0..num_samples).map(|i| Point {
-            val: f64::round(rnd.sample::<f64, _>(StandardNormal) * 100.0),
-            idx: i,
-        });
+        let from = Unbounded;
+        let range_size = 1000;
+        let to = histogram.get_range_by_size(from, range_size);
+        let estimation = histogram.estimate(from, to);
+        eprintln!("({from:?} - {to:?}) -> {estimation:?} / {range_size}");
+        assert!(estimation.0 <= range_size);
+        assert!(estimation.2 >= range_size);
 
+        let from = Excluded(0.1);
+        let range_size = 100;
+        let to = histogram.get_range_by_size(from, range_size);
+        let estimation = histogram.estimate(from, to);
+        eprintln!("({from:?} - {to:?}) -> {estimation:?} / {range_size}");
+        assert!(estimation.0 <= range_size);
+        assert!(estimation.2 >= range_size);
+
+        let from = Excluded(0.1);
+        let range_size = 1000;
+        let to = histogram.get_range_by_size(from, range_size);
+        let estimation = histogram.estimate(from, to);
+        eprintln!("({from:?} - {to:?}) -> {estimation:?} / {range_size}");
+        assert!(estimation.0 <= range_size);
+        assert!(estimation.2 >= range_size);
+
+        let from = Excluded(0.1);
+        let range_size = 100_000;
+        let to = histogram.get_range_by_size(from, range_size);
+        let estimation = histogram.estimate(from, to);
+        eprintln!("({from:?} - {to:?}) -> {estimation:?} / {range_size}");
+        assert!(matches!(to, Unbounded));
+    }
+
+    fn request_histogram(histogram: &Histogram, points_index: &BTreeSet<Point>) {
+        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.0));
+        let real = count_range(points_index, 0., 0.);
+
+        eprintln!(
+            "{} / ({}, {}, {}) = {}",
+            real,
+            est_min,
+            estimation,
+            est_max,
+            estimation as f64 / real as f64
+        );
+        assert!(real.abs_diff(estimation) < 2 * histogram.bucket_size);
+
+        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.0001));
+        let real = count_range(points_index, 0., 0.0001);
+
+        eprintln!(
+            "{} / ({}, {}, {}) = {}",
+            real,
+            est_min,
+            estimation,
+            est_max,
+            estimation as f64 / real as f64
+        );
+        assert!(real.abs_diff(estimation) < 2 * histogram.bucket_size);
+
+        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.01));
+        let real = count_range(points_index, 0., 0.01);
+
+        eprintln!(
+            "{} / ({}, {}, {}) = {}",
+            real,
+            est_min,
+            estimation,
+            est_max,
+            estimation as f64 / real as f64
+        );
+        assert!(real.abs_diff(estimation) < 2 * histogram.bucket_size);
+
+        let (est_min, estimation, est_max) = histogram.estimate(Included(0.), Included(1.));
+        let real = count_range(points_index, 0., 1.);
+
+        eprintln!(
+            "{} / ({}, {}, {}) = {}",
+            real,
+            est_min,
+            estimation,
+            est_max,
+            estimation as f64 / real as f64
+        );
+        assert!(real.abs_diff(estimation) < 2 * histogram.bucket_size);
+
+        let (est_min, estimation, est_max) = histogram.estimate(Included(0.), Included(100.));
+        let real = count_range(points_index, 0., 100.);
+
+        eprintln!(
+            "{} / ({}, {}, {}) = {}",
+            real,
+            est_min,
+            estimation,
+            est_max,
+            estimation as f64 / real as f64
+        );
+        assert!(real.abs_diff(estimation) < 2 * histogram.bucket_size);
+
+        let (est_min, estimation, est_max) = histogram.estimate(Included(-100.), Included(100.));
+        let real = count_range(points_index, -100., 100.);
+
+        eprintln!(
+            "{} / ({}, {}, {}) = {}",
+            real,
+            est_min,
+            estimation,
+            est_max,
+            estimation as f64 / real as f64
+        );
+        assert!(real.abs_diff(estimation) < 2 * histogram.bucket_size);
+
+        let (est_min, estimation, est_max) = histogram.estimate(Included(20.), Included(100.));
+        let real = count_range(points_index, 20., 100.);
+
+        eprintln!(
+            "{} / ({}, {}, {}) = {}",
+            real,
+            est_min,
+            estimation,
+            est_max,
+            estimation as f64 / real as f64
+        );
+        assert!(real.abs_diff(estimation) < 2 * histogram.bucket_size);
+    }
+
+    fn build_histogram(bucket_size: usize, points: Vec<Point>) -> (Histogram, BTreeSet<Point>) {
         let mut points_index: BTreeSet<Point> = Default::default();
-
         let mut histogram = Histogram::new(bucket_size);
 
         let read_counter = Cell::new(0);
@@ -671,100 +841,26 @@ mod tests {
         }
         eprintln!("read_counter.get() = {:#?}", read_counter.get());
         eprintln!("histogram.borders.len() = {:#?}", histogram.borders.len());
-        for border in histogram.borders.iter().take(2) {
-            eprintln!("border = {:#?}", border);
+        for border in histogram.borders.iter().take(5) {
+            eprintln!("border = {:?}", border);
         }
+        (histogram, points_index)
+    }
 
-        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.0));
-        let real = count_range(&points_index, 0., 0.);
+    #[test]
+    fn test_build_histogram_round() {
+        let bucket_size = 100;
+        let num_samples = 100_000;
+        let mut rnd = StdRng::seed_from_u64(42);
 
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < 2 * bucket_size);
+        // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
+        let points = (0..num_samples).map(|i| Point {
+            val: f64::round(rnd.sample::<f64, _>(StandardNormal) * 100.0),
+            idx: i,
+        });
+        let (histogram, points_index) = build_histogram(bucket_size, points.collect());
 
-        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.0001));
-        let real = count_range(&points_index, 0., 0.0001);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < 2 * bucket_size);
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.01));
-        let real = count_range(&points_index, 0., 0.01);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < 2 * bucket_size);
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(0.), Included(1.));
-        let real = count_range(&points_index, 0., 1.);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < 2 * bucket_size);
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(0.), Included(100.));
-        let real = count_range(&points_index, 0., 100.);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < 2 * bucket_size);
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(-100.), Included(100.));
-        let real = count_range(&points_index, -100., 100.);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < 2 * bucket_size);
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(20.), Included(100.));
-        let real = count_range(&points_index, 20., 100.);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < 2 * bucket_size);
+        request_histogram(&histogram, &points_index);
     }
 
     #[test]
@@ -781,124 +877,8 @@ mod tests {
             })
             .collect_vec();
 
-        let mut points_index: BTreeSet<Point> = Default::default();
-
-        let mut histogram = Histogram::new(bucket_size);
-
-        let read_counter = Cell::new(0);
-        for point in points {
-            points_index.insert(point.clone());
-            // print_results(&points_index, &histogram, Some(point.clone()));
-            histogram.insert(
-                point,
-                |x| {
-                    read_counter.set(read_counter.get() + 1);
-                    points_index
-                        .range((Unbounded, Excluded(x)))
-                        .next_back()
-                        .cloned()
-                },
-                |x| {
-                    read_counter.set(read_counter.get() + 1);
-                    points_index.range((Excluded(x), Unbounded)).next().cloned()
-                },
-            );
-        }
-        eprintln!("read_counter.get() = {:#?}", read_counter.get());
-        eprintln!("histogram.borders.len() = {:#?}", histogram.borders.len());
-        for border in histogram.borders.iter().take(2) {
-            eprintln!("border = {:#?}", border);
-        }
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.0));
-        let real = count_range(&points_index, 0., 0.);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < bucket_size);
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.0001));
-        let real = count_range(&points_index, 0., 0.0001);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < bucket_size);
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(0.0), Included(0.01));
-        let real = count_range(&points_index, 0., 0.01);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < bucket_size);
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(0.), Included(1.));
-        let real = count_range(&points_index, 0., 1.);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < bucket_size);
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(0.), Included(100.));
-        let real = count_range(&points_index, 0., 100.);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < bucket_size);
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(-100.), Included(100.));
-        let real = count_range(&points_index, -100., 100.);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < bucket_size);
-
-        let (est_min, estimation, est_max) = histogram.estimate(Included(20.), Included(100.));
-        let real = count_range(&points_index, 20., 100.);
-
-        eprintln!(
-            "{} / ({}, {}, {}) = {}",
-            real,
-            est_min,
-            estimation,
-            est_max,
-            estimation as f64 / real as f64
-        );
-        assert!(real.abs_diff(estimation) < bucket_size);
+        let (histogram, points_index) = build_histogram(bucket_size, points);
+        request_histogram(&histogram, &points_index);
+        test_range_by_cardinality(&histogram);
     }
 }
