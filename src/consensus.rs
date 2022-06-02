@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::{
     sync::{
         atomic::{AtomicUsize, Ordering},
-        mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
+        mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender},
     },
     thread,
     time::{Duration, Instant},
@@ -16,11 +16,13 @@ use storage::content_manager::{
 
 use crate::settings::ConsensusConfig;
 use api::grpc::transport_channel_pool::TransportChannelPool;
-use raft::{eraftpb::Message as RaftMessage, prelude::*};
+use raft::{eraftpb::Message as RaftMessage, prelude::*, StateRole};
 use tokio::runtime::Runtime;
 use tonic::transport::Uri;
 
 type Node = RawNode<TableOfContentRef>;
+
+type NotifyWhenLeader = Sender<()>;
 
 pub enum Message {
     FromClient(Vec<u8>),
@@ -34,6 +36,7 @@ pub struct Consensus {
     runtime: Runtime,
     bootstrap_uri: Option<Uri>,
     config: ConsensusConfig,
+    notify_when_leader: Option<NotifyWhenLeader>,
 }
 
 impl Consensus {
@@ -60,7 +63,7 @@ impl Consensus {
             .enable_all()
             .build()?;
         let (sender, receiver) = mpsc::sync_channel(config.max_message_queue_size);
-        if toc_ref.is_raft_state_new()? {
+        let notify_when_leader = if toc_ref.is_raft_state_new()? {
             Self::init(
                 &toc_ref,
                 bootstrap_peer.clone(),
@@ -69,13 +72,14 @@ impl Consensus {
                 &config,
                 &runtime,
                 sender.clone(),
-            )?;
+            )?
         } else {
             if bootstrap_peer.is_some() || uri.is_some() {
                 log::warn!("Local raft state found - bootstrap and uri cli arguments were ignored")
             }
-            log::info!("Local raft state found - skipping initialization")
-        }
+            log::info!("Local raft state found - skipping initialization");
+            None
+        };
         let mut node = Node::new(&raft_config, toc_ref.clone(), logger)?;
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
@@ -87,6 +91,7 @@ impl Consensus {
                 runtime,
                 bootstrap_uri: bootstrap_peer,
                 config,
+                notify_when_leader,
             },
             sender,
         ))
@@ -100,7 +105,7 @@ impl Consensus {
         config: &ConsensusConfig,
         runtime: &Runtime,
         sender: SyncSender<Message>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<NotifyWhenLeader>> {
         if let Some(bootstrap_peer) = bootstrap_peer {
             log::info!("Bootstrapping from peer with address: {bootstrap_peer}");
             if uri.is_none() && p2p_port.is_none() {
@@ -113,6 +118,7 @@ impl Consensus {
                 p2p_port,
                 config,
             ))?;
+            Ok(None)
         } else {
             log::info!("Bootstrapping is disabled. Assuming this peer is the first in the network");
             // First peer needs to add its own address
@@ -120,16 +126,17 @@ impl Consensus {
                 toc_ref.this_peer_id(),
                 uri.ok_or_else(|| anyhow::anyhow!("First peer should specify its uri."))?,
             ))?);
+            let (tx, rx) = mpsc::channel();
             thread::spawn(move || {
                 // Wait for the leader to be established
-                // TODO: Is it possible to do it deterministically?
-                thread::sleep(Duration::from_secs(5));
-                if let Err(err) = sender.send(message) {
+                if let Err(err) = rx.recv() {
+                    log::error!("Failed await for leader to be established: {err}")
+                } else if let Err(err) = sender.send(message) {
                     log::error!("Failed to send message to add this peer to known peers: {err}")
                 }
             });
+            Ok(Some(tx))
         }
-        Ok(())
     }
 
     async fn bootstrap(
@@ -207,102 +214,101 @@ impl Consensus {
             } else {
                 timeout -= d;
             }
-            on_ready(
-                &mut self.node,
+            self.on_ready();
+        }
+    }
+
+    fn on_ready(&mut self) {
+        if !self.node.has_ready() {
+            return;
+        }
+
+        let store = self.node.raft.raft_log.store.clone();
+        // Get the `Ready` with `RawNode::ready` interface.
+        let mut ready = self.node.ready();
+        if !ready.messages().is_empty() {
+            if let Err(err) = handle_messages(
+                ready.take_messages(),
+                &store,
                 &self.runtime,
                 &self.bootstrap_uri,
                 &self.config,
-            );
+            ) {
+                log::error!("Failed to send messages: {err}")
+            }
         }
-    }
-}
+        if !ready.snapshot().is_empty() {
+            // This is a snapshot, we need to apply the snapshot at first.
+            log::info!("Applying snapshot");
+            if let Err(err) = store.apply_snapshot(&ready.snapshot().clone()) {
+                log::error!("Failed to apply snapshot: {err}")
+            }
+        }
+        if let Err(err) =
+            handle_committed_entries(ready.take_committed_entries(), &store, &mut self.node)
+        {
+            log::error!("Failed to apply committed entries: {err}")
+        }
+        if !ready.entries().is_empty() {
+            // Append entries to the Raft log.
+            log::info!("Appending {} entries to raft log", ready.entries().len());
+            if let Err(err) = store.append_entries(ready.take_entries()) {
+                log::error!("Failed to append entries: {err}")
+            }
+        }
+        if let Some(hs) = ready.hs() {
+            // Raft HardState changed, and we need to persist it.
+            log::info!("Changing hard state. New hard state: {hs:?}");
+            if let Err(err) = store.set_hard_state(hs.clone()) {
+                log::error!("Failed to set hard state: {err}")
+            }
+        }
+        if !ready.persisted_messages().is_empty() {
+            if let Err(err) = handle_messages(
+                ready.take_persisted_messages(),
+                &store,
+                &self.runtime,
+                &self.bootstrap_uri,
+                &self.config,
+            ) {
+                log::error!("Failed to send messages: {err}")
+            }
+        }
 
-fn on_ready(
-    raft_group: &mut Node,
-    runtime: &Runtime,
-    bootstrap_uri: &Option<Uri>,
-    config: &ConsensusConfig,
-) {
-    if !raft_group.has_ready() {
-        return;
-    }
-
-    let store = raft_group.raft.raft_log.store.clone();
-    // Get the `Ready` with `RawNode::ready` interface.
-    let mut ready = raft_group.ready();
-    if !ready.messages().is_empty() {
+        // Advance the Raft.
+        let mut light_rd = self.node.advance(ready);
+        // Update commit index.
+        if let Some(commit) = light_rd.commit_index() {
+            log::info!("Updating commit index to {commit}");
+            if let Err(err) = store.set_commit_index(commit) {
+                log::error!("Failed to set commit index: {err}")
+            }
+        }
         if let Err(err) = handle_messages(
-            ready.take_messages(),
+            light_rd.take_messages(),
             &store,
-            runtime,
-            bootstrap_uri,
-            config,
+            &self.runtime,
+            &self.bootstrap_uri,
+            &self.config,
         ) {
             log::error!("Failed to send messages: {err}")
         }
-    }
-    if !ready.snapshot().is_empty() {
-        // This is a snapshot, we need to apply the snapshot at first.
-        log::info!("Applying snapshot");
-        if let Err(err) = store.apply_snapshot(&ready.snapshot().clone()) {
-            log::error!("Failed to apply snapshot: {err}")
+        // Apply all committed entries.
+        if let Err(err) =
+            handle_committed_entries(light_rd.take_committed_entries(), &store, &mut self.node)
+        {
+            log::error!("Failed to apply committed entries: {err}")
+        }
+        // Advance the apply index.
+        self.node.advance_apply();
+        if self.node.status().ss.raft_state == StateRole::Leader {
+            if let Some(tx) = self.notify_when_leader.take() {
+                if let Err(err) = tx.send(()) {
+                    log::error!("Failed to notify init thread of this peer becoming leader: {err}")
+                }
+            }
         }
     }
-    if let Err(err) = handle_committed_entries(ready.take_committed_entries(), &store, raft_group) {
-        log::error!("Failed to apply committed entries: {err}")
-    }
-    if !ready.entries().is_empty() {
-        // Append entries to the Raft log.
-        log::info!("Appending {} entries to raft log", ready.entries().len());
-        if let Err(err) = store.append_entries(ready.take_entries()) {
-            log::error!("Failed to append entries: {err}")
-        }
-    }
-    if let Some(hs) = ready.hs() {
-        // Raft HardState changed, and we need to persist it.
-        log::info!("Changing hard state. New hard state: {hs:?}");
-        if let Err(err) = store.set_hard_state(hs.clone()) {
-            log::error!("Failed to set hard state: {err}")
-        }
-    }
-    if !ready.persisted_messages().is_empty() {
-        if let Err(err) = handle_messages(
-            ready.take_persisted_messages(),
-            &store,
-            runtime,
-            bootstrap_uri,
-            config,
-        ) {
-            log::error!("Failed to send messages: {err}")
-        }
-    }
-
-    // Advance the Raft.
-    let mut light_rd = raft_group.advance(ready);
-    // Update commit index.
-    if let Some(commit) = light_rd.commit_index() {
-        log::info!("Updating commit index to {commit}");
-        if let Err(err) = store.set_commit_index(commit) {
-            log::error!("Failed to set commit index: {err}")
-        }
-    }
-    if let Err(err) = handle_messages(
-        light_rd.take_messages(),
-        &store,
-        runtime,
-        bootstrap_uri,
-        config,
-    ) {
-        log::error!("Failed to send messages: {err}")
-    }
-    // Apply all committed entries.
-    if let Err(err) =
-        handle_committed_entries(light_rd.take_committed_entries(), &store, raft_group)
-    {
-        log::error!("Failed to apply committed entries: {err}")
-    }
-    // Advance the apply index.
-    raft_group.advance_apply();
 }
 
 fn handle_committed_entries(
