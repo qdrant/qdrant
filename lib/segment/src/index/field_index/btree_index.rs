@@ -385,10 +385,50 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Payload
 
     fn payload_blocks(
         &self,
-        _threshold: usize,
-        _key: PayloadKeyType,
+        threshold: usize,
+        key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
-        todo!()
+        let mut lower_bound = Unbounded;
+        let mut payload_conditions = Vec::new();
+
+        loop {
+            let upper_bound = self.histogram.get_range_by_size(lower_bound, threshold / 2);
+
+            let lower_val = match lower_bound {
+                Included(v) => v,
+                Unbounded => f64::MIN,
+                _ => panic!("invalid bound value"),
+            };
+
+            let upper_val = match upper_bound {
+                Included(v) => v,
+                Unbounded => f64::MAX,
+                _ => panic!("invalid bound value"),
+            };
+
+            let condition = PayloadBlockCondition {
+                condition: FieldCondition::new_range(
+                    key.clone(),
+                    Range {
+                        lt: None,
+                        gt: None,
+                        gte: Some(lower_val),
+                        lte: Some(upper_val),
+                    },
+                ),
+                cardinality: self.histogram.estimate(lower_bound, upper_bound).1,
+            };
+
+            payload_conditions.push(condition);
+
+            if upper_bound == Unbounded {
+                break;
+            }
+
+            lower_bound = upper_bound;
+        }
+
+        Box::new(payload_conditions.into_iter())
     }
 
     fn count_indexed_points(&self) -> usize {
@@ -450,11 +490,22 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
 mod tests {
     use crate::common::rocksdb_operations::db_options;
     use itertools::Itertools;
+    use std::path::Path;
     use tempdir::TempDir;
 
     use super::*;
 
     const CF_NAME: &str = "test_cf";
+
+    fn open_index<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone>(
+        path: &Path,
+    ) -> NumericIndex<T> {
+        let file_path = path.join("index");
+        let mut db = DB::open_default(file_path).unwrap();
+        db.create_cf(CF_NAME, &db_options()).unwrap();
+        let db_ref = Arc::new(AtomicRefCell::new(db));
+        NumericIndex::new(db_ref, CF_NAME.to_string())
+    }
 
     #[test]
     fn test_numeric_index_load_from_disk() {
@@ -599,5 +650,54 @@ mod tests {
         let offsets = index.filter(&condition).unwrap().collect_vec();
 
         assert_eq!(offsets, result);
+    }
+
+    #[test]
+    fn test_payload_blocks() {
+        let threshold = 4;
+        let values = vec![
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![1.0],
+            vec![2.0],
+            vec![2.0],
+            vec![2.0],
+            vec![2.0],
+        ];
+
+        let tmp_dir = TempDir::new("test_numeric_index_payload_blocks").unwrap();
+        let mut index = open_index(tmp_dir.path());
+
+        values
+            .into_iter()
+            .enumerate()
+            .for_each(|(idx, values)| index.add_many_to_list(idx as PointOffsetType + 1, values));
+
+        let blocks = index
+            .payload_blocks(threshold, "test".to_owned())
+            .collect_vec();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(
+            blocks[0]
+                .condition
+                .range
+                .as_ref()
+                .expect("range condition")
+                .gte
+                .expect("gte"),
+            1.0
+        );
+        assert_eq!(
+            blocks[0]
+                .condition
+                .range
+                .as_ref()
+                .expect("range condition")
+                .lte
+                .expect("lte"),
+            2.0
+        );
     }
 }
