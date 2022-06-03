@@ -8,7 +8,7 @@ doctest = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = [ "web" ]
+default = [ "web", "parking_lot" ]
 web = ["actix-web"]
 service_debug = ["parking_lot", "parking_lot/deadlock_detection"]
 
@@ -19,7 +19,7 @@ rusty-hook = "^0.11.2"
 
 [dependencies]
 
-parking_lot = { version = "0.12", features=["deadlock_detection"], optional = true }
+parking_lot = { version = "0.12.1", features=["deadlock_detection"], optional = true }
 
 num_cpus = "1.13"
 thiserror = "1.0"
