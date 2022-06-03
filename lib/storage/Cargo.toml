@@ -22,6 +22,7 @@ async-trait = "0.1.56"
 log = "0.4"
 tonic = "0.7.2"
 http = "0.2"
+parking_lot = { version = "0.12.1", features=["deadlock_detection"]}
 
 # Consensus related
 atomicwrites = { version = "0.3.1" }

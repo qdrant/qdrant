@@ -47,12 +47,37 @@ pub struct RaftInfo {
     /// The term number increases monotonically.
     /// Each server stores the current term number which is also exchanged in every communication.
     pub term: u64,
-    // ToDo: What does this mean?
+    /// The index of the latest committed (finalized) operation that this peer is aware of.
     pub commit: u64,
     /// Number of consensus operations pending to be applied on this peer
     pub pending_operations: usize,
-    // ToDo: Who is the current leader?
-    // pub leader: u64
+    /// Leader of the current term
+    pub leader: Option<u64>,
+    /// Role of this peer in the current term
+    pub role: Option<StateRole>,
+}
+
+#[derive(Debug, PartialEq, Clone, Copy, Serialize, JsonSchema, Deserialize)]
+pub enum StateRole {
+    /// The node is a follower of the leader.
+    Follower,
+    /// The node could become a leader.
+    Candidate,
+    /// The node is a leader.
+    Leader,
+    /// The node could become a candidate, if `prevote` is enabled.
+    PreCandidate,
+}
+
+impl From<raft::StateRole> for StateRole {
+    fn from(role: raft::StateRole) -> Self {
+        match role {
+            raft::StateRole::Follower => Self::Follower,
+            raft::StateRole::Candidate => Self::Candidate,
+            raft::StateRole::Leader => Self::Leader,
+            raft::StateRole::PreCandidate => Self::PreCandidate,
+        }
+    }
 }
 
 /// Description of enabled cluster
