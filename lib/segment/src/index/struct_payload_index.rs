@@ -31,8 +31,9 @@ use crate::index::PayloadIndex;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{FilterContext, PayloadStorage};
 use crate::types::{
-    Condition, FieldCondition, Filter, FloatPayloadType, IntPayloadType, IsEmptyCondition, Payload,
-    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
+    infer_value_type, Condition, FieldCondition, Filter, FloatPayloadType, IntPayloadType,
+    IsEmptyCondition, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    PointOffsetType,
 };
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
@@ -453,5 +454,18 @@ impl PayloadIndex for StructPayloadIndex {
             }
         }
         self.payload.borrow().flush()
+    }
+
+    fn infer_payload_type(
+        &self,
+        key: PayloadKeyTypeRef,
+    ) -> OperationResult<Option<PayloadSchemaType>> {
+        let mut schema = None;
+        self.payload.borrow().iter(|_id, payload| {
+            let field_value = payload.get_value(key);
+            schema = field_value.and_then(infer_value_type);
+            false
+        })?;
+        Ok(schema)
     }
 }

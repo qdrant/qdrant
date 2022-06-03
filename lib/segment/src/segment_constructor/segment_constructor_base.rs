@@ -3,7 +3,7 @@ use crate::common::version::StorageVersion;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::index::hnsw_index::hnsw::HNSWIndex;
-use crate::index::plain_payload_index::{PlainIndex, PlainPayloadIndex};
+use crate::index::plain_payload_index::PlainIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndexSS, VectorIndexSS};
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
@@ -61,21 +61,13 @@ fn create_segment(
         id_tracker.clone(),
     ));
 
-    let payload_index: Arc<AtomicRefCell<PayloadIndexSS>> =
-        match config.payload_index.unwrap_or_default() {
-            PayloadIndexType::Plain => sp(PlainPayloadIndex::open(
-                condition_checker.clone(),
-                id_tracker.clone(),
-                &payload_index_path,
-            )?),
-            PayloadIndexType::Struct => sp(StructPayloadIndex::open(
-                id_tracker.clone(),
-                payload_storage.clone(),
-                id_tracker.clone(),
-                &payload_index_path,
-                database.clone(),
-            )?),
-        };
+    let payload_index: Arc<AtomicRefCell<PayloadIndexSS>> = sp(StructPayloadIndex::open(
+        id_tracker.clone(),
+        payload_storage,
+        id_tracker.clone(),
+        &payload_index_path,
+        database.clone(),
+    )?);
 
     let vector_index: Arc<AtomicRefCell<VectorIndexSS>> = match config.index {
         Indexes::Plain { .. } => sp(PlainIndex::new(
@@ -107,7 +99,6 @@ fn create_segment(
         current_path: segment_path.to_owned(),
         id_tracker,
         vector_storage,
-        payload_storage,
         payload_index,
         condition_checker,
         vector_index,

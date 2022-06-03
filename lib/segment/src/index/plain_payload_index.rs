@@ -163,6 +163,13 @@ impl PayloadIndex for PlainPayloadIndex {
     fn flush(&self) -> OperationResult<()> {
         todo!()
     }
+
+    fn infer_payload_type(
+        &self,
+        _key: PayloadKeyTypeRef,
+    ) -> OperationResult<Option<PayloadSchemaType>> {
+        todo!()
+    }
 }
 
 pub struct PlainIndex {

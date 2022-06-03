@@ -5,12 +5,11 @@ use crate::entry::entry_point::{
 };
 use crate::id_tracker::IdTrackerSS;
 use crate::index::{PayloadIndexSS, VectorIndexSS};
-use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::payload_storage::{ConditionCheckerSS, PayloadStorage};
+use crate::payload_storage::ConditionCheckerSS;
 use crate::types::{
-    infer_value_type, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
-    PayloadSchemaType, PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig,
-    SegmentInfo, SegmentState, SegmentType, SeqNumberType, VectorElementType, WithPayload,
+    Filter, Payload, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
+    SegmentState, SegmentType, SeqNumberType, VectorElementType, WithPayload,
 };
 use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
@@ -48,7 +47,6 @@ pub struct Segment {
     /// Component for mapping external ids to internal and also keeping track of point versions
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
-    pub payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
     pub payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
     pub condition_checker: Arc<ConditionCheckerSS>,
     pub vector_index: Arc<AtomicRefCell<VectorIndexSS>>,
@@ -75,10 +73,10 @@ impl Segment {
         }?;
         if new_internal_index != old_internal_id {
             // If vector was moved to a new internal id, move payload to this internal id as well
-            let mut payload_storage = self.payload_storage.borrow_mut();
-            let payload = payload_storage.drop(old_internal_id)?;
+            let mut payload_index = self.payload_index.borrow_mut();
+            let payload = payload_index.drop(old_internal_id)?;
             if let Some(payload) = payload {
-                payload_storage.assign(new_internal_index, &payload)?;
+                payload_index.assign(new_internal_index, &payload)?;
             }
         }
 
@@ -223,7 +221,7 @@ impl Segment {
     /// Retrieve payload by internal ID
     #[inline]
     fn payload_by_offset(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
-        self.payload_storage.borrow().payload(point_offset)
+        self.payload_index.borrow().payload(point_offset)
     }
 
     pub fn save_current_state(&self) -> OperationResult<()> {
@@ -234,15 +232,8 @@ impl Segment {
         &self,
         key: PayloadKeyTypeRef,
     ) -> OperationResult<Option<PayloadSchemaType>> {
-        let payload_store = self.payload_storage.borrow();
-
-        let mut schema = None;
-        payload_store.iter(|_id, payload| {
-            let field_value = payload.get_value(key);
-            schema = field_value.and_then(infer_value_type);
-            false
-        })?;
-        Ok(schema)
+        let payload_index = self.payload_index.borrow();
+        payload_index.infer_payload_type(key)
     }
 }
 
@@ -402,7 +393,7 @@ impl SegmentEntry for Segment {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
             segment
-                .payload_storage
+                .payload_index
                 .borrow_mut()
                 .assign_all(internal_id, full_payload)?;
             Ok(true)
@@ -418,7 +409,7 @@ impl SegmentEntry for Segment {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
             segment
-                .payload_storage
+                .payload_index
                 .borrow_mut()
                 .assign(internal_id, payload)?;
             Ok(true)
@@ -434,7 +425,7 @@ impl SegmentEntry for Segment {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
             segment
-                .payload_storage
+                .payload_index
                 .borrow_mut()
                 .delete(internal_id, key)?;
             Ok(true)
@@ -448,7 +439,7 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         self.handle_version_and_failure(op_num, Some(point_id), |segment| {
             let internal_id = segment.lookup_internal_id(point_id)?;
-            segment.payload_storage.borrow_mut().drop(internal_id)?;
+            segment.payload_index.borrow_mut().drop(internal_id)?;
             Ok(true)
         })
     }
@@ -559,7 +550,7 @@ impl SegmentEntry for Segment {
         let state = self.get_state();
 
         self.id_tracker.borrow().flush()?;
-        self.payload_storage.borrow().flush()?;
+        self.payload_index.borrow().flush()?;
         self.vector_storage.borrow().flush()?;
         self.save_state(&state)?;
 
