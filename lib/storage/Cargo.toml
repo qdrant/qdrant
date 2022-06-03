@@ -18,7 +18,7 @@ tokio = {version = "~1.18", features = ["rt-multi-thread"]}
 serde = { version = "~1.0", features = ["derive"] }
 schemars = { version = "0.8.10", features = ["uuid1", "preserve_order"] }
 itertools = "0.10"
-async-trait = "0.1.53"
+async-trait = "0.1.56"
 log = "0.4"
 tonic = "0.7.2"
 http = "0.2"
