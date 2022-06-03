@@ -47,7 +47,7 @@ use collection::PeerId;
 pub use consensus::TableOfContentRef;
 use raft::{
     eraftpb::{ConfChangeV2, Entry as RaftEntry, Snapshot as RaftSnapshot},
-    RawNode,
+    RawNode, SoftState,
 };
 use tokio::sync::oneshot;
 use tonic::transport::{Channel, Uri};
@@ -73,6 +73,7 @@ pub struct TableOfContent {
     collection_management_runtime: Runtime,
     alias_persistence: RwLock<AliasPersistence>,
     segment_searcher: Box<dyn CollectionSearcher + Sync + Send>,
+    // TODO: move raft related fields into separate struct
     consensus_op_wal: Arc<std::sync::Mutex<Wal>>,
     raft_state: Arc<std::sync::Mutex<PersistentRaftState>>,
     propose_sender: Option<std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>>,
@@ -80,6 +81,7 @@ pub struct TableOfContent {
         std::sync::Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
     transport_channel_pool: Arc<TransportChannelPool>,
     this_peer_id: PeerId,
+    raft_soft_state: parking_lot::Mutex<Option<SoftState>>,
 }
 
 impl TableOfContent {
@@ -164,6 +166,7 @@ impl TableOfContent {
             propose_sender,
             on_consensus_op_apply: std::sync::Mutex::new(HashMap::new()),
             transport_channel_pool,
+            raft_soft_state: parking_lot::Mutex::new(None),
         }
     }
 
@@ -662,6 +665,7 @@ impl TableOfContent {
         match self.is_consensus_enabled() {
             true => {
                 let hard_state = self.hard_state()?;
+                let soft_state = self.raft_soft_state.lock();
                 let peers = self
                     .peer_address_by_id()?
                     .into_iter()
@@ -682,11 +686,17 @@ impl TableOfContent {
                         term: hard_state.term,
                         commit: hard_state.commit,
                         pending_operations,
+                        leader: soft_state.as_ref().map(|state| state.leader_id),
+                        role: soft_state.as_ref().map(|state| state.raft_state.into()),
                     },
                 }))
             }
             false => Ok(ClusterStatus::Disabled),
         }
+    }
+
+    pub fn set_raft_soft_state(&self, state: &SoftState) {
+        *self.raft_soft_state.lock() = Some(SoftState { ..*state });
     }
 
     pub fn consensus_op_entry(&self, raft_entry_id: u64) -> raft::Result<RaftEntry> {

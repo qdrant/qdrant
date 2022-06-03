@@ -3305,6 +3305,7 @@ dependencies = [
  "itertools 0.10.3",
  "log 0.4.17",
  "num_cpus",
+ "parking_lot",
  "prost 0.7.0",
  "raft",
  "rand 0.8.5",

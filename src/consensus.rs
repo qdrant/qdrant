@@ -307,6 +307,7 @@ impl Consensus {
     }
 
     fn handle_soft_state(&self, state: &SoftState) {
+        self.node.raft.raft_log.store.set_raft_soft_state(state);
         if state.raft_state == StateRole::Leader || state.raft_state == StateRole::Follower {
             self.is_leader_established.make_ready()
         } else {

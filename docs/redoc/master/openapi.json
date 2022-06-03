@@ -3273,6 +3273,7 @@
             "minimum": 0
           },
           "commit": {
+            "description": "The index of the latest committed (finalized) operation that this peer is aware of.",
             "type": "integer",
             "format": "uint64",
             "minimum": 0
@@ -3282,8 +3283,35 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          },
+          "leader": {
+            "description": "Leader of the current term",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "role": {
+            "description": "Role of this peer in the current term",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StateRole"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "StateRole": {
+        "type": "string",
+        "enum": [
+          "Follower",
+          "Candidate",
+          "Leader",
+          "PreCandidate"
+        ]
       }
     }
   }
