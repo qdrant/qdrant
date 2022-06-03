@@ -1,24 +1,19 @@
 #[cfg(test)]
 mod tests {
-    use atomic_refcell::AtomicRefCell;
     use itertools::Itertools;
     use rand::{thread_rng, Rng};
-    use segment::common::rocksdb_operations::open_db;
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
     use segment::index::hnsw_index::hnsw::HNSWIndex;
-    use segment::index::struct_payload_index::StructPayloadIndex;
-    use segment::index::{PayloadIndex, VectorIndex};
+    use segment::index::VectorIndex;
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload,
         PayloadIndexType, PayloadSchemaType, Range, SearchParams, SegmentConfig, SeqNumberType,
         StorageType,
     };
-    use segment::vector_storage::storage_points_iterator::StoragePointsIterator;
     use serde_json::json;
     use std::sync::atomic::AtomicBool;
-    use std::sync::Arc;
     use tempdir::TempDir;
 
     #[test]
@@ -38,9 +33,7 @@ mod tests {
         let mut rnd = thread_rng();
 
         let dir = TempDir::new("segment_dir").unwrap();
-        let payload_index_dir = TempDir::new("payload_index_dir").unwrap();
         let hnsw_dir = TempDir::new("hnsw_dir").unwrap();
-        let db = open_db(dir.path()).unwrap();
 
         let config = SegmentConfig {
             vector_size: dim,
@@ -70,18 +63,7 @@ mod tests {
         }
         // let opnum = num_vectors + 1;
 
-        let payload_index = StructPayloadIndex::open(
-            Arc::new(AtomicRefCell::new(StoragePointsIterator(
-                segment.vector_storage.clone(),
-            ))),
-            segment.payload_storage.clone(),
-            segment.id_tracker.clone(),
-            payload_index_dir.path(),
-            db,
-        )
-        .unwrap();
-
-        let payload_index_ptr = Arc::new(AtomicRefCell::new(payload_index));
+        let payload_index_ptr = segment.payload_index;
 
         let hnsw_config = HnswConfig {
             m,

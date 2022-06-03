@@ -86,6 +86,12 @@ pub trait PayloadIndex {
 
     /// Force persistence of current storage state.
     fn flush(&self) -> OperationResult<()>;
+
+    /// Infer payload type from existing payload data.
+    fn infer_payload_type(
+        &self,
+        key: PayloadKeyTypeRef,
+    ) -> OperationResult<Option<PayloadSchemaType>>;
 }
 
 pub type VectorIndexSS = dyn VectorIndex + Sync + Send;
