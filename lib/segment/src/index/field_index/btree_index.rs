@@ -545,7 +545,7 @@ mod tests {
         let mut db = DB::open_default(tmp_dir.path()).unwrap();
         db.create_cf(CF_NAME, &db_options()).unwrap();
         let db_ref = Arc::new(AtomicRefCell::new(db));
-        let index: NumericIndex<_> = NumericIndex::new(db_ref.clone(), CF_NAME.to_string());
+        let index: NumericIndex<_> = NumericIndex::new(db_ref, CF_NAME.to_string());
         (tmp_dir, index)
     }
 
