@@ -234,7 +234,7 @@ impl Histogram {
                         (
                             Some(left_border.clone()),
                             Some((new_border, new_border_count)),
-                            true
+                            true,
                         )
                     }
                 } else {
@@ -266,7 +266,7 @@ impl Histogram {
                         (
                             Some(right_border.clone()),
                             Some((new_border, new_border_count)),
-                            true
+                            true,
                         )
                     }
                 } else {
@@ -286,7 +286,8 @@ impl Histogram {
                         // ... |...
                         right_border_count.left = left_border_count.left;
                         (Some(left_border.clone()), None, true)
-                    } else if right_border_count.left + left_border_count.left <= self.current_bucket_size()
+                    } else if right_border_count.left + left_border_count.left
+                        <= self.current_bucket_size()
                         && far_left_neighbor.is_some()
                     {
                         // ...|.l..r...
@@ -313,7 +314,7 @@ impl Histogram {
                         (
                             Some(left_border.clone()),
                             Some((new_border, new_border_count)),
-                            true
+                            true,
                         )
                     }
                 } else if right_border == val {
@@ -324,7 +325,8 @@ impl Histogram {
                         // ...| ...
                         left_border_count.right = right_border_count.left;
                         (Some(right_border.clone()), None, true)
-                    } else if left_border_count.right + right_border_count.right <= self.current_bucket_size()
+                    } else if left_border_count.right + right_border_count.right
+                        <= self.current_bucket_size()
                         && far_right_neighbor.is_some()
                     {
                         // ...l..r.|...
@@ -351,7 +353,7 @@ impl Histogram {
                         (
                             Some(right_border.clone()),
                             Some((new_border, new_border_count)),
-                            true
+                            true,
                         )
                     }
                 } else if right_border_count.left == 0 {
@@ -510,7 +512,8 @@ impl Histogram {
                             },
                         );
 
-                        if left_border_count.left < self.current_bucket_size() && far_left_neighbor.is_some()
+                        if left_border_count.left < self.current_bucket_size()
+                            && far_left_neighbor.is_some()
                         {
                             //we can move
                             //  ...|..x.........|...
@@ -701,28 +704,40 @@ mod tests {
         let to = histogram.get_range_by_size(from, range_size);
         let estimation = histogram.estimate(from, to);
         eprintln!("({from:?} - {to:?}) -> {estimation:?} / {range_size}");
-        assert!((estimation.1 as i64 - range_size as i64).abs() < 2 * histogram.current_bucket_size() as i64);
+        assert!(
+            (estimation.1 as i64 - range_size as i64).abs()
+                < 2 * histogram.current_bucket_size() as i64
+        );
 
         let from = Unbounded;
         let range_size = 1000;
         let to = histogram.get_range_by_size(from, range_size);
         let estimation = histogram.estimate(from, to);
         eprintln!("({from:?} - {to:?}) -> {estimation:?} / {range_size}");
-        assert!((estimation.1 as i64 - range_size as i64).abs() < 2 * histogram.current_bucket_size() as i64);
+        assert!(
+            (estimation.1 as i64 - range_size as i64).abs()
+                < 2 * histogram.current_bucket_size() as i64
+        );
 
         let from = Excluded(0.1);
         let range_size = 100;
         let to = histogram.get_range_by_size(from, range_size);
         let estimation = histogram.estimate(from, to);
         eprintln!("({from:?} - {to:?}) -> {estimation:?} / {range_size}");
-        assert!((estimation.1 as i64 - range_size as i64).abs() < 2 * histogram.current_bucket_size() as i64);
+        assert!(
+            (estimation.1 as i64 - range_size as i64).abs()
+                < 2 * histogram.current_bucket_size() as i64
+        );
 
         let from = Excluded(0.1);
         let range_size = 1000;
         let to = histogram.get_range_by_size(from, range_size);
         let estimation = histogram.estimate(from, to);
         eprintln!("({from:?} - {to:?}) -> {estimation:?} / {range_size}");
-        assert!((estimation.1 as i64 - range_size as i64).abs() < 2 * histogram.current_bucket_size() as i64);
+        assert!(
+            (estimation.1 as i64 - range_size as i64).abs()
+                < 2 * histogram.current_bucket_size() as i64
+        );
 
         let from = Excluded(0.1);
         let range_size = 100_000;
@@ -825,7 +840,11 @@ mod tests {
         assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
     }
 
-    fn build_histogram(max_bucket_size: usize, precision: f64, points: Vec<Point>) -> (Histogram, BTreeSet<Point>) {
+    fn build_histogram(
+        max_bucket_size: usize,
+        precision: f64,
+        points: Vec<Point>,
+    ) -> (Histogram, BTreeSet<Point>) {
         let mut points_index: BTreeSet<Point> = Default::default();
         let mut histogram = Histogram::new(max_bucket_size, precision);
 
@@ -868,7 +887,8 @@ mod tests {
             val: f64::round(rnd.sample::<f64, _>(StandardNormal) * 100.0),
             idx: i,
         });
-        let (histogram, points_index) = build_histogram(max_bucket_size, precision, points.collect());
+        let (histogram, points_index) =
+            build_histogram(max_bucket_size, precision, points.collect());
 
         request_histogram(&histogram, &points_index);
     }
