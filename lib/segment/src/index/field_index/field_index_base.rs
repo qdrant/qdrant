@@ -1,7 +1,7 @@
 use crate::entry::entry_point::OperationResult;
-use crate::index::field_index::btree_index::NumericIndex;
-use crate::index::field_index::on_disk_geo_index::OnDiskGeoMapIndex;
-use crate::index::field_index::on_disk_map_index::OnDiskMapIndex;
+use crate::index::field_index::geo_index::GeoMapIndex;
+use crate::index::field_index::map_index::MapIndex;
+use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType,
@@ -73,10 +73,10 @@ pub trait ValueIndexer<T> {
 #[allow(clippy::enum_variant_names)]
 pub enum FieldIndex {
     IntIndex(NumericIndex<IntPayloadType>),
-    IntMapIndex(OnDiskMapIndex<IntPayloadType>),
-    KeywordIndex(OnDiskMapIndex<String>),
+    IntMapIndex(MapIndex<IntPayloadType>),
+    KeywordIndex(MapIndex<String>),
     FloatIndex(NumericIndex<FloatPayloadType>),
-    GeoIndex(OnDiskGeoMapIndex),
+    GeoIndex(GeoMapIndex),
 }
 
 impl FieldIndex {

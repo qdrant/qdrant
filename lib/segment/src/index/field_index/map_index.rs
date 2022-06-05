@@ -21,7 +21,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 /// HashMap-based type of index
-pub struct OnDiskMapIndex<N: Hash + Eq + Clone + Display> {
+pub struct MapIndex<N: Hash + Eq + Clone + Display> {
     map: HashMap<N, Vec<PointOffsetType>>,
     point_to_values: Vec<Vec<N>>,
     /// Amount of point which have at least one indexed payload value
@@ -30,9 +30,9 @@ pub struct OnDiskMapIndex<N: Hash + Eq + Clone + Display> {
     db: Arc<AtomicRefCell<DB>>,
 }
 
-impl<N: Hash + Eq + Clone + Display + FromStr> OnDiskMapIndex<N> {
-    pub fn new(db: Arc<AtomicRefCell<DB>>, field_name: &str) -> OnDiskMapIndex<N> {
-        OnDiskMapIndex {
+impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
+    pub fn new(db: Arc<AtomicRefCell<DB>>, field_name: &str) -> MapIndex<N> {
+        MapIndex {
             map: HashMap::new(),
             point_to_values: Vec::new(),
             indexed_points: 0,
@@ -184,7 +184,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> OnDiskMapIndex<N> {
         }
 
         for value in &removed_values {
-            let key = OnDiskMapIndex::encode_db_record(value, idx);
+            let key = MapIndex::encode_db_record(value, idx);
             self.map.remove(value);
             store_ref.delete_cf(cf_handle, key)?;
         }
@@ -193,9 +193,9 @@ impl<N: Hash + Eq + Clone + Display + FromStr> OnDiskMapIndex<N> {
     }
 }
 
-impl PayloadFieldIndex for OnDiskMapIndex<String> {
+impl PayloadFieldIndex for MapIndex<String> {
     fn load(&mut self) -> OperationResult<bool> {
-        OnDiskMapIndex::load(self)
+        MapIndex::load(self)
     }
 
     fn clear(self) -> OperationResult<()> {
@@ -203,7 +203,7 @@ impl PayloadFieldIndex for OnDiskMapIndex<String> {
     }
 
     fn flush(&self) -> OperationResult<()> {
-        OnDiskMapIndex::flush(self)
+        MapIndex::flush(self)
     }
 
     fn filter(
@@ -254,9 +254,9 @@ impl PayloadFieldIndex for OnDiskMapIndex<String> {
     }
 }
 
-impl PayloadFieldIndex for OnDiskMapIndex<IntPayloadType> {
+impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     fn load(&mut self) -> OperationResult<bool> {
-        OnDiskMapIndex::load(self)
+        MapIndex::load(self)
     }
 
     fn clear(self) -> OperationResult<()> {
@@ -264,7 +264,7 @@ impl PayloadFieldIndex for OnDiskMapIndex<IntPayloadType> {
     }
 
     fn flush(&self) -> OperationResult<()> {
-        OnDiskMapIndex::flush(self)
+        MapIndex::flush(self)
     }
 
     fn filter(
@@ -315,7 +315,7 @@ impl PayloadFieldIndex for OnDiskMapIndex<IntPayloadType> {
     }
 }
 
-impl ValueIndexer<String> for OnDiskMapIndex<String> {
+impl ValueIndexer<String> for MapIndex<String> {
     fn add_many(&mut self, id: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
         self.add_many_to_map(id, values)
     }
@@ -332,7 +332,7 @@ impl ValueIndexer<String> for OnDiskMapIndex<String> {
     }
 }
 
-impl ValueIndexer<IntPayloadType> for OnDiskMapIndex<IntPayloadType> {
+impl ValueIndexer<IntPayloadType> for MapIndex<IntPayloadType> {
     fn add_many(
         &mut self,
         id: PointOffsetType,
@@ -370,8 +370,7 @@ mod tests {
         data: &[Vec<N>],
         path: &Path,
     ) {
-        let mut index =
-            OnDiskMapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
+        let mut index = MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
         index.recreate().unwrap();
         for (idx, values) in data.iter().enumerate() {
             index
@@ -385,8 +384,7 @@ mod tests {
         data: &[Vec<N>],
         path: &Path,
     ) {
-        let mut index =
-            OnDiskMapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
+        let mut index = MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
         index.load().unwrap();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<N> = HashSet::from_iter(

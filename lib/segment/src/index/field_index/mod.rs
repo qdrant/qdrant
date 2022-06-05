@@ -1,13 +1,13 @@
 use crate::types::{FieldCondition, IsEmptyCondition, PointOffsetType};
 use std::collections::HashSet;
 
-pub mod btree_index;
 mod field_index_base;
 pub mod geo_hash;
+pub mod geo_index;
 mod histogram;
 pub mod index_selector;
-pub mod on_disk_geo_index;
-pub mod on_disk_map_index;
+pub mod map_index;
+pub mod numeric_index;
 mod stat_tools;
 
 pub use field_index_base::*;

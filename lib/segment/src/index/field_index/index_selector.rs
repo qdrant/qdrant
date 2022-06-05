@@ -1,6 +1,6 @@
-use crate::index::field_index::btree_index::NumericIndex;
-use crate::index::field_index::on_disk_geo_index::OnDiskGeoMapIndex;
-use crate::index::field_index::on_disk_map_index::OnDiskMapIndex;
+use crate::index::field_index::geo_index::GeoMapIndex;
+use crate::index::field_index::map_index::MapIndex;
+use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::FieldIndex;
 use crate::types::{FloatPayloadType, IntPayloadType, PayloadSchemaType};
 use atomic_refcell::AtomicRefCell;
@@ -15,10 +15,10 @@ pub fn index_selector(
 ) -> Vec<FieldIndex> {
     match payload_type {
         PayloadSchemaType::Keyword => {
-            vec![FieldIndex::KeywordIndex(OnDiskMapIndex::new(db, field))]
+            vec![FieldIndex::KeywordIndex(MapIndex::new(db, field))]
         }
         PayloadSchemaType::Integer => vec![
-            FieldIndex::IntMapIndex(OnDiskMapIndex::<IntPayloadType>::new(db.clone(), field)),
+            FieldIndex::IntMapIndex(MapIndex::<IntPayloadType>::new(db.clone(), field)),
             FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(db, field)),
         ],
         PayloadSchemaType::Float => {
@@ -26,6 +26,6 @@ pub fn index_selector(
                 NumericIndex::<FloatPayloadType>::new(db, field),
             )]
         }
-        PayloadSchemaType::Geo => vec![FieldIndex::GeoIndex(OnDiskGeoMapIndex::new(db, field))],
+        PayloadSchemaType::Geo => vec![FieldIndex::GeoIndex(GeoMapIndex::new(db, field))],
     }
 }

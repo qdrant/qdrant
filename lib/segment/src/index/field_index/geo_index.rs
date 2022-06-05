@@ -24,7 +24,7 @@ use std::sync::Arc;
 // TODO discuss value, should it be dynamically computed?
 const GEO_QUERY_MAX_REGION: usize = 12;
 
-pub struct OnDiskGeoMapIndex {
+pub struct GeoMapIndex {
     /**
     {
         "d": 10,
@@ -54,9 +54,9 @@ pub struct OnDiskGeoMapIndex {
     db: Arc<AtomicRefCell<DB>>,
 }
 
-impl OnDiskGeoMapIndex {
+impl GeoMapIndex {
     pub fn new(db: Arc<AtomicRefCell<DB>>, field: &str) -> Self {
-        OnDiskGeoMapIndex {
+        GeoMapIndex {
             points_per_hash: Default::default(),
             values_per_hash: Default::default(),
             points_map: Default::default(),
@@ -422,7 +422,7 @@ impl OnDiskGeoMapIndex {
     }
 }
 
-impl ValueIndexer<GeoPoint> for OnDiskGeoMapIndex {
+impl ValueIndexer<GeoPoint> for GeoMapIndex {
     fn add_many(&mut self, id: PointOffsetType, values: Vec<GeoPoint>) -> OperationResult<()> {
         self.add_many_geo_points(id, &values)
     }
@@ -447,9 +447,9 @@ impl ValueIndexer<GeoPoint> for OnDiskGeoMapIndex {
     }
 }
 
-impl PayloadFieldIndex for OnDiskGeoMapIndex {
+impl PayloadFieldIndex for GeoMapIndex {
     fn load(&mut self) -> OperationResult<bool> {
-        OnDiskGeoMapIndex::load(self)
+        GeoMapIndex::load(self)
     }
 
     fn clear(self) -> OperationResult<()> {
@@ -457,7 +457,7 @@ impl PayloadFieldIndex for OnDiskGeoMapIndex {
     }
 
     fn flush(&self) -> OperationResult<()> {
-        OnDiskGeoMapIndex::flush(self)
+        GeoMapIndex::flush(self)
     }
 
     fn filter(
@@ -577,12 +577,12 @@ mod tests {
         FieldCondition::new_geo_radius(key, geo_radius)
     }
 
-    fn build_random_index(num_points: usize, num_geo_values: usize) -> OnDiskGeoMapIndex {
+    fn build_random_index(num_points: usize, num_geo_values: usize) -> GeoMapIndex {
         let tmp_dir = TempDir::new("test_dir").unwrap();
         let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
 
         let mut rnd = StdRng::seed_from_u64(42);
-        let mut index = OnDiskGeoMapIndex::new(db, FIELD_NAME);
+        let mut index = GeoMapIndex::new(db, FIELD_NAME);
 
         index.recreate().unwrap();
 
@@ -689,7 +689,7 @@ mod tests {
         let tmp_dir = TempDir::new("test_dir").unwrap();
         let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
 
-        let mut index = OnDiskGeoMapIndex::new(db, FIELD_NAME);
+        let mut index = GeoMapIndex::new(db, FIELD_NAME);
 
         index.recreate().unwrap();
 
@@ -750,7 +750,7 @@ mod tests {
         let tmp_dir = TempDir::new("test_dir").unwrap();
         let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
 
-        let mut index = OnDiskGeoMapIndex::new(db, FIELD_NAME);
+        let mut index = GeoMapIndex::new(db, FIELD_NAME);
 
         index.recreate().unwrap();
 
@@ -785,7 +785,7 @@ mod tests {
         {
             let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
 
-            let mut index = OnDiskGeoMapIndex::new(db, FIELD_NAME);
+            let mut index = GeoMapIndex::new(db, FIELD_NAME);
 
             index.recreate().unwrap();
 
@@ -805,7 +805,7 @@ mod tests {
         }
 
         let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
-        let mut new_index = OnDiskGeoMapIndex::new(db, FIELD_NAME);
+        let mut new_index = GeoMapIndex::new(db, FIELD_NAME);
         new_index.load().unwrap();
 
         let berlin_geo_radius = GeoRadius {
