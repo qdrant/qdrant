@@ -1,4 +1,4 @@
-use crate::index::{PayloadIndex, PayloadIndexSS, VectorIndex};
+use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::types::{
     Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
@@ -18,6 +18,7 @@ use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use crate::index::struct_payload_index::StructPayloadIndex;
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -174,13 +175,13 @@ impl PayloadIndex for PlainPayloadIndex {
 
 pub struct PlainIndex {
     vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
-    payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
+    payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
 }
 
 impl PlainIndex {
     pub fn new(
         vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
-        payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
+        payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     ) -> PlainIndex {
         PlainIndex {
             vector_storage,

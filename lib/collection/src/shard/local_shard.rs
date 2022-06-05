@@ -232,7 +232,6 @@ impl LocalShard {
                 vector_size,
                 distance,
                 index: Default::default(),
-                payload_index: Default::default(),
                 storage_type: Default::default(),
                 payload_storage_type: match config.params.on_disk_payload {
                     true => PayloadStorageType::OnDisk,

@@ -69,7 +69,6 @@ pub trait SegmentOptimizer {
             vector_size: collection_params.vector_size,
             distance: collection_params.distance,
             index: Indexes::Plain {},
-            payload_index: Some(PayloadIndexType::Plain),
             storage_type: StorageType::InMemory,
             payload_storage_type: match collection_params.on_disk_payload {
                 true => PayloadStorageType::OnDisk,
@@ -121,11 +120,6 @@ pub trait SegmentOptimizer {
             } else {
                 Indexes::Plain {}
             },
-            payload_index: Some(if is_payload_indexed {
-                PayloadIndexType::Struct
-            } else {
-                PayloadIndexType::Plain
-            }),
             storage_type: if is_on_disk {
                 StorageType::Mmap
             } else {

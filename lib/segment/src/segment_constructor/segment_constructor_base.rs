@@ -5,13 +5,13 @@ use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::plain_payload_index::PlainIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::{PayloadIndexSS, VectorIndexSS};
+use crate::index::VectorIndexSS;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SegmentVersion, SEGMENT_STATE_FILE};
 use crate::types::{
-    Indexes, PayloadIndexType, PayloadStorageType, SegmentConfig, SegmentState, SegmentType,
-    SeqNumberType, StorageType,
+    Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
+    StorageType,
 };
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
@@ -55,7 +55,7 @@ fn create_segment(
         PayloadStorageType::OnDisk => sp(OnDiskPayloadStorage::open(database.clone())?.into()),
     };
 
-    let payload_index: Arc<AtomicRefCell<PayloadIndexSS>> = sp(StructPayloadIndex::open(
+    let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
         id_tracker.clone(),
         payload_storage,
         id_tracker.clone(),
@@ -76,10 +76,7 @@ fn create_segment(
     };
 
     let segment_type = match config.index {
-        Indexes::Plain { .. } => match config.payload_index.unwrap_or_default() {
-            PayloadIndexType::Plain => SegmentType::Plain,
-            PayloadIndexType::Struct => SegmentType::Indexed,
-        },
+        Indexes::Plain { .. } => SegmentType::Plain,
         Indexes::Hnsw { .. } => SegmentType::Indexed,
     };
 

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use crate::index::PayloadIndex;
 
 /// Structure for constructing segment out of several other segments
 pub struct SegmentBuilder {

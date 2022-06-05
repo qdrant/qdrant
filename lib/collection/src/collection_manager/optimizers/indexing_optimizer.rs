@@ -75,11 +75,6 @@ impl IndexingOptimizer {
                     Indexes::Hnsw(_) => true,
                 };
 
-                let is_payload_indexed = match segment_config.payload_index.unwrap_or_default() {
-                    PayloadIndexType::Plain => false,
-                    PayloadIndexType::Struct => true,
-                };
-
                 let is_memmaped = match segment_config.storage_type {
                     StorageType::InMemory => false,
                     StorageType::Mmap => true,
@@ -90,15 +85,8 @@ impl IndexingOptimizer {
                 let big_for_index =
                     vector_size >= self.thresholds_config.indexing_threshold * BYTES_IN_KB;
 
-                // ToDo: remove deprecated
-                let big_for_payload_index =
-                    vector_size >= self.thresholds_config.payload_indexing_threshold * BYTES_IN_KB;
-
-                let has_payload = !read_segment.get_indexed_fields().is_empty();
-
                 let require_indexing = (big_for_mmap && !is_memmaped)
-                    || (big_for_index && !is_vector_indexed)
-                    || (has_payload && big_for_payload_index && !is_payload_indexed);
+                    || (big_for_index && !is_vector_indexed);
 
                 match require_indexing {
                     true => Some((*idx, vector_size)),

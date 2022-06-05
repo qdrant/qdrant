@@ -39,7 +39,6 @@ mod tests {
         let config = SegmentConfig {
             vector_size: dim,
             index: Indexes::Plain {},
-            payload_index: Some(PayloadIndexType::Plain),
             storage_type: StorageType::InMemory,
             distance,
             payload_storage_type: Default::default(),

@@ -4,7 +4,7 @@ use crate::entry::entry_point::{
     get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };
 use crate::id_tracker::IdTrackerSS;
-use crate::index::{PayloadIndexSS, VectorIndexSS};
+use crate::index::{PayloadIndex, VectorIndexSS};
 use crate::types::{
     Filter, Payload, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
@@ -19,6 +19,7 @@ use std::fs::{remove_dir_all, rename};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use crate::index::struct_payload_index::StructPayloadIndex;
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
@@ -46,7 +47,7 @@ pub struct Segment {
     /// Component for mapping external ids to internal and also keeping track of point versions
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
-    pub payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
+    pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     pub vector_index: Arc<AtomicRefCell<VectorIndexSS>>,
     /// Shows if it is possible to insert more points into this segment
     pub appendable_flag: bool,
@@ -691,7 +692,6 @@ mod tests {
         let config = SegmentConfig {
             vector_size: dim,
             index: Indexes::Plain {},
-            payload_index: Some(PayloadIndexType::Plain),
             storage_type: StorageType::InMemory,
             distance: Distance::Dot,
             payload_storage_type: Default::default(),

@@ -95,4 +95,3 @@ pub trait PayloadIndex {
 }
 
 pub type VectorIndexSS = dyn VectorIndex + Sync + Send;
-pub type PayloadIndexSS = dyn PayloadIndex + Sync + Send;

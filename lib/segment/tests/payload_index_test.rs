@@ -5,38 +5,43 @@ mod tests {
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{
         generate_diverse_payload, random_filter, random_vector, FLICKING_KEY, GEO_KEY, INT_KEY,
-        LAT_RANGE, LON_RANGE, STR_KEY,
+        INT_KEY_2, LAT_RANGE, LON_RANGE, STR_KEY,
     };
     use segment::segment::Segment;
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, GeoPoint, GeoRadius, Indexes,
-        IsEmptyCondition, Payload, PayloadField, PayloadIndexType, PayloadSchemaType, Range,
+        IsEmptyCondition, Payload, PayloadField, PayloadSchemaType, Range,
         SegmentConfig, StorageType, WithPayload,
     };
     use std::path::Path;
     use tempdir::TempDir;
+    use segment::index::PayloadIndex;
 
     fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
         let mut rnd = rand::thread_rng();
         let dim = 5;
 
-        let mut config = SegmentConfig {
+        let config = SegmentConfig {
             vector_size: dim,
             index: Indexes::Plain {},
-            payload_index: Some(PayloadIndexType::Plain),
             storage_type: StorageType::InMemory,
             distance: Distance::Dot,
             payload_storage_type: Default::default(),
         };
 
         let mut plain_segment = build_segment(path_plain, &config).unwrap();
-        config.payload_index = Some(PayloadIndexType::Struct);
         let mut struct_segment = build_segment(path_struct, &config).unwrap();
 
-        let num_points = 2000;
+        let num_points = 3000;
+        let points_to_delete = 1000;
 
         let mut opnum = 0;
+        struct_segment
+            .create_field_index(opnum, INT_KEY_2, &Some(PayloadSchemaType::Integer))
+            .unwrap();
+
+        opnum += 1;
         for n in 0..num_points {
             let idx = n.into();
             let vector = random_vector(&mut rnd, dim);
@@ -67,6 +72,17 @@ mod tests {
             .create_field_index(opnum, FLICKING_KEY, &Some(PayloadSchemaType::Integer))
             .unwrap();
 
+        for _ in 0..points_to_delete {
+            opnum += 1;
+            let idx_to_remove = rnd.gen_range(0..num_points);
+            plain_segment
+                .delete_point(opnum, idx_to_remove.into())
+                .unwrap();
+            struct_segment
+                .delete_point(opnum, idx_to_remove.into())
+                .unwrap();
+        }
+        
         (struct_segment, plain_segment)
     }
 
