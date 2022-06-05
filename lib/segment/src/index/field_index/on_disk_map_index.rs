@@ -45,10 +45,9 @@ impl<N: Hash + Eq + Clone + Display + FromStr> OnDiskMapIndex<N> {
         format!("{field}_map")
     }
 
-    pub fn recreate(&self) -> OperationResult<()>{
+    pub fn recreate(&self) -> OperationResult<()> {
         Ok(recreate_cf(self.db.clone(), &self.store_cf_name)?)
     }
-
 
     fn load(&mut self) -> OperationResult<bool> {
         let db_ref = self.db.borrow();
@@ -195,7 +194,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr> OnDiskMapIndex<N> {
 }
 
 impl PayloadFieldIndex for OnDiskMapIndex<String> {
-
     fn load(&mut self) -> OperationResult<bool> {
         OnDiskMapIndex::load(self)
     }
@@ -329,13 +327,17 @@ impl ValueIndexer<String> for OnDiskMapIndex<String> {
         None
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()>  {
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         self.remove_point(id)
     }
 }
 
 impl ValueIndexer<IntPayloadType> for OnDiskMapIndex<IntPayloadType> {
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<IntPayloadType>) -> OperationResult<()> {
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<IntPayloadType>,
+    ) -> OperationResult<()> {
         self.add_many_to_map(id, values)
     }
 
@@ -368,7 +370,8 @@ mod tests {
         data: &[Vec<N>],
         path: &Path,
     ) {
-        let mut index = OnDiskMapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
+        let mut index =
+            OnDiskMapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
         index.recreate().unwrap();
         for (idx, values) in data.iter().enumerate() {
             index
@@ -382,7 +385,8 @@ mod tests {
         data: &[Vec<N>],
         path: &Path,
     ) {
-        let mut index = OnDiskMapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
+        let mut index =
+            OnDiskMapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
         index.load().unwrap();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<N> = HashSet::from_iter(

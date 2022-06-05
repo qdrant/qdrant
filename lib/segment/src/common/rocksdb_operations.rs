@@ -67,10 +67,7 @@ pub fn create_db_cf_if_not_exists(
     Ok(())
 }
 
-pub fn recreate_cf(
-    db: Arc<AtomicRefCell<DB>>,
-    store_cf_name: &str,
-) -> Result<(), Error> {
+pub fn recreate_cf(db: Arc<AtomicRefCell<DB>>, store_cf_name: &str) -> Result<(), Error> {
     let mut db_mut = db.borrow_mut();
 
     if db_mut.cf_handle(store_cf_name).is_some() {
@@ -80,4 +77,3 @@ pub fn recreate_cf(
     db_mut.create_cf(store_cf_name, &db_options())?;
     Ok(())
 }
-

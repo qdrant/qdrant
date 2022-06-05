@@ -73,7 +73,7 @@ impl OnDiskGeoMapIndex {
         format!("{field}_geo")
     }
 
-    pub fn recreate(&self) -> OperationResult<()>{
+    pub fn recreate(&self) -> OperationResult<()> {
         Ok(recreate_cf(self.db.clone(), &self.store_cf_name)?)
     }
 
@@ -230,11 +230,10 @@ impl OnDiskGeoMapIndex {
             return Ok(()); // Already removed or never actually existed
         }
 
-
         let removed_points = std::mem::take(&mut self.point_to_values[idx as usize]);
 
         if removed_points.is_empty() {
-            return Ok(())
+            return Ok(());
         }
 
         self.points_count -= 1;
@@ -443,7 +442,7 @@ impl ValueIndexer<GeoPoint> for OnDiskGeoMapIndex {
         }
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()>  {
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         self.remove_point(id)
     }
 }
@@ -589,7 +588,9 @@ mod tests {
 
         for idx in 0..num_points {
             let geo_points = random_geo_payload(&mut rnd, num_geo_values..=num_geo_values);
-            index.add_point(idx as PointOffsetType, &Value::Array(geo_points)).unwrap();
+            index
+                .add_point(idx as PointOffsetType, &Value::Array(geo_points))
+                .unwrap();
         }
         assert_eq!(index.points_count, num_points);
         assert_eq!(index.values_count, num_points * num_geo_values);
@@ -789,15 +790,15 @@ mod tests {
             index.recreate().unwrap();
 
             let geo_values = json!([
-            {
-                "lon": BERLIN.lon,
-                "lat": BERLIN.lat
-            },
-            {
-                "lon": POTSDAM.lon,
-                "lat": POTSDAM.lat
-            }
-        ]);
+                {
+                    "lon": BERLIN.lon,
+                    "lat": BERLIN.lat
+                },
+                {
+                    "lon": POTSDAM.lon,
+                    "lat": POTSDAM.lat
+                }
+            ]);
             index.add_point(1, &geo_values).unwrap();
             index.flush().unwrap();
             drop(index);

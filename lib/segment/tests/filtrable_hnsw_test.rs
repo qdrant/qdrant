@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use itertools::Itertools;
     use rand::{thread_rng, Rng};
     use segment::entry::entry_point::SegmentEntry;
@@ -8,8 +7,13 @@ mod tests {
     use segment::index::hnsw_index::hnsw::HNSWIndex;
     use segment::index::VectorIndex;
     use segment::segment_constructor::build_segment;
-    use segment::types::{Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadIndexType, PayloadSchemaType, PointOffsetType, Range, SearchParams, SegmentConfig, SeqNumberType, StorageType};
+    use segment::types::{
+        Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload,
+        PayloadIndexType, PayloadSchemaType, PointOffsetType, Range, SearchParams, SegmentConfig,
+        SeqNumberType, StorageType,
+    };
     use serde_json::json;
+    use std::collections::HashMap;
     use std::sync::atomic::AtomicBool;
     use tempdir::TempDir;
 
@@ -49,8 +53,7 @@ mod tests {
             let vector = random_vector(&mut rnd, dim);
 
             let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
-            let payload: Payload =
-                json!({int_key:int_payload,}).into();
+            let payload: Payload = json!({int_key:int_payload,}).into();
 
             segment
                 .upsert_point(n as SeqNumberType, idx, &vector)
@@ -110,7 +113,11 @@ mod tests {
             "real number of payload blocks is too far from expected"
         );
 
-        assert_eq!(coverage.len(), num_vectors as usize, "not all points are covered by payload blocks");
+        assert_eq!(
+            coverage.len(),
+            num_vectors as usize,
+            "not all points are covered by payload blocks"
+        );
 
         hnsw_index.build_index(&stopped).unwrap();
 
