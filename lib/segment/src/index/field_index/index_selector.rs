@@ -19,11 +19,11 @@ pub fn index_selector(
         }
         PayloadSchemaType::Integer => vec![
             FieldIndex::IntMapIndex(OnDiskMapIndex::<IntPayloadType>::new(db.clone(), field)),
-            FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(db, field.to_string())),
+            FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(db, field)),
         ],
         PayloadSchemaType::Float => {
             vec![FieldIndex::FloatIndex(
-                NumericIndex::<FloatPayloadType>::new(db, field.to_string()),
+                NumericIndex::<FloatPayloadType>::new(db, field),
             )]
         }
         PayloadSchemaType::Geo => vec![FieldIndex::GeoIndex(OnDiskGeoMapIndex::new(db, field))],

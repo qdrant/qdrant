@@ -56,10 +56,10 @@ impl SimplePayloadStorage {
 
     pub fn iter<F>(&self, mut callback: F) -> OperationResult<()>
     where
-        F: FnMut(PointOffsetType, &Payload) -> bool,
+        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
         for (key, val) in self.payload.iter() {
-            let do_continue = callback(*key, val);
+            let do_continue = callback(*key, val)?;
             if !do_continue {
                 return Ok(());
             }

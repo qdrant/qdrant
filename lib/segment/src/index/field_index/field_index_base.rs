@@ -10,12 +10,16 @@ use serde_json::Value;
 
 pub trait PayloadFieldIndex {
     /// Load index from disk.
-    fn load(&mut self) -> OperationResult<()>;
+    fn load(&mut self) -> OperationResult<bool>;
+
+    /// Remove db content of the current payload index
+    fn clear(self) -> OperationResult<()>;
 
     /// Flush all pending updates to disk.
     fn flush(&self) -> OperationResult<()>;
 
     /// Get iterator over points fitting given `condition`
+    /// Return `None` if condition does not match the index type
     fn filter(
         &self,
         condition: &FieldCondition,
@@ -38,13 +42,13 @@ pub trait PayloadFieldIndex {
 
 pub trait ValueIndexer<T> {
     /// Add multiple values associated with a single point
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<T>);
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<T>) -> OperationResult<()>;
 
     /// Extract index-able value from payload `Value`
     fn get_value(&self, value: &Value) -> Option<T>;
 
     /// Add point with payload to index
-    fn add_point(&mut self, id: PointOffsetType, payload: &Value) {
+    fn add_point(&mut self, id: PointOffsetType, payload: &Value) -> OperationResult<()> {
         match payload {
             Value::Array(values) => {
                 self.add_many(id, values.iter().flat_map(|x| self.get_value(x)).collect())
@@ -52,19 +56,15 @@ pub trait ValueIndexer<T> {
             _ => {
                 if let Some(x) = self.get_value(payload) {
                     self.add_many(id, vec![x])
+                } else {
+                    Ok(())
                 }
             }
         }
     }
 
     /// remove a point from the index
-    // TODO(gvelo): instead of using only PointOffsetType use the full key ( value + offset )
-    // to avoid a index full-scan
-    fn remove_point(&mut self, id: PointOffsetType);
-}
-
-pub trait PayloadFieldIndexBuilder {
-    fn add(&mut self, id: PointOffsetType, value: &Value);
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()>;
 }
 
 /// Common interface for all possible types of field indexes
@@ -89,6 +89,8 @@ impl FieldIndex {
             FieldIndex::GeoIndex(payload_field_index) => payload_field_index,
         }
     }
+
+    #[allow(dead_code)]
     fn get_payload_field_index_mut(&mut self) -> &mut dyn PayloadFieldIndex {
         match self {
             FieldIndex::IntIndex(ref mut payload_field_index) => payload_field_index,
@@ -99,8 +101,34 @@ impl FieldIndex {
         }
     }
 
-    pub fn load(&mut self) -> OperationResult<()> {
-        self.get_payload_field_index_mut().load()
+    pub fn load(&mut self) -> OperationResult<bool> {
+        match self {
+            FieldIndex::IntIndex(ref mut payload_field_index) => payload_field_index.load(),
+            FieldIndex::IntMapIndex(ref mut payload_field_index) => payload_field_index.load(),
+            FieldIndex::KeywordIndex(ref mut payload_field_index) => payload_field_index.load(),
+            FieldIndex::FloatIndex(ref mut payload_field_index) => payload_field_index.load(),
+            FieldIndex::GeoIndex(ref mut payload_field_index) => payload_field_index.load(),
+        }
+    }
+
+    pub fn clear(self) -> OperationResult<()> {
+        match self {
+            FieldIndex::IntIndex(index) => index.clear(),
+            FieldIndex::IntMapIndex(index) => index.clear(),
+            FieldIndex::KeywordIndex(index) => index.clear(),
+            FieldIndex::FloatIndex(index) => index.clear(),
+            FieldIndex::GeoIndex(index) => index.clear(),
+        }
+    }
+
+    pub fn recreate(&self) -> OperationResult<()> {
+        match self {
+            FieldIndex::IntIndex(index) => index.recreate(),
+            FieldIndex::IntMapIndex(index) => index.recreate(),
+            FieldIndex::KeywordIndex(index) => index.recreate(),
+            FieldIndex::FloatIndex(index) => index.recreate(),
+            FieldIndex::GeoIndex(index) => index.recreate(),
+        }
     }
 
     pub fn flush(&self) -> OperationResult<()> {
@@ -135,7 +163,7 @@ impl FieldIndex {
         self.get_payload_field_index().count_indexed_points()
     }
 
-    pub fn add_point(&mut self, id: PointOffsetType, payload: &Value) {
+    pub fn add_point(&mut self, id: PointOffsetType, payload: &Value) -> OperationResult<()> {
         match self {
             FieldIndex::IntIndex(ref mut payload_field_index) => {
                 payload_field_index.add_point(id, payload)
@@ -155,13 +183,12 @@ impl FieldIndex {
         }
     }
 
-    pub fn remove_point(&mut self, point_id: PointOffsetType) {
-        // TODO(gvelo): refactor remove_point and remove unwrap()
+    pub fn remove_point(&mut self, point_id: PointOffsetType) -> OperationResult<()> {
         match self {
-            FieldIndex::IntIndex(index) => index.remove_point(point_id).unwrap(),
+            FieldIndex::IntIndex(index) => index.remove_point(point_id),
             FieldIndex::IntMapIndex(index) => index.remove_point(point_id),
             FieldIndex::KeywordIndex(index) => index.remove_point(point_id),
-            FieldIndex::FloatIndex(index) => index.remove_point(point_id).unwrap(),
+            FieldIndex::FloatIndex(index) => index.remove_point(point_id),
             FieldIndex::GeoIndex(index) => index.remove_point(point_id),
         }
     }

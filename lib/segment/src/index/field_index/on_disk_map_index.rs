@@ -4,7 +4,7 @@ use std::iter;
 
 use serde_json::Value;
 
-use crate::common::rocksdb_operations::db_write_options;
+use crate::common::rocksdb_operations::{db_write_options, recreate_cf};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::PayloadFieldIndex;
 use crate::index::field_index::{
@@ -24,33 +24,41 @@ use std::sync::Arc;
 pub struct OnDiskMapIndex<N: Hash + Eq + Clone + Display> {
     map: HashMap<N, Vec<PointOffsetType>>,
     point_to_values: Vec<Vec<N>>,
-    total_points: usize,
+    /// Amount of point which have at least one indexed payload value
+    indexed_points: usize,
     store_cf_name: String,
-    store: Arc<AtomicRefCell<DB>>,
+    db: Arc<AtomicRefCell<DB>>,
 }
 
 impl<N: Hash + Eq + Clone + Display + FromStr> OnDiskMapIndex<N> {
-    #[allow(dead_code)]
-    pub fn new(store: Arc<AtomicRefCell<DB>>, store_cf_name: &str) -> OnDiskMapIndex<N> {
+    pub fn new(db: Arc<AtomicRefCell<DB>>, field_name: &str) -> OnDiskMapIndex<N> {
         OnDiskMapIndex {
             map: HashMap::new(),
             point_to_values: Vec::new(),
-            total_points: 0,
-            store_cf_name: String::from(store_cf_name),
-            store,
+            indexed_points: 0,
+            store_cf_name: Self::storage_cf_name(field_name),
+            db,
         }
     }
 
-    #[allow(dead_code)]
-    fn load(&mut self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Index load error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-        for (record, _) in store_ref.iterator_cf(cf_handle, IteratorMode::Start) {
+    fn storage_cf_name(field: &str) -> String {
+        format!("{field}_map")
+    }
+
+    pub fn recreate(&self) -> OperationResult<()>{
+        Ok(recreate_cf(self.db.clone(), &self.store_cf_name)?)
+    }
+
+
+    fn load(&mut self) -> OperationResult<bool> {
+        let db_ref = self.db.borrow();
+        let cf_handle = if let Some(cf_handle) = db_ref.cf_handle(&self.store_cf_name) {
+            cf_handle
+        } else {
+            return Ok(false);
+        };
+        self.indexed_points = 0;
+        for (record, _) in db_ref.iterator_cf(cf_handle, IteratorMode::Start) {
             let record = std::str::from_utf8(&record).map_err(|_| {
                 OperationError::service_error("Index load error: UTF8 error while DB parsing")
             })?;
@@ -59,17 +67,16 @@ impl<N: Hash + Eq + Clone + Display + FromStr> OnDiskMapIndex<N> {
                 self.point_to_values.resize(idx as usize + 1, Vec::new())
             }
             if self.point_to_values[idx as usize].is_empty() {
-                self.total_points += 1;
+                self.indexed_points += 1;
             }
             self.point_to_values[idx as usize].push(value.clone());
             self.map.entry(value).or_default().push(idx);
         }
-        Ok(())
+        Ok(true)
     }
 
-    #[allow(dead_code)]
     pub fn flush(&self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
+        let store_ref = self.db.borrow();
         let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
             OperationError::service_error(&format!(
                 "Index flush error: column family {} not found",
@@ -93,13 +100,16 @@ impl<N: Hash + Eq + Clone + Display + FromStr> OnDiskMapIndex<N> {
         }
     }
 
-    #[allow(dead_code)]
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<N>> {
         self.point_to_values.get(idx as usize)
     }
 
     fn add_many_to_map(&mut self, idx: PointOffsetType, values: Vec<N>) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
+        if values.is_empty() {
+            return Ok(());
+        }
+
+        let store_ref = self.db.borrow();
         let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
             OperationError::service_error(&format!(
                 "Index add error: column family {} not found",
@@ -111,11 +121,9 @@ impl<N: Hash + Eq + Clone + Display + FromStr> OnDiskMapIndex<N> {
             self.point_to_values.resize(idx as usize + 1, Vec::new())
         }
         self.point_to_values[idx as usize] = values.into_iter().collect();
-        let mut empty = true;
         for value in &self.point_to_values[idx as usize] {
             let entry = self.map.entry(value.clone()).or_default();
             entry.push(idx);
-            empty = false;
 
             let db_record = Self::encode_db_record(value, idx);
             store_ref
@@ -124,9 +132,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> OnDiskMapIndex<N> {
                     OperationError::service_error(&format!("Index db update error: {}", e))
                 })?;
         }
-        if !empty {
-            self.total_points += 1;
-        }
+        self.indexed_points += 1;
         Ok(())
     }
 
@@ -158,9 +164,8 @@ impl<N: Hash + Eq + Clone + Display + FromStr> OnDiskMapIndex<N> {
         Ok((value, idx))
     }
 
-    #[allow(dead_code)]
     fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
+        let store_ref = self.db.borrow();
 
         let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
             OperationError::service_error(&format!(
@@ -175,6 +180,10 @@ impl<N: Hash + Eq + Clone + Display + FromStr> OnDiskMapIndex<N> {
 
         let removed_values = std::mem::take(&mut self.point_to_values[idx as usize]);
 
+        if !removed_values.is_empty() {
+            self.indexed_points -= 1;
+        }
+
         for value in &removed_values {
             let key = OnDiskMapIndex::encode_db_record(value, idx);
             self.map.remove(value);
@@ -186,8 +195,13 @@ impl<N: Hash + Eq + Clone + Display + FromStr> OnDiskMapIndex<N> {
 }
 
 impl PayloadFieldIndex for OnDiskMapIndex<String> {
-    fn load(&mut self) -> OperationResult<()> {
+
+    fn load(&mut self) -> OperationResult<bool> {
         OnDiskMapIndex::load(self)
+    }
+
+    fn clear(self) -> OperationResult<()> {
+        Ok(self.db.borrow_mut().drop_cf(&self.store_cf_name)?)
     }
 
     fn flush(&self) -> OperationResult<()> {
@@ -238,13 +252,17 @@ impl PayloadFieldIndex for OnDiskMapIndex<String> {
     }
 
     fn count_indexed_points(&self) -> usize {
-        self.total_points
+        self.indexed_points
     }
 }
 
 impl PayloadFieldIndex for OnDiskMapIndex<IntPayloadType> {
-    fn load(&mut self) -> OperationResult<()> {
+    fn load(&mut self) -> OperationResult<bool> {
         OnDiskMapIndex::load(self)
+    }
+
+    fn clear(self) -> OperationResult<()> {
+        Ok(self.db.borrow_mut().drop_cf(&self.store_cf_name)?)
     }
 
     fn flush(&self) -> OperationResult<()> {
@@ -295,13 +313,13 @@ impl PayloadFieldIndex for OnDiskMapIndex<IntPayloadType> {
     }
 
     fn count_indexed_points(&self) -> usize {
-        self.total_points
+        self.indexed_points
     }
 }
 
 impl ValueIndexer<String> for OnDiskMapIndex<String> {
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<String>) {
-        self.add_many_to_map(id, values).unwrap();
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
+        self.add_many_to_map(id, values)
     }
 
     fn get_value(&self, value: &Value) -> Option<String> {
@@ -311,14 +329,14 @@ impl ValueIndexer<String> for OnDiskMapIndex<String> {
         None
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) {
-        self.remove_point(id).unwrap()
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()>  {
+        self.remove_point(id)
     }
 }
 
 impl ValueIndexer<IntPayloadType> for OnDiskMapIndex<IntPayloadType> {
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<IntPayloadType>) {
-        self.add_many_to_map(id, values).unwrap();
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<IntPayloadType>) -> OperationResult<()> {
+        self.add_many_to_map(id, values)
     }
 
     fn get_value(&self, value: &Value) -> Option<IntPayloadType> {
@@ -328,14 +346,14 @@ impl ValueIndexer<IntPayloadType> for OnDiskMapIndex<IntPayloadType> {
         None
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) {
-        self.remove_point(id).unwrap()
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        self.remove_point(id)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::common::rocksdb_operations::db_options;
+    use crate::common::rocksdb_operations::open_db_with_existing_cf;
     use std::collections::HashSet;
     use std::fmt::Debug;
     use std::iter::FromIterator;
@@ -344,18 +362,14 @@ mod tests {
 
     use super::*;
 
-    const CF_NAME: &str = "test_cf";
-
-    fn open_db(path: &Path) -> Arc<AtomicRefCell<DB>> {
-        let db = DB::open_cf(&db_options(), path, &[CF_NAME]).unwrap();
-        Arc::new(AtomicRefCell::new(db))
-    }
+    const FIELD_NAME: &str = "test";
 
     fn save_map_index<N: Hash + Eq + Clone + Display + FromStr + Debug>(
         data: &[Vec<N>],
         path: &Path,
     ) {
-        let mut index = OnDiskMapIndex::<N>::new(open_db(path), CF_NAME);
+        let mut index = OnDiskMapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
+        index.recreate().unwrap();
         for (idx, values) in data.iter().enumerate() {
             index
                 .add_many_to_map(idx as PointOffsetType, values.clone())
@@ -368,7 +382,7 @@ mod tests {
         data: &[Vec<N>],
         path: &Path,
     ) {
-        let mut index = OnDiskMapIndex::<N>::new(open_db(path), CF_NAME);
+        let mut index = OnDiskMapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
         index.load().unwrap();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<N> = HashSet::from_iter(

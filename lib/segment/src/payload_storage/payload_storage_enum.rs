@@ -33,7 +33,7 @@ impl From<OnDiskPayloadStorage> for PayloadStorageEnum {
 impl PayloadStorageEnum {
     pub fn iter<F>(&self, callback: F) -> OperationResult<()>
     where
-        F: FnMut(PointOffsetType, &Payload) -> bool,
+        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
         match self {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback),

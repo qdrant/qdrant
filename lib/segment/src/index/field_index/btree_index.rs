@@ -7,13 +7,12 @@ use atomic_refcell::AtomicRefCell;
 use rocksdb::DB;
 use serde_json::Value;
 
-use crate::common::rocksdb_operations::db_write_options;
+use crate::common::rocksdb_operations::{db_write_options, recreate_cf};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
-    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexBuilder,
-    PrimaryCondition, ValueIndexer,
+    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
 use crate::index::key_encoding::{
     decode_f64_key_ascending, decode_i64_key_ascending, encode_f64_key_ascending,
@@ -101,12 +100,11 @@ pub struct NumericIndex<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> {
 }
 
 impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> NumericIndex<T> {
-    #[allow(dead_code)] // TODO(gvelo): remove when this index is integrated in `StructPayloadIndex`
-    pub fn new(db: Arc<AtomicRefCell<DB>>, store_cf_name: String) -> Self {
+    pub fn new(db: Arc<AtomicRefCell<DB>>, field: &str) -> Self {
         Self {
             map: BTreeMap::new(),
             db,
-            store_cf_name,
+            store_cf_name: Self::storage_cf_name(field),
             histogram: Histogram::new(HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION),
             points_count: 0,
             max_values_per_point: 0,
@@ -114,42 +112,52 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         }
     }
 
-    fn add_value(&mut self, id: PointOffsetType, value: T) {
-        let key = value.encode_key(id);
-        let db_ref = self.db.borrow();
-        //TODO(gvelo): currently all the methods on the ValueIndexer trait are infallible so we
-        // cannot propagate error from here. We need to remove the unwrap() and handle the
-        // cf_handle() result when ValueIndexer is refactored to return OperationResult<>
-        let cf_handle = db_ref.cf_handle(&self.store_cf_name).unwrap();
-        db_ref
-            .put_cf_opt(cf_handle, &key, id.to_be_bytes(), &db_write_options())
-            .unwrap();
-        Self::add_to_map(&mut self.map, &mut self.histogram, key, id);
+    fn storage_cf_name(field: &str) -> String {
+        format!("{field}_numeric")
     }
 
-    pub fn add_many_to_list(&mut self, idx: PointOffsetType, values: impl IntoIterator<Item = T>) {
+    pub fn recreate(&self) -> OperationResult<()> {
+        Ok(recreate_cf(self.db.clone(), &self.store_cf_name)?)
+    }
+
+    fn add_value(&mut self, id: PointOffsetType, value: T) -> OperationResult<()> {
+        let key = value.encode_key(id);
+        let db_ref = self.db.borrow();
+        let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
+            OperationError::service_error(&format!("Column not found: {}", self.store_cf_name))
+        })?;
+        db_ref.put_cf_opt(cf_handle, &key, id.to_be_bytes(), &db_write_options())?;
+        Self::add_to_map(&mut self.map, &mut self.histogram, key, id);
+        Ok(())
+    }
+
+    pub fn add_many_to_list(
+        &mut self,
+        idx: PointOffsetType,
+        values: impl IntoIterator<Item = T>,
+    ) -> OperationResult<()> {
         if self.point_to_values.len() <= idx as usize {
             self.point_to_values.resize(idx as usize + 1, Vec::new())
         }
         let values: Vec<T> = values.into_iter().collect();
         for value in &values {
-            self.add_value(idx, value.clone());
+            self.add_value(idx, value.clone())?;
         }
         if !values.is_empty() {
             self.points_count += 1;
             self.max_values_per_point = self.max_values_per_point.max(values.len());
         }
         self.point_to_values[idx as usize] = values;
+        Ok(())
     }
 
-    pub fn load(&mut self) -> OperationResult<()> {
+    pub fn load(&mut self) -> OperationResult<bool> {
         let db_ref = self.db.borrow();
-        let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Index flush error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
+        let cf_handle = if let Some(cf_handle) = db_ref.cf_handle(&self.store_cf_name) {
+            cf_handle
+        } else {
+            return Ok(false);
+        };
 
         let mut iter = db_ref.raw_iterator_cf(&cf_handle);
 
@@ -183,7 +191,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
                 self.max_values_per_point = self.max_values_per_point.max(values.len());
             }
         }
-        Ok(())
+        Ok(true)
     }
 
     pub fn flush(&self) -> OperationResult<()> {
@@ -350,8 +358,12 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
 impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> PayloadFieldIndex
     for NumericIndex<T>
 {
-    fn load(&mut self) -> OperationResult<()> {
+    fn load(&mut self) -> OperationResult<bool> {
         NumericIndex::load(self)
+    }
+
+    fn clear(self) -> OperationResult<()> {
+        Ok(self.db.borrow_mut().drop_cf(&self.store_cf_name)?)
     }
 
     fn flush(&self) -> OperationResult<()> {
@@ -367,11 +379,11 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Payload
         let start_bound = match cond_range {
             Range { gt: Some(gt), .. } => {
                 let v: T = T::from_range(gt.to_owned());
-                Excluded(v.encode_key(u32::MAX))
+                Excluded(v.encode_key(PointOffsetType::MAX))
             }
             Range { gte: Some(gte), .. } => {
                 let v: T = T::from_range(gte.to_owned());
-                Included(v.encode_key(u32::MIN))
+                Included(v.encode_key(PointOffsetType::MIN))
             }
             _ => Unbounded,
         };
@@ -379,14 +391,28 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Payload
         let end_bound = match cond_range {
             Range { lt: Some(lt), .. } => {
                 let v: T = T::from_range(lt.to_owned());
-                Excluded(v.encode_key(u32::MIN))
+                Excluded(v.encode_key(PointOffsetType::MIN))
             }
             Range { lte: Some(lte), .. } => {
                 let v: T = T::from_range(lte.to_owned());
-                Included(v.encode_key(u32::MAX))
+                Included(v.encode_key(PointOffsetType::MAX))
             }
             _ => Unbounded,
         };
+
+        // map.range
+        // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
+        match (&start_bound, &end_bound) {
+            (Excluded(s), Excluded(e)) if s == e => {
+                // range start and end are equal and excluded in BTreeMap
+                return Some(Box::new(vec![].into_iter()));
+            }
+            (Included(s) | Excluded(s), Included(e) | Excluded(e)) if s > e => {
+                //range start is greater than range end
+                return Some(Box::new(vec![].into_iter()));
+            }
+            _ => {}
+        }
 
         Some(Box::new(
             self.map.range((start_bound, end_bound)).map(|(_, v)| *v),
@@ -474,24 +500,16 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Payload
     }
 
     fn count_indexed_points(&self) -> usize {
-        self.map.len()
-    }
-}
-
-impl PayloadFieldIndexBuilder for NumericIndex<IntPayloadType> {
-    fn add(&mut self, id: PointOffsetType, value: &Value) {
-        self.add_point(id, value);
-    }
-}
-
-impl PayloadFieldIndexBuilder for NumericIndex<FloatPayloadType> {
-    fn add(&mut self, id: PointOffsetType, value: &Value) {
-        self.add_point(id, value);
+        self.points_count
     }
 }
 
 impl ValueIndexer<IntPayloadType> for NumericIndex<IntPayloadType> {
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<IntPayloadType>) {
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<IntPayloadType>,
+    ) -> OperationResult<()> {
         self.add_many_to_list(id, values)
     }
 
@@ -502,15 +520,17 @@ impl ValueIndexer<IntPayloadType> for NumericIndex<IntPayloadType> {
         None
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) {
-        // TODO(gvelo): remove unwrap once we have refactored
-        // ValueIndexer to return OperationResult
-        NumericIndex::remove_point(self, id).unwrap()
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        NumericIndex::remove_point(self, id)
     }
 }
 
 impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<FloatPayloadType>) {
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<FloatPayloadType>,
+    ) -> OperationResult<()> {
         self.add_many_to_list(id, values)
     }
 
@@ -521,16 +541,14 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
         None
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) {
-        // TODO(gvelo): remove unwrap once we have refactored
-        // ValueIndexer to return OperationResult
-        NumericIndex::remove_point(self, id).unwrap()
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        NumericIndex::remove_point(self, id)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::common::rocksdb_operations::db_options;
+    use crate::common::rocksdb_operations::open_db_with_existing_cf;
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
@@ -538,14 +556,13 @@ mod tests {
 
     use super::*;
 
-    const CF_NAME: &str = "test_cf";
+    const COLUMN_NAME: &str = "test";
 
     fn get_index() -> (TempDir, NumericIndex<f64>) {
         let tmp_dir = TempDir::new("test_numeric_index").unwrap();
-        let mut db = DB::open_default(tmp_dir.path()).unwrap();
-        db.create_cf(CF_NAME, &db_options()).unwrap();
-        let db_ref = Arc::new(AtomicRefCell::new(db));
-        let index: NumericIndex<_> = NumericIndex::new(db_ref, CF_NAME.to_string());
+        let db = open_db_with_existing_cf(tmp_dir.path()).unwrap();
+        let index: NumericIndex<_> = NumericIndex::new(db, COLUMN_NAME);
+        index.recreate().unwrap();
         (tmp_dir, index)
     }
 
@@ -555,7 +572,9 @@ mod tests {
 
         for i in 0..num_points {
             let values = (0..values_per_point).map(|_| rng.gen_range(0.0..100.0));
-            index.add_many_to_list(i as PointOffsetType, values);
+            index
+                .add_many_to_list(i as PointOffsetType, values)
+                .unwrap();
         }
 
         (tmp_dir, index)
@@ -689,10 +708,11 @@ mod tests {
             vec![2.0],
         ];
 
-        values
-            .into_iter()
-            .enumerate()
-            .for_each(|(idx, values)| index.add_many_to_list(idx as PointOffsetType + 1, values));
+        values.into_iter().enumerate().for_each(|(idx, values)| {
+            index
+                .add_many_to_list(idx as PointOffsetType + 1, values)
+                .unwrap()
+        });
 
         let blocks = index
             .payload_blocks(threshold, "test".to_owned())
@@ -702,12 +722,7 @@ mod tests {
 
     #[test]
     fn test_numeric_index_load_from_disk() {
-        let tmp_dir = TempDir::new("test_numeric_index_load").unwrap();
-        let file_path = tmp_dir.path().join("index");
-        let mut db = DB::open_default(file_path).unwrap();
-        db.create_cf(CF_NAME, &db_options()).unwrap();
-        let db_ref = Arc::new(AtomicRefCell::new(db));
-        let mut index: NumericIndex<_> = NumericIndex::new(db_ref.clone(), CF_NAME.to_string());
+        let (_tmp_dir, mut index) = get_index();
 
         let values = vec![
             vec![1.0],
@@ -721,14 +736,16 @@ mod tests {
             vec![3.0],
         ];
 
-        values
-            .into_iter()
-            .enumerate()
-            .for_each(|(idx, values)| index.add_many_to_list(idx as PointOffsetType + 1, values));
+        values.into_iter().enumerate().for_each(|(idx, values)| {
+            index
+                .add_many_to_list(idx as PointOffsetType + 1, values)
+                .unwrap()
+        });
 
         index.flush().unwrap();
 
-        let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, CF_NAME.to_string());
+        let db_ref = index.db.clone();
+        let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME);
         new_index.load().unwrap();
 
         test_cond(
@@ -745,11 +762,7 @@ mod tests {
 
     #[test]
     fn test_numeric_index() {
-        let tmp_dir = TempDir::new("test_numeric_index").unwrap();
-        let file_path = tmp_dir.path().join("index");
-        let mut db = DB::open_default(file_path).unwrap();
-        db.create_cf(CF_NAME, &db_options()).unwrap();
-        let db_ref = Arc::new(AtomicRefCell::new(db));
+        let (_tmp_dir, mut index) = get_index();
 
         let values = vec![
             vec![1.0],
@@ -763,12 +776,11 @@ mod tests {
             vec![3.0],
         ];
 
-        let mut index: NumericIndex<_> = NumericIndex::new(db_ref, CF_NAME.to_string());
-
-        values
-            .into_iter()
-            .enumerate()
-            .for_each(|(idx, values)| index.add_many_to_list(idx as PointOffsetType + 1, values));
+        values.into_iter().enumerate().for_each(|(idx, values)| {
+            index
+                .add_many_to_list(idx as PointOffsetType + 1, values)
+                .unwrap()
+        });
 
         test_cond(
             &index,

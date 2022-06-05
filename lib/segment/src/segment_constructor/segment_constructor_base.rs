@@ -7,7 +7,6 @@ use crate::index::plain_payload_index::PlainIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndexSS, VectorIndexSS};
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
-use crate::payload_storage::query_checker::SimpleConditionChecker;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SegmentVersion, SEGMENT_STATE_FILE};
 use crate::types::{
@@ -56,17 +55,11 @@ fn create_segment(
         PayloadStorageType::OnDisk => sp(OnDiskPayloadStorage::open(database.clone())?.into()),
     };
 
-    let condition_checker = Arc::new(SimpleConditionChecker::new(
-        payload_storage.clone(),
-        id_tracker.clone(),
-    ));
-
     let payload_index: Arc<AtomicRefCell<PayloadIndexSS>> = sp(StructPayloadIndex::open(
         id_tracker.clone(),
         payload_storage,
         id_tracker.clone(),
         &payload_index_path,
-        database.clone(),
     )?);
 
     let vector_index: Arc<AtomicRefCell<VectorIndexSS>> = match config.index {
@@ -100,7 +93,6 @@ fn create_segment(
         id_tracker,
         vector_storage,
         payload_index,
-        condition_checker,
         vector_index,
         appendable_flag,
         segment_type,

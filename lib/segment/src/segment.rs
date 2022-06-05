@@ -5,7 +5,6 @@ use crate::entry::entry_point::{
 };
 use crate::id_tracker::IdTrackerSS;
 use crate::index::{PayloadIndexSS, VectorIndexSS};
-use crate::payload_storage::ConditionCheckerSS;
 use crate::types::{
     Filter, Payload, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
@@ -48,7 +47,6 @@ pub struct Segment {
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
     pub payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
-    pub condition_checker: Arc<ConditionCheckerSS>,
     pub vector_index: Arc<AtomicRefCell<VectorIndexSS>>,
     /// Shows if it is possible to insert more points into this segment
     pub appendable_flag: bool,

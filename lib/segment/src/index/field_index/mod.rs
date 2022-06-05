@@ -4,12 +4,8 @@ use std::collections::HashSet;
 pub mod btree_index;
 mod field_index_base;
 pub mod geo_hash;
-mod geo_index;
-#[allow(dead_code)]
 mod histogram;
 pub mod index_selector;
-pub mod map_index;
-pub mod numeric_index;
 pub mod on_disk_geo_index;
 pub mod on_disk_map_index;
 mod stat_tools;

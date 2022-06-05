@@ -406,6 +406,8 @@ impl Histogram {
         F: Fn(&Point) -> Option<Point>,
         G: Fn(&Point) -> Option<Point>,
     {
+        self.total_count += 1;
+
         if self.borders.len() < 2 {
             self.borders.insert(val, Counts { left: 0, right: 0 });
             return;
@@ -605,8 +607,6 @@ impl Histogram {
         if let Some((new_border, new_border_count)) = to_create {
             self.borders.insert(new_border, new_border_count);
         }
-
-        self.total_count += 1;
     }
 }
 
@@ -637,7 +637,7 @@ mod tests {
                 eprint!(".");
             }
         }
-        eprintln!();
+        eprintln!("[{}]", histogram.total_count);
         io::stdout().flush().unwrap();
     }
 
@@ -652,7 +652,7 @@ mod tests {
     fn test_build_histogram_small() {
         let max_bucket_size = 5;
         let precision = 0.01;
-        let num_samples = 1000;
+        let num_samples = 60;
         let mut rnd = StdRng::seed_from_u64(42);
 
         // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
@@ -683,7 +683,7 @@ mod tests {
         }
 
         for point in &points {
-            // print_results(&points_index, &histogram, Some(point.clone()));
+            print_results(&points_index, &histogram, Some(point.clone()));
             points_index.remove(point);
             histogram.remove(
                 point,

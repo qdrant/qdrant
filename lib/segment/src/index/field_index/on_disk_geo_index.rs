@@ -1,4 +1,4 @@
-use crate::common::rocksdb_operations::db_write_options;
+use crate::common::rocksdb_operations::{db_write_options, recreate_cf};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{
     circle_hashes, common_hash_prefix, encode_max_precision, geo_hash_to_box, rectangle_hashes,
@@ -51,12 +51,11 @@ pub struct OnDiskGeoMapIndex {
     values_count: usize,
     max_values_per_point: usize,
     store_cf_name: String,
-    store: Arc<AtomicRefCell<DB>>,
+    db: Arc<AtomicRefCell<DB>>,
 }
 
 impl OnDiskGeoMapIndex {
-    #[allow(dead_code)]
-    pub fn new(store: Arc<AtomicRefCell<DB>>, store_cf_name: &str) -> Self {
+    pub fn new(db: Arc<AtomicRefCell<DB>>, field: &str) -> Self {
         OnDiskGeoMapIndex {
             points_per_hash: Default::default(),
             values_per_hash: Default::default(),
@@ -65,20 +64,27 @@ impl OnDiskGeoMapIndex {
             points_count: 0,
             values_count: 0,
             max_values_per_point: 0,
-            store_cf_name: store_cf_name.to_owned(),
-            store,
+            store_cf_name: Self::storage_cf_name(field),
+            db,
         }
     }
 
-    #[allow(dead_code)]
-    fn load(&mut self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Index load error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
+    fn storage_cf_name(field: &str) -> String {
+        format!("{field}_geo")
+    }
+
+    pub fn recreate(&self) -> OperationResult<()>{
+        Ok(recreate_cf(self.db.clone(), &self.store_cf_name)?)
+    }
+
+    fn load(&mut self) -> OperationResult<bool> {
+        let store_ref = self.db.borrow();
+        let cf_handle = if let Some(cf_handle) = store_ref.cf_handle(&self.store_cf_name) {
+            cf_handle
+        } else {
+            return Ok(false);
+        };
+
         for (key, value) in store_ref.iterator_cf(cf_handle, IteratorMode::Start) {
             let key_str = std::str::from_utf8(&key).map_err(|_| {
                 OperationError::service_error("Index load error: UTF8 error while DB parsing")
@@ -98,7 +104,7 @@ impl OnDiskGeoMapIndex {
             self.point_to_values[idx as usize].push(geo_point);
             self.points_map.entry(geo_hash).or_default().insert(idx);
         }
-        Ok(())
+        Ok(true)
     }
 
     fn encode_db_key(value: &str, idx: PointOffsetType) -> String {
@@ -142,9 +148,8 @@ impl OnDiskGeoMapIndex {
         result
     }
 
-    #[allow(dead_code)]
     pub fn flush(&self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
+        let store_ref = self.db.borrow();
         let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
             OperationError::service_error(&format!(
                 "Index flush error: column family {} not found",
@@ -154,19 +159,16 @@ impl OnDiskGeoMapIndex {
         Ok(store_ref.flush_cf(cf_handle)?)
     }
 
-    #[allow(dead_code)]
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<GeoPoint>> {
         self.point_to_values.get(idx as usize)
     }
 
-    #[allow(dead_code)]
     pub fn check_radius(&self, idx: PointOffsetType, radius: &GeoRadius) -> bool {
         self.get_values(idx)
             .map(|values| values.iter().any(|x| radius.check_point(x.lon, x.lat)))
             .unwrap_or(false)
     }
 
-    #[allow(dead_code)]
     pub fn check_box(&self, idx: PointOffsetType, bbox: &GeoBoundingBox) -> bool {
         self.get_values(idx)
             .map(|values| values.iter().any(|x| bbox.check_point(x.lon, x.lat)))
@@ -214,9 +216,8 @@ impl OnDiskGeoMapIndex {
         }
     }
 
-    #[allow(dead_code)]
     fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
+        let store_ref = self.db.borrow();
 
         let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
             OperationError::service_error(&format!(
@@ -229,7 +230,16 @@ impl OnDiskGeoMapIndex {
             return Ok(()); // Already removed or never actually existed
         }
 
+
         let removed_points = std::mem::take(&mut self.point_to_values[idx as usize]);
+
+        if removed_points.is_empty() {
+            return Ok(())
+        }
+
+        self.points_count -= 1;
+        self.values_count -= removed_points.len();
+
         let mut seen_hashes: HashSet<&str> = Default::default();
         let mut geo_hashes = vec![];
 
@@ -288,7 +298,7 @@ impl OnDiskGeoMapIndex {
             return Ok(());
         }
 
-        let store_ref = self.store.borrow();
+        let store_ref = self.db.borrow();
         let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
             OperationError::service_error(&format!(
                 "Index add error: column family {} not found",
@@ -414,10 +424,8 @@ impl OnDiskGeoMapIndex {
 }
 
 impl ValueIndexer<GeoPoint> for OnDiskGeoMapIndex {
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<GeoPoint>) {
-        // TODO(gvelo): refactor `ValueIndexer` to return `OperationResult<()>` and
-        // remove unwrap()
-        self.add_many_geo_points(id, &values).unwrap()
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<GeoPoint>) -> OperationResult<()> {
+        self.add_many_geo_points(id, &values)
     }
 
     fn get_value(&self, value: &Value) -> Option<GeoPoint> {
@@ -435,14 +443,18 @@ impl ValueIndexer<GeoPoint> for OnDiskGeoMapIndex {
         }
     }
 
-    fn remove_point(&mut self, id: PointOffsetType) {
-        self.remove_point(id).unwrap()
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()>  {
+        self.remove_point(id)
     }
 }
 
 impl PayloadFieldIndex for OnDiskGeoMapIndex {
-    fn load(&mut self) -> OperationResult<()> {
+    fn load(&mut self) -> OperationResult<bool> {
         OnDiskGeoMapIndex::load(self)
+    }
+
+    fn clear(self) -> OperationResult<()> {
+        Ok(self.db.borrow_mut().drop_cf(&self.store_cf_name)?)
     }
 
     fn flush(&self) -> OperationResult<()> {
@@ -531,14 +543,13 @@ impl PayloadFieldIndex for OnDiskGeoMapIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::rocksdb_operations::db_options;
+    use crate::common::rocksdb_operations::open_db_with_existing_cf;
     use crate::fixtures::payload_fixtures::random_geo_payload;
     use crate::types::GeoRadius;
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use serde_json::json;
-    use std::path::Path;
     use tempdir::TempDir;
 
     const NYC: GeoPoint = GeoPoint {
@@ -561,27 +572,24 @@ mod tests {
         lon: 139.691706,
     };
 
-    const CF_NAME: &str = "test_cf";
+    const FIELD_NAME: &str = "test";
 
     fn condition_for_geo_radius(key: String, geo_radius: GeoRadius) -> FieldCondition {
         FieldCondition::new_geo_radius(key, geo_radius)
     }
 
-    fn open_db(path: &Path) -> Arc<AtomicRefCell<DB>> {
-        let db = DB::open_cf(&db_options(), path, &[CF_NAME]).unwrap();
-        Arc::new(AtomicRefCell::new(db))
-    }
-
     fn build_random_index(num_points: usize, num_geo_values: usize) -> OnDiskGeoMapIndex {
         let tmp_dir = TempDir::new("test_dir").unwrap();
-        let db = open_db(&tmp_dir.path().join("test_db"));
+        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
 
         let mut rnd = StdRng::seed_from_u64(42);
-        let mut index = OnDiskGeoMapIndex::new(db, CF_NAME);
+        let mut index = OnDiskGeoMapIndex::new(db, FIELD_NAME);
+
+        index.recreate().unwrap();
 
         for idx in 0..num_points {
             let geo_points = random_geo_payload(&mut rnd, num_geo_values..=num_geo_values);
-            index.add_point(idx as PointOffsetType, &Value::Array(geo_points))
+            index.add_point(idx as PointOffsetType, &Value::Array(geo_points)).unwrap();
         }
         assert_eq!(index.points_count, num_points);
         assert_eq!(index.values_count, num_points * num_geo_values);
@@ -678,9 +686,11 @@ mod tests {
     #[test]
     fn match_cardinality_point_with_multi_far_geo_payload() {
         let tmp_dir = TempDir::new("test_dir").unwrap();
-        let db = open_db(&tmp_dir.path().join("test_db"));
+        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
 
-        let mut index = OnDiskGeoMapIndex::new(db, CF_NAME);
+        let mut index = OnDiskGeoMapIndex::new(db, FIELD_NAME);
+
+        index.recreate().unwrap();
 
         let r_meters = 100.0;
         let geo_values = json!([
@@ -694,7 +704,7 @@ mod tests {
             }
         ]);
 
-        index.add_point(1, &geo_values);
+        index.add_point(1, &geo_values).unwrap();
 
         // around NYC
         let nyc_geo_radius = GeoRadius {
@@ -737,9 +747,11 @@ mod tests {
     #[test]
     fn match_cardinality_point_with_multi_close_geo_payload() {
         let tmp_dir = TempDir::new("test_dir").unwrap();
-        let db = open_db(&tmp_dir.path().join("test_db"));
+        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
 
-        let mut index = OnDiskGeoMapIndex::new(db, CF_NAME);
+        let mut index = OnDiskGeoMapIndex::new(db, FIELD_NAME);
+
+        index.recreate().unwrap();
 
         let geo_values = json!([
             {
@@ -751,7 +763,7 @@ mod tests {
                 "lat": POTSDAM.lat
             }
         ]);
-        index.add_point(1, &geo_values);
+        index.add_point(1, &geo_values).unwrap();
 
         let berlin_geo_radius = GeoRadius {
             center: BERLIN,
@@ -769,11 +781,14 @@ mod tests {
     #[test]
     fn load_from_disk() {
         let tmp_dir = TempDir::new("test_dir").unwrap();
-        let db = open_db(&tmp_dir.path().join("test_db"));
+        {
+            let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
 
-        let mut index = OnDiskGeoMapIndex::new(db, CF_NAME);
+            let mut index = OnDiskGeoMapIndex::new(db, FIELD_NAME);
 
-        let geo_values = json!([
+            index.recreate().unwrap();
+
+            let geo_values = json!([
             {
                 "lon": BERLIN.lon,
                 "lat": BERLIN.lat
@@ -783,12 +798,13 @@ mod tests {
                 "lat": POTSDAM.lat
             }
         ]);
-        index.add_point(1, &geo_values);
-        index.flush().unwrap();
-        drop(index);
+            index.add_point(1, &geo_values).unwrap();
+            index.flush().unwrap();
+            drop(index);
+        }
 
-        let new_db = open_db(&tmp_dir.path().join("test_db"));
-        let mut new_index = OnDiskGeoMapIndex::new(new_db, CF_NAME);
+        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+        let mut new_index = OnDiskGeoMapIndex::new(db, FIELD_NAME);
         new_index.load().unwrap();
 
         let berlin_geo_radius = GeoRadius {

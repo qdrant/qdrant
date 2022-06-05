@@ -99,6 +99,10 @@ mod tests {
             .query_points(&filter)
             .count();
 
+        eprintln!("estimation_plain = {:#?}", estimation_plain);
+        eprintln!("estimation_struct = {:#?}", estimation_struct);
+        eprintln!("real_number = {:#?}", real_number);
+
         assert!(estimation_plain.max >= real_number);
         assert!(estimation_plain.min <= real_number);
 
