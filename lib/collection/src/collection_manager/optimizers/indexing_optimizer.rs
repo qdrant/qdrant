@@ -1,9 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use segment::types::{
-    HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType, VECTOR_ELEMENT_SIZE,
-};
+use segment::types::{HnswConfig, Indexes, SegmentType, StorageType, VECTOR_ELEMENT_SIZE};
 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
@@ -85,8 +83,8 @@ impl IndexingOptimizer {
                 let big_for_index =
                     vector_size >= self.thresholds_config.indexing_threshold * BYTES_IN_KB;
 
-                let require_indexing = (big_for_mmap && !is_memmaped)
-                    || (big_for_index && !is_vector_indexed);
+                let require_indexing =
+                    (big_for_mmap && !is_memmaped) || (big_for_index && !is_vector_indexed);
 
                 match require_indexing {
                     true => Some((*idx, vector_size)),

@@ -11,8 +11,8 @@ use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
-    HnswConfig, Indexes, PayloadIndexType, PayloadKeyType, PayloadSchemaType, PayloadStorageType,
-    PointIdType, SegmentConfig, StorageType, VECTOR_ELEMENT_SIZE,
+    HnswConfig, Indexes, PayloadKeyType, PayloadSchemaType, PayloadStorageType, PointIdType,
+    SegmentConfig, StorageType, VECTOR_ELEMENT_SIZE,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -95,20 +95,10 @@ pub trait SegmentOptimizer {
             })
             .sum();
 
-        let have_indexed_fields = optimizing_segments
-            .iter()
-            .any(|s| !s.get().read().get_indexed_fields().is_empty());
-
         let thresholds = self.threshold_config();
         let collection_params = self.collection_params();
 
         let is_indexed = total_vectors_size >= thresholds.indexing_threshold * BYTES_IN_KB;
-
-        // Create structure index only if there is something to index
-        // ToDo: remove deprecated
-        let is_payload_indexed = total_vectors_size
-            >= thresholds.payload_indexing_threshold * BYTES_IN_KB
-            && have_indexed_fields;
 
         let is_on_disk = total_vectors_size >= thresholds.memmap_threshold * BYTES_IN_KB;
 

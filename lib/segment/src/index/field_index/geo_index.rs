@@ -448,6 +448,10 @@ impl ValueIndexer<GeoPoint> for GeoMapIndex {
 }
 
 impl PayloadFieldIndex for GeoMapIndex {
+    fn indexed_points(&self) -> usize {
+        self.points_count
+    }
+
     fn load(&mut self) -> OperationResult<bool> {
         GeoMapIndex::load(self)
     }

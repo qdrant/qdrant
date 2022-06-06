@@ -12,13 +12,13 @@ use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::points_iterator::PointsIteratorSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
+use crate::index::struct_payload_index::StructPayloadIndex;
 use atomic_refcell::AtomicRefCell;
 use schemars::_serde_json::Value;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use crate::index::struct_payload_index::StructPayloadIndex;
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///

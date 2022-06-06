@@ -1,5 +1,6 @@
 use crate::common::error_logging::LogError;
 use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
+use crate::index::PayloadIndex;
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{PayloadKeyType, PayloadSchemaType, SegmentConfig};
@@ -8,7 +9,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use crate::index::PayloadIndex;
 
 /// Structure for constructing segment out of several other segments
 pub struct SegmentBuilder {

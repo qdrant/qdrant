@@ -1,25 +1,26 @@
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
-    use rand::Rng;
+    use rand::prelude::StdRng;
+    use rand::{Rng, SeedableRng};
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{
         generate_diverse_payload, random_filter, random_vector, FLICKING_KEY, GEO_KEY, INT_KEY,
         INT_KEY_2, LAT_RANGE, LON_RANGE, STR_KEY,
     };
+    use segment::index::PayloadIndex;
     use segment::segment::Segment;
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, GeoPoint, GeoRadius, Indexes,
-        IsEmptyCondition, Payload, PayloadField, PayloadSchemaType, Range,
-        SegmentConfig, StorageType, WithPayload,
+        IsEmptyCondition, Payload, PayloadField, PayloadSchemaType, Range, SegmentConfig,
+        StorageType, WithPayload,
     };
     use std::path::Path;
     use tempdir::TempDir;
-    use segment::index::PayloadIndex;
 
     fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
-        let mut rnd = rand::thread_rng();
+        let mut rnd = StdRng::seed_from_u64(42);
         let dim = 5;
 
         let config = SegmentConfig {
@@ -34,7 +35,8 @@ mod tests {
         let mut struct_segment = build_segment(path_struct, &config).unwrap();
 
         let num_points = 3000;
-        let points_to_delete = 1000;
+        let points_to_delete = 500;
+        let points_to_clear = 500;
 
         let mut opnum = 0;
         struct_segment
@@ -72,6 +74,17 @@ mod tests {
             .create_field_index(opnum, FLICKING_KEY, &Some(PayloadSchemaType::Integer))
             .unwrap();
 
+        for _ in 0..points_to_clear {
+            opnum += 1;
+            let idx_to_remove = rnd.gen_range(0..num_points);
+            plain_segment
+                .clear_payload(opnum, idx_to_remove.into())
+                .unwrap();
+            struct_segment
+                .clear_payload(opnum, idx_to_remove.into())
+                .unwrap();
+        }
+
         for _ in 0..points_to_delete {
             opnum += 1;
             let idx_to_remove = rnd.gen_range(0..num_points);
@@ -82,7 +95,19 @@ mod tests {
                 .delete_point(opnum, idx_to_remove.into())
                 .unwrap();
         }
-        
+
+        for (field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
+            for index in indexes {
+                assert!(index.indexed_points() < num_points as usize);
+                if field != FLICKING_KEY {
+                    assert!(
+                        index.indexed_points()
+                            > (num_points as usize - points_to_delete - points_to_clear)
+                    );
+                }
+            }
+        }
+
         (struct_segment, plain_segment)
     }
 

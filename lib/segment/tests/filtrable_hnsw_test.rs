@@ -5,12 +5,12 @@ mod tests {
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
     use segment::index::hnsw_index::hnsw::HNSWIndex;
-    use segment::index::VectorIndex;
+    use segment::index::{PayloadIndex, VectorIndex};
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload,
-        PayloadIndexType, PayloadSchemaType, PointOffsetType, Range, SearchParams, SegmentConfig,
-        SeqNumberType, StorageType,
+        PayloadSchemaType, PointOffsetType, Range, SearchParams, SegmentConfig, SeqNumberType,
+        StorageType,
     };
     use serde_json::json;
     use std::collections::HashMap;

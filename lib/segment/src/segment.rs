@@ -4,6 +4,7 @@ use crate::entry::entry_point::{
     get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };
 use crate::id_tracker::IdTrackerSS;
+use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndexSS};
 use crate::types::{
     Filter, Payload, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
@@ -19,7 +20,6 @@ use std::fs::{remove_dir_all, rename};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use crate::index::struct_payload_index::StructPayloadIndex;
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
@@ -375,6 +375,7 @@ impl SegmentEntry for Segment {
             match internal_id {
                 Some(internal_id) => {
                     segment.vector_storage.borrow_mut().delete(internal_id)?;
+                    segment.payload_index.borrow_mut().drop(internal_id)?;
                     id_tracker.drop(point_id)?;
                     Ok(true)
                 }
@@ -638,7 +639,7 @@ mod tests {
     use super::*;
     use crate::entry::entry_point::SegmentEntry;
     use crate::segment_constructor::build_segment;
-    use crate::types::{Distance, Indexes, PayloadIndexType, SegmentConfig, StorageType};
+    use crate::types::{Distance, Indexes, SegmentConfig, StorageType};
     use tempdir::TempDir;
 
     // no longer valid since users are now allowed to store arbitrary json objects.

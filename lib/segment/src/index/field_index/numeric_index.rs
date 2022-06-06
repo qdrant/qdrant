@@ -358,6 +358,10 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
 impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> PayloadFieldIndex
     for NumericIndex<T>
 {
+    fn indexed_points(&self) -> usize {
+        self.points_count
+    }
+
     fn load(&mut self) -> OperationResult<bool> {
         NumericIndex::load(self)
     }

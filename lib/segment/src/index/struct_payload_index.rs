@@ -41,7 +41,7 @@ pub struct StructPayloadIndex {
     payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     /// Indexes, associated with fields
-    field_indexes: IndexesMap,
+    pub field_indexes: IndexesMap,
     config: PayloadConfig,
     /// Root of index persistence dir
     path: PathBuf,

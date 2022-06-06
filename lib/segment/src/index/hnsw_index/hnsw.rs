@@ -13,13 +13,13 @@ use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 use atomic_refcell::AtomicRefCell;
 use log::debug;
 
+use crate::index::struct_payload_index::StructPayloadIndex;
 use rand::thread_rng;
 use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use crate::index::struct_payload_index::StructPayloadIndex;
 
 const HNSW_USE_HEURISTIC: bool = true;
 const BYTES_IN_KB: usize = 1024;

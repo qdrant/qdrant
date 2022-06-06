@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::hash::Hash;
 use std::iter;
 
@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 /// HashMap-based type of index
 pub struct MapIndex<N: Hash + Eq + Clone + Display> {
-    map: HashMap<N, Vec<PointOffsetType>>,
+    map: HashMap<N, BTreeSet<PointOffsetType>>,
     point_to_values: Vec<Vec<N>>,
     /// Amount of point which have at least one indexed payload value
     indexed_points: usize,
@@ -33,7 +33,7 @@ pub struct MapIndex<N: Hash + Eq + Clone + Display> {
 impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     pub fn new(db: Arc<AtomicRefCell<DB>>, field_name: &str) -> MapIndex<N> {
         MapIndex {
-            map: HashMap::new(),
+            map: Default::default(),
             point_to_values: Vec::new(),
             indexed_points: 0,
             store_cf_name: Self::storage_cf_name(field_name),
@@ -69,7 +69,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
                 self.indexed_points += 1;
             }
             self.point_to_values[idx as usize].push(value.clone());
-            self.map.entry(value).or_default().push(idx);
+            self.map.entry(value).or_default().insert(idx);
         }
         Ok(true)
     }
@@ -122,7 +122,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         self.point_to_values[idx as usize] = values.into_iter().collect();
         for value in &self.point_to_values[idx as usize] {
             let entry = self.map.entry(value.clone()).or_default();
-            entry.push(idx);
+            entry.insert(idx);
 
             let db_record = Self::encode_db_record(value, idx);
             store_ref
@@ -184,8 +184,10 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         }
 
         for value in &removed_values {
+            if let Some(vals) = self.map.get_mut(value) {
+                vals.remove(&idx);
+            }
             let key = MapIndex::encode_db_record(value, idx);
-            self.map.remove(value);
             store_ref.delete_cf(cf_handle, key)?;
         }
 
@@ -194,6 +196,10 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
 }
 
 impl PayloadFieldIndex for MapIndex<String> {
+    fn indexed_points(&self) -> usize {
+        self.indexed_points
+    }
+
     fn load(&mut self) -> OperationResult<bool> {
         MapIndex::load(self)
     }
@@ -255,6 +261,10 @@ impl PayloadFieldIndex for MapIndex<String> {
 }
 
 impl PayloadFieldIndex for MapIndex<IntPayloadType> {
+    fn indexed_points(&self) -> usize {
+        self.indexed_points
+    }
+
     fn load(&mut self) -> OperationResult<bool> {
         MapIndex::load(self)
     }

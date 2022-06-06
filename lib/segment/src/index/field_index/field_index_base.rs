@@ -9,6 +9,9 @@ use crate::types::{
 use serde_json::Value;
 
 pub trait PayloadFieldIndex {
+    /// Return number of points with at least one value indexed in here
+    fn indexed_points(&self) -> usize;
+
     /// Load index from disk.
     fn load(&mut self) -> OperationResult<bool>;
 
@@ -129,6 +132,10 @@ impl FieldIndex {
             FieldIndex::FloatIndex(index) => index.recreate(),
             FieldIndex::GeoIndex(index) => index.recreate(),
         }
+    }
+
+    pub fn indexed_points(&self) -> usize {
+        self.get_payload_field_index().indexed_points()
     }
 
     pub fn flush(&self) -> OperationResult<()> {
