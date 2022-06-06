@@ -108,16 +108,12 @@ pub struct OptimizersConfigDiff {
     #[prost(uint64, optional, tag="6")]
     pub indexing_threshold: ::core::option::Option<u64>,
     ///
-    ///Starting from this amount of vectors per-segment the engine will start building index for payload.
-    #[prost(uint64, optional, tag="7")]
-    pub payload_indexing_threshold: ::core::option::Option<u64>,
-    ///
     ///Interval between forced flushes.
-    #[prost(uint64, optional, tag="8")]
+    #[prost(uint64, optional, tag="7")]
     pub flush_interval_sec: ::core::option::Option<u64>,
     ///
     ///Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used
-    #[prost(uint64, optional, tag="9")]
+    #[prost(uint64, optional, tag="8")]
     pub max_optimization_threads: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

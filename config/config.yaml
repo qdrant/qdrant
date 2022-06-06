@@ -58,9 +58,6 @@ storage:
     # Note: 1Kb = 1 vector of size 256
     indexing_threshold_kb: 20000
 
-    # Starting from this amount of vectors per-segment the engine will start building index for payload.
-    payload_indexing_threshold: 10000
-
     # Interval between forced flushes.
     flush_interval_sec: 1
     

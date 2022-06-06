@@ -116,17 +116,13 @@ message OptimizersConfigDiff {
   */
   optional uint64 indexing_threshold = 6;
   /*
-  Starting from this amount of vectors per-segment the engine will start building index for payload.
-  */
-  optional uint64 payload_indexing_threshold = 7;
-  /*
   Interval between forced flushes.
   */
-  optional uint64 flush_interval_sec = 8;
+  optional uint64 flush_interval_sec = 7;
   /*
   Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used
   */
-  optional uint64 max_optimization_threads = 9;
+  optional uint64 max_optimization_threads = 8;
 }
 
 message CreateCollection {

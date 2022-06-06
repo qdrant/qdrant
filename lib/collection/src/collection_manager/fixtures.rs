@@ -115,7 +115,6 @@ pub(crate) fn get_merge_optimizer(
         OptimizerThresholds {
             memmap_threshold: 1000000,
             indexing_threshold: 1000000,
-            payload_indexing_threshold: 1000000,
         },
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
@@ -138,7 +137,6 @@ pub(crate) fn get_indexing_optimizer(
         OptimizerThresholds {
             memmap_threshold: 100,
             indexing_threshold: 100,
-            payload_indexing_threshold: 100,
         },
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),

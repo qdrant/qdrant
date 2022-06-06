@@ -35,6 +35,14 @@
 - [collections_service.proto](#collections_service-proto)
     - [Collections](#qdrant-Collections)
   
+- [json_with_int.proto](#json_with_int-proto)
+    - [ListValue](#qdrant-ListValue)
+    - [Struct](#qdrant-Struct)
+    - [Struct.FieldsEntry](#qdrant-Struct-FieldsEntry)
+    - [Value](#qdrant-Value)
+  
+    - [NullValue](#qdrant-NullValue)
+  
 - [points.proto](#points-proto)
     - [ClearPayloadPoints](#qdrant-ClearPayloadPoints)
     - [Condition](#qdrant-Condition)
@@ -233,7 +241,7 @@
 | vector_size | [uint64](#uint64) |  | Size of the vectors |
 | distance | [Distance](#qdrant-Distance) |  | Distance function used for comparing vectors |
 | shard_number | [uint32](#uint32) |  | Number of shards in collection |
-| on_disk_payload | [bool](#bool) |  | Read payload directly from disk? |
+| on_disk_payload | [bool](#bool) |  | If true - point&#39;s payload will not be stored in memory |
 
 
 
@@ -271,7 +279,7 @@
 | wal_config | [WalConfigDiff](#qdrant-WalConfigDiff) | optional | Configuration of the Write-Ahead-Log |
 | optimizers_config | [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff) | optional | Configuration of the optimizers |
 | shard_number | [uint32](#uint32) | optional | Number of shards in the collection, default = 1 |
-| on_disk_payload | [bool](#bool) | optional | If `true` keep payload on disk, if `false` - in RAM |
+| on_disk_payload | [bool](#bool) | optional | If true - point&#39;s payload will not be stored in memory |
 | timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
 
 
@@ -351,7 +359,7 @@
 | ----- | ---- | ----- | ----------- |
 | m | [uint64](#uint64) | optional | Number of edges per node in the index graph. Larger the value - more accurate the search, more space required. |
 | ef_construct | [uint64](#uint64) | optional | Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index. |
-| full_scan_threshold | [uint64](#uint64) | optional | Minimal amount of points for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold` additional indexing won&#39;t be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. |
+| full_scan_threshold | [uint64](#uint64) | optional | Minimal size (in KiloBytes) of vectors for additional payload-based indexing. If payload chunk is smaller than `full_scan_threshold` additional indexing won&#39;t be used - in this case full-scan search should be preferred by query planner and additional indexing is not required. Note: 1Kb = 1 vector of size 256 |
 
 
 
@@ -415,12 +423,11 @@
 - Amount of stored points. - Current write RPS.
 
 It is recommended to select default number of segments as a factor of the number of search threads, so that each segment would be handled evenly by one of the threads. |
-| max_segment_size | [uint64](#uint64) | optional | Do not create segments larger this number of points. Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.
+| max_segment_size | [uint64](#uint64) | optional | Do not create segments larger this size (in KiloBytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.
 
-If indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher. |
-| memmap_threshold | [uint64](#uint64) | optional | Maximum number of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. |
-| indexing_threshold | [uint64](#uint64) | optional | Maximum number of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md |
-| payload_indexing_threshold | [uint64](#uint64) | optional | Starting from this amount of vectors per-segment the engine will start building index for payload. |
+If indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 |
+| memmap_threshold | [uint64](#uint64) | optional | Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256 |
+| indexing_threshold | [uint64](#uint64) | optional | Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md Note: 1Kb = 1 vector of size 256 |
 | flush_interval_sec | [uint64](#uint64) | optional | Interval between forced flushes. |
 | max_optimization_threads | [uint64](#uint64) | optional | Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used |
 
@@ -571,6 +578,117 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Update | [UpdateCollection](#qdrant-UpdateCollection) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Update parameters of the existing collection |
 | Delete | [DeleteCollection](#qdrant-DeleteCollection) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Drop collection and all associated data |
 | UpdateAliases | [ChangeAliases](#qdrant-ChangeAliases) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Update Aliases of the existing collection |
+
+ 
+
+
+
+<a name="json_with_int-proto"></a>
+<p align="right"><a href="#top">Top</a></p>
+
+## json_with_int.proto
+
+
+
+<a name="qdrant-ListValue"></a>
+
+### ListValue
+`ListValue` is a wrapper around a repeated field of values.
+
+The JSON representation for `ListValue` is JSON array.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| values | [Value](#qdrant-Value) | repeated | Repeated field of dynamically typed values. |
+
+
+
+
+
+
+<a name="qdrant-Struct"></a>
+
+### Struct
+`Struct` represents a structured data value, consisting of fields
+which map to dynamically typed values. In some languages, `Struct`
+might be supported by a native representation. For example, in
+scripting languages like JS a struct is represented as an
+object. The details of that representation are described together
+with the proto support for the language.
+
+The JSON representation for `Struct` is JSON object.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| fields | [Struct.FieldsEntry](#qdrant-Struct-FieldsEntry) | repeated | Unordered map of dynamically typed values. |
+
+
+
+
+
+
+<a name="qdrant-Struct-FieldsEntry"></a>
+
+### Struct.FieldsEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [Value](#qdrant-Value) |  |  |
+
+
+
+
+
+
+<a name="qdrant-Value"></a>
+
+### Value
+`Value` represents a dynamically typed value which can be either
+null, a number, a string, a boolean, a recursive struct value, or a
+list of values. A producer of value is expected to set one of that
+variants, absence of any variant indicates an error.
+
+The JSON representation for `Value` is JSON value.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| null_value | [NullValue](#qdrant-NullValue) |  | Represents a null value. |
+| double_value | [double](#double) |  | Represents a double value. |
+| integer_value | [int64](#int64) |  | Represents an integer value |
+| string_value | [string](#string) |  | Represents a string value. |
+| bool_value | [bool](#bool) |  | Represents a boolean value. |
+| struct_value | [Struct](#qdrant-Struct) |  | Represents a structured value. |
+| list_value | [ListValue](#qdrant-ListValue) |  | Represents a repeated `Value`. |
+
+
+
+
+
+ 
+
+
+<a name="qdrant-NullValue"></a>
+
+### NullValue
+`NullValue` is a singleton enumeration to represent the null value for the
+`Value` type union.
+
+ The JSON representation for `NullValue` is JSON `null`.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| NULL_VALUE | 0 | Null value. |
+
+
+ 
+
+ 
 
  
 
@@ -862,7 +980,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| exclude | [string](#string) | repeated | List of payload keys to exclude from the result |
+| fields | [string](#string) | repeated | List of payload keys to exclude from the result |
 
 
 
@@ -877,7 +995,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| include | [string](#string) | repeated | List of payload keys to include into result |
+| fields | [string](#string) | repeated | List of payload keys to include into result |
 
 
 
@@ -926,7 +1044,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
-| value | [google.protobuf.Value](#google-protobuf-Value) |  |  |
+| value | [Value](#qdrant-Value) |  |  |
 
 
 
@@ -1063,7 +1181,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
-| value | [google.protobuf.Value](#google-protobuf-Value) |  |  |
+| value | [Value](#qdrant-Value) |  |  |
 
 
 
@@ -1098,7 +1216,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
-| value | [google.protobuf.Value](#google-protobuf-Value) |  |  |
+| value | [Value](#qdrant-Value) |  |  |
 
 
 
@@ -1222,7 +1340,7 @@ If indexation speed have more priority for your - make this parameter lower. If 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
-| value | [google.protobuf.Value](#google-protobuf-Value) |  |  |
+| value | [Value](#qdrant-Value) |  |  |
 
 
 

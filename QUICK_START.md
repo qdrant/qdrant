@@ -54,7 +54,6 @@ Expected response:
         "max_segment_number": 5,
         "memmap_threshold": 50000,
         "indexing_threshold": 20000,
-        "payload_indexing_threshold": 10000,
         "flush_interval_sec": 1
       },
       "wal_config": {

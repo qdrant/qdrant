@@ -192,7 +192,6 @@ mod tests {
             OptimizerThresholds {
                 memmap_threshold: 1000000,
                 indexing_threshold: 1000000,
-                payload_indexing_threshold: 1000000,
             },
             dir.path().to_owned(),
             temp_dir.path().to_owned(),

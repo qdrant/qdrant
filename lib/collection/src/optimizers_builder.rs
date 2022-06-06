@@ -46,8 +46,6 @@ pub struct OptimizersConfig {
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "indexing_threshold_kb")]
     pub indexing_threshold: usize,
-    /// Starting from this amount of vectors per-segment the engine will start building index for payload.
-    pub payload_indexing_threshold: usize,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: u64,
     /// Maximum available threads for optimization workers
@@ -79,7 +77,6 @@ pub fn build_optimizers(
     let threshold_config = OptimizerThresholds {
         memmap_threshold: optimizers_config.memmap_threshold,
         indexing_threshold: optimizers_config.indexing_threshold,
-        payload_indexing_threshold: optimizers_config.payload_indexing_threshold,
     };
 
     Arc::new(vec![

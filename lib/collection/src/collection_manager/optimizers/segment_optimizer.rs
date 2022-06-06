@@ -28,7 +28,6 @@ const BYTES_IN_KB: usize = 1024;
 pub struct OptimizerThresholds {
     pub memmap_threshold: usize,
     pub indexing_threshold: usize,
-    pub payload_indexing_threshold: usize,
 }
 
 /// SegmentOptimizer - trait implementing common functionality of the optimizers

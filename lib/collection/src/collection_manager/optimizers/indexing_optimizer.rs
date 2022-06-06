@@ -189,7 +189,6 @@ mod tests {
             OptimizerThresholds {
                 memmap_threshold: 1000,
                 indexing_threshold: 1000,
-                payload_indexing_threshold: 50,
             },
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
@@ -355,7 +354,7 @@ mod tests {
         // ---- New appendable segment should be created if none left
 
         // Index even the smallest segment
-        index_optimizer.thresholds_config.payload_indexing_threshold = 20;
+        index_optimizer.thresholds_config.indexing_threshold = 20;
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert!(suggested_to_optimize.contains(&small_segment_id));
