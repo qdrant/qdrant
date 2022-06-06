@@ -28,7 +28,7 @@ docker run --rm \
     -v "$(pwd)/openapi/schemas/AllDefinitions.json:/app/schema.json" \
     schema2openapi | sed -e 's%#/definitions/%#/components/schemas/%g' >./openapi/models.json
 
-docker run --rm -i simplealpine/json2yaml <./openapi/models.json > ./openapi/models.yaml
+docker run --rm -i mikefarah/yq eval -P - <./openapi/models.json > ./openapi/models.yaml
 
 # Merge all *.yaml files together into a single-file OpenAPI definition
 docker run --rm -v "${PWD}":/workdir mikefarah/yq eval-all '. as $item ireduce ({}; . *+ $item)' \
@@ -40,6 +40,6 @@ docker run --rm -v "${PWD}":/workdir mikefarah/yq eval-all '. as $item ireduce (
 
 docker run --rm -v "${PWD}"/openapi:/spec redocly/openapi-cli lint openapi-merged.yaml
 
-docker run --rm -i simplealpine/yaml2json <./openapi/openapi-merged.yaml | jq > ./openapi/openapi-merged.json
+docker run --rm -i mikefarah/yq eval -o=json - <./openapi/openapi-merged.yaml | jq > ./openapi/openapi-merged.json
 
 cp ./openapi/openapi-merged.json ./docs/redoc/master/openapi.json
