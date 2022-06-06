@@ -25,7 +25,7 @@ wal = { git = "https://github.com/qdrant/wal.git" }
 ordered-float = "3.0"
 hashring = "0.3.0"
 
-tokio = {version = "~1.18", features = ["full"]}
+tokio = {version = "~1.19", features = ["full"]}
 futures = "0.3.21"
 atomicwrites = "0.3.1"
 log = "0.4"
