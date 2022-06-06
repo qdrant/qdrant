@@ -105,7 +105,7 @@ service:
 
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
-  enabled: true
+  enabled: false
 
   # Configuration of the inter-cluster communication
   p2p:
