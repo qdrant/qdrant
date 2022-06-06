@@ -76,9 +76,9 @@ impl Consensus {
             )?;
         } else {
             if bootstrap_peer.is_some() || uri.is_some() {
-                log::warn!("Local raft state found - bootstrap and uri cli arguments were ignored")
+                log::info!("Local raft state found - bootstrap and uri cli arguments were ignored")
             }
-            log::info!("Local raft state found - skipping initialization");
+            log::debug!("Local raft state found - skipping initialization");
         };
         let mut node = Node::new(&raft_config, toc_ref.clone(), logger)?;
         // Before consensus has started apply any unapplied committed entries

@@ -102,3 +102,20 @@ service:
   # More info: https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS
   # Default: true
   enable_cors: true
+
+cluster:
+  # Use `enabled: true` to run Qdrant in distributed deployment mode
+  enabled: true
+
+  # Configuration of the inter-cluster communication
+  p2p:
+    # Port for internal communication between peers
+    port: 6335
+
+  # Configuration related to distributed consensus algorithm
+  consensus:
+    # How frequently peers should ping each other.
+    # Setting this parameter to lower value will allow consensus
+    # to detect disconnected nodes earlier, but too frequent
+    # tick period may create significant network and CPU overhead.
+    tick_period_ms: 300

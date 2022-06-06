@@ -82,13 +82,13 @@ impl Persistent {
     ) -> Result<Self, StorageError> {
         let path = storage_path.as_ref().join(STATE_FILE_NAME);
         let state = if path.exists() {
-            log::info!("Loading raft state from {}", path.display());
+            log::debug!("Loading raft state from {}", path.display());
             Self::load(path)?
         } else {
-            log::info!("Initializing new raft state at {}", path.display());
+            log::debug!("Initializing new raft state at {}", path.display());
             Self::init(path, first_peer)?
         };
-        log::info!("State: {:?}", state.state());
+        log::debug!("State: {:?}", state.state());
         Ok(state)
     }
 

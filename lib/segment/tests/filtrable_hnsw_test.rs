@@ -107,8 +107,9 @@ mod tests {
         }
         let expected_blocks = num_vectors as usize / indexing_threshold * 2;
 
+        eprintln!("blocks.len() = {:#?}", blocks.len());
         assert!(
-            (blocks.len() as i64 - expected_blocks as i64).abs() < 3,
+            (blocks.len() as i64 - expected_blocks as i64).abs() <= 3,
             "real number of payload blocks is too far from expected"
         );
 
