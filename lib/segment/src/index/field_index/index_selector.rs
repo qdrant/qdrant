@@ -1,22 +1,31 @@
-use crate::index::field_index::geo_index::PersistedGeoMapIndex;
-use crate::index::field_index::map_index::PersistedMapIndex;
-use crate::index::field_index::numeric_index::PersistedNumericIndex;
-use crate::index::field_index::PayloadFieldIndexBuilder;
+use crate::index::field_index::geo_index::GeoMapIndex;
+use crate::index::field_index::map_index::MapIndex;
+use crate::index::field_index::numeric_index::NumericIndex;
+use crate::index::field_index::FieldIndex;
 use crate::types::{FloatPayloadType, IntPayloadType, PayloadSchemaType};
+use atomic_refcell::AtomicRefCell;
+use rocksdb::DB;
+use std::sync::Arc;
 
 /// Selects index types based on field type
-pub fn index_selector(payload_type: &PayloadSchemaType) -> Vec<Box<dyn PayloadFieldIndexBuilder>> {
+pub fn index_selector(
+    field: &str,
+    payload_type: &PayloadSchemaType,
+    db: Arc<AtomicRefCell<DB>>,
+) -> Vec<FieldIndex> {
     match payload_type {
-        PayloadSchemaType::Keyword => vec![Box::new(PersistedMapIndex::<String>::default())],
+        PayloadSchemaType::Keyword => {
+            vec![FieldIndex::KeywordIndex(MapIndex::new(db, field))]
+        }
         PayloadSchemaType::Integer => vec![
-            Box::new(PersistedMapIndex::<IntPayloadType>::default()),
-            Box::new(PersistedNumericIndex::<IntPayloadType>::default()),
+            FieldIndex::IntMapIndex(MapIndex::<IntPayloadType>::new(db.clone(), field)),
+            FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(db, field)),
         ],
         PayloadSchemaType::Float => {
-            vec![Box::new(
-                PersistedNumericIndex::<FloatPayloadType>::default(),
+            vec![FieldIndex::FloatIndex(
+                NumericIndex::<FloatPayloadType>::new(db, field),
             )]
         }
-        PayloadSchemaType::Geo => vec![Box::new(PersistedGeoMapIndex::default())],
+        PayloadSchemaType::Geo => vec![FieldIndex::GeoIndex(GeoMapIndex::new(db, field))],
     }
 }

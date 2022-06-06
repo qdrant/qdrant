@@ -338,8 +338,6 @@ pub struct SegmentConfig {
     pub distance: Distance,
     /// Type of index used for search
     pub index: Indexes,
-    /// Payload Indexes
-    pub payload_index: Option<PayloadIndexType>,
     /// Type of vector storage
     pub storage_type: StorageType,
     /// Defines payload storage type

@@ -29,7 +29,6 @@ mod tests {
                 max_segment_size: 100_000,
                 memmap_threshold: 100,
                 indexing_threshold: 100,
-                payload_indexing_threshold: 100,
                 flush_interval_sec: 2,
                 max_optimization_threads: 2,
             },

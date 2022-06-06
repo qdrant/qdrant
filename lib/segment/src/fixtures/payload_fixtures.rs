@@ -43,6 +43,7 @@ pub const LAT_RANGE: Range<f64> = -90.0..90.0;
 
 pub const STR_KEY: &str = "kvd";
 pub const INT_KEY: &str = "int";
+pub const INT_KEY_2: &str = "int2";
 pub const FLT_KEY: &str = "flt";
 pub const FLICKING_KEY: &str = "flicking";
 pub const GEO_KEY: &str = "geo";
@@ -208,6 +209,7 @@ pub fn generate_diverse_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
         json!({
             STR_KEY: random_keyword_payload(rnd_gen, 1..=3),
             INT_KEY: random_int_payload(rnd_gen, 1..=3),
+            INT_KEY_2: random_int_payload(rnd_gen, 1..=2),
             FLT_KEY: rnd_gen.gen_range(0.0..10.0),
             GEO_KEY: random_geo_payload(rnd_gen, 1..=3)
         })
@@ -216,6 +218,7 @@ pub fn generate_diverse_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
         json!({
             STR_KEY: random_keyword_payload(rnd_gen, 1..=2),
             INT_KEY: random_int_payload(rnd_gen, 1..=3),
+            INT_KEY_2: random_int_payload(rnd_gen, 1..=2),
             FLT_KEY: rnd_gen.gen_range(0.0..10.0),
             GEO_KEY: random_geo_payload(rnd_gen, 1..=3),
             FLICKING_KEY: random_int_payload(rnd_gen, 1..=3)

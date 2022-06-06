@@ -78,7 +78,6 @@ mod tests {
             vector_size: segment.segment_config.vector_size,
             distance: segment.segment_config.distance,
             index: Indexes::Hnsw(Default::default()),
-            payload_index: None,
             storage_type: Default::default(),
             payload_storage_type: Default::default(),
         };

@@ -1,23 +1,20 @@
 #[cfg(test)]
 mod tests {
-    use atomic_refcell::AtomicRefCell;
     use itertools::Itertools;
     use rand::{thread_rng, Rng};
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
     use segment::index::hnsw_index::hnsw::HNSWIndex;
-    use segment::index::struct_payload_index::StructPayloadIndex;
     use segment::index::{PayloadIndex, VectorIndex};
     use segment::segment_constructor::build_segment;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload,
-        PayloadIndexType, PayloadSchemaType, Range, SearchParams, SegmentConfig, SeqNumberType,
+        PayloadSchemaType, PointOffsetType, Range, SearchParams, SegmentConfig, SeqNumberType,
         StorageType,
     };
-    use segment::vector_storage::storage_points_iterator::StoragePointsIterator;
     use serde_json::json;
+    use std::collections::HashMap;
     use std::sync::atomic::AtomicBool;
-    use std::sync::Arc;
     use tempdir::TempDir;
 
     #[test]
@@ -37,13 +34,11 @@ mod tests {
         let mut rnd = thread_rng();
 
         let dir = TempDir::new("segment_dir").unwrap();
-        let payload_index_dir = TempDir::new("payload_index_dir").unwrap();
         let hnsw_dir = TempDir::new("hnsw_dir").unwrap();
 
         let config = SegmentConfig {
             vector_size: dim,
             index: Indexes::Plain {},
-            payload_index: Some(PayloadIndexType::Plain),
             storage_type: StorageType::InMemory,
             distance,
             payload_storage_type: Default::default(),
@@ -56,8 +51,8 @@ mod tests {
             let idx = n.into();
             let vector = random_vector(&mut rnd, dim);
 
-            let payload: Payload =
-                json!({int_key:random_int_payload(&mut rnd, num_payload_values..=num_payload_values),}).into();
+            let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
+            let payload: Payload = json!({int_key:int_payload,}).into();
 
             segment
                 .upsert_point(n as SeqNumberType, idx, &vector)
@@ -68,17 +63,7 @@ mod tests {
         }
         // let opnum = num_vectors + 1;
 
-        let payload_index = StructPayloadIndex::open(
-            Arc::new(AtomicRefCell::new(StoragePointsIterator(
-                segment.vector_storage.clone(),
-            ))),
-            segment.payload_storage.clone(),
-            segment.id_tracker.clone(),
-            payload_index_dir.path(),
-        )
-        .unwrap();
-
-        let payload_index_ptr = Arc::new(AtomicRefCell::new(payload_index));
+        let payload_index_ptr = segment.payload_index;
 
         let hnsw_config = HnswConfig {
             m,
@@ -111,7 +96,27 @@ mod tests {
             );
         }
 
-        assert_eq!(blocks.len(), num_vectors as usize / indexing_threshold * 2);
+        let mut coverage: HashMap<PointOffsetType, usize> = Default::default();
+        for block in &blocks {
+            let px = payload_index_ptr.borrow();
+            let filter = Filter::new_must(Condition::Field(block.condition.clone()));
+            let points = px.query_points(&filter);
+            for point in points {
+                coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);
+            }
+        }
+        let expected_blocks = num_vectors as usize / indexing_threshold * 2;
+
+        assert!(
+            (blocks.len() as i64 - expected_blocks as i64).abs() < 3,
+            "real number of payload blocks is too far from expected"
+        );
+
+        assert_eq!(
+            coverage.len(),
+            num_vectors as usize,
+            "not all points are covered by payload blocks"
+        );
 
         hnsw_index.build_index(&stopped).unwrap();
 

@@ -1,29 +1,30 @@
-use crate::entry::entry_point::OperationResult;
+use crate::common::rocksdb_operations::{db_write_options, recreate_cf};
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{
     circle_hashes, common_hash_prefix, encode_max_precision, geo_hash_to_box, rectangle_hashes,
     GeoHash,
 };
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
-    CardinalityEstimation, FieldIndex, PayloadBlockCondition, PayloadFieldIndex,
-    PayloadFieldIndexBuilder, PrimaryCondition, ValueIndexer,
+    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
 use crate::types::{
     FieldCondition, GeoBoundingBox, GeoPoint, GeoRadius, PayloadKeyType, PointOffsetType,
 };
+use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
+use rocksdb::{IteratorMode, DB};
 use serde_json::Value;
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, HashSet};
-use std::mem;
+use std::str::FromStr;
+use std::sync::Arc;
 
 /// Max number of sub-regions computed for an input geo query
 // TODO discuss value, should it be dynamically computed?
 const GEO_QUERY_MAX_REGION: usize = 12;
 
-#[derive(Serialize, Deserialize, Default)]
-pub struct PersistedGeoMapIndex {
+pub struct GeoMapIndex {
     /**
     {
         "d": 10,
@@ -49,9 +50,115 @@ pub struct PersistedGeoMapIndex {
     points_count: usize,
     values_count: usize,
     max_values_per_point: usize,
+    store_cf_name: String,
+    db: Arc<AtomicRefCell<DB>>,
 }
 
-impl PersistedGeoMapIndex {
+impl GeoMapIndex {
+    pub fn new(db: Arc<AtomicRefCell<DB>>, field: &str) -> Self {
+        GeoMapIndex {
+            points_per_hash: Default::default(),
+            values_per_hash: Default::default(),
+            points_map: Default::default(),
+            point_to_values: vec![],
+            points_count: 0,
+            values_count: 0,
+            max_values_per_point: 0,
+            store_cf_name: Self::storage_cf_name(field),
+            db,
+        }
+    }
+
+    fn storage_cf_name(field: &str) -> String {
+        format!("{field}_geo")
+    }
+
+    pub fn recreate(&self) -> OperationResult<()> {
+        Ok(recreate_cf(self.db.clone(), &self.store_cf_name)?)
+    }
+
+    fn load(&mut self) -> OperationResult<bool> {
+        let store_ref = self.db.borrow();
+        let cf_handle = if let Some(cf_handle) = store_ref.cf_handle(&self.store_cf_name) {
+            cf_handle
+        } else {
+            return Ok(false);
+        };
+
+        for (key, value) in store_ref.iterator_cf(cf_handle, IteratorMode::Start) {
+            let key_str = std::str::from_utf8(&key).map_err(|_| {
+                OperationError::service_error("Index load error: UTF8 error while DB parsing")
+            })?;
+
+            let (geo_hash, idx) = Self::decode_db_key(key_str)?;
+            let geo_point = Self::decode_db_value(value)?;
+
+            if self.point_to_values.len() <= idx as usize {
+                self.point_to_values.resize(idx as usize + 1, Vec::new())
+            }
+
+            if self.point_to_values[idx as usize].is_empty() {
+                self.points_count += 1;
+            }
+
+            self.point_to_values[idx as usize].push(geo_point);
+            self.points_map.entry(geo_hash).or_default().insert(idx);
+        }
+        Ok(true)
+    }
+
+    fn encode_db_key(value: &str, idx: PointOffsetType) -> String {
+        format!("{}/{}", value, idx)
+    }
+
+    fn decode_db_key(s: &str) -> OperationResult<(GeoHash, PointOffsetType)> {
+        const DECODE_ERR: &str = "Index db parsing error: wrong data format";
+        let separator_pos = s
+            .rfind('/')
+            .ok_or_else(|| OperationError::service_error(DECODE_ERR))?;
+        if separator_pos == s.len() - 1 {
+            return Err(OperationError::service_error(DECODE_ERR));
+        }
+        let geohash = s[..separator_pos].to_string();
+        let idx_str = &s[separator_pos + 1..];
+        let idx = PointOffsetType::from_str(idx_str)
+            .map_err(|_| OperationError::service_error(DECODE_ERR))?;
+        Ok((geohash, idx))
+    }
+
+    fn decode_db_value<T: AsRef<[u8]>>(value: T) -> OperationResult<GeoPoint> {
+        let lat_bytes = value.as_ref()[0..8]
+            .try_into()
+            .map_err(|_| OperationError::service_error("invalid lat encoding"))?;
+
+        let lon_bytes = value.as_ref()[8..16]
+            .try_into()
+            .map_err(|_| OperationError::service_error("invalid lat encoding"))?;
+
+        let lat = f64::from_be_bytes(lat_bytes);
+        let lon = f64::from_be_bytes(lon_bytes);
+
+        Ok(GeoPoint { lon, lat })
+    }
+
+    fn encode_db_value(value: &GeoPoint) -> [u8; 16] {
+        let mut result: [u8; 16] = [0; 16];
+        result[0..8].clone_from_slice(&value.lat.to_be_bytes());
+        result[8..16].clone_from_slice(&value.lon.to_be_bytes());
+        result
+    }
+
+    pub fn flush(&self) -> OperationResult<()> {
+        let store_ref = self.db.borrow();
+        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
+            OperationError::service_error(&format!(
+                "Index flush error: column family {} not found",
+                self.store_cf_name
+            ))
+        })?;
+        Ok(store_ref.flush_cf(cf_handle)?)
+    }
+
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<GeoPoint>> {
         self.point_to_values.get(idx as usize)
     }
@@ -109,12 +216,29 @@ impl PersistedGeoMapIndex {
         }
     }
 
-    #[allow(dead_code)]
-    fn remove_point(&mut self, idx: PointOffsetType) {
+    fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+        let store_ref = self.db.borrow();
+
+        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
+            OperationError::service_error(&format!(
+                "point remove error: column family {} not found",
+                self.store_cf_name
+            ))
+        })?;
+
         if self.point_to_values.len() <= idx as usize {
-            return; // Already removed or never actually existed
+            return Ok(()); // Already removed or never actually existed
         }
+
         let removed_points = std::mem::take(&mut self.point_to_values[idx as usize]);
+
+        if removed_points.is_empty() {
+            return Ok(());
+        }
+
+        self.points_count -= 1;
+        self.values_count -= removed_points.len();
+
         let mut seen_hashes: HashSet<&str> = Default::default();
         let mut geo_hashes = vec![];
 
@@ -126,6 +250,16 @@ impl PersistedGeoMapIndex {
 
         for removed_geo_hash in &geo_hashes {
             let hash_points = self.points_map.get_mut(removed_geo_hash);
+
+            if let Some(ref offsets) = hash_points {
+                for point_offset in offsets.iter() {
+                    let key = Self::encode_db_key(removed_geo_hash, *point_offset);
+                    store_ref.delete_cf(cf_handle, &key).map_err(|e| {
+                        OperationError::service_error(&format!("Index db remove error: {}", e))
+                    })?;
+                }
+            }
+
             let is_last = match hash_points {
                 None => false,
                 Some(points_set) => {
@@ -150,12 +284,26 @@ impl PersistedGeoMapIndex {
                 }
             }
         }
+
+        Ok(())
     }
 
-    fn add_many_geo_points(&mut self, idx: PointOffsetType, values: &[GeoPoint]) {
+    fn add_many_geo_points(
+        &mut self,
+        idx: PointOffsetType,
+        values: &[GeoPoint],
+    ) -> OperationResult<()> {
         if values.is_empty() {
-            return;
+            return Ok(());
         }
+
+        let store_ref = self.db.borrow();
+        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
+            OperationError::service_error(&format!(
+                "Index add error: column family {} not found",
+                self.store_cf_name
+            ))
+        })?;
 
         if self.point_to_values.len() <= idx as usize {
             // That's a smart reallocation
@@ -170,7 +318,17 @@ impl PersistedGeoMapIndex {
         for added_point in values {
             let added_geo_hash: GeoHash =
                 encode_max_precision(added_point.lon, added_point.lat).unwrap();
+
+            let key = Self::encode_db_key(&added_geo_hash, idx);
+            let value = Self::encode_db_value(added_point);
+
             geo_hashes.push(added_geo_hash);
+
+            store_ref
+                .put_cf_opt(cf_handle, &key, &value, &db_write_options())
+                .map_err(|e| {
+                    OperationError::service_error(&format!("Index db update error: {}", e))
+                })?;
         }
 
         for geo_hash in &geo_hashes {
@@ -206,6 +364,7 @@ impl PersistedGeoMapIndex {
         self.values_count += values.len();
         self.points_count += 1;
         self.max_values_per_point = self.max_values_per_point.max(values.len());
+        Ok(())
     }
 
     fn get_stored_sub_regions(
@@ -263,8 +422,8 @@ impl PersistedGeoMapIndex {
     }
 }
 
-impl ValueIndexer<GeoPoint> for PersistedGeoMapIndex {
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<GeoPoint>) {
+impl ValueIndexer<GeoPoint> for GeoMapIndex {
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<GeoPoint>) -> OperationResult<()> {
         self.add_many_geo_points(id, &values)
     }
 
@@ -282,51 +441,27 @@ impl ValueIndexer<GeoPoint> for PersistedGeoMapIndex {
             _ => None,
         }
     }
-}
 
-impl PayloadFieldIndexBuilder for PersistedGeoMapIndex {
-    fn add(&mut self, id: PointOffsetType, value: &Value) {
-        self.add_point(id, value)
-    }
-
-    fn build(&mut self) -> FieldIndex {
-        /*
-        points_map contains full hashes:
-        {
-            "dr5ruj4477ku": [1,2,3],
-            "dr5ruj4477kk": [1,2,4],
-            "dr5ruj4477k7": [1,2,5],
-            ...
-        }
-         */
-        let points_map = mem::take(&mut self.points_map);
-        let point_to_values = mem::take(&mut self.point_to_values);
-        let points_per_hash = mem::take(&mut self.points_per_hash);
-        let values_per_hash = mem::take(&mut self.values_per_hash);
-
-        let values_count = self.values_count;
-        let points_count = self.points_count;
-        let max_values_per_point = self.max_values_per_point;
-
-        FieldIndex::GeoIndex(PersistedGeoMapIndex {
-            points_per_hash,
-            values_per_hash,
-            points_map,
-            point_to_values,
-            values_count,
-            points_count,
-            max_values_per_point,
-        })
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        self.remove_point(id)
     }
 }
 
-impl PayloadFieldIndex for PersistedGeoMapIndex {
-    fn load(&mut self) -> OperationResult<()> {
-        panic!("cannot load from disk in PersistedGeoMapIndex");
+impl PayloadFieldIndex for GeoMapIndex {
+    fn indexed_points(&self) -> usize {
+        self.points_count
+    }
+
+    fn load(&mut self) -> OperationResult<bool> {
+        GeoMapIndex::load(self)
+    }
+
+    fn clear(self) -> OperationResult<()> {
+        Ok(self.db.borrow_mut().drop_cf(&self.store_cf_name)?)
     }
 
     fn flush(&self) -> OperationResult<()> {
-        panic!("cannot flush to disk in PersistedGeoMapIndex");
+        GeoMapIndex::flush(self)
     }
 
     fn filter(
@@ -411,12 +546,14 @@ impl PayloadFieldIndex for PersistedGeoMapIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::rocksdb_operations::open_db_with_existing_cf;
     use crate::fixtures::payload_fixtures::random_geo_payload;
     use crate::types::GeoRadius;
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use serde_json::json;
+    use tempdir::TempDir;
 
     const NYC: GeoPoint = GeoPoint {
         lat: 40.75798,
@@ -438,22 +575,31 @@ mod tests {
         lon: 139.691706,
     };
 
+    const FIELD_NAME: &str = "test";
+
     fn condition_for_geo_radius(key: String, geo_radius: GeoRadius) -> FieldCondition {
         FieldCondition::new_geo_radius(key, geo_radius)
     }
 
-    fn build_random_index(num_points: usize, num_geo_values: usize) -> FieldIndex {
+    fn build_random_index(num_points: usize, num_geo_values: usize) -> GeoMapIndex {
+        let tmp_dir = TempDir::new("test_dir").unwrap();
+        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+
         let mut rnd = StdRng::seed_from_u64(42);
-        let mut index = PersistedGeoMapIndex::default();
+        let mut index = GeoMapIndex::new(db, FIELD_NAME);
+
+        index.recreate().unwrap();
 
         for idx in 0..num_points {
             let geo_points = random_geo_payload(&mut rnd, num_geo_values..=num_geo_values);
-            index.add(idx as PointOffsetType, &Value::Array(geo_points))
+            index
+                .add_point(idx as PointOffsetType, &Value::Array(geo_points))
+                .unwrap();
         }
         assert_eq!(index.points_count, num_points);
         assert_eq!(index.values_count, num_points * num_geo_values);
 
-        index.build()
+        index
     }
 
     #[test]
@@ -468,13 +614,8 @@ mod tests {
 
         let nyc_hashes = circle_hashes(&geo_radius, GEO_QUERY_MAX_REGION);
 
-        let real_cardinality = match &field_index {
-            FieldIndex::GeoIndex(geo_index) => {
-                let exact_points_for_hashes = geo_index.get_iterator(nyc_hashes).collect_vec();
-                exact_points_for_hashes.len()
-            }
-            _ => panic!("Wrong index created"),
-        };
+        let exact_points_for_hashes = field_index.get_iterator(nyc_hashes).collect_vec();
+        let real_cardinality = exact_points_for_hashes.len();
 
         let field_condition = condition_for_geo_radius("test".to_string(), geo_radius);
         let card = field_index.estimate_cardinality(&field_condition);
@@ -500,20 +641,17 @@ mod tests {
 
         let field_index = build_random_index(1000, 5);
 
-        let mut matched_points = match &field_index {
-            FieldIndex::GeoIndex(geo_index) => geo_index
-                .point_to_values
-                .iter()
-                .enumerate()
-                .filter(|(_idx, geo_points)| {
-                    geo_points
-                        .iter()
-                        .any(|geo_point| geo_radius.check_point(geo_point.lon, geo_point.lat))
-                })
-                .map(|(idx, _geo_points)| idx as PointOffsetType)
-                .collect_vec(),
-            _ => panic!("wrong index"),
-        };
+        let mut matched_points = field_index
+            .point_to_values
+            .iter()
+            .enumerate()
+            .filter(|(_idx, geo_points)| {
+                geo_points
+                    .iter()
+                    .any(|geo_point| geo_radius.check_point(geo_point.lon, geo_point.lat))
+            })
+            .map(|(idx, _geo_points)| idx as PointOffsetType)
+            .collect_vec();
 
         assert!(!matched_points.is_empty());
 
@@ -531,20 +669,16 @@ mod tests {
     #[test]
     fn test_payload_blocks() {
         let field_index = build_random_index(1000, 5);
-        match &field_index {
-            FieldIndex::GeoIndex(geo_index) => {
-                let top_level_points = geo_index.points_per_hash.get("").unwrap();
-                assert_eq!(*top_level_points, 1_000);
-                let block_hashes = geo_index.get_large_hashes(100).collect_vec();
-                assert!(!block_hashes.is_empty());
-                for (geohash, size) in block_hashes {
-                    assert_eq!(geohash.len(), 1);
-                    assert!(size > 100);
-                    assert!(size < 1000);
-                }
-            }
-            _ => panic!("wrong index"),
-        };
+        let top_level_points = field_index.points_per_hash.get("").unwrap();
+        assert_eq!(*top_level_points, 1_000);
+        let block_hashes = field_index.get_large_hashes(100).collect_vec();
+        assert!(!block_hashes.is_empty());
+        for (geohash, size) in block_hashes {
+            assert_eq!(geohash.len(), 1);
+            assert!(size > 100);
+            assert!(size < 1000);
+        }
+
         let blocks = field_index
             .payload_blocks(100, "test".to_string())
             .collect_vec();
@@ -556,7 +690,12 @@ mod tests {
 
     #[test]
     fn match_cardinality_point_with_multi_far_geo_payload() {
-        let mut index = PersistedGeoMapIndex::default();
+        let tmp_dir = TempDir::new("test_dir").unwrap();
+        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+
+        let mut index = GeoMapIndex::new(db, FIELD_NAME);
+
+        index.recreate().unwrap();
 
         let r_meters = 100.0;
         let geo_values = json!([
@@ -570,8 +709,7 @@ mod tests {
             }
         ]);
 
-        index.add(1, &geo_values);
-        let field_index = index.build();
+        index.add_point(1, &geo_values).unwrap();
 
         // around NYC
         let nyc_geo_radius = GeoRadius {
@@ -579,7 +717,7 @@ mod tests {
             radius: r_meters,
         };
         let field_condition = condition_for_geo_radius("test".to_string(), nyc_geo_radius);
-        let card = field_index.estimate_cardinality(&field_condition);
+        let card = index.estimate_cardinality(&field_condition);
         let card = card.unwrap();
         assert_eq!(card.min, 1);
         assert_eq!(card.max, 1);
@@ -591,7 +729,7 @@ mod tests {
             radius: r_meters,
         };
         let field_condition = condition_for_geo_radius("test".to_string(), berlin_geo_radius);
-        let card = field_index.estimate_cardinality(&field_condition);
+        let card = index.estimate_cardinality(&field_condition);
         let card = card.unwrap();
         assert_eq!(card.min, 1);
         assert_eq!(card.max, 1);
@@ -603,7 +741,7 @@ mod tests {
             radius: r_meters,
         };
         let field_condition = condition_for_geo_radius("test".to_string(), tokyo_geo_radius);
-        let card = field_index.estimate_cardinality(&field_condition);
+        let card = index.estimate_cardinality(&field_condition);
         let card = card.unwrap();
         // no points found
         assert_eq!(card.min, 0);
@@ -613,7 +751,13 @@ mod tests {
 
     #[test]
     fn match_cardinality_point_with_multi_close_geo_payload() {
-        let mut index = PersistedGeoMapIndex::default();
+        let tmp_dir = TempDir::new("test_dir").unwrap();
+        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+
+        let mut index = GeoMapIndex::new(db, FIELD_NAME);
+
+        index.recreate().unwrap();
+
         let geo_values = json!([
             {
                 "lon": BERLIN.lon,
@@ -624,19 +768,57 @@ mod tests {
                 "lat": POTSDAM.lat
             }
         ]);
-        index.add(1, &geo_values);
-        let field_index = index.build();
+        index.add_point(1, &geo_values).unwrap();
 
         let berlin_geo_radius = GeoRadius {
             center: BERLIN,
             radius: 50_000.0, // Berlin <-> Potsdam is 27 km
         };
         let field_condition = condition_for_geo_radius("test".to_string(), berlin_geo_radius);
-        let card = field_index.estimate_cardinality(&field_condition);
+        let card = index.estimate_cardinality(&field_condition);
         let card = card.unwrap();
         // handle properly that a single point matches via two different geo payloads
         assert_eq!(card.min, 1);
         assert_eq!(card.max, 1);
         assert_eq!(card.exp, 1);
+    }
+
+    #[test]
+    fn load_from_disk() {
+        let tmp_dir = TempDir::new("test_dir").unwrap();
+        {
+            let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+
+            let mut index = GeoMapIndex::new(db, FIELD_NAME);
+
+            index.recreate().unwrap();
+
+            let geo_values = json!([
+                {
+                    "lon": BERLIN.lon,
+                    "lat": BERLIN.lat
+                },
+                {
+                    "lon": POTSDAM.lon,
+                    "lat": POTSDAM.lat
+                }
+            ]);
+            index.add_point(1, &geo_values).unwrap();
+            index.flush().unwrap();
+            drop(index);
+        }
+
+        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+        let mut new_index = GeoMapIndex::new(db, FIELD_NAME);
+        new_index.load().unwrap();
+
+        let berlin_geo_radius = GeoRadius {
+            center: BERLIN,
+            radius: 50_000.0, // Berlin <-> Potsdam is 27 km
+        };
+
+        let field_condition = condition_for_geo_radius("test".to_string(), berlin_geo_radius);
+        let point_offsets = new_index.filter(&field_condition).unwrap().collect_vec();
+        assert_eq!(point_offsets, vec![1]);
     }
 }

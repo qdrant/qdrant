@@ -62,7 +62,7 @@ impl OnDiskPayloadStorage {
 
     pub fn iter<F>(&self, mut callback: F) -> OperationResult<()>
     where
-        F: FnMut(PointOffsetType, &Payload) -> bool,
+        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
         let store_ref = self.store.borrow();
         let cf_handle = store_ref
@@ -73,7 +73,7 @@ impl OnDiskPayloadStorage {
             let do_continue = callback(
                 serde_cbor::from_slice(&key)?,
                 &serde_cbor::from_slice(&val)?,
-            );
+            )?;
             if !do_continue {
                 return Ok(());
             }

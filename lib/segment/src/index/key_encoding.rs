@@ -82,7 +82,7 @@ pub fn encode_i64_ascending(val: i64, buf: &mut Vec<u8>) {
 }
 
 /// Decode a i64 from a slice
-fn decode_i64_ascending(buf: &[u8]) -> i64 {
+pub fn decode_i64_ascending(buf: &[u8]) -> i64 {
     let i = i64::from_be_bytes(buf[0..8].try_into().expect("cannot decode i64"));
     i ^ i64::MIN
 }

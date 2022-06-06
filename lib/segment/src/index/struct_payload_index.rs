@@ -1,21 +1,23 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::{create_dir_all, remove_file, File};
+use std::fs::{create_dir_all, remove_file};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 use std::sync::Arc;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
+use crate::common::rocksdb_operations::open_db_with_existing_cf;
 use atomic_refcell::AtomicRefCell;
-use itertools::Itertools;
 use log::debug;
+use rocksdb::DB;
+use schemars::_serde_json::Value;
 
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::points_iterator::PointsIteratorSS;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;
+use crate::index::field_index::FieldIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
-use crate::index::field_index::{FieldIndex, PayloadFieldIndex};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
 use crate::index::query_optimization::optimizer::IndexesMap;
@@ -24,10 +26,10 @@ use crate::index::struct_filter_context::StructFilterContext;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::payload_storage::FilterContext;
+use crate::payload_storage::{FilterContext, PayloadStorage};
 use crate::types::{
-    Condition, FieldCondition, Filter, IsEmptyCondition, PayloadKeyType, PayloadKeyTypeRef,
-    PayloadSchemaType, PointOffsetType,
+    infer_value_type, Condition, FieldCondition, Filter, IsEmptyCondition, Payload, PayloadKeyType,
+    PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
 };
 
 pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
@@ -39,11 +41,12 @@ pub struct StructPayloadIndex {
     payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     /// Indexes, associated with fields
-    field_indexes: IndexesMap,
+    pub field_indexes: IndexesMap,
     config: PayloadConfig,
     /// Root of index persistence dir
     path: PathBuf,
     visited_pool: VisitedPool,
+    db: Arc<AtomicRefCell<DB>>,
 }
 
 impl StructPayloadIndex {
@@ -97,61 +100,37 @@ impl StructPayloadIndex {
         Self::get_field_index_dir(path).join(format!("{}.idx", field))
     }
 
-    fn save_field_index(&self, field: PayloadKeyTypeRef) -> OperationResult<()> {
-        let field_index_dir = Self::get_field_index_dir(&self.path);
-        let field_index_path = Self::get_field_index_path(&self.path, field);
-        create_dir_all(field_index_dir)?;
-
-        match self.field_indexes.get(field) {
-            None => {}
-            Some(indexes) => {
-                let file = File::create(&field_index_path)?;
-                serde_cbor::to_writer(file, indexes).map_err(|err| {
-                    OperationError::service_error(&format!("Unable to save index: {:?}", err))
-                })?;
-            }
-        }
-        Ok(())
-    }
-
-    fn load_or_build_field_index(
-        &self,
-        field: PayloadKeyTypeRef,
-        payload_type: PayloadSchemaType,
-    ) -> OperationResult<Vec<FieldIndex>> {
-        let field_index_path = Self::get_field_index_path(&self.path, field);
-        if field_index_path.exists() {
-            debug!(
-                "Loading field `{}` index from {}",
-                field,
-                field_index_path.to_str().unwrap()
-            );
-            let file = File::open(field_index_path)?;
-            let field_indexes: Vec<FieldIndex> = serde_cbor::from_reader(file).map_err(|err| {
-                OperationError::service_error(&format!("Unable to load index: {:?}", err))
-            })?;
-
-            Ok(field_indexes)
-        } else {
-            debug!(
-                "Index for field `{}` not found in {}, building now",
-                field,
-                field_index_path.to_str().unwrap()
-            );
-            let res = self.build_field_index(field, payload_type)?;
-            self.save_field_index(field)?;
-            Ok(res)
-        }
-    }
-
     fn load_all_fields(&mut self) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
+
         for (field, payload_type) in &self.config.indexed_fields {
-            let field_index = self.load_or_build_field_index(field, payload_type.to_owned())?;
+            let field_index = self.load_from_db(field, payload_type.to_owned())?;
             field_indexes.insert(field.clone(), field_index);
         }
         self.field_indexes = field_indexes;
         Ok(())
+    }
+
+    fn load_from_db(
+        &self,
+        field: PayloadKeyTypeRef,
+        payload_type: PayloadSchemaType,
+    ) -> OperationResult<Vec<FieldIndex>> {
+        let mut indexes = index_selector(field, &payload_type, self.db.clone());
+
+        let mut is_loaded = true;
+        for ref mut index in indexes.iter_mut() {
+            if !index.load()? {
+                is_loaded = false;
+                break;
+            }
+        }
+        if !is_loaded {
+            debug!("Index for `{field}` was not loaded. Building...");
+            indexes = self.build_field_indexes(field, payload_type)?;
+        }
+
+        Ok(indexes)
     }
 
     pub fn open(
@@ -168,6 +147,8 @@ impl StructPayloadIndex {
             PayloadConfig::default()
         };
 
+        let db = open_db_with_existing_cf(path)?;
+
         let mut index = StructPayloadIndex {
             points_iterator,
             payload,
@@ -176,6 +157,7 @@ impl StructPayloadIndex {
             config,
             path: path.to_owned(),
             visited_pool: Default::default(),
+            db,
         };
 
         if !index.config_path().exists() {
@@ -188,29 +170,26 @@ impl StructPayloadIndex {
         Ok(index)
     }
 
-    pub fn build_field_index(
+    pub fn build_field_indexes(
         &self,
         field: PayloadKeyTypeRef,
         field_type: PayloadSchemaType,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
+        let mut field_indexes = index_selector(field, &field_type, self.db.clone());
+        for index in &field_indexes {
+            index.recreate()?;
+        }
 
-        let mut builders = index_selector(&field_type);
         payload_storage.iter(|point_id, point_payload| {
             let field_value_opt = point_payload.get_value(field);
             if let Some(field_value) = field_value_opt {
-                for builder in &mut builders {
-                    builder.add(point_id, field_value);
+                for field_index in field_indexes.iter_mut() {
+                    field_index.add_point(point_id, field_value)?;
                 }
             }
-            true
+            Ok(true)
         })?;
-
-        let field_indexes = builders
-            .iter_mut()
-            .map(|builder| builder.build())
-            .collect_vec();
-
         Ok(field_indexes)
     }
 
@@ -219,11 +198,8 @@ impl StructPayloadIndex {
         field: PayloadKeyTypeRef,
         payload_type: PayloadSchemaType,
     ) -> OperationResult<()> {
-        let field_indexes = self.build_field_index(field, payload_type)?;
+        let field_indexes = self.build_field_indexes(field, payload_type)?;
         self.field_indexes.insert(field.into(), field_indexes);
-
-        self.save_field_index(field)?;
-
         Ok(())
     }
 
@@ -413,5 +389,77 @@ impl PayloadIndex for StructPayloadIndex {
                 }))
             }
         }
+    }
+
+    fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+        for (field, field_index) in &mut self.field_indexes {
+            match payload.get_value(field) {
+                Some(field_value) => {
+                    for index in field_index {
+                        index.add_point(point_id, field_value)?;
+                    }
+                }
+                None => {}
+            }
+        }
+        self.payload.borrow_mut().assign(point_id, payload)
+    }
+
+    fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
+        self.payload.borrow().payload(point_id)
+    }
+
+    fn delete(
+        &mut self,
+        point_id: PointOffsetType,
+        key: PayloadKeyTypeRef,
+    ) -> OperationResult<Option<Value>> {
+        if let Some(indexes) = self.field_indexes.get_mut(key) {
+            for index in indexes {
+                index.remove_point(point_id)?;
+            }
+        }
+        self.payload.borrow_mut().delete(point_id, key)
+    }
+
+    fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
+        for (_, field_indexes) in self.field_indexes.iter_mut() {
+            for index in field_indexes {
+                index.remove_point(point_id)?;
+            }
+        }
+        self.payload.borrow_mut().drop(point_id)
+    }
+
+    fn wipe(&mut self) -> OperationResult<()> {
+        self.payload.borrow_mut().wipe()?;
+        for (_, field_indexes) in self.field_indexes.iter_mut() {
+            for index in field_indexes.drain(..) {
+                index.clear()?;
+            }
+        }
+        self.load_all_fields()
+    }
+
+    fn flush(&self) -> OperationResult<()> {
+        for field_indexes in self.field_indexes.values() {
+            for index in field_indexes {
+                index.flush()?;
+            }
+        }
+        self.payload.borrow().flush()
+    }
+
+    fn infer_payload_type(
+        &self,
+        key: PayloadKeyTypeRef,
+    ) -> OperationResult<Option<PayloadSchemaType>> {
+        let mut schema = None;
+        self.payload.borrow().iter(|_id, payload| {
+            let field_value = payload.get_value(key);
+            schema = field_value.and_then(infer_value_type);
+            Ok(false)
+        })?;
+        Ok(schema)
     }
 }

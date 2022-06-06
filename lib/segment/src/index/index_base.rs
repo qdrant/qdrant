@@ -2,10 +2,11 @@ use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::payload_storage::FilterContext;
 use crate::types::{
-    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType, SearchParams,
-    VectorElementType,
+    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
+    SearchParams, VectorElementType,
 };
 use crate::vector_storage::ScoredPointOffset;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
@@ -56,7 +57,41 @@ pub trait PayloadIndex {
         field: PayloadKeyTypeRef,
         threshold: usize,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
+
+    /// Assign same payload to each given point
+    fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+        self.drop(point_id)?;
+        self.assign(point_id, payload)?;
+        Ok(())
+    }
+
+    /// Assign payload to a concrete point with a concrete payload value
+    fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
+
+    /// Get payload for point
+    fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
+
+    /// Delete payload by key
+    fn delete(
+        &mut self,
+        point_id: PointOffsetType,
+        key: PayloadKeyTypeRef,
+    ) -> OperationResult<Option<Value>>;
+
+    /// Drop all payload of the point
+    fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;
+
+    /// Completely drop payload. Pufff!
+    fn wipe(&mut self) -> OperationResult<()>;
+
+    /// Force persistence of current storage state.
+    fn flush(&self) -> OperationResult<()>;
+
+    /// Infer payload type from existing payload data.
+    fn infer_payload_type(
+        &self,
+        key: PayloadKeyTypeRef,
+    ) -> OperationResult<Option<PayloadSchemaType>>;
 }
 
 pub type VectorIndexSS = dyn VectorIndex + Sync + Send;
-pub type PayloadIndexSS = dyn PayloadIndex + Sync + Send;

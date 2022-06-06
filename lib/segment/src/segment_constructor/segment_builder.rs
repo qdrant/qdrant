@@ -1,6 +1,6 @@
 use crate::common::error_logging::LogError;
 use crate::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
-use crate::payload_storage::PayloadStorage;
+use crate::index::PayloadIndex;
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{PayloadKeyType, PayloadSchemaType, SegmentConfig};
@@ -58,11 +58,11 @@ impl SegmentBuilder {
 
                 let other_id_tracker = other.id_tracker.borrow();
                 let other_vector_storage = other.vector_storage.borrow();
-                let other_payload_storage = other.payload_storage.borrow();
+                let other_payload_index = other.payload_index.borrow();
 
                 let mut id_tracker = self_segment.id_tracker.borrow_mut();
                 let mut vector_storage = self_segment.vector_storage.borrow_mut();
-                let mut payload_storage = self_segment.payload_storage.borrow_mut();
+                let mut payload_index = self_segment.payload_index.borrow_mut();
 
                 let new_internal_range = vector_storage.update_from(&*other_vector_storage)?;
 
@@ -82,9 +82,9 @@ impl SegmentBuilder {
                             // New point, just insert
                             id_tracker.set_link(external_id, new_internal_id)?;
                             id_tracker.set_version(external_id, other_version)?;
-                            payload_storage.assign(
+                            payload_index.assign(
                                 new_internal_id,
-                                &other_payload_storage.payload(old_internal_id)?,
+                                &other_payload_index.payload(old_internal_id)?,
                             )?;
                         }
                         Some(existing_version) => {
@@ -96,9 +96,9 @@ impl SegmentBuilder {
                                 id_tracker.drop(external_id)?;
                                 id_tracker.set_link(external_id, new_internal_id)?;
                                 id_tracker.set_version(external_id, other_version)?;
-                                payload_storage.assign(
+                                payload_index.assign(
                                     new_internal_id,
-                                    &other_payload_storage.payload(old_internal_id)?,
+                                    &other_payload_index.payload(old_internal_id)?,
                                 )?;
                             } else {
                                 // Old version is still good, do not move anything else

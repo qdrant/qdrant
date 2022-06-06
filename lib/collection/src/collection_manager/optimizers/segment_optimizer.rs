@@ -11,8 +11,8 @@ use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
-    HnswConfig, Indexes, PayloadIndexType, PayloadKeyType, PayloadSchemaType, PayloadStorageType,
-    PointIdType, SegmentConfig, StorageType, VECTOR_ELEMENT_SIZE,
+    HnswConfig, Indexes, PayloadKeyType, PayloadSchemaType, PayloadStorageType, PointIdType,
+    SegmentConfig, StorageType, VECTOR_ELEMENT_SIZE,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -28,7 +28,6 @@ const BYTES_IN_KB: usize = 1024;
 pub struct OptimizerThresholds {
     pub memmap_threshold: usize,
     pub indexing_threshold: usize,
-    pub payload_indexing_threshold: usize,
 }
 
 /// SegmentOptimizer - trait implementing common functionality of the optimizers
@@ -69,7 +68,6 @@ pub trait SegmentOptimizer {
             vector_size: collection_params.vector_size,
             distance: collection_params.distance,
             index: Indexes::Plain {},
-            payload_index: Some(PayloadIndexType::Plain),
             storage_type: StorageType::InMemory,
             payload_storage_type: match collection_params.on_disk_payload {
                 true => PayloadStorageType::OnDisk,
@@ -96,20 +94,10 @@ pub trait SegmentOptimizer {
             })
             .sum();
 
-        let have_indexed_fields = optimizing_segments
-            .iter()
-            .any(|s| !s.get().read().get_indexed_fields().is_empty());
-
         let thresholds = self.threshold_config();
         let collection_params = self.collection_params();
 
         let is_indexed = total_vectors_size >= thresholds.indexing_threshold * BYTES_IN_KB;
-
-        // Create structure index only if there is something to index
-        // ToDo: remove deprecated
-        let is_payload_indexed = total_vectors_size
-            >= thresholds.payload_indexing_threshold * BYTES_IN_KB
-            && have_indexed_fields;
 
         let is_on_disk = total_vectors_size >= thresholds.memmap_threshold * BYTES_IN_KB;
 
@@ -121,11 +109,6 @@ pub trait SegmentOptimizer {
             } else {
                 Indexes::Plain {}
             },
-            payload_index: Some(if is_payload_indexed {
-                PayloadIndexType::Struct
-            } else {
-                PayloadIndexType::Plain
-            }),
             storage_type: if is_on_disk {
                 StorageType::Mmap
             } else {

@@ -1,9 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use segment::types::{
-    HnswConfig, Indexes, PayloadIndexType, SegmentType, StorageType, VECTOR_ELEMENT_SIZE,
-};
+use segment::types::{HnswConfig, Indexes, SegmentType, StorageType, VECTOR_ELEMENT_SIZE};
 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
@@ -75,11 +73,6 @@ impl IndexingOptimizer {
                     Indexes::Hnsw(_) => true,
                 };
 
-                let is_payload_indexed = match segment_config.payload_index.unwrap_or_default() {
-                    PayloadIndexType::Plain => false,
-                    PayloadIndexType::Struct => true,
-                };
-
                 let is_memmaped = match segment_config.storage_type {
                     StorageType::InMemory => false,
                     StorageType::Mmap => true,
@@ -90,15 +83,8 @@ impl IndexingOptimizer {
                 let big_for_index =
                     vector_size >= self.thresholds_config.indexing_threshold * BYTES_IN_KB;
 
-                // ToDo: remove deprecated
-                let big_for_payload_index =
-                    vector_size >= self.thresholds_config.payload_indexing_threshold * BYTES_IN_KB;
-
-                let has_payload = !read_segment.get_indexed_fields().is_empty();
-
-                let require_indexing = (big_for_mmap && !is_memmaped)
-                    || (big_for_index && !is_vector_indexed)
-                    || (has_payload && big_for_payload_index && !is_payload_indexed);
+                let require_indexing =
+                    (big_for_mmap && !is_memmaped) || (big_for_index && !is_vector_indexed);
 
                 match require_indexing {
                     true => Some((*idx, vector_size)),
@@ -203,7 +189,6 @@ mod tests {
             OptimizerThresholds {
                 memmap_threshold: 1000,
                 indexing_threshold: 1000,
-                payload_indexing_threshold: 50,
             },
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
@@ -369,7 +354,7 @@ mod tests {
         // ---- New appendable segment should be created if none left
 
         // Index even the smallest segment
-        index_optimizer.thresholds_config.payload_indexing_threshold = 20;
+        index_optimizer.thresholds_config.indexing_threshold = 20;
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert!(suggested_to_optimize.contains(&small_segment_id));

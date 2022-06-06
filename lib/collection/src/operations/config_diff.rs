@@ -80,8 +80,6 @@ pub struct OptimizersConfigDiff {
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "indexing_threshold_kb")]
     pub indexing_threshold: Option<usize>,
-    /// Starting from this amount of vectors per-segment the engine will start building index for payload.
-    pub payload_indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: Option<u64>,
     /// Maximum available threads for optimization workers
@@ -96,7 +94,6 @@ impl std::hash::Hash for OptimizersConfigDiff {
         self.max_segment_size.hash(state);
         self.memmap_threshold.hash(state);
         self.indexing_threshold.hash(state);
-        self.payload_indexing_threshold.hash(state);
         self.flush_interval_sec.hash(state);
         self.max_optimization_threads.hash(state);
     }
@@ -111,7 +108,6 @@ impl PartialEq for OptimizersConfigDiff {
             && self.max_segment_size == other.max_segment_size
             && self.memmap_threshold == other.memmap_threshold
             && self.indexing_threshold == other.indexing_threshold
-            && self.payload_indexing_threshold == other.payload_indexing_threshold
             && self.flush_interval_sec == other.flush_interval_sec
             && self.max_optimization_threads == other.max_optimization_threads
     }
@@ -163,7 +159,6 @@ mod tests {
             max_segment_size: 100_000,
             memmap_threshold: 100_000,
             indexing_threshold: 50_000,
-            payload_indexing_threshold: 20_000,
             flush_interval_sec: 30,
             max_optimization_threads: 1,
         };

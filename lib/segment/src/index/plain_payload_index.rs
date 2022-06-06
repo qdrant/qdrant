@@ -1,8 +1,8 @@
-use crate::index::{PayloadIndex, PayloadIndexSS, VectorIndex};
+use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::types::{
-    Filter, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType, SearchParams,
-    VectorElementType,
+    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
+    SearchParams, VectorElementType,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 use std::collections::HashMap;
@@ -12,7 +12,9 @@ use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::points_iterator::PointsIteratorSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
+use crate::index::struct_payload_index::StructPayloadIndex;
 use atomic_refcell::AtomicRefCell;
+use schemars::_serde_json::Value;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -134,17 +136,52 @@ impl PayloadIndex for PlainPayloadIndex {
         // No blocks for un-indexed payload
         Box::new(vec![].into_iter())
     }
+
+    fn assign(&mut self, _point_id: PointOffsetType, _payload: &Payload) -> OperationResult<()> {
+        todo!()
+    }
+
+    fn payload(&self, _point_id: PointOffsetType) -> OperationResult<Payload> {
+        todo!()
+    }
+
+    fn delete(
+        &mut self,
+        _point_id: PointOffsetType,
+        _key: PayloadKeyTypeRef,
+    ) -> OperationResult<Option<Value>> {
+        todo!()
+    }
+
+    fn drop(&mut self, _point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
+        todo!()
+    }
+
+    fn wipe(&mut self) -> OperationResult<()> {
+        todo!()
+    }
+
+    fn flush(&self) -> OperationResult<()> {
+        todo!()
+    }
+
+    fn infer_payload_type(
+        &self,
+        _key: PayloadKeyTypeRef,
+    ) -> OperationResult<Option<PayloadSchemaType>> {
+        todo!()
+    }
 }
 
 pub struct PlainIndex {
     vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
-    payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
+    payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
 }
 
 impl PlainIndex {
     pub fn new(
         vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
-        payload_index: Arc<AtomicRefCell<PayloadIndexSS>>,
+        payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     ) -> PlainIndex {
         PlainIndex {
             vector_storage,
