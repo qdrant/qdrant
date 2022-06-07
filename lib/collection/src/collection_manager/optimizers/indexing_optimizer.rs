@@ -210,12 +210,29 @@ mod tests {
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.is_empty());
 
-        index_optimizer.thresholds_config.memmap_threshold = 150;
+        index_optimizer.thresholds_config.memmap_threshold = 1000;
         index_optimizer.thresholds_config.indexing_threshold = 50;
 
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
+
+        index_optimizer.thresholds_config.memmap_threshold = 1000;
+        index_optimizer.thresholds_config.indexing_threshold = 1000;
+
+        let suggested_to_optimize =
+            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
+        assert!(suggested_to_optimize.is_empty());
+
+        index_optimizer.thresholds_config.memmap_threshold = 50;
+        index_optimizer.thresholds_config.indexing_threshold = 1000;
+
+        let suggested_to_optimize =
+            index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
+        assert!(suggested_to_optimize.contains(&large_segment_id));
+
+        index_optimizer.thresholds_config.memmap_threshold = 150;
+        index_optimizer.thresholds_config.indexing_threshold = 50;
 
         // ----- CREATE AN INDEXED FIELD ------
         process_field_index_operation(

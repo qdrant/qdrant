@@ -7,6 +7,7 @@ use std::{
     sync::Arc,
 };
 
+use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::PointRequest;
 use crate::operations::OperationToShard;
 use crate::shard::remote_shard::RemoteShard;
@@ -42,6 +43,7 @@ use segment::{
 use serde::{Deserialize, Serialize};
 use shard::{local_shard::LocalShard, Shard, ShardId};
 use tokio::runtime::Handle;
+use tokio::sync::RwLock;
 use tonic::transport::Uri;
 
 pub mod collection_manager;
@@ -254,9 +256,10 @@ pub struct Collection {
     id: CollectionId,
     shards: HashMap<ShardId, Shard>,
     ring: HashRing<ShardId>,
-    config: CollectionConfig,
+    config: Arc<RwLock<CollectionConfig>>,
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
+    path: PathBuf,
 }
 
 impl Collection {
@@ -277,9 +280,12 @@ impl Collection {
         let mut shards: HashMap<ShardId, Shard> = HashMap::new();
         let (local_shards, remote_shards) =
             shard_distribution.unpack_or_default(config.params.shard_number.get());
+
+        let shared_config = Arc::new(RwLock::new(config.clone()));
         for shard_id in local_shards {
             let shard_path = create_shard_dir(path, shard_id).await?;
-            let shard = LocalShard::build(shard_id, id.clone(), &shard_path, config).await;
+            let shard =
+                LocalShard::build(shard_id, id.clone(), &shard_path, shared_config.clone()).await;
             let shard = match shard {
                 Ok(shard) => shard,
                 Err(err) => {
@@ -312,8 +318,9 @@ impl Collection {
             id,
             shards,
             ring,
-            config: config.clone(),
+            config: shared_config,
             before_drop_called: false,
+            path: path.to_owned(),
         })
     }
 
@@ -363,11 +370,15 @@ impl Collection {
             configured_shards, total_shards
         );
 
+        let shared_config = Arc::new(RwLock::new(config));
         for shard_id in local_shards {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
                 shard_id,
-                Shard::Local(LocalShard::load(shard_id, id.clone(), &shard_path, &config).await),
+                Shard::Local(
+                    LocalShard::load(shard_id, id.clone(), &shard_path, shared_config.clone())
+                        .await,
+                ),
             );
             ring.add(shard_id);
         }
@@ -382,8 +393,9 @@ impl Collection {
             id,
             shards,
             ring,
-            config,
+            config: shared_config,
             before_drop_called: false,
+            path: path.to_owned(),
         }
     }
 
@@ -590,7 +602,7 @@ impl Collection {
             .map(|shard| shard.search(request.clone(), segment_searcher, search_runtime_handle));
 
         let all_searches_res = try_join_all(all_searches).await?.into_iter().flatten();
-        let distance = self.config.params.distance;
+        let distance = self.config.read().await.params.distance;
 
         let top_result = match distance.distance_order() {
             Order::LargeBetter => peek_top_largest_scores_iterable(all_searches_res, request.top),
@@ -696,13 +708,17 @@ impl Collection {
         &self,
         optimizer_config_diff: OptimizersConfigDiff,
     ) -> CollectionResult<()> {
+        {
+            let mut config = self.config.write().await;
+            config.optimizer_config =
+                DiffConfig::update(optimizer_config_diff, &config.optimizer_config)?;
+        }
         for shard in self.all_shards() {
             if let Shard::Local(shard) = shard {
-                shard
-                    .update_optimizer_with_diff(optimizer_config_diff.clone())
-                    .await?;
+                shard.on_optimizer_config_update().await?;
             }
         }
+        self.config.read().await.save(&self.path)?;
         Ok(())
     }
 
@@ -714,13 +730,16 @@ impl Collection {
         &self,
         optimizer_config: OptimizersConfig,
     ) -> CollectionResult<()> {
+        {
+            let mut config = self.config.write().await;
+            config.optimizer_config = optimizer_config;
+        }
         for shard in self.all_shards() {
             if let Shard::Local(shard) = shard {
-                shard
-                    .update_optimizer_with_config(optimizer_config.clone())
-                    .await?;
+                shard.on_optimizer_config_update().await?;
             }
         }
+        self.config.read().await.save(&self.path)?;
         Ok(())
     }
 
@@ -762,9 +781,9 @@ impl Collection {
         self.before_drop_called = true
     }
 
-    pub fn state(&self, this_peer_id: PeerId) -> State {
+    pub async fn state(&self, this_peer_id: PeerId) -> State {
         State {
-            config: self.config.clone(),
+            config: self.config.read().await.clone(),
             shard_to_peer: self
                 .shards
                 .iter()

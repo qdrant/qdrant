@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 
-pub const SHARD_CONFIG_FILE: &str = "config.json";
+pub const SHARD_CONFIG_FILE: &str = "shard_config.json";
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub enum ShardType {

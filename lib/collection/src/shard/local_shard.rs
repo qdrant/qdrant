@@ -24,13 +24,12 @@ use crate::collection_manager::collection_managers::CollectionSearcher;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
-use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CollectionStatus, OptimizersStatus, Record,
     UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::optimizers_builder::{build_optimizers, OptimizersConfig};
+use crate::optimizers_builder::build_optimizers;
 use crate::shard::shard_config::ShardConfig;
 use crate::shard::ShardOperation;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
@@ -58,17 +57,17 @@ pub struct LocalShard {
 /// Shard holds information about segments and WAL.
 impl LocalShard {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub async fn new(
         id: ShardId,
         collection_id: CollectionId,
         segment_holder: SegmentHolder,
-        config: CollectionConfig,
+        shared_config: Arc<TokioRwLock<CollectionConfig>>,
         wal: SerdeWal<CollectionUpdateOperations>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         collection_path: &Path,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
-
+        let config = shared_config.read().await;
         let blocking_threads = if config.optimizer_config.max_optimization_threads == 0 {
             max(num_cpus::get() - 1, 1)
         } else {
@@ -99,9 +98,11 @@ impl LocalShard {
         let (update_sender, update_receiver) = mpsc::unbounded_channel();
         update_handler.run_workers(update_receiver);
 
+        drop(config); // release `shared_config` from borrow checker
+
         Self {
             segments: segment_holder,
-            config: Arc::new(TokioRwLock::new(config)),
+            config: shared_config,
             wal: locked_wal,
             update_handler: Arc::new(tokio::sync::Mutex::new(update_handler)),
             runtime_handle: Some(optimize_runtime),
@@ -119,8 +120,10 @@ impl LocalShard {
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
-        collection_config: &CollectionConfig,
+        shared_config: Arc<TokioRwLock<CollectionConfig>>,
     ) -> LocalShard {
+        let collection_config = shared_config.read().await;
+
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
         let mut segment_holder = SegmentHolder::default();
@@ -168,15 +171,18 @@ impl LocalShard {
             &collection_config.hnsw_config,
         );
 
+        drop(collection_config); // release `shared_config` from borrow checker
+
         let collection = LocalShard::new(
             id,
             collection_id,
             segment_holder,
-            collection_config.clone(),
+            shared_config,
             wal,
             optimizers,
             shard_path,
-        );
+        )
+        .await;
 
         collection.load_from_wal().await;
 
@@ -196,12 +202,14 @@ impl LocalShard {
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
-        config: &CollectionConfig,
+        shared_config: Arc<TokioRwLock<CollectionConfig>>,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         ShardConfig::init_file(shard_path)?;
-        let shard_config = ShardConfig::new_local();
-        shard_config.save(shard_path)?;
+        let local_shard_config = ShardConfig::new_local();
+        local_shard_config.save(shard_path)?;
+
+        let config = shared_config.read().await;
 
         let wal_path = shard_path.join("wal");
 
@@ -271,15 +279,18 @@ impl LocalShard {
             &config.hnsw_config,
         );
 
+        drop(config); // release `shared_config` from borrow checker
+
         let collection = LocalShard::new(
             id,
             collection_id,
             segment_holder,
-            config.clone(),
+            shared_config,
             wal,
             optimizers,
             shard_path,
-        );
+        )
+        .await;
 
         Ok(collection)
     }
@@ -313,40 +324,6 @@ impl LocalShard {
 
         self.segments.read().flush_all().unwrap();
         bar.finish();
-    }
-
-    /// Updates shard optimization params:
-    /// - Saves new params on disk
-    /// - Stops existing optimization loop
-    /// - Runs new optimizers with new params
-    pub async fn update_optimizer_with_diff(
-        &self,
-        optimizer_config_diff: OptimizersConfigDiff,
-    ) -> CollectionResult<()> {
-        log::debug!("Updating optimizer params");
-        {
-            let mut config = self.config.write().await;
-            config.optimizer_config = optimizer_config_diff.update(&config.optimizer_config)?;
-            config.save(&self.path)?;
-        }
-        self.on_optimizer_config_update().await
-    }
-
-    /// Updates shard optimization params:
-    /// - Saves new params on disk
-    /// - Stops existing optimization loop
-    /// - Runs new optimizers with new params
-    pub async fn update_optimizer_with_config(
-        &self,
-        optimizer_config: OptimizersConfig,
-    ) -> CollectionResult<()> {
-        log::debug!("Updating optimizer params");
-        {
-            let mut config = self.config.write().await;
-            config.optimizer_config = optimizer_config;
-            config.save(&self.path)?;
-        }
-        self.on_optimizer_config_update().await
     }
 
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {

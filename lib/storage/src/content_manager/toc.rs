@@ -745,13 +745,11 @@ impl TableOfContent {
     }
 
     async fn state_snapshot(&self) -> raft::Result<consensus::SnapshotData> {
-        let collections: HashMap<collection::CollectionId, collection::State> = self
-            .collections
-            .read()
-            .await
-            .iter()
-            .map(|(id, collection)| (id.clone(), collection.state(self.this_peer_id())))
-            .collect();
+        let mut collections: HashMap<collection::CollectionId, collection::State> =
+            Default::default();
+        for (id, collection) in self.collections.read().await.iter() {
+            collections.insert(id.clone(), collection.state(self.this_peer_id()).await);
+        }
         Ok(consensus::SnapshotData {
             collections,
             aliases: self.alias_persistence.read().await.state().clone(),
@@ -936,7 +934,7 @@ impl TableOfContent {
                 match collection {
                     // Update state if collection present locally
                     Some(collection) => {
-                        if &collection.state(self.this_peer_id()) != state {
+                        if &collection.state(self.this_peer_id()).await != state {
                             collection
                                 .apply_state(
                                     state.clone(),
