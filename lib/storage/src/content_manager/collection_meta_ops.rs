@@ -84,9 +84,11 @@ impl From<RenameAlias> for AliasOperations {
 pub struct CreateCollection {
     pub vector_size: usize,
     pub distance: Distance,
-    /// Number of shards in collection. Default is 1, minimum is 1.
+    /// Number of shards in collection.
+    /// Default is 1 for standalone, otherwise equal to the number of nodes
+    /// Minimum is 1
     #[serde(default = "default_shard_number")]
-    pub shard_number: u32,
+    pub shard_number: Option<u32>,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
@@ -101,8 +103,8 @@ pub struct CreateCollection {
     pub optimizers_config: Option<OptimizersConfigDiff>,
 }
 
-pub const fn default_shard_number() -> u32 {
-    1
+pub const fn default_shard_number() -> Option<u32> {
+    None
 }
 
 pub const fn default_on_disk_payload() -> Option<bool> {

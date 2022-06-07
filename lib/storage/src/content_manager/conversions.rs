@@ -1,6 +1,6 @@
 use crate::content_manager::collection_meta_ops::{
-    default_shard_number, AliasOperations, ChangeAliasesOperation, CollectionMetaOperations,
-    CreateAlias, CreateAliasOperation, CreateCollection, CreateCollectionOperation, DeleteAlias,
+    AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
+    CreateAliasOperation, CreateCollection, CreateCollectionOperation, DeleteAlias,
     DeleteAliasOperation, DeleteCollectionOperation, RenameAlias, RenameAliasOperation,
     UpdateCollection, UpdateCollectionOperation,
 };
@@ -37,7 +37,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 hnsw_config: value.hnsw_config.map(|v| v.into()),
                 wal_config: value.wal_config.map(|v| v.into()),
                 optimizers_config: value.optimizers_config.map(|v| v.into()),
-                shard_number: value.shard_number.unwrap_or_else(default_shard_number),
+                shard_number: value.shard_number,
                 on_disk_payload: value.on_disk_payload,
             },
         }))

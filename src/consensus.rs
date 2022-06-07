@@ -509,7 +509,7 @@ mod tests {
                         hnsw_config: None,
                         wal_config: None,
                         optimizers_config: None,
-                        shard_number: 2,
+                        shard_number: Some(2),
                         on_disk_payload: None,
                     },
                 }),
