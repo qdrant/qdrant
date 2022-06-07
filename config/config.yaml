@@ -118,4 +118,5 @@ cluster:
     # Setting this parameter to lower value will allow consensus
     # to detect disconnected nodes earlier, but too frequent
     # tick period may create significant network and CPU overhead.
+    # We encourage you NOT to change this parameter unless you know what you are doing.
     tick_period_ms: 100
