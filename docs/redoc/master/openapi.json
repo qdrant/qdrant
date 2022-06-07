@@ -2099,7 +2099,7 @@
             "type": "boolean"
           },
           "score_threshold": {
-            "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smalled than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
+            "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
             "type": "number",
             "format": "float",
             "nullable": true
@@ -2598,7 +2598,7 @@
             "type": "boolean"
           },
           "score_threshold": {
-            "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smalled than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
+            "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
             "type": "number",
             "format": "float",
             "nullable": true

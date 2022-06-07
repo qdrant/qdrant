@@ -160,7 +160,7 @@ pub struct SearchRequest {
     pub with_vector: bool,
     /// Define a minimal score threshold for the result.
     /// If defined, less similar results will not be returned.
-    /// Score of the returned result might be higher or smalled than the threshold depending on the
+    /// Score of the returned result might be higher or smaller than the threshold depending on the
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
     pub score_threshold: Option<ScoreType>,
 }
@@ -204,7 +204,7 @@ pub struct RecommendRequest {
     pub with_vector: bool,
     /// Define a minimal score threshold for the result.
     /// If defined, less similar results will not be returned.
-    /// Score of the returned result might be higher or smalled than the threshold depending on the
+    /// Score of the returned result might be higher or smaller than the threshold depending on the
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
     pub score_threshold: Option<ScoreType>,
 }
