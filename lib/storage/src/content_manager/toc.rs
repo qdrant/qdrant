@@ -251,9 +251,10 @@ impl TableOfContent {
         let collection_params = CollectionParams {
             vector_size,
             distance,
-            shard_number: NonZeroU32::new(shard_number).ok_or(StorageError::BadInput {
-                description: "`shard_number` cannot be 0".to_string(),
-            })?,
+            shard_number: NonZeroU32::new(shard_number.unwrap_or(self.suggest_number_of_shards()?))
+                .ok_or(StorageError::BadInput {
+                    description: "`shard_number` cannot be 0".to_string(),
+                })?,
             on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
         };
         let wal_config = match wal_config_diff {
@@ -376,6 +377,16 @@ impl TableOfContent {
         Ok(true)
     }
 
+    /// Return a recommended number of shards for current cluster deployment
+    pub fn suggest_number_of_shards(&self) -> Result<u32, StorageError> {
+        if self.is_consensus_enabled() {
+            let number_of_peers = self.peer_address_by_id()?.len() as u32;
+            Ok(number_of_peers)
+        } else {
+            Ok(1)
+        }
+    }
+
     /// If `wait_timeout` is not supplied - then default duration will be used.
     /// This function needs to be called from a runtime with timers enabled.
     #[allow(unused_variables)]
@@ -388,7 +399,10 @@ impl TableOfContent {
         if self.is_consensus_enabled() {
             let op = match operation {
                 CollectionMetaOperations::CreateCollection(op) => {
-                    let shard_number = op.create_collection.shard_number;
+                    let shard_number = op
+                        .create_collection
+                        .shard_number
+                        .unwrap_or(self.suggest_number_of_shards()?);
                     let known_peers: Vec<_> = self
                         .raft_state
                         .lock()?
