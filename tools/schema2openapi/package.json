@@ -4,7 +4,7 @@
   "description": "",
   "main": "convert.js",
   "dependencies": {
-    "@openapi-contrib/json-schema-to-openapi-schema": "^1.2.0"
+    "@openapi-contrib/json-schema-to-openapi-schema": "^1.3.0"
   },
   "devDependencies": {},
   "scripts": {
