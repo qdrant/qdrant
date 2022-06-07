@@ -217,17 +217,17 @@ impl CollectionShardDistribution {
 
 #[derive(Clone)]
 pub struct ChannelService {
-    ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
-    channel_pool: Arc<TransportChannelPool>,
+    pub id_to_address: Arc<parking_lot::RwLock<HashMap<u64, Uri>>>,
+    pub channel_pool: Arc<TransportChannelPool>,
 }
 
 impl ChannelService {
     pub fn new(
-        ip_to_address: Arc<std::sync::RwLock<HashMap<u64, Uri>>>,
+        id_to_address: Arc<parking_lot::RwLock<HashMap<u64, Uri>>>,
         channel_pool: Arc<TransportChannelPool>,
     ) -> Self {
         Self {
-            ip_to_address,
+            id_to_address,
             channel_pool,
         }
     }
@@ -236,7 +236,7 @@ impl ChannelService {
 impl Default for ChannelService {
     fn default() -> Self {
         Self {
-            ip_to_address: Arc::new(Default::default()),
+            id_to_address: Arc::new(Default::default()),
             channel_pool: Arc::new(Default::default()),
         }
     }

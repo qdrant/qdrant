@@ -17,13 +17,13 @@ def test_collection_after_peers_added(tmp_path: pathlib.Path):
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
-    wait_for_leader_setup(bootstrap_api_uri)
+    wait_peer_added(bootstrap_api_uri)
 
     for i in range(1, len(peer_dirs)):
         peer_api_uris.append(start_peer(
             peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri))
         # Add peers one by one sequentially
-        wait_for_leader_setup(peer_api_uris[i])
+        wait_peer_added(peer_api_uris[i])
 
     # Wait for cluster
     wait_for_uniform_cluster_size(peer_api_uris)

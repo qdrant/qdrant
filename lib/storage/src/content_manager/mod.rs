@@ -1,10 +1,10 @@
 mod alias_mapping;
 pub mod collection_meta_ops;
 mod collections_ops;
+pub mod consensus_state;
 pub mod conversions;
 pub mod errors;
-pub mod raft_state;
-mod shard_distribution;
+pub mod shard_distribution;
 pub mod toc;
 
 pub mod consensus_ops {

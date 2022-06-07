@@ -6,6 +6,7 @@ mod greeting;
 mod settings;
 mod tonic;
 
+use collection::ChannelService;
 use consensus::Consensus;
 use log::LevelFilter;
 use slog::Drain;
@@ -14,11 +15,13 @@ use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
+use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef, Persistent};
+use storage::Dispatcher;
 
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
-use storage::content_manager::toc::{ConsensusEnabled, TableOfContent};
+use storage::content_manager::toc::TableOfContent;
 
 use crate::common::helpers::create_search_runtime;
 use crate::greeting::welcome;
@@ -46,7 +49,7 @@ struct Args {
     uri: Option<Uri>,
 }
 
-fn main() -> std::io::Result<()> {
+fn main() -> anyhow::Result<()> {
     let settings = Settings::new().expect("Can't read config.");
     let is_info = settings.log_level.to_ascii_uppercase() == "INFO";
     let mut log_builder = env_logger::Builder::new();
@@ -76,22 +79,24 @@ fn main() -> std::io::Result<()> {
     let runtime_handle = runtime.handle().clone();
 
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
-    let consensus_enabled = if settings.cluster.enabled {
-        let args = Args::parse();
+    let args = Args::parse();
+    let persistent_consensus_state =
+        Persistent::load_or_init(&settings.storage.storage_path, args.bootstrap.is_none())?;
+    let mut channel_service = ChannelService::default();
+    if settings.cluster.enabled {
         let p2p_grpc_timeout = Duration::from_millis(settings.cluster.grpc_timeout_ms);
-        Some(ConsensusEnabled {
-            propose_sender,
-            first_peer: args.bootstrap.is_none(),
-            transport_channel_pool: TransportChannelPool::new(
-                p2p_grpc_timeout,
-                settings.cluster.p2p.connection_pool_size,
-            ),
-        })
-    } else {
-        None
-    };
-
-    let toc = TableOfContent::new(&settings.storage, runtime, consensus_enabled);
+        channel_service.channel_pool = Arc::new(TransportChannelPool::new(
+            p2p_grpc_timeout,
+            settings.cluster.p2p.connection_pool_size,
+        ));
+        channel_service.id_to_address = persistent_consensus_state.peer_address_by_id.clone();
+    }
+    let toc = TableOfContent::new(
+        &settings.storage,
+        runtime,
+        channel_service.clone(),
+        persistent_consensus_state.this_peer_id(),
+    );
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {
             log::debug!("Loaded collection: {}", collection);
@@ -100,20 +105,27 @@ fn main() -> std::io::Result<()> {
 
     let toc_arc = Arc::new(toc);
     let mut handles: Vec<JoinHandle<Result<(), Error>>> = vec![];
+    let mut dispatcher = Dispatcher::new(toc_arc.clone());
+    let consensus_state: ConsensusStateRef =
+        ConsensusState::new(persistent_consensus_state, toc_arc.clone(), propose_sender).into();
+    if settings.cluster.enabled {
+        dispatcher = dispatcher.with_consensus(consensus_state.clone());
+    }
+    let dispatcher_arc = Arc::new(dispatcher);
 
     if settings.cluster.enabled {
-        let args = Args::parse();
         // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
         // logs from it to `log` crate
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
 
         let (mut consensus, message_sender) = Consensus::new(
             &slog_logger,
-            toc_arc.clone().into(),
+            consensus_state,
             args.bootstrap,
             args.uri.map(|uri| uri.to_string()),
             settings.cluster.p2p.port.map(|port| port as u32),
             settings.cluster.consensus.clone(),
+            channel_service.channel_pool,
         )
         .expect("Can't initialize consensus");
         thread::Builder::new()
@@ -140,13 +152,13 @@ fn main() -> std::io::Result<()> {
             })?;
 
         if let Some(internal_grpc_port) = settings.cluster.p2p.port {
-            let toc_arc = toc_arc.clone();
             let settings = settings.clone();
+            let dispatcher_arc = dispatcher_arc.clone();
             let handle = thread::Builder::new()
                 .name("grpc_internal".to_string())
                 .spawn(move || {
                     tonic::init_internal(
-                        toc_arc,
+                        dispatcher_arc.clone(),
                         settings.service.host,
                         internal_grpc_port,
                         message_sender,
@@ -163,21 +175,20 @@ fn main() -> std::io::Result<()> {
 
     #[cfg(feature = "web")]
     {
-        let toc_arc = toc_arc.clone();
+        let dispatcher_arc = dispatcher_arc.clone();
         let settings = settings.clone();
         let handle = thread::Builder::new()
             .name("web".to_string())
-            .spawn(move || actix::init(toc_arc, settings))
+            .spawn(move || actix::init(dispatcher_arc.clone(), settings))
             .unwrap();
         handles.push(handle);
     }
 
     if let Some(grpc_port) = settings.service.grpc_port {
-        let toc_arc = toc_arc.clone();
         let settings = settings.clone();
         let handle = thread::Builder::new()
             .name("grpc".to_string())
-            .spawn(move || tonic::init(toc_arc, settings.service.host, grpc_port))
+            .spawn(move || tonic::init(dispatcher_arc, settings.service.host, grpc_port))
             .unwrap();
         handles.push(handle);
     } else {

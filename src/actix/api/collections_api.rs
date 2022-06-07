@@ -10,6 +10,7 @@ use storage::content_manager::collection_meta_ops::{
     DeleteCollectionOperation, UpdateCollection, UpdateCollectionOperation,
 };
 use storage::content_manager::toc::TableOfContent;
+use storage::Dispatcher;
 
 #[derive(Debug, Deserialize)]
 struct WaitTimeout {
@@ -43,25 +44,27 @@ async fn get_collection(
 // Deprecated
 #[post("/collections")]
 async fn update_collections(
-    toc: web::Data<Arc<TableOfContent>>,
+    dispatcher: web::Data<Arc<Dispatcher>>,
     operation: web::Json<CollectionMetaOperations>,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = toc.submit_collection_operation(operation.0, None).await;
+    let response = dispatcher
+        .submit_collection_meta_op(operation.0, None)
+        .await;
     process_response(response, timing)
 }
 
 #[put("/collections/{name}")]
 async fn create_collection(
-    toc: web::Data<Arc<TableOfContent>>,
+    dispatcher: web::Data<Arc<Dispatcher>>,
     path: web::Path<String>,
     operation: web::Json<CreateCollection>,
     web::Query(query): web::Query<WaitTimeout>,
 ) -> impl Responder {
     let timing = Instant::now();
     let name = path.into_inner();
-    let response = toc
-        .submit_collection_operation(
+    let response = dispatcher
+        .submit_collection_meta_op(
             CollectionMetaOperations::CreateCollection(CreateCollectionOperation {
                 collection_name: name,
                 create_collection: operation.0,
@@ -74,15 +77,15 @@ async fn create_collection(
 
 #[patch("/collections/{name}")]
 async fn update_collection(
-    toc: web::Data<Arc<TableOfContent>>,
+    dispatcher: web::Data<Arc<Dispatcher>>,
     path: web::Path<String>,
     operation: web::Json<UpdateCollection>,
     web::Query(query): web::Query<WaitTimeout>,
 ) -> impl Responder {
     let timing = Instant::now();
     let name = path.into_inner();
-    let response = toc
-        .submit_collection_operation(
+    let response = dispatcher
+        .submit_collection_meta_op(
             CollectionMetaOperations::UpdateCollection(UpdateCollectionOperation {
                 collection_name: name,
                 update_collection: operation.0,
@@ -95,14 +98,14 @@ async fn update_collection(
 
 #[delete("/collections/{name}")]
 async fn delete_collection(
-    toc: web::Data<Arc<TableOfContent>>,
+    dispatcher: web::Data<Arc<Dispatcher>>,
     path: web::Path<String>,
     web::Query(query): web::Query<WaitTimeout>,
 ) -> impl Responder {
     let timing = Instant::now();
     let name = path.into_inner();
-    let response = toc
-        .submit_collection_operation(
+    let response = dispatcher
+        .submit_collection_meta_op(
             CollectionMetaOperations::DeleteCollection(DeleteCollectionOperation(name)),
             query.timeout(),
         )
@@ -112,13 +115,13 @@ async fn delete_collection(
 
 #[post("/collections/aliases")]
 async fn update_aliases(
-    toc: web::Data<Arc<TableOfContent>>,
+    dispatcher: web::Data<Arc<Dispatcher>>,
     operation: web::Json<ChangeAliasesOperation>,
     web::Query(query): web::Query<WaitTimeout>,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = toc
-        .submit_collection_operation(
+    let response = dispatcher
+        .submit_collection_meta_op(
             CollectionMetaOperations::ChangeAliases(operation.0),
             query.timeout(),
         )

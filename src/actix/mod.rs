@@ -10,7 +10,7 @@ use actix_web::middleware::{Condition, Logger};
 use actix_web::web::Data;
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use std::sync::Arc;
-use storage::content_manager::toc::TableOfContent;
+use storage::Dispatcher;
 
 use crate::actix::api::recommend_api::recommend_points;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
@@ -43,9 +43,10 @@ pub async fn index() -> impl Responder {
 }
 
 #[allow(dead_code)]
-pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()> {
+pub fn init(dispatcher: Arc<Dispatcher>, settings: Settings) -> std::io::Result<()> {
     actix_web::rt::System::new().block_on(async {
-        let toc_data = web::Data::new(toc);
+        let toc_data = web::Data::new(dispatcher.toc().clone());
+        let dispatcher_data = web::Data::new(dispatcher);
         HttpServer::new(move || {
             let cors = Cors::default()
                 .allow_any_origin()
@@ -55,6 +56,7 @@ pub fn init(toc: Arc<TableOfContent>, settings: Settings) -> std::io::Result<()>
             App::new()
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(Logger::default())
+                .app_data(dispatcher_data.clone())
                 .app_data(toc_data.clone())
                 .app_data(Data::new(
                     web::JsonConfig::default()

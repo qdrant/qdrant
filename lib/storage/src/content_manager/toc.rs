@@ -1,11 +1,9 @@
-use std::cmp;
 use std::collections::HashMap;
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -20,7 +18,8 @@ use collection::operations::CollectionUpdateOperations;
 use collection::{ChannelService, Collection, CollectionShardDistribution};
 use segment::types::ScoredPoint;
 
-use crate::content_manager::collection_meta_ops::CollectionMetaOperations::CreateCollectionDistributed;
+use super::collection_meta_ops::CreateCollectionOperation;
+use super::consensus_state;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::content_manager::{
     alias_mapping::AliasPersistence,
@@ -32,36 +31,13 @@ use crate::content_manager::{
     collections_ops::{Checker, Collections},
     errors::StorageError,
 };
-use crate::types::{ClusterInfo, ClusterStatus, PeerInfo, RaftInfo, StorageConfig};
-use crate::{
-    content_manager::{
-        consensus_ops::ConsensusOperations, raft_state::Persistent as PersistentRaftState,
-    },
-    types::PeerAddressById,
-};
-use api::grpc::transport_channel_pool::TransportChannelPool;
+use crate::types::{PeerAddressById, StorageConfig};
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 use collection::shard::ShardId;
 use collection::PeerId;
-pub use consensus::TableOfContentRef;
-use raft::{
-    eraftpb::{ConfChangeV2, Entry as RaftEntry, Snapshot as RaftSnapshot},
-    RawNode, SoftState,
-};
-use tokio::sync::oneshot;
-use tonic::transport::{Channel, Uri};
-use wal::Wal;
 
 const COLLECTIONS_DIR: &str = "collections";
-const COLLECTIONS_META_WAL_DIR: &str = "collections_meta_wal";
-const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
-
-pub struct ConsensusEnabled {
-    pub propose_sender: std::sync::mpsc::Sender<Vec<u8>>,
-    pub first_peer: bool,
-    pub transport_channel_pool: TransportChannelPool,
-}
 
 /// The main object of the service. It holds all objects, required for proper functioning.
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
@@ -73,50 +49,24 @@ pub struct TableOfContent {
     collection_management_runtime: Runtime,
     alias_persistence: RwLock<AliasPersistence>,
     segment_searcher: Box<dyn CollectionSearcher + Sync + Send>,
-    // TODO: move raft related fields into separate struct
-    consensus_op_wal: Arc<std::sync::Mutex<Wal>>,
-    raft_state: Arc<std::sync::Mutex<PersistentRaftState>>,
-    propose_sender: Option<std::sync::Mutex<std::sync::mpsc::Sender<Vec<u8>>>>,
-    on_consensus_op_apply:
-        std::sync::Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
-    transport_channel_pool: Arc<TransportChannelPool>,
     this_peer_id: PeerId,
-    raft_soft_state: parking_lot::Mutex<Option<SoftState>>,
+    channel_service: ChannelService,
 }
 
 impl TableOfContent {
+    /// PeerId does not change during execution so it is ok to copy it here.
     pub fn new(
         storage_config: &StorageConfig,
         search_runtime: Runtime,
-        consensus_enabled: Option<ConsensusEnabled>,
+        channel_service: ChannelService,
+        this_peer_id: PeerId,
     ) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
         let collection_management_runtime = Runtime::new().unwrap();
-
         create_dir_all(&collections_path).expect("Can't create Collections directory");
-
-        let raft_state = PersistentRaftState::load_or_init(
-            &storage_config.storage_path,
-            consensus_enabled.as_ref().map(|ce| ce.first_peer),
-        )
-        .expect("Cannot initialize Raft persistent storage");
-
-        let (propose_sender, transport_channel_pool) = match consensus_enabled {
-            None => (None, Arc::new(TransportChannelPool::default())), // use a default empty pool as consensus is disabled
-            Some(ce) => (
-                Some(std::sync::Mutex::new(ce.propose_sender)),
-                Arc::new(ce.transport_channel_pool),
-            ),
-        };
-
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");
-
         let mut collections: HashMap<String, Collection> = Default::default();
-        let channel_service = ChannelService::new(
-            raft_state.peer_address_by_id.clone(),
-            transport_channel_pool.clone(),
-        );
         for entry in collection_paths {
             let collection_path = entry
                 .expect("Can't access of one of the collection files")
@@ -136,22 +86,9 @@ impl TableOfContent {
 
             collections.insert(collection_name, collection);
         }
-
         let alias_path = Path::new(&storage_config.storage_path).join("aliases");
-
         let alias_persistence =
             AliasPersistence::open(alias_path).expect("Can't open database by the provided config");
-
-        let collection_meta_wal = {
-            let collections_meta_wal_path =
-                Path::new(&storage_config.storage_path).join(&COLLECTIONS_META_WAL_DIR);
-            create_dir_all(&collections_meta_wal_path)
-                .expect("Can't create Collections meta Wal directory");
-            Arc::new(std::sync::Mutex::new(
-                Wal::open(collections_meta_wal_path).unwrap(),
-            ))
-        };
-
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: storage_config.clone(),
@@ -159,14 +96,8 @@ impl TableOfContent {
             alias_persistence: RwLock::new(alias_persistence),
             segment_searcher: Box::new(SimpleCollectionSearcher::new()),
             collection_management_runtime,
-            // PeerId does not change during execution so it is ok to copy it here.
-            this_peer_id: raft_state.this_peer_id(),
-            consensus_op_wal: collection_meta_wal,
-            raft_state: Arc::new(std::sync::Mutex::new(raft_state)),
-            propose_sender,
-            on_consensus_op_apply: std::sync::Mutex::new(HashMap::new()),
-            transport_channel_pool,
-            raft_soft_state: parking_lot::Mutex::new(None),
+            this_peer_id,
+            channel_service,
         }
     }
 
@@ -174,6 +105,10 @@ impl TableOfContent {
         Path::new(&self.storage_config.storage_path)
             .join(&COLLECTIONS_DIR)
             .join(collection_name)
+    }
+
+    pub fn storage_path(&self) -> &str {
+        &self.storage_config.storage_path
     }
 
     async fn create_collection_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
@@ -217,13 +152,6 @@ impl TableOfContent {
         Ok(resolved_name)
     }
 
-    fn share_ip_to_address(&self) -> Result<Arc<std::sync::RwLock<PeerAddressById>>, StorageError> {
-        // Done within a non-async function as the std::sync::Mutex is not Send
-        let raft_state_guard = self.raft_state.lock()?;
-        let ip_to_address = raft_state_guard.peer_address_by_id.clone();
-        Ok(ip_to_address)
-    }
-
     async fn create_collection(
         &self,
         collection_name: &str,
@@ -251,10 +179,11 @@ impl TableOfContent {
         let collection_params = CollectionParams {
             vector_size,
             distance,
-            shard_number: NonZeroU32::new(shard_number.unwrap_or(self.suggest_number_of_shards()?))
-                .ok_or(StorageError::BadInput {
+            shard_number: NonZeroU32::new(shard_number.unwrap_or(1)).ok_or(
+                StorageError::BadInput {
                     description: "`shard_number` cannot be 0".to_string(),
-                })?,
+                },
+            )?,
             on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
         };
         let wal_config = match wal_config_diff {
@@ -278,15 +207,12 @@ impl TableOfContent {
             optimizer_config: optimizers_config,
             hnsw_config,
         };
-        let ip_to_address = self.share_ip_to_address()?;
-        let channel_service =
-            ChannelService::new(ip_to_address, self.transport_channel_pool.clone());
         let collection = Collection::new(
             collection_name.to_string(),
             Path::new(&collection_path),
             &collection_config,
             collection_shard_distribution,
-            channel_service,
+            self.channel_service.clone(),
         )
         .await?;
 
@@ -377,100 +303,15 @@ impl TableOfContent {
         Ok(true)
     }
 
-    /// Return a recommended number of shards for current cluster deployment
-    pub fn suggest_number_of_shards(&self) -> Result<u32, StorageError> {
-        if self.is_consensus_enabled() {
-            let number_of_peers = self.peer_address_by_id()?.len() as u32;
-            Ok(number_of_peers)
-        } else {
-            Ok(1)
-        }
-    }
-
-    /// If `wait_timeout` is not supplied - then default duration will be used.
-    /// This function needs to be called from a runtime with timers enabled.
-    #[allow(unused_variables)]
-    pub async fn submit_collection_operation(
+    pub fn perform_collection_meta_op_sync(
         &self,
         operation: CollectionMetaOperations,
-        wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
-        // if distributed deployment is enabled
-        if self.is_consensus_enabled() {
-            let op = match operation {
-                CollectionMetaOperations::CreateCollection(op) => {
-                    let shard_number = op
-                        .create_collection
-                        .shard_number
-                        .unwrap_or(self.suggest_number_of_shards()?);
-                    let known_peers: Vec<_> = self
-                        .raft_state
-                        .lock()?
-                        .peer_address_by_id
-                        .read()?
-                        .keys()
-                        .cloned()
-                        .collect();
-                    let known_collections = self.collections.read().await;
-                    let known_shards: Vec<_> = known_collections
-                        .iter()
-                        .flat_map(|(_, col)| col.all_shards())
-                        .collect();
-                    let shard_distribution = ShardDistributionProposal::new(
-                        shard_number,
-                        self.this_peer_id,
-                        &known_peers,
-                        known_shards,
-                    );
-                    log::debug!("Proposing distribution for {} shards for collection '{}' among {} peers {:?}", shard_number, op.collection_name, known_peers.len(), shard_distribution.distribution);
-                    CreateCollectionDistributed(op, shard_distribution)
-                }
-                op => op,
-            };
-            self.propose_consensus_op(
-                ConsensusOperations::CollectionMeta(Box::new(op)),
-                wait_timeout,
-            )
-            .await
-        } else {
-            self.perform_collection_meta_op(operation).await
-        }
+        self.collection_management_runtime
+            .block_on(self.perform_collection_meta_op(operation))
     }
 
-    pub async fn propose_consensus_op(
-        &self,
-        operation: ConsensusOperations,
-        wait_timeout: Option<Duration>,
-    ) -> Result<bool, StorageError> {
-        let propose_sender = match &self.propose_sender {
-            Some(sender) => sender,
-            None => {
-                return Err(StorageError::ServiceError {
-                    description:
-                        "Cannot submit consensus operation proposal: no sender supplied to ToC"
-                            .to_string(),
-                });
-            }
-        };
-        let serialized = serde_cbor::to_vec(&operation)?;
-        let (sender, receiver) = oneshot::channel();
-        self.on_consensus_op_apply.lock()?.insert(operation, sender);
-        propose_sender.lock()?.send(serialized)?;
-        let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
-        tokio::time::timeout(wait_timeout, receiver)
-            .await
-            .map_err(
-                |_: tokio::time::error::Elapsed| StorageError::ServiceError {
-                    description: format!(
-                        "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
-                        wait_timeout.as_secs_f64()
-                    ),
-                },
-                // ?? - forwards 2 possible errors: sender dropped, operation failed
-            )??
-    }
-
-    async fn perform_collection_meta_op(
+    pub async fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
     ) -> Result<bool, StorageError> {
@@ -671,264 +512,36 @@ impl TableOfContent {
         result.map_err(|err| err.into())
     }
 
-    fn is_consensus_enabled(&self) -> bool {
-        self.propose_sender.is_some()
-    }
-
-    pub async fn cluster_status(&self) -> Result<ClusterStatus, StorageError> {
-        match self.is_consensus_enabled() {
-            true => {
-                let hard_state = self.hard_state()?;
-                let soft_state = self.raft_soft_state.lock();
-                let peers = self
-                    .peer_address_by_id()?
-                    .into_iter()
-                    .map(|(peer_id, uri)| {
-                        (
-                            peer_id,
-                            PeerInfo {
-                                uri: uri.to_string(),
-                            },
-                        )
-                    })
-                    .collect();
-                let pending_operations = self.raft_state.lock()?.unapplied_entities_count();
-                Ok(ClusterStatus::Enabled(ClusterInfo {
-                    peer_id: self.this_peer_id,
-                    peers,
-                    raft_info: RaftInfo {
-                        term: hard_state.term,
-                        commit: hard_state.commit,
-                        pending_operations,
-                        leader: soft_state.as_ref().map(|state| state.leader_id),
-                        role: soft_state.as_ref().map(|state| state.raft_state.into()),
-                    },
-                }))
-            }
-            false => Ok(ClusterStatus::Disabled),
-        }
-    }
-
-    pub fn set_raft_soft_state(&self, state: &SoftState) {
-        *self.raft_soft_state.lock() = Some(SoftState { ..*state });
-    }
-
-    pub fn consensus_op_entry(&self, raft_entry_id: u64) -> raft::Result<RaftEntry> {
-        // Raft entries are expected to have index starting from 1
-        if raft_entry_id < 1 {
-            return Err(raft::Error::Store(raft::StorageError::Unavailable));
-        }
-        let first_entry = self
-            .first_consensus_op_wal_entry()
-            .map_err(consensus::raft_error_other)?
-            .ok_or(raft::Error::Store(raft::StorageError::Unavailable))?;
-        let first_wal_index = self
-            .consensus_op_wal
-            .lock()
-            .map_err(consensus::raft_error_other)?
-            .first_index();
-        // Due to snapshots there might be different offsets between wal index and raft entry index
-        let offset = first_entry.index - first_wal_index;
-        <RaftEntry as prost::Message>::decode(
-            self.consensus_op_wal
-                .lock()
-                .map_err(consensus::raft_error_other)?
-                .entry(raft_entry_id - offset)
-                .ok_or(raft::Error::Store(raft::StorageError::Unavailable))?
-                .as_ref(),
-        )
-        .map_err(consensus::raft_error_other)
-    }
-
-    pub fn this_peer_id(&self) -> PeerId {
+    fn this_peer_id(&self) -> PeerId {
         self.this_peer_id
     }
 
-    async fn state_snapshot(&self) -> raft::Result<consensus::SnapshotData> {
-        let mut collections: HashMap<collection::CollectionId, collection::State> =
-            Default::default();
+    pub fn peer_address_by_id(&self) -> PeerAddressById {
+        self.channel_service.id_to_address.read().clone()
+    }
+
+    pub fn collections_snapshot_sync(&self) -> consensus_state::CollectionsSnapshot {
+        self.collection_management_runtime
+            .block_on(self.collections_snapshot())
+    }
+
+    pub async fn collections_snapshot(&self) -> consensus_state::CollectionsSnapshot {
+        let mut collections: HashMap<collection::CollectionId, collection::State> = HashMap::new();
         for (id, collection) in self.collections.read().await.iter() {
             collections.insert(id.clone(), collection.state(self.this_peer_id()).await);
         }
-        Ok(consensus::SnapshotData {
+        consensus_state::CollectionsSnapshot {
             collections,
             aliases: self.alias_persistence.read().await.state().clone(),
-            address_by_id: self
-                .raft_state
-                .lock()
-                .map_err(consensus::raft_error_other)?
-                .peer_address_by_id()
-                .map_err(consensus::raft_error_other)?,
-        })
-    }
-
-    pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
-        let operation: ConsensusOperations = entry.try_into()?;
-        let on_apply = self.on_consensus_op_apply.lock()?.remove(&operation);
-        let result = match operation {
-            ConsensusOperations::CollectionMeta(operation) => self
-                .collection_management_runtime
-                .block_on(self.perform_collection_meta_op(*operation)),
-            ConsensusOperations::AddPeer(peer_id, uri) => self
-                .add_peer(
-                    peer_id,
-                    uri.parse().map_err(|err| StorageError::ServiceError {
-                        description: format!("Failed to parse Uri: {err}"),
-                    })?,
-                )
-                .map(|()| true),
-        };
-        if let Some(on_apply) = on_apply {
-            if on_apply.send(result.clone()).is_err() {
-                log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
-            }
         }
-        result
     }
 
-    pub fn apply_conf_change_entry(
+    pub fn apply_collections_snapshot(
         &self,
-        entry: &RaftEntry,
-        raw_node: &mut RawNode<TableOfContentRef>,
+        data: consensus_state::CollectionsSnapshot,
     ) -> Result<(), StorageError> {
-        let change: ConfChangeV2 = prost::Message::decode(entry.get_data())?;
-        let conf_state = raw_node.apply_conf_change(&change)?;
-        self.raft_state
-            .lock()?
-            .apply_state_update(|state| state.conf_state = conf_state)?;
-        Ok(())
-    }
-
-    pub fn set_unapplied_entries(
-        &self,
-        first_index: u64,
-        last_index: u64,
-    ) -> Result<(), raft::Error> {
-        self.raft_state
-            .lock()
-            .map_err(consensus::raft_error_other)?
-            .set_unapplied_entries(first_index, last_index)
-            .map_err(consensus::raft_error_other)
-    }
-
-    pub fn apply_entries(
-        &self,
-        raw_node: &mut RawNode<TableOfContentRef>,
-    ) -> Result<(), raft::Error> {
-        use raft::eraftpb::EntryType;
-
-        loop {
-            let unapplied_index = self
-                .raft_state
-                .lock()
-                .map_err(consensus::raft_error_other)?
-                .current_unapplied_entry();
-            let entry_index = match unapplied_index {
-                Some(index) => index,
-                None => break,
-            };
-            log::debug!("Applying committed entry with index {entry_index}");
-            let entry = self.consensus_op_entry(entry_index)?;
-            if entry.data.is_empty() {
-                // Empty entry, when the peer becomes Leader it will send an empty entry.
-            } else {
-                match entry.get_entry_type() {
-                    EntryType::EntryNormal => {
-                        let operation_result = self.apply_normal_entry(&entry);
-                        match operation_result {
-                            Ok(result) => log::debug!(
-                                "Successfully applied consensus operation entry. Index: {}. Result: {result}",
-                                entry.index
-                            ),
-                            Err(err) => {
-                                log::error!("Failed to apply collection meta operation entry with error: {err}")
-                            }
-                         }
-                    }
-                    EntryType::EntryConfChangeV2 => {
-                        match self.apply_conf_change_entry(&entry, raw_node) {
-                            Ok(()) => log::debug!(
-                                "Successfully applied configuration change entry. Index: {}.",
-                                entry.index
-                            ),
-                            Err(err) => {
-                                log::error!(
-                                    "Failed to apply configuration change entry with error: {err}"
-                                )
-                            }
-                        }
-                    }
-                    ty => log::error!("Failed to apply entry: unsupported entry type {ty:?}"),
-                }
-            }
-
-            self.raft_state
-                .lock()
-                .map_err(consensus::raft_error_other)?
-                .entry_applied()
-                .map_err(consensus::raft_error_other)?;
-        }
-        Ok(())
-    }
-
-    pub fn append_entries(&self, entries: Vec<RaftEntry>) -> Result<(), StorageError> {
-        use prost::Message;
-
-        let mut wal_guard = self.consensus_op_wal.lock()?;
-        for entry in entries {
-            log::debug!("Appending entry: {entry:?}");
-            let mut buf = vec![];
-            entry.encode(&mut buf)?;
-            wal_guard.append(&buf)?;
-        }
-        Ok(())
-    }
-
-    pub fn first_consensus_op_wal_entry(&self) -> Result<Option<RaftEntry>, StorageError> {
-        let wal_guard = self.consensus_op_wal.lock()?;
-        let first_index = wal_guard.first_index();
-        let entry = wal_guard
-            .entry(first_index)
-            .map(|entry| <RaftEntry as prost::Message>::decode(entry.as_ref()));
-        Ok(entry.transpose()?)
-    }
-
-    pub fn last_consensus_op_wal_entry(&self) -> Result<Option<RaftEntry>, StorageError> {
-        let wal_guard = self.consensus_op_wal.lock()?;
-        let last_index = wal_guard.last_index();
-        let entry = wal_guard
-            .entry(last_index)
-            .map(|entry| <RaftEntry as prost::Message>::decode(entry.as_ref()));
-        Ok(entry.transpose()?)
-    }
-
-    pub fn apply_snapshot(&self, snapshot: &RaftSnapshot) -> Result<(), StorageError> {
-        let meta = snapshot.get_metadata();
-        if raft::Storage::first_index(self)? > meta.index {
-            return Err(StorageError::ServiceError {
-                description: "Snapshot out of date".to_string(),
-            });
-        }
-        self.consensus_op_wal.lock()?.clear()?;
-        self.raft_state.lock()?.apply_state_update(move |state| {
-            state.conf_state = meta.get_conf_state().clone();
-            state.hard_state.term = cmp::max(state.hard_state.term, meta.term);
-            state.hard_state.commit = meta.index
-        })?;
-        self.apply_snapshot_data(snapshot.get_data().try_into()?)
-    }
-
-    fn apply_snapshot_data(&self, data: consensus::SnapshotData) -> Result<(), StorageError> {
-        // Apply peer addresses
-        self.raft_state
-            .lock()?
-            .set_peer_address_by_id(data.address_by_id)?;
-
         self.collection_management_runtime.block_on(async {
             let mut collections = self.collections.write().await;
-            let ip_to_address = self.share_ip_to_address()?;
-            let channel_service =
-                ChannelService::new(ip_to_address, self.transport_channel_pool.clone());
             for (id, state) in &data.collections {
                 let collection = collections.get_mut(id);
                 match collection {
@@ -940,7 +553,7 @@ impl TableOfContent {
                                     state.clone(),
                                     self.this_peer_id(),
                                     &self.get_collection_path(&collection.name()),
-                                    channel_service.clone(),
+                                    self.channel_service.clone(),
                                 )
                                 .await?;
                         }
@@ -957,7 +570,7 @@ impl TableOfContent {
                             Path::new(&collection_path),
                             &state.config,
                             shard_distribution,
-                            channel_service.clone(),
+                            self.channel_service.clone(),
                         )
                         .await?;
                         collections.validate_collection_not_exists(id).await?;
@@ -986,45 +599,37 @@ impl TableOfContent {
         })
     }
 
-    pub fn is_raft_state_new(&self) -> Result<bool, StorageError> {
-        Ok(self.raft_state.lock()?.is_new())
-    }
-
-    pub fn set_hard_state(&self, hard_state: raft::eraftpb::HardState) -> Result<(), StorageError> {
-        self.raft_state
-            .lock()?
-            .apply_state_update(move |state| state.hard_state = hard_state)
-    }
-
-    pub fn hard_state(&self) -> Result<raft::eraftpb::HardState, StorageError> {
-        Ok(self.raft_state.lock()?.state().hard_state.clone())
-    }
-
-    pub fn set_commit_index(&self, index: u64) -> Result<(), StorageError> {
-        self.raft_state
-            .lock()?
-            .apply_state_update(|state| state.hard_state.commit = index)
-    }
-
-    pub fn peer_address_by_id(&self) -> Result<PeerAddressById, StorageError> {
-        self.raft_state.lock()?.peer_address_by_id()
-    }
-
-    pub fn add_peer(&self, peer_id: PeerId, uri: Uri) -> Result<(), StorageError> {
-        self.raft_state.lock()?.insert_peer(peer_id, uri)
-    }
-
-    /// A pool will be created if no channels exist for this address.
-    pub async fn get_or_create_pooled_channel(&self, uri: &Uri) -> Result<Channel, StorageError> {
-        self.transport_channel_pool
-            .get_or_create_pooled_channel(uri)
-            .await
-            .map_err(|err| StorageError::ServiceError {
-                description: format!(
-                    "Can't create pooled transport channel for {}. Error: {}",
-                    uri, err
-                ),
-            })
+    pub async fn suggest_shard_distribution(
+        &self,
+        op: &CreateCollectionOperation,
+    ) -> ShardDistributionProposal {
+        let shard_number = op.create_collection.shard_number.unwrap_or(1);
+        let known_peers: Vec<_> = self
+            .channel_service
+            .id_to_address
+            .read()
+            .keys()
+            .copied()
+            .collect();
+        let known_collections = self.collections.read().await;
+        let known_shards: Vec<_> = known_collections
+            .iter()
+            .flat_map(|(_, col)| col.all_shards())
+            .collect();
+        let shard_distribution = ShardDistributionProposal::new(
+            shard_number,
+            self.this_peer_id(),
+            &known_peers,
+            known_shards,
+        );
+        log::debug!(
+            "Suggesting distribution for {} shards for collection '{}' among {} peers {:?}",
+            shard_number,
+            op.collection_name,
+            known_peers.len(),
+            shard_distribution.distribution
+        );
+        shard_distribution
     }
 }
 
@@ -1036,195 +641,5 @@ impl Drop for TableOfContent {
                 collection.before_drop().await;
             }
         });
-    }
-}
-
-mod consensus {
-    use std::{collections::HashMap, ops::Deref, sync::Arc};
-
-    use collection::CollectionId;
-    use raft::{eraftpb::Entry as RaftEntry, storage::Storage as RaftStorage, RaftState};
-    use serde::{Deserialize, Serialize};
-
-    use crate::{content_manager::alias_mapping::AliasMapping, types::PeerAddressById};
-
-    use super::TableOfContent;
-
-    fn wal_entries(
-        toc: &TableOfContent,
-        low: u64,
-        high: u64,
-        max_size: Option<u64>,
-    ) -> raft::Result<Vec<RaftEntry>> {
-        (low..high)
-            .take(max_size.unwrap_or(high - low + 1) as usize)
-            .map(|id| toc.consensus_op_entry(id))
-            .collect()
-    }
-
-    impl RaftStorage for TableOfContent {
-        fn initial_state(&self) -> raft::Result<RaftState> {
-            Ok(self
-                .raft_state
-                .lock()
-                .map_err(raft_error_other)?
-                .state()
-                .clone())
-        }
-
-        fn entries(
-            &self,
-            low: u64,
-            high: u64,
-            max_size: impl Into<Option<u64>>,
-        ) -> raft::Result<Vec<RaftEntry>> {
-            let max_size: Option<_> = max_size.into();
-            wal_entries(self, low, high, max_size)
-        }
-
-        fn term(&self, idx: u64) -> raft::Result<u64> {
-            {
-                let raft_state = self.raft_state.lock().map_err(raft_error_other)?;
-                if idx == raft_state.state().hard_state.commit {
-                    return Ok(raft_state.state().hard_state.term);
-                }
-            }
-            Ok(self.consensus_op_entry(idx)?.term)
-        }
-
-        fn first_index(&self) -> raft::Result<u64> {
-            let index = match self
-                .first_consensus_op_wal_entry()
-                .map_err(raft_error_other)?
-            {
-                Some(entry) => entry.index,
-                None => {
-                    self.raft_state
-                        .lock()
-                        .map_err(raft_error_other)?
-                        .state()
-                        .hard_state
-                        .commit
-                        + 1
-                }
-            };
-            Ok(index)
-        }
-
-        fn last_index(&self) -> raft::Result<u64> {
-            let index = match self
-                .last_consensus_op_wal_entry()
-                .map_err(raft_error_other)?
-            {
-                Some(entry) => entry.index,
-                None => {
-                    self.raft_state
-                        .lock()
-                        .map_err(raft_error_other)?
-                        .state()
-                        .hard_state
-                        .commit
-                }
-            };
-            Ok(index)
-        }
-
-        fn snapshot(&self, request_index: u64) -> raft::Result<raft::eraftpb::Snapshot> {
-            let snapshot = self
-                .collection_management_runtime
-                .block_on(self.state_snapshot())?;
-            let raft_state = self
-                .raft_state
-                .lock()
-                .map_err(raft_error_other)?
-                .state()
-                .clone();
-            if raft_state.hard_state.commit >= request_index {
-                Ok(raft::eraftpb::Snapshot {
-                    data: serde_cbor::to_vec(&snapshot).map_err(raft_error_other)?,
-                    metadata: Some(raft::eraftpb::SnapshotMetadata {
-                        conf_state: Some(raft_state.conf_state),
-                        index: raft_state.hard_state.commit,
-                        term: raft_state.hard_state.term,
-                    }),
-                })
-            } else {
-                Err(raft::Error::Store(
-                    raft::StorageError::SnapshotTemporarilyUnavailable,
-                ))
-            }
-        }
-    }
-
-    #[derive(Clone)]
-    pub struct TableOfContentRef(Arc<TableOfContent>);
-
-    impl From<Arc<TableOfContent>> for TableOfContentRef {
-        fn from(arc: Arc<TableOfContent>) -> Self {
-            Self(arc)
-        }
-    }
-
-    impl Deref for TableOfContentRef {
-        type Target = TableOfContent;
-
-        fn deref(&self) -> &Self::Target {
-            &*self.0
-        }
-    }
-
-    impl RaftStorage for TableOfContentRef {
-        fn initial_state(&self) -> raft::Result<raft::RaftState> {
-            self.0.initial_state()
-        }
-
-        fn entries(
-            &self,
-            low: u64,
-            high: u64,
-            max_size: impl Into<Option<u64>>,
-        ) -> raft::Result<Vec<raft::eraftpb::Entry>> {
-            self.0.entries(low, high, max_size)
-        }
-
-        fn term(&self, idx: u64) -> raft::Result<u64> {
-            self.0.term(idx)
-        }
-
-        fn first_index(&self) -> raft::Result<u64> {
-            self.0.first_index()
-        }
-
-        fn last_index(&self) -> raft::Result<u64> {
-            self.0.last_index()
-        }
-
-        fn snapshot(&self, request_index: u64) -> raft::Result<raft::eraftpb::Snapshot> {
-            self.0.snapshot(request_index)
-        }
-    }
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    pub struct SnapshotData {
-        pub collections: HashMap<CollectionId, collection::State>,
-        pub aliases: AliasMapping,
-        #[serde(with = "crate::serialize_peer_addresses")]
-        pub address_by_id: PeerAddressById,
-    }
-
-    impl TryFrom<&[u8]> for SnapshotData {
-        type Error = serde_cbor::Error;
-
-        fn try_from(bytes: &[u8]) -> Result<SnapshotData, Self::Error> {
-            serde_cbor::from_slice(bytes)
-        }
-    }
-
-    #[derive(thiserror::Error, Debug)]
-    #[error("{0}")]
-    struct StrError(String);
-
-    pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
-        raft::Error::Store(raft::StorageError::Other(Box::new(StrError(e.to_string()))))
     }
 }
