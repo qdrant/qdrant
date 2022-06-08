@@ -63,7 +63,7 @@ impl GeoMapIndex {
             point_to_values: vec![],
             points_count: 0,
             values_count: 0,
-            max_values_per_point: 0,
+            max_values_per_point: 1,
             store_cf_name: Self::storage_cf_name(field),
             db,
         }

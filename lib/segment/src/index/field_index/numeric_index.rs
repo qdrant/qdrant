@@ -107,7 +107,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
             store_cf_name: Self::storage_cf_name(field),
             histogram: Histogram::new(HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION),
             points_count: 0,
-            max_values_per_point: 0,
+            max_values_per_point: 1,
             point_to_values: Default::default(),
         }
     }
@@ -231,7 +231,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
             self.points_count -= 1;
         }
         if removed_values.len() == self.max_values_per_point {
-            self.max_values_per_point = 0;
+            self.max_values_per_point = 1;
             for values in &self.point_to_values {
                 self.max_values_per_point = self.max_values_per_point.max(values.len());
             }
