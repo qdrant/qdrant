@@ -32,10 +32,11 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 ## Milestones
 
 * :earth_americas: Distributed Deployment
-  * [ ] Distributed querying
-  * [ ] Remote replications - automatic segment replication between nodes in cluster
-  * [ ] Sharding - group segments into shards
-  * [ ] Integration of [raft](https://raft.github.io/) for distributed consistency
+  * [x] Distributed querying
+  * [x] Integration of [raft](https://raft.github.io/) for distributed consistency
+  * [x] Sharding - group segments into shards
+  * [ ] Cluster scaling
+  * [ ] Replications - automatic segment replication between nodes in cluster
 
 ---
 
@@ -50,8 +51,8 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
   * [ ] Support more payload types, e.g.
     * Data-time
   * [x] Support for `Null` values
-  * [ ] Enable more types of filtering queries, e.g.
-    * [ ] Filter by Score
+  * [x] Enable more types of filtering queries, e.g.
+    * [x] Filter by Score
     * [x] Filter by number of stored elements
     * [x] `isNull` or `isEmpty` query conditions
 
@@ -59,7 +60,7 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 
 * :racing_car: Performance improvements
   * [x] Indexing of geo-payload
-  * [ ] On the fly payload index
+  * [x] On the fly payload index
   * [x] Multiprocessing segment optimization
-  * [ ] Fine-tuned HNSW index configuration
+  * [x] Fine-tuned HNSW index configuration
   
