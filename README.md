@@ -150,7 +150,13 @@ Or use latest pre-built image from [DockerHub](https://hub.docker.com/r/qdrant/q
 docker pull qdrant/qdrant
 ```
 
-To run container use command:
+To run the container, use the command:
+
+```bash
+docker run -p 6333:6333 qdrant/qdrant
+```
+
+And once you need a fine-grained setup, you can also define a storage path and custom configuration:
 
 ```bash
 docker run -p 6333:6333 \
