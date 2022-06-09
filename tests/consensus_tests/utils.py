@@ -55,7 +55,6 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str) -> str:
     log_file = open(log_file, "w")
     conftest.processes.append(
         Popen([get_qdrant_exec(), "--bootstrap", bootstrap_uri], env=env, cwd=peer_dir, stderr=log_file))
-    time.sleep(3)
     return get_uri(http_port)
 
 
@@ -68,8 +67,7 @@ def start_first_peer(peer_dir: Path, log_file: str) -> Tuple[str, str]:
     bootstrap_uri = get_uri(p2p_port)
     conftest.processes.append(
         Popen([get_qdrant_exec(), "--uri", bootstrap_uri], env=env, cwd=peer_dir, stderr=log_file))
-    time.sleep(5)
-    return (get_uri(http_port), bootstrap_uri)
+    return get_uri(http_port), bootstrap_uri
 
 
 def make_peer_folders(base_path: Path, n_peers: int) -> list[Path]:
@@ -80,3 +78,103 @@ def make_peer_folders(base_path: Path, n_peers: int) -> list[Path]:
         peer_dirs.append(peer_dir)
         shutil.copytree("config", peer_dir / "config")
     return peer_dirs
+
+
+def leader_is_defined(peer_api_uri: str) -> bool:
+    try:
+        r = requests.get(f"{peer_api_uri}/cluster")
+        assert_http_ok(r)
+        leader = r.json()["result"]["raft_info"]["leader"]
+        return leader is not None
+    except requests.exceptions.ConnectionError:
+        # the api is not yet available - caller needs to retry
+        print(f"Could not contact peer {peer_api_uri} to fetch leader info")
+        return False
+
+
+def cluster_size(peer_api_uri: str, expected_size: int) -> bool:
+    try:
+        r = requests.get(f"{peer_api_uri}/cluster")
+        assert_http_ok(r)
+        peers = r.json()["result"]["peers"]
+        if not len(peers) == expected_size:
+            print(f"Cluster size invalid for peer {peer_api_uri} {len(peers)}/{expected_size}")
+        return len(peers) == expected_size
+    except requests.exceptions.ConnectionError:
+        # the api is not yet available - caller needs to retry
+        print(f"Could not contact peer {peer_api_uri} to fetch cluster size")
+        return False
+
+
+def all_cluster_size_consistent(peer_api_uris: [str]) -> bool:
+    expected_size = len(peer_api_uris)
+    for uri in peer_api_uris:
+        if cluster_size(uri, expected_size):
+            continue
+        else:
+            return False
+    return True
+
+
+# TODO A.G use once https://github.com/qdrant/qdrant/issues/676 is fixed
+def assert_collection_exists_on_all_peers(collection_name: str, peer_api_uris: [str]):
+    for uri in peer_api_uris:
+        r = requests.get(f"{uri}/collections")
+        assert_http_ok(r)
+        collections = r.json()["result"]["collections"]
+        if len(collections) == 0:
+            raise Exception(f"Peer {uri} has no collections")
+        else:
+            assert collections[0]["name"] == collection_name, f"collection {collection_name} does not exist on peer {uri}"
+
+
+def collection_exists_on_all_peers(collection_name: str, peer_api_uris: [str]) -> bool:
+    for uri in peer_api_uris:
+        r = requests.get(f"{uri}/collections")
+        assert_http_ok(r)
+        collections = r.json()["result"]["collections"]
+        if len(collections) == 0:
+            return False
+        elif collections[0]["name"] != collection_name:
+            return False
+        else:
+            continue
+    return True
+
+
+WAIT_TIME_SEC = 30
+RETRY_INTERVAL_SEC = 0.2
+
+
+def wait_for_leader_setup(peer_api_uri: str):
+    start = time.time()
+    while not leader_is_defined(peer_api_uri):
+        elapsed = time.time() - start
+        # do not wait more than WAIT_TIME_SEC
+        if elapsed > WAIT_TIME_SEC:
+            raise Exception(f"Leader was not established in time ({WAIT_TIME_SEC} sec)")
+        else:
+            time.sleep(RETRY_INTERVAL_SEC)
+
+
+def wait_for_uniform_cluster_size(peer_api_uris: [str]):
+    start = time.time()
+    while not all_cluster_size_consistent(peer_api_uris):
+        elapsed = time.time() - start
+        # do not wait more than WAIT_TIME_SEC
+        if elapsed > WAIT_TIME_SEC:
+            raise Exception(f"Cluster size was not uniform in time ({WAIT_TIME_SEC} sec)")
+        else:
+            time.sleep(RETRY_INTERVAL_SEC)
+
+
+def wait_for_uniform_collection_existence(collection_name: str, peer_api_uris: [str]):
+    start = time.time()
+    while not collection_exists_on_all_peers(collection_name, peer_api_uris):
+        print(f"Collection '{collection_name}' does not exist on all peers")
+        elapsed = time.time() - start
+        # do not wait more than WAIT_TIME_SEC
+        if elapsed > WAIT_TIME_SEC:
+            raise Exception(f"Collection existence was not uniform in time ({WAIT_TIME_SEC} sec)")
+        else:
+            time.sleep(RETRY_INTERVAL_SEC)
