@@ -94,8 +94,9 @@ fn default_tick_period_ms() -> u64 {
     100
 }
 
+// Should not be less than `DEFAULT_META_OP_WAIT` as bootstrapping perform sync. consensus meta operations.
 fn default_bootstrap_timeout_sec() -> u64 {
-    5
+    15
 }
 
 fn default_max_message_queue_size() -> usize {
