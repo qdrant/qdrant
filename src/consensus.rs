@@ -73,7 +73,8 @@ impl Consensus {
                 &runtime,
                 sender.clone(),
                 is_leader_established.clone(),
-            )?;
+            )
+            .context("Failed to initialize Consensus for new Raft state")?;
         } else {
             if bootstrap_peer.is_some() || uri.is_some() {
                 log::info!("Local raft state found - bootstrap and uri cli arguments were ignored")
@@ -163,7 +164,8 @@ impl Consensus {
                     id,
                 },
             ))
-            .await?
+            .await
+            .context("Failed to add peer to known")?
             .into_inner();
         // Although peer addresses are synchronized with consensus, addresses need to be pre-fetched in the case of a new peer
         // or it will not know how to answer the Raft leader
@@ -179,7 +181,8 @@ impl Consensus {
         }
         client
             .add_peer_as_participant(tonic::Request::new(api::grpc::qdrant::PeerId { id }))
-            .await?;
+            .await
+            .context("Failed to add peer as participant")?;
         Ok(())
     }
 
