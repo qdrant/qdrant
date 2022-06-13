@@ -19,6 +19,7 @@ use storage::types::ClusterStatus;
 mod actix;
 mod common;
 mod settings;
+mod greeting;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 struct AllDefinitions {

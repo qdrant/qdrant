@@ -4,6 +4,7 @@ pub mod common;
 mod consensus;
 mod settings;
 mod tonic;
+mod greeting;
 
 use consensus::Consensus;
 use log::LevelFilter;
@@ -20,6 +21,7 @@ use clap::Parser;
 use storage::content_manager::toc::{ConsensusEnabled, TableOfContent};
 
 use crate::common::helpers::create_search_runtime;
+use crate::greeting::welcome;
 use crate::settings::Settings;
 
 /// Qdrant (read: quadrant ) is a vector similarity search engine.
@@ -65,6 +67,8 @@ fn main() -> std::io::Result<()> {
 
     log_builder.init();
 
+    welcome();
+
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it
     let runtime = create_search_runtime(settings.storage.performance.max_search_threads)
@@ -90,7 +94,7 @@ fn main() -> std::io::Result<()> {
     let toc = TableOfContent::new(&settings.storage, runtime, consensus_enabled);
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {
-            log::info!("Loaded collection: {}", collection);
+            log::debug!("Loaded collection: {}", collection);
         }
     });
 

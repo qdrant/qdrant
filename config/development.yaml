@@ -1,6 +1,6 @@
 
 debug: true
-log_level: DEBUG
+log_level: INFO
 
 service:
   host: 127.0.0.1
