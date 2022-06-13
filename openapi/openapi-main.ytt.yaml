@@ -211,7 +211,17 @@ externalDocs:
   description: Find out more about Qdrant applications and demo
   url: https://qdrant.tech/documentation/
 servers:
-  - url: http://localhost:6333
+  - url: "{protocol}://{hostname}:{port}"
+    variables:
+      protocol:
+        enum:
+          - http
+          - https
+        default: http
+      hostname:
+        default: localhost
+      port:
+        default: "6333"
 tags:
   - name: collections
     description: Searchable collections of points.
