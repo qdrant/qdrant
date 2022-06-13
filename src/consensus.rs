@@ -122,7 +122,9 @@ impl Consensus {
             ))?;
             Ok(())
         } else {
-            log::debug!("Bootstrapping is disabled. Assuming this peer is the first in the network");
+            log::debug!(
+                "Bootstrapping is disabled. Assuming this peer is the first in the network"
+            );
             // First peer needs to add its own address
             let message = Message::FromClient(serde_cbor::to_vec(&ConsensusOperations::AddPeer(
                 toc_ref.this_peer_id(),

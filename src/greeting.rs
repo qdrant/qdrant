@@ -1,9 +1,10 @@
-use std::env;
+use api::grpc::models::VersionInfo;
 use atty::Stream;
 use colored::Colorize;
-use api::grpc::models::VersionInfo;
+use std::env;
 
 /// Prints welcome message
+#[rustfmt::skip]
 pub fn welcome() {
     if !atty::is(Stream::Stdout) {
         colored::control::set_override(false);
@@ -25,10 +26,11 @@ pub fn welcome() {
     println!();
     let ui_link = format!("https://ui.qdrant.tech/?v=v{}", VersionInfo::default().version);
 
-    println!("{} {}", "Access web UI at".truecolor(134, 186, 144), ui_link.bold().underline().truecolor(82, 139, 183));
+    println!("{} {}",
+             "Access web UI at".truecolor(134, 186, 144),
+             ui_link.bold().underline().truecolor(82, 139, 183));
     println!();
 }
-
 
 #[cfg(test)]
 mod tests {

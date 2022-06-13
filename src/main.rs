@@ -2,9 +2,9 @@
 mod actix;
 pub mod common;
 mod consensus;
+mod greeting;
 mod settings;
 mod tonic;
-mod greeting;
 
 use consensus::Consensus;
 use log::LevelFilter;
