@@ -215,7 +215,7 @@ impl UpdateHandler {
                             }
                             Err(error) => match error {
                                 CollectionError::Cancelled { description } => {
-                                    log::info!("Optimization cancelled - {}", description);
+                                    log::debug!("Optimization cancelled - {}", description);
                                     false
                                 }
                                 _ => {

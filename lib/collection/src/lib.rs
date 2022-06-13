@@ -20,7 +20,6 @@ use futures::future::{join_all, try_join_all};
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
 use hashring::HashRing;
 use itertools::Itertools;
-use log::info;
 use operations::{
     config_diff::OptimizersConfigDiff,
     types::{
@@ -330,7 +329,7 @@ impl Collection {
 
         if let Some(stored_version) = stored_version_opt {
             if stored_version != CollectionVersion::current() {
-                info!(
+                log::info!(
                     "Migrating collection {} -> {}",
                     stored_version,
                     CollectionVersion::current()

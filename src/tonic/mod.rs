@@ -57,7 +57,7 @@ pub fn init(toc: Arc<TableOfContent>, host: String, grpc_port: u16) -> std::io::
                 .add_service(PointsServer::new(points_service))
                 .serve_with_shutdown(socket, async {
                     signal::ctrl_c().await.unwrap();
-                    log::info!("Stopping gRPC");
+                    log::debug!("Stopping gRPC");
                 })
                 .await
         })
@@ -92,7 +92,7 @@ pub fn init_internal(
             let points_internal_service = PointsInternalService::new(toc.clone());
             let raft_service = RaftService::new(to_consensus, toc.clone());
 
-            log::info!("Qdrant internal gRPC listening on {}", internal_grpc_port);
+            log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
             Server::builder()
                 .add_service(QdrantServer::new(service))
@@ -101,7 +101,7 @@ pub fn init_internal(
                 .add_service(RaftServer::new(raft_service))
                 .serve_with_shutdown(socket, async {
                     signal::ctrl_c().await.unwrap();
-                    log::info!("Stopping internal gRPC");
+                    log::debug!("Stopping internal gRPC");
                 })
                 .await
         })
