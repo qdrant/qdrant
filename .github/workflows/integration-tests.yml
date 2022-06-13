@@ -47,7 +47,7 @@ jobs:
       - uses: Swatinem/rust-cache@v1
       - name: Install dependencies
         run: sudo apt-get install clang
-      - uses: actions/setup-python@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
       - name: Install pytest
@@ -69,7 +69,7 @@ jobs:
   
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
       - name: Install requests python lib
