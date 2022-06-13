@@ -80,6 +80,27 @@ def make_peer_folders(base_path: Path, n_peers: int) -> list[Path]:
     return peer_dirs
 
 
+def get_leader(peer_api_uri: str) -> str:
+    r = requests.get(f"{peer_api_uri}/cluster")
+    assert_http_ok(r)
+    return r.json()["result"]["raft_info"]["leader"]
+
+
+def check_leader(peer_api_uri: str, expected_leader: str) -> bool:
+    try:
+        r = requests.get(f"{peer_api_uri}/cluster")
+        assert_http_ok(r)
+        leader = r.json()["result"]["raft_info"]["leader"]
+        correct_leader = leader == expected_leader
+        if not correct_leader:
+            print(f"Cluster leader invalid for peer {peer_api_uri} {leader}/{expected_leader}")
+        return correct_leader
+    except requests.exceptions.ConnectionError:
+        # the api is not yet available - caller needs to retry
+        print(f"Could not contact peer {peer_api_uri} to fetch cluster leader")
+        return False
+
+
 def leader_is_defined(peer_api_uri: str) -> bool:
     try:
         r = requests.get(f"{peer_api_uri}/cluster")
@@ -92,24 +113,25 @@ def leader_is_defined(peer_api_uri: str) -> bool:
         return False
 
 
-def cluster_size(peer_api_uri: str, expected_size: int) -> bool:
+def check_cluster_size(peer_api_uri: str, expected_size: int) -> bool:
     try:
         r = requests.get(f"{peer_api_uri}/cluster")
         assert_http_ok(r)
         peers = r.json()["result"]["peers"]
-        if not len(peers) == expected_size:
+        correct_size = len(peers) == expected_size
+        if not correct_size:
             print(f"Cluster size invalid for peer {peer_api_uri} {len(peers)}/{expected_size}")
-        return len(peers) == expected_size
+        return correct_size
     except requests.exceptions.ConnectionError:
         # the api is not yet available - caller needs to retry
         print(f"Could not contact peer {peer_api_uri} to fetch cluster size")
         return False
 
 
-def all_cluster_size_consistent(peer_api_uris: [str]) -> bool:
+def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: str) -> bool:
     expected_size = len(peer_api_uris)
     for uri in peer_api_uris:
-        if cluster_size(uri, expected_size):
+        if check_leader(uri, expected_leader) and check_cluster_size(uri, expected_size):
             continue
         else:
             return False
@@ -143,10 +165,10 @@ def collection_exists_on_all_peers(collection_name: str, peer_api_uris: [str]) -
 
 
 WAIT_TIME_SEC = 30
-RETRY_INTERVAL_SEC = 0.2
+RETRY_INTERVAL_SEC = 1
 
 
-def wait_for_leader_setup(peer_api_uri: str):
+def wait_for_leader_setup(peer_api_uri: str) -> str:
     start = time.time()
     while not leader_is_defined(peer_api_uri):
         elapsed = time.time() - start
@@ -155,15 +177,16 @@ def wait_for_leader_setup(peer_api_uri: str):
             raise Exception(f"Leader was not established in time ({WAIT_TIME_SEC} sec)")
         else:
             time.sleep(RETRY_INTERVAL_SEC)
+    return get_leader(peer_api_uri)
 
 
-def wait_for_uniform_cluster_size(peer_api_uris: [str]):
+def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str):
     start = time.time()
-    while not all_cluster_size_consistent(peer_api_uris):
+    while not all_nodes_cluster_info_consistent(peer_api_uris, expected_leader):
         elapsed = time.time() - start
         # do not wait more than WAIT_TIME_SEC
         if elapsed > WAIT_TIME_SEC:
-            raise Exception(f"Cluster size was not uniform in time ({WAIT_TIME_SEC} sec)")
+            raise Exception(f"Cluster info was not uniform in time ({WAIT_TIME_SEC} sec)")
         else:
             time.sleep(RETRY_INTERVAL_SEC)
 
