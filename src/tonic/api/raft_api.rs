@@ -3,9 +3,11 @@ use api::grpc::qdrant::{
     raft_server::Raft, AddPeerToKnownMessage, AllPeers, Peer, PeerId,
     RaftMessage as RaftMessageBytes, Uri as UriStr,
 };
+use itertools::Itertools;
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Message as RaftMessage};
 use std::sync::{mpsc::SyncSender, Arc, Mutex};
 use storage::content_manager::{consensus_ops::ConsensusOperations, toc::TableOfContent};
+use tonic::transport::Uri;
 use tonic::{async_trait, Request, Response, Status};
 
 pub struct RaftService {
@@ -58,7 +60,7 @@ impl Raft for RaftService {
         request: tonic::Request<AddPeerToKnownMessage>,
     ) -> Result<tonic::Response<AllPeers>, tonic::Status> {
         let peer = request.get_ref();
-        let uri = if let Some(uri) = &peer.uri {
+        let uri_string = if let Some(uri) = &peer.uri {
             uri.clone()
         } else {
             let ip = request
@@ -72,15 +74,25 @@ impl Raft for RaftService {
                 .ok_or_else(|| Status::invalid_argument("URI or port should be supplied"))?;
             format!("http://{ip}:{port}")
         };
+        let uri: Uri = uri_string
+            .parse()
+            .map_err(|err| Status::internal(format!("Failed to parse uri: {err}")))?;
         let peer = request.into_inner();
+        // the consensus operation can take up to DEFAULT_META_OP_WAIT
         self.toc
-            .propose_consensus_op(ConsensusOperations::AddPeer(peer.id, uri), None)
+            .propose_consensus_op(ConsensusOperations::AddPeer(peer.id, uri_string), None)
             .await
             .map_err(|err| Status::internal(format!("Failed to add peer: {err}")))?;
         let addresses = self
             .toc
             .peer_address_by_id()
             .map_err(|err| Status::internal(format!("Can't get peer addresses: {err}")))?;
+        // Make sure that the new peer is now present in the known addresses
+        if !addresses.values().contains(&uri) {
+            return Err(Status::internal(format!(
+                "Failed to add peer after consensus: {uri}"
+            )));
+        }
         Ok(Response::new(AllPeers {
             all_peers: addresses
                 .into_iter()
