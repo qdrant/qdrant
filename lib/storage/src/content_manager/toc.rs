@@ -127,7 +127,7 @@ impl TableOfContent {
                 .to_str()
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
-
+            log::info!("Loading collection: {}", collection_name);
             let collection = collection_management_runtime.block_on(Collection::load(
                 collection_name.clone(),
                 &collection_path,
@@ -422,7 +422,7 @@ impl TableOfContent {
                         &known_peers,
                         known_shards,
                     );
-                    log::info!("Proposing distribution for {} shards for collection '{}' among {} peers {:?}", shard_number, op.collection_name, known_peers.len(), shard_distribution.distribution);
+                    log::debug!("Proposing distribution for {} shards for collection '{}' among {} peers {:?}", shard_number, op.collection_name, known_peers.len(), shard_distribution.distribution);
                     CreateCollectionDistributed(op, shard_distribution)
                 }
                 op => op,
@@ -827,7 +827,7 @@ impl TableOfContent {
                 Some(index) => index,
                 None => break,
             };
-            log::info!("Applying committed entry with index {entry_index}");
+            log::debug!("Applying committed entry with index {entry_index}");
             let entry = self.consensus_op_entry(entry_index)?;
             if entry.data.is_empty() {
                 // Empty entry, when the peer becomes Leader it will send an empty entry.
@@ -836,7 +836,7 @@ impl TableOfContent {
                     EntryType::EntryNormal => {
                         let operation_result = self.apply_normal_entry(&entry);
                         match operation_result {
-                            Ok(result) => log::info!(
+                            Ok(result) => log::debug!(
                                 "Successfully applied consensus operation entry. Index: {}. Result: {result}",
                                 entry.index
                             ),
@@ -847,7 +847,7 @@ impl TableOfContent {
                     }
                     EntryType::EntryConfChangeV2 => {
                         match self.apply_conf_change_entry(&entry, raw_node) {
-                            Ok(()) => log::info!(
+                            Ok(()) => log::debug!(
                                 "Successfully applied configuration change entry. Index: {}.",
                                 entry.index
                             ),
@@ -969,7 +969,7 @@ impl TableOfContent {
             // Remove collections that are present locally but are not in the snapshot state
             for collection_name in collections.keys() {
                 if !data.collections.contains_key(collection_name) {
-                    log::info!(
+                    log::debug!(
                         "Deleting collection {} because it is not part of the consensus snapshot",
                         collection_name
                     );

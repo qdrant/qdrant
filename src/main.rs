@@ -2,6 +2,7 @@
 mod actix;
 pub mod common;
 mod consensus;
+mod greeting;
 mod settings;
 mod tonic;
 
@@ -20,6 +21,7 @@ use clap::Parser;
 use storage::content_manager::toc::{ConsensusEnabled, TableOfContent};
 
 use crate::common::helpers::create_search_runtime;
+use crate::greeting::welcome;
 use crate::settings::Settings;
 
 /// Qdrant (read: quadrant ) is a vector similarity search engine.
@@ -46,13 +48,26 @@ struct Args {
 
 fn main() -> std::io::Result<()> {
     let settings = Settings::new().expect("Can't read config.");
-    env_logger::Builder::new()
+    let is_info = settings.log_level.to_ascii_uppercase() == "INFO";
+    let mut log_builder = env_logger::Builder::new();
+
+    log_builder
         // Parse user defined log level configuration
         .parse_filters(&settings.log_level)
         // h2 is very verbose and we have many network operations,
         // so it is limited to only errors
-        .filter_module("h2", LevelFilter::Error)
-        .init();
+        .filter_module("h2", LevelFilter::Error);
+
+    if is_info {
+        // Additionally filter verbose modules if no extended logging configuration is provided
+        log_builder
+            .filter_module("wal", LevelFilter::Warn)
+            .filter_module("raft::raft", LevelFilter::Warn);
+    };
+
+    log_builder.init();
+
+    welcome();
 
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it
@@ -79,7 +94,7 @@ fn main() -> std::io::Result<()> {
     let toc = TableOfContent::new(&settings.storage, runtime, consensus_enabled);
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {
-            log::info!("Loaded collection: {}", collection);
+            log::debug!("Loaded collection: {}", collection);
         }
     });
 

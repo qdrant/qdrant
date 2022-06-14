@@ -27,7 +27,7 @@ impl ShardConfig {
     /// Initialize an empty config. file if it does not already exist.
     pub fn init_file(dir_path: &Path) -> Result<(), CollectionError> {
         let file_path = Self::get_config_path(dir_path);
-        log::info!("Initialize shard config in {:?}", file_path);
+        log::debug!("Initialize shard config in {:?}", file_path);
         if !file_path.exists() {
             let mut file = fs::File::create(&file_path)?;
             let empty_json = "{}";

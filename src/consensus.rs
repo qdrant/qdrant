@@ -77,7 +77,7 @@ impl Consensus {
             .context("Failed to initialize Consensus for new Raft state")?;
         } else {
             if bootstrap_peer.is_some() || uri.is_some() {
-                log::info!("Local raft state found - bootstrap and uri cli arguments were ignored")
+                log::debug!("Local raft state found - bootstrap and uri cli arguments were ignored")
             }
             log::debug!("Local raft state found - skipping initialization");
         };
@@ -110,7 +110,7 @@ impl Consensus {
         is_leader_established: Arc<IsReady>,
     ) -> anyhow::Result<()> {
         if let Some(bootstrap_peer) = bootstrap_peer {
-            log::info!("Bootstrapping from peer with address: {bootstrap_peer}");
+            log::debug!("Bootstrapping from peer with address: {bootstrap_peer}");
             if uri.is_none() && p2p_port.is_none() {
                 return Err(anyhow::anyhow!("Failed to bootstrap peer as neither `internal rpc port` was configured nor `this peer uri` was supplied"));
             }
@@ -123,7 +123,9 @@ impl Consensus {
             ))?;
             Ok(())
         } else {
-            log::info!("Bootstrapping is disabled. Assuming this peer is the first in the network");
+            log::debug!(
+                "Bootstrapping is disabled. Assuming this peer is the first in the network"
+            );
             // First peer needs to add its own address
             let message = Message::FromClient(serde_cbor::to_vec(&ConsensusOperations::AddPeer(
                 toc_ref.this_peer_id(),
@@ -242,7 +244,7 @@ impl Consensus {
         }
         if !ready.snapshot().is_empty() {
             // This is a snapshot, we need to apply the snapshot at first.
-            log::info!("Applying snapshot");
+            log::debug!("Applying snapshot");
             if let Err(err) = store.apply_snapshot(&ready.snapshot().clone()) {
                 log::error!("Failed to apply snapshot: {err}")
             }
@@ -254,14 +256,14 @@ impl Consensus {
         }
         if !ready.entries().is_empty() {
             // Append entries to the Raft log.
-            log::info!("Appending {} entries to raft log", ready.entries().len());
+            log::debug!("Appending {} entries to raft log", ready.entries().len());
             if let Err(err) = store.append_entries(ready.take_entries()) {
                 log::error!("Failed to append entries: {err}")
             }
         }
         if let Some(hs) = ready.hs() {
             // Raft HardState changed, and we need to persist it.
-            log::info!("Changing hard state. New hard state: {hs:?}");
+            log::debug!("Changing hard state. New hard state: {hs:?}");
             if let Err(err) = store.set_hard_state(hs.clone()) {
                 log::error!("Failed to set hard state: {err}")
             }
@@ -285,7 +287,7 @@ impl Consensus {
         let mut light_rd = self.node.advance(ready);
         // Update commit index.
         if let Some(commit) = light_rd.commit_index() {
-            log::info!("Updating commit index to {commit}");
+            log::debug!("Updating commit index to {commit}");
             if let Err(err) = store.set_commit_index(commit) {
                 log::error!("Failed to set commit index: {err}")
             }
