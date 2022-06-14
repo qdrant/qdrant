@@ -1543,7 +1543,22 @@
   },
   "servers": [
     {
-      "url": "http://localhost:6333"
+      "url": "{protocol}://{hostname}:{port}",
+      "variables": {
+        "protocol": {
+          "enum": [
+            "http",
+            "https"
+          ],
+          "default": "http"
+        },
+        "hostname": {
+          "default": "localhost"
+        },
+        "port": {
+          "default": "6333"
+        }
+      }
     }
   ],
   "tags": [
