@@ -33,7 +33,7 @@ use crate::settings::Settings;
 struct Args {
     /// Uri of the peer to bootstrap from in case of multi-peer deployment.
     /// If not specified - this peer will be considered as a first in a new deployment.
-    #[clap(long, value_name = "URI")]
+    #[clap(long, value_parser, value_name = "URI")]
     bootstrap: Option<Uri>,
     /// Uri of this peer.
     /// Other peers should be able to reach it by this uri.
@@ -42,7 +42,7 @@ struct Args {
     ///
     /// In case this is not the first peer and it bootstraps the value is optional.
     /// If not supplied then qdrant will take internal grpc port from config and derive the IP address of this peer on bootstrap peer (receiving side)
-    #[clap(long, value_name = "URI")]
+    #[clap(long, value_parser, value_name = "URI")]
     uri: Option<Uri>,
 }
 
