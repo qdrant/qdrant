@@ -44,6 +44,7 @@ impl UnappliedEntries {
         match &mut self.0 {
             Some((current_index, _)) => {
                 *current_index += 1;
+                log::debug!("UnappliedEntries applied {:?}", self);
             }
             None => (),
         }

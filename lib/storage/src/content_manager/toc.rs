@@ -699,6 +699,7 @@ impl TableOfContent {
                     raft_info: RaftInfo {
                         term: hard_state.term,
                         commit: hard_state.commit,
+                        vote: hard_state.vote,
                         pending_operations,
                         leader: soft_state.as_ref().map(|state| state.leader_id),
                         role: soft_state.as_ref().map(|state| state.raft_state.into()),
@@ -818,6 +819,7 @@ impl TableOfContent {
         use raft::eraftpb::EntryType;
 
         loop {
+            log::debug!("Applying committed entry before lock");
             let unapplied_index = self
                 .raft_state
                 .lock()
@@ -1043,7 +1045,9 @@ mod consensus {
     use std::{collections::HashMap, ops::Deref, sync::Arc};
 
     use collection::CollectionId;
-    use raft::{eraftpb::Entry as RaftEntry, storage::Storage as RaftStorage, RaftState};
+    use raft::{
+        eraftpb::Entry as RaftEntry, storage::Storage as RaftStorage, GetEntriesContext, RaftState,
+    };
     use serde::{Deserialize, Serialize};
 
     use crate::{content_manager::alias_mapping::AliasMapping, types::PeerAddressById};
@@ -1077,6 +1081,7 @@ mod consensus {
             low: u64,
             high: u64,
             max_size: impl Into<Option<u64>>,
+            context: GetEntriesContext,
         ) -> raft::Result<Vec<RaftEntry>> {
             let max_size: Option<_> = max_size.into();
             wal_entries(self, low, high, max_size)
@@ -1129,7 +1134,7 @@ mod consensus {
             Ok(index)
         }
 
-        fn snapshot(&self, request_index: u64) -> raft::Result<raft::eraftpb::Snapshot> {
+        fn snapshot(&self, request_index: u64, to: u64) -> raft::Result<raft::eraftpb::Snapshot> {
             let snapshot = self
                 .collection_management_runtime
                 .block_on(self.state_snapshot())?;
@@ -1183,8 +1188,10 @@ mod consensus {
             low: u64,
             high: u64,
             max_size: impl Into<Option<u64>>,
+            context: GetEntriesContext,
         ) -> raft::Result<Vec<raft::eraftpb::Entry>> {
-            self.0.entries(low, high, max_size)
+            log::debug!("Raft storage context {:?}", context);
+            self.0.entries(low, high, max_size, context)
         }
 
         fn term(&self, idx: u64) -> raft::Result<u64> {
@@ -1199,8 +1206,8 @@ mod consensus {
             self.0.last_index()
         }
 
-        fn snapshot(&self, request_index: u64) -> raft::Result<raft::eraftpb::Snapshot> {
-            self.0.snapshot(request_index)
+        fn snapshot(&self, request_index: u64, to: u64) -> raft::Result<raft::eraftpb::Snapshot> {
+            self.0.snapshot(request_index, to)
         }
     }
 

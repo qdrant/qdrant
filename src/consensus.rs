@@ -194,7 +194,15 @@ impl Consensus {
 
         loop {
             match self.receiver.recv_timeout(timeout) {
-                Ok(Message::FromPeer(message)) => self.node.step(*message)?,
+                Ok(Message::FromPeer(message)) => {
+                    log::debug!("Message from peer check_quorum:{} pre_vote:{} pending_snapshot:{} pending_conf_index:{:?} progress_for:{:?} lead_transferee:{:?}",
+                        self.node.raft.check_quorum, self.node.raft.pre_vote,
+                        self.node.raft.pending_request_snapshot,
+                        self.node.raft.pending_conf_index,
+                        self.node.raft.prs().get(message.from),
+                        self.node.raft.lead_transferee);
+                    self.node.step(*message)?
+                }
                 Ok(Message::FromClient(message)) => {
                     log::debug!("Proposing entry from client with length: {}", message.len());
                     self.node.propose(vec![], message)?
@@ -225,13 +233,25 @@ impl Consensus {
 
     fn on_ready(&mut self) {
         if !self.node.has_ready() {
+            log::debug!("on ready has nothing");
             return;
         }
+        let raft = &self.node.raft;
+        //log::debug!("{}", !raft.msgs.is_empty());
+        //log::debug!("{:?}", raft.msgs);
+        //log::debug!("{}", raft.soft_state() != self.node.prev_ss);
+        //log::debug!("{}", raft.hard_state() != self.node.prev_hs);
+        //log::debug!("{}", !raft.read_states.is_empty());
+        //log::debug!("{}", !raft.raft_log.unstable_entries().is_empty());
+        //log::debug!("{:?}", raft.raft_log.unstable_entries());
+        //log::debug!("{}", self.node.snap().map_or(false, |s| !s.is_empty()));
+        //log::debug!("{}", raft.raft_log.has_next_entries_since(self.node.commit_since_index));
 
         let store = self.node.raft.raft_log.store.clone();
         // Get the `Ready` with `RawNode::ready` interface.
         let mut ready = self.node.ready();
         if !ready.messages().is_empty() {
+            log::debug!("Handling messages");
             if let Err(err) = handle_messages(
                 ready.take_messages(),
                 &store,
@@ -269,10 +289,11 @@ impl Consensus {
             }
         }
         if let Some(ss) = ready.ss() {
-            log::info!("Changing soft state. New soft state: {ss:?}");
+            log::debug!("Changing soft state. New soft state: {ss:?}");
             self.handle_soft_state(ss);
         }
         if !ready.persisted_messages().is_empty() {
+            log::debug!("Handling persisted messages");
             if let Err(err) = handle_messages(
                 ready.take_persisted_messages(),
                 &store,
@@ -286,6 +307,7 @@ impl Consensus {
 
         // Advance the Raft.
         let mut light_rd = self.node.advance(ready);
+        log::debug!("Light ready: {:?}", light_rd.commit_index());
         // Update commit index.
         if let Some(commit) = light_rd.commit_index() {
             log::debug!("Updating commit index to {commit}");
@@ -327,9 +349,13 @@ fn handle_committed_entries(
     toc: &TableOfContentRef,
     raw_node: &mut RawNode<TableOfContentRef>,
 ) -> raft::Result<()> {
+    log::debug!("handle_committed_entries {}", entries.len());
     if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
+        log::debug!("handle_committed_entries first:{:?} last:{:?}", first, last);
         toc.set_unapplied_entries(first.index, last.index)?;
         toc.apply_entries(raw_node)?;
+    } else {
+        log::debug!("handle_committed_entries nothing");
     }
     Ok(())
 }
@@ -378,6 +404,7 @@ fn handle_messages(
             send_futures.push(send_message(toc_clone.clone(), address, message));
         }
         for result in futures::future::join_all(send_futures).await {
+            log::debug!("{:?}", result);
             if let Err(err) = result {
                 log::warn!("Failed to send message: {err:#}")
             }
@@ -416,6 +443,7 @@ async fn send_message(
     address: Uri,
     message: RaftMessage,
 ) -> anyhow::Result<()> {
+    log::debug!("Sending message to {}", address);
     let channel = toc
         .get_or_create_pooled_channel(&address)
         .await

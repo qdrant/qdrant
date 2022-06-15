@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 from subprocess import Popen
@@ -78,6 +79,14 @@ def make_peer_folders(base_path: Path, n_peers: int) -> list[Path]:
         peer_dirs.append(peer_dir)
         shutil.copytree("config", peer_dir / "config")
     return peer_dirs
+
+
+def print_cluster_info(peer_api_uris: [str]):
+    for uri in peer_api_uris:
+        r = requests.get(f"{uri}/cluster")
+        assert_http_ok(r)
+        res = r.json()["result"]
+        print(json.dumps(res, indent=4))
 
 
 def get_leader(peer_api_uri: str) -> str:
@@ -186,6 +195,8 @@ def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str):
         elapsed = time.time() - start
         # do not wait more than WAIT_TIME_SEC
         if elapsed > WAIT_TIME_SEC:
+            # print cluster for debug
+            print_cluster_info(peer_api_uris)
             raise Exception(f"Cluster info was not uniform in time ({WAIT_TIME_SEC} sec)")
         else:
             time.sleep(RETRY_INTERVAL_SEC)

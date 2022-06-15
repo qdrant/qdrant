@@ -49,6 +49,7 @@ pub struct RaftInfo {
     pub term: u64,
     /// The index of the latest committed (finalized) operation that this peer is aware of.
     pub commit: u64,
+    pub vote: u64,
     /// Number of consensus operations pending to be applied on this peer
     pub pending_operations: usize,
     /// Leader of the current term

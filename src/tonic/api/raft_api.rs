@@ -27,6 +27,7 @@ impl RaftService {
 #[async_trait]
 impl Raft for RaftService {
     async fn send(&self, mut request: Request<RaftMessageBytes>) -> Result<Response<()>, Status> {
+        log::debug!("RaftService sent message");
         let message = <RaftMessage as prost::Message>::decode(&request.get_mut().message[..])
             .map_err(|err| {
                 Status::invalid_argument(format!("Failed to parse raft message: {err}"))
@@ -43,6 +44,7 @@ impl Raft for RaftService {
         &self,
         request: tonic::Request<PeerId>,
     ) -> Result<tonic::Response<UriStr>, tonic::Status> {
+        log::debug!("RaftService who_is");
         let addresses = self
             .toc
             .peer_address_by_id()
