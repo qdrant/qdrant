@@ -196,7 +196,14 @@ impl Consensus {
 
         loop {
             match self.receiver.recv_timeout(timeout) {
-                Ok(Message::FromPeer(message)) => self.node.step(*message)?,
+                Ok(Message::FromPeer(message)) => {
+                    log::debug!(
+                        "Proposing entry from peer {} with progress {:?}",
+                        message.from,
+                        self.node.raft.prs().get(message.from)
+                    );
+                    self.node.step(*message)?
+                }
                 Ok(Message::FromClient(message)) => {
                     log::debug!("Proposing entry from client with length: {}", message.len());
                     self.node.propose(vec![], message)?
@@ -234,6 +241,7 @@ impl Consensus {
         // Get the `Ready` with `RawNode::ready` interface.
         let mut ready = self.node.ready();
         if !ready.messages().is_empty() {
+            log::debug!("Handling {} messages", ready.messages().len());
             if let Err(err) = self.handle_messages(ready.take_messages(), &store) {
                 log::error!("Failed to send messages: {err}")
             }
@@ -265,11 +273,16 @@ impl Consensus {
             }
         }
         if let Some(ss) = ready.ss() {
+            log::debug!("Changing soft state. New soft state: {ss:?}");
             self.handle_soft_state(ss);
         }
         if !ready.persisted_messages().is_empty() {
+            log::debug!(
+                "Handling {} persisted messages",
+                ready.persisted_messages().len()
+            );
             if let Err(err) = self.handle_messages(ready.take_persisted_messages(), &store) {
-                log::error!("Failed to send messages: {err}")
+                log::error!("Failed to send persisted messages: {err}")
             }
         }
 
@@ -374,6 +387,7 @@ async fn who_is(
     bootstrap_uri: Option<Uri>,
     config: Arc<ConsensusConfig>,
 ) -> anyhow::Result<Uri> {
+    log::debug!("Resolving who is {peer_id}");
     let bootstrap_uri =
         bootstrap_uri.ok_or_else(|| anyhow::anyhow!("No bootstrap uri supplied"))?;
     let bootstrap_timeout = Duration::from_secs(config.bootstrap_timeout_sec);
