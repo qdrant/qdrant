@@ -513,7 +513,7 @@ impl UnappliedEntries {
     pub fn len(&self) -> usize {
         match self.0 {
             None => 0,
-            Some((current, last)) => (last.saturating_sub(current) + 1) as usize,
+            Some((current, last)) => (last as isize - current as isize + 1) as usize,
         }
     }
 }
@@ -778,11 +778,15 @@ mod tests {
     fn unapplied_entries() {
         let mut entries = UnappliedEntries(Some((0, 2)));
         assert_eq!(entries.current(), Some(0));
+        assert_eq!(entries.len(), 3);
         entries.applied();
         assert_eq!(entries.current(), Some(1));
+        assert_eq!(entries.len(), 2);
         entries.applied();
         assert_eq!(entries.current(), Some(2));
+        assert_eq!(entries.len(), 1);
         entries.applied();
         assert_eq!(entries.current(), None);
+        assert_eq!(entries.len(), 0);
     }
 }
