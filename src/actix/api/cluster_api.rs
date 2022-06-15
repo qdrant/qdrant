@@ -2,13 +2,13 @@ use crate::actix::helpers::process_response;
 use actix_web::rt::time::Instant;
 use actix_web::{get, web, Responder};
 use std::sync::Arc;
-use storage::content_manager::toc::TableOfContent;
+use storage::Dispatcher;
 
 #[get("/cluster")]
-async fn cluster_status(toc: web::Data<Arc<TableOfContent>>) -> impl Responder {
+async fn cluster_status(dispatcher: web::Data<Arc<Dispatcher>>) -> impl Responder {
     let timing = Instant::now();
-    let response = toc.cluster_status().await;
-    process_response(response, timing)
+    let response = dispatcher.cluster_status().await;
+    process_response(Ok(response), timing)
 }
 
 // Configure services

@@ -1,3 +1,4 @@
+use storage::Dispatcher;
 use tonic::{Request, Response, Status};
 
 use crate::common::collections::*;
@@ -12,15 +13,14 @@ use std::time::{Duration, Instant};
 
 use crate::tonic::api::collections_common::get;
 use storage::content_manager::conversions::error_to_status;
-use storage::content_manager::toc::TableOfContent;
 
 pub struct CollectionsService {
-    toc: Arc<TableOfContent>,
+    dispatcher: Arc<Dispatcher>,
 }
 
 impl CollectionsService {
-    pub fn new(toc: Arc<TableOfContent>) -> Self {
-        Self { toc }
+    pub fn new(dispatcher: Arc<Dispatcher>) -> Self {
+        Self { dispatcher }
     }
 
     async fn perform_operation<O>(
@@ -38,8 +38,8 @@ impl CollectionsService {
         let wait_timeout = operation.wait_timeout();
         let timing = Instant::now();
         let result = self
-            .toc
-            .submit_collection_operation(operation.try_into()?, wait_timeout)
+            .dispatcher
+            .submit_collection_meta_op(operation.try_into()?, wait_timeout)
             .await
             .map_err(error_to_status)?;
 
@@ -54,7 +54,7 @@ impl Collections for CollectionsService {
         &self,
         request: Request<GetCollectionInfoRequest>,
     ) -> Result<Response<GetCollectionInfoResponse>, Status> {
-        get(self.toc.as_ref(), request.into_inner(), None).await
+        get(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
     async fn list(
@@ -62,7 +62,7 @@ impl Collections for CollectionsService {
         _request: Request<ListCollectionsRequest>,
     ) -> Result<Response<ListCollectionsResponse>, Status> {
         let timing = Instant::now();
-        let result = do_list_collections(&self.toc).await;
+        let result = do_list_collections(&self.dispatcher).await;
 
         let response = ListCollectionsResponse::from((timing, result));
         Ok(Response::new(response))

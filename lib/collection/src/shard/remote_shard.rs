@@ -75,7 +75,7 @@ impl RemoteShard {
     }
 
     fn current_address(&self) -> CollectionResult<Uri> {
-        let guard_peer_address = self.channel_service.ip_to_address.read()?;
+        let guard_peer_address = self.channel_service.id_to_address.read();
         let peer_address = guard_peer_address.get(&self.peer_id).cloned();
         match peer_address {
             None => Err(CollectionError::service_error(format!(

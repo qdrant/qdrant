@@ -10,9 +10,8 @@ use std::{
 
 use anyhow::Context;
 use api::grpc::qdrant::{raft_client::RaftClient, PeerId, RaftMessage as GrpcRaftMessage};
-use storage::content_manager::{
-    consensus_ops::ConsensusOperations, errors::StorageError, toc::TableOfContentRef,
-};
+use storage::content_manager::consensus_state::ConsensusStateRef;
+use storage::content_manager::{consensus_ops::ConsensusOperations, errors::StorageError};
 
 use crate::common::helpers::IsReady;
 use crate::settings::ConsensusConfig;
@@ -21,7 +20,7 @@ use raft::{eraftpb::Message as RaftMessage, prelude::*, SoftState, StateRole};
 use tokio::runtime::Runtime;
 use tonic::transport::Uri;
 
-type Node = RawNode<TableOfContentRef>;
+type Node = RawNode<ConsensusStateRef>;
 
 pub enum Message {
     FromClient(Vec<u8>),
@@ -36,20 +35,22 @@ pub struct Consensus {
     bootstrap_uri: Option<Uri>,
     config: ConsensusConfig,
     pub is_leader_established: Arc<IsReady>,
+    transport_channel_pool: Arc<TransportChannelPool>,
 }
 
 impl Consensus {
     /// If `bootstrap_peer` peer is supplied, then either `uri` or `p2p_port` should be also supplied
     pub fn new(
         logger: &slog::Logger,
-        toc_ref: TableOfContentRef,
+        state_ref: ConsensusStateRef,
         bootstrap_peer: Option<Uri>,
         uri: Option<String>,
         p2p_port: Option<u32>,
         config: ConsensusConfig,
+        transport_channel_pool: Arc<TransportChannelPool>,
     ) -> anyhow::Result<(Self, SyncSender<Message>)> {
         let raft_config = Config {
-            id: toc_ref.this_peer_id(),
+            id: state_ref.this_peer_id(),
             ..Default::default()
         };
         raft_config.validate()?;
@@ -63,9 +64,9 @@ impl Consensus {
             .build()?;
         let is_leader_established = Arc::new(IsReady::default());
         let (sender, receiver) = mpsc::sync_channel(config.max_message_queue_size);
-        if toc_ref.is_raft_state_new()? {
+        if state_ref.is_new_deployment() {
             Self::init(
-                &toc_ref,
+                &state_ref,
                 bootstrap_peer.clone(),
                 uri,
                 p2p_port,
@@ -81,10 +82,10 @@ impl Consensus {
             }
             log::debug!("Local raft state found - skipping initialization");
         };
-        let mut node = Node::new(&raft_config, toc_ref.clone(), logger)?;
+        let mut node = Node::new(&raft_config, state_ref.clone(), logger)?;
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
-        toc_ref.apply_entries(&mut node)?;
+        state_ref.apply_entries(&mut node)?;
         Ok((
             Self {
                 node,
@@ -93,6 +94,7 @@ impl Consensus {
                 bootstrap_uri: bootstrap_peer,
                 config,
                 is_leader_established,
+                transport_channel_pool,
             },
             sender,
         ))
@@ -100,7 +102,7 @@ impl Consensus {
 
     #[allow(clippy::too_many_arguments)]
     fn init(
-        toc_ref: &TableOfContentRef,
+        state_ref: &ConsensusStateRef,
         bootstrap_peer: Option<Uri>,
         uri: Option<String>,
         p2p_port: Option<u32>,
@@ -115,7 +117,7 @@ impl Consensus {
                 return Err(anyhow::anyhow!("Failed to bootstrap peer as neither `internal rpc port` was configured nor `this peer uri` was supplied"));
             }
             runtime.block_on(Self::bootstrap(
-                toc_ref,
+                state_ref,
                 bootstrap_peer,
                 uri,
                 p2p_port,
@@ -128,7 +130,7 @@ impl Consensus {
             );
             // First peer needs to add its own address
             let message = Message::FromClient(serde_cbor::to_vec(&ConsensusOperations::AddPeer(
-                toc_ref.this_peer_id(),
+                state_ref.this_peer_id(),
                 uri.ok_or_else(|| anyhow::anyhow!("First peer should specify its uri."))?,
             ))?);
             thread::spawn(move || {
@@ -143,7 +145,7 @@ impl Consensus {
     }
 
     async fn bootstrap(
-        toc_ref: &TableOfContentRef,
+        state_ref: &ConsensusStateRef,
         bootstrap_peer: Uri,
         uri: Option<String>,
         p2p_port: Option<u32>,
@@ -157,7 +159,7 @@ impl Consensus {
         .await
         .context("Failed to create timeout channel")?;
         let mut client = RaftClient::new(channel);
-        let id = toc_ref.this_peer_id();
+        let id = state_ref.this_peer_id();
         let all_peers = client
             .add_peer_to_known(tonic::Request::new(
                 api::grpc::qdrant::AddPeerToKnownMessage {
@@ -172,7 +174,7 @@ impl Consensus {
         // Although peer addresses are synchronized with consensus, addresses need to be pre-fetched in the case of a new peer
         // or it will not know how to answer the Raft leader
         for peer in all_peers.all_peers {
-            toc_ref
+            state_ref
                 .add_peer(
                     peer.id,
                     peer.uri
@@ -228,17 +230,11 @@ impl Consensus {
             return;
         }
 
-        let store = self.node.raft.raft_log.store.clone();
+        let store = self.node.store().clone();
         // Get the `Ready` with `RawNode::ready` interface.
         let mut ready = self.node.ready();
         if !ready.messages().is_empty() {
-            if let Err(err) = handle_messages(
-                ready.take_messages(),
-                &store,
-                &self.runtime,
-                &self.bootstrap_uri,
-                &self.config,
-            ) {
+            if let Err(err) = self.handle_messages(ready.take_messages(), &store) {
                 log::error!("Failed to send messages: {err}")
             }
         }
@@ -272,13 +268,7 @@ impl Consensus {
             self.handle_soft_state(ss);
         }
         if !ready.persisted_messages().is_empty() {
-            if let Err(err) = handle_messages(
-                ready.take_persisted_messages(),
-                &store,
-                &self.runtime,
-                &self.bootstrap_uri,
-                &self.config,
-            ) {
+            if let Err(err) = self.handle_messages(ready.take_persisted_messages(), &store) {
                 log::error!("Failed to send messages: {err}")
             }
         }
@@ -292,13 +282,7 @@ impl Consensus {
                 log::error!("Failed to set commit index: {err}")
             }
         }
-        if let Err(err) = handle_messages(
-            light_rd.take_messages(),
-            &store,
-            &self.runtime,
-            &self.bootstrap_uri,
-            &self.config,
-        ) {
+        if let Err(err) = self.handle_messages(light_rd.take_messages(), &store) {
             log::error!("Failed to send messages: {err}")
         }
         // Apply all committed entries.
@@ -312,79 +296,76 @@ impl Consensus {
     }
 
     fn handle_soft_state(&self, state: &SoftState) {
-        self.node.raft.raft_log.store.set_raft_soft_state(state);
+        self.node.store().set_raft_soft_state(state);
         if state.raft_state == StateRole::Leader || state.raft_state == StateRole::Follower {
             self.is_leader_established.make_ready()
         } else {
             self.is_leader_established.make_not_ready()
         }
     }
+
+    fn handle_messages(
+        &self,
+        messages: Vec<RaftMessage>,
+        state: &ConsensusStateRef,
+    ) -> Result<(), StorageError> {
+        let peer_address_by_id = state.peer_address_by_id();
+        let messages_with_address: Vec<_> = messages
+            .into_iter()
+            .map(|message| {
+                let address = peer_address_by_id.get(&message.to).cloned();
+                (message, address)
+            })
+            .collect();
+        let bootstrap_uri = self.bootstrap_uri.clone();
+        let consensus_config_arc = Arc::new(self.config.clone());
+        let pool = self.transport_channel_pool.clone();
+        let future = async move {
+            let mut send_futures = Vec::new();
+            for (message, address) in messages_with_address {
+                let address = match address {
+                    Some(address) => address,
+                    None => match who_is(
+                        message.to,
+                        bootstrap_uri.clone(),
+                        consensus_config_arc.clone(),
+                    )
+                    .await
+                    {
+                        Ok(address) => address,
+                        Err(_) => {
+                            log::warn!(
+                                "Address of peer with ID {} not found. Message was not sent to it.",
+                                message.to
+                            );
+                            continue;
+                        }
+                    },
+                };
+                send_futures.push(send_message(address, message, pool.clone()));
+            }
+            for result in futures::future::join_all(send_futures).await {
+                if let Err(err) = result {
+                    log::warn!("Failed to send message: {err:#}")
+                }
+            }
+        };
+        // Raft does not need the responses and should not wait for timeouts
+        // so sending messages in parallel should be ok
+        self.runtime.spawn(future);
+        Ok(())
+    }
 }
 
 fn handle_committed_entries(
     entries: Vec<Entry>,
-    toc: &TableOfContentRef,
-    raw_node: &mut RawNode<TableOfContentRef>,
+    state: &ConsensusStateRef,
+    raw_node: &mut RawNode<ConsensusStateRef>,
 ) -> raft::Result<()> {
     if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
-        toc.set_unapplied_entries(first.index, last.index)?;
-        toc.apply_entries(raw_node)?;
+        state.set_unapplied_entries(first.index, last.index)?;
+        state.apply_entries(raw_node)?;
     }
-    Ok(())
-}
-
-fn handle_messages(
-    messages: Vec<RaftMessage>,
-    toc: &TableOfContentRef,
-    runtime: &Runtime,
-    bootstrap_uri: &Option<Uri>,
-    config: &ConsensusConfig,
-) -> Result<(), StorageError> {
-    let peer_address_by_id = toc.peer_address_by_id()?;
-    let messages_with_address: Vec<_> = messages
-        .into_iter()
-        .map(|message| {
-            let address = peer_address_by_id.get(&message.to).cloned();
-            (message, address)
-        })
-        .collect();
-    let bootstrap_uri = bootstrap_uri.clone();
-    let consensus_config_arc = Arc::new(config.clone());
-    // TableOfContentRef wraps a Arc<TableOfContent>
-    let toc_clone = toc.clone();
-    let future = async move {
-        let mut send_futures = Vec::new();
-        for (message, address) in messages_with_address {
-            let address = match address {
-                Some(address) => address,
-                None => match who_is(
-                    message.to,
-                    bootstrap_uri.clone(),
-                    consensus_config_arc.clone(),
-                )
-                .await
-                {
-                    Ok(address) => address,
-                    Err(_) => {
-                        log::warn!(
-                            "Address of peer with ID {} not found. Message was not sent to it.",
-                            message.to
-                        );
-                        continue;
-                    }
-                },
-            };
-            send_futures.push(send_message(toc_clone.clone(), address, message));
-        }
-        for result in futures::future::join_all(send_futures).await {
-            if let Err(err) = result {
-                log::warn!("Failed to send message: {err:#}")
-            }
-        }
-    };
-    // Raft does not need the responses and should not wait for timeouts
-    // so sending messages in parallel should be ok
-    runtime.spawn(future);
     Ok(())
 }
 
@@ -410,11 +391,11 @@ async fn who_is(
 }
 
 async fn send_message(
-    toc: TableOfContentRef,
     address: Uri,
     message: RaftMessage,
+    transport_channel_pool: Arc<TransportChannelPool>,
 ) -> anyhow::Result<()> {
-    let channel = toc
+    let channel = transport_channel_pool
         .get_or_create_pooled_channel(&address)
         .await
         .context("Failed to create timeout channel")?;
@@ -436,14 +417,18 @@ mod tests {
 
     use crate::settings::ConsensusConfig;
     use api::grpc::transport_channel_pool::TransportChannelPool;
+    use collection::ChannelService;
     use segment::types::Distance;
     use slog::Drain;
-    use storage::content_manager::toc::ConsensusEnabled;
-    use storage::content_manager::{
-        collection_meta_ops::{
-            CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
+    use storage::{
+        content_manager::{
+            collection_meta_ops::{
+                CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
+            },
+            consensus_state::{ConsensusState, ConsensusStateRef, Persistent},
+            toc::TableOfContent,
         },
-        toc::TableOfContent,
+        Dispatcher,
     };
     use tempdir::TempDir;
 
@@ -460,21 +445,27 @@ mod tests {
         let runtime = crate::create_search_runtime(settings.storage.performance.max_search_threads)
             .expect("Can't create runtime.");
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
-        let consensus_enabled = ConsensusEnabled {
-            propose_sender,
-            first_peer: true,
-            transport_channel_pool: TransportChannelPool::default(),
-        };
-        let toc = TableOfContent::new(&settings.storage, runtime, Some(consensus_enabled));
+        let persistent_state =
+            Persistent::load_or_init(&settings.storage.storage_path, true).unwrap();
+        let toc = TableOfContent::new(
+            &settings.storage,
+            runtime,
+            ChannelService::default(),
+            persistent_state.this_peer_id(),
+        );
         let toc_arc = Arc::new(toc);
+        let consensus_state: ConsensusStateRef =
+            ConsensusState::new(persistent_state, toc_arc.clone(), propose_sender).into();
+        let dispatcher = Dispatcher::new(toc_arc.clone()).with_consensus(consensus_state.clone());
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
         let (mut consensus, message_sender) = Consensus::new(
             &slog_logger,
-            toc_arc.clone().into(),
+            consensus_state.clone(),
             None,
             Some("http://127.0.0.1:6335".parse().unwrap()),
             None,
             ConsensusConfig::default(),
+            Arc::new(TransportChannelPool::default()),
         )
         .unwrap();
         let is_leader_established = consensus.is_leader_established.clone();
@@ -496,7 +487,7 @@ mod tests {
         thread::sleep(Duration::from_secs(10));
         // Leader election produces a raft log entry
         // Address commit also produces a raft log entry
-        assert_eq!(toc_arc.hard_state().unwrap().commit, 2);
+        assert_eq!(consensus_state.hard_state().commit, 2);
         // Initially there are 0 collections
         assert_eq!(toc_arc.all_collections_sync().len(), 0);
 
@@ -505,7 +496,7 @@ mod tests {
         // New runtime is used as timers need to be enabled.
         tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(toc_arc.submit_collection_operation(
+            .block_on(dispatcher.submit_collection_meta_op(
                 CollectionMetaOperations::CreateCollection(CreateCollectionOperation {
                     collection_name: "test".to_string(),
                     create_collection: CreateCollection {
@@ -523,7 +514,7 @@ mod tests {
             .unwrap();
 
         // Then
-        assert_eq!(toc_arc.hard_state().unwrap().commit, 3);
+        assert_eq!(consensus_state.hard_state().commit, 3);
         assert_eq!(toc_arc.all_collections_sync(), vec!["test"]);
     }
 }

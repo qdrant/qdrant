@@ -1,5 +1,7 @@
 #[cfg(all(test))]
 mod tests {
+    use std::sync::Arc;
+
     use collection::optimizers_builder::OptimizersConfig;
     use segment::types::Distance;
     use storage::{
@@ -11,6 +13,7 @@ mod tests {
             toc::TableOfContent,
         },
         types::{PerformanceConfig, StorageConfig},
+        Dispatcher,
     };
     use tempdir::TempDir;
     use tokio::runtime::Runtime;
@@ -42,10 +45,11 @@ mod tests {
         let runtime = Runtime::new().unwrap();
         let handle = runtime.handle().clone();
 
-        let toc = TableOfContent::new(&config, runtime, None);
+        let toc = Arc::new(TableOfContent::new(&config, runtime, Default::default(), 0));
+        let dispatcher = Dispatcher::new(toc);
 
         handle
-            .block_on(toc.submit_collection_operation(
+            .block_on(dispatcher.submit_collection_meta_op(
                 CollectionMetaOperations::CreateCollection(CreateCollectionOperation {
                     collection_name: "test".to_string(),
                     create_collection: CreateCollection {
@@ -63,7 +67,7 @@ mod tests {
             .unwrap();
 
         handle
-            .block_on(toc.submit_collection_operation(
+            .block_on(dispatcher.submit_collection_meta_op(
                 CollectionMetaOperations::ChangeAliases(ChangeAliasesOperation {
                     actions: vec![CreateAlias {
                             collection_name: "test".to_string(),
@@ -76,7 +80,7 @@ mod tests {
             .unwrap();
 
         handle
-            .block_on(toc.submit_collection_operation(
+            .block_on(dispatcher.submit_collection_meta_op(
                 CollectionMetaOperations::ChangeAliases(ChangeAliasesOperation {
                     actions: vec![
                             CreateAlias {
@@ -99,6 +103,8 @@ mod tests {
             ))
             .unwrap();
 
-        handle.block_on(toc.get_collection("test_alias3")).unwrap();
+        handle
+            .block_on(dispatcher.get_collection("test_alias3"))
+            .unwrap();
     }
 }

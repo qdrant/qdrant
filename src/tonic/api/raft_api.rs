@@ -6,20 +6,19 @@ use api::grpc::qdrant::{
 use itertools::Itertools;
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Message as RaftMessage};
 use std::sync::{mpsc::SyncSender, Arc, Mutex};
-use storage::content_manager::{consensus_ops::ConsensusOperations, toc::TableOfContent};
-use tonic::transport::Uri;
-use tonic::{async_trait, Request, Response, Status};
+use storage::{content_manager::consensus_ops::ConsensusOperations, Dispatcher};
+use tonic::{async_trait, transport::Uri, Request, Response, Status};
 
 pub struct RaftService {
     message_sender: Mutex<SyncSender<consensus::Message>>,
-    toc: Arc<TableOfContent>,
+    dispatcher: Arc<Dispatcher>,
 }
 
 impl RaftService {
-    pub fn new(sender: SyncSender<consensus::Message>, toc: Arc<TableOfContent>) -> Self {
+    pub fn new(sender: SyncSender<consensus::Message>, dispatcher: Arc<Dispatcher>) -> Self {
         Self {
             message_sender: Mutex::new(sender),
-            toc,
+            dispatcher,
         }
     }
 }
@@ -43,10 +42,7 @@ impl Raft for RaftService {
         &self,
         request: tonic::Request<PeerId>,
     ) -> Result<tonic::Response<UriStr>, tonic::Status> {
-        let addresses = self
-            .toc
-            .peer_address_by_id()
-            .map_err(|err| Status::internal(format!("Can't get peer addresses: {err}")))?;
+        let addresses = self.dispatcher.peer_address_by_id();
         let uri = addresses
             .get(&request.get_ref().id)
             .ok_or_else(|| Status::internal("Peer not found"))?;
@@ -79,14 +75,13 @@ impl Raft for RaftService {
             .map_err(|err| Status::internal(format!("Failed to parse uri: {err}")))?;
         let peer = request.into_inner();
         // the consensus operation can take up to DEFAULT_META_OP_WAIT
-        self.toc
-            .propose_consensus_op(ConsensusOperations::AddPeer(peer.id, uri_string), None)
+        self.dispatcher
+            .consensus_state()
+            .expect("RaftService should be started only if consensus is enabled")
+            .propose_consensus_op(ConsensusOperations::AddPeer(peer.id, uri.to_string()), None)
             .await
             .map_err(|err| Status::internal(format!("Failed to add peer: {err}")))?;
-        let addresses = self
-            .toc
-            .peer_address_by_id()
-            .map_err(|err| Status::internal(format!("Can't get peer addresses: {err}")))?;
+        let addresses = self.dispatcher.peer_address_by_id();
         // Make sure that the new peer is now present in the known addresses
         if !addresses.values().contains(&uri) {
             return Err(Status::internal(format!(

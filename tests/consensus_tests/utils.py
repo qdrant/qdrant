@@ -146,7 +146,7 @@ WAIT_TIME_SEC = 30
 RETRY_INTERVAL_SEC = 0.2
 
 
-def wait_for_leader_setup(peer_api_uri: str):
+def wait_peer_added(peer_api_uri: str):
     start = time.time()
     while not leader_is_defined(peer_api_uri):
         elapsed = time.time() - start
@@ -155,6 +155,8 @@ def wait_for_leader_setup(peer_api_uri: str):
             raise Exception(f"Leader was not established in time ({WAIT_TIME_SEC} sec)")
         else:
             time.sleep(RETRY_INTERVAL_SEC)
+    # It seems that waiting for leader to be recognised is not enough
+    time.sleep(3)
 
 
 def wait_for_uniform_cluster_size(peer_api_uris: [str]):
