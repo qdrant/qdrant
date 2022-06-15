@@ -17,7 +17,7 @@ def test_collection_after_peers_added(tmp_path: pathlib.Path):
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
-    wait_peer_added(bootstrap_api_uri)
+    leader = wait_peer_added(bootstrap_api_uri)
 
     for i in range(1, len(peer_dirs)):
         peer_api_uris.append(start_peer(
@@ -26,7 +26,7 @@ def test_collection_after_peers_added(tmp_path: pathlib.Path):
         wait_peer_added(peer_api_uris[i])
 
     # Wait for cluster
-    wait_for_uniform_cluster_size(peer_api_uris)
+    wait_for_uniform_cluster_status(peer_api_uris, leader)
 
     # Check that there are no collections on all peers
     for uri in peer_api_uris:

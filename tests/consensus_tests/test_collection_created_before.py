@@ -18,7 +18,7 @@ def test_collection_before_peers_added(tmp_path: pathlib.Path):
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
-    wait_peer_added(bootstrap_api_uri)
+    leader = wait_peer_added(bootstrap_api_uri)
 
     # Create collection
     r = requests.put(
@@ -37,7 +37,7 @@ def test_collection_before_peers_added(tmp_path: pathlib.Path):
         wait_peer_added(peer_api_uris[i])
 
     # Wait for cluster
-    wait_for_uniform_cluster_size(peer_api_uris)
+    wait_for_uniform_cluster_status(peer_api_uris, leader)
 
     # Check that it exists on all peers
     assert_collection_exists_on_all_peers("test_collection", peer_api_uris)
