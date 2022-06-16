@@ -37,7 +37,10 @@ impl LockedSegment {
             LockedSegment::Original(segment) => segment.clone(),
             LockedSegment::Proxy(proxy) => proxy.clone(),
         };
-        eprintln!("giving SegmentEntry from LockedSegment: {:?}", res.read().data_path());
+        eprintln!(
+            "giving SegmentEntry from LockedSegment: {:?}",
+            res.read().data_path()
+        );
         res
     }
 
@@ -45,15 +48,17 @@ impl LockedSegment {
         match self {
             LockedSegment::Original(segment) => match Arc::try_unwrap(segment) {
                 Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
-                Err(locked_segment) => Err(OperationError::service_error(
-                    &format!("Removing segment which is still in use: {:?}", locked_segment.read().data_path()),
-                )),
+                Err(locked_segment) => Err(OperationError::service_error(&format!(
+                    "Removing segment which is still in use: {:?}",
+                    locked_segment.read().data_path()
+                ))),
             },
             LockedSegment::Proxy(proxy) => match Arc::try_unwrap(proxy) {
                 Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
-                Err(locked_segment) => Err(OperationError::service_error(
-                    &format!("Removing segment which is still in use: {:?}", locked_segment.read().data_path()),
-                )),
+                Err(locked_segment) => Err(OperationError::service_error(&format!(
+                    "Removing segment which is still in use: {:?}",
+                    locked_segment.read().data_path()
+                ))),
             },
         }
     }
