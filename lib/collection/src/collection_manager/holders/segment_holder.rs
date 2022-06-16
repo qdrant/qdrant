@@ -33,15 +33,10 @@ impl LockedSegment {
     }
 
     pub fn get(&self) -> Arc<RwLock<dyn SegmentEntry>> {
-        let res: Arc<RwLock<dyn SegmentEntry>> = match self {
+        match self {
             LockedSegment::Original(segment) => segment.clone(),
             LockedSegment::Proxy(proxy) => proxy.clone(),
-        };
-        eprintln!(
-            "giving SegmentEntry from LockedSegment: {:?}",
-            res.read().data_path()
-        );
-        res
+        }
     }
 
     pub fn drop_data(self) -> OperationResult<()> {
