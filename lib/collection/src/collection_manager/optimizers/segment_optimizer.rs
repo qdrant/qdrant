@@ -421,17 +421,22 @@ pub trait SegmentOptimizer {
 
             let has_appendable_segments = write_segments.random_appendable_segment().is_some();
 
+            // Release reference counter of the optimized segments
+            drop(optimizing_segments);
             // Append a temp segment to a collection if it is not empty or there is no other appendable segment
             if tmp_segment.get().read().vectors_count() > 0 || !has_appendable_segments {
                 write_segments.add_locked(tmp_segment);
+                // Only remove data after we ensure the consistency of the collection.
+                // If remove fails - we will still have operational collection with reported error.
+                for proxy in proxies {
+                    proxy.drop_data()?;
+                }
             } else {
+                // Proxy contains pointer to the `tmp_segment`, so they should be removed first
+                for proxy in proxies {
+                    proxy.drop_data()?;
+                }
                 tmp_segment.drop_data()?;
-            }
-
-            // Only remove data after we ensure the consistency of the collection.
-            // If remove fails - we will till have operational collection with reported error.
-            for proxy in proxies {
-                proxy.drop_data()?;
             }
         }
         Ok(true)

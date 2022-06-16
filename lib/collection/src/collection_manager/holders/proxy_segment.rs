@@ -8,6 +8,7 @@ use segment::types::{
 };
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 type LockedRmSet = Arc<RwLock<HashSet<PointIdType>>>;
@@ -394,9 +395,12 @@ impl SegmentEntry for ProxySegment {
         }
     }
 
-    fn drop_data(&mut self) -> OperationResult<()> {
-        self.wrapped_segment.get().write().drop_data()?;
-        Ok(())
+    fn drop_data(self) -> OperationResult<()> {
+        self.wrapped_segment.drop_data()
+    }
+
+    fn data_path(&self) -> PathBuf {
+        self.wrapped_segment.get().read().data_path()
     }
 
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {

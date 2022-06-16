@@ -40,8 +40,22 @@ impl LockedSegment {
     }
 
     pub fn drop_data(self) -> OperationResult<()> {
-        self.get().write().drop_data()?;
-        Ok(())
+        match self {
+            LockedSegment::Original(segment) => match Arc::try_unwrap(segment) {
+                Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
+                Err(locked_segment) => Err(OperationError::service_error(&format!(
+                    "Removing segment which is still in use: {:?}",
+                    locked_segment.read().data_path()
+                ))),
+            },
+            LockedSegment::Proxy(proxy) => match Arc::try_unwrap(proxy) {
+                Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
+                Err(locked_segment) => Err(OperationError::service_error(&format!(
+                    "Removing segment which is still in use: {:?}",
+                    locked_segment.read().data_path()
+                ))),
+            },
+        }
     }
 }
 

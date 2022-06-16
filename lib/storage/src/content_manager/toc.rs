@@ -245,6 +245,7 @@ impl TableOfContent {
         if let Some(mut removed) = self.collections.write().await.remove(collection_name) {
             removed.before_drop().await;
             let path = self.get_collection_path(collection_name);
+            drop(removed);
             remove_dir_all(path).map_err(|err| StorageError::ServiceError {
                 description: format!(
                     "Can't delete collection {}, error: {}",
