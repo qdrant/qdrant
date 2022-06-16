@@ -254,7 +254,7 @@ checksum = "08f9b8508dccb7687a1d6c4ce66b2b0ecef467c94667de27d8d7fe1f8d2a9cdc"
 
 [[package]]
 name = "api"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "prost 0.10.1",
  "prost-types 0.10.1",
@@ -2595,7 +2595,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "actix-cors",
  "actix-web",
