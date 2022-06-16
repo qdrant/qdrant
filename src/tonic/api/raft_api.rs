@@ -106,7 +106,7 @@ impl Raft for RaftService {
         let mut change = ConfChangeV2::default();
         change.set_changes(vec![raft_proto::new_conf_change_single(
             request.get_ref().id,
-            ConfChangeType::AddNode,
+            ConfChangeType::AddLearnerNode,
         )]);
         self.message_sender
             .lock()
