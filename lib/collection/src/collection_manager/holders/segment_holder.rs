@@ -33,15 +33,29 @@ impl LockedSegment {
     }
 
     pub fn get(&self) -> Arc<RwLock<dyn SegmentEntry>> {
-        match self {
+        let res: Arc<RwLock<dyn SegmentEntry>> = match self {
             LockedSegment::Original(segment) => segment.clone(),
             LockedSegment::Proxy(proxy) => proxy.clone(),
-        }
+        };
+        eprintln!("giving SegmentEntry from LockedSegment: {:?}", res.read().data_path());
+        res
     }
 
     pub fn drop_data(self) -> OperationResult<()> {
-        self.get().write().drop_data()?;
-        Ok(())
+        match self {
+            LockedSegment::Original(segment) => match Arc::try_unwrap(segment) {
+                Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
+                Err(locked_segment) => Err(OperationError::service_error(
+                    &format!("Removing segment which is still in use: {:?}", locked_segment.read().data_path()),
+                )),
+            },
+            LockedSegment::Proxy(proxy) => match Arc::try_unwrap(proxy) {
+                Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
+                Err(locked_segment) => Err(OperationError::service_error(
+                    &format!("Removing segment which is still in use: {:?}", locked_segment.read().data_path()),
+                )),
+            },
+        }
     }
 }
 

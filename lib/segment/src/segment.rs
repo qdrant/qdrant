@@ -559,10 +559,12 @@ impl SegmentEntry for Segment {
         Ok(state.version)
     }
 
-    fn drop_data(&mut self) -> OperationResult<()> {
-        let mut deleted_path = self.current_path.clone();
+    fn drop_data(self) -> OperationResult<()> {
+        let current_path = self.current_path.clone();
+        drop(self);
+        let mut deleted_path = current_path.clone();
         deleted_path.set_extension("deleted");
-        rename(&self.current_path, &deleted_path)?;
+        rename(&current_path, &deleted_path)?;
         remove_dir_all(&deleted_path).map_err(|err| {
             OperationError::service_error(&format!(
                 "Can't remove segment data at {}, error: {}",
@@ -570,6 +572,10 @@ impl SegmentEntry for Segment {
                 err
             ))
         })
+    }
+
+    fn data_path(&self) -> PathBuf {
+        self.current_path.clone()
     }
 
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {

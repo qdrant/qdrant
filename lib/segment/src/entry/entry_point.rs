@@ -8,6 +8,7 @@ use atomicwrites::Error as AtomicIoError;
 use rocksdb::Error;
 use std::collections::HashMap;
 use std::io::Error as IoError;
+use std::path::PathBuf;
 use std::result;
 use thiserror::Error;
 
@@ -217,7 +218,10 @@ pub trait SegmentEntry {
     fn flush(&self) -> OperationResult<SeqNumberType>;
 
     /// Removes all persisted data and forces to destroy segment
-    fn drop_data(&mut self) -> OperationResult<()>;
+    fn drop_data(self) -> OperationResult<()>;
+
+    /// Path to data, owned by segment
+    fn data_path(&self) -> PathBuf;
 
     /// Delete field index, if exists
     fn delete_field_index(
