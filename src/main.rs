@@ -55,6 +55,8 @@ fn main() -> anyhow::Result<()> {
     let mut log_builder = env_logger::Builder::new();
 
     log_builder
+        // Timestamp in millis
+        .format_timestamp_millis()
         // Parse user defined log level configuration
         .parse_filters(&settings.log_level)
         // h2 is very verbose and we have many network operations,
