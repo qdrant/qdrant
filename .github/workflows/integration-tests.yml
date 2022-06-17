@@ -28,7 +28,7 @@ jobs:
         run: .github/scripts/protoc.sh
         shell: bash
       - name: Build
-        run: cargo build
+        run: cargo build --features service_debug
       - name: Run integration tests
         run: ./tests/integration-tests.sh
         shell: bash
@@ -56,7 +56,7 @@ jobs:
         run: .github/scripts/protoc.sh
         shell: bash
       - name: Build
-        run: cargo build
+        run: cargo build --features service_debug
       - name: Run integration tests - 1 peer
         run: ./tests/integration-tests.sh distributed
         shell: bash

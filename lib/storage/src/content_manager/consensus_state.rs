@@ -175,15 +175,18 @@ impl ConsensusState {
             .collect();
         let pending_operations = persistent.unapplied_entities_count();
         let soft_state = self.soft_state.read();
+        let leader = soft_state.as_ref().map(|state| state.leader_id);
+        let role = soft_state.as_ref().map(|state| state.raft_state.into());
+        let peer_id = persistent.this_peer_id;
         ClusterStatus::Enabled(ClusterInfo {
-            peer_id: self.this_peer_id(),
+            peer_id,
             peers,
             raft_info: RaftInfo {
                 term: hard_state.term,
                 commit: hard_state.commit,
                 pending_operations,
-                leader: soft_state.as_ref().map(|state| state.leader_id),
-                role: soft_state.as_ref().map(|state| state.raft_state.into()),
+                leader,
+                role,
             },
         })
     }
