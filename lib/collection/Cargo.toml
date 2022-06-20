@@ -34,7 +34,7 @@ merge = "0.1.0"
 async-trait = "0.1.56"
 arc-swap = "1.5.0"
 tonic = "0.7.2"
-tower = "0.4.12"
+tower = "0.4.13"
 
 segment = {path = "../segment"}
 api = {path = "../api"}
