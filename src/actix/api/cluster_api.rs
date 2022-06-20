@@ -7,7 +7,7 @@ use storage::Dispatcher;
 #[get("/cluster")]
 async fn cluster_status(dispatcher: web::Data<Arc<Dispatcher>>) -> impl Responder {
     let timing = Instant::now();
-    let response = dispatcher.cluster_status().await;
+    let response = dispatcher.cluster_status();
     process_response(Ok(response), timing)
 }
 

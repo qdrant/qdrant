@@ -158,7 +158,7 @@ impl ConsensusState {
         self.persistent.read().this_peer_id
     }
 
-    pub async fn cluster_status(&self) -> ClusterStatus {
+    pub fn cluster_status(&self) -> ClusterStatus {
         let persistent = self.persistent.read();
         let hard_state = &persistent.state.hard_state;
         let peers = persistent
