@@ -299,17 +299,16 @@ impl ConsensusState {
             });
         }
         let data: SnapshotData = snapshot.get_data().try_into()?;
-        self.persistent
-            .write()
-            .set_peer_address_by_id(data.address_by_id)?;
         self.toc.apply_collections_snapshot(data.collections_data)?;
         self.wal.lock().0.clear()?;
-        self.persistent.write().apply_state_update(move |state| {
+        let mut persistent = self.persistent.write();
+        persistent.set_peer_address_by_id(data.address_by_id)?;
+        persistent.apply_state_update(move |state| {
             state.conf_state = meta.get_conf_state().clone();
             state.hard_state.term = cmp::max(state.hard_state.term, meta.term);
             state.hard_state.commit = meta.index
         })?;
-        self.persistent.write().snapshot_applied()?;
+        persistent.snapshot_applied()?;
         Ok(())
     }
 

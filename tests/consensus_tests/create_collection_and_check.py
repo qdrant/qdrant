@@ -15,8 +15,6 @@ r = requests.put(
         "distance": "Dot",
         "shard_number": 6
     })
-print(r)
-print(r.json())
 assert r.status_code == 200
 
 # Wait

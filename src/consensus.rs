@@ -198,7 +198,7 @@ impl Consensus {
             match self.receiver.recv_timeout(timeout) {
                 Ok(Message::FromPeer(message)) => {
                     log::trace!(
-                        "Recieved a message from peer with progress: {:?}. Message: {:?}",
+                        "Received a message from peer with progress: {:?}. Message: {:?}",
                         self.node.raft.prs().get(message.from),
                         message
                     );
