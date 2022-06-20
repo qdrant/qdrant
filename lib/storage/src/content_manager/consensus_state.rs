@@ -130,7 +130,7 @@ pub struct ConsensusState {
     soft_state: RwLock<Option<SoftState>>,
     toc: Arc<TableOfContent>,
     on_consensus_op_apply:
-        RwLock<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
+        Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
     propose_sender: Mutex<Sender<Vec<u8>>>,
 }
 
@@ -269,7 +269,7 @@ impl ConsensusState {
 
     pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
         let operation: ConsensusOperations = entry.try_into()?;
-        let on_apply = self.on_consensus_op_apply.write().remove(&operation);
+        let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
         let result = match operation {
             ConsensusOperations::CollectionMeta(operation) => {
                 self.toc.perform_collection_meta_op_sync(*operation)
@@ -339,7 +339,7 @@ impl ConsensusState {
     ) -> Result<bool, StorageError> {
         let serialized = serde_cbor::to_vec(&operation)?;
         let (sender, receiver) = oneshot::channel();
-        self.on_consensus_op_apply.write().insert(operation, sender);
+        self.on_consensus_op_apply.lock().insert(operation, sender);
         self.propose_sender.lock().send(serialized)?;
         let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
         tokio::time::timeout(wait_timeout, receiver)
