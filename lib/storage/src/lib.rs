@@ -101,9 +101,9 @@ impl Dispatcher {
         }
     }
 
-    pub async fn cluster_status(&self) -> ClusterStatus {
+    pub fn cluster_status(&self) -> ClusterStatus {
         match self.consensus_state.as_ref() {
-            Some(state) => state.cluster_status().await,
+            Some(state) => state.cluster_status(),
             None => ClusterStatus::Disabled,
         }
     }
