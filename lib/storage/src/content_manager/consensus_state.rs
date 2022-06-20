@@ -125,7 +125,7 @@ impl ConsensusOpWal {
 }
 
 pub struct ConsensusState {
-    persistent: RwLock<Persistent>,
+    pub persistent: RwLock<Persistent>,
     wal: Mutex<ConsensusOpWal>,
     soft_state: RwLock<Option<SoftState>>,
     toc: Arc<TableOfContent>,
@@ -309,6 +309,7 @@ impl ConsensusState {
             state.hard_state.term = cmp::max(state.hard_state.term, meta.term);
             state.hard_state.commit = meta.index
         })?;
+        self.persistent.write().snapshot_applied()?;
         Ok(())
     }
 
@@ -513,6 +514,14 @@ impl UnappliedEntries {
         }
     }
 
+    fn get_last_applied(&self) -> Option<u64> {
+        match &self.0 {
+            Some((0, _)) => None,
+            Some((current, _)) => Some(current - 1),
+            None => None,
+        }
+    }
+
     pub fn len(&self) -> usize {
         match self.0 {
             None => 0,
@@ -533,6 +542,8 @@ pub struct Persistent {
     path: PathBuf,
     #[serde(skip)]
     new: bool,
+    /// Is `true` if the last update was from the snapshot.
+    snapshot_was_applied: bool,
 }
 
 impl Persistent {
@@ -553,7 +564,7 @@ impl Persistent {
             log::info!("Initializing new raft state at {}", path.display());
             Self::init(path, first_peer)?
         };
-        log::info!("State: {:?}", state.state());
+        log::debug!("State: {:?}", state);
         Ok(state)
     }
 
@@ -581,6 +592,12 @@ impl Persistent {
 
     pub fn entry_applied(&mut self) -> Result<(), StorageError> {
         self.unapplied_entries.applied();
+        self.snapshot_was_applied = false;
+        self.save()
+    }
+
+    pub fn snapshot_applied(&mut self) -> Result<(), StorageError> {
+        self.snapshot_was_applied = true;
         self.save()
     }
 
@@ -612,6 +629,14 @@ impl Persistent {
             log::debug!("Added peer with id {peer_id} and address {address}")
         }
         self.save()
+    }
+
+    pub fn last_applied_entry(&self) -> Option<u64> {
+        if self.snapshot_was_applied {
+            Some(self.state.hard_state.commit)
+        } else {
+            self.unapplied_entries.get_last_applied()
+        }
     }
 
     pub fn peer_address_by_id(&self) -> PeerAddressById {
@@ -649,6 +674,7 @@ impl Persistent {
             r#new: true,
             this_peer_id,
             path,
+            snapshot_was_applied: false,
         };
         state.save()?;
         Ok(state)
