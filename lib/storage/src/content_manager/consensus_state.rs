@@ -125,7 +125,7 @@ impl ConsensusOpWal {
 }
 
 pub struct ConsensusState {
-    persistent: RwLock<Persistent>,
+    pub persistent: RwLock<Persistent>,
     wal: Mutex<ConsensusOpWal>,
     soft_state: RwLock<Option<SoftState>>,
     toc: Arc<TableOfContent>,
@@ -299,16 +299,18 @@ impl ConsensusState {
             });
         }
         let data: SnapshotData = snapshot.get_data().try_into()?;
-        self.persistent
-            .write()
-            .set_peer_address_by_id(data.address_by_id)?;
         self.toc.apply_collections_snapshot(data.collections_data)?;
         self.wal.lock().0.clear()?;
-        self.persistent.write().apply_state_update(move |state| {
+        let mut persistent = self.persistent.write();
+        persistent.set_peer_address_by_id(data.address_by_id)?;
+        persistent.apply_state_update(move |state| {
             state.conf_state = meta.get_conf_state().clone();
             state.hard_state.term = cmp::max(state.hard_state.term, meta.term);
             state.hard_state.commit = meta.index
         })?;
+        persistent
+            .apply_progress_queue
+            .set_from_snapshot(meta.index);
         Ok(())
     }
 
@@ -487,9 +489,9 @@ type Current = u64;
 type Last = u64;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
-struct UnappliedEntries(Option<(Current, Last)>);
+struct EntryApplyProgressQueue(Option<(Current, Last)>);
 
-impl UnappliedEntries {
+impl EntryApplyProgressQueue {
     /// Return oldest un-applied entry id if any
     fn current(&self) -> Option<u64> {
         match self.0 {
@@ -513,6 +515,18 @@ impl UnappliedEntries {
         }
     }
 
+    fn get_last_applied(&self) -> Option<u64> {
+        match &self.0 {
+            Some((0, _)) => None,
+            Some((current, _)) => Some(current - 1),
+            None => None,
+        }
+    }
+
+    fn set_from_snapshot(&mut self, snapshot_at_commit: u64) {
+        self.0 = Some((snapshot_at_commit + 1, snapshot_at_commit))
+    }
+
     pub fn len(&self) -> usize {
         match self.0 {
             None => 0,
@@ -525,7 +539,7 @@ impl UnappliedEntries {
 pub struct Persistent {
     #[serde(with = "RaftStateDef")]
     state: RaftState,
-    unapplied_entries: UnappliedEntries,
+    apply_progress_queue: EntryApplyProgressQueue,
     #[serde(with = "serialize_peer_addresses")]
     pub peer_address_by_id: Arc<RwLock<PeerAddressById>>,
     this_peer_id: u64,
@@ -553,7 +567,7 @@ impl Persistent {
             log::info!("Initializing new raft state at {}", path.display());
             Self::init(path, first_peer)?
         };
-        log::info!("State: {:?}", state.state());
+        log::debug!("State: {:?}", state);
         Ok(state)
     }
 
@@ -562,7 +576,7 @@ impl Persistent {
     }
 
     pub fn unapplied_entities_count(&self) -> usize {
-        self.unapplied_entries.len()
+        self.apply_progress_queue.len()
     }
 
     pub fn apply_state_update(
@@ -576,11 +590,11 @@ impl Persistent {
     }
 
     pub fn current_unapplied_entry(&self) -> Option<u64> {
-        self.unapplied_entries.current()
+        self.apply_progress_queue.current()
     }
 
     pub fn entry_applied(&mut self) -> Result<(), StorageError> {
-        self.unapplied_entries.applied();
+        self.apply_progress_queue.applied();
         self.save()
     }
 
@@ -589,7 +603,7 @@ impl Persistent {
         first_index: u64,
         last_index: u64,
     ) -> Result<(), StorageError> {
-        self.unapplied_entries = UnappliedEntries(Some((first_index, last_index)));
+        self.apply_progress_queue = EntryApplyProgressQueue(Some((first_index, last_index)));
         self.save()
     }
 
@@ -612,6 +626,10 @@ impl Persistent {
             log::debug!("Added peer with id {peer_id} and address {address}")
         }
         self.save()
+    }
+
+    pub fn last_applied_entry(&self) -> Option<u64> {
+        self.apply_progress_queue.get_last_applied()
     }
 
     pub fn peer_address_by_id(&self) -> PeerAddressById {
@@ -644,7 +662,7 @@ impl Persistent {
                 // First vec is voters, second is learners.
                 conf_state: ConfState::from((learners, vec![])),
             },
-            unapplied_entries: Default::default(),
+            apply_progress_queue: Default::default(),
             peer_address_by_id: Default::default(),
             r#new: true,
             this_peer_id,
@@ -740,7 +758,7 @@ pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{Persistent, UnappliedEntries};
+    use super::{EntryApplyProgressQueue, Persistent};
 
     #[test]
     fn update_is_applied() {
@@ -779,7 +797,7 @@ mod tests {
 
     #[test]
     fn unapplied_entries() {
-        let mut entries = UnappliedEntries(Some((0, 2)));
+        let mut entries = EntryApplyProgressQueue(Some((0, 2)));
         assert_eq!(entries.current(), Some(0));
         assert_eq!(entries.len(), 3);
         entries.applied();

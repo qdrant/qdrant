@@ -197,10 +197,10 @@ impl Consensus {
         loop {
             match self.receiver.recv_timeout(timeout) {
                 Ok(Message::FromPeer(message)) => {
-                    log::debug!(
-                        "Proposing entry from peer {} with progress {:?}",
-                        message.from,
-                        self.node.raft.prs().get(message.from)
+                    log::trace!(
+                        "Received a message from peer with progress: {:?}. Message: {:?}",
+                        self.node.raft.prs().get(message.from),
+                        message
                     );
                     self.node.step(*message)?
                 }
@@ -241,7 +241,7 @@ impl Consensus {
         // Get the `Ready` with `RawNode::ready` interface.
         let mut ready = self.node.ready();
         if !ready.messages().is_empty() {
-            log::debug!("Handling {} messages", ready.messages().len());
+            log::trace!("Handling {} messages", ready.messages().len());
             if let Err(err) = self.handle_messages(ready.take_messages(), &store) {
                 log::error!("Failed to send messages: {err}")
             }
@@ -277,7 +277,7 @@ impl Consensus {
             self.handle_soft_state(ss);
         }
         if !ready.persisted_messages().is_empty() {
-            log::debug!(
+            log::trace!(
                 "Handling {} persisted messages",
                 ready.persisted_messages().len()
             );
@@ -371,10 +371,20 @@ impl Consensus {
 }
 
 fn handle_committed_entries(
-    entries: Vec<Entry>,
+    mut entries: Vec<Entry>,
     state: &ConsensusStateRef,
     raw_node: &mut RawNode<ConsensusStateRef>,
 ) -> raft::Result<()> {
+    if state.persistent.read().unapplied_entities_count() > 0 {
+        panic!("Preconditon broken - all committed entries must be applied before this fn call")
+    }
+    let last_applied = state.persistent.read().last_applied_entry();
+    if let Some(last_applied) = last_applied {
+        entries = entries
+            .into_iter()
+            .filter(|entry| entry.index > last_applied)
+            .collect();
+    }
     if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
         state.set_unapplied_entries(first.index, last.index)?;
         state.apply_entries(raw_node)?;
