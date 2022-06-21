@@ -2625,10 +2625,12 @@ dependencies = [
  "slog",
  "slog-stdlog",
  "storage",
+ "sys-info",
  "tempdir",
  "thiserror",
  "tokio",
  "tonic",
+ "uuid 1.1.2",
 ]
 
 [[package]]
@@ -3492,6 +3494,16 @@ checksum = "05bc2b72659ac27a2d0e7c4166c8596578197c4c41f767deab12c81f523b85c7"
 dependencies = [
  "log 0.3.9",
  "time 0.1.43",
+]
+
+[[package]]
+name = "sys-info"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b3a0d0aba8bf96a0e1ddfdc352fc53b3df7f39318c71854910c3c4b024ae52c"
+dependencies = [
+ "cc",
+ "libc",
 ]
 
 [[package]]

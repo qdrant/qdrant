@@ -5,6 +5,7 @@ mod consensus;
 mod greeting;
 mod settings;
 mod tonic;
+mod user_telemetry;
 
 use collection::ChannelService;
 use consensus::Consensus;
@@ -26,6 +27,7 @@ use storage::content_manager::toc::TableOfContent;
 use crate::common::helpers::create_search_runtime;
 use crate::greeting::welcome;
 use crate::settings::Settings;
+use crate::user_telemetry::UserTelemetryCollector;
 
 /// Qdrant (read: quadrant ) is a vector similarity search engine.
 /// It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.
@@ -73,6 +75,10 @@ fn main() -> anyhow::Result<()> {
     log_builder.init();
 
     welcome();
+
+    // create user telemetry collector and put settings to telemetry
+    let mut telemetry_collector = UserTelemetryCollector::new();
+    telemetry_collector.put_settings(settings.clone());
 
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it

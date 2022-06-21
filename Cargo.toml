@@ -35,6 +35,8 @@ anyhow = "1.0.58"
 futures = "0.3.21"
 clap = { version = "3.2.2", features = ["derive"] }
 serde_cbor = { version = "0.11.2"}
+uuid = { version = "1.1", features = ["v4", "serde"] }
+sys-info = "0.9.1"
 
 config = "~0.13.1"
 
