@@ -487,9 +487,9 @@ type Current = u64;
 type Last = u64;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
-struct UnappliedEntries(Option<(Current, Last)>);
+struct EntryApplyProgressQueue(Option<(Current, Last)>);
 
-impl UnappliedEntries {
+impl EntryApplyProgressQueue {
     /// Return oldest un-applied entry id if any
     fn current(&self) -> Option<u64> {
         match self.0 {
@@ -533,7 +533,7 @@ impl UnappliedEntries {
 pub struct Persistent {
     #[serde(with = "RaftStateDef")]
     state: RaftState,
-    unapplied_entries: UnappliedEntries,
+    apply_progress_queue: EntryApplyProgressQueue,
     #[serde(with = "serialize_peer_addresses")]
     pub peer_address_by_id: Arc<RwLock<PeerAddressById>>,
     this_peer_id: u64,
@@ -572,7 +572,7 @@ impl Persistent {
     }
 
     pub fn unapplied_entities_count(&self) -> usize {
-        self.unapplied_entries.len()
+        self.apply_progress_queue.len()
     }
 
     pub fn apply_state_update(
@@ -586,11 +586,11 @@ impl Persistent {
     }
 
     pub fn current_unapplied_entry(&self) -> Option<u64> {
-        self.unapplied_entries.current()
+        self.apply_progress_queue.current()
     }
 
     pub fn entry_applied(&mut self) -> Result<(), StorageError> {
-        self.unapplied_entries.applied();
+        self.apply_progress_queue.applied();
         self.snapshot_was_applied = false;
         self.save()
     }
@@ -605,7 +605,7 @@ impl Persistent {
         first_index: u64,
         last_index: u64,
     ) -> Result<(), StorageError> {
-        self.unapplied_entries = UnappliedEntries(Some((first_index, last_index)));
+        self.apply_progress_queue = EntryApplyProgressQueue(Some((first_index, last_index)));
         self.save()
     }
 
@@ -634,7 +634,7 @@ impl Persistent {
         if self.snapshot_was_applied {
             Some(self.state.hard_state.commit)
         } else {
-            self.unapplied_entries.get_last_applied()
+            self.apply_progress_queue.get_last_applied()
         }
     }
 
@@ -668,7 +668,7 @@ impl Persistent {
                 // First vec is voters, second is learners.
                 conf_state: ConfState::from((learners, vec![])),
             },
-            unapplied_entries: Default::default(),
+            apply_progress_queue: Default::default(),
             peer_address_by_id: Default::default(),
             r#new: true,
             this_peer_id,
@@ -765,7 +765,7 @@ pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{Persistent, UnappliedEntries};
+    use super::{EntryApplyProgressQueue, Persistent};
 
     #[test]
     fn update_is_applied() {
@@ -804,7 +804,7 @@ mod tests {
 
     #[test]
     fn unapplied_entries() {
-        let mut entries = UnappliedEntries(Some((0, 2)));
+        let mut entries = EntryApplyProgressQueue(Some((0, 2)));
         assert_eq!(entries.current(), Some(0));
         assert_eq!(entries.len(), 3);
         entries.applied();
