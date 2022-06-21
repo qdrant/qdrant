@@ -81,12 +81,16 @@ def make_peer_folders(base_path: Path, n_peers: int) -> list[Path]:
     return peer_dirs
 
 
-def print_cluster_info(peer_api_uris: [str]):
+def get_cluster_info(peer_api_uri: str) -> str:
+    r = requests.get(f"{peer_api_uri}/cluster")
+    assert_http_ok(r)
+    res = r.json()["result"]
+    return json.dumps(res, indent=4)
+
+
+def print_clusters_info(peer_api_uris: [str]):
     for uri in peer_api_uris:
-        r = requests.get(f"{uri}/cluster")
-        assert_http_ok(r)
-        res = r.json()["result"]
-        print(json.dumps(res, indent=4))
+        print(get_cluster_info(uri))
 
 
 def get_leader(peer_api_uri: str) -> str:
@@ -164,9 +168,8 @@ def collection_exists_on_all_peers(collection_name: str, peer_api_uris: [str]) -
         r = requests.get(f"{uri}/collections")
         assert_http_ok(r)
         collections = r.json()["result"]["collections"]
-        if len(collections) == 0:
-            return False
-        elif collections[0]["name"] != collection_name:
+        if len(collections) == 0 or collections[0]["name"] != collection_name:
+            print(f"Collection '{collection_name}' does not exist on peer {uri}")
             return False
         else:
             continue
@@ -174,20 +177,18 @@ def collection_exists_on_all_peers(collection_name: str, peer_api_uris: [str]) -
 
 
 WAIT_TIME_SEC = 30
-RETRY_INTERVAL_SEC = 0.2
+RETRY_INTERVAL_SEC = 0.5
 
 
-def wait_peer_added(peer_api_uri: str) -> str:
+def wait_peer_added(peer_api_uri: str, expected_size: int = 1) -> str:
     start = time.time()
-    while not leader_is_defined(peer_api_uri):
+    while not check_cluster_size(peer_api_uri, expected_size):
         elapsed = time.time() - start
         # do not wait more than WAIT_TIME_SEC
         if elapsed > WAIT_TIME_SEC:
-            raise Exception(f"Leader was not established in time ({WAIT_TIME_SEC} sec)")
+            raise Exception(f"Peer {peer_api_uri} did not join cluster in time ({WAIT_TIME_SEC} sec)")
         else:
             time.sleep(RETRY_INTERVAL_SEC)
-    # FIXME It seems that waiting for leader to be recognised is not enough
-    time.sleep(3)
     return get_leader(peer_api_uri)
 
 
@@ -198,7 +199,7 @@ def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str):
         # do not wait more than WAIT_TIME_SEC
         if elapsed > WAIT_TIME_SEC:
             # print cluster for debug
-            print_cluster_info(peer_api_uris)
+            print_clusters_info(peer_api_uris)
             raise Exception(f"Cluster size was not uniform in time ({WAIT_TIME_SEC} sec)")
         else:
             time.sleep(RETRY_INTERVAL_SEC)
@@ -207,10 +208,11 @@ def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str):
 def wait_for_uniform_collection_existence(collection_name: str, peer_api_uris: [str]):
     start = time.time()
     while not collection_exists_on_all_peers(collection_name, peer_api_uris):
-        print(f"Collection '{collection_name}' does not exist on all peers")
         elapsed = time.time() - start
         # do not wait more than WAIT_TIME_SEC
         if elapsed > WAIT_TIME_SEC:
+            # print cluster for debug
+            print_clusters_info(peer_api_uris)
             raise Exception(f"Collection existence was not uniform in time ({WAIT_TIME_SEC} sec)")
         else:
             time.sleep(RETRY_INTERVAL_SEC)
