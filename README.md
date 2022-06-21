@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-    <b>Vector Similarity Search Engine for the generation of AI applications</b>
+    <b>Vector Similarity Search Engine for the next generation of AI applications</b>
 </p>
 
 
