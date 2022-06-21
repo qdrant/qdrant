@@ -16,12 +16,12 @@ use atomicwrites::{AtomicFile, OverwriteBehavior::AllowOverwrite};
 use collection::{CollectionId, PeerId};
 use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::ConfChangeV2;
-use raft::RawNode;
 use raft::{eraftpb::Entry as RaftEntry, SoftState, Storage};
 use raft::{
     eraftpb::{ConfState, HardState},
     RaftState,
 };
+use raft::{GetEntriesContext, RawNode};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tonic::transport::Uri;
@@ -380,6 +380,7 @@ impl Storage for ConsensusState {
         low: u64,
         high: u64,
         max_size: impl Into<Option<u64>>,
+        _context: GetEntriesContext,
     ) -> raft::Result<Vec<RaftEntry>> {
         let max_size: Option<_> = max_size.into();
         self.wal.lock().entries(low, high, max_size)
@@ -410,7 +411,7 @@ impl Storage for ConsensusState {
         Ok(index)
     }
 
-    fn snapshot(&self, request_index: u64) -> raft::Result<raft::eraftpb::Snapshot> {
+    fn snapshot(&self, request_index: u64, _to: u64) -> raft::Result<raft::eraftpb::Snapshot> {
         let collections_data = self.toc.collections_snapshot_sync();
         let persistent = self.persistent.read();
         let raft_state = persistent.state().clone();
@@ -462,8 +463,9 @@ impl Storage for ConsensusStateRef {
         low: u64,
         high: u64,
         max_size: impl Into<Option<u64>>,
+        context: GetEntriesContext,
     ) -> raft::Result<Vec<RaftEntry>> {
-        self.0.entries(low, high, max_size)
+        self.0.entries(low, high, max_size, context)
     }
 
     fn term(&self, idx: u64) -> raft::Result<u64> {
@@ -478,8 +480,8 @@ impl Storage for ConsensusStateRef {
         self.0.last_index()
     }
 
-    fn snapshot(&self, request_index: u64) -> raft::Result<raft::eraftpb::Snapshot> {
-        self.0.snapshot(request_index)
+    fn snapshot(&self, request_index: u64, to: u64) -> raft::Result<raft::eraftpb::Snapshot> {
+        self.0.snapshot(request_index, to)
     }
 }
 
