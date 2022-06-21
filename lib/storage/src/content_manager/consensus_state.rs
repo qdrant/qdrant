@@ -308,7 +308,9 @@ impl ConsensusState {
             state.hard_state.term = cmp::max(state.hard_state.term, meta.term);
             state.hard_state.commit = meta.index
         })?;
-        persistent.snapshot_applied()?;
+        persistent
+            .apply_progress_queue
+            .set_from_snapshot(meta.index);
         Ok(())
     }
 
@@ -521,6 +523,10 @@ impl EntryApplyProgressQueue {
         }
     }
 
+    fn set_from_snapshot(&mut self, snapshot_at_commit: u64) {
+        self.0 = Some((snapshot_at_commit + 1, snapshot_at_commit))
+    }
+
     pub fn len(&self) -> usize {
         match self.0 {
             None => 0,
@@ -541,8 +547,6 @@ pub struct Persistent {
     path: PathBuf,
     #[serde(skip)]
     new: bool,
-    /// Is `true` if the last update was from the snapshot.
-    snapshot_was_applied: bool,
 }
 
 impl Persistent {
@@ -591,12 +595,6 @@ impl Persistent {
 
     pub fn entry_applied(&mut self) -> Result<(), StorageError> {
         self.apply_progress_queue.applied();
-        self.snapshot_was_applied = false;
-        self.save()
-    }
-
-    pub fn snapshot_applied(&mut self) -> Result<(), StorageError> {
-        self.snapshot_was_applied = true;
         self.save()
     }
 
@@ -631,11 +629,7 @@ impl Persistent {
     }
 
     pub fn last_applied_entry(&self) -> Option<u64> {
-        if self.snapshot_was_applied {
-            Some(self.state.hard_state.commit)
-        } else {
-            self.apply_progress_queue.get_last_applied()
-        }
+        self.apply_progress_queue.get_last_applied()
     }
 
     pub fn peer_address_by_id(&self) -> PeerAddressById {
@@ -673,7 +667,6 @@ impl Persistent {
             r#new: true,
             this_peer_id,
             path,
-            snapshot_was_applied: false,
         };
         state.save()?;
         Ok(state)
