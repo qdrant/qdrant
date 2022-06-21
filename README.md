@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-    <b>Vector Similarity Search Engine for the next generation of AI applications</b>
+    <b>Vector Search Engine for the next generation of AI applications</b>
 </p>
 
 
@@ -203,6 +203,7 @@ Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/).
 * Subscribe to our [Newsletters](https://qdrant.to/newsletter)
 * Write us an email [info@qdrant.tech](mailto:info@qdrant.tech)
 
+Building something special with Qdrant? We can [help](https://qdrant.tech/pricing/)!
 
 ## Contributors ✨
 
