@@ -375,10 +375,15 @@ fn handle_committed_entries(
     state: &ConsensusStateRef,
     raw_node: &mut RawNode<ConsensusStateRef>,
 ) -> raft::Result<()> {
-    if state.persistent.read().unapplied_entities_count() > 0 {
-        panic!("Preconditon broken - all committed entries must be applied before this fn call")
-    }
-    let last_applied = state.persistent.read().last_applied_entry();
+    let last_applied = {
+        let persistent = state.persistent.read();
+        if persistent.unapplied_entities_count() > 0 {
+            panic!(
+                "Precondition broken - all committed entries must be applied before this fn call"
+            )
+        }
+        persistent.last_applied_entry()
+    };
     if let Some(last_applied) = last_applied {
         entries = entries
             .into_iter()
