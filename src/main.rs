@@ -66,7 +66,7 @@ fn main() -> anyhow::Result<()> {
         .filter_module("h2", LevelFilter::Error)
         .filter_module("tower", LevelFilter::Warn);
 
-    if dbg!(is_info) {
+    if is_info {
         // Additionally filter verbose modules if no extended logging configuration is provided
         log_builder
             .filter_module("wal", LevelFilter::Warn)

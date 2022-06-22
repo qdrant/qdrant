@@ -871,6 +871,20 @@ mod tests {
 
     #[test]
     fn at_least_1_entry() {
-        todo!()
+        let dir = tempdir::TempDir::new("raft_state_test").unwrap();
+        let mut wal = ConsensusOpWal::new(dir.path().to_str().unwrap());
+        wal.append_entries(vec![
+            Entry {
+                index: 4,
+                ..Default::default()
+            },
+            Entry {
+                index: 5,
+                ..Default::default()
+            },
+        ])
+        .unwrap();
+        // Even when `max_size` is `0` this fn should return at least 1 entry
+        assert_eq!(wal.entries(4, 5, Some(0)).unwrap().len(), 1)
     }
 }
