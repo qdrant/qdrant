@@ -307,7 +307,7 @@ impl ConsensusState {
         self.wal.lock().0.clear()?;
         self.persistent
             .write()
-            .update_from_snapshot(&meta, data.address_by_id)?;
+            .update_from_snapshot(meta, data.address_by_id)?;
         Ok(())
     }
 

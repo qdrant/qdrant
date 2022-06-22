@@ -2,7 +2,7 @@ import pathlib
 
 from .utils import *
 
-N_PEERS = 3
+N_PEERS = 5
 
 
 def test_collection_after_peers_added(tmp_path: pathlib.Path):
