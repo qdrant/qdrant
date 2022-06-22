@@ -78,8 +78,11 @@ impl ProxySegment {
         Ok(false)
     }
 
-    fn add_deleted_points_condition_to_filter(&self, filter: Option<&Filter>) -> Filter {
-        let deleted_points = self.deleted_points.read();
+    fn add_deleted_points_condition_to_filter(
+        &self,
+        filter: Option<&Filter>,
+        deleted_points: &HashSet<PointIdType>,
+    ) -> Filter {
         let wrapper_condition = Condition::HasId(deleted_points.clone().into());
         match filter {
             None => Filter::new_must_not(wrapper_condition),
@@ -137,7 +140,8 @@ impl SegmentEntry for ProxySegment {
             // ToDo: Come up with better way to pass deleted points into Filter
             // e.g. implement AtomicRefCell for Serializer.
             // This copy might slow process down if there will be a lot of deleted points
-            let wrapped_filter = self.add_deleted_points_condition_to_filter(filter);
+            let wrapped_filter =
+                self.add_deleted_points_condition_to_filter(filter, &deleted_points);
 
             self.wrapped_segment.get().read().search(
                 vector,
@@ -304,7 +308,8 @@ impl SegmentEntry for ProxySegment {
                 .read()
                 .read_filtered(offset, limit, filter)
         } else {
-            let wrapped_filter = self.add_deleted_points_condition_to_filter(filter);
+            let wrapped_filter =
+                self.add_deleted_points_condition_to_filter(filter, &deleted_points);
             self.wrapped_segment
                 .get()
                 .read()
