@@ -48,11 +48,11 @@ tonic = "0.7.2"
 num-traits = "0.2.15"
 
 # Consensus related crates
-raft = { version = "=0.6.0", features = ["prost-codec"], default-features = false }
+raft = { git = "https://github.com/tikv/raft-rs", rev = "52d84aac8734369d81c2d77413ea3ab8e58e0af9", features = ["prost-codec"], default-features = false }
 slog = "2.7.0"
 slog-stdlog = "4.1.1"
-prost = "=0.7.0"
-raft-proto = { version = "=0.6.0", features = ["prost-codec"], default-features = false}
+prost = "=0.9.0"
+raft-proto = {  git = "https://github.com/tikv/raft-rs", rev = "52d84aac8734369d81c2d77413ea3ab8e58e0af9", features = ["prost-codec"], default-features = false}
 
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
