@@ -184,6 +184,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "BurtonQin",
+      "name": "Boqin Qin(秦 伯钦)",
+      "avatar_url": "https://avatars.githubusercontent.com/u/11943383?v=4",
+      "profile": "http://burtonqin.github.io",
+      "contributions": [
+        "bug"
+      ]
     }
   ],
   "contributorsPerLine": 7,
