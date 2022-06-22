@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::operations::config_diff::DiffConfig;
-use crate::operations::types::PointRequest;
+use crate::operations::types::{BatchSearchRequest, PointRequest};
 use crate::operations::OperationToShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::{ShardConfig, ShardType};
@@ -609,6 +609,42 @@ impl Collection {
         };
 
         Ok(top_result)
+    }
+
+    pub async fn batch_search(
+        &self,
+        request: BatchSearchRequest,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        search_runtime_handle: &Handle,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let batch_result_futures = request
+            .batch
+            .into_iter()
+            .map(|query| SearchRequest {
+                vector: query.vector,
+                filter: query.filter,
+                params: request.params,
+                top: request.top,
+                with_payload: request.with_payload.clone(),
+                with_vector: request.with_vector,
+                score_threshold: request.score_threshold,
+            })
+            .map(|request| {
+                self.search(
+                    request,
+                    segment_searcher,
+                    search_runtime_handle,
+                    shard_selection,
+                )
+            });
+
+        let batch_result = try_join_all(batch_result_futures)
+            .await?
+            .into_iter()
+            .collect();
+
+        Ok(batch_result)
     }
 
     pub async fn scroll_by(
