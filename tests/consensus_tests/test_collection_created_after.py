@@ -23,7 +23,6 @@ def test_collection_after_peers_added(tmp_path: pathlib.Path):
         peer_api_uris.append(start_peer(
             peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri))
         # Add peers one by one sequentially
-        wait_peer_added(peer_api_uris[i], i + 1)
 
     # Wait for cluster
     wait_for_uniform_cluster_status(peer_api_uris, leader)

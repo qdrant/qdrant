@@ -49,6 +49,7 @@ impl Consensus {
         config: ConsensusConfig,
         transport_channel_pool: Arc<TransportChannelPool>,
     ) -> anyhow::Result<(Self, SyncSender<Message>)> {
+        // FIXME: Set applied index here instead checking it in committed entries
         let raft_config = Config {
             id: state_ref.this_peer_id(),
             ..Default::default()
@@ -197,11 +198,21 @@ impl Consensus {
         loop {
             match self.receiver.recv_timeout(timeout) {
                 Ok(Message::FromPeer(message)) => {
-                    log::trace!(
-                        "Received a message from peer with progress: {:?}. Message: {:?}",
-                        self.node.raft.prs().get(message.from),
-                        message
-                    );
+                    if message.get_msg_type() == MessageType::MsgHeartbeat
+                        || message.get_msg_type() == MessageType::MsgHeartbeatResponse
+                    {
+                        log::trace!(
+                            "Received a message from peer with progress: {:?}. Message: {:?}",
+                            self.node.raft.prs().get(message.from),
+                            message
+                        );
+                    } else {
+                        log::debug!(
+                            "Received a message from peer with progress: {:?}. Message: {:?}",
+                            self.node.raft.prs().get(message.from),
+                            message
+                        );
+                    }
                     self.node.step(*message)?
                 }
                 Ok(Message::FromClient(message)) => {

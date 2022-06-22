@@ -14,8 +14,10 @@ use std::{
 use crate::types::{ClusterInfo, ClusterStatus, PeerAddressById, PeerInfo, RaftInfo};
 use atomicwrites::{AtomicFile, OverwriteBehavior::AllowOverwrite};
 use collection::{CollectionId, PeerId};
+use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
-use raft::eraftpb::ConfChangeV2;
+use raft::eraftpb::{ConfChangeV2, SnapshotMetadata};
+use raft::util::limit_size;
 use raft::{eraftpb::Entry as RaftEntry, SoftState, Storage};
 use raft::{
     eraftpb::{ConfState, HardState},
@@ -75,6 +77,9 @@ impl ConsensusOpWal {
             .first_entry()
             .map_err(raft_error_other)?
             .ok_or(raft::Error::Store(raft::StorageError::Unavailable))?;
+        if id < first_entry.index {
+            return Err(raft::Error::Store(raft::StorageError::Compacted));
+        }
         // Due to snapshots there might be different offsets between wal index and raft entry index
         let offset = first_entry.index - self.0.first_index();
         <RaftEntry as prost::Message>::decode(
@@ -87,10 +92,9 @@ impl ConsensusOpWal {
     }
 
     fn entries(&self, low: u64, high: u64, max_size: Option<u64>) -> raft::Result<Vec<RaftEntry>> {
-        (low..high)
-            .take(max_size.unwrap_or(high - low + 1) as usize)
-            .map(|id| self.entry(id))
-            .collect()
+        let mut entries = (low..high).map(|id| self.entry(id)).try_collect()?;
+        limit_size(&mut entries, max_size);
+        Ok(entries)
     }
 
     pub fn first_entry(&self) -> Result<Option<RaftEntry>, StorageError> {
@@ -301,16 +305,9 @@ impl ConsensusState {
         let data: SnapshotData = snapshot.get_data().try_into()?;
         self.toc.apply_collections_snapshot(data.collections_data)?;
         self.wal.lock().0.clear()?;
-        let mut persistent = self.persistent.write();
-        persistent.set_peer_address_by_id(data.address_by_id)?;
-        persistent.apply_state_update(move |state| {
-            state.conf_state = meta.get_conf_state().clone();
-            state.hard_state.term = cmp::max(state.hard_state.term, meta.term);
-            state.hard_state.commit = meta.index
-        })?;
-        persistent
-            .apply_progress_queue
-            .set_from_snapshot(meta.index);
+        self.persistent
+            .write()
+            .update_from_snapshot(meta, data.address_by_id)?;
         Ok(())
     }
 
@@ -388,9 +385,9 @@ impl Storage for ConsensusState {
 
     fn term(&self, idx: u64) -> raft::Result<u64> {
         let persistent = self.persistent.read();
-        let raft_state = persistent.state();
-        if idx == raft_state.hard_state.commit {
-            return Ok(raft_state.hard_state.term);
+        let snapshot_meta = persistent.latest_snapshot_meta();
+        if idx == snapshot_meta.index {
+            return Ok(snapshot_meta.term);
         }
         Ok(self.wal.lock().entry(idx)?.term)
     }
@@ -398,7 +395,7 @@ impl Storage for ConsensusState {
     fn first_index(&self) -> raft::Result<u64> {
         let index = match self.wal.lock().first_entry().map_err(raft_error_other)? {
             Some(entry) => entry.index,
-            None => self.persistent.read().state().hard_state.commit + 1,
+            None => self.persistent.read().latest_snapshot_meta().index + 1,
         };
         Ok(index)
     }
@@ -406,7 +403,7 @@ impl Storage for ConsensusState {
     fn last_index(&self) -> raft::Result<u64> {
         let index = match self.wal.lock().last_entry().map_err(raft_error_other)? {
             Some(entry) => entry.index,
-            None => self.persistent.read().state().hard_state.commit,
+            None => self.persistent.read().latest_snapshot_meta().index,
         };
         Ok(index)
     }
@@ -541,6 +538,7 @@ impl EntryApplyProgressQueue {
 pub struct Persistent {
     #[serde(with = "RaftStateDef")]
     state: RaftState,
+    latest_snapshot_meta: SnapshotMetadataSer,
     apply_progress_queue: EntryApplyProgressQueue,
     #[serde(with = "serialize_peer_addresses")]
     pub peer_address_by_id: Arc<RwLock<PeerAddressById>>,
@@ -554,6 +552,24 @@ pub struct Persistent {
 impl Persistent {
     pub fn state(&self) -> &RaftState {
         &self.state
+    }
+
+    pub fn latest_snapshot_meta(&self) -> &SnapshotMetadataSer {
+        &self.latest_snapshot_meta
+    }
+
+    pub fn update_from_snapshot(
+        &mut self,
+        meta: &SnapshotMetadata,
+        address_by_id: PeerAddressById,
+    ) -> Result<(), StorageError> {
+        *self.peer_address_by_id.write() = address_by_id;
+        self.state.conf_state = meta.get_conf_state().clone();
+        self.state.hard_state.term = cmp::max(self.state.hard_state.term, meta.term);
+        self.state.hard_state.commit = meta.index;
+        self.apply_progress_queue.set_from_snapshot(meta.index);
+        self.latest_snapshot_meta = meta.into();
+        self.save()
     }
 
     pub fn load_or_init(
@@ -669,6 +685,7 @@ impl Persistent {
             r#new: true,
             this_peer_id,
             path,
+            latest_snapshot_meta: Default::default(),
         };
         state.save()?;
         Ok(state)
@@ -717,6 +734,21 @@ mod serialize_peer_addresses {
     }
 }
 
+#[derive(Serialize, Deserialize, Default, Debug)]
+pub struct SnapshotMetadataSer {
+    term: u64,
+    index: u64,
+}
+
+impl From<&SnapshotMetadata> for SnapshotMetadataSer {
+    fn from(meta: &SnapshotMetadata) -> Self {
+        Self {
+            term: meta.term,
+            index: meta.index,
+        }
+    }
+}
+
 /// Definition of struct to help with serde serialization.
 /// Should be used only in `[serde(with=...)]`
 #[derive(Serialize, Deserialize)]
@@ -760,7 +792,9 @@ pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{EntryApplyProgressQueue, Persistent};
+    use raft::eraftpb::Entry;
+
+    use super::{ConsensusOpWal, EntryApplyProgressQueue, Persistent};
 
     #[test]
     fn update_is_applied() {
@@ -811,5 +845,46 @@ mod tests {
         entries.applied();
         assert_eq!(entries.current(), None);
         assert_eq!(entries.len(), 0);
+    }
+
+    #[test]
+    fn correct_entry_with_offset() {
+        let dir = tempdir::TempDir::new("raft_state_test").unwrap();
+        let mut wal = ConsensusOpWal::new(dir.path().to_str().unwrap());
+        wal.append_entries(vec![Entry {
+            index: 4,
+            ..Default::default()
+        }])
+        .unwrap();
+        wal.append_entries(vec![Entry {
+            index: 5,
+            ..Default::default()
+        }])
+        .unwrap();
+        wal.append_entries(vec![Entry {
+            index: 6,
+            ..Default::default()
+        }])
+        .unwrap();
+        assert_eq!(wal.entry(5).unwrap().index, 5)
+    }
+
+    #[test]
+    fn at_least_1_entry() {
+        let dir = tempdir::TempDir::new("raft_state_test").unwrap();
+        let mut wal = ConsensusOpWal::new(dir.path().to_str().unwrap());
+        wal.append_entries(vec![
+            Entry {
+                index: 4,
+                ..Default::default()
+            },
+            Entry {
+                index: 5,
+                ..Default::default()
+            },
+        ])
+        .unwrap();
+        // Even when `max_size` is `0` this fn should return at least 1 entry
+        assert_eq!(wal.entries(4, 5, Some(0)).unwrap().len(), 1)
     }
 }

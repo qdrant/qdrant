@@ -63,7 +63,8 @@ fn main() -> anyhow::Result<()> {
         .parse_filters(&settings.log_level)
         // h2 is very verbose and we have many network operations,
         // so it is limited to only errors
-        .filter_module("h2", LevelFilter::Error);
+        .filter_module("h2", LevelFilter::Error)
+        .filter_module("tower", LevelFilter::Warn);
 
     if is_info {
         // Additionally filter verbose modules if no extended logging configuration is provided
