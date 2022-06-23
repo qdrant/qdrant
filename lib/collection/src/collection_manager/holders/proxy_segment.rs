@@ -78,7 +78,9 @@ impl ProxySegment {
             let mut deleted_points_write = RwLockUpgradableReadGuard::upgrade(deleted_points_guard);
             deleted_points_write.insert(point_id);
             self.deleted_points_count.fetch_add(1, Ordering::Relaxed);
-            debug_assert!(self.deleted_points_count.load(Ordering::Relaxed) <= deleted_points_guard.len());
+            debug_assert!(
+                self.deleted_points_count.load(Ordering::Relaxed) <= deleted_points_guard.len()
+            );
         }
 
         let segment_arc = self.write_segment.get();
