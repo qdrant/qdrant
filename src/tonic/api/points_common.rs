@@ -1,18 +1,20 @@
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_get_points, do_scroll_points, do_search_points, do_set_payload, do_update_points,
-    CreateFieldIndex,
+    do_get_points, do_scroll_points, do_search_points, do_search_points_batch, do_set_payload,
+    do_update_points, CreateFieldIndex,
 };
 use api::grpc::conversions::proto_to_payloads;
 use api::grpc::qdrant::{
-    ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
+    BatchResult, ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
     DeletePayloadPoints, DeletePoints, FieldType, GetPoints, GetResponse, PointsOperationResponse,
-    RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse,
-    SetPayloadPoints, UpsertPoints,
+    RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse,
+    SearchPoints, SearchPointsBatch, SearchResponse, SetPayloadPoints, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{PointInsertOperations, PointOperations};
-use collection::operations::types::{PointRequest, ScrollRequest, SearchRequest};
+use collection::operations::types::{
+    BatchSearchRequest, PointRequest, Query, ScrollRequest, SearchRequest,
+};
 use collection::operations::CollectionUpdateOperations;
 use collection::shard::ShardId;
 use segment::types::PayloadSchemaType;
@@ -304,6 +306,62 @@ pub async fn search(
         result: scored_points
             .into_iter()
             .map(|point| point.into())
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn search_batch(
+    toc: &TableOfContent,
+    search_points_batch: SearchPointsBatch,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<SearchBatchResponse>, Status> {
+    let SearchPointsBatch {
+        collection_name,
+        batch,
+        top,
+        with_vector,
+        with_payload,
+        params,
+        score_threshold,
+    } = search_points_batch;
+
+    let mut query_batch = Vec::new();
+    for query in batch.into_iter() {
+        let q = Query {
+            vector: query.vector,
+            filter: query.filter.map(|f| f.try_into()).transpose()?,
+        };
+        query_batch.push(q);
+    }
+
+    let search_request = BatchSearchRequest {
+        batch: query_batch,
+        params: params.map(|p| p.into()),
+        top: top as usize,
+        with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
+        with_vector: with_vector.unwrap_or(false),
+        score_threshold,
+    };
+
+    let timing = Instant::now();
+
+    let scored_points_batch =
+        do_search_points_batch(toc, &collection_name, search_request, shard_selection)
+            .await
+            .map_err(error_to_status)?;
+
+    let response = SearchBatchResponse {
+        result: scored_points_batch
+            .into_iter()
+            .map(|scored_points| BatchResult {
+                result: scored_points
+                    .into_iter()
+                    .map(|point| point.into())
+                    .collect(),
+            })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
     };

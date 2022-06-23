@@ -15,6 +15,7 @@ service PointsInternal {
   rpc CreateFieldIndex (CreateFieldIndexCollectionInternal) returns (PointsOperationResponse) {}
   rpc DeleteFieldIndex (DeleteFieldIndexCollectionInternal) returns (PointsOperationResponse) {}
   rpc Search (SearchPointsInternal) returns (SearchResponse) {}
+  rpc SearchBatch (SearchPointsBatchInternal) returns (SearchBatchResponse) {}
   rpc Scroll (ScrollPointsInternal) returns (ScrollResponse) {}
   rpc Recommend (RecommendPointsInternal) returns (RecommendResponse) {}
   rpc Get (GetPointsInternal) returns (GetResponse) {}
@@ -57,6 +58,11 @@ message DeleteFieldIndexCollectionInternal {
 
 message SearchPointsInternal {
   SearchPoints search_points = 1;
+  uint32 shard_id = 2;
+}
+
+message SearchPointsBatchInternal {
+  SearchPointsBatch batch = 1;
   uint32 shard_id = 2;
 }
 

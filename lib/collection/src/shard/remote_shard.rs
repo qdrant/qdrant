@@ -1,5 +1,6 @@
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::PointOperations;
+use crate::operations::types::BatchSearchRequest;
 use crate::operations::FieldIndexOperations;
 use crate::shard::conversions::{
     internal_clear_payload, internal_clear_payload_by_filter, internal_create_index,
@@ -16,8 +17,9 @@ use crate::{
 use api::grpc::qdrant::{
     collections_internal_client::CollectionsInternalClient,
     points_internal_client::PointsInternalClient, GetCollectionInfoRequest,
-    GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal, ScrollPoints,
-    ScrollPointsInternal, SearchPoints, SearchPointsInternal,
+    GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal, Query, ScrollPoints,
+    ScrollPointsInternal, SearchPoints, SearchPointsBatch, SearchPointsBatchInternal,
+    SearchPointsInternal,
 };
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
@@ -254,6 +256,51 @@ impl ShardOperation for &RemoteShard {
             .into_iter()
             .map(|scored| scored.try_into())
             .collect();
+        result.map_err(|e| e.into())
+    }
+
+    async fn batch_search(
+        &self,
+        request: Arc<BatchSearchRequest>,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let mut client = self.points_client().await?;
+
+        let search_points = SearchPointsBatch {
+            collection_name: self.collection_id.clone(),
+            batch: request
+                .batch
+                .iter()
+                .map(|q| Query {
+                    vector: q.vector.clone(),
+                    filter: q.filter.clone().map(|f| f.into()),
+                })
+                .collect(),
+            top: request.top as u64,
+            with_vector: Some(request.with_vector),
+            with_payload: request.with_payload.clone().map(|wp| wp.into()),
+            params: request.params.map(|sp| sp.into()),
+            score_threshold: request.score_threshold,
+        };
+        let request = tonic::Request::new(SearchPointsBatchInternal {
+            batch: Some(search_points),
+            shard_id: self.id,
+        });
+        let response = client.search_batch(request).await?;
+        let search_response = response.into_inner();
+        let result: Result<Vec<Vec<ScoredPoint>>, Status> = search_response
+            .result
+            .into_iter()
+            .map(|batch_result| {
+                batch_result
+                    .result
+                    .into_iter()
+                    .map(|scored| scored.try_into())
+                    .collect()
+            })
+            .collect();
+
         result.map_err(|e| e.into())
     }
 

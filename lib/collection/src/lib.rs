@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::operations::config_diff::DiffConfig;
-use crate::operations::types::PointRequest;
+use crate::operations::types::{BatchSearchRequest, PointRequest};
 use crate::operations::OperationToShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::{ShardConfig, ShardType};
@@ -609,6 +609,35 @@ impl Collection {
         };
 
         Ok(top_result)
+    }
+
+    pub async fn batch_search(
+        &self,
+        request: BatchSearchRequest,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        search_runtime_handle: &Handle,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let request = Arc::new(request);
+
+        let target_shards = self.target_shards(shard_selection)?;
+
+        let all_searches = target_shards.iter().map(|shard| {
+            shard.batch_search(request.clone(), segment_searcher, search_runtime_handle)
+        });
+
+        let all_searches_res = try_join_all(all_searches).await?.into_iter().flatten();
+
+        let distance = self.config.read().await.params.distance;
+
+        let top_results: Vec<Vec<ScoredPoint>> = all_searches_res
+            .map(|res| match distance.distance_order() {
+                Order::LargeBetter => peek_top_largest_scores_iterable(res, request.top),
+                Order::SmallBetter => peek_top_smallest_scores_iterable(res, request.top),
+            })
+            .collect();
+
+        Ok(top_results)
     }
 
     pub async fn scroll_by(

@@ -11,8 +11,8 @@ use tokio::sync::{RwLock, RwLockReadGuard};
 use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::types::{
-    PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
-    UpdateResult,
+    BatchSearchRequest, PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult,
+    SearchRequest, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::{ChannelService, Collection, CollectionShardDistribution};
@@ -410,6 +410,35 @@ impl TableOfContent {
         let collection = self.get_collection(collection_name).await?;
         collection
             .search(
+                request,
+                self.segment_searcher.as_ref(),
+                self.search_runtime.handle(),
+                shard_selection,
+            )
+            .await
+            .map_err(|err| err.into())
+    }
+
+    /// Search for the closest points using vector similarity with given restrictions defined
+    /// in the request
+    ///
+    /// # Arguments
+    ///
+    /// * `collection_name` - in what collection do we search
+    /// * `request` - [`SearchRequest`]
+    /// * `shard_selection` - which local shard to use
+    /// # Result
+    ///
+    /// Points with search score
+    pub async fn search_batch(
+        &self,
+        collection_name: &str,
+        request: BatchSearchRequest,
+        shard_selection: Option<ShardId>,
+    ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+        collection
+            .batch_search(
                 request,
                 self.segment_searcher.as_ref(),
                 self.search_runtime.handle(),

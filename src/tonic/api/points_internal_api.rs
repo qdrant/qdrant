@@ -2,15 +2,16 @@ use tonic::{Request, Response, Status};
 
 use crate::tonic::api::points_common::{
     clear_payload, create_field_index, delete, delete_field_index, delete_payload, get, recommend,
-    scroll, search, set_payload, upsert,
+    scroll, search, search_batch, set_payload, upsert,
 };
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CreateFieldIndexCollectionInternal,
     DeleteFieldIndexCollectionInternal, DeletePayloadPointsInternal, DeletePointsInternal,
     GetPointsInternal, GetResponse, PointsOperationResponse, RecommendPointsInternal,
-    RecommendResponse, ScrollPointsInternal, ScrollResponse, SearchPointsInternal, SearchResponse,
-    SetPayloadPointsInternal, UpsertPointsInternal,
+    RecommendResponse, ScrollPointsInternal, ScrollResponse, SearchBatchResponse,
+    SearchPointsBatchInternal, SearchPointsInternal, SearchResponse, SetPayloadPointsInternal,
+    UpsertPointsInternal,
 };
 use std::sync::Arc;
 use storage::content_manager::toc::TableOfContent;
@@ -201,6 +202,18 @@ impl PointsInternal for PointsInternalService {
             get_points.ok_or_else(|| Status::invalid_argument("GetPoints is missing"))?;
 
         get(self.toc.as_ref(), get_points, Some(shard_id)).await
+    }
+
+    async fn search_batch(
+        &self,
+        request: Request<SearchPointsBatchInternal>,
+    ) -> Result<Response<SearchBatchResponse>, Status> {
+        let SearchPointsBatchInternal { batch, shard_id } = request.into_inner();
+
+        let batch =
+            batch.ok_or_else(|| Status::invalid_argument("SearchPointsBatch is missing"))?;
+
+        search_batch(self.toc.as_ref(), batch, Some(shard_id)).await
     }
 }
 

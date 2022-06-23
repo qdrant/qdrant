@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::thread;
 
 use async_trait::async_trait;
+use futures::future::try_join_all;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -25,8 +26,8 @@ use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CollectionStatus, OptimizersStatus, Record,
-    UpdateResult, UpdateStatus,
+    BatchSearchRequest, CollectionError, CollectionInfo, CollectionResult, CollectionStatus,
+    OptimizersStatus, Record, UpdateResult, UpdateStatus,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
@@ -521,6 +522,34 @@ impl ShardOperation for &LocalShard {
             processed_res.collect()
         };
         Ok(top_result)
+    }
+
+    async fn batch_search(
+        &self,
+        request: Arc<BatchSearchRequest>,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let batch_result_futures = request
+            .batch
+            .iter()
+            .map(|query| SearchRequest {
+                vector: query.vector.clone(),
+                filter: query.filter.clone(),
+                params: request.params,
+                top: request.top,
+                with_payload: request.with_payload.clone(),
+                with_vector: request.with_vector,
+                score_threshold: request.score_threshold,
+            })
+            .map(|request| self.search(Arc::new(request), segment_searcher, search_runtime_handle));
+
+        let batch_result = try_join_all(batch_result_futures)
+            .await?
+            .into_iter()
+            .collect();
+
+        Ok(batch_result)
     }
 
     async fn retrieve(

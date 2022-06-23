@@ -3,6 +3,7 @@ pub mod local_shard;
 pub mod remote_shard;
 pub mod shard_config;
 
+use crate::operations::types::BatchSearchRequest;
 use crate::shard::remote_shard::RemoteShard;
 use crate::{
     CollectionInfo, CollectionResult, CollectionSearcher, CollectionUpdateOperations, LocalShard,
@@ -75,6 +76,13 @@ pub trait ShardOperation {
         segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>>;
+
+    async fn batch_search(
+        &self,
+        request: Arc<BatchSearchRequest>,
+        segment_searcher: &(dyn CollectionSearcher + Sync),
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>>;
 
     async fn retrieve(
         &self,

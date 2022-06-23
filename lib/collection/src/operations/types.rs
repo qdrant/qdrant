@@ -165,6 +165,41 @@ pub struct SearchRequest {
     pub score_threshold: Option<ScoreType>,
 }
 
+/// Query .
+/// given the filtering restrictions.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct Query {
+    /// Look for vectors closest to this
+    pub vector: Vec<VectorElementType>,
+    /// Look only for points which satisfies this conditions
+    pub filter: Option<Filter>,
+}
+
+/// Batch Search request.
+/// Holds all conditions and parameters for the search of most similar points by vector similarity
+/// given the filtering restrictions.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct BatchSearchRequest {
+    /// batch of vector queries.
+    pub batch: Vec<Query>,
+    /// Additional search params
+    pub params: Option<SearchParams>,
+    /// Max number of result to return
+    pub top: usize,
+    /// Select which payload to return with the response. Default: None
+    pub with_payload: Option<WithPayloadInterface>,
+    /// Whether to return the point vector with the result?
+    #[serde(default)]
+    pub with_vector: bool,
+    /// Define a minimal score threshold for the result.
+    /// If defined, less similar results will not be returned.
+    /// Score of the returned result might be higher or smaller than the threshold depending on the
+    /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
+    pub score_threshold: Option<ScoreType>,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct PointRequest {
