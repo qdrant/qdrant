@@ -59,11 +59,13 @@ impl ProxySegment {
     ) -> OperationResult<bool> {
         let deleted_points_guard = self.deleted_points.upgradable_read();
         if deleted_points_guard.contains(&point_id) {
+            // Point is already removed from wrapped segment
             return Ok(false);
         }
         let wrapped_segment = self.wrapped_segment.get();
         let wrapped_segment_guard = wrapped_segment.read();
         if !wrapped_segment_guard.has_point(point_id) {
+            // Point is not in wrapped segment
             return Ok(false);
         }
 
@@ -76,6 +78,7 @@ impl ProxySegment {
             let mut deleted_points_write = RwLockUpgradableReadGuard::upgrade(deleted_points_guard);
             deleted_points_write.insert(point_id);
             self.deleted_points_count.fetch_add(1, Ordering::Relaxed);
+            debug_assert!(self.deleted_points_count.load(Ordering::Relaxed) <= deleted_points_guard.len());
         }
 
         let segment_arc = self.write_segment.get();
