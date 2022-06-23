@@ -60,20 +60,24 @@ impl LockedSegment {
     /// Operation fails if the segment is used by other thread for longer than `timeout`.
     pub fn drop_data(self) -> OperationResult<()> {
         match self {
-            LockedSegment::Original(segment) => match try_unwrap_with_timeout(segment, DROP_SPIN_TIMEOUT, DROP_DATA_TIMEOUT) {
-                Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
-                Err(locked_segment) => Err(OperationError::service_error(&format!(
-                    "Removing segment which is still in use: {:?}",
-                    locked_segment.read().data_path()
-                ))),
-            },
-            LockedSegment::Proxy(proxy) => match try_unwrap_with_timeout(proxy, DROP_SPIN_TIMEOUT, DROP_DATA_TIMEOUT) {
-                Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
-                Err(locked_segment) => Err(OperationError::service_error(&format!(
-                    "Removing segment which is still in use: {:?}",
-                    locked_segment.read().data_path()
-                ))),
-            },
+            LockedSegment::Original(segment) => {
+                match try_unwrap_with_timeout(segment, DROP_SPIN_TIMEOUT, DROP_DATA_TIMEOUT) {
+                    Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
+                    Err(locked_segment) => Err(OperationError::service_error(&format!(
+                        "Removing segment which is still in use: {:?}",
+                        locked_segment.read().data_path()
+                    ))),
+                }
+            }
+            LockedSegment::Proxy(proxy) => {
+                match try_unwrap_with_timeout(proxy, DROP_SPIN_TIMEOUT, DROP_DATA_TIMEOUT) {
+                    Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
+                    Err(locked_segment) => Err(OperationError::service_error(&format!(
+                        "Removing segment which is still in use: {:?}",
+                        locked_segment.read().data_path()
+                    ))),
+                }
+            }
         }
     }
 }

@@ -11,7 +11,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 
 type LockedRmSet = Arc<RwLock<HashSet<PointIdType>>>;
 type LockedFieldsSet = Arc<RwLock<HashSet<PayloadKeyType>>>;
@@ -74,8 +73,7 @@ impl ProxySegment {
         );
 
         {
-            let mut deleted_points_write =
-                RwLockUpgradableReadGuard::upgrade(deleted_points_guard);
+            let mut deleted_points_write = RwLockUpgradableReadGuard::upgrade(deleted_points_guard);
             deleted_points_write.insert(point_id);
             self.deleted_points_count.fetch_add(1, Ordering::Relaxed);
         }
