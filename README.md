@@ -1,5 +1,5 @@
 <p align="center">
-  <img height="100" src="docs/logo.svg" alt="Qdrant">
+  <img height="100" src="https://github.com/qdrant/qdrant/raw/master/docs/logo.svg" alt="Qdrant">
 </p>
 
 <p align="center">
