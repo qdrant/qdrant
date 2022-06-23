@@ -79,7 +79,7 @@ impl ProxySegment {
             deleted_points_write.insert(point_id);
             self.deleted_points_count.fetch_add(1, Ordering::Relaxed);
             debug_assert!(
-                self.deleted_points_count.load(Ordering::Relaxed) <= deleted_points_guard.len()
+                self.deleted_points_count.load(Ordering::Relaxed) <= deleted_points_write.len()
             );
         }
 
