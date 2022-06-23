@@ -74,10 +74,12 @@ impl Raft for RaftService {
             .parse()
             .map_err(|err| Status::internal(format!("Failed to parse uri: {err}")))?;
         let peer = request.into_inner();
-        // the consensus operation can take up to DEFAULT_META_OP_WAIT
-        self.dispatcher
+        let consensus_state = self
+            .dispatcher
             .consensus_state()
-            .expect("RaftService should be started only if consensus is enabled")
+            .expect("RaftService should be started only if consensus is enabled");
+        // the consensus operation can take up to DEFAULT_META_OP_WAIT
+        consensus_state
             .propose_consensus_op(ConsensusOperations::AddPeer(peer.id, uri.to_string()), None)
             .await
             .map_err(|err| Status::internal(format!("Failed to add peer: {err}")))?;
@@ -88,6 +90,7 @@ impl Raft for RaftService {
                 "Failed to add peer after consensus: {uri}"
             )));
         }
+        let first_peer_id = consensus_state.first_voter();
         Ok(Response::new(AllPeers {
             all_peers: addresses
                 .into_iter()
@@ -96,6 +99,7 @@ impl Raft for RaftService {
                     uri: uri.to_string(),
                 })
                 .collect(),
+            first_peer_id,
         }))
     }
 

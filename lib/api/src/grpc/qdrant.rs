@@ -3472,6 +3472,8 @@ pub struct RaftMessage {
 pub struct AllPeers {
     #[prost(message, repeated, tag="1")]
     pub all_peers: ::prost::alloc::vec::Vec<Peer>,
+    #[prost(uint64, tag="2")]
+    pub first_peer_id: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Peer {
