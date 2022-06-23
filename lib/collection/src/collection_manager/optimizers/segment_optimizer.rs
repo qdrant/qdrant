@@ -395,7 +395,7 @@ pub trait SegmentOptimizer {
 
         {
             // This block locks all operations with collection. It should be fast
-            let mut write_segments = segments.write();
+            let mut write_segments_guard = segments.write();
             let deleted_points = proxy_deleted_points.read();
             let points_diff = already_remove_points.difference(&deleted_points);
             for &point_id in points_diff {
@@ -417,21 +417,31 @@ pub trait SegmentOptimizer {
                 )?;
             }
 
-            let (_, proxies) = write_segments.swap(optimized_segment, &proxy_ids);
+            let (_, proxies) = write_segments_guard.swap(optimized_segment, &proxy_ids);
 
-            let has_appendable_segments = write_segments.random_appendable_segment().is_some();
+            let has_appendable_segments =
+                write_segments_guard.random_appendable_segment().is_some();
 
             // Release reference counter of the optimized segments
             drop(optimizing_segments);
             // Append a temp segment to a collection if it is not empty or there is no other appendable segment
             if tmp_segment.get().read().vectors_count() > 0 || !has_appendable_segments {
-                write_segments.add_locked(tmp_segment);
+                write_segments_guard.add_locked(tmp_segment);
+
+                // unlock collection for search and updates
+                drop(write_segments_guard);
+                // After the collection is unlocked - we can remove data as slow as we want.
+
                 // Only remove data after we ensure the consistency of the collection.
                 // If remove fails - we will still have operational collection with reported error.
                 for proxy in proxies {
                     proxy.drop_data()?;
                 }
             } else {
+                // unlock collection for search and updates
+                drop(write_segments_guard);
+                // After the collection is unlocked - we can remove data as slow as we want.
+
                 // Proxy contains pointer to the `tmp_segment`, so they should be removed first
                 for proxy in proxies {
                     proxy.drop_data()?;

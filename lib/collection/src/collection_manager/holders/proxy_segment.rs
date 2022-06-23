@@ -1,5 +1,5 @@
 use crate::collection_manager::holders::segment_holder::LockedSegment;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
 use segment::types::{
     Condition, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
@@ -9,6 +9,7 @@ use segment::types::{
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 type LockedRmSet = Arc<RwLock<HashSet<PointIdType>>>;
@@ -22,7 +23,11 @@ pub struct ProxySegment {
     pub write_segment: LockedSegment,
     pub wrapped_segment: LockedSegment,
     /// Points which should not longer used from wrapped_segment
+    /// May contain points which are not in wrapped_segment,
+    /// because the set is shared among all proxy segments
     deleted_points: LockedRmSet,
+    /// Number of points removed from this segment
+    deleted_points_count: AtomicUsize,
     deleted_indexes: LockedFieldsSet,
     created_indexes: LockedFieldsMap,
     last_flushed_version: Arc<RwLock<Option<SeqNumberType>>>,
@@ -43,18 +48,40 @@ impl ProxySegment {
             created_indexes,
             deleted_indexes,
             last_flushed_version: Arc::new(RwLock::new(None)),
+            deleted_points_count: Default::default(),
         }
     }
 
-    fn move_point(&self, op_num: SeqNumberType, point_id: PointIdType) -> OperationResult<bool> {
-        let (vector, payload) = {
-            let segment_arc = self.wrapped_segment.get();
-            let segment = segment_arc.read();
-            (segment.vector(point_id)?, segment.payload(point_id)?)
-        };
+    fn move_if_exists(
+        &self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+    ) -> OperationResult<bool> {
+        let deleted_points_guard = self.deleted_points.upgradable_read();
+        if deleted_points_guard.contains(&point_id) {
+            // Point is already removed from wrapped segment
+            return Ok(false);
+        }
+        let wrapped_segment = self.wrapped_segment.get();
+        let wrapped_segment_guard = wrapped_segment.read();
+        if !wrapped_segment_guard.has_point(point_id) {
+            // Point is not in wrapped segment
+            return Ok(false);
+        }
 
-        let mut deleted_points = self.deleted_points.write();
-        deleted_points.insert(point_id);
+        let (vector, payload) = (
+            wrapped_segment_guard.vector(point_id)?,
+            wrapped_segment_guard.payload(point_id)?,
+        );
+
+        {
+            let mut deleted_points_write = RwLockUpgradableReadGuard::upgrade(deleted_points_guard);
+            deleted_points_write.insert(point_id);
+            self.deleted_points_count.fetch_add(1, Ordering::Relaxed);
+            debug_assert!(
+                self.deleted_points_count.load(Ordering::Relaxed) <= deleted_points_write.len()
+            );
+        }
 
         let segment_arc = self.write_segment.get();
         let mut write_segment = segment_arc.write();
@@ -63,19 +90,6 @@ impl ProxySegment {
         write_segment.set_full_payload(op_num, point_id, &payload)?;
 
         Ok(true)
-    }
-
-    fn move_if_exists(
-        &self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-    ) -> OperationResult<bool> {
-        let wrapped_has_point = self.wrapped_segment.get().read().has_point(point_id);
-        let already_deleted = self.deleted_points.read().contains(&point_id);
-        if wrapped_has_point && !already_deleted {
-            return self.move_point(op_num, point_id);
-        }
-        Ok(false)
     }
 
     fn add_deleted_points_condition_to_filter(
@@ -336,9 +350,12 @@ impl SegmentEntry for ProxySegment {
 
     fn vectors_count(&self) -> usize {
         let mut count = 0;
-        count += self.wrapped_segment.get().read().vectors_count();
-        count -= self.deleted_points.read().len();
-        count += self.write_segment.get().read().vectors_count();
+        let deleted_points_count = self.deleted_points_count.load(Ordering::Relaxed);
+        let wrapped_segment_count = self.wrapped_segment.get().read().vectors_count();
+        let write_segment_count = self.write_segment.get().read().vectors_count();
+        count += wrapped_segment_count;
+        count -= deleted_points_count;
+        count += write_segment_count;
         count
     }
 
