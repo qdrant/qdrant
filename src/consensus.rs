@@ -162,7 +162,6 @@ impl Consensus {
         .context("Failed to create timeout channel")?;
         let mut client = RaftClient::new(channel);
         let id = state_ref.this_peer_id();
-        // TODO: here ask who the first peer was and add it as the first voter
         let all_peers = client
             .add_peer_to_known(tonic::Request::new(
                 api::grpc::qdrant::AddPeerToKnownMessage {
@@ -202,7 +201,10 @@ impl Consensus {
         let mut timeout = Duration::from_millis(self.config.tick_period_ms);
 
         loop {
-            if !self.try_promote_learner()? {
+            if !self
+                .try_promote_learner()
+                .context("Failed to promote learner")?
+            {
                 // If learner promotion was proposed - do not add other proposals.
                 self.propose_updates(timeout)?;
             }

@@ -3264,6 +3264,7 @@
         "type": "object",
         "required": [
           "commit",
+          "is_voter",
           "pending_operations",
           "term"
         ],
@@ -3303,6 +3304,10 @@
                 "nullable": true
               }
             ]
+          },
+          "is_voter": {
+            "description": "Is this peer a voter or a learner",
+            "type": "boolean"
           }
         }
       },
