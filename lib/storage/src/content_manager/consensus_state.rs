@@ -365,6 +365,10 @@ impl ConsensusState {
     pub fn append_entries(&self, entries: Vec<RaftEntry>) -> Result<(), StorageError> {
         self.wal.lock().append_entries(entries)
     }
+
+    pub fn last_applied_entry(&self) -> Option<u64> {
+        self.persistent.read().last_applied_entry()
+    }
 }
 
 impl Storage for ConsensusState {

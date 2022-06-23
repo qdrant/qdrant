@@ -49,9 +49,11 @@ impl Consensus {
         config: ConsensusConfig,
         transport_channel_pool: Arc<TransportChannelPool>,
     ) -> anyhow::Result<(Self, SyncSender<Message>)> {
-        // FIXME: Set applied index here instead checking it in committed entries
+        // raft will not return entries to the application smaller or equal to `applied`
+        let last_applied = state_ref.last_applied_entry().unwrap_or_default();
         let raft_config = Config {
             id: state_ref.this_peer_id(),
+            applied: last_applied,
             ..Default::default()
         };
         raft_config.validate()?;
@@ -382,25 +384,10 @@ impl Consensus {
 }
 
 fn handle_committed_entries(
-    mut entries: Vec<Entry>,
+    entries: Vec<Entry>,
     state: &ConsensusStateRef,
     raw_node: &mut RawNode<ConsensusStateRef>,
 ) -> raft::Result<()> {
-    let last_applied = {
-        let persistent = state.persistent.read();
-        if persistent.unapplied_entities_count() > 0 {
-            panic!(
-                "Precondition broken - all committed entries must be applied before this fn call"
-            )
-        }
-        persistent.last_applied_entry()
-    };
-    if let Some(last_applied) = last_applied {
-        entries = entries
-            .into_iter()
-            .filter(|entry| entry.index > last_applied)
-            .collect();
-    }
     if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
         state.set_unapplied_entries(first.index, last.index)?;
         state.apply_entries(raw_node)?;
