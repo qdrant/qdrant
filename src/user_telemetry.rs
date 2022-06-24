@@ -1,12 +1,17 @@
 use serde::Serialize;
 use std::path::Path;
 use uuid::Uuid;
+use std::sync::mpsc::{Sender, Receiver};
+use std::sync::mpsc::channel;
+use collection::telemetry::CollectionTelemetryMessage;
 
 use crate::settings::Settings;
 
 pub struct UserTelemetryCollector {
     process_id: Uuid,
     settings: Option<Settings>,
+    collection_receiver: Receiver<CollectionTelemetryMessage>,
+    collection_sender: Sender<CollectionTelemetryMessage>,
 }
 
 #[derive(Serialize, Clone)]
@@ -77,14 +82,21 @@ pub struct UserTelemetryData {
 
 impl UserTelemetryCollector {
     pub fn new() -> Self {
+        let (collection_sender, collection_receiver) = channel();
         Self {
             process_id: Uuid::new_v4(),
             settings: None,
+            collection_receiver,
+            collection_sender,
         }
     }
 
     pub fn put_settings(&mut self, settings: Settings) {
         self.settings = Some(settings);
+    }
+
+    pub fn get_collection_sender(&self) -> Sender<CollectionTelemetryMessage> {
+        self.collection_sender.clone()        
     }
 
     #[allow(dead_code)]

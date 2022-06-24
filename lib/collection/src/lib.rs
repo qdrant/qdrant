@@ -13,6 +13,7 @@ use crate::operations::OperationToShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::ShardOperation;
+use crate::telemetry::{CollectionTelemetryMessage, CollectionTelemetrySender, send_telemetry_message};
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
@@ -53,6 +54,7 @@ pub mod optimizers_builder;
 pub mod shard;
 mod update_handler;
 mod wal;
+pub mod telemetry;
 
 #[cfg(test)]
 mod tests;
@@ -259,6 +261,7 @@ pub struct Collection {
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
     path: PathBuf,
+    telemetry_sender: CollectionTelemetrySender,
 }
 
 impl Collection {
@@ -273,6 +276,8 @@ impl Collection {
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
     ) -> Result<Self, CollectionError> {
+        let creation_start = std::time::Instant::now();
+
         CollectionVersion::save(path)?;
         config.save(path)?;
         let mut ring = HashRing::new();
@@ -313,6 +318,15 @@ impl Collection {
             ring.add(shard_id);
         }
 
+        let mut telemetry_sender = Arc::new(parking_lot::Mutex::new(None));
+
+        let telemetry_message = CollectionTelemetryMessage::NewSegment {
+            id: id.clone(),
+            config: config.clone(),
+            creation_time: creation_start.elapsed(),
+        };
+        send_telemetry_message(&mut telemetry_sender, telemetry_message);
+
         Ok(Self {
             id,
             shards,
@@ -320,10 +334,13 @@ impl Collection {
             config: shared_config,
             before_drop_called: false,
             path: path.to_owned(),
+            telemetry_sender,
         })
     }
 
     pub async fn load(id: CollectionId, path: &Path, channel_service: ChannelService) -> Self {
+        let load_start = std::time::Instant::now();
+
         let stored_version_opt = CollectionVersion::load(path)
             .unwrap_or_else(|err| panic!("Can't read collection version {}", err));
 
@@ -369,7 +386,7 @@ impl Collection {
             configured_shards, total_shards
         );
 
-        let shared_config = Arc::new(RwLock::new(config));
+        let shared_config = Arc::new(RwLock::new(config.clone()));
         for shard_id in local_shards {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
@@ -388,6 +405,15 @@ impl Collection {
             ring.add(shard_id);
         }
 
+        let mut telemetry_sender = Arc::new(parking_lot::Mutex::new(None));
+
+        let telemetry_message = CollectionTelemetryMessage::LoadSegment {
+            id: id.clone(),
+            config: config,
+            load_time: load_start.elapsed(),
+        };
+        send_telemetry_message(&mut telemetry_sender, telemetry_message);
+
         Self {
             id,
             shards,
@@ -395,6 +421,7 @@ impl Collection {
             config: shared_config,
             before_drop_called: false,
             path: path.to_owned(),
+            telemetry_sender,
         }
     }
 
