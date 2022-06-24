@@ -260,6 +260,11 @@ impl Consensus {
 
     /// Returns `true` if learner promotion was proposed, `false` otherwise.
     fn try_promote_learner(&mut self) -> anyhow::Result<bool> {
+        let learner = if let Some(learner) = self.find_learner_to_promote() {
+            learner
+        } else {
+            return Ok(false);
+        };
         let store = self.node.store();
         let commit = store.hard_state().commit;
         let last_log_entry = store.last_index()?;
@@ -272,18 +277,14 @@ impl Consensus {
         if status.ss.raft_state != StateRole::Leader {
             return Ok(false);
         }
-        if let Some(learner) = self.find_learner_to_promote() {
-            let mut change = ConfChangeV2::default();
-            change.set_changes(vec![raft_proto::new_conf_change_single(
-                learner,
-                ConfChangeType::AddNode,
-            )]);
-            log::debug!("Proposing promotion for learner {learner} to voter");
-            self.node.propose_conf_change(vec![], change)?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        let mut change = ConfChangeV2::default();
+        change.set_changes(vec![raft_proto::new_conf_change_single(
+            learner,
+            ConfChangeType::AddNode,
+        )]);
+        log::debug!("Proposing promotion for learner {learner} to voter");
+        self.node.propose_conf_change(vec![], change)?;
+        Ok(true)
     }
 
     fn find_learner_to_promote(&self) -> Option<u64> {
