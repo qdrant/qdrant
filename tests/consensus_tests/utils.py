@@ -151,25 +151,14 @@ def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: str
     return True
 
 
-# TODO A.G use once https://github.com/qdrant/qdrant/issues/676 is fixed
-def assert_collection_exists_on_all_peers(collection_name: str, peer_api_uris: [str]):
-    for uri in peer_api_uris:
-        r = requests.get(f"{uri}/collections")
-        assert_http_ok(r)
-        collections = r.json()["result"]["collections"]
-        if len(collections) == 0:
-            raise Exception(f"Peer {uri} has no collections")
-        else:
-            assert collections[0]["name"] == collection_name, f"collection {collection_name} does not exist on peer {uri}"
-
-
 def collection_exists_on_all_peers(collection_name: str, peer_api_uris: [str]) -> bool:
     for uri in peer_api_uris:
         r = requests.get(f"{uri}/collections")
         assert_http_ok(r)
         collections = r.json()["result"]["collections"]
-        if len(collections) == 0 or collections[0]["name"] != collection_name:
-            print(f"Collection '{collection_name}' does not exist on peer {uri}")
+        filtered_collections = [c for c in collections if c['name'] == collection_name]
+        if len(filtered_collections) == 0:
+            print(f"Collection '{collection_name}' does not exist on peer {uri} found {json.dumps(collections, indent=4)}")
             return False
         else:
             continue
@@ -213,6 +202,6 @@ def wait_for_uniform_collection_existence(collection_name: str, peer_api_uris: [
         if elapsed > WAIT_TIME_SEC:
             # print cluster for debug
             print_clusters_info(peer_api_uris)
-            raise Exception(f"Collection existence was not uniform in time ({WAIT_TIME_SEC} sec)")
+            raise Exception(f"Collection '{collection_name}' does not exist on all peers in time ({WAIT_TIME_SEC} sec)")
         else:
             time.sleep(RETRY_INTERVAL_SEC)
