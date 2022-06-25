@@ -197,9 +197,10 @@ mod tests {
 
         // Test clear payload
 
-        let res = SegmentsSearcher::retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
-            .await
-            .unwrap();
+        let res =
+            SegmentsSearcher::retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
+                .await
+                .unwrap();
         assert_eq!(res.len(), 1);
         assert!(res[0].payload.as_ref().unwrap().contains_key("color"));
 
@@ -211,9 +212,10 @@ mod tests {
             },
         )
         .unwrap();
-        let res = SegmentsSearcher::retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
-            .await
-            .unwrap();
+        let res =
+            SegmentsSearcher::retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
+                .await
+                .unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
     }

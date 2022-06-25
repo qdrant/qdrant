@@ -1,12 +1,11 @@
-use tokio::runtime::Handle;
-use collection::operations::CollectionUpdateOperations;
+use crate::common::{simple_collection_fixture, N_SHARDS};
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
 use collection::operations::types::SearchRequest;
+use collection::operations::CollectionUpdateOperations;
 use segment::types::WithPayloadInterface;
-use crate::common::{simple_collection_fixture, N_SHARDS};
+use tokio::runtime::Handle;
 
 mod common;
-
 
 #[tokio::test]
 async fn test_collection_paginated_search() {
@@ -28,9 +27,9 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             payload: Some(serde_json::from_str(r#"{"number": "John Doe"}"#).unwrap()),
         });
     }
-    let insert_points = CollectionUpdateOperations::PointOperation(
-        PointOperations::UpsertPoints(PointInsertOperations::PointsList(points)),
-    );
+    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperations::PointsList(points),
+    ));
     collection
         .update_from_client(insert_points, true)
         .await
@@ -46,14 +45,13 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: false,
         params: None,
-        score_threshold: None
+        score_threshold: None,
     };
 
-    let reference_result = collection.search(
-        full_search_request,
-        &Handle::current(),
-        None
-    ).await.unwrap();
+    let reference_result = collection
+        .search(full_search_request, &Handle::current(), None)
+        .await
+        .unwrap();
 
     assert_eq!(reference_result.len(), 100);
     assert_eq!(reference_result[0].id, 999.into());
@@ -70,14 +68,13 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: false,
         params: None,
-        score_threshold: None
+        score_threshold: None,
     };
 
-    let page_1_result = collection.search(
-        page_1_request,
-        &Handle::current(),
-        None
-    ).await.unwrap();
+    let page_1_result = collection
+        .search(page_1_request, &Handle::current(), None)
+        .await
+        .unwrap();
 
     // Check that the first page is the same as the reference result
     assert_eq!(page_1_result.len(), 10);
@@ -93,14 +90,13 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: false,
         params: None,
-        score_threshold: None
+        score_threshold: None,
     };
 
-    let page_9_result = collection.search(
-        page_9_request,
-        &Handle::current(),
-        None
-    ).await.unwrap();
+    let page_9_result = collection
+        .search(page_9_request, &Handle::current(), None)
+        .await
+        .unwrap();
 
     // Check that the 9th page is the same as the reference result
     assert_eq!(page_9_result.len(), 10);

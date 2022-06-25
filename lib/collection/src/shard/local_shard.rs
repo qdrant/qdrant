@@ -501,9 +501,8 @@ impl ShardOperation for &LocalShard {
         request: Arc<SearchRequest>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        let res =
-            SegmentsSearcher::search(self.segments(), request.clone(), search_runtime_handle)
-                .await?;
+        let res = SegmentsSearcher::search(self.segments(), request.clone(), search_runtime_handle)
+            .await?;
         let distance = self.config.read().await.params.distance;
         let processed_res = res.into_iter().map(|mut scored_point| {
             scored_point.score = distance.postprocess_score(scored_point.score);
