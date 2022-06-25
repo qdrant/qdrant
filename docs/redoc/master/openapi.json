@@ -2057,7 +2057,7 @@
         "description": "Search request. Holds all conditions and parameters for the search of most similar points by vector similarity given the filtering restrictions.",
         "type": "object",
         "required": [
-          "top",
+          "limit",
           "vector"
         ],
         "properties": {
@@ -2091,8 +2091,15 @@
               }
             ]
           },
-          "top": {
+          "limit": {
             "description": "Max number of result to return",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "offset": {
+            "description": "Offset of the first result to return. May be used to paginate results. Note: large offset values may cause performance issues.",
+            "default": 0,
             "type": "integer",
             "format": "uint",
             "minimum": 0
@@ -2549,9 +2556,9 @@
         "description": "Recommendation request. Provides positive and negative examples of the vectors, which are already stored in the collection.\n\nService should look for the points which are closer to positive examples and at the same time further to negative examples. The concrete way of how to compare negative and positive distances is up to implementation in `segment` crate.",
         "type": "object",
         "required": [
+          "limit",
           "negative",
-          "positive",
-          "top"
+          "positive"
         ],
         "properties": {
           "positive": {
@@ -2590,8 +2597,15 @@
               }
             ]
           },
-          "top": {
+          "limit": {
             "description": "Max number of result to return",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "offset": {
+            "description": "Offset of the first result to return. May be used to paginate results. Note: large offset values may cause performance issues.",
+            "default": 0,
             "type": "integer",
             "format": "uint",
             "minimum": 0
