@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::num::NonZeroU32;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -32,8 +31,6 @@ use crate::content_manager::{
     errors::StorageError,
 };
 use crate::types::{PeerAddressById, StorageConfig};
-use collection::collection_manager::collection_managers::CollectionSearcher;
-use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 use collection::shard::ShardId;
 use collection::PeerId;
 
@@ -48,7 +45,6 @@ pub struct TableOfContent {
     search_runtime: Runtime,
     collection_management_runtime: Runtime,
     alias_persistence: RwLock<AliasPersistence>,
-    segment_searcher: Box<dyn CollectionSearcher + Sync + Send>,
     this_peer_id: PeerId,
     channel_service: ChannelService,
 }
@@ -94,7 +90,6 @@ impl TableOfContent {
             storage_config: storage_config.clone(),
             search_runtime,
             alias_persistence: RwLock::new(alias_persistence),
-            segment_searcher: Box::new(SimpleCollectionSearcher::new()),
             collection_management_runtime,
             this_peer_id,
             channel_service,
@@ -380,12 +375,7 @@ impl TableOfContent {
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .recommend_by(
-                request,
-                self.segment_searcher.deref(),
-                self.search_runtime.handle(),
-                shard_selection,
-            )
+            .recommend_by(request, self.search_runtime.handle(), shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -409,12 +399,7 @@ impl TableOfContent {
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .search(
-                request,
-                self.segment_searcher.as_ref(),
-                self.search_runtime.handle(),
-                shard_selection,
-            )
+            .search(request, self.search_runtime.handle(), shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -438,7 +423,7 @@ impl TableOfContent {
     ) -> Result<Vec<Record>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .retrieve(request, self.segment_searcher.as_ref(), shard_selection)
+            .retrieve(request, shard_selection)
             .await
             .map_err(|err| err.into())
     }
@@ -489,7 +474,7 @@ impl TableOfContent {
     ) -> Result<ScrollResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .scroll_by(request, self.segment_searcher.deref(), shard_selection)
+            .scroll_by(request, shard_selection)
             .await
             .map_err(|err| err.into())
     }

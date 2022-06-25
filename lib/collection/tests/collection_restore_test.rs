@@ -2,13 +2,10 @@ use itertools::Itertools;
 use serde_json::Value;
 use tempdir::TempDir;
 
-use collection::{
-    collection_manager::simple_collection_searcher::SimpleCollectionSearcher,
-    operations::{
-        point_ops::{Batch, PointInsertOperations, PointOperations},
-        types::ScrollRequest,
-        CollectionUpdateOperations,
-    },
+use collection::operations::{
+    point_ops::{Batch, PointInsertOperations, PointOperations},
+    types::ScrollRequest,
+    CollectionUpdateOperations,
 };
 use segment::types::{PayloadSelectorExclude, WithPayloadInterface};
 
@@ -76,7 +73,6 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
 
     let mut collection = load_local_collection("test".to_string(), collection_dir.path()).await;
 
-    let searcher = SimpleCollectionSearcher::new();
     let res = collection
         .scroll_by(
             ScrollRequest {
@@ -86,7 +82,6 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
                 with_payload: Some(WithPayloadInterface::Bool(true)),
                 with_vector: true,
             },
-            &searcher,
             None,
         )
         .await
@@ -141,7 +136,6 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
 
     let mut collection = load_local_collection("test".to_string(), collection_dir.path()).await;
 
-    let searcher = SimpleCollectionSearcher::new();
     // Test res with filter payload
     let res_with_custom_payload = collection
         .scroll_by(
@@ -152,7 +146,6 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
                 with_payload: Some(WithPayloadInterface::Fields(vec![String::from("k2")])),
                 with_vector: true,
             },
-            &searcher,
             None,
         )
         .await
@@ -184,7 +177,6 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
                 with_payload: Some(PayloadSelectorExclude::new(vec!["k1".to_string()]).into()),
                 with_vector: false,
             },
-            &searcher,
             None,
         )
         .await
