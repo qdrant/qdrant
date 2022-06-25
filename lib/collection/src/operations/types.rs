@@ -154,7 +154,9 @@ pub struct SearchRequest {
     /// Max number of result to return
     #[serde(alias = "top")]
     pub limit: usize,
-    /// Offset of the first result to return
+    /// Offset of the first result to return.
+    /// May be used to paginate results.
+    /// Note: large offset values may cause performance issues.
     #[serde(default)]
     pub offset: usize,
     /// Select which payload to return with the response. Default: None
@@ -202,7 +204,9 @@ pub struct RecommendRequest {
     /// Max number of result to return
     #[serde(alias = "top")]
     pub limit: usize,
-    /// Offset of the first result to return
+    /// Offset of the first result to return.
+    /// May be used to paginate results.
+    /// Note: large offset values may cause performance issues.
     #[serde(default)]
     pub offset: usize,
     /// Select which payload to return with the response. Default: None

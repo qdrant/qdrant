@@ -606,11 +606,9 @@ impl Collection {
 
         if request.offset > 0 {
             // Remove offset from top result.
-            let top_result_with_offset = top_result.drain(..request.offset).collect();
-            Ok(top_result_with_offset)
-        } else {
-            Ok(top_result)
+            top_result.drain(..request.offset);
         }
+        Ok(top_result)
     }
 
     async fn fill_search_result_with_payload(
