@@ -70,6 +70,8 @@ pub struct CollectionInfo {
     pub optimizer_status: OptimizersStatus,
     /// Number of vectors in collection
     pub vectors_count: usize,
+    /// Number of points in collection
+    pub points_count: usize,
     /// Number of segments in collection
     pub segments_count: usize,
     /// Disk space, used by collection

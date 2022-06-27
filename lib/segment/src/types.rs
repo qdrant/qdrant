@@ -211,6 +211,7 @@ pub struct PayloadIndexInfo {
 pub struct SegmentInfo {
     pub segment_type: SegmentType,
     pub num_vectors: usize,
+    pub num_points: usize,
     pub num_deleted_vectors: usize,
     pub ram_usage_bytes: usize,
     pub disk_usage_bytes: usize,

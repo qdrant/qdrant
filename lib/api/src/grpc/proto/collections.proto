@@ -180,6 +180,7 @@ message CollectionInfo {
   uint64 ram_data_size = 6; // Used RAM (not implemented)
   CollectionConfig config = 7; // Configuration
   map<string, PayloadSchemaInfo> payload_schema = 8; // Collection data types
+  uint64 points_count = 9; // number of vectors in the collection
 }
 
 message ChangeAliases {

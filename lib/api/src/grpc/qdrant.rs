@@ -238,6 +238,9 @@ pub struct CollectionInfo {
     /// Collection data types
     #[prost(map="string, message", tag="8")]
     pub payload_schema: ::std::collections::HashMap<::prost::alloc::string::String, PayloadSchemaInfo>,
+    /// number of vectors in the collection
+    #[prost(uint64, tag="9")]
+    pub points_count: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ChangeAliases {

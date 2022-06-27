@@ -348,11 +348,11 @@ impl SegmentEntry for ProxySegment {
         };
     }
 
-    fn vectors_count(&self) -> usize {
+    fn points_count(&self) -> usize {
         let mut count = 0;
         let deleted_points_count = self.deleted_points_count.load(Ordering::Relaxed);
-        let wrapped_segment_count = self.wrapped_segment.get().read().vectors_count();
-        let write_segment_count = self.write_segment.get().read().vectors_count();
+        let wrapped_segment_count = self.wrapped_segment.get().read().points_count();
+        let write_segment_count = self.write_segment.get().read().points_count();
         count += wrapped_segment_count;
         count -= deleted_points_count;
         count += write_segment_count;
@@ -373,7 +373,8 @@ impl SegmentEntry for ProxySegment {
 
         SegmentInfo {
             segment_type: SegmentType::Special,
-            num_vectors: self.vectors_count(),
+            num_vectors: self.points_count(), // ToDo: account number of vector storages
+            num_points: self.points_count(),
             num_deleted_vectors: write_info.num_deleted_vectors,
             ram_usage_bytes: wrapped_info.ram_usage_bytes + write_info.ram_usage_bytes,
             disk_usage_bytes: wrapped_info.disk_usage_bytes + write_info.disk_usage_bytes,

@@ -90,7 +90,7 @@ pub trait SegmentOptimizer {
             .map(|s| {
                 let segment = s.get();
                 let locked_segment = segment.read();
-                locked_segment.vectors_count() * locked_segment.vector_dim() * VECTOR_ELEMENT_SIZE
+                locked_segment.points_count() * locked_segment.vector_dim() * VECTOR_ELEMENT_SIZE
             })
             .sum();
 
@@ -197,7 +197,7 @@ pub trait SegmentOptimizer {
         temp_segment: &LockedSegment,
     ) {
         self.unwrap_proxy(segments, proxy_ids);
-        if temp_segment.get().read().vectors_count() > 0 {
+        if temp_segment.get().read().points_count() > 0 {
             let mut write_segments = segments.write();
             write_segments.add_locked(temp_segment.clone());
         }
@@ -425,7 +425,7 @@ pub trait SegmentOptimizer {
             // Release reference counter of the optimized segments
             drop(optimizing_segments);
             // Append a temp segment to a collection if it is not empty or there is no other appendable segment
-            if tmp_segment.get().read().vectors_count() > 0 || !has_appendable_segments {
+            if tmp_segment.get().read().points_count() > 0 || !has_appendable_segments {
                 write_segments_guard.add_locked(tmp_segment);
 
                 // unlock collection for search and updates
