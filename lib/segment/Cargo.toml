@@ -12,6 +12,7 @@ tempdir = "0.3.7"
 criterion = "0.3"
 rmp-serde = "~1.1"
 rand_distr = "0.4.3"
+walkdir = "2.3.2"
 
 [dependencies]
 
@@ -38,6 +39,7 @@ rand = "0.8"
 bit-vec = "0.6"
 seahash = "4.1.0"
 json-patch = "0.2.6"
+tar = "0.4.38"
 
 [[bench]]
 name = "vector_search"
