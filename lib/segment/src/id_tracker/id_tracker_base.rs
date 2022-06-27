@@ -54,8 +54,11 @@ pub trait IdTracker {
     /// Max stored ID
     fn max_id(&self) -> PointOffsetType;
 
-    /// Force persistence of current tracker state.
-    fn flush(&self) -> OperationResult<()>;
+    /// Flush id mapping to disk
+    fn flush_mapping(&self) -> OperationResult<()>;
+
+    /// Flush points versions to disk
+    fn flush_versions(&self) -> OperationResult<()>;
 }
 
 pub type IdTrackerSS = dyn IdTracker + Sync + Send;

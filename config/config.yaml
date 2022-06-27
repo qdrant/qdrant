@@ -93,7 +93,7 @@ service:
 
   # gRPC port to bind the service on.
   # If `null` - gRPC is disabled. Default: null
-  grpc_port: null
+  grpc_port: 6334
   # Uncomment to enable gRPC:
   # grpc_port: 6334
 

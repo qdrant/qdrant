@@ -71,7 +71,18 @@ impl SimpleIdTracker {
             ) {
                 let external_id = Self::restore_key(&key);
                 let internal_id: PointOffsetType = bincode::deserialize(&val).unwrap();
-                internal_to_external.insert(internal_id, external_id);
+                let replaced = internal_to_external.insert(internal_id, external_id);
+                if let Some(replaced_id) = replaced {
+                    // Fixing corrupted mapping - this id should be recovered from WAL
+                    // This should not happen in normal operation, but it can happen if
+                    // the database is corrupted.
+                    log::warn!(
+                        "removing duplicated external id {} in internal id {}",
+                        external_id,
+                        replaced_id
+                    );
+                    external_to_internal.remove(&replaced_id);
+                }
                 external_to_internal.insert(external_id, internal_id);
                 max_internal_id = max_internal_id.max(internal_id);
             }
@@ -205,11 +216,14 @@ impl IdTracker for SimpleIdTracker {
         self.max_internal_id
     }
 
-    fn flush(&self) -> OperationResult<()> {
+    fn flush_mapping(&self) -> OperationResult<()> {
         let store_ref = self.store.borrow();
-        store_ref.flush_cf(store_ref.cf_handle(DB_MAPPING_CF).unwrap())?;
-        store_ref.flush_cf(store_ref.cf_handle(DB_VERSIONS_CF).unwrap())?;
-        Ok(store_ref.flush()?)
+        Ok(store_ref.flush_cf(store_ref.cf_handle(DB_MAPPING_CF).unwrap())?)
+    }
+
+    fn flush_versions(&self) -> OperationResult<()> {
+        let store_ref = self.store.borrow();
+        Ok(store_ref.flush_cf(store_ref.cf_handle(DB_VERSIONS_CF).unwrap())?)
     }
 }
 

@@ -16,7 +16,7 @@ use super::vector_storage_base::VectorStorage;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use atomic_refcell::AtomicRefCell;
-use bit_vec::BitVec;
+use bitvec::prelude::BitVec;
 use std::mem::size_of;
 use std::sync::Arc;
 
@@ -197,7 +197,7 @@ where
     }
 
     fn get_vector(&self, key: PointOffsetType) -> Option<Vec<VectorElementType>> {
-        if self.deleted.get(key as usize).unwrap_or(true) {
+        if self.deleted.get(key as usize).map(|x| *x).unwrap_or(true) {
             return None;
         }
         Some(self.vectors.get(key).to_vec())
@@ -217,6 +217,10 @@ where
         vector: Vec<VectorElementType>,
     ) -> OperationResult<PointOffsetType> {
         self.vectors.insert(key, &vector);
+        if self.deleted.len() <= (key as usize) {
+            self.deleted.resize(key as usize + 1, false);
+        }
+        self.deleted.set(key as usize, false);
         self.update_stored(key)?;
         Ok(key)
     }

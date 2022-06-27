@@ -592,10 +592,33 @@ impl SegmentEntry for Segment {
 
         let state = self.get_state();
 
-        self.id_tracker.borrow().flush()?;
-        self.payload_index.borrow().flush()?;
-        self.vector_storage.borrow().flush()?;
-        self.save_state(&state)?;
+        // Flush mapping first to prevent having orphan internal ids.
+        self.id_tracker.borrow().flush_mapping().map_err(|err| {
+            OperationError::service_error(&format!("Failed to flush id_tracker mapping: {}", err))
+        })?;
+        self.vector_storage.borrow().flush().map_err(|err| {
+            OperationError::service_error(&format!("Failed to flush vector_storage: {}", err))
+        })?;
+
+        self.payload_index.borrow().flush().map_err(|err| {
+            OperationError::service_error(&format!("Failed to flush payload_index: {}", err))
+        })?;
+        // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
+        // This is because vector_storage and payload_index flush are not atomic.
+        // If payload or vector flush fails, we will be able to recover data from WAL.
+        // If Id Tracker flush fails, we are also able to recover data from WAL
+        //  by simply overriding data in vector and payload storages.
+        // Once versions are saved - points are considered persisted.
+        self.id_tracker.borrow().flush_versions().map_err(|err| {
+            OperationError::service_error(&format!("Failed to flush id_tracker versions: {}", err))
+        })?;
+        self.save_state(&state).map_err(|err| {
+            OperationError::service_error(&format!("Failed to flush segment state: {}", err))
+        })?;
+
+        self.database.borrow().flush().map_err(|err| {
+            OperationError::service_error(&format!("Failed to flush database: {}", err))
+        })?;
 
         *persisted_version = state.version;
 
