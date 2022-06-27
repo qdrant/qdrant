@@ -1,9 +1,11 @@
+use collection::telemetry::CollectionTelemetryMessage;
+use collection::telemetry::CollectionTelemetrySender;
 use serde::Serialize;
 use std::path::Path;
-use uuid::Uuid;
-use std::sync::mpsc::{Sender, Receiver};
 use std::sync::mpsc::channel;
-use collection::telemetry::CollectionTelemetryMessage;
+use std::sync::mpsc::Receiver;
+use std::sync::Arc;
+use uuid::Uuid;
 
 use crate::settings::Settings;
 
@@ -11,7 +13,7 @@ pub struct UserTelemetryCollector {
     process_id: Uuid,
     settings: Option<Settings>,
     collection_receiver: Receiver<CollectionTelemetryMessage>,
-    collection_sender: Sender<CollectionTelemetryMessage>,
+    collection_sender: CollectionTelemetrySender,
 }
 
 #[derive(Serialize, Clone)]
@@ -87,7 +89,7 @@ impl UserTelemetryCollector {
             process_id: Uuid::new_v4(),
             settings: None,
             collection_receiver,
-            collection_sender,
+            collection_sender: Arc::new(parking_lot::Mutex::new(Some(collection_sender))),
         }
     }
 
@@ -95,18 +97,23 @@ impl UserTelemetryCollector {
         self.settings = Some(settings);
     }
 
-    pub fn get_collection_sender(&self) -> Sender<CollectionTelemetryMessage> {
-        self.collection_sender.clone()        
+    pub fn get_collection_sender(&self) -> CollectionTelemetrySender {
+        self.collection_sender.clone()
     }
 
     #[allow(dead_code)]
     pub fn prepare_data(&self) -> UserTelemetryData {
+        self.process_messages();
         UserTelemetryData {
             id: self.process_id.to_string(),
             app: self.get_app_data(),
             system: self.get_system_data(),
             configs: self.get_configs_data(),
         }
+    }
+
+    fn process_messages(&self) {
+        while let Ok(_message) = self.collection_receiver.try_recv() {}
     }
 
     fn get_app_data(&self) -> UserTelemetryApp {

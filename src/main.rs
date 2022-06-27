@@ -105,6 +105,7 @@ fn main() -> anyhow::Result<()> {
         runtime,
         channel_service.clone(),
         persistent_consensus_state.this_peer_id(),
+        telemetry_collector.get_collection_sender(),
     );
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {

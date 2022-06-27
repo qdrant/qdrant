@@ -457,6 +457,7 @@ mod tests {
 
     use crate::settings::ConsensusConfig;
     use api::grpc::transport_channel_pool::TransportChannelPool;
+    use collection::telemetry::get_empty_telemetry_sender;
     use collection::ChannelService;
     use segment::types::Distance;
     use slog::Drain;
@@ -492,6 +493,7 @@ mod tests {
             runtime,
             ChannelService::default(),
             persistent_state.this_peer_id(),
+            get_empty_telemetry_sender(),
         );
         let toc_arc = Arc::new(toc);
         let consensus_state: ConsensusStateRef =

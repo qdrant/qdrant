@@ -3,6 +3,7 @@ mod tests {
     use std::sync::Arc;
 
     use collection::optimizers_builder::OptimizersConfig;
+    use collection::telemetry::get_empty_telemetry_sender;
     use segment::types::Distance;
     use storage::{
         content_manager::{
@@ -45,7 +46,13 @@ mod tests {
         let runtime = Runtime::new().unwrap();
         let handle = runtime.handle().clone();
 
-        let toc = Arc::new(TableOfContent::new(&config, runtime, Default::default(), 0));
+        let toc = Arc::new(TableOfContent::new(
+            &config,
+            runtime,
+            Default::default(),
+            0,
+            get_empty_telemetry_sender(),
+        ));
         let dispatcher = Dispatcher::new(toc);
 
         handle

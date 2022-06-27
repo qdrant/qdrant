@@ -13,7 +13,10 @@ use crate::operations::OperationToShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::ShardOperation;
-use crate::telemetry::{CollectionTelemetryMessage, CollectionTelemetrySender, send_telemetry_message};
+use crate::telemetry::{
+    send_telemetry_message, telemetry_hash, telemetry_round, CollectionTelemetryMessage,
+    CollectionTelemetrySender,
+};
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
@@ -52,9 +55,9 @@ pub mod config;
 pub mod operations;
 pub mod optimizers_builder;
 pub mod shard;
+pub mod telemetry;
 mod update_handler;
 mod wal;
-pub mod telemetry;
 
 #[cfg(test)]
 mod tests;
@@ -275,6 +278,7 @@ impl Collection {
         config: &CollectionConfig,
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
+        telemetry_sender: CollectionTelemetrySender,
     ) -> Result<Self, CollectionError> {
         let creation_start = std::time::Instant::now();
 
@@ -318,14 +322,12 @@ impl Collection {
             ring.add(shard_id);
         }
 
-        let mut telemetry_sender = Arc::new(parking_lot::Mutex::new(None));
-
         let telemetry_message = CollectionTelemetryMessage::NewSegment {
-            id: id.clone(),
+            id: telemetry_hash(&id),
             config: config.clone(),
             creation_time: creation_start.elapsed(),
         };
-        send_telemetry_message(&mut telemetry_sender, telemetry_message);
+        send_telemetry_message(&telemetry_sender, telemetry_message);
 
         Ok(Self {
             id,
@@ -338,7 +340,12 @@ impl Collection {
         })
     }
 
-    pub async fn load(id: CollectionId, path: &Path, channel_service: ChannelService) -> Self {
+    pub async fn load(
+        id: CollectionId,
+        path: &Path,
+        channel_service: ChannelService,
+        telemetry_sender: CollectionTelemetrySender,
+    ) -> Self {
         let load_start = std::time::Instant::now();
 
         let stored_version_opt = CollectionVersion::load(path)
@@ -405,14 +412,12 @@ impl Collection {
             ring.add(shard_id);
         }
 
-        let mut telemetry_sender = Arc::new(parking_lot::Mutex::new(None));
-
         let telemetry_message = CollectionTelemetryMessage::LoadSegment {
-            id: id.clone(),
-            config: config,
+            id: telemetry_hash(&id),
+            config,
             load_time: load_start.elapsed(),
         };
-        send_telemetry_message(&mut telemetry_sender, telemetry_message);
+        send_telemetry_message(&telemetry_sender, telemetry_message);
 
         Self {
             id,
@@ -828,6 +833,23 @@ impl Collection {
         state
             .apply(this_peer_id, self, collection_path, channel_service)
             .await
+    }
+
+    pub async fn send_info_to_telemetry(&self) {
+        if let Ok(info) = self.info(None).await {
+            send_telemetry_message(
+                &self.telemetry_sender,
+                CollectionTelemetryMessage::Info {
+                    id: telemetry_hash(&self.id),
+                    status: info.status,
+                    optimizer_status: info.optimizer_status,
+                    vectors_count: telemetry_round(info.vectors_count),
+                    segments_count: telemetry_round(info.segments_count),
+                    disk_data_size: telemetry_round(info.disk_data_size),
+                    ram_data_size: telemetry_round(info.ram_data_size),
+                },
+            )
+        }
     }
 }
 

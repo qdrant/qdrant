@@ -1,6 +1,7 @@
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::types::CollectionError;
 use collection::optimizers_builder::OptimizersConfig;
+use collection::telemetry::get_empty_telemetry_sender;
 use collection::{ChannelService, Collection, CollectionId, CollectionShardDistribution};
 use segment::types::Distance;
 use std::num::NonZeroU32;
@@ -62,11 +63,18 @@ pub async fn new_local_collection(
         config,
         CollectionShardDistribution::AllLocal,
         ChannelService::default(),
+        get_empty_telemetry_sender(),
     )
     .await
 }
 
 /// Default to a collection with all the shards local
 pub async fn load_local_collection(id: CollectionId, path: &Path) -> Collection {
-    Collection::load(id, path, ChannelService::default()).await
+    Collection::load(
+        id,
+        path,
+        ChannelService::default(),
+        get_empty_telemetry_sender(),
+    )
+    .await
 }

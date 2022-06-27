@@ -35,6 +35,7 @@ use crate::types::{PeerAddressById, StorageConfig};
 use collection::collection_manager::collection_managers::CollectionSearcher;
 use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 use collection::shard::ShardId;
+use collection::telemetry::CollectionTelemetrySender;
 use collection::PeerId;
 
 const COLLECTIONS_DIR: &str = "collections";
@@ -51,6 +52,7 @@ pub struct TableOfContent {
     segment_searcher: Box<dyn CollectionSearcher + Sync + Send>,
     this_peer_id: PeerId,
     channel_service: ChannelService,
+    telemetry_sender: CollectionTelemetrySender,
 }
 
 impl TableOfContent {
@@ -60,6 +62,7 @@ impl TableOfContent {
         search_runtime: Runtime,
         channel_service: ChannelService,
         this_peer_id: PeerId,
+        telemetry_sender: CollectionTelemetrySender,
     ) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
         let collection_management_runtime = Runtime::new().unwrap();
@@ -82,6 +85,7 @@ impl TableOfContent {
                 collection_name.clone(),
                 &collection_path,
                 channel_service.clone(),
+                telemetry_sender.clone(),
             ));
 
             collections.insert(collection_name, collection);
@@ -98,6 +102,7 @@ impl TableOfContent {
             collection_management_runtime,
             this_peer_id,
             channel_service,
+            telemetry_sender,
         }
     }
 
@@ -213,6 +218,7 @@ impl TableOfContent {
             &collection_config,
             collection_shard_distribution,
             self.channel_service.clone(),
+            self.telemetry_sender.clone(),
         )
         .await?;
 
@@ -572,6 +578,7 @@ impl TableOfContent {
                             &state.config,
                             shard_distribution,
                             self.channel_service.clone(),
+                            self.telemetry_sender.clone(),
                         )
                         .await?;
                         collections.validate_collection_not_exists(id).await?;
