@@ -457,6 +457,7 @@ impl ShardOperation for &LocalShard {
         let collection_config = self.config.read().await.clone();
         let segments = self.segments.read();
         let mut vectors_count = 0;
+        let mut points_count = 0;
         let mut segments_count = 0;
         let mut ram_size = 0;
         let mut disk_size = 0;
@@ -469,6 +470,7 @@ impl ShardOperation for &LocalShard {
                 status = CollectionStatus::Yellow;
             }
             vectors_count += segment_info.num_vectors;
+            points_count += segment_info.num_points;
             disk_size += segment_info.disk_usage_bytes;
             ram_size += segment_info.ram_usage_bytes;
             for (key, val) in segment_info.index_schema {
@@ -488,6 +490,7 @@ impl ShardOperation for &LocalShard {
             status,
             optimizer_status,
             vectors_count,
+            points_count,
             segments_count,
             disk_data_size: disk_size,
             ram_data_size: ram_size,

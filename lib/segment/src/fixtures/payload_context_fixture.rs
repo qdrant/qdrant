@@ -2,7 +2,6 @@ use crate::entry::entry_point::OperationResult;
 use crate::fixtures::payload_fixtures::{
     generate_diverse_payload, FLT_KEY, GEO_KEY, INT_KEY, STR_KEY,
 };
-use crate::id_tracker::points_iterator::PointsIterator;
 use crate::id_tracker::IdTracker;
 use crate::index::plain_payload_index::PlainPayloadIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -20,11 +19,11 @@ use std::sync::Arc;
 /// Warn: Use for tests only
 ///
 /// This struct mimics the interface of `PointsIterator` and `IdTracker` only for basic cases
-pub struct IdsIterator {
+pub struct FixtureIdTracker {
     ids: Vec<PointOffsetType>,
 }
 
-impl IdsIterator {
+impl FixtureIdTracker {
     pub fn new(num_points: usize) -> Self {
         Self {
             ids: (0..num_points).map(|x| x as PointOffsetType).collect(),
@@ -32,21 +31,7 @@ impl IdsIterator {
     }
 }
 
-impl PointsIterator for IdsIterator {
-    fn points_count(&self) -> usize {
-        self.ids.len()
-    }
-
-    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(self.ids.iter().copied())
-    }
-
-    fn max_id(&self) -> PointOffsetType {
-        self.ids.last().copied().unwrap()
-    }
-}
-
-impl IdTracker for IdsIterator {
+impl IdTracker for FixtureIdTracker {
     fn version(&self, _external_id: PointIdType) -> Option<SeqNumberType> {
         Some(0)
     }
@@ -116,6 +101,18 @@ impl IdTracker for IdsIterator {
         )
     }
 
+    fn points_count(&self) -> usize {
+        self.ids.len()
+    }
+
+    fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        Box::new(self.ids.iter().copied())
+    }
+
+    fn max_id(&self) -> PointOffsetType {
+        self.ids.last().copied().unwrap()
+    }
+
     fn flush(&self) -> OperationResult<()> {
         Ok(())
     }
@@ -158,14 +155,14 @@ fn create_payload_storage_fixture(num_points: usize, seed: u64) -> InMemoryPaylo
 ///
 pub fn create_plain_payload_index(path: &Path, num_points: usize, seed: u64) -> PlainPayloadIndex {
     let payload_storage = create_payload_storage_fixture(num_points, seed);
-    let ids_iterator = Arc::new(AtomicRefCell::new(IdsIterator::new(num_points)));
+    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num_points)));
 
     let condition_checker = Arc::new(SimpleConditionChecker::new(
         Arc::new(AtomicRefCell::new(payload_storage.into())),
-        ids_iterator.clone(),
+        id_tracker.clone(),
     ));
 
-    PlainPayloadIndex::open(condition_checker, ids_iterator, path).unwrap()
+    PlainPayloadIndex::open(condition_checker, id_tracker, path).unwrap()
 }
 
 /// Function generates `StructPayloadIndex` with random payload for testing.
@@ -188,11 +185,9 @@ pub fn create_struct_payload_index(
     let payload_storage = Arc::new(AtomicRefCell::new(
         create_payload_storage_fixture(num_points, seed).into(),
     ));
-    let ids_iterator = Arc::new(AtomicRefCell::new(IdsIterator::new(num_points)));
+    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num_points)));
 
-    let mut index =
-        StructPayloadIndex::open(ids_iterator.clone(), payload_storage, ids_iterator, path)
-            .unwrap();
+    let mut index = StructPayloadIndex::open(payload_storage, id_tracker, path).unwrap();
 
     index
         .set_indexed(STR_KEY, PayloadSchemaType::Keyword)

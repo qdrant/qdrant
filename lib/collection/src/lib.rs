@@ -844,6 +844,7 @@ impl Collection {
                 info.optimizer_status =
                     max(info.optimizer_status.clone(), shard_info.optimizer_status);
                 info.vectors_count += shard_info.vectors_count;
+                info.points_count += shard_info.points_count;
                 info.segments_count += shard_info.segments_count;
                 info.disk_data_size += shard_info.disk_data_size;
                 info.ram_data_size += shard_info.ram_data_size;

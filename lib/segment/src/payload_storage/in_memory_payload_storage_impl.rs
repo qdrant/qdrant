@@ -57,7 +57,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::payload_context_fixture::IdsIterator;
+    use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::payload_storage::query_checker::check_payload;
     use crate::types::{Condition, FieldCondition, Filter, OwnedPayloadRef};
     use serde_json::json;
@@ -65,7 +65,7 @@ mod tests {
 
     #[test]
     fn test_condition_checking() {
-        let id_tracker = IdsIterator::new(1);
+        let id_tracker = FixtureIdTracker::new(1);
         let get_payload = || {
             let payload: Payload = serde_json::from_value(json!({
                 "name": "John Doe",

@@ -194,7 +194,7 @@ pub trait SegmentEntry {
     fn has_point(&self, point_id: PointIdType) -> bool;
 
     /// Return number of vectors in this segment
-    fn vectors_count(&self) -> usize;
+    fn points_count(&self) -> usize;
 
     fn vector_dim(&self) -> usize;
 

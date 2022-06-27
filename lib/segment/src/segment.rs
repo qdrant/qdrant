@@ -494,8 +494,8 @@ impl SegmentEntry for Segment {
         self.id_tracker.borrow().internal_id(point_id).is_some()
     }
 
-    fn vectors_count(&self) -> usize {
-        self.vector_storage.borrow().vector_count()
+    fn points_count(&self) -> usize {
+        self.id_tracker.borrow().points_count()
     }
 
     fn deleted_count(&self) -> usize {
@@ -524,7 +524,8 @@ impl SegmentEntry for Segment {
 
         SegmentInfo {
             segment_type: self.segment_type,
-            num_vectors: self.vectors_count(),
+            num_vectors: self.points_count(),
+            num_points: self.points_count(),
             num_deleted_vectors: self.vector_storage.borrow().deleted_count(),
             ram_usage_bytes: 0,  // ToDo: Implement
             disk_usage_bytes: 0, // ToDo: Implement

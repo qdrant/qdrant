@@ -13,7 +13,6 @@ use rocksdb::DB;
 use schemars::_serde_json::Value;
 
 use crate::entry::entry_point::OperationResult;
-use crate::id_tracker::points_iterator::PointsIteratorSS;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;
 use crate::index::field_index::FieldIndex;
@@ -36,7 +35,6 @@ pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
 
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
 pub struct StructPayloadIndex {
-    points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
     /// Payload storage
     payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
@@ -134,7 +132,6 @@ impl StructPayloadIndex {
     }
 
     pub fn open(
-        points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
         payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         path: &Path,
@@ -150,7 +147,6 @@ impl StructPayloadIndex {
         let db = open_db_with_existing_cf(path)?;
 
         let mut index = StructPayloadIndex {
-            points_iterator,
             payload,
             id_tracker,
             field_indexes: Default::default(),
@@ -204,7 +200,7 @@ impl StructPayloadIndex {
     }
 
     pub fn total_points(&self) -> usize {
-        self.points_iterator.borrow().points_count()
+        self.id_tracker.borrow().points_count()
     }
 
     fn struct_filtered_context<'a>(&'a self, filter: &'a Filter) -> StructFilterContext<'a> {
@@ -327,7 +323,7 @@ impl PayloadIndex for StructPayloadIndex {
         let query_cardinality = self.estimate_cardinality(query);
         return if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator =
-                ArcAtomicRefCellIterator::new(self.points_iterator.clone(), |points_iterator| {
+                ArcAtomicRefCellIterator::new(self.id_tracker.clone(), |points_iterator| {
                     points_iterator.iter_ids()
                 });
 
@@ -338,12 +334,14 @@ impl PayloadIndex for StructPayloadIndex {
 
             Box::new(matched_points)
         } else {
-            let points_iterator_ref = self.points_iterator.borrow();
+            let points_iterator_ref = self.id_tracker.borrow();
             let struct_filtered_context = self.struct_filtered_context(query);
 
             // CPU-optimized strategy here: points are made unique before applying other filters.
             // ToDo: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
-            let mut visited_list = self.visited_pool.get(points_iterator_ref.max_id() as usize);
+            let mut visited_list = self
+                .visited_pool
+                .get(points_iterator_ref.max_id() as usize + 1);
 
             #[allow(clippy::needless_collect)]
                 let preselected: Vec<PointOffsetType> = query_cardinality

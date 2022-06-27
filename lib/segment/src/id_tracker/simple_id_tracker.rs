@@ -1,6 +1,5 @@
 use crate::common::rocksdb_operations::{db_write_options, DB_MAPPING_CF, DB_VERSIONS_CF};
 use crate::entry::entry_point::OperationResult;
-use crate::id_tracker::points_iterator::PointsIterator;
 use crate::id_tracker::IdTracker;
 use crate::types::{ExtendedPointId, PointIdType, PointOffsetType, SeqNumberType};
 use atomic_refcell::AtomicRefCell;
@@ -194,15 +193,6 @@ impl IdTracker for SimpleIdTracker {
         Box::new(range.map(|(key, value)| (*key, *value)))
     }
 
-    fn flush(&self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        store_ref.flush_cf(store_ref.cf_handle(DB_MAPPING_CF).unwrap())?;
-        store_ref.flush_cf(store_ref.cf_handle(DB_VERSIONS_CF).unwrap())?;
-        Ok(store_ref.flush()?)
-    }
-}
-
-impl PointsIterator for SimpleIdTracker {
     fn points_count(&self) -> usize {
         self.internal_to_external.len()
     }
@@ -213,6 +203,13 @@ impl PointsIterator for SimpleIdTracker {
 
     fn max_id(&self) -> PointOffsetType {
         self.max_internal_id
+    }
+
+    fn flush(&self) -> OperationResult<()> {
+        let store_ref = self.store.borrow();
+        store_ref.flush_cf(store_ref.cf_handle(DB_MAPPING_CF).unwrap())?;
+        store_ref.flush_cf(store_ref.cf_handle(DB_VERSIONS_CF).unwrap())?;
+        Ok(store_ref.flush()?)
     }
 }
 
