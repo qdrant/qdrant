@@ -13,7 +13,6 @@ use rocksdb::DB;
 use schemars::_serde_json::Value;
 
 use crate::entry::entry_point::OperationResult;
-use crate::id_tracker::points_iterator::PointsIteratorSS;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;
 use crate::index::field_index::FieldIndex;

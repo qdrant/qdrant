@@ -20,7 +20,6 @@ use std::fs::{remove_dir_all, rename};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use crate::id_tracker::points_iterator::PointsIteratorSS;
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
