@@ -50,7 +50,7 @@ def points_retrieve():
         path_params={'collection_name': collection_name},
         body={
             "vector": [0.2, 0.1, 0.9, 0.7],
-            "top": 3
+            "limit": 3
         }
     )
     assert response.ok
@@ -72,7 +72,7 @@ def points_retrieve():
                 ]
             },
             "vector": [0.2, 0.1, 0.9, 0.7],
-            "top": 3
+            "limit": 3
         }
     )
     assert response.ok
@@ -99,7 +99,7 @@ def exclude_payload():
         path_params={'collection_name': collection_name},
         body={
             "vector": [0.2, 0.1, 0.9, 0.7],
-            "top": 5,
+            "limit": 5,
             "filter": {
                 "should": [
                     {
@@ -132,7 +132,7 @@ def is_empty_condition():
         path_params={'collection_name': collection_name},
         body={
             "vector": [0.2, 0.1, 0.9, 0.7],
-            "top": 5,
+            "limit": 5,
             "filter": {
                 "should": [
                     {
@@ -162,7 +162,7 @@ def recommendation():
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "top": 3,
+            "limit": 3,
             "negative": [],
             "positive": [1],
             "with_vector": False,

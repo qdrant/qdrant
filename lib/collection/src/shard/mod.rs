@@ -5,8 +5,8 @@ pub mod shard_config;
 
 use crate::shard::remote_shard::RemoteShard;
 use crate::{
-    CollectionInfo, CollectionResult, CollectionSearcher, CollectionUpdateOperations, LocalShard,
-    PeerId, PointRequest, Record, SearchRequest, UpdateResult,
+    CollectionInfo, CollectionResult, CollectionUpdateOperations, LocalShard, PeerId, PointRequest,
+    Record, SearchRequest, UpdateResult,
 };
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
@@ -59,7 +59,6 @@ pub trait ShardOperation {
     #[allow(clippy::too_many_arguments)]
     async fn scroll_by(
         &self,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         offset: Option<ExtendedPointId>,
         limit: usize,
         with_payload_interface: &WithPayloadInterface,
@@ -72,14 +71,12 @@ pub trait ShardOperation {
     async fn search(
         &self,
         request: Arc<SearchRequest>,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>>;
 
     async fn retrieve(
         &self,
         request: Arc<PointRequest>,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         with_payload: &WithPayload,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>>;

@@ -51,7 +51,7 @@ $docker_grpcurl -d '{ "collection_name": "test_collection" }' $QDRANT_HOST qdran
 $docker_grpcurl -d '{
   "collection_name": "test_collection",
   "vector": [0.2,0.1,0.9,0.7],
-  "top": 3
+  "limit": 3
 }' $QDRANT_HOST qdrant.Points/Search
 
 $docker_grpcurl -d '{
@@ -69,7 +69,7 @@ $docker_grpcurl -d '{
     ]
   },
   "vector": [0.2,0.1,0.9,0.7],
-  "top": 3
+  "limit": 3
 }' $QDRANT_HOST qdrant.Points/Search
 
 $docker_grpcurl -d '{
@@ -118,7 +118,7 @@ $docker_grpcurl -d '{
 $docker_grpcurl -d '{
   "collection_name": "test_alias",
   "vector": [0.2,0.1,0.9,0.7],
-  "top": 3
+  "limit": 3
 }' $QDRANT_HOST qdrant.Points/Search
 
 # rename alias
@@ -137,7 +137,7 @@ $docker_grpcurl -d '{
 $docker_grpcurl -d '{
   "collection_name": "new_test_alias",
   "vector": [0.2,0.1,0.9,0.7],
-  "top": 3
+  "limit": 3
 }' $QDRANT_HOST qdrant.Points/Search
 
 # delete alias
@@ -172,7 +172,7 @@ $docker_grpcurl -d '{
 #  --fail -s \
 #  --data-raw '{
 #        "vector": [0.2,0.1,0.9,0.7],
-#        "top": 3
+#        "limit": 3
 #    }' | jq
 #
 #curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/search" \
@@ -190,5 +190,5 @@ $docker_grpcurl -d '{
 #          ]
 #      },
 #      "vector": [0.2, 0.1, 0.9, 0.7],
-#      "top": 3
+#      "limit": 3
 #  }' | jq

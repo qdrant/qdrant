@@ -10,7 +10,6 @@ use tokio::runtime::Handle;
 use segment::spaces::tools::peek_top_largest_scores_iterable;
 use segment::types::{PointIdType, ScoredPoint, SeqNumberType, WithPayload, WithPayloadInterface};
 
-use crate::collection_manager::collection_managers::CollectionSearcher;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::operations::types::CollectionResult;
 use crate::operations::types::{Record, SearchRequest};
@@ -18,18 +17,10 @@ use crate::operations::types::{Record, SearchRequest};
 /// Simple implementation of segment manager
 ///  - rebuild segment for memory optimization purposes
 #[derive(Default)]
-pub struct SimpleCollectionSearcher {}
+pub struct SegmentsSearcher {}
 
-impl SimpleCollectionSearcher {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-#[async_trait::async_trait]
-impl CollectionSearcher for SimpleCollectionSearcher {
-    async fn search(
-        &self,
+impl SegmentsSearcher {
+    pub async fn search(
         segments: &RwLock<SegmentHolder>,
         request: Arc<SearchRequest>,
         runtime_handle: &Handle,
@@ -78,14 +69,13 @@ impl CollectionSearcher for SimpleCollectionSearcher {
                     seen_idx.insert(scored.id);
                     !res
                 }),
-            request.top,
+            request.limit + request.offset,
         );
 
         Ok(top_scores)
     }
 
-    async fn retrieve(
-        &self,
+    pub async fn retrieve(
         segments: &RwLock<SegmentHolder>,
         points: &[PointIdType],
         with_payload: &WithPayload,
@@ -144,7 +134,7 @@ async fn search_in_segment(
         &with_payload,
         with_vector,
         request.filter.as_ref(),
-        request.top,
+        request.limit + request.offset,
         request.params.as_ref(),
     )?;
 
@@ -165,8 +155,6 @@ mod tests {
 
         let segment_holder = build_test_holder(dir.path());
 
-        let searcher = SimpleCollectionSearcher::new();
-
         let query = vec![1.0, 1.0, 1.0, 1.0];
 
         let req = Arc::new(SearchRequest {
@@ -175,12 +163,12 @@ mod tests {
             with_vector: false,
             filter: None,
             params: None,
-            top: 5,
+            limit: 5,
             score_threshold: None,
+            offset: 0,
         });
 
-        let result = searcher
-            .search(&segment_holder, req, &Handle::current())
+        let result = SegmentsSearcher::search(&segment_holder, req, &Handle::current())
             .await
             .unwrap();
 
@@ -197,17 +185,14 @@ mod tests {
         let dir = TempDir::new("segment_dir").unwrap();
         let segment_holder = build_test_holder(dir.path());
 
-        let searcher = SimpleCollectionSearcher::new();
-
-        let records = searcher
-            .retrieve(
-                &segment_holder,
-                &[1.into(), 2.into(), 3.into()],
-                &WithPayload::from(true),
-                true,
-            )
-            .await
-            .unwrap();
+        let records = SegmentsSearcher::retrieve(
+            &segment_holder,
+            &[1.into(), 2.into(), 3.into()],
+            &WithPayload::from(true),
+            true,
+        )
+        .await
+        .unwrap();
         assert_eq!(records.len(), 3);
     }
 }

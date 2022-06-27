@@ -1128,11 +1128,12 @@ The JSON representation for `Value` is JSON value.
 | positive | [PointId](#qdrant-PointId) | repeated | Look for vectors closest to those |
 | negative | [PointId](#qdrant-PointId) | repeated | Try to avoid vectors like this |
 | filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
-| top | [uint64](#uint64) |  | Max number of result |
+| limit | [uint64](#uint64) |  | Max number of result |
 | with_vector | [bool](#bool) | optional | Return point vector with the result. |
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
 | params | [SearchParams](#qdrant-SearchParams) |  | Search config |
 | score_threshold | [float](#float) | optional | If provided - cut off results with worse scores |
+| offset | [uint64](#uint64) | optional | Offset of the result |
 
 
 
@@ -1286,11 +1287,12 @@ The JSON representation for `Value` is JSON value.
 | collection_name | [string](#string) |  | name of the collection |
 | vector | [float](#float) | repeated | vector |
 | filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
-| top | [uint64](#uint64) |  | Max number of result |
+| limit | [uint64](#uint64) |  | Max number of result |
 | with_vector | [bool](#bool) | optional | Return point vector with the result. |
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
 | params | [SearchParams](#qdrant-SearchParams) |  | Search config |
 | score_threshold | [float](#float) | optional | If provided - cut off results with worse scores |
+| offset | [uint64](#uint64) | optional | Offset of the result |
 
 
 

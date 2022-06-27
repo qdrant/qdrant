@@ -926,6 +926,15 @@ pub enum WithPayloadInterface {
     Selector(PayloadSelector),
 }
 
+impl WithPayloadInterface {
+    pub fn is_required(&self) -> bool {
+        match self {
+            WithPayloadInterface::Bool(b) => *b,
+            _ => true,
+        }
+    }
+}
+
 impl From<bool> for WithPayload {
     fn from(x: bool) -> Self {
         WithPayload {
