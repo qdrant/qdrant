@@ -403,7 +403,7 @@ impl SegmentEntry for Segment {
         res
     }
 
-    fn upsert_point(
+    fn upsert_vector(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
@@ -1006,7 +1006,7 @@ mod tests {
         };
 
         let mut segment = build_segment(dir.path(), &config).unwrap();
-        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
+        segment.upsert_vector(0, 0.into(), &[1.0, 1.0]).unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
 

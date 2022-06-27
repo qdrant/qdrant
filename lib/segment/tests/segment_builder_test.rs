@@ -33,7 +33,7 @@ mod tests {
 
         // Include overlapping with segment1 to check the
         segment2
-            .upsert_point(100, 3.into(), &[0., 0., 0., 0.])
+            .upsert_vector(100, 3.into(), &[0., 0., 0., 0.])
             .unwrap();
 
         builder.update_from(&segment1, &stopped).unwrap();
@@ -119,7 +119,7 @@ mod tests {
 
         for idx in 0..1000 {
             segment
-                .upsert_point(1, idx.into(), &[0., 0., 0., 0.])
+                .upsert_vector(1, idx.into(), &[0., 0., 0., 0.])
                 .unwrap();
         }
 

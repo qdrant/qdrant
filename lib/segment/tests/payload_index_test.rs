@@ -50,8 +50,8 @@ mod tests {
             let vector = random_vector(&mut rnd, dim);
             let payload: Payload = generate_diverse_payload(&mut rnd);
 
-            plain_segment.upsert_point(opnum, idx, &vector).unwrap();
-            struct_segment.upsert_point(opnum, idx, &vector).unwrap();
+            plain_segment.upsert_vector(opnum, idx, &vector).unwrap();
+            struct_segment.upsert_vector(opnum, idx, &vector).unwrap();
             plain_segment
                 .set_full_payload(opnum, idx, &payload)
                 .unwrap();
