@@ -1,12 +1,16 @@
+use collection::telemetry::CollectionTelemetry;
 use serde::Serialize;
 use std::path::Path;
+use std::sync::Arc;
+use storage::Dispatcher;
 use uuid::Uuid;
 
 use crate::settings::Settings;
 
 pub struct UserTelemetryCollector {
     process_id: Uuid,
-    settings: Option<Settings>,
+    settings: Settings,
+    dispatcher: Arc<Dispatcher>,
 }
 
 #[derive(Serialize, Clone)]
@@ -73,27 +77,27 @@ pub struct UserTelemetryData {
     app: UserTelemetryApp,
     system: UserTelemetrySystem,
     configs: UserTelemetryConfigs,
+    collections: Vec<CollectionTelemetry>,
 }
 
 impl UserTelemetryCollector {
-    pub fn new() -> Self {
+    pub fn new(settings: Settings, dispatcher: Arc<Dispatcher>) -> Self {
         Self {
             process_id: Uuid::new_v4(),
-            settings: None,
+            settings,
+            dispatcher,
         }
     }
 
-    pub fn put_settings(&mut self, settings: Settings) {
-        self.settings = Some(settings);
-    }
-
     #[allow(dead_code)]
-    pub fn prepare_data(&self) -> UserTelemetryData {
+    pub async fn prepare_data(&self) -> UserTelemetryData {
+        let collections = self.dispatcher.get_telemetry_data().await;
         UserTelemetryData {
             id: self.process_id.to_string(),
             app: self.get_app_data(),
             system: self.get_system_data(),
             configs: self.get_configs_data(),
+            collections,
         }
     }
 
@@ -154,10 +158,7 @@ impl UserTelemetryCollector {
     }
 
     fn get_configs_data(&self) -> UserTelemetryConfigs {
-        let settings = self
-            .settings
-            .clone()
-            .expect("User settings have been not provided");
+        let settings = self.settings.clone();
         UserTelemetryConfigs {
             service_config: UserTelemetryServiceConfig {
                 grpc_enable: settings.service.grpc_port.is_some(),
