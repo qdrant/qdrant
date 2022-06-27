@@ -1,6 +1,8 @@
-use collection::telemetry::CollectionTelemetryMessage;
-use collection::telemetry::CollectionTelemetrySender;
+use collection::config::CollectionConfig;
+use collection::operations::types::{CollectionStatus, OptimizersStatus};
+use collection::telemetry::{CollectionTelemetryMessage, CollectionTelemetrySender};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::Receiver;
@@ -9,9 +11,21 @@ use uuid::Uuid;
 
 use crate::settings::Settings;
 
+pub struct CollectionTelemetryCollector {
+    config: CollectionConfig,
+    init_time: std::time::Duration,
+    status: CollectionStatus,
+    optimizer_status: OptimizersStatus,
+    vectors_count: usize,
+    segments_count: usize,
+    disk_data_size: usize,
+    ram_data_size: usize,
+}
+
 pub struct UserTelemetryCollector {
     process_id: Uuid,
     settings: Option<Settings>,
+    collections: HashMap<String, CollectionTelemetryCollector>,
     collection_receiver: Receiver<CollectionTelemetryMessage>,
     collection_sender: CollectionTelemetrySender,
 }
@@ -75,11 +89,25 @@ pub struct UserTelemetryConfigs {
 }
 
 #[derive(Serialize, Clone)]
+pub struct UserTelemetryCollection {
+    id: String,
+    config: CollectionConfig,
+    creation_time: std::time::Duration,
+    status: CollectionStatus,
+    optimizer_status: OptimizersStatus,
+    vectors_count: usize,
+    segments_count: usize,
+    disk_data_size: usize,
+    ram_data_size: usize,
+}
+
+#[derive(Serialize, Clone)]
 pub struct UserTelemetryData {
     id: String,
     app: UserTelemetryApp,
     system: UserTelemetrySystem,
     configs: UserTelemetryConfigs,
+    collections: Vec<UserTelemetryCollection>,
 }
 
 impl UserTelemetryCollector {
@@ -88,6 +116,7 @@ impl UserTelemetryCollector {
         Self {
             process_id: Uuid::new_v4(),
             settings: None,
+            collections: HashMap::new(),
             collection_receiver,
             collection_sender: Arc::new(parking_lot::Mutex::new(Some(collection_sender))),
         }
@@ -102,18 +131,56 @@ impl UserTelemetryCollector {
     }
 
     #[allow(dead_code)]
-    pub fn prepare_data(&self) -> UserTelemetryData {
+    pub fn prepare_data(&mut self) -> UserTelemetryData {
         self.process_messages();
         UserTelemetryData {
             id: self.process_id.to_string(),
             app: self.get_app_data(),
             system: self.get_system_data(),
             configs: self.get_configs_data(),
+            collections: self.get_collections_data(),
         }
     }
 
-    fn process_messages(&self) {
-        while let Ok(_message) = self.collection_receiver.try_recv() {}
+    fn process_messages(&mut self) {
+        while let Ok(message) = self.collection_receiver.try_recv() {
+            match message {
+                CollectionTelemetryMessage::NewSegment {
+                    id,
+                    config,
+                    creation_time,
+                } => {
+                    let collection = CollectionTelemetryCollector::new(config, creation_time);
+                    self.collections.insert(id, collection);
+                }
+                CollectionTelemetryMessage::LoadSegment {
+                    id,
+                    config,
+                    load_time,
+                } => {
+                    let collection = CollectionTelemetryCollector::new(config, load_time);
+                    self.collections.insert(id, collection);
+                }
+                CollectionTelemetryMessage::Info {
+                    id,
+                    status,
+                    optimizer_status,
+                    vectors_count,
+                    segments_count,
+                    disk_data_size,
+                    ram_data_size,
+                } => {
+                    if let Some(collection) = self.collections.get_mut(&id) {
+                        collection.status = status;
+                        collection.optimizer_status = optimizer_status;
+                        collection.vectors_count = vectors_count;
+                        collection.segments_count = segments_count;
+                        collection.disk_data_size = disk_data_size;
+                        collection.ram_data_size = ram_data_size;
+                    }
+                }
+            }
+        }
     }
 
     fn get_app_data(&self) -> UserTelemetryApp {
@@ -196,6 +263,39 @@ impl UserTelemetryCollector {
                     bootstrap_timeout_sec: settings.cluster.consensus.bootstrap_timeout_sec,
                 },
             },
+        }
+    }
+
+    fn get_collections_data(&self) -> Vec<UserTelemetryCollection> {
+        let mut result = Vec::new();
+        for (id, collection) in &self.collections {
+            result.push(UserTelemetryCollection {
+                id: id.clone(),
+                config: collection.config.clone(),
+                creation_time: collection.init_time,
+                status: collection.status,
+                optimizer_status: collection.optimizer_status.clone(),
+                vectors_count: collection.vectors_count,
+                segments_count: collection.segments_count,
+                disk_data_size: collection.disk_data_size,
+                ram_data_size: collection.ram_data_size,
+            });
+        }
+        result
+    }
+}
+
+impl CollectionTelemetryCollector {
+    pub fn new(config: CollectionConfig, init_time: std::time::Duration) -> Self {
+        Self {
+            config,
+            init_time,
+            status: CollectionStatus::Green,
+            optimizer_status: OptimizersStatus::Ok,
+            vectors_count: 0,
+            segments_count: 0,
+            disk_data_size: 0,
+            ram_data_size: 0,
         }
     }
 }
