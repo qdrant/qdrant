@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::entry::entry_point::OperationResult;
+use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -18,7 +19,6 @@ use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use crate::id_tracker::IdTrackerSS;
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
