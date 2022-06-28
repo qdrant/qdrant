@@ -1535,7 +1535,7 @@
       "name": "Apache 2.0",
       "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "version": "master"
+    "version": "v0.8.3"
   },
   "externalDocs": {
     "description": "Find out more about Qdrant applications and demo",
@@ -1633,7 +1633,6 @@
           "disk_data_size",
           "optimizer_status",
           "payload_schema",
-          "points_count",
           "ram_data_size",
           "segments_count",
           "status",
@@ -1648,12 +1647,6 @@
           },
           "vectors_count": {
             "description": "Number of vectors in collection",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          },
-          "points_count": {
-            "description": "Number of points in collection",
             "type": "integer",
             "format": "uint",
             "minimum": 0
