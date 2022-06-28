@@ -185,10 +185,6 @@ pub struct Query {
 pub struct BatchSearchRequest {
     /// batch of vector queries.
     pub batch: Vec<Query>,
-    /// Look for vectors closest to this
-    pub vector: Vec<VectorElementType>,
-    /// Look only for points which satisfies this conditions
-    pub filter: Option<Filter>,
     /// Additional search params
     pub params: Option<SearchParams>,
     /// Max number of result to return
