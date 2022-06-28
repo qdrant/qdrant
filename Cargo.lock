@@ -3390,6 +3390,7 @@ dependencies = [
  "async-trait",
  "atomicwrites",
  "collection",
+ "criterion",
  "http",
  "itertools",
  "log 0.4.17",
