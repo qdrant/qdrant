@@ -8,7 +8,7 @@ use atomicwrites::Error as AtomicIoError;
 use rocksdb::Error;
 use std::collections::HashMap;
 use std::io::Error as IoError;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::result;
 use thiserror::Error;
 
@@ -250,4 +250,9 @@ pub trait SegmentEntry {
         op_num: SeqNumberType,
         filter: &'a Filter,
     ) -> OperationResult<usize>;
+
+    /// Take a snapshot of the segment.
+    ///
+    /// Creates a tar archive of the segment directory into `snapshot_dir_path`.
+    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()>;
 }

@@ -792,6 +792,7 @@ dependencies = [
  "tonic",
  "tower",
  "wal",
+ "walkdir",
 ]
 
 [[package]]

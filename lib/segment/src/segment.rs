@@ -235,47 +235,6 @@ impl Segment {
         let payload_index = self.payload_index.borrow();
         payload_index.infer_payload_type(key)
     }
-
-    /// Take a snapshot of the segment.
-    ///
-    /// Creates a tar archive of the segment directory into `snapshot_dir_path`.
-    #[allow(dead_code)]
-    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
-        if !snapshot_dir_path.exists() {
-            return Err(OperationError::service_error(&format!(
-                "the snapshot path provided {:?} does not exist",
-                snapshot_dir_path
-            )));
-        }
-        if !snapshot_dir_path.is_dir() {
-            return Err(OperationError::service_error(&format!(
-                "the snapshot path provided {:?} is not a directory",
-                snapshot_dir_path
-            )));
-        }
-        // flush segment to capture latest state
-        self.flush()?;
-        // extract segment id from current path
-        let segment_id = self
-            .current_path
-            .file_stem()
-            .and_then(|f| f.to_str())
-            .unwrap();
-        let file_name = format!("{}.tar", segment_id);
-        let archive_path = snapshot_dir_path.join(file_name);
-        if archive_path.exists() {
-            return Err(OperationError::service_error(&format!(
-                "the snapshot path directory already contains an archive for the segment {}",
-                segment_id
-            )));
-        }
-        let file = File::create(archive_path)?;
-        let mut builder = Builder::new(file);
-        // archive recursively segment directory `current_path` into `archive_path`.
-        builder.append_dir_all(".", &self.current_path)?;
-        builder.finish()?;
-        Ok(())
-    }
 }
 
 /// This is a basic implementation of `SegmentEntry`,
@@ -704,6 +663,44 @@ impl SegmentEntry for Segment {
     fn vector_dim(&self) -> usize {
         self.segment_config.vector_size
     }
+
+    #[allow(dead_code)]
+    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
+        if !snapshot_dir_path.exists() {
+            return Err(OperationError::service_error(&format!(
+                "the snapshot path provided {:?} does not exist",
+                snapshot_dir_path
+            )));
+        }
+        if !snapshot_dir_path.is_dir() {
+            return Err(OperationError::service_error(&format!(
+                "the snapshot path provided {:?} is not a directory",
+                snapshot_dir_path
+            )));
+        }
+        // flush segment to capture latest state
+        self.flush()?;
+        // extract segment id from current path
+        let segment_id = self
+            .current_path
+            .file_stem()
+            .and_then(|f| f.to_str())
+            .unwrap();
+        let file_name = format!("{}.tar", segment_id);
+        let archive_path = snapshot_dir_path.join(file_name);
+        if archive_path.exists() {
+            return Err(OperationError::service_error(&format!(
+                "the snapshot path directory already contains an archive for the segment {}",
+                segment_id
+            )));
+        }
+        let file = File::create(archive_path)?;
+        let mut builder = Builder::new(file);
+        // archive recursively segment directory `current_path` into `archive_path`.
+        builder.append_dir_all(".", &self.current_path)?;
+        builder.finish()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -866,7 +863,6 @@ mod tests {
         assert_eq!(segment_file_count, 20);
 
         let snapshot_dir = TempDir::new("snapshot_dir").unwrap();
-        println!("{:?}", snapshot_dir);
 
         // snapshotting!
         segment.take_snapshot(snapshot_dir.path()).unwrap();

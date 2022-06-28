@@ -8,7 +8,7 @@ use segment::types::{
 };
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -498,6 +498,13 @@ impl SegmentEntry for ProxySegment {
 
     fn vector_dim(&self) -> usize {
         self.write_segment.get().read().vector_dim()
+    }
+
+    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
+        self.wrapped_segment
+            .get()
+            .read()
+            .take_snapshot(snapshot_dir_path)
     }
 }
 

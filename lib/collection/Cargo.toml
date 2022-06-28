@@ -9,7 +9,7 @@ edition = "2021"
 [dev-dependencies]
 tempdir = "0.3.7"
 criterion = "0.3"
-
+walkdir = "2.3.2"
 
 [dependencies]
 
