@@ -10,7 +10,7 @@ pub const ALIAS_MAPPING_CONFIG_FILE: &str = "data.json";
 
 type Alias = String;
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Default)]
 pub struct AliasMapping(HashMap<Alias, collection::CollectionId>);
 
 impl AliasMapping {

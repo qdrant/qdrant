@@ -542,8 +542,14 @@ mod tests {
             persistent_state.this_peer_id(),
         );
         let toc_arc = Arc::new(toc);
-        let consensus_state: ConsensusStateRef =
-            ConsensusState::new(persistent_state, toc_arc.clone(), propose_sender).into();
+        let storage_path = toc_arc.storage_path();
+        let consensus_state: ConsensusStateRef = ConsensusState::new(
+            persistent_state,
+            toc_arc.clone(),
+            propose_sender,
+            storage_path,
+        )
+        .into();
         let dispatcher = Dispatcher::new(toc_arc.clone()).with_consensus(consensus_state.clone());
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
         let (mut consensus, message_sender) = Consensus::new(
