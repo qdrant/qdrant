@@ -3,7 +3,7 @@ import os
 import shutil
 from subprocess import Popen
 import time
-from typing import Tuple
+from typing import Tuple, Callable
 import requests
 import socket
 from contextlib import closing
@@ -81,16 +81,16 @@ def make_peer_folders(base_path: Path, n_peers: int) -> list[Path]:
     return peer_dirs
 
 
-def get_cluster_info(peer_api_uri: str) -> str:
+def get_cluster_info(peer_api_uri: str) -> dict:
     r = requests.get(f"{peer_api_uri}/cluster")
     assert_http_ok(r)
     res = r.json()["result"]
-    return json.dumps(res, indent=4)
+    return res
 
 
 def print_clusters_info(peer_api_uris: [str]):
     for uri in peer_api_uris:
-        print(get_cluster_info(uri))
+        print(json.dumps(get_cluster_info(uri), indent=4))
 
 
 def get_leader(peer_api_uri: str) -> str:
@@ -165,43 +165,36 @@ def collection_exists_on_all_peers(collection_name: str, peer_api_uris: [str]) -
     return True
 
 
-WAIT_TIME_SEC = 30
+WAIT_TIME_SEC = 60
 RETRY_INTERVAL_SEC = 0.5
 
 
 def wait_peer_added(peer_api_uri: str, expected_size: int = 1) -> str:
-    start = time.time()
-    while not check_cluster_size(peer_api_uri, expected_size):
-        elapsed = time.time() - start
-        # do not wait more than WAIT_TIME_SEC
-        if elapsed > WAIT_TIME_SEC:
-            raise Exception(f"Peer {peer_api_uri} did not join cluster in time ({WAIT_TIME_SEC} sec)")
-        else:
-            time.sleep(RETRY_INTERVAL_SEC)
+    wait_for(check_cluster_size, peer_api_uri, expected_size)
     return get_leader(peer_api_uri)
 
 
 def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str):
-    start = time.time()
-    while not all_nodes_cluster_info_consistent(peer_api_uris, expected_leader):
-        elapsed = time.time() - start
-        # do not wait more than WAIT_TIME_SEC
-        if elapsed > WAIT_TIME_SEC:
-            # print cluster for debug
-            print_clusters_info(peer_api_uris)
-            raise Exception(f"Cluster size was not uniform in time ({WAIT_TIME_SEC} sec)")
-        else:
-            time.sleep(RETRY_INTERVAL_SEC)
+    try:
+        wait_for(all_nodes_cluster_info_consistent, peer_api_uris, expected_leader)
+    except Exception as e:
+        print_clusters_info(peer_api_uris)
+        raise e
 
 
 def wait_for_uniform_collection_existence(collection_name: str, peer_api_uris: [str]):
+    try:
+        wait_for(collection_exists_on_all_peers, collection_name, peer_api_uris)
+    except Exception as e:
+        print_clusters_info(peer_api_uris)
+        raise e
+
+
+def wait_for(condition: Callable[..., bool], *args):
     start = time.time()
-    while not collection_exists_on_all_peers(collection_name, peer_api_uris):
+    while not condition(*args):
         elapsed = time.time() - start
-        # do not wait more than WAIT_TIME_SEC
         if elapsed > WAIT_TIME_SEC:
-            # print cluster for debug
-            print_clusters_info(peer_api_uris)
-            raise Exception(f"Collection '{collection_name}' does not exist on all peers in time ({WAIT_TIME_SEC} sec)")
+            raise Exception(f"Timeout waiting for condition {condition.__name__} to be satisfied in {WAIT_TIME_SEC} seconds")
         else:
             time.sleep(RETRY_INTERVAL_SEC)
