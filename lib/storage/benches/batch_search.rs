@@ -83,7 +83,7 @@ fn batch_search_benchmark(c: &mut Criterion) {
     group.bench_function("batch-search", |b| {
         b.iter(|| {
             handle
-                .block_on(toc.search_batch(
+                .block_on(toc.batch_search(
                     "test",
                     BatchSearchRequest {
                         batch: vec![Query {
