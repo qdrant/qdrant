@@ -7,6 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dev-dependencies]
 tempdir = "0.3.7"
+criterion = "0.3"
 
 [dependencies]
 
@@ -33,3 +34,9 @@ serde_cbor = { version = "0.11.2" }
 segment = {path = "../segment"}
 collection = {path = "../collection"}
 api = {path = "../api"}
+
+
+
+[[bench]]
+name = "batch_search"
+harness = false
