@@ -5,7 +5,7 @@ use log::debug;
 use rocksdb::{IteratorMode, DB};
 use serde::{Deserialize, Serialize};
 
-use crate::common::rocksdb_operations::{db_write_options, DB_VECTOR_CF};
+use crate::common::rocksdb_operations::{db_write_options, flush_db, DB_VECTOR_CF};
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::tools::peek_top_largest_scores_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
@@ -261,9 +261,7 @@ where
     }
 
     fn flush(&self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        let cf_handle = store_ref.cf_handle(DB_VECTOR_CF).unwrap();
-        Ok(store_ref.flush_cf(cf_handle)?)
+        flush_db(&self.store, DB_VECTOR_CF)
     }
 
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {

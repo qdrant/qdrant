@@ -4,7 +4,7 @@ use std::iter;
 
 use serde_json::Value;
 
-use crate::common::rocksdb_operations::{db_write_options, recreate_cf};
+use crate::common::rocksdb_operations::{db_write_options, flush_db, recreate_cf};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::PayloadFieldIndex;
 use crate::index::field_index::{
@@ -75,14 +75,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 
     pub fn flush(&self) -> OperationResult<()> {
-        let store_ref = self.db.borrow();
-        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Index flush error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-        Ok(store_ref.flush_cf(cf_handle)?)
+        flush_db(&self.db, &self.store_cf_name)
     }
 
     pub fn match_cardinality(&self, value: &N) -> CardinalityEstimation {

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::common::rocksdb_operations::{db_options, DB_PAYLOAD_CF};
+use crate::common::rocksdb_operations::{db_options, flush_db, DB_PAYLOAD_CF};
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::PayloadStorage;
@@ -61,9 +61,7 @@ impl PayloadStorage for SimplePayloadStorage {
     }
 
     fn flush(&self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        let cf_handle = store_ref.cf_handle(DB_PAYLOAD_CF).unwrap();
-        Ok(store_ref.flush_cf(cf_handle)?)
+        flush_db(&self.store, DB_PAYLOAD_CF)
     }
 }
 

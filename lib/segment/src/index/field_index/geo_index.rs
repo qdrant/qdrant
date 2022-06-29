@@ -1,4 +1,4 @@
-use crate::common::rocksdb_operations::{db_write_options, recreate_cf};
+use crate::common::rocksdb_operations::{db_write_options, flush_db, recreate_cf};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{
     circle_hashes, common_hash_prefix, encode_max_precision, geo_hash_to_box, rectangle_hashes,
@@ -149,14 +149,7 @@ impl GeoMapIndex {
     }
 
     pub fn flush(&self) -> OperationResult<()> {
-        let store_ref = self.db.borrow();
-        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Index flush error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-        Ok(store_ref.flush_cf(cf_handle)?)
+        flush_db(&self.db, &self.store_cf_name)
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<GeoPoint>> {

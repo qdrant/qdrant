@@ -1,3 +1,4 @@
+use crate::entry::entry_point::{OperationError, OperationResult};
 use atomic_refcell::AtomicRefCell;
 use rocksdb::{Error, LogLevel, Options, WriteOptions, DB};
 use std::path::Path;
@@ -6,6 +7,7 @@ use std::sync::Arc;
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 const DB_MAX_LOG_SIZE: usize = 1024 * 1024; // 1 mb
 const DB_MAX_OPEN_FILES: usize = 256;
+const MAX_SST_FILES_PER_COLUMN_FAMILY: usize = 8;
 
 pub const DB_VECTOR_CF: &str = "vector";
 pub const DB_PAYLOAD_CF: &str = "payload";
@@ -77,5 +79,34 @@ pub fn recreate_cf(db: Arc<AtomicRefCell<DB>>, store_cf_name: &str) -> Result<()
     }
 
     db_mut.create_cf(store_cf_name, &db_options())?;
+    Ok(())
+}
+
+pub fn flush_db(db: &Arc<AtomicRefCell<DB>>, cf_name: &str) -> OperationResult<()> {
+    let db_ref = db.borrow();
+    let cf = db_ref.cf_handle(cf_name).ok_or_else(|| {
+        OperationError::service_error(&format!(
+            "RocksDB flush error: column family {} not found",
+            cf_name
+        ))
+    })?;
+
+    db_ref.flush_cf(cf)?;
+
+    let live_files = db_ref
+        .live_files()?
+        .iter()
+        .filter(|live_file| live_file.column_family_name == cf_name)
+        .count();
+
+    if live_files > MAX_SST_FILES_PER_COLUMN_FAMILY {
+        let mut compact_options = rocksdb::CompactOptions::default();
+        compact_options.set_bottommost_level_compaction(rocksdb::BottommostLevelCompaction::Force);
+        // merge all SST files to one
+        let start_key: Option<&[u8]> = None;
+        let end_key: Option<&[u8]> = None;
+        db_ref.compact_range_cf_opt(cf, start_key, end_key, &compact_options);
+    }
+
     Ok(())
 }

@@ -1,4 +1,6 @@
-use crate::common::rocksdb_operations::{db_write_options, DB_MAPPING_CF, DB_VERSIONS_CF};
+use crate::common::rocksdb_operations::{
+    db_write_options, flush_db, DB_MAPPING_CF, DB_VERSIONS_CF,
+};
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTracker;
 use crate::types::{ExtendedPointId, PointIdType, PointOffsetType, SeqNumberType};
@@ -217,13 +219,11 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn flush_mapping(&self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        Ok(store_ref.flush_cf(store_ref.cf_handle(DB_MAPPING_CF).unwrap())?)
+        flush_db(&self.store, DB_MAPPING_CF)
     }
 
     fn flush_versions(&self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        Ok(store_ref.flush_cf(store_ref.cf_handle(DB_VERSIONS_CF).unwrap())?)
+        flush_db(&self.store, DB_VERSIONS_CF)
     }
 }
 

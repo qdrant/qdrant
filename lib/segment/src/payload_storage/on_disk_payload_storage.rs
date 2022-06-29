@@ -1,4 +1,4 @@
-use crate::common::rocksdb_operations::{db_options, db_write_options, DB_PAYLOAD_CF};
+use crate::common::rocksdb_operations::{db_options, db_write_options, flush_db, DB_PAYLOAD_CF};
 use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
 use atomic_refcell::AtomicRefCell;
 use std::sync::Arc;
@@ -140,10 +140,6 @@ impl PayloadStorage for OnDiskPayloadStorage {
     }
 
     fn flush(&self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        let cf_handle = store_ref
-            .cf_handle(DB_PAYLOAD_CF)
-            .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
-        Ok(store_ref.flush_cf(cf_handle)?)
+        flush_db(&self.store, DB_PAYLOAD_CF)
     }
 }

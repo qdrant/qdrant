@@ -7,7 +7,7 @@ use atomic_refcell::AtomicRefCell;
 use rocksdb::DB;
 use serde_json::Value;
 
-use crate::common::rocksdb_operations::{db_write_options, recreate_cf};
+use crate::common::rocksdb_operations::{db_write_options, flush_db, recreate_cf};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
@@ -195,14 +195,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 
     pub fn flush(&self) -> OperationResult<()> {
-        let db_ref = self.db.borrow();
-        let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Index flush error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-        Ok(db_ref.flush_cf(cf_handle)?)
+        flush_db(&self.db, &self.store_cf_name)
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
