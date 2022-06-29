@@ -13,7 +13,6 @@ use collection::operations::{
 use segment::types::{Condition, HasIdCondition, Payload, PointIdType, WithPayloadInterface};
 
 use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
-use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 use collection::operations::point_ops::Batch;
 use collection::operations::types::PointRequest;
 
@@ -63,13 +62,13 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         with_vector: false,
         filter: None,
         params: None,
-        top: 3,
+        limit: 3,
+        offset: 0,
         score_threshold: None,
     };
 
-    let segment_searcher = SimpleCollectionSearcher::new();
     let search_res = collection
-        .search(search_request, &segment_searcher, &Handle::current(), None)
+        .search(search_request, &Handle::current(), None)
         .await;
 
     match search_res {
@@ -121,13 +120,13 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         with_vector: true,
         filter: None,
         params: None,
-        top: 3,
+        limit: 3,
+        offset: 0,
         score_threshold: None,
     };
 
-    let segment_searcher = SimpleCollectionSearcher::new();
     let search_res = collection
-        .search(search_request, &segment_searcher, &Handle::current(), None)
+        .search(search_request, &Handle::current(), None)
         .await;
 
     match search_res {
@@ -194,16 +193,12 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
 
     let mut loaded_collection =
         load_local_collection("test".to_string(), collection_dir.path()).await;
-    let segment_searcher = SimpleCollectionSearcher::new();
     let request = PointRequest {
         ids: vec![1.into(), 2.into()],
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: true,
     };
-    let retrieved = loaded_collection
-        .retrieve(request, &segment_searcher, None)
-        .await
-        .unwrap();
+    let retrieved = loaded_collection.retrieve(request, None).await.unwrap();
 
     assert_eq!(retrieved.len(), 2);
 
@@ -301,7 +296,6 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         .update_from_client(insert_points, true)
         .await
         .unwrap();
-    let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection
         .recommend_by(
             RecommendRequest {
@@ -309,12 +303,12 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
                 negative: vec![8.into()],
                 filter: None,
                 params: None,
-                top: 5,
+                limit: 5,
+                offset: 0,
                 with_payload: None,
                 with_vector: false,
                 score_threshold: None,
             },
-            &segment_searcher,
             &Handle::current(),
             None,
         )
@@ -364,7 +358,6 @@ async fn test_read_api_with_shards(shard_number: u32) {
         .await
         .unwrap();
 
-    let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection
         .scroll_by(
             ScrollRequest {
@@ -374,7 +367,6 @@ async fn test_read_api_with_shards(shard_number: u32) {
                 with_payload: Some(WithPayloadInterface::Bool(true)),
                 with_vector: false,
             },
-            &segment_searcher,
             None,
         )
         .await
@@ -444,7 +436,6 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
         Err(err) => panic!("operation failed: {:?}", err),
     }
 
-    let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection
         .scroll_by(
             ScrollRequest {
@@ -454,7 +445,6 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
                 with_payload: Some(WithPayloadInterface::Bool(false)),
                 with_vector: false,
             },
-            &segment_searcher,
             None,
         )
         .await

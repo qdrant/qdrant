@@ -55,6 +55,8 @@ pub struct RaftInfo {
     pub leader: Option<u64>,
     /// Role of this peer in the current term
     pub role: Option<StateRole>,
+    /// Is this peer a voter or a learner
+    pub is_voter: bool,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, Serialize, JsonSchema, Deserialize)]

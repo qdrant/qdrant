@@ -79,6 +79,10 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         self.read(self.wal.first_index())
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn len(&self) -> u64 {
         self.wal.num_entries()
     }

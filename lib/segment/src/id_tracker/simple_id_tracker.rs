@@ -1,6 +1,5 @@
 use crate::common::rocksdb_operations::{db_write_options, DB_MAPPING_CF, DB_VERSIONS_CF};
 use crate::entry::entry_point::OperationResult;
-use crate::id_tracker::points_iterator::PointsIterator;
 use crate::id_tracker::IdTracker;
 use crate::types::{ExtendedPointId, PointIdType, PointOffsetType, SeqNumberType};
 use atomic_refcell::AtomicRefCell;
@@ -72,7 +71,18 @@ impl SimpleIdTracker {
             ) {
                 let external_id = Self::restore_key(&key);
                 let internal_id: PointOffsetType = bincode::deserialize(&val).unwrap();
-                internal_to_external.insert(internal_id, external_id);
+                let replaced = internal_to_external.insert(internal_id, external_id);
+                if let Some(replaced_id) = replaced {
+                    // Fixing corrupted mapping - this id should be recovered from WAL
+                    // This should not happen in normal operation, but it can happen if
+                    // the database is corrupted.
+                    log::warn!(
+                        "removing duplicated external id {} in internal id {}",
+                        external_id,
+                        replaced_id
+                    );
+                    external_to_internal.remove(&replaced_id);
+                }
                 external_to_internal.insert(external_id, internal_id);
                 max_internal_id = max_internal_id.max(internal_id);
             }
@@ -194,15 +204,6 @@ impl IdTracker for SimpleIdTracker {
         Box::new(range.map(|(key, value)| (*key, *value)))
     }
 
-    fn flush(&self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        store_ref.flush_cf(store_ref.cf_handle(DB_MAPPING_CF).unwrap())?;
-        store_ref.flush_cf(store_ref.cf_handle(DB_VERSIONS_CF).unwrap())?;
-        Ok(store_ref.flush()?)
-    }
-}
-
-impl PointsIterator for SimpleIdTracker {
     fn points_count(&self) -> usize {
         self.internal_to_external.len()
     }
@@ -213,6 +214,16 @@ impl PointsIterator for SimpleIdTracker {
 
     fn max_id(&self) -> PointOffsetType {
         self.max_internal_id
+    }
+
+    fn flush_mapping(&self) -> OperationResult<()> {
+        let store_ref = self.store.borrow();
+        Ok(store_ref.flush_cf(store_ref.cf_handle(DB_MAPPING_CF).unwrap())?)
+    }
+
+    fn flush_versions(&self) -> OperationResult<()> {
+        let store_ref = self.store.borrow();
+        Ok(store_ref.flush_cf(store_ref.cf_handle(DB_VERSIONS_CF).unwrap())?)
     }
 }
 

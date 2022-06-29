@@ -1,7 +1,9 @@
 use crate::config::{CollectionParams, WalConfig};
 use crate::operations::config_diff::{HnswConfigDiff, WalConfigDiff};
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
-use crate::operations::point_ops::{FilterSelector, PointIdsList, PointStruct, PointsSelector};
+use crate::operations::point_ops::{
+    Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector,
+};
 use crate::operations::types::{CollectionStatus, OptimizersStatus, UpdateStatus};
 use crate::{
     CollectionConfig, CollectionInfo, OptimizersConfig, OptimizersConfigDiff, Record, UpdateResult,
@@ -52,6 +54,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             status,
             optimizer_status,
             vectors_count,
+            points_count,
             segments_count,
             disk_data_size,
             ram_data_size,
@@ -76,6 +79,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 }
             }),
             vectors_count: vectors_count as u64,
+            points_count: points_count as u64,
             segments_count: segments_count as u64,
             disk_data_size: disk_data_size as u64,
             ram_data_size: ram_data_size as u64,
@@ -247,6 +251,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                     }
                 },
                 vectors_count: collection_info_response.vectors_count as usize,
+                points_count: collection_info_response.points_count as usize,
                 segments_count: collection_info_response.segments_count as usize,
                 disk_data_size: collection_info_response.disk_data_size as usize,
                 ram_data_size: collection_info_response.ram_data_size as usize,
@@ -308,6 +313,32 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
             vector,
             payload: converted_payload,
         })
+    }
+}
+
+impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
+    type Error = Status;
+
+    fn try_from(value: Batch) -> Result<Self, Self::Error> {
+        let mut points = Vec::new();
+        for (i, p_id) in value.ids.into_iter().enumerate() {
+            let id = Some(p_id.into());
+            let vector = value.vectors.get(i).cloned();
+            let payload = value.payloads.as_ref().and_then(|payloads| {
+                payloads.get(i).map(|payload| match payload {
+                    None => HashMap::new(),
+                    Some(payload) => payload_to_proto(payload.clone()),
+                })
+            });
+            let point = api::grpc::qdrant::PointStruct {
+                id,
+                vector: vector.unwrap_or_default(),
+                payload: payload.unwrap_or_default(),
+            };
+            points.push(point);
+        }
+
+        Ok(points)
     }
 }
 

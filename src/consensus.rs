@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::{
     sync::{
@@ -49,8 +50,11 @@ impl Consensus {
         config: ConsensusConfig,
         transport_channel_pool: Arc<TransportChannelPool>,
     ) -> anyhow::Result<(Self, SyncSender<Message>)> {
+        // raft will not return entries to the application smaller or equal to `applied`
+        let last_applied = state_ref.last_applied_entry().unwrap_or_default();
         let raft_config = Config {
             id: state_ref.this_peer_id(),
+            applied: last_applied,
             ..Default::default()
         };
         raft_config.validate()?;
@@ -183,6 +187,10 @@ impl Consensus {
                 )
                 .context("Failed to add peer")?;
         }
+        // Only first peer has itself as a voter in the initial conf state.
+        // This needs to be propagated manually to other peers as it is not contained in any log entry.
+        state_ref.set_first_voter(all_peers.first_peer_id);
+        state_ref.set_conf_state(ConfState::from((vec![all_peers.first_peer_id], vec![])))?;
         client
             .add_peer_as_participant(tonic::Request::new(api::grpc::qdrant::PeerId { id }))
             .await
@@ -195,30 +203,13 @@ impl Consensus {
         let mut timeout = Duration::from_millis(self.config.tick_period_ms);
 
         loop {
-            match self.receiver.recv_timeout(timeout) {
-                Ok(Message::FromPeer(message)) => {
-                    log::trace!(
-                        "Received a message from peer with progress: {:?}. Message: {:?}",
-                        self.node.raft.prs().get(message.from),
-                        message
-                    );
-                    self.node.step(*message)?
-                }
-                Ok(Message::FromClient(message)) => {
-                    log::debug!("Proposing entry from client with length: {}", message.len());
-                    self.node.propose(vec![], message)?
-                }
-                Ok(Message::ConfChange(change)) => {
-                    log::debug!("Proposing network configuration change: {:?}", change);
-                    self.node.propose_conf_change(vec![], change)?
-                }
-                Err(RecvTimeoutError::Timeout) => (),
-                Err(RecvTimeoutError::Disconnected) => {
-                    log::warn!("Stopping Raft as message sender was dropped");
-                    return Ok(());
-                }
+            if !self
+                .try_promote_learner()
+                .context("Failed to promote learner")?
+            {
+                // If learner promotion was proposed - do not add other proposals.
+                self.propose_updates(timeout)?;
             }
-
             let d = t.elapsed();
             t = Instant::now();
             if d >= timeout {
@@ -230,6 +221,89 @@ impl Consensus {
             }
             self.on_ready();
         }
+    }
+
+    fn propose_updates(&mut self, timeout: Duration) -> anyhow::Result<()> {
+        match self.receiver.recv_timeout(timeout) {
+            Ok(Message::FromPeer(message)) => {
+                if message.get_msg_type() == MessageType::MsgHeartbeat
+                    || message.get_msg_type() == MessageType::MsgHeartbeatResponse
+                {
+                    log::trace!(
+                        "Received a message from peer with progress: {:?}. Message: {:?}",
+                        self.node.raft.prs().get(message.from),
+                        message
+                    );
+                } else {
+                    log::debug!(
+                        "Received a message from peer with progress: {:?}. Message: {:?}",
+                        self.node.raft.prs().get(message.from),
+                        message
+                    );
+                }
+                self.node.step(*message)?
+            }
+            Ok(Message::FromClient(message)) => {
+                log::debug!("Proposing entry from client with length: {}", message.len());
+                self.node.propose(vec![], message)?
+            }
+            Ok(Message::ConfChange(change)) => {
+                log::debug!("Proposing network configuration change: {:?}", change);
+                self.node.propose_conf_change(vec![], change)?
+            }
+            Err(RecvTimeoutError::Timeout) => (),
+            Err(RecvTimeoutError::Disconnected) => {
+                log::warn!("Stopping Raft as message sender was dropped");
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns `true` if learner promotion was proposed, `false` otherwise.
+    fn try_promote_learner(&mut self) -> anyhow::Result<bool> {
+        let learner = if let Some(learner) = self.find_learner_to_promote() {
+            learner
+        } else {
+            return Ok(false);
+        };
+        let store = self.node.store();
+        let commit = store.hard_state().commit;
+        let last_log_entry = store.last_index()?;
+        // Promote only when there are no uncommitted changes.
+        if commit != last_log_entry {
+            return Ok(false);
+        }
+        let status = self.node.status();
+        // Promote only if leader
+        if status.ss.raft_state != StateRole::Leader {
+            return Ok(false);
+        }
+        let mut change = ConfChangeV2::default();
+        change.set_changes(vec![raft_proto::new_conf_change_single(
+            learner,
+            ConfChangeType::AddNode,
+        )]);
+        log::debug!("Proposing promotion for learner {learner} to voter");
+        self.node.propose_conf_change(vec![], change)?;
+        Ok(true)
+    }
+
+    fn find_learner_to_promote(&self) -> Option<u64> {
+        let commit = self.node.store().hard_state().commit;
+        let learners: HashSet<_> = self
+            .node
+            .store()
+            .conf_state()
+            .learners
+            .into_iter()
+            .collect();
+        let status = self.node.status();
+        status
+            .progress?
+            .iter()
+            .find(|(id, progress)| learners.contains(id) && progress.matched == commit)
+            .map(|(id, _)| *id)
     }
 
     fn on_ready(&mut self) {
@@ -371,25 +445,10 @@ impl Consensus {
 }
 
 fn handle_committed_entries(
-    mut entries: Vec<Entry>,
+    entries: Vec<Entry>,
     state: &ConsensusStateRef,
     raw_node: &mut RawNode<ConsensusStateRef>,
 ) -> raft::Result<()> {
-    let last_applied = {
-        let persistent = state.persistent.read();
-        if persistent.unapplied_entities_count() > 0 {
-            panic!(
-                "Precondition broken - all committed entries must be applied before this fn call"
-            )
-        }
-        persistent.last_applied_entry()
-    };
-    if let Some(last_applied) = last_applied {
-        entries = entries
-            .into_iter()
-            .filter(|entry| entry.index > last_applied)
-            .collect();
-    }
     if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
         state.set_unapplied_entries(first.index, last.index)?;
         state.apply_entries(raw_node)?;

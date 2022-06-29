@@ -1,5 +1,5 @@
 <p align="center">
-  <img height="100" src="docs/logo.svg" alt="Qdrant">
+  <img height="100" src="https://github.com/qdrant/qdrant/raw/master/docs/logo.svg" alt="Qdrant">
 </p>
 
 <p align="center">
@@ -113,6 +113,14 @@ You can also download raw OpenAPI [definitions](https://github.com/qdrant/qdrant
 ### gRPC
 
 For faster production-tier searches, Qdrant also provides a gRPC interface. You can find gRPC documentation [here](https://qdrant.tech/documentation/quick_start/#grpc).
+
+### Clients
+
+Qdrant offers the following client libraries to help you integrate it into your application stack with ease:
+
+- [Python client](https://github.com/qdrant/qdrant_client)
+- [Go client](https://github.com/qdrant/go-client)
+- [Rust client](https://github.com/qdrant/rust-client)
 
 ## Features
 
@@ -238,6 +246,7 @@ Thanks to the people who contributed to Qdrant:
     <td align="center"><a href="https://github.com/prok20"><img src="https://avatars.githubusercontent.com/u/20628026?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Prokudin Alexander</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=prok20" title="Code">💻</a></td>
     <td align="center"><a href="https://github.com/elbart"><img src="https://avatars.githubusercontent.com/u/48974?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Tim Eggert</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=elbart" title="Code">💻</a></td>
     <td align="center"><a href="https://github.com/gvelo"><img src="https://avatars.githubusercontent.com/u/943360?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Gabriel Velo</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=gvelo" title="Code">💻</a></td>
+    <td align="center"><a href="http://burtonqin.github.io"><img src="https://avatars.githubusercontent.com/u/11943383?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Boqin Qin(秦 伯钦)</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/issues?q=author%3ABurtonQin" title="Bug reports">🐛</a></td>
   </tr>
 </table>
 

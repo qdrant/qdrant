@@ -14,8 +14,10 @@ use std::{
 use crate::types::{ClusterInfo, ClusterStatus, PeerAddressById, PeerInfo, RaftInfo};
 use atomicwrites::{AtomicFile, OverwriteBehavior::AllowOverwrite};
 use collection::{CollectionId, PeerId};
+use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
-use raft::eraftpb::ConfChangeV2;
+use raft::eraftpb::{ConfChangeV2, SnapshotMetadata};
+use raft::util::limit_size;
 use raft::{eraftpb::Entry as RaftEntry, SoftState, Storage};
 use raft::{
     eraftpb::{ConfState, HardState},
@@ -75,6 +77,9 @@ impl ConsensusOpWal {
             .first_entry()
             .map_err(raft_error_other)?
             .ok_or(raft::Error::Store(raft::StorageError::Unavailable))?;
+        if id < first_entry.index {
+            return Err(raft::Error::Store(raft::StorageError::Compacted));
+        }
         // Due to snapshots there might be different offsets between wal index and raft entry index
         let offset = first_entry.index - self.0.first_index();
         <RaftEntry as prost::Message>::decode(
@@ -87,10 +92,9 @@ impl ConsensusOpWal {
     }
 
     fn entries(&self, low: u64, high: u64, max_size: Option<u64>) -> raft::Result<Vec<RaftEntry>> {
-        (low..high)
-            .take(max_size.unwrap_or(high - low + 1) as usize)
-            .map(|id| self.entry(id))
-            .collect()
+        let mut entries = (low..high).map(|id| self.entry(id)).try_collect()?;
+        limit_size(&mut entries, max_size);
+        Ok(entries)
     }
 
     pub fn first_entry(&self) -> Result<Option<RaftEntry>, StorageError> {
@@ -132,6 +136,7 @@ pub struct ConsensusState {
     on_consensus_op_apply:
         Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
     propose_sender: Mutex<Sender<Vec<u8>>>,
+    first_voter: RwLock<Option<PeerId>>,
 }
 
 impl ConsensusState {
@@ -147,6 +152,7 @@ impl ConsensusState {
             toc,
             on_consensus_op_apply: Default::default(),
             propose_sender: Mutex::new(propose_sender),
+            first_voter: Default::default(),
         }
     }
 
@@ -156,6 +162,17 @@ impl ConsensusState {
 
     pub fn this_peer_id(&self) -> PeerId {
         self.persistent.read().this_peer_id
+    }
+
+    pub fn first_voter(&self) -> PeerId {
+        match self.first_voter.read().as_ref() {
+            Some(id) => *id,
+            None => self.this_peer_id(),
+        }
+    }
+
+    pub fn set_first_voter(&self, id: PeerId) {
+        *self.first_voter.write() = Some(id);
     }
 
     pub fn cluster_status(&self) -> ClusterStatus {
@@ -178,6 +195,7 @@ impl ConsensusState {
         let leader = soft_state.as_ref().map(|state| state.leader_id);
         let role = soft_state.as_ref().map(|state| state.raft_state.into());
         let peer_id = persistent.this_peer_id;
+        let is_voter = persistent.state.conf_state.get_voters().contains(&peer_id);
         ClusterStatus::Enabled(ClusterInfo {
             peer_id,
             peers,
@@ -187,6 +205,7 @@ impl ConsensusState {
                 pending_operations,
                 leader,
                 role,
+                is_voter,
             },
         })
     }
@@ -301,16 +320,9 @@ impl ConsensusState {
         let data: SnapshotData = snapshot.get_data().try_into()?;
         self.toc.apply_collections_snapshot(data.collections_data)?;
         self.wal.lock().0.clear()?;
-        let mut persistent = self.persistent.write();
-        persistent.set_peer_address_by_id(data.address_by_id)?;
-        persistent.apply_state_update(move |state| {
-            state.conf_state = meta.get_conf_state().clone();
-            state.hard_state.term = cmp::max(state.hard_state.term, meta.term);
-            state.hard_state.commit = meta.index
-        })?;
-        persistent
-            .apply_progress_queue
-            .set_from_snapshot(meta.index);
+        self.persistent
+            .write()
+            .update_from_snapshot(meta, data.address_by_id)?;
         Ok(())
     }
 
@@ -320,8 +332,18 @@ impl ConsensusState {
             .apply_state_update(move |state| state.hard_state = hard_state)
     }
 
+    pub fn set_conf_state(&self, conf_state: raft::eraftpb::ConfState) -> Result<(), StorageError> {
+        self.persistent
+            .write()
+            .apply_state_update(move |state| state.conf_state = conf_state)
+    }
+
     pub fn hard_state(&self) -> raft::eraftpb::HardState {
         self.persistent.read().state().hard_state.clone()
+    }
+
+    pub fn conf_state(&self) -> raft::eraftpb::ConfState {
+        self.persistent.read().state().conf_state.clone()
     }
 
     pub fn set_commit_index(&self, index: u64) -> Result<(), StorageError> {
@@ -368,6 +390,10 @@ impl ConsensusState {
     pub fn append_entries(&self, entries: Vec<RaftEntry>) -> Result<(), StorageError> {
         self.wal.lock().append_entries(entries)
     }
+
+    pub fn last_applied_entry(&self) -> Option<u64> {
+        self.persistent.read().last_applied_entry()
+    }
 }
 
 impl Storage for ConsensusState {
@@ -388,9 +414,9 @@ impl Storage for ConsensusState {
 
     fn term(&self, idx: u64) -> raft::Result<u64> {
         let persistent = self.persistent.read();
-        let raft_state = persistent.state();
-        if idx == raft_state.hard_state.commit {
-            return Ok(raft_state.hard_state.term);
+        let snapshot_meta = persistent.latest_snapshot_meta();
+        if idx == snapshot_meta.index {
+            return Ok(snapshot_meta.term);
         }
         Ok(self.wal.lock().entry(idx)?.term)
     }
@@ -398,7 +424,7 @@ impl Storage for ConsensusState {
     fn first_index(&self) -> raft::Result<u64> {
         let index = match self.wal.lock().first_entry().map_err(raft_error_other)? {
             Some(entry) => entry.index,
-            None => self.persistent.read().state().hard_state.commit + 1,
+            None => self.persistent.read().latest_snapshot_meta().index + 1,
         };
         Ok(index)
     }
@@ -406,7 +432,7 @@ impl Storage for ConsensusState {
     fn last_index(&self) -> raft::Result<u64> {
         let index = match self.wal.lock().last_entry().map_err(raft_error_other)? {
             Some(entry) => entry.index,
-            None => self.persistent.read().state().hard_state.commit,
+            None => self.persistent.read().latest_snapshot_meta().index,
         };
         Ok(index)
     }
@@ -541,6 +567,8 @@ impl EntryApplyProgressQueue {
 pub struct Persistent {
     #[serde(with = "RaftStateDef")]
     state: RaftState,
+    #[serde(default)] // TODO quick fix to avoid breaking the compat. with 0.8.1
+    latest_snapshot_meta: SnapshotMetadataSer,
     apply_progress_queue: EntryApplyProgressQueue,
     #[serde(with = "serialize_peer_addresses")]
     pub peer_address_by_id: Arc<RwLock<PeerAddressById>>,
@@ -554,6 +582,24 @@ pub struct Persistent {
 impl Persistent {
     pub fn state(&self) -> &RaftState {
         &self.state
+    }
+
+    pub fn latest_snapshot_meta(&self) -> &SnapshotMetadataSer {
+        &self.latest_snapshot_meta
+    }
+
+    pub fn update_from_snapshot(
+        &mut self,
+        meta: &SnapshotMetadata,
+        address_by_id: PeerAddressById,
+    ) -> Result<(), StorageError> {
+        *self.peer_address_by_id.write() = address_by_id;
+        self.state.conf_state = meta.get_conf_state().clone();
+        self.state.hard_state.term = cmp::max(self.state.hard_state.term, meta.term);
+        self.state.hard_state.commit = meta.index;
+        self.apply_progress_queue.set_from_snapshot(meta.index);
+        self.latest_snapshot_meta = meta.into();
+        self.save()
     }
 
     pub fn load_or_init(
@@ -649,7 +695,7 @@ impl Persistent {
     /// It is `None` if distributed deployment is disabled
     fn init(path: PathBuf, first_peer: bool) -> Result<Self, StorageError> {
         let this_peer_id = rand::random();
-        let learners = if first_peer {
+        let voters = if first_peer {
             vec![this_peer_id]
         } else {
             // `Some(false)` - Leave empty the network topology for the peer, if it is not starting a network itself.
@@ -662,13 +708,14 @@ impl Persistent {
                 hard_state: HardState::default(),
                 // For network with 1 node, set it as voter.
                 // First vec is voters, second is learners.
-                conf_state: ConfState::from((learners, vec![])),
+                conf_state: ConfState::from((voters, vec![])),
             },
             apply_progress_queue: Default::default(),
             peer_address_by_id: Default::default(),
             r#new: true,
             this_peer_id,
             path,
+            latest_snapshot_meta: Default::default(),
         };
         state.save()?;
         Ok(state)
@@ -717,6 +764,21 @@ mod serialize_peer_addresses {
     }
 }
 
+#[derive(Serialize, Deserialize, Default, Debug)]
+pub struct SnapshotMetadataSer {
+    term: u64,
+    index: u64,
+}
+
+impl From<&SnapshotMetadata> for SnapshotMetadataSer {
+    fn from(meta: &SnapshotMetadata) -> Self {
+        Self {
+            term: meta.term,
+            index: meta.index,
+        }
+    }
+}
+
 /// Definition of struct to help with serde serialization.
 /// Should be used only in `[serde(with=...)]`
 #[derive(Serialize, Deserialize)]
@@ -760,7 +822,9 @@ pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{EntryApplyProgressQueue, Persistent};
+    use raft::eraftpb::Entry;
+
+    use super::{ConsensusOpWal, EntryApplyProgressQueue, Persistent};
 
     #[test]
     fn update_is_applied() {
@@ -811,5 +875,46 @@ mod tests {
         entries.applied();
         assert_eq!(entries.current(), None);
         assert_eq!(entries.len(), 0);
+    }
+
+    #[test]
+    fn correct_entry_with_offset() {
+        let dir = tempdir::TempDir::new("raft_state_test").unwrap();
+        let mut wal = ConsensusOpWal::new(dir.path().to_str().unwrap());
+        wal.append_entries(vec![Entry {
+            index: 4,
+            ..Default::default()
+        }])
+        .unwrap();
+        wal.append_entries(vec![Entry {
+            index: 5,
+            ..Default::default()
+        }])
+        .unwrap();
+        wal.append_entries(vec![Entry {
+            index: 6,
+            ..Default::default()
+        }])
+        .unwrap();
+        assert_eq!(wal.entry(5).unwrap().index, 5)
+    }
+
+    #[test]
+    fn at_least_1_entry() {
+        let dir = tempdir::TempDir::new("raft_state_test").unwrap();
+        let mut wal = ConsensusOpWal::new(dir.path().to_str().unwrap());
+        wal.append_entries(vec![
+            Entry {
+                index: 4,
+                ..Default::default()
+            },
+            Entry {
+                index: 5,
+                ..Default::default()
+            },
+        ])
+        .unwrap();
+        // Even when `max_size` is `0` this fn should return at least 1 entry
+        assert_eq!(wal.entries(4, 5, Some(0)).unwrap().len(), 1)
     }
 }
