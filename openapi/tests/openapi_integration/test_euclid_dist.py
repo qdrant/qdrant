@@ -82,7 +82,7 @@ def test_search_with_threshold():
         path_params={'collection_name': collection_name},
         body={
             "vector": [1., 1.],
-            "top": 3
+            "limit": 3
         }
     )
     assert response.ok
@@ -102,7 +102,7 @@ def test_search_with_threshold():
         path_params={'collection_name': collection_name},
         body={
             "vector": [1., 1.],
-            "top": 3,
+            "limit": 3,
             "score_threshold": 1.5
         }
     )

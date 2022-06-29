@@ -22,19 +22,21 @@ curl -X PUT "http://$QDRANT_HOST/collections/test_collection" \
       }
     }' | jq
 
-# fail to decode payload
-JSON_ERROR=$(curl -X PUT "http://$QDRANT_HOST/collections/test_collection" \
+curl -L -X PUT  "http://$QDRANT_HOST/collections/test_collection/index" \
   -H 'Content-Type: application/json' \
-  -s \
+  --fail -s \
   --data-raw '{
-      "vector_size": 4,
-      "distance": "Dots"
-    }' | jq '.status.error')
-JSON_ERROR_EXPECTED='"Json deserialize error: unknown variant `Dots`, expected one of `Cosine`, `Euclid`, `Dot` at line 3 column 24"'
-[[ "$JSON_ERROR" == "$JSON_ERROR_EXPECTED" ]] || {
-  echo 'check failed - unexpected error'
-  exit 1
-}
+      "field_name": "city",
+      "field_type": "keyword"
+    }' | jq
+
+curl -L -X PUT  "http://$QDRANT_HOST/collections/test_collection/index" \
+  -H 'Content-Type: application/json' \
+  --fail -s \
+  --data-raw '{
+      "field_name": "count",
+      "field_type": "integer"
+    }' | jq
 
 curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq
 

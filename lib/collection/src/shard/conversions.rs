@@ -2,7 +2,7 @@ use crate::operations::payload_ops::{DeletePayload, SetPayload};
 use crate::operations::point_ops::PointInsertOperations;
 use crate::operations::CreateIndex;
 use crate::shard::remote_shard::RemoteShard;
-use crate::{CollectionError, CollectionResult};
+use crate::CollectionResult;
 use api::grpc::conversions::payload_to_proto;
 use api::grpc::qdrant::points_selector::PointsSelectorOneOf;
 use api::grpc::qdrant::{
@@ -25,11 +25,7 @@ pub fn internal_upsert_points(
             collection_name: shard.collection_id.clone(),
             wait: Some(true),
             points: match point_insert_operations {
-                PointInsertOperations::PointsBatch(_batch) => {
-                    return Err(CollectionError::service_error(
-                        "Operation not supported".to_string(),
-                    ))
-                }
+                PointInsertOperations::PointsBatch(batch) => batch.try_into()?,
                 PointInsertOperations::PointsList(list) => list
                     .into_iter()
                     .map(|id| id.try_into())

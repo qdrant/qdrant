@@ -25,6 +25,7 @@ message RaftMessage {
 
 message AllPeers {
     repeated Peer all_peers = 1;
+    uint64 first_peer_id = 2;
 }
 
 message Peer {

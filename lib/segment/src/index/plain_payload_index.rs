@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::entry::entry_point::OperationResult;
-use crate::id_tracker::points_iterator::PointsIteratorSS;
+use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -26,7 +26,7 @@ use std::sync::Arc;
 /// rather than spend time for index re-building
 pub struct PlainPayloadIndex {
     condition_checker: Arc<ConditionCheckerSS>,
-    points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
+    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     config: PayloadConfig,
     path: PathBuf,
 }
@@ -43,7 +43,7 @@ impl PlainPayloadIndex {
 
     pub fn open(
         condition_checker: Arc<ConditionCheckerSS>,
-        points_iterator: Arc<AtomicRefCell<PointsIteratorSS>>,
+        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         path: &Path,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
@@ -56,7 +56,7 @@ impl PlainPayloadIndex {
 
         let index = PlainPayloadIndex {
             condition_checker,
-            points_iterator,
+            id_tracker,
             config,
             path: path.to_owned(),
         };
@@ -97,7 +97,7 @@ impl PayloadIndex for PlainPayloadIndex {
     }
 
     fn estimate_cardinality(&self, _query: &Filter) -> CardinalityEstimation {
-        let total_points = self.points_iterator.borrow().points_count();
+        let total_points = self.id_tracker.borrow().points_count();
         CardinalityEstimation {
             primary_clauses: vec![],
             min: 0,
@@ -112,7 +112,7 @@ impl PayloadIndex for PlainPayloadIndex {
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         let filter_context = self.filter_context(query);
         Box::new(ArcAtomicRefCellIterator::new(
-            self.points_iterator.clone(),
+            self.id_tracker.clone(),
             move |points_iterator| {
                 points_iterator
                     .iter_ids()

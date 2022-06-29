@@ -57,7 +57,7 @@ mod tests {
         assert_eq!(new_segment_count, 3);
 
         assert_eq!(
-            merged_segment.vectors_count(),
+            merged_segment.points_count(),
             segment1
                 .iter_points()
                 .chain(segment2.iter_points())

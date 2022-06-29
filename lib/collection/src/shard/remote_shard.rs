@@ -11,8 +11,7 @@ use crate::shard::shard_config::ShardConfig;
 use crate::shard::{PeerId, ShardId, ShardOperation};
 use crate::{
     ChannelService, CollectionError, CollectionId, CollectionInfo, CollectionResult,
-    CollectionSearcher, CollectionUpdateOperations, PointRequest, Record, SearchRequest,
-    UpdateResult,
+    CollectionUpdateOperations, PointRequest, Record, SearchRequest, UpdateResult,
 };
 use api::grpc::qdrant::{
     collections_internal_client::CollectionsInternalClient,
@@ -180,7 +179,6 @@ impl ShardOperation for &RemoteShard {
 
     async fn scroll_by(
         &self,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         offset: Option<ExtendedPointId>,
         limit: usize,
         with_payload_interface: &WithPayloadInterface,
@@ -230,7 +228,6 @@ impl ShardOperation for &RemoteShard {
     async fn search(
         &self,
         request: Arc<SearchRequest>,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let mut client = self.points_client().await?;
@@ -239,11 +236,12 @@ impl ShardOperation for &RemoteShard {
             collection_name: self.collection_id.clone(),
             vector: request.vector.clone(),
             filter: request.filter.clone().map(|f| f.into()),
-            top: request.top as u64,
+            limit: request.limit as u64,
             with_vector: Some(request.with_vector),
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
             params: request.params.map(|sp| sp.into()),
             score_threshold: request.score_threshold,
+            offset: Some(request.offset as u64),
         };
         let request = tonic::Request::new(SearchPointsInternal {
             search_points: Some(search_points),
@@ -262,7 +260,6 @@ impl ShardOperation for &RemoteShard {
     async fn batch_search(
         &self,
         request: Arc<BatchSearchRequest>,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let mut client = self.points_client().await?;
@@ -307,7 +304,6 @@ impl ShardOperation for &RemoteShard {
     async fn retrieve(
         &self,
         request: Arc<PointRequest>,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         with_payload: &WithPayload,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>> {

@@ -20,7 +20,7 @@ def test_search_with_threshold():
         path_params={'collection_name': collection_name},
         body={
             "vector": [0.2, 0.1, 0.9, 0.7],
-            "top": 3
+            "limit": 3
         }
     )
     assert response.ok
@@ -35,7 +35,7 @@ def test_search_with_threshold():
         path_params={'collection_name': collection_name},
         body={
             "vector": [0.2, 0.1, 0.9, 0.7],
-            "top": 3,
+            "limit": 3,
             "score_threshold": more_than_second_score
         }
     )
@@ -49,7 +49,7 @@ def test_search_with_threshold():
         path_params={'collection_name': collection_name},
         body={
             "vector": [0.2, 0.1, 0.9, 0.7],
-            "top": 3,
+            "limit": 3,
             "score_threshold": less_than_second_score
         }
     )

@@ -21,9 +21,9 @@ use segment::types::{
     SegmentConfig, SegmentType, WithPayload, WithPayloadInterface,
 };
 
-use crate::collection_manager::collection_managers::CollectionSearcher;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
+use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::config::CollectionConfig;
 use crate::operations::types::{
     BatchSearchRequest, CollectionError, CollectionInfo, CollectionResult, CollectionStatus,
@@ -428,7 +428,6 @@ impl ShardOperation for &LocalShard {
 
     async fn scroll_by(
         &self,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         offset: Option<ExtendedPointId>,
         limit: usize,
         with_payload_interface: &WithPayloadInterface,
@@ -447,9 +446,8 @@ impl ShardOperation for &LocalShard {
             .collect_vec();
 
         let with_payload = WithPayload::from(with_payload_interface);
-        let mut points = segment_searcher
-            .retrieve(segments, &point_ids, &with_payload, with_vector)
-            .await?;
+        let mut points =
+            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector).await?;
         points.sort_by_key(|point| point.id);
 
         Ok(points)
@@ -460,6 +458,7 @@ impl ShardOperation for &LocalShard {
         let collection_config = self.config.read().await.clone();
         let segments = self.segments.read();
         let mut vectors_count = 0;
+        let mut points_count = 0;
         let mut segments_count = 0;
         let mut ram_size = 0;
         let mut disk_size = 0;
@@ -472,6 +471,7 @@ impl ShardOperation for &LocalShard {
                 status = CollectionStatus::Yellow;
             }
             vectors_count += segment_info.num_vectors;
+            points_count += segment_info.num_points;
             disk_size += segment_info.disk_usage_bytes;
             ram_size += segment_info.ram_usage_bytes;
             for (key, val) in segment_info.index_schema {
@@ -491,6 +491,7 @@ impl ShardOperation for &LocalShard {
             status,
             optimizer_status,
             vectors_count,
+            points_count,
             segments_count,
             disk_data_size: disk_size,
             ram_data_size: ram_size,
@@ -502,11 +503,9 @@ impl ShardOperation for &LocalShard {
     async fn search(
         &self,
         request: Arc<SearchRequest>,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        let res = segment_searcher
-            .search(self.segments(), request.clone(), search_runtime_handle)
+        let res = SegmentsSearcher::search(self.segments(), request.clone(), search_runtime_handle)
             .await?;
         let distance = self.config.read().await.params.distance;
         let processed_res = res.into_iter().map(|mut scored_point| {
@@ -527,7 +526,6 @@ impl ShardOperation for &LocalShard {
     async fn batch_search(
         &self,
         request: Arc<BatchSearchRequest>,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let batch_result_futures = request
@@ -537,12 +535,13 @@ impl ShardOperation for &LocalShard {
                 vector: query.vector.clone(),
                 filter: query.filter.clone(),
                 params: request.params,
-                top: request.top,
+                limit: 0,
+                offset: 0,
                 with_payload: request.with_payload.clone(),
                 with_vector: request.with_vector,
                 score_threshold: request.score_threshold,
             })
-            .map(|request| self.search(Arc::new(request), segment_searcher, search_runtime_handle));
+            .map(|request| self.search(Arc::new(request), search_runtime_handle));
 
         let batch_result = try_join_all(batch_result_futures)
             .await?
@@ -555,13 +554,10 @@ impl ShardOperation for &LocalShard {
     async fn retrieve(
         &self,
         request: Arc<PointRequest>,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         with_payload: &WithPayload,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>> {
-        segment_searcher
-            .retrieve(self.segments(), &request.ids, with_payload, with_vector)
-            .await
+        SegmentsSearcher::retrieve(self.segments(), &request.ids, with_payload, with_vector).await
     }
 }
 

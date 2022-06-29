@@ -136,6 +136,7 @@ pub struct ConsensusState {
     on_consensus_op_apply:
         Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
     propose_sender: Mutex<Sender<Vec<u8>>>,
+    first_voter: RwLock<Option<PeerId>>,
 }
 
 impl ConsensusState {
@@ -151,6 +152,7 @@ impl ConsensusState {
             toc,
             on_consensus_op_apply: Default::default(),
             propose_sender: Mutex::new(propose_sender),
+            first_voter: Default::default(),
         }
     }
 
@@ -160,6 +162,17 @@ impl ConsensusState {
 
     pub fn this_peer_id(&self) -> PeerId {
         self.persistent.read().this_peer_id
+    }
+
+    pub fn first_voter(&self) -> PeerId {
+        match self.first_voter.read().as_ref() {
+            Some(id) => *id,
+            None => self.this_peer_id(),
+        }
+    }
+
+    pub fn set_first_voter(&self, id: PeerId) {
+        *self.first_voter.write() = Some(id);
     }
 
     pub fn cluster_status(&self) -> ClusterStatus {
@@ -182,6 +195,7 @@ impl ConsensusState {
         let leader = soft_state.as_ref().map(|state| state.leader_id);
         let role = soft_state.as_ref().map(|state| state.raft_state.into());
         let peer_id = persistent.this_peer_id;
+        let is_voter = persistent.state.conf_state.get_voters().contains(&peer_id);
         ClusterStatus::Enabled(ClusterInfo {
             peer_id,
             peers,
@@ -191,6 +205,7 @@ impl ConsensusState {
                 pending_operations,
                 leader,
                 role,
+                is_voter,
             },
         })
     }
@@ -317,8 +332,18 @@ impl ConsensusState {
             .apply_state_update(move |state| state.hard_state = hard_state)
     }
 
+    pub fn set_conf_state(&self, conf_state: raft::eraftpb::ConfState) -> Result<(), StorageError> {
+        self.persistent
+            .write()
+            .apply_state_update(move |state| state.conf_state = conf_state)
+    }
+
     pub fn hard_state(&self) -> raft::eraftpb::HardState {
         self.persistent.read().state().hard_state.clone()
+    }
+
+    pub fn conf_state(&self) -> raft::eraftpb::ConfState {
+        self.persistent.read().state().conf_state.clone()
     }
 
     pub fn set_commit_index(&self, index: u64) -> Result<(), StorageError> {
@@ -364,6 +389,10 @@ impl ConsensusState {
 
     pub fn append_entries(&self, entries: Vec<RaftEntry>) -> Result<(), StorageError> {
         self.wal.lock().append_entries(entries)
+    }
+
+    pub fn last_applied_entry(&self) -> Option<u64> {
+        self.persistent.read().last_applied_entry()
     }
 }
 
@@ -538,6 +567,7 @@ impl EntryApplyProgressQueue {
 pub struct Persistent {
     #[serde(with = "RaftStateDef")]
     state: RaftState,
+    #[serde(default)] // TODO quick fix to avoid breaking the compat. with 0.8.1
     latest_snapshot_meta: SnapshotMetadataSer,
     apply_progress_queue: EntryApplyProgressQueue,
     #[serde(with = "serialize_peer_addresses")]
@@ -665,7 +695,7 @@ impl Persistent {
     /// It is `None` if distributed deployment is disabled
     fn init(path: PathBuf, first_peer: bool) -> Result<Self, StorageError> {
         let this_peer_id = rand::random();
-        let learners = if first_peer {
+        let voters = if first_peer {
             vec![this_peer_id]
         } else {
             // `Some(false)` - Leave empty the network topology for the peer, if it is not starting a network itself.
@@ -678,7 +708,7 @@ impl Persistent {
                 hard_state: HardState::default(),
                 // For network with 1 node, set it as voter.
                 // First vec is voters, second is learners.
-                conf_state: ConfState::from((learners, vec![])),
+                conf_state: ConfState::from((voters, vec![])),
             },
             apply_progress_queue: Default::default(),
             peer_address_by_id: Default::default(),

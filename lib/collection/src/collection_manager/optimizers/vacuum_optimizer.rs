@@ -62,9 +62,9 @@ impl VacuumOptimizer {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let littered_ratio =
-                    read_segment.deleted_count() as f64 / read_segment.vectors_count() as f64;
+                    read_segment.deleted_count() as f64 / read_segment.points_count() as f64;
 
-                let is_big = read_segment.vectors_count() >= self.min_vectors_number;
+                let is_big = read_segment.points_count() >= self.min_vectors_number;
                 let is_not_special = read_segment.segment_type() != SegmentType::Special;
                 let is_littered = littered_ratio > self.deleted_threshold;
 
@@ -233,7 +233,7 @@ mod tests {
 
         // Check new segment have proper amount of points
         assert_eq!(
-            segment_guard.vectors_count(),
+            segment_guard.points_count(),
             200 - segment_points_to_delete.len()
         );
 

@@ -70,6 +70,8 @@ pub struct CollectionInfo {
     pub optimizer_status: OptimizersStatus,
     /// Number of vectors in collection
     pub vectors_count: usize,
+    /// Number of points in collection
+    pub points_count: usize,
     /// Number of segments in collection
     pub segments_count: usize,
     /// Disk space, used by collection
@@ -142,7 +144,7 @@ pub struct ScrollResult {
 /// Search request.
 /// Holds all conditions and parameters for the search of most similar points by vector similarity
 /// given the filtering restrictions.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequest {
     /// Look for vectors closest to this
@@ -152,7 +154,13 @@ pub struct SearchRequest {
     /// Additional search params
     pub params: Option<SearchParams>,
     /// Max number of result to return
-    pub top: usize,
+    #[serde(alias = "top")]
+    pub limit: usize,
+    /// Offset of the first result to return.
+    /// May be used to paginate results.
+    /// Note: large offset values may cause performance issues.
+    #[serde(default)]
+    pub offset: usize,
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
@@ -231,7 +239,13 @@ pub struct RecommendRequest {
     /// Additional search params
     pub params: Option<SearchParams>,
     /// Max number of result to return
-    pub top: usize,
+    #[serde(alias = "top")]
+    pub limit: usize,
+    /// Offset of the first result to return.
+    /// May be used to paginate results.
+    /// Note: large offset values may cause performance issues.
+    #[serde(default)]
+    pub offset: usize,
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?

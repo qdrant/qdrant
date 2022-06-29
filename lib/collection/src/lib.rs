@@ -14,7 +14,6 @@ use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::ShardOperation;
 use api::grpc::transport_channel_pool::TransportChannelPool;
-use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
 use futures::future::{join_all, try_join_all};
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
@@ -52,7 +51,7 @@ pub mod operations;
 pub mod optimizers_builder;
 pub mod shard;
 mod update_handler;
-mod wal;
+pub mod wal;
 
 #[cfg(test)]
 mod tests;
@@ -493,7 +492,6 @@ impl Collection {
     pub async fn recommend_by(
         &self,
         request: RecommendRequest,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
@@ -517,7 +515,6 @@ impl Collection {
                     with_payload: Some(WithPayloadInterface::Bool(true)),
                     with_vector: true,
                 },
-                segment_searcher,
                 shard_selection,
             )
             .await?;
@@ -574,23 +571,18 @@ impl Collection {
             with_payload: request.with_payload.clone(),
             with_vector: request.with_vector,
             params: request.params,
-            top: request.top,
+            limit: request.limit,
             score_threshold: request.score_threshold,
+            offset: request.offset,
         };
 
-        self.search(
-            search_request,
-            segment_searcher,
-            search_runtime_handle,
-            shard_selection,
-        )
-        .await
+        self.search(search_request, search_runtime_handle, shard_selection)
+            .await
     }
 
-    pub async fn search(
+    async fn _search(
         &self,
         request: SearchRequest,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
@@ -598,23 +590,121 @@ impl Collection {
         let target_shards = self.target_shards(shard_selection)?;
         let all_searches = target_shards
             .iter()
-            .map(|shard| shard.search(request.clone(), segment_searcher, search_runtime_handle));
+            .map(|shard| shard.search(request.clone(), search_runtime_handle));
 
         let all_searches_res = try_join_all(all_searches).await?.into_iter().flatten();
         let distance = self.config.read().await.params.distance;
 
-        let top_result = match distance.distance_order() {
-            Order::LargeBetter => peek_top_largest_scores_iterable(all_searches_res, request.top),
-            Order::SmallBetter => peek_top_smallest_scores_iterable(all_searches_res, request.top),
+        let mut top_result = match distance.distance_order() {
+            Order::LargeBetter => {
+                peek_top_largest_scores_iterable(all_searches_res, request.limit + request.offset)
+            }
+            Order::SmallBetter => {
+                peek_top_smallest_scores_iterable(all_searches_res, request.limit + request.offset)
+            }
         };
 
+        if request.offset > 0 {
+            // Remove offset from top result.
+            top_result.drain(..request.offset);
+        }
         Ok(top_result)
+    }
+
+    async fn fill_search_result_with_payload(
+        &self,
+        search_result: Vec<ScoredPoint>,
+        with_payload: Option<WithPayloadInterface>,
+        with_vector: bool,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        let retrieve_request = PointRequest {
+            ids: search_result.iter().map(|x| x.id).collect(),
+            with_payload,
+            with_vector,
+        };
+        let retrieved_records = self.retrieve(retrieve_request, shard_selection).await?;
+        let mut records_map: HashMap<ExtendedPointId, Record> = retrieved_records
+            .into_iter()
+            .map(|rec| (rec.id, rec))
+            .collect();
+        let enriched_result = search_result
+            .into_iter()
+            .filter_map(|mut scored_point| {
+                // Points might get deleted between search and retrieve.
+                // But it's not a problem, because we don't want to return deleted points.
+                // So we just filter out them.
+                records_map.remove(&scored_point.id).map(|record| {
+                    scored_point.payload = record.payload;
+                    scored_point.vector = record.vector;
+                    scored_point
+                })
+            })
+            .collect();
+        Ok(enriched_result)
+    }
+
+    pub async fn search(
+        &self,
+        request: SearchRequest,
+        search_runtime_handle: &Handle,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        // A factor which determines if we need to use the 2-step search or not
+        // Should be adjusted based on usage statistics.
+        const PAYLOAD_TRANSFERS_FACTOR_THRESHOLD: usize = 10;
+
+        let is_payload_required = if let Some(with_payload) = &request.with_payload {
+            with_payload.is_required()
+        } else {
+            false
+        };
+
+        let metadata_required = is_payload_required || request.with_vector;
+
+        // Number of records we need to retrieve to fill the search result.
+        let require_transfers = self.shards.len() * (request.limit + request.offset);
+        // Actually used number of records.
+        let used_transfers = request.limit;
+
+        let is_required_transfer_large_enough =
+            require_transfers > used_transfers * PAYLOAD_TRANSFERS_FACTOR_THRESHOLD;
+
+        if metadata_required && is_required_transfer_large_enough {
+            // If there is an significant offset, we need to retrieve the whole result
+            // set without payload first and then retrieve the payload.
+            // It is required to do this because the payload might be too large to send over the
+            // network.
+            let mut without_payload_request = request.clone();
+            without_payload_request.with_payload = None;
+            without_payload_request.with_vector = false;
+            let without_payload_result = self
+                ._search(
+                    without_payload_request,
+                    search_runtime_handle,
+                    shard_selection,
+                )
+                .await?;
+            let filled_result = self
+                .fill_search_result_with_payload(
+                    without_payload_result,
+                    request.with_payload.clone(),
+                    request.with_vector,
+                    shard_selection,
+                )
+                .await?;
+            Ok(filled_result)
+        } else {
+            let result = self
+                ._search(request, search_runtime_handle, shard_selection)
+                .await?;
+            Ok(result)
+        }
     }
 
     pub async fn batch_search(
         &self,
         request: BatchSearchRequest,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -622,9 +712,9 @@ impl Collection {
 
         let target_shards = self.target_shards(shard_selection)?;
 
-        let all_searches = target_shards.iter().map(|shard| {
-            shard.batch_search(request.clone(), segment_searcher, search_runtime_handle)
-        });
+        let all_searches = target_shards
+            .iter()
+            .map(|shard| shard.batch_search(request.clone(), search_runtime_handle));
 
         let all_searches_res = try_join_all(all_searches).await?.into_iter().flatten();
 
@@ -643,7 +733,6 @@ impl Collection {
     pub async fn scroll_by(
         &self,
         request: ScrollRequest,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequest::default();
@@ -670,7 +759,6 @@ impl Collection {
         let target_shards = self.target_shards(shard_selection)?;
         let scroll_futures = target_shards.iter().map(|shard| {
             shard.scroll_by(
-                segment_searcher,
                 offset,
                 limit,
                 &with_payload_interface,
@@ -703,7 +791,6 @@ impl Collection {
     pub async fn retrieve(
         &self,
         request: PointRequest,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Record>> {
         let with_payload_interface = request
@@ -714,14 +801,9 @@ impl Collection {
         let with_vector = request.with_vector;
         let request = Arc::new(request);
         let target_shards = self.target_shards(shard_selection)?;
-        let retrieve_futures = target_shards.iter().map(|shard| {
-            shard.retrieve(
-                request.clone(),
-                segment_searcher,
-                &with_payload,
-                with_vector,
-            )
-        });
+        let retrieve_futures = target_shards
+            .iter()
+            .map(|shard| shard.retrieve(request.clone(), &with_payload, with_vector));
 
         let all_shard_collection_results = try_join_all(retrieve_futures).await?;
         let points = all_shard_collection_results.into_iter().flatten().collect();
@@ -790,6 +872,7 @@ impl Collection {
                 info.optimizer_status =
                     max(info.optimizer_status.clone(), shard_info.optimizer_status);
                 info.vectors_count += shard_info.vectors_count;
+                info.points_count += shard_info.points_count;
                 info.segments_count += shard_info.segments_count;
                 info.disk_data_size += shard_info.disk_data_size;
                 info.ram_data_size += shard_info.ram_data_size;

@@ -13,15 +13,32 @@ use segment::types::{PointIdType, SeqNumberType};
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::operations::types::CollectionError;
 use std::ops::Mul;
+use std::thread::sleep;
 use std::time::Duration;
 
 pub type SegmentId = usize;
+
+const DROP_SPIN_TIMEOUT: Duration = Duration::from_millis(10);
+const DROP_DATA_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Object, which unifies the access to different types of segments, but still allows to
 /// access the original type of the segment if it is required for more efficient operations.
 pub enum LockedSegment {
     Original(Arc<RwLock<Segment>>),
     Proxy(Arc<RwLock<ProxySegment>>),
+}
+
+fn try_unwrap_with_timeout<T>(arc: Arc<T>, spin: Duration, timeout: Duration) -> Result<T, Arc<T>> {
+    if timeout.is_zero() {
+        return Err(arc);
+    }
+    match Arc::try_unwrap(arc) {
+        Ok(t) => Ok(t),
+        Err(t) => {
+            sleep(spin);
+            try_unwrap_with_timeout(t, spin, timeout.saturating_sub(spin))
+        }
+    }
 }
 
 impl LockedSegment {
@@ -39,22 +56,28 @@ impl LockedSegment {
         }
     }
 
+    /// Consume the LockedSegment and drop the underlying segment data.
+    /// Operation fails if the segment is used by other thread for longer than `timeout`.
     pub fn drop_data(self) -> OperationResult<()> {
         match self {
-            LockedSegment::Original(segment) => match Arc::try_unwrap(segment) {
-                Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
-                Err(locked_segment) => Err(OperationError::service_error(&format!(
-                    "Removing segment which is still in use: {:?}",
-                    locked_segment.read().data_path()
-                ))),
-            },
-            LockedSegment::Proxy(proxy) => match Arc::try_unwrap(proxy) {
-                Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
-                Err(locked_segment) => Err(OperationError::service_error(&format!(
-                    "Removing segment which is still in use: {:?}",
-                    locked_segment.read().data_path()
-                ))),
-            },
+            LockedSegment::Original(segment) => {
+                match try_unwrap_with_timeout(segment, DROP_SPIN_TIMEOUT, DROP_DATA_TIMEOUT) {
+                    Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
+                    Err(locked_segment) => Err(OperationError::service_error(&format!(
+                        "Removing segment which is still in use: {:?}",
+                        locked_segment.read().data_path()
+                    ))),
+                }
+            }
+            LockedSegment::Proxy(proxy) => {
+                match try_unwrap_with_timeout(proxy, DROP_SPIN_TIMEOUT, DROP_DATA_TIMEOUT) {
+                    Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
+                    Err(locked_segment) => Err(OperationError::service_error(&format!(
+                        "Removing segment which is still in use: {:?}",
+                        locked_segment.read().data_path()
+                    ))),
+                }
+            }
         }
     }
 }
