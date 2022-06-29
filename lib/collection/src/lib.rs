@@ -721,13 +721,7 @@ impl Collection {
                 with_vector: request.with_vector,
                 score_threshold: request.score_threshold,
             })
-            .map(|request| {
-                self.search(
-                    request,
-                    search_runtime_handle,
-                    shard_selection,
-                )
-            });
+            .map(|request| self.search(request, search_runtime_handle, shard_selection));
 
         let batch_result = try_join_all(batch_result_futures)
             .await?

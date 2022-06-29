@@ -423,11 +423,7 @@ impl TableOfContent {
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         let collection = self.get_collection(collection_name).await?;
         collection
-            .batch_search(
-                request,
-                self.search_runtime.handle(),
-                shard_selection,
-            )
+            .batch_search(request, self.search_runtime.handle(), shard_selection)
             .await
             .map_err(|err| err.into())
     }
