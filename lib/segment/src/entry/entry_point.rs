@@ -104,6 +104,12 @@ impl From<serde_json::Error> for OperationError {
     }
 }
 
+impl From<fs_extra::error::Error> for OperationError {
+    fn from(err: fs_extra::error::Error) -> Self {
+        OperationError::service_error(&format!("File system error: {}", err))
+    }
+}
+
 pub type OperationResult<T> = result::Result<T, OperationError>;
 
 pub fn get_service_error<T>(err: &OperationResult<T>) -> Option<OperationError> {
@@ -255,4 +261,9 @@ pub trait SegmentEntry {
     ///
     /// Creates a tar archive of the segment directory into `snapshot_dir_path`.
     fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()>;
+
+    /// Copy the segment directory structure into `target_dir_path`
+    ///
+    /// Return the `Path` of the copy
+    fn copy_segment_directory(&self, target_dir_path: &Path) -> OperationResult<PathBuf>;
 }

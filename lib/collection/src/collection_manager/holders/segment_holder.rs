@@ -439,8 +439,8 @@ mod tests {
     use crate::collection_manager::fixtures::{build_segment_1, build_segment_2};
 
     use super::*;
+    use std::fs::read_dir;
     use std::{thread, time};
-    use walkdir::WalkDir;
 
     #[test]
     fn test_add_and_swap() {
@@ -553,7 +553,8 @@ mod tests {
         let snapshot_dir = TempDir::new("snapshot_dir").unwrap();
         holder.snapshot_all(snapshot_dir.path()).unwrap();
 
-        let archive_count = WalkDir::new(snapshot_dir.path()).into_iter().count();
-        assert_eq!(archive_count, 2 + 1); // If the path is a directory, then it is the first item yielded by the iterator.
+        let archive_count = read_dir(&snapshot_dir).unwrap().into_iter().count();
+        // one archive produced per concrete segment in the SegmentHolder
+        assert_eq!(archive_count, 2);
     }
 }
