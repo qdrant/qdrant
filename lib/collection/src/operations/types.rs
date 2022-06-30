@@ -176,7 +176,7 @@ pub struct SearchRequest {
 /// Query Search request.
 /// Holds all conditions and parameters for the search of most similar points by vector similarity
 /// given the filtering restrictions.
-#[derive(Debug, Deserialize, Serialize, JsonSchema,Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Query {
     /// Look for vectors closest to this
