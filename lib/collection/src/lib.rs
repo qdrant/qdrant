@@ -8,6 +8,7 @@ use std::{
 };
 
 use crate::operations::config_diff::DiffConfig;
+use crate::operations::snapshot_ops::{get_snapshot_description, list_snapshots_in_directory, SnapshotDescription};
 use crate::operations::types::PointRequest;
 use crate::operations::OperationToShard;
 use crate::shard::remote_shard::RemoteShard;
@@ -258,6 +259,7 @@ pub struct Collection {
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
     path: PathBuf,
+    snapshots_path: PathBuf,
 }
 
 impl Collection {
@@ -268,6 +270,7 @@ impl Collection {
     pub async fn new(
         id: CollectionId,
         path: &Path,
+        snapshots_path: &Path,
         config: &CollectionConfig,
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
@@ -319,10 +322,16 @@ impl Collection {
             config: shared_config,
             before_drop_called: false,
             path: path.to_owned(),
+            snapshots_path: snapshots_path.to_owned(),
         })
     }
 
-    pub async fn load(id: CollectionId, path: &Path, channel_service: ChannelService) -> Self {
+    pub async fn load(
+        id: CollectionId,
+        path: &Path,
+        snapshots_path: &Path,
+        channel_service: ChannelService,
+    ) -> Self {
         let stored_version_opt = CollectionVersion::load(path)
             .unwrap_or_else(|err| panic!("Can't read collection version {}", err));
 
@@ -394,6 +403,7 @@ impl Collection {
             config: shared_config,
             before_drop_called: false,
             path: path.to_owned(),
+            snapshots_path: snapshots_path.to_owned(),
         }
     }
 
@@ -525,7 +535,7 @@ impl Collection {
 
         for &point_id in &reference_vectors_ids {
             if !vectors_map.contains_key(&point_id) {
-                return Err(CollectionError::NotFound {
+                return Err(CollectionError::PointNotFound {
                     missed_point_id: point_id,
                 });
             }
@@ -885,6 +895,29 @@ impl Collection {
         state
             .apply(this_peer_id, self, collection_path, channel_service)
             .await
+    }
+
+    pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {
+        list_snapshots_in_directory(&self.snapshots_path).await
+    }
+
+    pub async fn get_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
+        let snapshot_path = self.snapshots_path.join(snapshot_name);
+        if !snapshot_path.exists() {
+            return Err(CollectionError::NotFound {
+                what: format!("Snapshot {}", snapshot_name),
+            });
+        }
+        Ok(snapshot_path)
+    }
+
+    pub async fn create_snapshot(&self) -> CollectionResult<SnapshotDescription> {
+        let snapshot_name = format!("{}-{}.snapshot", self.name(), chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S").to_string());
+        let snapshot_path = self.snapshots_path.join(snapshot_name);
+
+        todo!("Create snapshot {}", snapshot_path.display());
+
+        get_snapshot_description(&snapshot_path).await
     }
 }
 

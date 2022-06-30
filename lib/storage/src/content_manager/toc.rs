@@ -57,6 +57,8 @@ impl TableOfContent {
         channel_service: ChannelService,
         this_peer_id: PeerId,
     ) -> Self {
+        let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
+
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
         let collection_management_runtime = Runtime::new().unwrap();
         create_dir_all(&collections_path).expect("Can't create Collections directory");
@@ -73,10 +75,12 @@ impl TableOfContent {
                 .to_str()
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
+            let collection_snapshots_path = Self::collection_snapshots_path(&snapshots_path, &collection_name);
             log::info!("Loading collection: {}", collection_name);
             let collection = collection_management_runtime.block_on(Collection::load(
                 collection_name.clone(),
                 &collection_path,
+                &collection_snapshots_path,
                 channel_service.clone(),
             ));
 
@@ -104,6 +108,27 @@ impl TableOfContent {
 
     pub fn storage_path(&self) -> &str {
         &self.storage_config.storage_path
+    }
+
+    fn collection_snapshots_path(snapshots_path: &Path, collection_name: &str) -> PathBuf {
+        snapshots_path.join(collection_name)
+    }
+
+    async fn create_snapshots_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
+        let snapshots_path = Self::collection_snapshots_path(
+            &Path::new(&self.storage_config.snapshots_path),
+            collection_name,
+        );
+        tokio::fs::create_dir_all(&snapshots_path)
+            .await
+            .map_err(|err| StorageError::ServiceError {
+                description: format!(
+                    "Can't create directory for snapshots {}. Error: {}",
+                    collection_name, err
+                ),
+            })?;
+
+        Ok(snapshots_path)
     }
 
     async fn create_collection_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
@@ -170,6 +195,7 @@ impl TableOfContent {
             .await?;
 
         let collection_path = self.create_collection_path(collection_name).await?;
+        let snapshots_path = self.create_snapshots_path(collection_name).await?;
 
         let collection_params = CollectionParams {
             vector_size,
@@ -204,7 +230,8 @@ impl TableOfContent {
         };
         let collection = Collection::new(
             collection_name.to_string(),
-            Path::new(&collection_path),
+            &collection_path,
+            &snapshots_path,
             &collection_config,
             collection_shard_distribution,
             self.channel_service.clone(),
@@ -547,13 +574,15 @@ impl TableOfContent {
                     // Create collection if not present locally
                     None => {
                         let collection_path = self.create_collection_path(id).await?;
+                        let snapshots_path = self.create_snapshots_path(id).await?;
                         let shard_distribution = CollectionShardDistribution::from_shard_to_peer(
                             self.this_peer_id,
                             &state.shard_to_peer,
                         );
                         let collection = Collection::new(
                             id.to_string(),
-                            Path::new(&collection_path),
+                            &collection_path,
+                            &snapshots_path,
                             &state.config,
                             shard_distribution,
                             self.channel_service.clone(),

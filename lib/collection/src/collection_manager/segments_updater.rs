@@ -32,7 +32,7 @@ pub(crate) fn check_unprocessed_points(
 
     match missed_point {
         None => Ok(processed.len()),
-        Some(missed_point) => Err(CollectionError::NotFound {
+        Some(missed_point) => Err(CollectionError::PointNotFound {
             missed_point_id: missed_point,
         }),
     }

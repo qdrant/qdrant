@@ -1,9 +1,24 @@
 use actix_web::rt::time::Instant;
-use actix_web::{HttpResponse, Responder};
+use actix_web::{error, Error, HttpResponse, Responder};
 use api::grpc::models::{ApiResponse, ApiStatus};
 use serde::Serialize;
 use std::fmt::Debug;
+use collection::operations::types::CollectionError;
 use storage::content_manager::errors::StorageError;
+
+pub fn collection_into_actix_error(err: CollectionError) -> Error {
+    let storage_error: StorageError = err.into();
+    storage_into_actix_error(storage_error)
+}
+
+pub fn storage_into_actix_error(err: StorageError) -> Error {
+    match err {
+        StorageError::BadInput { .. } => error::ErrorBadRequest(format!("{}", err)),
+        StorageError::NotFound { .. } => error::ErrorNotFound(format!("{}", err)),
+        StorageError::ServiceError { .. } => error::ErrorInternalServerError(format!("{}", err)),
+        StorageError::BadRequest { .. } => error::ErrorBadRequest(format!("{}", err)),
+    }
+}
 
 pub fn process_response<D>(response: Result<D, StorageError>, timing: Instant) -> impl Responder
 where

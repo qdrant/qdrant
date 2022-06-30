@@ -29,7 +29,8 @@ atty = "0.2"
 colored = "2"
 serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"
-schemars = { version = "0.8.10", features = ["uuid1", "preserve_order"] }
+chrono = { version = "~0.4", features = ["serde"] }
+schemars = { version = "0.8.10", features = ["uuid1", "preserve_order", "chrono"] }
 itertools = "0.10"
 anyhow = "1.0.58"
 futures = "0.3.21"
@@ -44,6 +45,7 @@ tokio = { version = "~1.19", features = ["full"] }
 
 actix-web = { version = "4.1.0", optional = true }
 actix-cors = "0.6.1"
+actix-files = "0.6.1"
 tonic = "0.7.2"
 num-traits = "0.2.15"
 
