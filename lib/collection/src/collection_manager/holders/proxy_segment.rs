@@ -542,6 +542,8 @@ impl SegmentEntry for ProxySegment {
             in_memory_wrapped_segment.delete_point(segment_version, deleted_point)?;
         }
         in_memory_wrapped_segment.take_snapshot(snapshot_dir_path)?;
+        // release segment resources
+        drop(in_memory_wrapped_segment);
         // delete temporary copy
         remove_dir_all(copy_target_dir)?;
         Ok(())
