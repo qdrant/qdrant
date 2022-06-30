@@ -175,7 +175,7 @@ pub struct SearchRequest {
 
 /// Query .
 /// given the filtering restrictions.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema,Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Query {
     /// Look for vectors closest to this

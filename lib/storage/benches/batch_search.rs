@@ -1,7 +1,12 @@
+use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
 use collection::operations::types::{BatchSearchRequest, Query, SearchRequest};
+use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
 use criterion::{criterion_group, criterion_main, Criterion};
-use segment::types::Distance;
+use itertools::Itertools;
+use rand::thread_rng;
+use segment::fixtures::payload_fixtures::random_vector;
+use segment::types::{Distance, PointIdType};
 use std::sync::Arc;
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
@@ -58,6 +63,19 @@ fn batch_search_benchmark(c: &mut Criterion) {
         )
         .unwrap();
 
+    let rnd_batch = create_rnd_batch();
+
+    handle
+        .block_on(toc.update(
+            "test",
+            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperations::PointsList(rnd_batch),
+            )),
+            None,
+            true,
+        ))
+        .unwrap();
+
     let mut group = c.benchmark_group("batch-search-bench");
 
     group.bench_function("search", |b| {
@@ -81,16 +99,15 @@ fn batch_search_benchmark(c: &mut Criterion) {
         })
     });
 
+    let batch_query = create_rnd_batch_query();
+
     group.bench_function("batch-search", |b| {
         b.iter(|| {
             handle
                 .block_on(toc.search_batch(
                     "test",
                     BatchSearchRequest {
-                        batch: vec![Query {
-                            vector: vec![0.0, 0.0, 1.0, 1.0],
-                            filter: None,
-                        }],
+                        batch: batch_query.clone(),
                         params: None,
                         top: 0,
                         with_payload: None,
@@ -104,6 +121,29 @@ fn batch_search_benchmark(c: &mut Criterion) {
     });
 
     group.finish();
+}
+
+fn create_rnd_batch() -> Vec<PointStruct> {
+    let mut rnd = thread_rng();
+    (0..1000)
+        .into_iter()
+        .map(|n| PointStruct {
+            id: PointIdType::NumId(n),
+            vector: random_vector(&mut rnd, 4),
+            payload: None,
+        })
+        .collect_vec()
+}
+
+fn create_rnd_batch_query() -> Vec<Query> {
+    let mut rnd = thread_rng();
+    (0..100)
+        .into_iter()
+        .map(|_| Query {
+            vector: random_vector(&mut rnd, 4),
+            filter: None,
+        })
+        .collect_vec()
 }
 
 criterion_group! {
