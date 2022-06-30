@@ -47,9 +47,14 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
     let snapshot_path = collection_path.join("snapshots");
 
     // Default to a collection with all the shards local
-    new_local_collection("test".to_string(), collection_path, &snapshot_path, &collection_config)
-        .await
-        .unwrap()
+    new_local_collection(
+        "test".to_string(),
+        collection_path,
+        &snapshot_path,
+        &collection_config,
+    )
+    .await
+    .unwrap()
 }
 
 /// Default to a collection with all the shards local

@@ -29,7 +29,7 @@ impl From<CollectionError> for StorageError {
         match err {
             CollectionError::BadInput { description } => StorageError::BadInput { description },
             err @ CollectionError::NotFound { .. } => StorageError::NotFound {
-                description: format!("{err}")
+                description: format!("{err}"),
             },
             err @ CollectionError::PointNotFound { .. } => StorageError::NotFound {
                 description: format!("{err}"),

@@ -8,7 +8,9 @@ use std::{
 };
 
 use crate::operations::config_diff::DiffConfig;
-use crate::operations::snapshot_ops::{get_snapshot_description, list_snapshots_in_directory, SnapshotDescription};
+use crate::operations::snapshot_ops::{
+    get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
+};
 use crate::operations::types::PointRequest;
 use crate::operations::OperationToShard;
 use crate::shard::remote_shard::RemoteShard;
@@ -912,7 +914,11 @@ impl Collection {
     }
 
     pub async fn create_snapshot(&self) -> CollectionResult<SnapshotDescription> {
-        let snapshot_name = format!("{}-{}.snapshot", self.name(), chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S").to_string());
+        let snapshot_name = format!(
+            "{}-{}.snapshot",
+            self.name(),
+            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S").to_string()
+        );
         let snapshot_path = self.snapshots_path.join(snapshot_name);
 
         todo!("Create snapshot {}", snapshot_path.display());

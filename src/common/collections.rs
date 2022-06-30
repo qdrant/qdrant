@@ -1,8 +1,8 @@
 use api::grpc::models::{CollectionDescription, CollectionsResponse};
+use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::CollectionInfo;
 use collection::shard::ShardId;
 use itertools::Itertools;
-use collection::operations::snapshot_ops::SnapshotDescription;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 
@@ -26,13 +26,24 @@ pub async fn do_list_collections(toc: &TableOfContent) -> CollectionsResponse {
     CollectionsResponse { collections }
 }
 
-pub async fn do_list_snapshots(toc: &TableOfContent, collection_name: &str) -> Result<Vec<SnapshotDescription>, StorageError> {
-    Ok(toc.get_collection(collection_name).await?.list_snapshots().await?)
+pub async fn do_list_snapshots(
+    toc: &TableOfContent,
+    collection_name: &str,
+) -> Result<Vec<SnapshotDescription>, StorageError> {
+    Ok(toc
+        .get_collection(collection_name)
+        .await?
+        .list_snapshots()
+        .await?)
 }
 
 pub async fn do_create_snapshot(
     toc: &TableOfContent,
     collection_name: &str,
 ) -> Result<SnapshotDescription, StorageError> {
-    Ok(toc.get_collection(collection_name).await?.create_snapshot().await?)
+    Ok(toc
+        .get_collection(collection_name)
+        .await?
+        .create_snapshot()
+        .await?)
 }

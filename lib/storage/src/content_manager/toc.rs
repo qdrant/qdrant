@@ -75,7 +75,8 @@ impl TableOfContent {
                 .to_str()
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
-            let collection_snapshots_path = Self::collection_snapshots_path(&snapshots_path, &collection_name);
+            let collection_snapshots_path =
+                Self::collection_snapshots_path(&snapshots_path, &collection_name);
             log::info!("Loading collection: {}", collection_name);
             let collection = collection_management_runtime.block_on(Collection::load(
                 collection_name.clone(),

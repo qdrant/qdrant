@@ -1,9 +1,8 @@
-use std::path::Path;
-use chrono::NaiveDateTime;
-use serde::{Deserialize, Serialize};
-use schemars::JsonSchema;
 use crate::CollectionResult;
-
+use chrono::NaiveDateTime;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct SnapshotDescription {
@@ -24,7 +23,9 @@ pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotD
     })
 }
 
-pub async fn list_snapshots_in_directory(directory: &Path) -> CollectionResult<Vec<SnapshotDescription>> {
+pub async fn list_snapshots_in_directory(
+    directory: &Path,
+) -> CollectionResult<Vec<SnapshotDescription>> {
     let mut snapshots = Vec::new();
     let mut entries = tokio::fs::read_dir(directory).await?;
     while let Some(entry) = entries.next_entry().await? {

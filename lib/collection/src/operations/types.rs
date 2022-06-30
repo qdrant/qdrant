@@ -275,7 +275,9 @@ impl From<OperationError> for CollectionError {
             OperationError::WrongVector { .. } => Self::BadInput {
                 description: format!("{}", err),
             },
-            OperationError::PointIdError { missed_point_id } => Self::PointNotFound { missed_point_id },
+            OperationError::PointIdError { missed_point_id } => {
+                Self::PointNotFound { missed_point_id }
+            }
             OperationError::ServiceError { description } => {
                 Self::ServiceError { error: description }
             }
