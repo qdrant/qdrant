@@ -411,10 +411,8 @@ impl Collection {
         }
     }
 
-    fn shard_by_id(&self, id: ShardId) -> &Shard {
-        self.shards
-            .get(&id)
-            .expect("Shard is guaranteed to be added when id is added to the ring.")
+    pub fn shard_by_id(&self, id: ShardId) -> Option<&Shard> {
+        self.shards.get(&id)
     }
 
     fn local_shard_by_id(&self, id: ShardId) -> CollectionResult<&Shard> {
@@ -467,7 +465,7 @@ impl Collection {
         let shard_ops: Vec<_> = match operation.split_by_shard(&self.ring) {
             OperationToShard::ByShard(by_shard) => by_shard
                 .into_iter()
-                .map(|(shard_id, operation)| (self.shard_by_id(shard_id).get(), operation))
+                .map(|(shard_id, operation)| (self.shard_by_id(shard_id).unwrap().get(), operation))
                 .collect(),
             OperationToShard::ToAll(operation) => self
                 .all_shards()
@@ -929,21 +927,16 @@ impl Collection {
 
         // Create snapshot of each shard
         for (shard_id, shard) in self.shards.iter() {
-            let shard_snapshot_path = snapshot_path.join(format!("{}", shard_id));
+            let shard_snapshot_path =
+                snapshot_path_with_tmp_extension.join(format!("{}", shard_id));
+            create_dir_all(&shard_snapshot_path).await?;
             match shard {
                 Shard::Local(local_shard) => {
                     local_shard.create_snapshot(&shard_snapshot_path).await?;
                 }
-                Shard::Remote(_remote_shard) => {
+                Shard::Remote(remote_shard) => {
                     // copy shard directory to snapshot directory
-                    let shard_path = self.path.join(format!("{}", shard_id));
-                    fs_extra::dir::copy(&shard_path, &shard_snapshot_path, &Default::default())
-                        .map_err(|err| CollectionError::ServiceError {
-                            error: format!(
-                                "Failed to copy shard {} to snapshot: {}",
-                                shard_id, err
-                            ),
-                        })?;
+                    remote_shard.create_snapshot(&shard_snapshot_path).await?;
                 }
             }
         }
@@ -991,7 +984,7 @@ impl Collection {
                 let shard_config = ShardConfig::load(&shard_path)?;
                 match shard_config.r#type {
                     ShardType::Local => LocalShard::restore_snapshot(&shard_path)?,
-                    ShardType::Remote { .. } => {} // No extra action needed
+                    ShardType::Remote { .. } => RemoteShard::restore_snapshot(&shard_path),
                 }
             }
         }

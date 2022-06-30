@@ -206,7 +206,6 @@ impl LocalShard {
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
-        ShardConfig::init_file(shard_path)?;
         let local_shard_config = ShardConfig::new_local();
         local_shard_config.save(shard_path)?;
 
