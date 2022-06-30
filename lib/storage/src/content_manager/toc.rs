@@ -34,7 +34,7 @@ use crate::types::{PeerAddressById, StorageConfig};
 use collection::shard::ShardId;
 use collection::PeerId;
 
-const COLLECTIONS_DIR: &str = "collections";
+pub const COLLECTIONS_DIR: &str = "collections";
 
 /// The main object of the service. It holds all objects, required for proper functioning.
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
@@ -58,7 +58,7 @@ impl TableOfContent {
         this_peer_id: PeerId,
     ) -> Self {
         let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
-
+        create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
         let collections_path = Path::new(&storage_config.storage_path).join(&COLLECTIONS_DIR);
         let collection_management_runtime = Runtime::new().unwrap();
         create_dir_all(&collections_path).expect("Can't create Collections directory");
@@ -77,6 +77,12 @@ impl TableOfContent {
                 .to_string();
             let collection_snapshots_path =
                 Self::collection_snapshots_path(&snapshots_path, &collection_name);
+            create_dir_all(&collection_snapshots_path).unwrap_or_else(|e| {
+                panic!(
+                    "Can't create a directory for snapshot of {}: {}",
+                    collection_name, e
+                )
+            });
             log::info!("Loading collection: {}", collection_name);
             let collection = collection_management_runtime.block_on(Collection::load(
                 collection_name.clone(),
@@ -117,7 +123,7 @@ impl TableOfContent {
 
     async fn create_snapshots_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
         let snapshots_path = Self::collection_snapshots_path(
-            &Path::new(&self.storage_config.snapshots_path),
+            Path::new(&self.storage_config.snapshots_path),
             collection_name,
         );
         tokio::fs::create_dir_all(&snapshots_path)

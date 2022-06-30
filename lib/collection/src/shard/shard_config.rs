@@ -20,7 +20,7 @@ pub struct ShardConfig {
 }
 
 impl ShardConfig {
-    fn get_config_path(shard_path: &Path) -> PathBuf {
+    pub fn get_config_path(shard_path: &Path) -> PathBuf {
         shard_path.join(SHARD_CONFIG_FILE)
     }
 

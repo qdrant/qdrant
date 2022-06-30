@@ -3,6 +3,7 @@ use chrono::NaiveDateTime;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::time::SystemTime;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct SnapshotDescription {
@@ -14,7 +15,10 @@ pub struct SnapshotDescription {
 pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotDescription> {
     let name = path.file_name().unwrap().to_str().unwrap();
     let file_meta = tokio::fs::metadata(&path).await?;
-    let creation_time = file_meta.created()?.elapsed()?.as_secs();
+    let creation_time = file_meta
+        .created()?
+        .duration_since(SystemTime::UNIX_EPOCH)?
+        .as_secs();
     let size = file_meta.len();
     Ok(SnapshotDescription {
         name: name.to_string(),

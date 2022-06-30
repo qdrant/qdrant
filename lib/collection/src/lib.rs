@@ -43,6 +43,8 @@ use segment::{
 };
 use serde::{Deserialize, Serialize};
 use shard::{local_shard::LocalShard, Shard, ShardId};
+use tar::Builder as TarBuilder;
+use tokio::fs::{create_dir_all, remove_dir_all, rename};
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 use tonic::transport::Uri;
@@ -917,13 +919,77 @@ impl Collection {
         let snapshot_name = format!(
             "{}-{}.snapshot",
             self.name(),
-            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S").to_string()
+            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
         );
         let snapshot_path = self.snapshots_path.join(snapshot_name);
 
-        todo!("Create snapshot {}", snapshot_path.display());
+        let snapshot_path_with_tmp_extension = snapshot_path.clone().with_extension("tmp");
+        let snapshot_path_with_arc_extension = snapshot_path.clone().with_extension("arc");
+        create_dir_all(&snapshot_path_with_tmp_extension).await?;
+
+        // Create snapshot of each shard
+        let mut shards_snapshots_path = vec![];
+        for shard in self.all_shards() {
+            if let Shard::Local(shard) = shard {
+                let shard_snapshot_path = shard
+                    .create_snapshot(&snapshot_path_with_tmp_extension)
+                    .await?;
+                shards_snapshots_path.push(shard_snapshot_path);
+            }
+        }
+
+        CollectionVersion::save(&snapshot_path_with_tmp_extension)?;
+        self.config
+            .read()
+            .await
+            .save(&snapshot_path_with_tmp_extension)?;
+
+        // have to use std here, cause TarBuilder is not async
+        let file = std::fs::File::create(&snapshot_path_with_arc_extension)?;
+        let mut builder = TarBuilder::new(file);
+        // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
+        builder.append_dir_all(".", &snapshot_path_with_tmp_extension)?;
+        builder.finish()?;
+
+        // remove temporary snapshot directory
+        remove_dir_all(&snapshot_path_with_tmp_extension).await?;
+
+        // move snapshot to permanent location
+        rename(&snapshot_path_with_arc_extension, &snapshot_path).await?;
 
         get_snapshot_description(&snapshot_path).await
+    }
+
+    pub fn restore_snapshot(snapshot_path: &Path, target_dir: &Path) -> CollectionResult<()> {
+        // decompress archive
+        let archive_file = std::fs::File::open(snapshot_path).unwrap();
+        let mut ar = tar::Archive::new(archive_file);
+        ar.unpack(target_dir)?;
+
+        let config = CollectionConfig::load(target_dir).unwrap_or_else(|err| {
+            panic!(
+                "Can't read collection config due to {}\nat {}",
+                err,
+                target_dir.to_str().unwrap()
+            )
+        });
+        let configured_shards = config.params.shard_number.get();
+
+        for shard_id in 0..configured_shards {
+            let shard_path = shard_path(target_dir, shard_id);
+            if shard_path.exists() {
+                LocalShard::restore_snapshot(&shard_path).unwrap_or_else(|err| {
+                    panic!(
+                        "Can't restore shard {} due to {}\nat {}",
+                        shard_id,
+                        err,
+                        shard_path.to_str().unwrap()
+                    )
+                });
+            }
+        }
+
+        Ok(())
     }
 }
 

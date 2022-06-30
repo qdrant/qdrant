@@ -236,6 +236,14 @@ impl Segment {
         let payload_index = self.payload_index.borrow();
         payload_index.infer_payload_type(key)
     }
+
+    pub fn restore_snapshot(snapshot_path: &Path, segment_id: &str) -> OperationResult<()> {
+        let segment_path = snapshot_path.parent().unwrap().join(segment_id);
+        let archive_file = File::open(snapshot_path)?;
+        let mut ar = tar::Archive::new(archive_file);
+        ar.unpack(&segment_path)?;
+        Ok(())
+    }
 }
 
 /// This is a basic implementation of `SegmentEntry`,
