@@ -207,6 +207,7 @@ fn main() -> anyhow::Result<()> {
     #[cfg(feature = "service_debug")]
     {
         use parking_lot::deadlock;
+        use std::fmt::Write;
 
         const DEADLOCK_CHECK_PERIOD: Duration = Duration::from_secs(10);
 
@@ -221,13 +222,15 @@ fn main() -> anyhow::Result<()> {
 
                 let mut error = format!("{} deadlocks detected\n", deadlocks.len());
                 for (i, threads) in deadlocks.iter().enumerate() {
-                    error.push_str(&format!("Deadlock #{}\n", i));
+                    writeln!(error, "Deadlock #{}", i).expect("fail to writeln!");
                     for t in threads {
-                        error.push_str(&format!(
-                            "Thread Id {:#?}\n{:#?}\n",
+                        writeln!(
+                            error,
+                            "Thread Id {:#?}\n{:#?}",
                             t.thread_id(),
                             t.backtrace()
-                        ));
+                        )
+                        .expect("fail to writeln!");
                     }
                 }
                 log::error!("{}", error);
