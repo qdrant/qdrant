@@ -53,7 +53,8 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
         "test".to_string(),
         collection_path,
         &collection_path.join("snapshots"),
-    ).await;
+    )
+    .await;
     assert_eq!(collection.info(None).await.unwrap().vectors_count, 2);
     collection.before_drop().await;
 }
