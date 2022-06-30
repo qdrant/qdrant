@@ -405,7 +405,6 @@ impl LocalShard {
 
     /// create snapshot for local shard into `snapshot_path/{shard_id}/`
     pub async fn create_snapshot(&self, snapshot_path: &Path) -> CollectionResult<PathBuf> {
-
         let shard_id = self
             .path
             .file_stem()
@@ -416,7 +415,9 @@ impl LocalShard {
         // snapshot all shard's segment
         let snapshot_segments_shard_path = snapshot_shard_path.join("segments");
         create_dir_all(&snapshot_segments_shard_path).await?;
-        self.segments.read().snapshot_all_segments(&snapshot_segments_shard_path)?;
+        self.segments
+            .read()
+            .snapshot_all_segments(&snapshot_segments_shard_path)?;
 
         // snapshot all shard's WAL
         self.snapshot_wal(&snapshot_shard_path).await?;
