@@ -13,6 +13,7 @@ use segment::types::{PointIdType, SeqNumberType};
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::operations::types::CollectionError;
 use std::ops::Mul;
+use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -409,6 +410,18 @@ impl<'s> SegmentHolder {
         }
     }
 
+    /// Take a snapshot of all segments into `snapshot_dir_path`
+    ///
+    /// Shortcuts at the first failing segment snapshot
+    pub fn snapshot_all(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
+        for segment in self.segments.values() {
+            let segment_lock = segment.get();
+            let read_segment = segment_lock.read();
+            read_segment.take_snapshot(snapshot_dir_path)?
+        }
+        Ok(())
+    }
+
     pub fn report_optimizer_error<E: Into<CollectionError>>(&mut self, error: E) {
         if self.optimizer_errors.is_none() {
             self.optimizer_errors = Some(error.into());
@@ -426,6 +439,7 @@ mod tests {
     use crate::collection_manager::fixtures::{build_segment_1, build_segment_2};
 
     use super::*;
+    use std::fs::read_dir;
     use std::{thread, time};
 
     #[test]
@@ -522,5 +536,25 @@ mod tests {
         // Points moved on apply
         assert!(read_segment_1.has_point(11.into()));
         assert!(read_segment_1.has_point(12.into()));
+    }
+
+    #[test]
+    fn test_snapshot_all() {
+        let dir = TempDir::new("segment_dir").unwrap();
+        let segment1 = build_segment_1(dir.path());
+        let segment2 = build_segment_2(dir.path());
+
+        let mut holder = SegmentHolder::default();
+
+        let sid1 = holder.add(segment1);
+        let sid2 = holder.add(segment2);
+        assert_ne!(sid1, sid2);
+
+        let snapshot_dir = TempDir::new("snapshot_dir").unwrap();
+        holder.snapshot_all(snapshot_dir.path()).unwrap();
+
+        let archive_count = read_dir(&snapshot_dir).unwrap().into_iter().count();
+        // one archive produced per concrete segment in the SegmentHolder
+        assert_eq!(archive_count, 2);
     }
 }

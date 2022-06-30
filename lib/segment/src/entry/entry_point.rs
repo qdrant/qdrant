@@ -8,7 +8,7 @@ use atomicwrites::Error as AtomicIoError;
 use rocksdb::Error;
 use std::collections::HashMap;
 use std::io::Error as IoError;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::result;
 use thiserror::Error;
 
@@ -101,6 +101,12 @@ impl From<Error> for OperationError {
 impl From<serde_json::Error> for OperationError {
     fn from(err: serde_json::Error) -> Self {
         OperationError::service_error(&format!("Json error: {}", err))
+    }
+}
+
+impl From<fs_extra::error::Error> for OperationError {
+    fn from(err: fs_extra::error::Error) -> Self {
+        OperationError::service_error(&format!("File system error: {}", err))
     }
 }
 
@@ -250,4 +256,14 @@ pub trait SegmentEntry {
         op_num: SeqNumberType,
         filter: &'a Filter,
     ) -> OperationResult<usize>;
+
+    /// Take a snapshot of the segment.
+    ///
+    /// Creates a tar archive of the segment directory into `snapshot_dir_path`.
+    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()>;
+
+    /// Copy the segment directory structure into `target_dir_path`
+    ///
+    /// Return the `Path` of the copy
+    fn copy_segment_directory(&self, target_dir_path: &Path) -> OperationResult<PathBuf>;
 }

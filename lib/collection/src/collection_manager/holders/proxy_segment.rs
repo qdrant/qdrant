@@ -1,6 +1,7 @@
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
+use segment::segment_constructor::load_segment;
 use segment::types::{
     Condition, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
@@ -8,9 +9,11 @@ use segment::types::{
 };
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::fs::{create_dir_all, remove_dir_all};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use uuid::Uuid;
 
 type LockedRmSet = Arc<RwLock<HashSet<PointIdType>>>;
 type LockedFieldsSet = Arc<RwLock<HashSet<PayloadKeyType>>>;
@@ -499,6 +502,60 @@ impl SegmentEntry for ProxySegment {
     fn vector_dim(&self) -> usize {
         self.write_segment.get().read().vector_dim()
     }
+
+    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
+        log::info!(
+            "Taking a snapshot of a proxy segment into {:?}",
+            snapshot_dir_path
+        );
+        // extra care is needed to capture outstanding deleted points
+        let deleted_points_guard = self.deleted_points.read();
+        let wrapped_segment_arc = self.wrapped_segment.get();
+        let wrapped_segment_guard = wrapped_segment_arc.read();
+
+        // stable copy of the deleted points at the time of the snapshot
+        let deleted_points_copy = deleted_points_guard.clone();
+
+        // create unique dir. to hold data copy of wrapped segment
+        let copy_target_dir = snapshot_dir_path.join(format!("segment_copy_{}", Uuid::new_v4()));
+        create_dir_all(&copy_target_dir)?;
+
+        // copy proxy segment current wrapped data
+        let full_copy_path = self.copy_segment_directory(&copy_target_dir)?;
+        // snapshot write_segment
+        let write_segment_rw = self.write_segment.get();
+        let write_segment_guard = write_segment_rw.read();
+        write_segment_guard.take_snapshot(snapshot_dir_path)?;
+        // guaranteed to be higher than anything in wrapped segment and does not exceed WAL at the same time
+        let write_segment_version = write_segment_guard.version();
+
+        // unlock deleted_points as we have a stable copy
+        drop(wrapped_segment_guard);
+        drop(deleted_points_guard);
+
+        // load copy of wrapped segment in memory
+        let mut in_memory_wrapped_segment = load_segment(&full_copy_path)?;
+
+        // remove potentially deleted points from wrapped_segment
+        for deleted_point in deleted_points_copy {
+            in_memory_wrapped_segment.delete_point(write_segment_version, deleted_point)?;
+        }
+        in_memory_wrapped_segment.take_snapshot(snapshot_dir_path)?;
+        // release segment resources
+        drop(in_memory_wrapped_segment);
+        // delete temporary copy
+        remove_dir_all(copy_target_dir)?;
+        Ok(())
+    }
+
+    /// This implementation delegates to the `wrapped_segment` copy directory
+    /// Other members from the proxy segment won't be copied!
+    fn copy_segment_directory(&self, target_dir_path: &Path) -> OperationResult<PathBuf> {
+        self.wrapped_segment
+            .get()
+            .read()
+            .copy_segment_directory(target_dir_path)
+    }
 }
 
 #[cfg(test)]
@@ -506,6 +563,7 @@ mod tests {
     use super::*;
     use crate::collection_manager::fixtures::{build_segment_1, empty_segment};
     use segment::types::FieldCondition;
+    use std::fs::read_dir;
     use tempdir::TempDir;
 
     #[test]
@@ -611,5 +669,48 @@ mod tests {
 
         assert_eq!(original_points_filtered.len() - 1, proxy_res_filtered.len());
         assert_eq!(original_points.len() - 1, proxy_res.len());
+    }
+
+    #[test]
+    fn test_take_snapshot() {
+        let dir = TempDir::new("segment_dir").unwrap();
+        let original_segment = LockedSegment::new(build_segment_1(dir.path()));
+        let write_segment = LockedSegment::new(empty_segment(dir.path()));
+        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+
+        let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+        let created_indexes = Arc::new(RwLock::new(
+            HashMap::<PayloadKeyType, PayloadSchemaType>::new(),
+        ));
+
+        let mut proxy_segment = ProxySegment::new(
+            original_segment,
+            write_segment,
+            deleted_points,
+            created_indexes,
+            deleted_indexes,
+        );
+
+        let vec4 = vec![1.1, 1.0, 0.0, 1.0];
+        proxy_segment.upsert_point(100, 4.into(), &vec4).unwrap();
+        let vec6 = vec![1.0, 1.0, 0.5, 1.0];
+        proxy_segment.upsert_point(101, 6.into(), &vec6).unwrap();
+        proxy_segment.delete_point(102, 1.into()).unwrap();
+
+        let snapshot_dir = TempDir::new("snapshot_dir").unwrap();
+        eprintln!("Snapshot into {:?}", snapshot_dir.path());
+
+        proxy_segment.take_snapshot(snapshot_dir.path()).unwrap();
+
+        // validate that two archives were created (wrapped_segment & write_segment)
+        let archive_count = read_dir(&snapshot_dir).unwrap().into_iter().count();
+        assert_eq!(archive_count, 2);
+
+        for archive in read_dir(&snapshot_dir).unwrap() {
+            let archive_path = archive.unwrap().path();
+            let archive_extension = archive_path.extension().unwrap();
+            // correct file extension
+            assert_eq!(archive_extension, "tar");
+        }
     }
 }

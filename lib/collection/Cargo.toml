@@ -10,7 +10,6 @@ edition = "2021"
 tempdir = "0.3.7"
 criterion = "0.3"
 
-
 [dependencies]
 
 parking_lot = "0.12"
@@ -35,6 +34,7 @@ async-trait = "0.1.56"
 arc-swap = "1.5.0"
 tonic = "0.7.2"
 tower = "0.4.13"
+uuid = { version = "1.1", features = ["v4", "serde"] }
 
 segment = {path = "../segment"}
 api = {path = "../api"}
