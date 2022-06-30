@@ -567,8 +567,9 @@ impl EntryApplyProgressQueue {
 pub struct Persistent {
     #[serde(with = "RaftStateDef")]
     state: RaftState,
-    #[serde(default)] // TODO quick fix to avoid breaking the compat. with 0.8.1
+    #[serde(default)] // TODO quick fix to avoid breaking the compat. with 0.8.x
     latest_snapshot_meta: SnapshotMetadataSer,
+    #[serde(default)] // TODO quick fix to avoid breaking the compat. with 0.8.x
     apply_progress_queue: EntryApplyProgressQueue,
     #[serde(with = "serialize_peer_addresses")]
     pub peer_address_by_id: Arc<RwLock<PeerAddressById>>,
