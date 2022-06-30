@@ -78,7 +78,7 @@ impl RemoteShard {
 
     pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
         let shard_config = ShardConfig::new_remote(self.peer_id);
-        shard_config.save(&target_path)?;
+        shard_config.save(target_path)?;
         Ok(())
     }
 

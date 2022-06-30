@@ -694,7 +694,6 @@ mod tests {
             deleted_indexes.clone(),
         );
 
-
         let mut proxy_segment2 = ProxySegment::new(
             original_segment_2,
             write_segment,
@@ -702,7 +701,6 @@ mod tests {
             created_indexes,
             deleted_indexes,
         );
-
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment.upsert_point(100, 4.into(), &vec4).unwrap();
