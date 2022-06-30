@@ -394,7 +394,7 @@ mod tests {
 
         assert_eq!(raw_res1, raw_res2);
 
-        let _top_idx = match closest.get(0) {
+        match closest.get(0) {
             Some(scored_point) => {
                 assert_ne!(scored_point.idx, 2);
                 assert_eq!(&raw_res1[scored_point.idx as usize], scored_point);
