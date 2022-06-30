@@ -523,10 +523,11 @@ impl SegmentEntry for ProxySegment {
         // copy proxy segment current wrapped data
         let full_copy_path = self.copy_segment_directory(&copy_target_dir)?;
         // snapshot write_segment
-        self.write_segment
-            .get()
-            .read()
-            .take_snapshot(snapshot_dir_path)?;
+        let write_segment_rw = self.write_segment.get();
+        let write_segment_guard = write_segment_rw.read();
+        write_segment_guard.take_snapshot(snapshot_dir_path)?;
+        // guaranteed to be higher than anything in wrapped segment and does not exceed WAL at the same time
+        let write_segment_version = write_segment_guard.version();
 
         // unlock deleted_points as we have a stable copy
         drop(wrapped_segment_guard);
@@ -534,12 +535,10 @@ impl SegmentEntry for ProxySegment {
 
         // load copy of wrapped segment in memory
         let mut in_memory_wrapped_segment = load_segment(&full_copy_path)?;
-        let mut segment_version = in_memory_wrapped_segment.version;
 
         // remove potentially deleted points from wrapped_segment
         for deleted_point in deleted_points_copy {
-            segment_version += 1;
-            in_memory_wrapped_segment.delete_point(segment_version, deleted_point)?;
+            in_memory_wrapped_segment.delete_point(write_segment_version, deleted_point)?;
         }
         in_memory_wrapped_segment.take_snapshot(snapshot_dir_path)?;
         // release segment resources
