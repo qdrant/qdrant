@@ -928,13 +928,23 @@ impl Collection {
         create_dir_all(&snapshot_path_with_tmp_extension).await?;
 
         // Create snapshot of each shard
-        let mut shards_snapshots_path = vec![];
-        for shard in self.all_shards() {
-            if let Shard::Local(shard) = shard {
-                let shard_snapshot_path = shard
-                    .create_snapshot(&snapshot_path_with_tmp_extension)
-                    .await?;
-                shards_snapshots_path.push(shard_snapshot_path);
+        for (shard_id, shard) in self.shards.iter() {
+            let shard_snapshot_path = snapshot_path.join(format!("{}", shard_id));
+            match shard {
+                Shard::Local(local_shard) => {
+                    local_shard.create_snapshot(&shard_snapshot_path).await?;
+                }
+                Shard::Remote(_remote_shard) => {
+                    // copy shard directory to snapshot directory
+                    let shard_path = self.path.join(format!("{}", shard_id));
+                    fs_extra::dir::copy(&shard_path, &shard_snapshot_path, &Default::default())
+                        .map_err(|err| CollectionError::ServiceError {
+                            error: format!(
+                                "Failed to copy shard {} to snapshot: {}",
+                                shard_id, err
+                            ),
+                        })?;
+                }
             }
         }
 
@@ -978,14 +988,11 @@ impl Collection {
         for shard_id in 0..configured_shards {
             let shard_path = shard_path(target_dir, shard_id);
             if shard_path.exists() {
-                LocalShard::restore_snapshot(&shard_path).unwrap_or_else(|err| {
-                    panic!(
-                        "Can't restore shard {} due to {}\nat {}",
-                        shard_id,
-                        err,
-                        shard_path.to_str().unwrap()
-                    )
-                });
+                let shard_config = ShardConfig::load(&shard_path)?;
+                match shard_config.r#type {
+                    ShardType::Local => LocalShard::restore_snapshot(&shard_path)?,
+                    ShardType::Remote { .. } => {} // No extra action needed
+                }
             }
         }
 

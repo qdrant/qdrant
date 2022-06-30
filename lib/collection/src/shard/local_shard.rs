@@ -403,14 +403,9 @@ impl LocalShard {
         Ok(())
     }
 
-    /// create snapshot for local shard into `snapshot_path/{shard_id}/`
-    pub async fn create_snapshot(&self, snapshot_path: &Path) -> CollectionResult<PathBuf> {
-        let shard_id = self
-            .path
-            .file_stem()
-            .and_then(|fs| fs.to_str())
-            .expect("Invalid shard id");
-        let snapshot_shard_path = snapshot_path.join(shard_id);
+    /// create snapshot for local shard into `target_path`
+    pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
+        let snapshot_shard_path = target_path;
 
         // snapshot all shard's segment
         let snapshot_segments_shard_path = snapshot_shard_path.join("segments");
@@ -420,13 +415,13 @@ impl LocalShard {
             .snapshot_all_segments(&snapshot_segments_shard_path)?;
 
         // snapshot all shard's WAL
-        self.snapshot_wal(&snapshot_shard_path).await?;
+        self.snapshot_wal(snapshot_shard_path).await?;
 
         // copy shard's config
         let shard_config_path = ShardConfig::get_config_path(&self.path);
         let target_shard_config_path = snapshot_shard_path.join(SHARD_CONFIG_FILE);
         copy(&shard_config_path, &target_shard_config_path).await?;
-        Ok(snapshot_shard_path)
+        Ok(())
     }
 
     /// snapshot WAL
