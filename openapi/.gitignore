@@ -2,6 +2,7 @@
 /models.yaml
 /models.json
 /openapi-collections.yaml
+/openapi-snapshots.yaml
 /openapi-main.yaml
 /openapi-merged.yaml
 /openapi-merged.json
