@@ -48,7 +48,12 @@ async fn test_snapshot_collection() {
     .await
     .unwrap();
 
-    let snapshot_description = collection.create_snapshot().await.unwrap();
+    let snapshots_tmp_dir = collection_dir.path().join("snapshots_tmp");
+    std::fs::create_dir_all(&snapshots_tmp_dir).unwrap();
+    let snapshot_description = collection
+        .create_snapshot(&snapshots_tmp_dir)
+        .await
+        .unwrap();
 
     Collection::restore_snapshot(
         &snapshots_path.path().join(snapshot_description.name),

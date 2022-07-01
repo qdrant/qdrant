@@ -36,7 +36,10 @@ where
             let mut resp = match err {
                 StorageError::BadInput { .. } => HttpResponse::BadRequest(),
                 StorageError::NotFound { .. } => HttpResponse::NotFound(),
-                StorageError::ServiceError { .. } => HttpResponse::InternalServerError(),
+                StorageError::ServiceError { .. } => {
+                    log::warn!("error processing request: {:?}", err);
+                    HttpResponse::InternalServerError()
+                }
                 StorageError::BadRequest { .. } => HttpResponse::BadRequest(),
             };
 

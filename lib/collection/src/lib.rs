@@ -44,7 +44,7 @@ use segment::{
 use serde::{Deserialize, Serialize};
 use shard::{local_shard::LocalShard, Shard, ShardId};
 use tar::Builder as TarBuilder;
-use tokio::fs::{create_dir_all, remove_dir_all, rename};
+use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 use tonic::transport::Uri;
@@ -913,16 +913,19 @@ impl Collection {
         Ok(snapshot_path)
     }
 
-    pub async fn create_snapshot(&self) -> CollectionResult<SnapshotDescription> {
+    pub async fn create_snapshot(&self, temp_dir: &Path) -> CollectionResult<SnapshotDescription> {
         let snapshot_name = format!(
             "{}-{}.snapshot",
             self.name(),
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
         );
-        let snapshot_path = self.snapshots_path.join(snapshot_name);
+        let snapshot_path = self.snapshots_path.join(&snapshot_name);
 
-        let snapshot_path_with_tmp_extension = snapshot_path.clone().with_extension("tmp");
-        let snapshot_path_with_arc_extension = snapshot_path.clone().with_extension("arc");
+        let snapshot_path_tmp = snapshot_path.with_extension("tmp");
+
+        let snapshot_path_with_tmp_extension = temp_dir.join(&snapshot_name).with_extension("tmp");
+        let snapshot_path_with_arc_extension = temp_dir.join(snapshot_name).with_extension("arc");
+
         create_dir_all(&snapshot_path_with_tmp_extension).await?;
 
         // Create snapshot of each shard
@@ -958,7 +961,11 @@ impl Collection {
         remove_dir_all(&snapshot_path_with_tmp_extension).await?;
 
         // move snapshot to permanent location
-        rename(&snapshot_path_with_arc_extension, &snapshot_path).await?;
+        // We can't move right away, because snapshot folder can be on another mounting point.
+        // We can't copy to the target location directly, cause copy is not atomic.
+        copy(&snapshot_path_with_arc_extension, &snapshot_path_tmp).await?;
+        rename(&snapshot_path_tmp, &snapshot_path).await?;
+        remove_file(snapshot_path_with_arc_extension).await?;
 
         get_snapshot_description(&snapshot_path).await
     }
@@ -980,12 +987,10 @@ impl Collection {
 
         for shard_id in 0..configured_shards {
             let shard_path = shard_path(target_dir, shard_id);
-            if shard_path.exists() {
-                let shard_config = ShardConfig::load(&shard_path)?;
-                match shard_config.r#type {
-                    ShardType::Local => LocalShard::restore_snapshot(&shard_path)?,
-                    ShardType::Remote { .. } => RemoteShard::restore_snapshot(&shard_path),
-                }
+            let shard_config = ShardConfig::load(&shard_path)?;
+            match shard_config.r#type {
+                ShardType::Local => LocalShard::restore_snapshot(&shard_path)?,
+                ShardType::Remote { .. } => RemoteShard::restore_snapshot(&shard_path),
             }
         }
 

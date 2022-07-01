@@ -9,6 +9,7 @@ use tokio::sync::{RwLock, RwLockReadGuard};
 
 use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::DiffConfig;
+use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
     PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
     UpdateResult,
@@ -35,6 +36,7 @@ use collection::shard::ShardId;
 use collection::PeerId;
 
 pub const COLLECTIONS_DIR: &str = "collections";
+pub const SNAPSHOTS_TMP_DIR: &str = "snapshots_tmp";
 
 /// The main object of the service. It holds all objects, required for proper functioning.
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
@@ -619,6 +621,18 @@ impl TableOfContent {
                 .apply_state(data.aliases)?;
             Ok(())
         })
+    }
+
+    pub async fn create_snapshot(
+        &self,
+        collection_name: &str,
+    ) -> Result<SnapshotDescription, StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+        // We want to use tmp dir inside the storage, because it is possible, that
+        // snapshot directory is mounted as network share and multiple writes to it could be slow
+        let tmp_dir = Path::new(&self.storage_config.storage_path).join(SNAPSHOTS_TMP_DIR);
+        tokio::fs::create_dir_all(&tmp_dir).await?;
+        Ok(collection.create_snapshot(&tmp_dir).await?)
     }
 
     pub async fn suggest_shard_distribution(

@@ -41,9 +41,5 @@ pub async fn do_create_snapshot(
     toc: &TableOfContent,
     collection_name: &str,
 ) -> Result<SnapshotDescription, StorageError> {
-    Ok(toc
-        .get_collection(collection_name)
-        .await?
-        .create_snapshot()
-        .await?)
+    toc.create_snapshot(collection_name).await
 }
