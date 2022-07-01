@@ -1,4 +1,5 @@
 use crate::CollectionResult;
+use api::grpc::conversions::date_time_to_proto;
 use chrono::NaiveDateTime;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,16 @@ pub struct SnapshotDescription {
     pub name: String,
     pub creation_time: NaiveDateTime,
     pub size: u64,
+}
+
+impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
+    fn from(value: SnapshotDescription) -> Self {
+        Self {
+            name: value.name,
+            creation_time: Some(date_time_to_proto(value.creation_time)),
+            size: value.size as i64,
+        }
+    }
 }
 
 pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotDescription> {
