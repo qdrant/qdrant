@@ -59,7 +59,7 @@ struct Args {
     force_snapshot: bool,
 
     /// List of paths to snapshot files.
-    /// Format: <snapshot_file_path>:<collection_name>
+    /// Format: <snapshot_file_path>:<target_collection_name>
     #[clap(long, value_name = "PATH:NAME")]
     snapshot: Option<Vec<String>>,
 }
