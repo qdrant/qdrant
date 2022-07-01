@@ -53,7 +53,7 @@ struct Args {
     uri: Option<Uri>,
 
     /// Force snapshot re-creation
-    /// If provided - existing collections will be replaces with snapshots.
+    /// If provided - existing collections will be replaced with snapshots.
     /// Default is to not recreate from snapshots.
     #[clap(short, long, action, default_value_t = false)]
     force_snapshot: bool,
