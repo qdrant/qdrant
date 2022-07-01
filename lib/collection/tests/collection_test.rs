@@ -191,8 +191,13 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         collection.before_drop().await;
     }
 
-    let mut loaded_collection =
-        load_local_collection("test".to_string(), collection_dir.path()).await;
+    let collection_path = collection_dir.path();
+    let mut loaded_collection = load_local_collection(
+        "test".to_string(),
+        collection_path,
+        &collection_path.join("snapshots"),
+    )
+    .await;
     let request = PointRequest {
         ids: vec![1.into(), 2.into()],
         with_payload: Some(WithPayloadInterface::Bool(true)),

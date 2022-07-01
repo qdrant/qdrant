@@ -10,8 +10,9 @@ use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use std::cmp::max;
+use std::fs::remove_file;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::fs::create_dir_all;
+use tokio::fs::{copy, create_dir_all};
 use tokio::runtime::{self, Handle, Runtime};
 use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot, Mutex, RwLock as TokioRwLock};
 
@@ -30,13 +31,13 @@ use crate::operations::types::{
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
-use crate::shard::shard_config::ShardConfig;
+use crate::shard::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shard::ShardOperation;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 use crate::{CollectionId, PointRequest, SearchRequest, ShardId};
+use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
-use std::fs::{read_dir, remove_dir_all};
 
 /// LocalShard
 ///
@@ -134,7 +135,7 @@ impl LocalShard {
         )
         .expect("Can't read WAL");
 
-        let segment_dirs = read_dir(&segments_path).unwrap_or_else(|err| {
+        let segment_dirs = std::fs::read_dir(&segments_path).unwrap_or_else(|err| {
             panic!(
                 "Can't read segments directory due to {}\nat {}",
                 err,
@@ -145,7 +146,7 @@ impl LocalShard {
         for entry in segment_dirs {
             let segments_path = entry.unwrap().path();
             if segments_path.ends_with("deleted") {
-                remove_dir_all(&segments_path).unwrap_or_else(|_| {
+                std::fs::remove_dir_all(&segments_path).unwrap_or_else(|_| {
                     panic!(
                         "Can't remove marked-for-remove segment {}",
                         segments_path.to_str().unwrap()
@@ -205,7 +206,6 @@ impl LocalShard {
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
-        ShardConfig::init_file(shard_path)?;
         let local_shard_config = ShardConfig::new_local();
         local_shard_config.save(shard_path)?;
 
@@ -377,6 +377,67 @@ impl LocalShard {
         }
 
         self.before_drop_called = true;
+    }
+
+    pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
+        // recover segments
+        let segments_path = LocalShard::segments_path(snapshot_path);
+        // iterate over segments directory and recover each segment
+        for entry in std::fs::read_dir(segments_path)? {
+            let entry_path = entry?.path();
+            if entry_path.extension().map(|s| s == "tar").unwrap_or(false) {
+                let segment_id_opt = entry_path
+                    .file_stem()
+                    .map(|s| s.to_str().unwrap().to_owned());
+                if segment_id_opt.is_none() {
+                    return Err(CollectionError::ServiceError {
+                        error: "Segment ID is empty".to_string(),
+                    });
+                }
+                let segment_id = segment_id_opt.unwrap();
+                Segment::restore_snapshot(&entry_path, &segment_id)?;
+                remove_file(&entry_path)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// create snapshot for local shard into `target_path`
+    pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
+        let snapshot_shard_path = target_path;
+
+        // snapshot all shard's segment
+        let snapshot_segments_shard_path = snapshot_shard_path.join("segments");
+        create_dir_all(&snapshot_segments_shard_path).await?;
+        self.segments
+            .read()
+            .snapshot_all_segments(&snapshot_segments_shard_path)?;
+
+        // snapshot all shard's WAL
+        self.snapshot_wal(snapshot_shard_path).await?;
+
+        // copy shard's config
+        let shard_config_path = ShardConfig::get_config_path(&self.path);
+        let target_shard_config_path = snapshot_shard_path.join(SHARD_CONFIG_FILE);
+        copy(&shard_config_path, &target_shard_config_path).await?;
+        Ok(())
+    }
+
+    /// snapshot WAL
+    ///
+    /// copies all WAL files into `snapshot_shard_path/wal`
+    pub async fn snapshot_wal(&self, snapshot_shard_path: &Path) -> CollectionResult<()> {
+        // lock wal during snapshot
+        let _wal_guard = self.wal.lock().await;
+        let source_wal_path = self.path.join("wal");
+        let options = fs_extra::dir::CopyOptions::new();
+        fs_extra::dir::copy(&source_wal_path, snapshot_shard_path, &options).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Error while copy WAL {:?} {}",
+                snapshot_shard_path, err
+            ))
+        })?;
+        Ok(())
     }
 }
 

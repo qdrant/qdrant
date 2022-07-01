@@ -4,6 +4,7 @@ pub mod common;
 mod consensus;
 mod greeting;
 mod settings;
+mod snapshots;
 mod tonic;
 mod user_telemetry;
 
@@ -27,6 +28,7 @@ use storage::content_manager::toc::TableOfContent;
 use crate::common::helpers::create_search_runtime;
 use crate::greeting::welcome;
 use crate::settings::Settings;
+use crate::snapshots::recover_snapshots;
 use crate::user_telemetry::UserTelemetryCollector;
 
 /// Qdrant (read: quadrant ) is a vector similarity search engine.
@@ -49,6 +51,17 @@ struct Args {
     /// If not supplied then qdrant will take internal grpc port from config and derive the IP address of this peer on bootstrap peer (receiving side)
     #[clap(long, value_parser, value_name = "URI")]
     uri: Option<Uri>,
+
+    /// Force snapshot re-creation
+    /// If provided - existing collections will be replaced with snapshots.
+    /// Default is to not recreate from snapshots.
+    #[clap(short, long, action, default_value_t = false)]
+    force_snapshot: bool,
+
+    /// List of paths to snapshot files.
+    /// Format: <snapshot_file_path>:<target_collection_name>
+    #[clap(long, value_name = "PATH:NAME")]
+    snapshot: Option<Vec<String>>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -74,6 +87,16 @@ fn main() -> anyhow::Result<()> {
     };
 
     log_builder.init();
+    let args = Args::parse();
+
+    if let Some(snapshots) = args.snapshot {
+        // recover from snapshots
+        recover_snapshots(
+            &snapshots,
+            args.force_snapshot,
+            &settings.storage.storage_path,
+        );
+    }
 
     welcome();
 
@@ -88,7 +111,7 @@ fn main() -> anyhow::Result<()> {
     let runtime_handle = runtime.handle().clone();
 
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
-    let args = Args::parse();
+
     let persistent_consensus_state =
         Persistent::load_or_init(&settings.storage.storage_path, args.bootstrap.is_none())?;
     let mut channel_service = ChannelService::default();

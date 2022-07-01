@@ -521,10 +521,12 @@ impl SegmentEntry for ProxySegment {
         create_dir_all(&copy_target_dir)?;
 
         // copy proxy segment current wrapped data
-        let full_copy_path = self.copy_segment_directory(&copy_target_dir)?;
+        let full_copy_path = wrapped_segment_guard.copy_segment_directory(&copy_target_dir)?;
         // snapshot write_segment
         let write_segment_rw = self.write_segment.get();
         let write_segment_guard = write_segment_rw.read();
+
+        // Write segment is not unique to the proxy segment, therefore it might overwrite an existing snapshot.
         write_segment_guard.take_snapshot(snapshot_dir_path)?;
         // guaranteed to be higher than anything in wrapped segment and does not exceed WAL at the same time
         let write_segment_version = write_segment_guard.version();
@@ -561,7 +563,7 @@ impl SegmentEntry for ProxySegment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::collection_manager::fixtures::{build_segment_1, empty_segment};
+    use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
     use segment::types::FieldCondition;
     use std::fs::read_dir;
     use tempdir::TempDir;
@@ -675,6 +677,7 @@ mod tests {
     fn test_take_snapshot() {
         let dir = TempDir::new("segment_dir").unwrap();
         let original_segment = LockedSegment::new(build_segment_1(dir.path()));
+        let original_segment_2 = LockedSegment::new(build_segment_2(dir.path()));
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
 
@@ -685,6 +688,14 @@ mod tests {
 
         let mut proxy_segment = ProxySegment::new(
             original_segment,
+            write_segment.clone(),
+            deleted_points.clone(),
+            created_indexes.clone(),
+            deleted_indexes.clone(),
+        );
+
+        let mut proxy_segment2 = ProxySegment::new(
+            original_segment_2,
             write_segment,
             deleted_points,
             created_indexes,
@@ -697,14 +708,18 @@ mod tests {
         proxy_segment.upsert_point(101, 6.into(), &vec6).unwrap();
         proxy_segment.delete_point(102, 1.into()).unwrap();
 
+        proxy_segment2.upsert_point(201, 11.into(), &vec6).unwrap();
+
         let snapshot_dir = TempDir::new("snapshot_dir").unwrap();
         eprintln!("Snapshot into {:?}", snapshot_dir.path());
 
         proxy_segment.take_snapshot(snapshot_dir.path()).unwrap();
+        proxy_segment2.take_snapshot(snapshot_dir.path()).unwrap();
 
-        // validate that two archives were created (wrapped_segment & write_segment)
+        // validate that 3 archives were created:
+        // wrapped_segment1, wrapped_segment2 & shared write_segment
         let archive_count = read_dir(&snapshot_dir).unwrap().into_iter().count();
-        assert_eq!(archive_count, 2);
+        assert_eq!(archive_count, 3);
 
         for archive in read_dir(&snapshot_dir).unwrap() {
             let archive_path = archive.unwrap().path();

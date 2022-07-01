@@ -236,6 +236,14 @@ impl Segment {
         let payload_index = self.payload_index.borrow();
         payload_index.infer_payload_type(key)
     }
+
+    pub fn restore_snapshot(snapshot_path: &Path, segment_id: &str) -> OperationResult<()> {
+        let segment_path = snapshot_path.parent().unwrap().join(segment_id);
+        let archive_file = File::open(snapshot_path)?;
+        let mut ar = tar::Archive::new(archive_file);
+        ar.unpack(&segment_path)?;
+        Ok(())
+    }
 }
 
 /// This is a basic implementation of `SegmentEntry`,
@@ -666,7 +674,7 @@ impl SegmentEntry for Segment {
     }
 
     fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
-        log::info!(
+        log::debug!(
             "Taking snapshot of segment {:?} into {:?}",
             self.current_path,
             snapshot_dir_path
@@ -693,12 +701,8 @@ impl SegmentEntry for Segment {
             .unwrap();
         let file_name = format!("{}.tar", segment_id);
         let archive_path = snapshot_dir_path.join(file_name);
-        if archive_path.exists() {
-            return Err(OperationError::service_error(&format!(
-                "the snapshot path directory already contains an archive for the segment {}",
-                segment_id
-            )));
-        }
+
+        // If `archive_path` exists, we still want to overwrite it
         let file = File::create(archive_path)?;
         let mut builder = Builder::new(file);
         // archive recursively segment directory `current_path` into `archive_path`.

@@ -19,12 +19,18 @@ pub struct PerformanceConfig {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct StorageConfig {
     pub storage_path: String,
+    #[serde(default = "default_snapshots_path")]
+    pub snapshots_path: String,
     #[serde(default = "default_on_disk_payload")]
     pub on_disk_payload: bool,
     pub optimizers: OptimizersConfig,
     pub wal: WalConfig,
     pub performance: PerformanceConfig,
     pub hnsw_index: HnswConfig,
+}
+
+fn default_snapshots_path() -> String {
+    "./snapshots".to_string()
 }
 
 fn default_on_disk_payload() -> bool {

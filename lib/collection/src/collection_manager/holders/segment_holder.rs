@@ -413,7 +413,7 @@ impl<'s> SegmentHolder {
     /// Take a snapshot of all segments into `snapshot_dir_path`
     ///
     /// Shortcuts at the first failing segment snapshot
-    pub fn snapshot_all(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
+    pub fn snapshot_all_segments(&self, snapshot_dir_path: &Path) -> OperationResult<()> {
         for segment in self.segments.values() {
             let segment_lock = segment.get();
             let read_segment = segment_lock.read();
@@ -551,7 +551,7 @@ mod tests {
         assert_ne!(sid1, sid2);
 
         let snapshot_dir = TempDir::new("snapshot_dir").unwrap();
-        holder.snapshot_all(snapshot_dir.path()).unwrap();
+        holder.snapshot_all_segments(snapshot_dir.path()).unwrap();
 
         let archive_count = read_dir(&snapshot_dir).unwrap().into_iter().count();
         // one archive produced per concrete segment in the SegmentHolder

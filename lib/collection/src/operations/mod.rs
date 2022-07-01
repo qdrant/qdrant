@@ -2,6 +2,7 @@ pub mod config_diff;
 mod conversions;
 pub mod payload_ops;
 pub mod point_ops;
+pub mod snapshot_ops;
 pub mod types;
 
 use std::collections::HashMap;

@@ -8,6 +8,9 @@ use std::{
 };
 
 use crate::operations::config_diff::DiffConfig;
+use crate::operations::snapshot_ops::{
+    get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
+};
 use crate::operations::types::PointRequest;
 use crate::operations::OperationToShard;
 use crate::shard::remote_shard::RemoteShard;
@@ -40,6 +43,8 @@ use segment::{
 };
 use serde::{Deserialize, Serialize};
 use shard::{local_shard::LocalShard, Shard, ShardId};
+use tar::Builder as TarBuilder;
+use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 use tonic::transport::Uri;
@@ -258,6 +263,7 @@ pub struct Collection {
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
     path: PathBuf,
+    snapshots_path: PathBuf,
 }
 
 impl Collection {
@@ -268,6 +274,7 @@ impl Collection {
     pub async fn new(
         id: CollectionId,
         path: &Path,
+        snapshots_path: &Path,
         config: &CollectionConfig,
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
@@ -319,10 +326,16 @@ impl Collection {
             config: shared_config,
             before_drop_called: false,
             path: path.to_owned(),
+            snapshots_path: snapshots_path.to_owned(),
         })
     }
 
-    pub async fn load(id: CollectionId, path: &Path, channel_service: ChannelService) -> Self {
+    pub async fn load(
+        id: CollectionId,
+        path: &Path,
+        snapshots_path: &Path,
+        channel_service: ChannelService,
+    ) -> Self {
         let stored_version_opt = CollectionVersion::load(path)
             .unwrap_or_else(|err| panic!("Can't read collection version {}", err));
 
@@ -394,13 +407,12 @@ impl Collection {
             config: shared_config,
             before_drop_called: false,
             path: path.to_owned(),
+            snapshots_path: snapshots_path.to_owned(),
         }
     }
 
-    fn shard_by_id(&self, id: ShardId) -> &Shard {
-        self.shards
-            .get(&id)
-            .expect("Shard is guaranteed to be added when id is added to the ring.")
+    pub fn shard_by_id(&self, id: ShardId) -> Option<&Shard> {
+        self.shards.get(&id)
     }
 
     fn local_shard_by_id(&self, id: ShardId) -> CollectionResult<&Shard> {
@@ -453,7 +465,7 @@ impl Collection {
         let shard_ops: Vec<_> = match operation.split_by_shard(&self.ring) {
             OperationToShard::ByShard(by_shard) => by_shard
                 .into_iter()
-                .map(|(shard_id, operation)| (self.shard_by_id(shard_id).get(), operation))
+                .map(|(shard_id, operation)| (self.shard_by_id(shard_id).unwrap().get(), operation))
                 .collect(),
             OperationToShard::ToAll(operation) => self
                 .all_shards()
@@ -525,7 +537,7 @@ impl Collection {
 
         for &point_id in &reference_vectors_ids {
             if !vectors_map.contains_key(&point_id) {
-                return Err(CollectionError::NotFound {
+                return Err(CollectionError::PointNotFound {
                     missed_point_id: point_id,
                 });
             }
@@ -885,6 +897,104 @@ impl Collection {
         state
             .apply(this_peer_id, self, collection_path, channel_service)
             .await
+    }
+
+    pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {
+        list_snapshots_in_directory(&self.snapshots_path).await
+    }
+
+    pub async fn get_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
+        let snapshot_path = self.snapshots_path.join(snapshot_name);
+        if !snapshot_path.exists() {
+            return Err(CollectionError::NotFound {
+                what: format!("Snapshot {}", snapshot_name),
+            });
+        }
+        Ok(snapshot_path)
+    }
+
+    pub async fn create_snapshot(&self, temp_dir: &Path) -> CollectionResult<SnapshotDescription> {
+        let snapshot_name = format!(
+            "{}-{}.snapshot",
+            self.name(),
+            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
+        );
+        let snapshot_path = self.snapshots_path.join(&snapshot_name);
+
+        let snapshot_path_tmp = snapshot_path.with_extension("tmp");
+
+        let snapshot_path_with_tmp_extension = temp_dir.join(&snapshot_name).with_extension("tmp");
+        let snapshot_path_with_arc_extension = temp_dir.join(snapshot_name).with_extension("arc");
+
+        create_dir_all(&snapshot_path_with_tmp_extension).await?;
+
+        // Create snapshot of each shard
+        for (shard_id, shard) in self.shards.iter() {
+            let shard_snapshot_path =
+                snapshot_path_with_tmp_extension.join(format!("{}", shard_id));
+            create_dir_all(&shard_snapshot_path).await?;
+            match shard {
+                Shard::Local(local_shard) => {
+                    local_shard.create_snapshot(&shard_snapshot_path).await?;
+                }
+                Shard::Remote(remote_shard) => {
+                    // copy shard directory to snapshot directory
+                    remote_shard.create_snapshot(&shard_snapshot_path).await?;
+                }
+            }
+        }
+
+        CollectionVersion::save(&snapshot_path_with_tmp_extension)?;
+        self.config
+            .read()
+            .await
+            .save(&snapshot_path_with_tmp_extension)?;
+
+        // have to use std here, cause TarBuilder is not async
+        let file = std::fs::File::create(&snapshot_path_with_arc_extension)?;
+        let mut builder = TarBuilder::new(file);
+        // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
+        builder.append_dir_all(".", &snapshot_path_with_tmp_extension)?;
+        builder.finish()?;
+
+        // remove temporary snapshot directory
+        remove_dir_all(&snapshot_path_with_tmp_extension).await?;
+
+        // move snapshot to permanent location
+        // We can't move right away, because snapshot folder can be on another mounting point.
+        // We can't copy to the target location directly, cause copy is not atomic.
+        copy(&snapshot_path_with_arc_extension, &snapshot_path_tmp).await?;
+        rename(&snapshot_path_tmp, &snapshot_path).await?;
+        remove_file(snapshot_path_with_arc_extension).await?;
+
+        get_snapshot_description(&snapshot_path).await
+    }
+
+    pub fn restore_snapshot(snapshot_path: &Path, target_dir: &Path) -> CollectionResult<()> {
+        // decompress archive
+        let archive_file = std::fs::File::open(snapshot_path).unwrap();
+        let mut ar = tar::Archive::new(archive_file);
+        ar.unpack(target_dir)?;
+
+        let config = CollectionConfig::load(target_dir).unwrap_or_else(|err| {
+            panic!(
+                "Can't read collection config due to {}\nat {}",
+                err,
+                target_dir.to_str().unwrap()
+            )
+        });
+        let configured_shards = config.params.shard_number.get();
+
+        for shard_id in 0..configured_shards {
+            let shard_path = shard_path(target_dir, shard_id);
+            let shard_config = ShardConfig::load(&shard_path)?;
+            match shard_config.r#type {
+                ShardType::Local => LocalShard::restore_snapshot(&shard_path)?,
+                ShardType::Remote { .. } => RemoteShard::restore_snapshot(&shard_path),
+            }
+        }
+
+        Ok(())
     }
 }
 

@@ -19,6 +19,7 @@ use segment::types::{
 use crate::{config::CollectionConfig, wal::WalError};
 use segment::common::file_operations::FileStorageError;
 use std::collections::HashMap;
+use std::time::SystemTimeError;
 use tonic::codegen::http::uri::InvalidUri;
 
 /// Type of vector in API
@@ -228,8 +229,10 @@ pub struct RecommendRequest {
 pub enum CollectionError {
     #[error("Wrong input: {description}")]
     BadInput { description: String },
+    #[error("{what} not found")]
+    NotFound { what: String },
     #[error("No point with id {missed_point_id} found")]
-    NotFound { missed_point_id: PointIdType },
+    PointNotFound { missed_point_id: PointIdType },
     #[error("Service internal error: {error}")]
     ServiceError { error: String },
     #[error("Bad request: {description}")]
@@ -258,13 +261,23 @@ impl CollectionError {
     }
 }
 
+impl From<SystemTimeError> for CollectionError {
+    fn from(error: SystemTimeError) -> CollectionError {
+        CollectionError::ServiceError {
+            error: format!("System time error: {}", error),
+        }
+    }
+}
+
 impl From<OperationError> for CollectionError {
     fn from(err: OperationError) -> Self {
         match err {
             OperationError::WrongVector { .. } => Self::BadInput {
                 description: format!("{}", err),
             },
-            OperationError::PointIdError { missed_point_id } => Self::NotFound { missed_point_id },
+            OperationError::PointIdError { missed_point_id } => {
+                Self::PointNotFound { missed_point_id }
+            }
             OperationError::ServiceError { description } => {
                 Self::ServiceError { error: description }
             }

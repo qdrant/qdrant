@@ -20,7 +20,7 @@ use api::grpc::qdrant::{
 };
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tonic::transport::Channel;
@@ -62,7 +62,6 @@ impl RemoteShard {
         channel_service: ChannelService,
     ) -> CollectionResult<Self> {
         // initialize remote shard config file
-        ShardConfig::init_file(&shard_path)?;
         let shard_config = ShardConfig::new_remote(peer_id);
         shard_config.save(&shard_path)?;
         Ok(RemoteShard::new(
@@ -71,6 +70,16 @@ impl RemoteShard {
             peer_id,
             channel_service,
         ))
+    }
+
+    pub fn restore_snapshot(_snapshot_path: &Path) {
+        // NO extra actions needed for remote shards
+    }
+
+    pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
+        let shard_config = ShardConfig::new_remote(self.peer_id);
+        shard_config.save(target_path)?;
+        Ok(())
     }
 
     fn current_address(&self) -> CollectionResult<Uri> {
