@@ -5,6 +5,7 @@ use crate::types::{
     VectorElementType, WithPayload,
 };
 use atomicwrites::Error as AtomicIoError;
+use rayon::ThreadPoolBuildError;
 use rocksdb::Error;
 use std::collections::HashMap;
 use std::io::Error as IoError;
@@ -51,6 +52,14 @@ pub struct SegmentFailedState {
     pub version: SeqNumberType,
     pub point_id: Option<PointIdType>,
     pub error: OperationError,
+}
+
+impl From<ThreadPoolBuildError> for OperationError {
+    fn from(error: ThreadPoolBuildError) -> Self {
+        OperationError::ServiceError {
+            description: format!("{}", error),
+        }
+    }
 }
 
 impl From<FileStorageError> for OperationError {

@@ -255,6 +255,13 @@ pub struct HnswConfig {
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "full_scan_threshold_kb")]
     pub full_scan_threshold: usize,
+    /// Number of parallel threads used for background index building. If 0 - auto selection.
+    #[serde(default = "default_max_indexing_threads")]
+    pub max_indexing_threads: usize,
+}
+
+fn default_max_indexing_threads() -> usize {
+    0
 }
 
 impl Default for HnswConfig {
@@ -263,6 +270,7 @@ impl Default for HnswConfig {
             m: 16,
             ef_construct: 100,
             full_scan_threshold: DEFAULT_FULL_SCAN_THRESHOLD,
+            max_indexing_threads: 0,
         }
     }
 }

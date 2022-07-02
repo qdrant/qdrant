@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use segment::types::{HnswConfig, Indexes, SegmentType, StorageType, VECTOR_ELEMENT_SIZE};
 
 use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentId,
+    LockedSegmentHolder, SegmentHolder, SegmentId,
 };
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
@@ -42,13 +42,57 @@ impl IndexingOptimizer {
         }
     }
 
+    fn smallest_indexed_segment(
+        &self,
+        segments: &SegmentHolder,
+        excluded_ids: &HashSet<SegmentId>,
+    ) -> Option<(SegmentId, usize)> {
+        segments
+            .iter()
+            .filter_map(|(idx, segment)| {
+                if excluded_ids.contains(idx) {
+                    // This segment is excluded externally. It might already be scheduled for optimization
+                    return None;
+                }
+
+                let segment_entry = segment.get();
+                let read_segment = segment_entry.read();
+                let vector_count = read_segment.points_count();
+                let vector_size = vector_count * read_segment.vector_dim() * VECTOR_ELEMENT_SIZE;
+
+                if read_segment.segment_type() == SegmentType::Special {
+                    return None; // Never optimize already optimized segment
+                }
+
+                let segment_config = read_segment.config();
+
+                let is_vector_indexed = match segment_config.index {
+                    Indexes::Plain { .. } => false,
+                    Indexes::Hnsw(_) => true,
+                };
+
+                let is_memmaped = match segment_config.storage_type {
+                    StorageType::InMemory => false,
+                    StorageType::Mmap => true,
+                };
+
+                if !(is_vector_indexed || is_memmaped) {
+                    return None;
+                }
+
+                Some((idx, vector_size))
+            })
+            .min_by_key(|(_, vector_size)| *vector_size)
+            .map(|(idx, size)| (*idx, size))
+    }
+
     fn worst_segment(
         &self,
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
-    ) -> Option<(SegmentId, LockedSegment)> {
+    ) -> Vec<SegmentId> {
         let segments_read_guard = segments.read();
-        segments_read_guard
+        let candidates: Vec<_> = segments_read_guard
             .iter()
             .filter_map(|(idx, segment)| {
                 if excluded_ids.contains(idx) {
@@ -91,8 +135,42 @@ impl IndexingOptimizer {
                     false => None,
                 }
             })
-            .max_by_key(|(_, vector_size)| *vector_size)
-            .map(|(idx, _)| (idx, segments_read_guard.get(idx).unwrap().clone()))
+            .collect();
+        let selected_segment = candidates
+            .iter()
+            .max_by_key(|(_, vector_size)| *vector_size);
+        if selected_segment.is_none() {
+            return vec![];
+        }
+        let (selected_segment_id, selected_segment_size) = *selected_segment.unwrap();
+        // It is better for scheduling if indexing optimizer optimizes 2 segments.
+        // Because result of the optimization is usually 2 segment - it should preserve
+        // overall count of segments.
+        let smallest_unindexed = candidates
+            .iter()
+            .min_by_key(|(_, vector_size)| *vector_size);
+
+        if let Some((idx, size)) = smallest_unindexed {
+            if *idx != selected_segment_id
+                && selected_segment_size + size
+                    < self.thresholds_config.max_segment_size * BYTES_IN_KB
+            {
+                return vec![selected_segment_id, *idx];
+            }
+        }
+
+        let smallest_indexed = self.smallest_indexed_segment(&segments_read_guard, excluded_ids);
+
+        if let Some((idx, size)) = smallest_indexed {
+            if idx != selected_segment_id
+                && selected_segment_size + size
+                    < self.thresholds_config.max_segment_size * BYTES_IN_KB
+            {
+                return vec![selected_segment_id, idx];
+            }
+        }
+
+        vec![selected_segment_id]
     }
 }
 
@@ -122,10 +200,7 @@ impl SegmentOptimizer for IndexingOptimizer {
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId> {
-        match self.worst_segment(segments, excluded_ids) {
-            None => vec![],
-            Some((segment_id, _segment)) => vec![segment_id],
-        }
+        self.worst_segment(segments, excluded_ids)
     }
 }
 
@@ -176,17 +251,21 @@ mod tests {
         let mut opnum = 101..1000000;
 
         let small_segment = random_segment(segments_dir.path(), opnum.next().unwrap(), 25, dim);
+        let middle_low_segment =
+            random_segment(segments_dir.path(), opnum.next().unwrap(), 90, dim);
         let middle_segment = random_segment(segments_dir.path(), opnum.next().unwrap(), 100, dim);
         let large_segment = random_segment(segments_dir.path(), opnum.next().unwrap(), 200, dim);
 
         let segment_config = small_segment.segment_config.clone();
 
         let small_segment_id = holder.add(small_segment);
+        let middle_low_segment_id = holder.add(middle_low_segment);
         let middle_segment_id = holder.add(middle_segment);
         let large_segment_id = holder.add(large_segment);
 
         let mut index_optimizer = IndexingOptimizer::new(
             OptimizerThresholds {
+                max_segment_size: 300,
                 memmap_threshold: 1000,
                 indexing_threshold: 1000,
             },
@@ -216,6 +295,7 @@ mod tests {
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
+        assert!(suggested_to_optimize.contains(&middle_low_segment_id));
 
         index_optimizer.thresholds_config.memmap_threshold = 1000;
         index_optimizer.thresholds_config.indexing_threshold = 1000;
@@ -385,9 +465,14 @@ mod tests {
             .map(|(_sid, segment)| segment.get().read().info())
             .collect_vec();
 
+        let mut has_empty = false;
+        for info in new_infos2 {
+            has_empty |= info.num_vectors == 0;
+        }
+
         assert!(
-            new_infos2.len() > new_infos.len(),
-            "Check that new appendable segment was created"
+            has_empty,
+            "Testing that new segment is created if none left"
         );
 
         let insert_point_ops =

@@ -7,5 +7,6 @@ pub mod hnsw;
 pub mod point_scorer;
 mod search_context;
 
+mod graph_layers_builder;
 #[cfg(test)]
 mod tests;

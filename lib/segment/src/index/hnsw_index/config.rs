@@ -16,16 +16,24 @@ pub struct HnswGraphConfig {
     pub ef: usize,
     /// Minimal number of vectors to perform indexing
     pub indexing_threshold: usize,
+    #[serde(default)]
+    pub max_indexing_threads: usize,
 }
 
 impl HnswGraphConfig {
-    pub fn new(m: usize, ef_construct: usize, indexing_threshold: usize) -> Self {
+    pub fn new(
+        m: usize,
+        ef_construct: usize,
+        indexing_threshold: usize,
+        max_indexing_threads: usize,
+    ) -> Self {
         HnswGraphConfig {
             m,
             m0: m * 2,
             ef_construct,
             ef: ef_construct,
             indexing_threshold,
+            max_indexing_threads,
         }
     }
 
@@ -39,5 +47,16 @@ impl HnswGraphConfig {
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {
         Ok(atomic_save_json(path, self)?)
+    }
+
+    pub fn max_rayon_threads(&self) -> usize {
+        let max_threads = self.max_indexing_threads;
+
+        if max_threads == 0 {
+            let num_cpu = num_cpus::get();
+            std::cmp::max(1, num_cpu - 1)
+        } else {
+            max_threads
+        }
     }
 }
