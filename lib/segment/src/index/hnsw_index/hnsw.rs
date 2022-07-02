@@ -13,17 +13,17 @@ use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 use atomic_refcell::AtomicRefCell;
 use log::debug;
 
+use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::visited_pool::VisitedList;
 use rand::thread_rng;
+use rayon::prelude::*;
+use rayon::ThreadPool;
 use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use rayon::prelude::*;
-use rayon::ThreadPool;
-use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::index::visited_pool::VisitedList;
 
 const HNSW_USE_HEURISTIC: bool = true;
 const BYTES_IN_KB: usize = 1024;
@@ -34,7 +34,6 @@ pub struct HNSWIndex {
     config: HnswGraphConfig,
     path: PathBuf,
     graph: GraphLayers,
-
 }
 
 impl HNSWIndex {
@@ -53,7 +52,12 @@ impl HNSWIndex {
             let indexing_threshold = hnsw_config.full_scan_threshold * BYTES_IN_KB
                 / (vector_storage.borrow().vector_dim() * VECTOR_ELEMENT_SIZE);
 
-            HnswGraphConfig::new(hnsw_config.m, hnsw_config.ef_construct, indexing_threshold, hnsw_config.max_indexing_threads)
+            HnswGraphConfig::new(
+                hnsw_config.m,
+                hnsw_config.ef_construct,
+                indexing_threshold,
+                hnsw_config.max_indexing_threads,
+            )
         };
 
         let graph_path = GraphLayers::get_path(path);
@@ -106,7 +110,7 @@ impl HNSWIndex {
         graph: &mut GraphLayersBuilder,
         condition: FieldCondition,
         block_filter_list: &mut VisitedList,
-    )  -> OperationResult<()> {
+    ) -> OperationResult<()> {
         block_filter_list.next_iteration();
 
         let filter = Filter::new_must(Field(condition));
@@ -127,24 +131,26 @@ impl HNSWIndex {
         }
 
         pool.install(|| {
-            points_to_index.into_par_iter().try_for_each(|block_point_id| {
-                if stopped.load(Ordering::Relaxed) {
-                    return Err(OperationError::Cancelled {
-                        description: "Cancelled by external thread".to_string(),
-                    });
-                }
-                let vector = vector_storage.get_vector(block_point_id).unwrap();
-                let raw_scorer = vector_storage.raw_scorer(vector);
-                let block_condition_checker= BuildConditionChecker {
-                    filter_list: block_filter_list,
-                    current_point: block_point_id
-                };
-                let points_scorer =
-                    FilteredScorer::new(raw_scorer.as_ref(), Some(&block_condition_checker));
+            points_to_index
+                .into_par_iter()
+                .try_for_each(|block_point_id| {
+                    if stopped.load(Ordering::Relaxed) {
+                        return Err(OperationError::Cancelled {
+                            description: "Cancelled by external thread".to_string(),
+                        });
+                    }
+                    let vector = vector_storage.get_vector(block_point_id).unwrap();
+                    let raw_scorer = vector_storage.raw_scorer(vector);
+                    let block_condition_checker = BuildConditionChecker {
+                        filter_list: block_filter_list,
+                        current_point: block_point_id,
+                    };
+                    let points_scorer =
+                        FilteredScorer::new(raw_scorer.as_ref(), Some(&block_condition_checker));
 
-                graph.link_new_point(block_point_id, points_scorer);
-                Ok(())
-            })
+                    graph.link_new_point(block_point_id, points_scorer);
+                    Ok(())
+                })
         })
     }
 
@@ -292,9 +298,7 @@ impl VectorIndex for HNSWIndex {
             let max_block_size = total_points / self.config.m * percolation_multiplier;
             let min_block_size = self.config.indexing_threshold;
 
-            for payload_block in
-                payload_index.payload_blocks(&field, min_block_size)
-            {
+            for payload_block in payload_index.payload_blocks(&field, min_block_size) {
                 if stopped.load(Ordering::Relaxed) {
                     return Err(OperationError::Cancelled {
                         description: "Cancelled by external thread".to_string(),
@@ -320,7 +324,8 @@ impl VectorIndex for HNSWIndex {
                     payload_block.condition,
                     &mut block_filter_list,
                 )?;
-                self.graph.merge_from_other(additional_graph.into_graph_layers());
+                self.graph
+                    .merge_from_other(additional_graph.into_graph_layers());
             }
         }
         debug!("finish additional payload field indexing");

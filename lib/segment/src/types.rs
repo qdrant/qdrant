@@ -260,7 +260,9 @@ pub struct HnswConfig {
     pub max_indexing_threads: usize,
 }
 
-fn default_max_indexing_threads() -> usize { 0 }
+fn default_max_indexing_threads() -> usize {
+    0
+}
 
 impl Default for HnswConfig {
     fn default() -> Self {
@@ -268,7 +270,7 @@ impl Default for HnswConfig {
             m: 16,
             ef_construct: 100,
             full_scan_threshold: DEFAULT_FULL_SCAN_THRESHOLD,
-            max_indexing_threads: 0
+            max_indexing_threads: 0,
         }
     }
 }

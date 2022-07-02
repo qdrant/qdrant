@@ -21,14 +21,19 @@ pub struct HnswGraphConfig {
 }
 
 impl HnswGraphConfig {
-    pub fn new(m: usize, ef_construct: usize, indexing_threshold: usize, max_indexing_threads: usize) -> Self {
+    pub fn new(
+        m: usize,
+        ef_construct: usize,
+        indexing_threshold: usize,
+        max_indexing_threads: usize,
+    ) -> Self {
         HnswGraphConfig {
             m,
             m0: m * 2,
             ef_construct,
             ef: ef_construct,
             indexing_threshold,
-            max_indexing_threads
+            max_indexing_threads,
         }
     }
 

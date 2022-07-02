@@ -152,7 +152,8 @@ impl IndexingOptimizer {
 
         if let Some((idx, size)) = smallest_unindexed {
             if *idx != selected_segment_id
-                && selected_segment_size + size < self.thresholds_config.max_segment_size * BYTES_IN_KB
+                && selected_segment_size + size
+                    < self.thresholds_config.max_segment_size * BYTES_IN_KB
             {
                 return vec![selected_segment_id, *idx];
             }
@@ -162,7 +163,9 @@ impl IndexingOptimizer {
 
         if let Some((idx, size)) = smallest_indexed {
             if idx != selected_segment_id
-                && selected_segment_size + size < self.thresholds_config.max_segment_size * BYTES_IN_KB {
+                && selected_segment_size + size
+                    < self.thresholds_config.max_segment_size * BYTES_IN_KB
+            {
                 return vec![selected_segment_id, idx];
             }
         }
@@ -467,7 +470,10 @@ mod tests {
             has_empty |= info.num_vectors == 0;
         }
 
-        assert!(has_empty, "Testing that new segment is created if none left");
+        assert!(
+            has_empty,
+            "Testing that new segment is created if none left"
+        );
 
         let insert_point_ops =
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {

@@ -506,6 +506,7 @@ mod tests {
     use crate::fixtures::index_fixtures::{
         random_vector, FakeFilterContext, TestRawScorerProducer,
     };
+    use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
     use crate::types::VectorElementType;
@@ -517,7 +518,6 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use tempdir::TempDir;
-    use crate::index::hnsw_index::tests::create_graph_layer_fixture;
 
     #[test]
     fn test_connect_new_point() {

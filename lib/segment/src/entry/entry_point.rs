@@ -5,12 +5,12 @@ use crate::types::{
     VectorElementType, WithPayload,
 };
 use atomicwrites::Error as AtomicIoError;
+use rayon::ThreadPoolBuildError;
 use rocksdb::Error;
 use std::collections::HashMap;
 use std::io::Error as IoError;
 use std::path::{Path, PathBuf};
 use std::result;
-use rayon::ThreadPoolBuildError;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone)]

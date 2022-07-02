@@ -1,9 +1,9 @@
-use rand::Rng;
 use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::spaces::metric::Metric;
 use crate::types::PointOffsetType;
+use rand::Rng;
 
 pub(crate) fn create_graph_layer_fixture<TMetric: Metric, R>(
     num_vectors: usize,
@@ -12,8 +12,8 @@ pub(crate) fn create_graph_layer_fixture<TMetric: Metric, R>(
     use_heuristic: bool,
     rng: &mut R,
 ) -> (TestRawScorerProducer<TMetric>, GraphLayers)
-    where
-        R: Rng + ?Sized,
+where
+    R: Rng + ?Sized,
 {
     let ef_construct = 16;
     let entry_points_num = 10;
