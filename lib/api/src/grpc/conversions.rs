@@ -605,6 +605,7 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
             m: hnsw_config.m.unwrap_or_default() as usize,
             ef_construct: hnsw_config.ef_construct.unwrap_or_default() as usize,
             full_scan_threshold: hnsw_config.full_scan_threshold.unwrap_or_default() as usize,
+            max_indexing_threads: hnsw_config.max_indexing_threads.unwrap_or_default() as usize,
         }
     }
 }

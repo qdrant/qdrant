@@ -78,6 +78,8 @@ storage:
     # in this case full-scan search should be preferred by query planner and additional indexing is not required.
     # Note: 1Kb = 1 vector of size 256
     full_scan_threshold_kb: 10000
+    # Number of parallel threads used for background index building. If 0 - auto selection.
+    max_indexing_threads: 0
 
 service:
 

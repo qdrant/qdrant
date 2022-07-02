@@ -99,6 +99,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     m: Some(config.hnsw_config.m as u64),
                     ef_construct: Some(config.hnsw_config.ef_construct as u64),
                     full_scan_threshold: Some(config.hnsw_config.full_scan_threshold as u64),
+                    max_indexing_threads: Some(config.hnsw_config.max_indexing_threads as u64),
                 }),
                 optimizer_config: Some(api::grpc::qdrant::OptimizersConfigDiff {
                     deleted_threshold: Some(config.optimizer_config.deleted_threshold),

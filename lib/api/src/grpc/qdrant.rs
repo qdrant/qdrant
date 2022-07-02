@@ -53,6 +53,10 @@ pub struct HnswConfigDiff {
     ///Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag="3")]
     pub full_scan_threshold: ::core::option::Option<u64>,
+    ///
+    ///Number of parallel threads used for background index building. If 0 - auto selection.
+    #[prost(uint64, optional, tag="4")]
+    pub max_indexing_threads: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WalConfigDiff {

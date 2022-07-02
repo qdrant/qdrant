@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::io::Error as IoError;
 use std::path::{Path, PathBuf};
 use std::result;
+use rayon::ThreadPoolBuildError;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone)]
@@ -51,6 +52,14 @@ pub struct SegmentFailedState {
     pub version: SeqNumberType,
     pub point_id: Option<PointIdType>,
     pub error: OperationError,
+}
+
+impl From<ThreadPoolBuildError> for OperationError {
+    fn from(error: ThreadPoolBuildError) -> Self {
+        OperationError::ServiceError {
+            description: format!("{}", error),
+        }
+    }
 }
 
 impl From<FileStorageError> for OperationError {
