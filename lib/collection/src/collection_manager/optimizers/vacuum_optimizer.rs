@@ -180,7 +180,7 @@ mod tests {
             segment
                 .get()
                 .write()
-                .set_payload(102, point_id, &json!({"size":0.42}).into())
+                .set_payload(102, point_id, &json!({"size": 0.42}).into())
                 .unwrap();
         }
 
@@ -190,6 +190,7 @@ mod tests {
             0.2,
             50,
             OptimizerThresholds {
+                max_segment_size: 1000000,
                 memmap_threshold: 1000000,
                 indexing_threshold: 1000000,
             },

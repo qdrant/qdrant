@@ -136,7 +136,7 @@ impl HNSWIndex {
                 let vector = vector_storage.get_vector(block_point_id).unwrap();
                 let raw_scorer = vector_storage.raw_scorer(vector);
                 let block_condition_checker= BuildConditionChecker {
-                    filter_list: &block_filter_list,
+                    filter_list: block_filter_list,
                     current_point: block_point_id
                 };
                 let points_scorer =

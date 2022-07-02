@@ -83,7 +83,7 @@ impl GraphLayersBuilder {
             ef_construct,
             level_factor: 1.0 / (m as f64).ln(),
             use_heuristic,
-            links_layers: links_layers,
+            links_layers,
             entry_points: Mutex::new(EntryPoints::new(entry_points_num)),
             visited_pool: VisitedPool::new(),
         }
@@ -514,7 +514,7 @@ mod tests {
                 .for_each(|idx| {
                     let fake_filter_context = FakeFilterContext {};
                     let added_vector = vector_holder.vectors.get(idx).to_vec();
-                    let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
+                    let raw_scorer = vector_holder.get_raw_scorer(added_vector);
                     let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
                     graph_layers.link_new_point(idx, scorer);
                 });
@@ -621,7 +621,7 @@ mod tests {
         let graph = graph_layers_builder.into_graph_layers();
 
         let fake_filter_context = FakeFilterContext {};
-        let raw_scorer = vector_holder.get_raw_scorer(query.to_owned());
+        let raw_scorer = vector_holder.get_raw_scorer(query);
         let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
         let ef = 16;
         let graph_search = graph.search(top, ef, scorer);
@@ -702,7 +702,7 @@ mod tests {
         let graph = graph_layers_builder.into_graph_layers();
 
         let fake_filter_context = FakeFilterContext {};
-        let raw_scorer = vector_holder.get_raw_scorer(query.to_owned());
+        let raw_scorer = vector_holder.get_raw_scorer(query);
         let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
         let ef = 16;
         let graph_search = graph.search(top, ef, scorer);

@@ -18,7 +18,6 @@ const BYTES_IN_KB: usize = 1024;
 /// will be less than before.
 pub struct MergeOptimizer {
     max_segments: usize,
-    max_segment_size: usize,
     thresholds_config: OptimizerThresholds,
     segments_path: PathBuf,
     collection_temp_dir: PathBuf,
@@ -30,7 +29,6 @@ impl MergeOptimizer {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         max_segments: usize,
-        max_segment_size: usize,
         thresholds_config: OptimizerThresholds,
         segments_path: PathBuf,
         collection_temp_dir: PathBuf,
@@ -39,7 +37,6 @@ impl MergeOptimizer {
     ) -> Self {
         MergeOptimizer {
             max_segments,
-            max_segment_size,
             thresholds_config,
             segments_path,
             collection_temp_dir,
@@ -112,7 +109,7 @@ impl SegmentOptimizer for MergeOptimizer {
                 *size_sum += size; // produce a cumulative sum of segment sizes starting from smallest
                 Some((sid, *size_sum))
             })
-            .take_while(|(_, size)| *size < self.max_segment_size * BYTES_IN_KB)
+            .take_while(|(_, size)| *size < self.thresholds_config.max_segment_size * BYTES_IN_KB)
             .take(3)
             .map(|x| x.0)
             .collect();
@@ -155,14 +152,14 @@ mod tests {
 
         merge_optimizer.max_segments = 1;
 
-        merge_optimizer.max_segment_size = 100;
+        merge_optimizer.thresholds_config.max_segment_size = 100;
 
         let check_result_empty =
             merge_optimizer.check_condition(locked_holder.clone(), &Default::default());
 
         assert!(check_result_empty.is_empty());
 
-        merge_optimizer.max_segment_size = 200;
+        merge_optimizer.thresholds_config.max_segment_size = 200;
 
         let check_result = merge_optimizer.check_condition(locked_holder, &Default::default());
 

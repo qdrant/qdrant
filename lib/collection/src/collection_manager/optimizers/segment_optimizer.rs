@@ -26,6 +26,7 @@ const BYTES_IN_KB: usize = 1024;
 
 #[derive(Debug, Clone)]
 pub struct OptimizerThresholds {
+    pub max_segment_size: usize,
     pub memmap_threshold: usize,
     pub indexing_threshold: usize,
 }

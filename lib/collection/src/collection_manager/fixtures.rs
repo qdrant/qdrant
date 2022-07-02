@@ -111,8 +111,8 @@ pub(crate) fn get_merge_optimizer(
 ) -> MergeOptimizer {
     MergeOptimizer::new(
         5,
-        100_000,
         OptimizerThresholds {
+            max_segment_size: 100_000,
             memmap_threshold: 1000000,
             indexing_threshold: 1000000,
         },
@@ -135,6 +135,7 @@ pub(crate) fn get_indexing_optimizer(
 ) -> IndexingOptimizer {
     IndexingOptimizer::new(
         OptimizerThresholds {
+            max_segment_size: 100_000,
             memmap_threshold: 100,
             indexing_threshold: 100,
         },
