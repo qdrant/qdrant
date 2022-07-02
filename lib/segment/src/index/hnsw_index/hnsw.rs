@@ -284,14 +284,24 @@ impl VectorIndex for HNSWIndex {
         for (field, _) in payload_index.indexed_fields() {
             debug!("building additional index for field {}", &field);
 
-            // ToDo: Think about using connectivity threshold (based on 1/m0) instead of `indexing_threshold`
+            // It is expected, that graph will become disconnected less than
+            // $1/m$ points left.
+            // So blocks larger than $1/m$ are not needed.
+            // We add multiplier for the extra safety.
+            let percolation_multiplier = 2;
+            let max_block_size = total_points / self.config.m * percolation_multiplier;
+            let min_block_size = self.config.indexing_threshold;
+
             for payload_block in
-                payload_index.payload_blocks(&field, self.config.indexing_threshold)
+                payload_index.payload_blocks(&field, min_block_size)
             {
                 if stopped.load(Ordering::Relaxed) {
                     return Err(OperationError::Cancelled {
                         description: "Cancelled by external thread".to_string(),
                     });
+                }
+                if payload_block.cardinality > max_block_size {
+                    continue;
                 }
                 // ToDo: re-use graph layer for same payload
                 let mut additional_graph = GraphLayersBuilder::new_with_params(
