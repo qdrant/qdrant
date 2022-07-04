@@ -39,3 +39,34 @@ def test_exact_count_search():
     )
     assert response.ok
     assert response.json()['result']['count'] == 4
+
+
+def test_approx_count_search():
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/count',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "should": [
+                    {
+                        "key": "city",
+                        "match": {
+                            "value": "London"
+                        }
+                    },
+                    {
+                        "key": "city",
+                        "match": {
+                            "value": "Berlin"
+                        }
+                    }
+                ]
+            },
+            "exact": False
+        }
+    )
+    assert response.ok
+    print(response.json())
+    assert response.json()['result']['count'] < 6
+    assert response.json()['result']['count'] > 0
