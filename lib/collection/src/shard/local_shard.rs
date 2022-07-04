@@ -94,6 +94,7 @@ impl LocalShard {
             segment_holder.clone(),
             locked_wal.clone(),
             config.optimizer_config.flush_interval_sec,
+            config.optimizer_config.max_optimization_threads,
         );
 
         let (update_sender, update_receiver) = mpsc::unbounded_channel();

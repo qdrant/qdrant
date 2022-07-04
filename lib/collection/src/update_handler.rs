@@ -73,6 +73,7 @@ pub struct UpdateHandler {
     /// WAL, required for operations
     wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
     optimization_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
+    max_optimization_threads: usize,
 }
 
 impl UpdateHandler {
@@ -82,6 +83,7 @@ impl UpdateHandler {
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
         flush_interval_sec: u64,
+        max_optimization_threads: usize,
     ) -> UpdateHandler {
         UpdateHandler {
             optimizers,
@@ -94,6 +96,7 @@ impl UpdateHandler {
             wal,
             flush_interval_sec,
             optimization_handles: Arc::new(Mutex::new(vec![])),
+            max_optimization_threads,
         }
     }
 
@@ -106,6 +109,7 @@ impl UpdateHandler {
             self.segments.clone(),
             self.wal.clone(),
             self.optimization_handles.clone(),
+            self.max_optimization_threads,
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
             update_receiver,
@@ -267,10 +271,31 @@ impl UpdateHandler {
         segments: LockedSegmentHolder,
         wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
         optimization_handles: Arc<Mutex<Vec<StoppableTaskHandle<bool>>>>,
+        max_handles: usize,
     ) {
         while let Some(signal) = receiver.recv().await {
             match signal {
-                OptimizerSignal::Nop | OptimizerSignal::Operation(_) => {
+                OptimizerSignal::Nop => {
+                    // We skip the check for number of optimization handles here
+                    // Because `Nop` usually means that we need to force the optimization
+                    if Self::try_recover(segments.clone(), wal.clone())
+                        .await
+                        .is_err()
+                    {
+                        continue;
+                    }
+                    Self::process_optimization(
+                        optimizers.clone(),
+                        segments.clone(),
+                        optimization_handles.clone(),
+                        sender.clone(),
+                    )
+                    .await;
+                }
+                OptimizerSignal::Operation(_) => {
+                    if optimization_handles.lock().await.len() >= max_handles {
+                        continue;
+                    }
                     if Self::try_recover(segments.clone(), wal.clone())
                         .await
                         .is_err()

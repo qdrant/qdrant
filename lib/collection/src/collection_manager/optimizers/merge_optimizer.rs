@@ -84,8 +84,9 @@ impl SegmentOptimizer for MergeOptimizer {
         if raw_segments.len() <= self.max_segments {
             return vec![];
         }
+        let max_candidates = raw_segments.len() - self.max_segments + 2;
 
-        // Find top-3 smallest segments to join.
+        // Find at least top-3 smallest segments to join.
         // We need 3 segments because in this case we can guarantee that total segments number will be less
 
         let candidates: Vec<_> = raw_segments
@@ -110,14 +111,14 @@ impl SegmentOptimizer for MergeOptimizer {
                 Some((sid, *size_sum))
             })
             .take_while(|(_, size)| *size < self.thresholds_config.max_segment_size * BYTES_IN_KB)
-            .take(3)
+            .take(max_candidates)
             .map(|x| x.0)
             .collect();
 
         if candidates.len() < 3 {
             return vec![];
         }
-
+        log::debug!("Merge candidates: {:?}", candidates);
         candidates
     }
 }
@@ -178,10 +179,10 @@ mod tests {
             holder.add(random_segment(dir.path(), 100, 3, dim)),
             holder.add(random_segment(dir.path(), 100, 3, dim)),
             holder.add(random_segment(dir.path(), 100, 3, dim)),
+            holder.add(random_segment(dir.path(), 100, 10, dim)),
         ];
 
         let other_segment_ids: Vec<SegmentId> = vec![
-            holder.add(random_segment(dir.path(), 100, 20, dim)),
             holder.add(random_segment(dir.path(), 100, 20, dim)),
             holder.add(random_segment(dir.path(), 100, 20, dim)),
             holder.add(random_segment(dir.path(), 100, 20, dim)),
@@ -194,7 +195,7 @@ mod tests {
         let suggested_for_merge =
             merge_optimizer.check_condition(locked_holder.clone(), &Default::default());
 
-        assert_eq!(suggested_for_merge.len(), 3);
+        assert_eq!(suggested_for_merge.len(), 4);
 
         for segment_in in &suggested_for_merge {
             assert!(segments_to_merge.contains(segment_in));
@@ -220,7 +221,8 @@ mod tests {
             locked_holder.read().iter().map(|(x, _)| *x).collect_vec();
 
         // Check proper number of segments after optimization
-        assert_eq!(after_optimization_segments.len(), 5);
+        assert!(after_optimization_segments.len() <= 5);
+        assert!(after_optimization_segments.len() > 3);
 
         // Check other segments are untouched
         for segment_id in &other_segment_ids {
@@ -232,7 +234,7 @@ mod tests {
             if !other_segment_ids.contains(&segment_id) {
                 let holder_guard = locked_holder.read();
                 let new_segment = holder_guard.get(segment_id).unwrap();
-                assert_eq!(new_segment.get().read().points_count(), 3 * 3);
+                assert_eq!(new_segment.get().read().points_count(), 3 * 3 + 10);
             }
         }
 
