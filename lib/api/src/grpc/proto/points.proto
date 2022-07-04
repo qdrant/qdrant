@@ -139,6 +139,12 @@ message RecommendPoints {
   optional uint64 offset = 10; // Offset of the result
 }
 
+message CountPoints {
+  string collection_name = 1; // name of the collection
+  Filter filter = 2; // Filter conditions - return only those points that satisfy the specified conditions
+  optional bool exact = 3; // If `true` - return exact count, if `false` - return approximate count
+}
+
 // ---------------------------------------------
 // ---------------- RPC Response ---------------
 // ---------------------------------------------
@@ -172,10 +178,19 @@ message SearchResponse {
   double time = 2; // Time spent to process
 }
 
+message CountResponse {
+  CountResult result = 1;
+  double time = 2; // Time spent to process
+}
+
 message ScrollResponse {
   optional PointId next_page_offset = 1; // Use this offset for the next query
   repeated RetrievedPoint result = 2;
   double time = 3; // Time spent to process
+}
+
+message CountResult {
+  uint64 count = 1;
 }
 
 message RetrievedPoint {

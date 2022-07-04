@@ -12,6 +12,7 @@ use std::io::Error as IoError;
 use std::path::{Path, PathBuf};
 use std::result;
 use thiserror::Error;
+use crate::index::field_index::CardinalityEstimation;
 
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
@@ -210,6 +211,9 @@ pub trait SegmentEntry {
 
     /// Return number of vectors in this segment
     fn points_count(&self) -> usize;
+
+    /// Estimate points count in this segment for given filter.
+    fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation;
 
     fn vector_dim(&self) -> usize;
 

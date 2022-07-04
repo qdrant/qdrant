@@ -8,16 +8,8 @@ use crate::shard::conversions::{
 };
 use crate::shard::shard_config::ShardConfig;
 use crate::shard::{PeerId, ShardId, ShardOperation};
-use crate::{
-    ChannelService, CollectionError, CollectionId, CollectionInfo, CollectionResult,
-    CollectionUpdateOperations, PointRequest, Record, SearchRequest, UpdateResult,
-};
-use api::grpc::qdrant::{
-    collections_internal_client::CollectionsInternalClient,
-    points_internal_client::PointsInternalClient, GetCollectionInfoRequest,
-    GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal, ScrollPoints,
-    ScrollPointsInternal, SearchPoints, SearchPointsInternal,
-};
+use crate::{ChannelService, CollectionError, CollectionId, CollectionInfo, CollectionResult, CollectionUpdateOperations, CountRequest, CountResult, PointRequest, Record, SearchRequest, UpdateResult};
+use api::grpc::qdrant::{collections_internal_client::CollectionsInternalClient, points_internal_client::PointsInternalClient, GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal, ScrollPoints, ScrollPointsInternal, SearchPoints, SearchPointsInternal, CountPoints, CountPointsInternal};
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
 use std::path::{Path, PathBuf};
@@ -262,6 +254,27 @@ impl ShardOperation for &RemoteShard {
             .map(|scored| scored.try_into())
             .collect();
         result.map_err(|e| e.into())
+    }
+
+    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+        let mut client = self.points_client().await?;
+
+        let count_points = CountPoints {
+            collection_name: self.collection_id.clone(),
+            filter: request.filter.clone().map(|f| f.into()),
+            exact: Some(request.exact),
+        };
+
+        let request = tonic::Request::new(CountPointsInternal {
+            count_points: Some(count_points),
+            shard_id: self.id,
+        });
+        let response = client.count(request).await?;
+        let count_response = response.into_inner();
+        count_response.result.map_or_else(
+            || Err(CollectionError::service_error("Unexpected empty CountResult".to_string())),
+            |count_result| Ok(count_result.into()),
+        )
     }
 
     async fn retrieve(

@@ -51,6 +51,8 @@ service Points {
   Look for the points which are closer to stored positive examples and at the same time further to negative examples.
    */
   rpc Recommend (RecommendPoints) returns (RecommendResponse) {}
-
-
+  /*
+   Count points in collection with given filtering conditions
+   */
+  rpc Count (CountPoints) returns (CountResponse) {}
 }

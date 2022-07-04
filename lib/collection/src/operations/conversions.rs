@@ -5,9 +5,7 @@ use crate::operations::point_ops::{
     Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector,
 };
 use crate::operations::types::{CollectionStatus, OptimizersStatus, UpdateStatus};
-use crate::{
-    CollectionConfig, CollectionInfo, OptimizersConfig, OptimizersConfigDiff, Record, UpdateResult,
-};
+use crate::{CollectionConfig, CollectionInfo, CountResult, OptimizersConfig, OptimizersConfigDiff, Record, UpdateResult};
 use api::grpc::conversions::{payload_to_proto, proto_to_payloads};
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -388,5 +386,21 @@ impl TryFrom<api::grpc::qdrant::UpdateResult> for UpdateResult {
                 _ => return Err(Status::invalid_argument("Malformed UpdateStatus type")),
             },
         })
+    }
+}
+
+impl From<api::grpc::qdrant::CountResult> for CountResult {
+    fn from(value: api::grpc::qdrant::CountResult) -> Self {
+        Self {
+            count: value.count as usize,
+        }
+    }
+}
+
+impl From<CountResult> for api::grpc::qdrant::CountResult {
+    fn from(value: CountResult) -> Self {
+        Self {
+            count: value.count as u64,
+        }
     }
 }

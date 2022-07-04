@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use uuid::Uuid;
+use segment::index::field_index::CardinalityEstimation;
 
 type LockedRmSet = Arc<RwLock<HashSet<PointIdType>>>;
 type LockedFieldsSet = Arc<RwLock<HashSet<PayloadKeyType>>>;
@@ -360,6 +361,17 @@ impl SegmentEntry for ProxySegment {
         count -= deleted_points_count;
         count += write_segment_count;
         count
+    }
+
+    fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
+        let deleted_points_count = self.deleted_points_count.load(Ordering::Relaxed);
+        let wrapped_segment_count = self.wrapped_segment.get().read().estimate_points_count(filter);
+        CardinalityEstimation {
+            primary_clauses: vec![],
+            min: wrapped_segment_count.min.saturating_sub(deleted_points_count),
+            exp: wrapped_segment_count.exp.saturating_sub(deleted_points_count),
+            max: wrapped_segment_count.max.saturating_sub(deleted_points_count),
+        }
     }
 
     fn deleted_count(&self) -> usize {

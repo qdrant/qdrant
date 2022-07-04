@@ -1,18 +1,9 @@
-use crate::common::points::{
-    do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_get_points, do_scroll_points, do_search_points, do_set_payload, do_update_points,
-    CreateFieldIndex,
-};
+use crate::common::points::{do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points, do_get_points, do_scroll_points, do_search_points, do_set_payload, do_update_points, CreateFieldIndex, do_count_points};
 use api::grpc::conversions::proto_to_payloads;
-use api::grpc::qdrant::{
-    ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
-    DeletePayloadPoints, DeletePoints, FieldType, GetPoints, GetResponse, PointsOperationResponse,
-    RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse,
-    SetPayloadPoints, UpsertPoints,
-};
+use api::grpc::qdrant::{ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints, FieldType, GetPoints, GetResponse, PointsOperationResponse, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse, SetPayloadPoints, UpsertPoints};
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{PointInsertOperations, PointOperations};
-use collection::operations::types::{PointRequest, ScrollRequest, SearchRequest};
+use collection::operations::types::{default_exact_count, PointRequest, ScrollRequest, SearchRequest};
 use collection::operations::CollectionUpdateOperations;
 use collection::shard::ShardId;
 use segment::types::PayloadSchemaType;
@@ -400,6 +391,35 @@ pub async fn scroll(
             .into_iter()
             .map(|point| point.into())
             .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn count(
+    toc: &TableOfContent,
+    count_points: CountPoints,
+    shard_selection: Option<ShardId>,
+) -> Result<Response<CountResponse>, Status> {
+    let CountPoints {
+        collection_name,
+        filter,
+        exact,
+    } = count_points;
+
+    let count_request = collection::operations::types::CountRequest {
+        filter: filter.map(|f| f.try_into()).transpose()?,
+        exact: exact.unwrap_or_else(default_exact_count),
+    };
+
+    let timing = Instant::now();
+    let count_result = do_count_points(toc, &collection_name, count_request, shard_selection)
+        .await
+        .map_err(error_to_status)?;
+
+    let response = CountResponse {
+        result: Some(count_result.into()),
         time: timing.elapsed().as_secs_f64(),
     };
 

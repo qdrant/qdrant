@@ -2,16 +2,8 @@ use tonic::{Request, Response, Status};
 
 use api::grpc::qdrant::points_server::Points;
 
-use crate::tonic::api::points_common::{
-    clear_payload, create_field_index, delete, delete_field_index, delete_payload, get, recommend,
-    scroll, search, set_payload, upsert,
-};
-use api::grpc::qdrant::{
-    ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
-    DeletePayloadPoints, DeletePoints, GetPoints, GetResponse, PointsOperationResponse,
-    RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse,
-    SetPayloadPoints, UpsertPoints,
-};
+use crate::tonic::api::points_common::{clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get, recommend, scroll, search, set_payload, upsert};
+use api::grpc::qdrant::{ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints, GetPoints, GetResponse, PointsOperationResponse, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse, SetPayloadPoints, UpsertPoints};
 use std::sync::Arc;
 
 use storage::content_manager::toc::TableOfContent;
@@ -100,6 +92,10 @@ impl Points for PointsService {
         request: Request<RecommendPoints>,
     ) -> Result<Response<RecommendResponse>, Status> {
         recommend(self.toc.as_ref(), request.into_inner(), None).await
+    }
+
+    async fn count(&self, request: Request<CountPoints>) -> Result<Response<CountResponse>, Status> {
+        count(self.toc.as_ref(), request.into_inner(), None).await
     }
 }
 
