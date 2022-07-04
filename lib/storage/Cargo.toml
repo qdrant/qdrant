@@ -7,9 +7,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dev-dependencies]
 tempdir = "0.3.7"
+proptest = "1.0.0"
 
 [dependencies]
-
 num_cpus = "1.13"
 thiserror = "1.0"
 rand = "0.8.5"

@@ -136,10 +136,16 @@ fn main() -> anyhow::Result<()> {
     });
 
     let toc_arc = Arc::new(toc);
+    let storage_path = toc_arc.storage_path();
     let mut handles: Vec<JoinHandle<Result<(), Error>>> = vec![];
     let mut dispatcher = Dispatcher::new(toc_arc.clone());
-    let consensus_state: ConsensusStateRef =
-        ConsensusState::new(persistent_consensus_state, toc_arc.clone(), propose_sender).into();
+    let consensus_state: ConsensusStateRef = ConsensusState::new(
+        persistent_consensus_state,
+        toc_arc.clone(),
+        propose_sender,
+        storage_path,
+    )
+    .into();
     if settings.cluster.enabled {
         dispatcher = dispatcher.with_consensus(consensus_state.clone());
     }

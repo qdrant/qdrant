@@ -19,7 +19,7 @@ use collection::{ChannelService, Collection, CollectionShardDistribution};
 use segment::types::ScoredPoint;
 
 use super::collection_meta_ops::CreateCollectionOperation;
-use super::consensus_state;
+use super::{consensus_state, CollectionContainer};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::content_manager::{
     alias_mapping::AliasPersistence,
@@ -666,6 +666,26 @@ impl TableOfContent {
             shard_distribution.distribution
         );
         shard_distribution
+    }
+}
+
+impl CollectionContainer for TableOfContent {
+    fn perform_collection_meta_op(
+        &self,
+        operation: CollectionMetaOperations,
+    ) -> Result<bool, StorageError> {
+        self.perform_collection_meta_op_sync(operation)
+    }
+
+    fn collections_snapshot(&self) -> consensus_state::CollectionsSnapshot {
+        self.collections_snapshot_sync()
+    }
+
+    fn apply_collections_snapshot(
+        &self,
+        data: consensus_state::CollectionsSnapshot,
+    ) -> Result<(), StorageError> {
+        self.apply_collections_snapshot(data)
     }
 }
 
