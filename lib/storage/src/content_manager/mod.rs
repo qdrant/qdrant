@@ -34,6 +34,8 @@ pub mod consensus_ops {
     }
 }
 
+/// Collection container abstraction for consensus
+/// Used to mock ToC in consensus state tests
 pub trait CollectionContainer {
     fn perform_collection_meta_op(
         &self,
