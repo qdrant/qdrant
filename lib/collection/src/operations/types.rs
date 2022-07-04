@@ -233,6 +233,7 @@ pub struct CountRequest {
     /// Look only for points which satisfies this conditions
     pub filter: Option<Filter>,
     /// If true, count exact number of points. If false, count approximate number of points faster.
+    /// Approximate count might be unreliable during the indexing process. Default: true
     #[serde(default = "default_exact_count")]
     pub exact: bool,
 }
