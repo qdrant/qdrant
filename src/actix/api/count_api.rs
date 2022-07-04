@@ -24,7 +24,7 @@ pub async fn count_points(
         request.into_inner(),
         None,
     )
-        .await;
+    .await;
 
     process_response(response, timing)
 }

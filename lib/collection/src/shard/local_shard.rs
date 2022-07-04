@@ -588,18 +588,30 @@ impl ShardOperation for &LocalShard {
         let some_segment = segments.iter().next();
 
         if some_segment.is_none() {
-            return Ok(CountResult { count: 0});
+            return Ok(CountResult { count: 0 });
         }
 
         let total_count = if request.exact {
-            let all_points: HashSet<_> = segments.iter()
-                .map(|(_id, segment)| segment.get().read().read_filtered(None, usize::MAX, request.filter.as_ref()))
-                .flatten()
+            let all_points: HashSet<_> = segments
+                .iter()
+                .flat_map(|(_id, segment)| {
+                    segment
+                        .get()
+                        .read()
+                        .read_filtered(None, usize::MAX, request.filter.as_ref())
+                })
                 .collect();
             all_points.len()
         } else {
-            segments.iter()
-                .map(|(_id, segment)| segment.get().read().estimate_points_count(request.filter.as_ref()).exp)
+            segments
+                .iter()
+                .map(|(_id, segment)| {
+                    segment
+                        .get()
+                        .read()
+                        .estimate_points_count(request.filter.as_ref())
+                        .exp
+                })
                 .sum()
         };
         Ok(CountResult { count: total_count })

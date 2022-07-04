@@ -1,9 +1,20 @@
-use crate::common::points::{do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points, do_get_points, do_scroll_points, do_search_points, do_set_payload, do_update_points, CreateFieldIndex, do_count_points};
+use crate::common::points::{
+    do_clear_payload, do_count_points, do_create_index, do_delete_index, do_delete_payload,
+    do_delete_points, do_get_points, do_scroll_points, do_search_points, do_set_payload,
+    do_update_points, CreateFieldIndex,
+};
 use api::grpc::conversions::proto_to_payloads;
-use api::grpc::qdrant::{ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints, FieldType, GetPoints, GetResponse, PointsOperationResponse, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchPoints, SearchResponse, SetPayloadPoints, UpsertPoints};
+use api::grpc::qdrant::{
+    ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
+    DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints, FieldType, GetPoints,
+    GetResponse, PointsOperationResponse, RecommendPoints, RecommendResponse, ScrollPoints,
+    ScrollResponse, SearchPoints, SearchResponse, SetPayloadPoints, UpsertPoints,
+};
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{PointInsertOperations, PointOperations};
-use collection::operations::types::{default_exact_count, PointRequest, ScrollRequest, SearchRequest};
+use collection::operations::types::{
+    default_exact_count, PointRequest, ScrollRequest, SearchRequest,
+};
 use collection::operations::CollectionUpdateOperations;
 use collection::shard::ShardId;
 use segment::types::PayloadSchemaType;

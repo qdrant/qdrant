@@ -10,7 +10,10 @@ use tokio::sync::{RwLock, RwLockReadGuard};
 use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::snapshot_ops::SnapshotDescription;
-use collection::operations::types::{CountRequest, CountResult, PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest, UpdateResult};
+use collection::operations::types::{
+    CountRequest, CountResult, PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult,
+    SearchRequest, UpdateResult,
+};
 use collection::operations::CollectionUpdateOperations;
 use collection::{ChannelService, Collection, CollectionShardDistribution};
 use segment::types::ScoredPoint;

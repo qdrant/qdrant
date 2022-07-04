@@ -88,12 +88,8 @@ pub fn init(dispatcher: Arc<Dispatcher>, settings: Settings) -> std::io::Result<
 }
 
 #[cfg(test)]
-mod tests {}
-struct Record {
-    id: Option<Id>,
-}
-
-use ::api::grpc::api_crate_version;
+mod tests {
+    use ::api::grpc::api_crate_version;
 
     #[test]
     fn test_version() {

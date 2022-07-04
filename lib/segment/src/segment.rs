@@ -4,6 +4,7 @@ use crate::entry::entry_point::{
     get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };
 use crate::id_tracker::IdTrackerSS;
+use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndexSS};
 use crate::types::{
@@ -22,7 +23,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tar::Builder;
-use crate::index::field_index::CardinalityEstimation;
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
@@ -513,13 +513,13 @@ impl SegmentEntry for Segment {
         match filter {
             None => {
                 let total_count = self.points_count();
-                    CardinalityEstimation {
-                primary_clauses: vec![],
-                min: total_count,
-                exp: total_count,
-                max: total_count
+                CardinalityEstimation {
+                    primary_clauses: vec![],
+                    min: total_count,
+                    exp: total_count,
+                    max: total_count,
+                }
             }
-            },
             Some(filter) => {
                 let payload_index = self.payload_index.borrow();
                 payload_index.estimate_cardinality(filter)

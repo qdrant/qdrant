@@ -772,21 +772,20 @@ impl Collection {
         })
     }
 
-    pub async fn count(&self, request: CountRequest, shard_selection: Option<ShardId>) -> CollectionResult<CountResult> {
+    pub async fn count(
+        &self,
+        request: CountRequest,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<CountResult> {
         let request = Arc::new(request);
         let target_shards = self.target_shards(shard_selection)?;
-        let count_futures = target_shards.iter().map(|shard| {
-            shard.count(request.clone())
-        });
-        let counts: Vec<_> = try_join_all(count_futures)
-            .await?
-            .into_iter()
-            .collect();
+        let count_futures = target_shards
+            .iter()
+            .map(|shard| shard.count(request.clone()));
+        let counts: Vec<_> = try_join_all(count_futures).await?.into_iter().collect();
 
         let total_count = counts.iter().map(|x| x.count).sum::<usize>();
-        let aggregated_count = CountResult {
-            count: total_count,
-        };
+        let aggregated_count = CountResult { count: total_count };
         Ok(aggregated_count)
     }
 

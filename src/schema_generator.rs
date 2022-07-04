@@ -2,7 +2,10 @@ use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
-use collection::operations::types::{CollectionInfo, CountRequest, CountResult, PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest, UpdateResult};
+use collection::operations::types::{
+    CollectionInfo, CountRequest, CountResult, PointRequest, RecommendRequest, Record,
+    ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
+};
 use segment::types::ScoredPoint;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,

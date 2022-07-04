@@ -1,6 +1,9 @@
 use collection::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsSelector};
-use collection::operations::types::{CountRequest, CountResult, PointRequest, Record, ScrollRequest, ScrollResult, SearchRequest, UpdateResult};
+use collection::operations::types::{
+    CountRequest, CountResult, PointRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
+    UpdateResult,
+};
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::shard::ShardId;
 use schemars::JsonSchema;
@@ -155,7 +158,6 @@ pub async fn do_count_points(
 ) -> Result<CountResult, StorageError> {
     toc.count(collection_name, request, shard_selection).await
 }
-
 
 pub async fn do_get_points(
     toc: &TableOfContent,

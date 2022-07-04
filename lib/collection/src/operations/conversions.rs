@@ -5,7 +5,10 @@ use crate::operations::point_ops::{
     Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector,
 };
 use crate::operations::types::{CollectionStatus, OptimizersStatus, UpdateStatus};
-use crate::{CollectionConfig, CollectionInfo, CountResult, OptimizersConfig, OptimizersConfigDiff, Record, UpdateResult};
+use crate::{
+    CollectionConfig, CollectionInfo, CountResult, OptimizersConfig, OptimizersConfigDiff, Record,
+    UpdateResult,
+};
 use api::grpc::conversions::{payload_to_proto, proto_to_payloads};
 use itertools::Itertools;
 use std::collections::HashMap;

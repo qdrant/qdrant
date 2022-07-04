@@ -1,6 +1,7 @@
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
+use segment::index::field_index::CardinalityEstimation;
 use segment::segment_constructor::load_segment;
 use segment::types::{
     Condition, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
@@ -14,7 +15,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use uuid::Uuid;
-use segment::index::field_index::CardinalityEstimation;
 
 type LockedRmSet = Arc<RwLock<HashSet<PointIdType>>>;
 type LockedFieldsSet = Arc<RwLock<HashSet<PayloadKeyType>>>;
@@ -365,12 +365,22 @@ impl SegmentEntry for ProxySegment {
 
     fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
         let deleted_points_count = self.deleted_points_count.load(Ordering::Relaxed);
-        let wrapped_segment_count = self.wrapped_segment.get().read().estimate_points_count(filter);
+        let wrapped_segment_count = self
+            .wrapped_segment
+            .get()
+            .read()
+            .estimate_points_count(filter);
         CardinalityEstimation {
             primary_clauses: vec![],
-            min: wrapped_segment_count.min.saturating_sub(deleted_points_count),
-            exp: wrapped_segment_count.exp.saturating_sub(deleted_points_count),
-            max: wrapped_segment_count.max.saturating_sub(deleted_points_count),
+            min: wrapped_segment_count
+                .min
+                .saturating_sub(deleted_points_count),
+            exp: wrapped_segment_count
+                .exp
+                .saturating_sub(deleted_points_count),
+            max: wrapped_segment_count
+                .max
+                .saturating_sub(deleted_points_count),
         }
     }
 

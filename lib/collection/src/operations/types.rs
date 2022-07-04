@@ -237,7 +237,9 @@ pub struct CountRequest {
     pub exact: bool,
 }
 
-pub fn default_exact_count() -> bool { true }
+pub fn default_exact_count() -> bool {
+    true
+}
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

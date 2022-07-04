@@ -1,4 +1,5 @@
 use crate::common::file_operations::FileStorageError;
+use crate::index::field_index::CardinalityEstimation;
 use crate::types::{
     Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
@@ -12,7 +13,6 @@ use std::io::Error as IoError;
 use std::path::{Path, PathBuf};
 use std::result;
 use thiserror::Error;
-use crate::index::field_index::CardinalityEstimation;
 
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
