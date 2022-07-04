@@ -112,7 +112,7 @@ fn main() -> anyhow::Result<()> {
 
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
 
-    let persistent_consensus_state =
+    let (persistent_consensus_state, p_state_just_initialized) =
         Persistent::load_or_init(&settings.storage.storage_path, args.bootstrap.is_none())?;
     let mut channel_service = ChannelService::default();
     if settings.cluster.enabled {
@@ -164,6 +164,7 @@ fn main() -> anyhow::Result<()> {
             settings.cluster.p2p.port.map(|port| port as u32),
             settings.cluster.consensus.clone(),
             channel_service.channel_pool,
+            p_state_just_initialized,
         )
         .expect("Can't initialize consensus");
         thread::Builder::new()
