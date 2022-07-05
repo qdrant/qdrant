@@ -7,8 +7,21 @@ from typing import Tuple, Callable
 import requests
 import socket
 from contextlib import closing
-from . import conftest
 from pathlib import Path
+import pytest
+
+
+# Tracks processes that need to be killed at the end of the test
+processes = []
+
+
+@pytest.fixture(autouse=True)
+def every_test():
+    yield
+    print()
+    for p in processes:
+        print(f"Killing {p.pid}")
+        p.kill()
 
 
 def get_port() -> int:
@@ -54,7 +67,7 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str) -> str:
     http_port = get_port()
     env = get_env(p2p_port, http_port)
     log_file = open(log_file, "w")
-    conftest.processes.append(
+    processes.append(
         Popen([get_qdrant_exec(), "--bootstrap", bootstrap_uri], env=env, cwd=peer_dir, stderr=log_file))
     return get_uri(http_port)
 
@@ -66,7 +79,7 @@ def start_first_peer(peer_dir: Path, log_file: str) -> Tuple[str, str]:
     env = get_env(p2p_port, http_port)
     log_file = open(log_file, "w")
     bootstrap_uri = get_uri(p2p_port)
-    conftest.processes.append(
+    processes.append(
         Popen([get_qdrant_exec(), "--uri", bootstrap_uri], env=env, cwd=peer_dir, stderr=log_file))
     return get_uri(http_port), bootstrap_uri
 
