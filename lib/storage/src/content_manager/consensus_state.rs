@@ -386,10 +386,6 @@ impl<C: CollectionContainer> ConsensusState<C> {
             )??
     }
 
-    pub fn is_new_deployment(&self) -> bool {
-        self.persistent.read().is_new()
-    }
-
     pub fn peer_address_by_id(&self) -> PeerAddressById {
         self.persistent.read().peer_address_by_id()
     }
@@ -593,8 +589,6 @@ pub struct Persistent {
     this_peer_id: u64,
     #[serde(skip)]
     path: PathBuf,
-    #[serde(skip)]
-    new: bool,
 }
 
 impl Persistent {
@@ -620,25 +614,25 @@ impl Persistent {
         self.save()
     }
 
+    /// Returns state and if it was initialized for the first time
     pub fn load_or_init(
         storage_path: impl AsRef<Path>,
         first_peer: bool,
-    ) -> Result<Self, StorageError> {
+    ) -> Result<(Self, bool), StorageError> {
         create_dir_all(storage_path.as_ref())?;
         let path = storage_path.as_ref().join(STATE_FILE_NAME);
-        let state = if path.exists() {
+        let (state, just_initialized) = if path.exists() {
             log::info!("Loading raft state from {}", path.display());
-            Self::load(path)?
+            (Self::load(path)?, false)
         } else {
             log::info!("Initializing new raft state at {}", path.display());
-            Self::init(path, first_peer)?
+            (Self::init(path, first_peer)?, true)
         };
-        log::debug!("State: {:?}", state);
-        Ok(state)
-    }
-
-    pub fn is_new(&self) -> bool {
-        self.new
+        log::debug!(
+            "State: {:?}. Is just initialized: {just_initialized}",
+            state
+        );
+        Ok((state, just_initialized))
     }
 
     pub fn unapplied_entities_count(&self) -> usize {
@@ -730,7 +724,6 @@ impl Persistent {
             },
             apply_progress_queue: Default::default(),
             peer_address_by_id: Default::default(),
-            r#new: true,
             this_peer_id,
             path,
             latest_snapshot_meta: Default::default(),
@@ -743,7 +736,6 @@ impl Persistent {
         let file = File::open(&path)?;
         let mut state: Self = serde_cbor::from_reader(&file)?;
         state.path = path;
-        state.r#new = false;
         Ok(state)
     }
 
@@ -854,7 +846,7 @@ mod tests {
     #[test]
     fn update_is_applied() {
         let dir = tempdir::TempDir::new("raft_state_test").unwrap();
-        let mut state = Persistent::load_or_init(dir.path(), false).unwrap();
+        let (mut state, _) = Persistent::load_or_init(dir.path(), false).unwrap();
         assert_eq!(state.state().hard_state.commit, 0);
         state
             .apply_state_update(|state| state.hard_state.commit = 1)
@@ -876,13 +868,15 @@ mod tests {
     #[test]
     fn state_is_loaded() {
         let dir = tempdir::TempDir::new("raft_state_test").unwrap();
-        let mut state = Persistent::load_or_init(dir.path(), false).unwrap();
+        let (mut state, just_initialized) = Persistent::load_or_init(dir.path(), false).unwrap();
+        assert!(just_initialized);
         state
             .apply_state_update(|state| state.hard_state.commit = 1)
             .unwrap();
         assert_eq!(state.state().hard_state.commit, 1);
 
-        let state_loaded = Persistent::load_or_init(dir.path(), false).unwrap();
+        let (state_loaded, initialized) = Persistent::load_or_init(dir.path(), false).unwrap();
+        assert!(!initialized);
         assert_eq!(state_loaded.state().hard_state.commit, 1);
     }
 
@@ -969,7 +963,7 @@ mod tests {
         entries: Vec<Entry>,
         path: &std::path::Path,
     ) -> (ConsensusState<NoCollections>, MemStorage) {
-        let persistent = Persistent::load_or_init(path, true).unwrap();
+        let (persistent, _) = Persistent::load_or_init(path, true).unwrap();
         let (sender, _) = mpsc::channel();
         let consensus_state = ConsensusState::new(
             persistent,

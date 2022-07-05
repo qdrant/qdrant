@@ -41,6 +41,7 @@ pub struct Consensus {
 
 impl Consensus {
     /// If `bootstrap_peer` peer is supplied, then either `uri` or `p2p_port` should be also supplied
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         logger: &slog::Logger,
         state_ref: ConsensusStateRef,
@@ -49,6 +50,7 @@ impl Consensus {
         p2p_port: Option<u32>,
         config: ConsensusConfig,
         transport_channel_pool: Arc<TransportChannelPool>,
+        state_just_initialized: bool,
     ) -> anyhow::Result<(Self, SyncSender<Message>)> {
         // raft will not return entries to the application smaller or equal to `applied`
         let last_applied = state_ref.last_applied_entry().unwrap_or_default();
@@ -68,7 +70,9 @@ impl Consensus {
             .build()?;
         let is_leader_established = Arc::new(IsReady::default());
         let (sender, receiver) = mpsc::sync_channel(config.max_message_queue_size);
-        if state_ref.is_new_deployment() {
+        // State might be initialized but the node might be shutdown without actually syncing or committing anything.
+        let is_new_deployment = state_just_initialized || state_ref.hard_state().term == 0;
+        if is_new_deployment {
             Self::init(
                 &state_ref,
                 bootstrap_peer.clone(),
@@ -533,7 +537,7 @@ mod tests {
         let runtime = crate::create_search_runtime(settings.storage.performance.max_search_threads)
             .expect("Can't create runtime.");
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
-        let persistent_state =
+        let (persistent_state, state_just_initialized) =
             Persistent::load_or_init(&settings.storage.storage_path, true).unwrap();
         let toc = TableOfContent::new(
             &settings.storage,
@@ -560,6 +564,7 @@ mod tests {
             None,
             ConsensusConfig::default(),
             Arc::new(TransportChannelPool::default()),
+            state_just_initialized,
         )
         .unwrap();
         let is_leader_established = consensus.is_leader_established.clone();
