@@ -83,7 +83,9 @@ impl DatabaseColumn {
         V: AsRef<[u8]>,
     {
         if key.as_ref() == FIXED_KEY {
-            return Err(OperationError::service_error("Rocksdb error: cannot use FIXED_KEY value"));
+            return Err(OperationError::service_error(
+                "Rocksdb error: cannot use FIXED_KEY value",
+            ));
         }
         let db = self.database.borrow();
         let cf_handle = db
@@ -160,10 +162,15 @@ impl DatabaseColumn {
                 &self.column_name
             ))
         })?;
-        
+
         if db.is_appendable {
             db.db
-                .put_cf_opt(column_family, FIXED_KEY, FIXED_VALUE, &Self::get_write_options())
+                .put_cf_opt(
+                    column_family,
+                    FIXED_KEY,
+                    FIXED_VALUE,
+                    &Self::get_write_options(),
+                )
                 .map_err(|_| OperationError::service_error(""))?;
         }
 
@@ -174,7 +181,8 @@ impl DatabaseColumn {
     pub fn create_column_family_if_not_exists(&self) -> OperationResult<()> {
         let mut db = self.database.borrow_mut();
         if db.db.cf_handle(&self.column_name).is_none() {
-            db.db.create_cf(&self.column_name, &Database::get_options())?;
+            db.db
+                .create_cf(&self.column_name, &Database::get_options())?;
         }
         Ok(())
     }
