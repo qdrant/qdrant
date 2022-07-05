@@ -1,4 +1,4 @@
-use crate::common::rocksdb_operations::open_db;
+use crate::common::rocksdb_operations::Database;
 use crate::common::version::StorageVersion;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
@@ -33,7 +33,9 @@ fn create_segment(
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<Segment> {
-    let database = open_db(segment_path)?;
+    let database = Arc::new(AtomicRefCell::new(
+        Database::new_with_default_column_families(segment_path)?,
+    ));
 
     let payload_index_path = segment_path.join("payload_index");
     let vector_storage_path = segment_path.join("vector_storage");

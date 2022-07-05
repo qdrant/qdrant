@@ -1,3 +1,4 @@
+use crate::common::rocksdb_operations::Database;
 use crate::common::version::StorageVersion;
 use crate::entry::entry_point::OperationError::ServiceError;
 use crate::entry::entry_point::{
@@ -14,7 +15,6 @@ use crate::types::{
 use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
 use atomicwrites::{AllowOverwrite, AtomicFile};
-use rocksdb::DB;
 use std::collections::HashMap;
 use std::fs::{remove_dir_all, rename, File};
 use std::io::Write;
@@ -58,7 +58,7 @@ pub struct Segment {
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
     pub error_status: Option<SegmentFailedState>,
-    pub database: Arc<AtomicRefCell<DB>>,
+    pub database: Arc<AtomicRefCell<Database>>,
 }
 
 impl Segment {
@@ -614,10 +614,6 @@ impl SegmentEntry for Segment {
         })?;
         self.save_state(&state).map_err(|err| {
             OperationError::service_error(&format!("Failed to flush segment state: {}", err))
-        })?;
-
-        self.database.borrow().flush().map_err(|err| {
-            OperationError::service_error(&format!("Failed to flush database: {}", err))
         })?;
 
         *persisted_version = state.version;

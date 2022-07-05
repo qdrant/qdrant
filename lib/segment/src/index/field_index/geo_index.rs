@@ -1,4 +1,4 @@
-use crate::common::rocksdb_operations::{db_write_options, flush_db, recreate_cf};
+use crate::common::rocksdb_operations::{Database, DatabaseIterationResult};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{
     circle_hashes, common_hash_prefix, encode_max_precision, geo_hash_to_box, rectangle_hashes,
@@ -13,7 +13,6 @@ use crate::types::{
 };
 use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
-use rocksdb::{IteratorMode, DB};
 use serde_json::Value;
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, HashSet};
@@ -51,11 +50,11 @@ pub struct GeoMapIndex {
     values_count: usize,
     max_values_per_point: usize,
     store_cf_name: String,
-    db: Arc<AtomicRefCell<DB>>,
+    database: Arc<AtomicRefCell<Database>>,
 }
 
 impl GeoMapIndex {
-    pub fn new(db: Arc<AtomicRefCell<DB>>, field: &str) -> Self {
+    pub fn new(database: Arc<AtomicRefCell<Database>>, field: &str) -> Self {
         GeoMapIndex {
             points_per_hash: Default::default(),
             values_per_hash: Default::default(),
@@ -65,7 +64,7 @@ impl GeoMapIndex {
             values_count: 0,
             max_values_per_point: 1,
             store_cf_name: Self::storage_cf_name(field),
-            db,
+            database,
         }
     }
 
@@ -74,36 +73,54 @@ impl GeoMapIndex {
     }
 
     pub fn recreate(&self) -> OperationResult<()> {
-        Ok(recreate_cf(self.db.clone(), &self.store_cf_name)?)
+        self.database
+            .borrow_mut()
+            .recreate_column_family(&self.store_cf_name)
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        let store_ref = self.db.borrow();
-        let cf_handle = if let Some(cf_handle) = store_ref.cf_handle(&self.store_cf_name) {
-            cf_handle
-        } else {
+        if !self
+            .database
+            .borrow()
+            .has_column_family(&self.store_cf_name)?
+        {
             return Ok(false);
         };
 
-        for (key, value) in store_ref.iterator_cf(cf_handle, IteratorMode::Start) {
-            let key_str = std::str::from_utf8(&key).map_err(|_| {
-                OperationError::service_error("Index load error: UTF8 error while DB parsing")
-            })?;
+        self.database.borrow().iterate_over_column_family(
+            &self.store_cf_name,
+            |(key, value)| {
+                let key_str = match std::str::from_utf8(key) {
+                    Ok(key) => key,
+                    Err(_) => {
+                        return DatabaseIterationResult::Break(Err(OperationError::service_error(
+                            "Index load error: UTF8 error while DB parsing",
+                        )))
+                    }
+                };
 
-            let (geo_hash, idx) = Self::decode_db_key(key_str)?;
-            let geo_point = Self::decode_db_value(value)?;
+                let (geo_hash, idx) = match Self::decode_db_key(key_str) {
+                    Ok(decoded) => decoded,
+                    Err(err) => return DatabaseIterationResult::Break(Err(err)),
+                };
+                let geo_point = match Self::decode_db_value(value) {
+                    Ok(geo_point) => geo_point,
+                    Err(err) => return DatabaseIterationResult::Break(Err(err)),
+                };
 
-            if self.point_to_values.len() <= idx as usize {
-                self.point_to_values.resize(idx as usize + 1, Vec::new())
-            }
+                if self.point_to_values.len() <= idx as usize {
+                    self.point_to_values.resize(idx as usize + 1, Vec::new())
+                }
 
-            if self.point_to_values[idx as usize].is_empty() {
-                self.points_count += 1;
-            }
+                if self.point_to_values[idx as usize].is_empty() {
+                    self.points_count += 1;
+                }
 
-            self.point_to_values[idx as usize].push(geo_point);
-            self.points_map.entry(geo_hash).or_default().insert(idx);
-        }
+                self.point_to_values[idx as usize].push(geo_point);
+                self.points_map.entry(geo_hash).or_default().insert(idx);
+                DatabaseIterationResult::Continue
+            },
+        )?;
         Ok(true)
     }
 
@@ -149,7 +166,7 @@ impl GeoMapIndex {
     }
 
     pub fn flush(&self) -> OperationResult<()> {
-        flush_db(&self.db, &self.store_cf_name)
+        self.database.borrow().flush(&self.store_cf_name)
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<GeoPoint>> {
@@ -210,15 +227,6 @@ impl GeoMapIndex {
     }
 
     fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        let store_ref = self.db.borrow();
-
-        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "point remove error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-
         if self.point_to_values.len() <= idx as usize {
             return Ok(()); // Already removed or never actually existed
         }
@@ -247,9 +255,7 @@ impl GeoMapIndex {
             if let Some(ref offsets) = hash_points {
                 for point_offset in offsets.iter() {
                     let key = Self::encode_db_key(removed_geo_hash, *point_offset);
-                    store_ref.delete_cf(cf_handle, &key).map_err(|e| {
-                        OperationError::service_error(&format!("Index db remove error: {}", e))
-                    })?;
+                    self.database.borrow().remove(&self.store_cf_name, &key)?;
                 }
             }
 
@@ -290,14 +296,6 @@ impl GeoMapIndex {
             return Ok(());
         }
 
-        let store_ref = self.db.borrow();
-        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Index add error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-
         if self.point_to_values.len() <= idx as usize {
             // That's a smart reallocation
             self.point_to_values.resize(idx as usize + 1, vec![]);
@@ -317,11 +315,9 @@ impl GeoMapIndex {
 
             geo_hashes.push(added_geo_hash);
 
-            store_ref
-                .put_cf_opt(cf_handle, &key, &value, &db_write_options())
-                .map_err(|e| {
-                    OperationError::service_error(&format!("Index db update error: {}", e))
-                })?;
+            self.database
+                .borrow()
+                .put(&self.store_cf_name, &key, &value)?;
         }
 
         for geo_hash in &geo_hashes {
@@ -450,7 +446,9 @@ impl PayloadFieldIndex for GeoMapIndex {
     }
 
     fn clear(self) -> OperationResult<()> {
-        Ok(self.db.borrow_mut().drop_cf(&self.store_cf_name)?)
+        self.database
+            .borrow_mut()
+            .remove_column_family(&self.store_cf_name)
     }
 
     fn flush(&self) -> OperationResult<()> {
@@ -539,7 +537,6 @@ impl PayloadFieldIndex for GeoMapIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::rocksdb_operations::open_db_with_existing_cf;
     use crate::fixtures::payload_fixtures::random_geo_payload;
     use crate::types::GeoRadius;
     use itertools::Itertools;
@@ -576,7 +573,9 @@ mod tests {
 
     fn build_random_index(num_points: usize, num_geo_values: usize) -> GeoMapIndex {
         let tmp_dir = TempDir::new("test_dir").unwrap();
-        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+        let db = Arc::new(AtomicRefCell::new(
+            Database::new_with_existing_column_families(&tmp_dir.path().join("test_db")).unwrap(),
+        ));
 
         let mut rnd = StdRng::seed_from_u64(42);
         let mut index = GeoMapIndex::new(db, FIELD_NAME);
@@ -684,7 +683,9 @@ mod tests {
     #[test]
     fn match_cardinality_point_with_multi_far_geo_payload() {
         let tmp_dir = TempDir::new("test_dir").unwrap();
-        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+        let db = Arc::new(AtomicRefCell::new(
+            Database::new_with_existing_column_families(&tmp_dir.path().join("test_db")).unwrap(),
+        ));
 
         let mut index = GeoMapIndex::new(db, FIELD_NAME);
 
@@ -745,7 +746,9 @@ mod tests {
     #[test]
     fn match_cardinality_point_with_multi_close_geo_payload() {
         let tmp_dir = TempDir::new("test_dir").unwrap();
-        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+        let db = Arc::new(AtomicRefCell::new(
+            Database::new_with_existing_column_families(&tmp_dir.path().join("test_db")).unwrap(),
+        ));
 
         let mut index = GeoMapIndex::new(db, FIELD_NAME);
 
@@ -780,7 +783,10 @@ mod tests {
     fn load_from_disk() {
         let tmp_dir = TempDir::new("test_dir").unwrap();
         {
-            let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+            let db = Arc::new(AtomicRefCell::new(
+                Database::new_with_existing_column_families(&tmp_dir.path().join("test_db"))
+                    .unwrap(),
+            ));
 
             let mut index = GeoMapIndex::new(db, FIELD_NAME);
 
@@ -801,7 +807,9 @@ mod tests {
             drop(index);
         }
 
-        let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
+        let db = Arc::new(AtomicRefCell::new(
+            Database::new_with_existing_column_families(&tmp_dir.path().join("test_db")).unwrap(),
+        ));
         let mut new_index = GeoMapIndex::new(db, FIELD_NAME);
         new_index.load().unwrap();
 

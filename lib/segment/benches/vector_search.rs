@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tempdir::TempDir;
 
-use segment::common::rocksdb_operations::open_db;
+use segment::common::rocksdb_operations::Database;
 use segment::types::{Distance, VectorElementType};
 use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use segment::vector_storage::VectorStorageSS;
@@ -26,7 +26,9 @@ fn init_vector_storage(
     num: usize,
     dist: Distance,
 ) -> Arc<AtomicRefCell<VectorStorageSS>> {
-    let db = open_db(path).unwrap();
+    let db = Arc::new(AtomicRefCell::new(
+        Database::new_with_default_column_families(path).unwrap(),
+    ));
     let storage = open_simple_vector_storage(db, dim, dist).unwrap();
     {
         let mut borrowed_storage = storage.borrow_mut();

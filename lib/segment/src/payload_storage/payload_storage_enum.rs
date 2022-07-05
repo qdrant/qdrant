@@ -100,14 +100,18 @@ impl PayloadStorage for PayloadStorageEnum {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::rocksdb_operations::open_db;
+    use crate::common::rocksdb_operations::Database;
     use crate::types::Payload;
+    use atomic_refcell::AtomicRefCell;
+    use std::sync::Arc;
     use tempdir::TempDir;
 
     #[test]
     fn test_storage() {
         let dir = TempDir::new("storage_dir").unwrap();
-        let db = open_db(dir.path()).unwrap();
+        let db = Arc::new(AtomicRefCell::new(
+            Database::new_with_default_column_families(dir.path()).unwrap(),
+        ));
 
         let mut storage: PayloadStorageEnum = SimplePayloadStorage::open(db).unwrap().into();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
@@ -124,7 +128,9 @@ mod tests {
     #[test]
     fn test_on_disk_storage() {
         let dir = TempDir::new("storage_dir").unwrap();
-        let db = open_db(dir.path()).unwrap();
+        let db = Arc::new(AtomicRefCell::new(
+            Database::new_with_default_column_families(dir.path()).unwrap(),
+        ));
 
         {
             let mut storage: PayloadStorageEnum =

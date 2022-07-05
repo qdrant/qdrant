@@ -308,7 +308,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::rocksdb_operations::open_db;
+    use crate::common::rocksdb_operations::Database;
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
     use std::mem::transmute;
     use tempdir::TempDir;
@@ -329,7 +329,9 @@ mod tests {
 
         {
             let dir2 = TempDir::new("db_dir").unwrap();
-            let db = open_db(dir2.path()).unwrap();
+            let db = Arc::new(AtomicRefCell::new(
+                Database::new_with_default_column_families(dir2.path()).unwrap(),
+            ));
             let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
@@ -352,7 +354,9 @@ mod tests {
 
         {
             let dir2 = TempDir::new("db_dir").unwrap();
-            let db = open_db(dir2.path()).unwrap();
+            let db = Arc::new(AtomicRefCell::new(
+                Database::new_with_default_column_families(dir2.path()).unwrap(),
+            ));
             let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
@@ -395,7 +399,9 @@ mod tests {
 
         {
             let dir2 = TempDir::new("db_dir").unwrap();
-            let db = open_db(dir2.path()).unwrap();
+            let db = Arc::new(AtomicRefCell::new(
+                Database::new_with_default_column_families(dir2.path()).unwrap(),
+            ));
             let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();

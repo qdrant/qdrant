@@ -213,7 +213,7 @@ mod tests {
     use serde_json::json;
     use tempdir::TempDir;
 
-    use crate::common::rocksdb_operations::open_db;
+    use crate::common::rocksdb_operations::Database;
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
@@ -226,7 +226,9 @@ mod tests {
     #[test]
     fn test_condition_checker() {
         let dir = TempDir::new("db_dir").unwrap();
-        let db = open_db(dir.path()).unwrap();
+        let db = Arc::new(AtomicRefCell::new(
+            Database::new_with_default_column_families(dir.path()).unwrap(),
+        ));
 
         let payload: Payload = json!(
             {

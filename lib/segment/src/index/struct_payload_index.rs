@@ -6,10 +6,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
-use crate::common::rocksdb_operations::open_db_with_existing_cf;
+use crate::common::rocksdb_operations::Database;
 use atomic_refcell::AtomicRefCell;
 use log::debug;
-use rocksdb::DB;
 use schemars::_serde_json::Value;
 
 use crate::entry::entry_point::OperationResult;
@@ -44,7 +43,7 @@ pub struct StructPayloadIndex {
     /// Root of index persistence dir
     path: PathBuf,
     visited_pool: VisitedPool,
-    db: Arc<AtomicRefCell<DB>>,
+    db: Arc<AtomicRefCell<Database>>,
 }
 
 impl StructPayloadIndex {
@@ -144,7 +143,9 @@ impl StructPayloadIndex {
             PayloadConfig::default()
         };
 
-        let db = open_db_with_existing_cf(path)?;
+        let db = Arc::new(AtomicRefCell::new(
+            Database::new_with_existing_column_families(path)?,
+        ));
 
         let mut index = StructPayloadIndex {
             payload,

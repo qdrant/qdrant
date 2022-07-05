@@ -4,10 +4,9 @@ use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use rocksdb::DB;
 use serde_json::Value;
 
-use crate::common::rocksdb_operations::{db_write_options, flush_db, recreate_cf};
+use crate::common::rocksdb_operations::{Database, DatabaseIterationResult};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
@@ -91,7 +90,7 @@ impl ToRangeValue for IntPayloadType {
 
 pub struct NumericIndex<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> {
     map: BTreeMap<Vec<u8>, u32>,
-    db: Arc<AtomicRefCell<DB>>,
+    database: Arc<AtomicRefCell<Database>>,
     store_cf_name: String,
     histogram: Histogram,
     points_count: usize,
@@ -100,10 +99,10 @@ pub struct NumericIndex<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> {
 }
 
 impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> NumericIndex<T> {
-    pub fn new(db: Arc<AtomicRefCell<DB>>, field: &str) -> Self {
+    pub fn new(database: Arc<AtomicRefCell<Database>>, field: &str) -> Self {
         Self {
             map: BTreeMap::new(),
-            db,
+            database,
             store_cf_name: Self::storage_cf_name(field),
             histogram: Histogram::new(HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION),
             points_count: 0,
@@ -117,16 +116,16 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 
     pub fn recreate(&self) -> OperationResult<()> {
-        Ok(recreate_cf(self.db.clone(), &self.store_cf_name)?)
+        self.database
+            .borrow_mut()
+            .recreate_column_family(&self.store_cf_name)
     }
 
     fn add_value(&mut self, id: PointOffsetType, value: T) -> OperationResult<()> {
         let key = value.encode_key(id);
-        let db_ref = self.db.borrow();
-        let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!("Column not found: {}", self.store_cf_name))
-        })?;
-        db_ref.put_cf_opt(cf_handle, &key, id.to_be_bytes(), &db_write_options())?;
+        self.database
+            .borrow()
+            .put(&self.store_cf_name, &key, id.to_be_bytes())?;
         Self::add_to_map(&mut self.map, &mut self.histogram, key, id);
         Ok(())
     }
@@ -152,39 +151,35 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 
     pub fn load(&mut self) -> OperationResult<bool> {
-        let db_ref = self.db.borrow();
-        let cf_handle = if let Some(cf_handle) = db_ref.cf_handle(&self.store_cf_name) {
-            cf_handle
-        } else {
+        if !self
+            .database
+            .borrow()
+            .has_column_family(&self.store_cf_name)?
+        {
             return Ok(false);
         };
 
-        let mut iter = db_ref.raw_iterator_cf(&cf_handle);
+        self.database.borrow().iterate_over_column_family(
+            &self.store_cf_name,
+            |(key, value)| {
+                let value_idx = u32::from_be_bytes(value.as_ref().try_into().unwrap());
+                let (idx, value) = T::decode_key(key);
+                if idx != value_idx {
+                    return DatabaseIterationResult::Break(Err(OperationError::service_error(
+                        "incorrect key value",
+                    )));
+                }
 
-        iter.seek_to_first();
+                if self.point_to_values.len() <= idx as usize {
+                    self.point_to_values.resize(idx as usize + 1, Vec::new())
+                }
 
-        while iter.valid() {
-            let key_bytes = iter.key().unwrap().to_owned();
-            let value_idx = u32::from_be_bytes(
-                iter.value()
-                    .ok_or_else(|| OperationError::service_error("cannot take value iteratror"))?
-                    .try_into()
-                    .map_err(|_| OperationError::service_error("key with incorrect length"))?,
-            );
-            let (idx, value) = T::decode_key(&key_bytes);
-            if idx != value_idx {
-                return Err(OperationError::service_error("incorrect key value"));
-            }
+                self.point_to_values[idx as usize].push(value);
 
-            if self.point_to_values.len() <= idx as usize {
-                self.point_to_values.resize(idx as usize + 1, Vec::new())
-            }
-
-            self.point_to_values[idx as usize].push(value);
-
-            Self::add_to_map(&mut self.map, &mut self.histogram, key_bytes, idx);
-            iter.next();
-        }
+                Self::add_to_map(&mut self.map, &mut self.histogram, key.to_vec(), idx);
+                DatabaseIterationResult::<()>::Continue
+            },
+        )?;
         for values in &self.point_to_values {
             if !values.is_empty() {
                 self.points_count += 1;
@@ -195,19 +190,10 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 
     pub fn flush(&self) -> OperationResult<()> {
-        flush_db(&self.db, &self.store_cf_name)
+        self.database.borrow().flush(&self.store_cf_name)
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        let db_ref = self.db.borrow();
-
-        let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Index flush error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-
         if self.point_to_values.len() <= idx as usize {
             return Ok(());
         }
@@ -216,7 +202,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
 
         for value in &removed_values {
             let key = value.encode_key(idx);
-            db_ref.delete_cf(cf_handle, &key)?;
+            self.database.borrow().remove(&self.store_cf_name, &key)?;
             Self::remove_from_map(&mut self.map, &mut self.histogram, key);
         }
 
@@ -360,7 +346,9 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Payload
     }
 
     fn clear(self) -> OperationResult<()> {
-        Ok(self.db.borrow_mut().drop_cf(&self.store_cf_name)?)
+        self.database
+            .borrow_mut()
+            .recreate_column_family(&self.store_cf_name)
     }
 
     fn flush(&self) -> OperationResult<()> {
@@ -545,7 +533,6 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::rocksdb_operations::open_db_with_existing_cf;
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
@@ -557,7 +544,9 @@ mod tests {
 
     fn get_index() -> (TempDir, NumericIndex<f64>) {
         let tmp_dir = TempDir::new("test_numeric_index").unwrap();
-        let db = open_db_with_existing_cf(tmp_dir.path()).unwrap();
+        let db = Arc::new(AtomicRefCell::new(
+            Database::new_with_existing_column_families(tmp_dir.path()).unwrap(),
+        ));
         let index: NumericIndex<_> = NumericIndex::new(db, COLUMN_NAME);
         index.recreate().unwrap();
         (tmp_dir, index)
@@ -741,7 +730,7 @@ mod tests {
 
         index.flush().unwrap();
 
-        let db_ref = index.db;
+        let db_ref = index.database.clone();
         let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME);
         new_index.load().unwrap();
 

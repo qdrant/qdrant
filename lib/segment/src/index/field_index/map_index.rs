@@ -4,7 +4,7 @@ use std::iter;
 
 use serde_json::Value;
 
-use crate::common::rocksdb_operations::{db_write_options, flush_db, recreate_cf};
+use crate::common::rocksdb_operations::{Database, DatabaseIterationResult};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::PayloadFieldIndex;
 use crate::index::field_index::{
@@ -15,7 +15,6 @@ use crate::types::{
     ValueVariants,
 };
 use atomic_refcell::AtomicRefCell;
-use rocksdb::{IteratorMode, DB};
 use std::fmt::Display;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -27,17 +26,17 @@ pub struct MapIndex<N: Hash + Eq + Clone + Display> {
     /// Amount of point which have at least one indexed payload value
     indexed_points: usize,
     store_cf_name: String,
-    db: Arc<AtomicRefCell<DB>>,
+    database: Arc<AtomicRefCell<Database>>,
 }
 
 impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
-    pub fn new(db: Arc<AtomicRefCell<DB>>, field_name: &str) -> MapIndex<N> {
+    pub fn new(database: Arc<AtomicRefCell<Database>>, field_name: &str) -> MapIndex<N> {
         MapIndex {
             map: Default::default(),
             point_to_values: Vec::new(),
             indexed_points: 0,
             store_cf_name: Self::storage_cf_name(field_name),
-            db,
+            database,
         }
     }
 
@@ -46,36 +45,50 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 
     pub fn recreate(&self) -> OperationResult<()> {
-        Ok(recreate_cf(self.db.clone(), &self.store_cf_name)?)
+        self.database
+            .borrow_mut()
+            .recreate_column_family(&self.store_cf_name)
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        let db_ref = self.db.borrow();
-        let cf_handle = if let Some(cf_handle) = db_ref.cf_handle(&self.store_cf_name) {
-            cf_handle
-        } else {
+        if !self
+            .database
+            .borrow()
+            .has_column_family(&self.store_cf_name)?
+        {
             return Ok(false);
         };
         self.indexed_points = 0;
-        for (record, _) in db_ref.iterator_cf(cf_handle, IteratorMode::Start) {
-            let record = std::str::from_utf8(&record).map_err(|_| {
-                OperationError::service_error("Index load error: UTF8 error while DB parsing")
+        self.database
+            .borrow()
+            .iterate_over_column_family(&self.store_cf_name, |(record, _)| {
+                let record = match std::str::from_utf8(record) {
+                    Ok(record) => record,
+                    Err(_) => {
+                        return DatabaseIterationResult::Break(Err(OperationError::service_error(
+                            "Index load error: UTF8 error while DB parsing",
+                        )))
+                    }
+                };
+                let (value, idx) = match Self::decode_db_record(record) {
+                    Ok(decoded) => decoded,
+                    Err(err) => return DatabaseIterationResult::Break(Err(err)),
+                };
+                if self.point_to_values.len() <= idx as usize {
+                    self.point_to_values.resize(idx as usize + 1, Vec::new())
+                }
+                if self.point_to_values[idx as usize].is_empty() {
+                    self.indexed_points += 1;
+                }
+                self.point_to_values[idx as usize].push(value.clone());
+                self.map.entry(value).or_default().insert(idx);
+                DatabaseIterationResult::Continue
             })?;
-            let (value, idx) = Self::decode_db_record(record)?;
-            if self.point_to_values.len() <= idx as usize {
-                self.point_to_values.resize(idx as usize + 1, Vec::new())
-            }
-            if self.point_to_values[idx as usize].is_empty() {
-                self.indexed_points += 1;
-            }
-            self.point_to_values[idx as usize].push(value.clone());
-            self.map.entry(value).or_default().insert(idx);
-        }
         Ok(true)
     }
 
     pub fn flush(&self) -> OperationResult<()> {
-        flush_db(&self.db, &self.store_cf_name)
+        self.database.borrow().flush(&self.store_cf_name)
     }
 
     pub fn match_cardinality(&self, value: &N) -> CardinalityEstimation {
@@ -100,15 +113,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         if values.is_empty() {
             return Ok(());
         }
-
-        let store_ref = self.db.borrow();
-        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Index add error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-
         if self.point_to_values.len() <= idx as usize {
             self.point_to_values.resize(idx as usize + 1, Vec::new())
         }
@@ -118,11 +122,9 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
             entry.insert(idx);
 
             let db_record = Self::encode_db_record(value, idx);
-            store_ref
-                .put_cf_opt(cf_handle, &db_record, &[], &db_write_options())
-                .map_err(|e| {
-                    OperationError::service_error(&format!("Index db update error: {}", e))
-                })?;
+            self.database
+                .borrow()
+                .put(&self.store_cf_name, &db_record, &[])?;
         }
         self.indexed_points += 1;
         Ok(())
@@ -157,15 +159,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 
     fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        let store_ref = self.db.borrow();
-
-        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "point remove error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-
         if self.point_to_values.len() <= idx as usize {
             return Ok(());
         }
@@ -181,7 +174,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
                 vals.remove(&idx);
             }
             let key = MapIndex::encode_db_record(value, idx);
-            store_ref.delete_cf(cf_handle, key)?;
+            self.database.borrow().remove(&self.store_cf_name, &key)?;
         }
 
         Ok(())
@@ -198,7 +191,9 @@ impl PayloadFieldIndex for MapIndex<String> {
     }
 
     fn clear(self) -> OperationResult<()> {
-        Ok(self.db.borrow_mut().drop_cf(&self.store_cf_name)?)
+        self.database
+            .borrow_mut()
+            .recreate_column_family(&self.store_cf_name)
     }
 
     fn flush(&self) -> OperationResult<()> {
@@ -263,7 +258,9 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     }
 
     fn clear(self) -> OperationResult<()> {
-        Ok(self.db.borrow_mut().drop_cf(&self.store_cf_name)?)
+        self.database
+            .borrow_mut()
+            .recreate_column_family(&self.store_cf_name)
     }
 
     fn flush(&self) -> OperationResult<()> {
@@ -358,7 +355,6 @@ impl ValueIndexer<IntPayloadType> for MapIndex<IntPayloadType> {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::rocksdb_operations::open_db_with_existing_cf;
     use std::collections::HashSet;
     use std::fmt::Debug;
     use std::iter::FromIterator;
@@ -373,7 +369,8 @@ mod tests {
         data: &[Vec<N>],
         path: &Path,
     ) {
-        let mut index = MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
+        let db = Database::new_with_existing_column_families(path).unwrap();
+        let mut index = MapIndex::<N>::new(Arc::new(AtomicRefCell::new(db)), FIELD_NAME);
         index.recreate().unwrap();
         for (idx, values) in data.iter().enumerate() {
             index
@@ -387,7 +384,8 @@ mod tests {
         data: &[Vec<N>],
         path: &Path,
     ) {
-        let mut index = MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
+        let db = Database::new_with_existing_column_families(path).unwrap();
+        let mut index = MapIndex::<N>::new(Arc::new(AtomicRefCell::new(db)), FIELD_NAME);
         index.load().unwrap();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<N> = HashSet::from_iter(

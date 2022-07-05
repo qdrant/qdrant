@@ -1,9 +1,8 @@
-use crate::common::rocksdb_operations::{db_options, db_write_options, flush_db, DB_PAYLOAD_CF};
+use crate::common::rocksdb_operations::{Database, DatabaseIterationResult, DB_PAYLOAD_CF};
 use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
 use atomic_refcell::AtomicRefCell;
 use std::sync::Arc;
 
-use rocksdb::{IteratorMode, DB};
 use serde_json::Value;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
@@ -12,21 +11,18 @@ use crate::payload_storage::PayloadStorage;
 /// On-disk implementation of `PayloadStorage`.
 /// Persists all changes to disk using `store`, does not keep payload in memory
 pub struct OnDiskPayloadStorage {
-    store: Arc<AtomicRefCell<DB>>,
+    database: Arc<AtomicRefCell<Database>>,
 }
 
 impl OnDiskPayloadStorage {
-    pub fn open(store: Arc<AtomicRefCell<DB>>) -> OperationResult<Self> {
-        Ok(OnDiskPayloadStorage { store })
+    pub fn open(database: Arc<AtomicRefCell<Database>>) -> OperationResult<Self> {
+        Ok(OnDiskPayloadStorage { database })
     }
 
     pub fn remove_from_storage(&self, point_id: PointOffsetType) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        let cf_handle = store_ref
-            .cf_handle(DB_PAYLOAD_CF)
-            .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
-        store_ref.delete_cf(cf_handle, serde_cbor::to_vec(&point_id).unwrap())?;
-        Ok(())
+        self.database
+            .borrow()
+            .remove(DB_PAYLOAD_CF, &serde_cbor::to_vec(&point_id).unwrap())
     }
 
     pub fn update_storage(
@@ -34,51 +30,52 @@ impl OnDiskPayloadStorage {
         point_id: PointOffsetType,
         payload: &Payload,
     ) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        let cf_handle = store_ref
-            .cf_handle(DB_PAYLOAD_CF)
-            .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
-        store_ref.put_cf_opt(
-            cf_handle,
-            serde_cbor::to_vec(&point_id).unwrap(),
-            serde_cbor::to_vec(payload).unwrap(),
-            &db_write_options(),
-        )?;
-        Ok(())
+        self.database.borrow().put(
+            DB_PAYLOAD_CF,
+            &serde_cbor::to_vec(&point_id).unwrap(),
+            &serde_cbor::to_vec(payload).unwrap(),
+        )
     }
 
     pub fn read_payload(&self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         let key = serde_cbor::to_vec(&point_id).unwrap();
-        let store_ref = self.store.borrow();
-        let cf_handle = store_ref
-            .cf_handle(DB_PAYLOAD_CF)
-            .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
-        let payload = store_ref
-            .get_pinned_cf(cf_handle, key)?
-            .map(|raw| serde_cbor::from_slice(raw.as_ref()))
-            .transpose()?;
-        Ok(payload)
+        self.database
+            .borrow()
+            .get_pinned(DB_PAYLOAD_CF, &key, |raw| serde_cbor::from_slice(raw))?
+            .transpose()
+            .map_err(OperationError::from)
     }
 
     pub fn iter<F>(&self, mut callback: F) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        let store_ref = self.store.borrow();
-        let cf_handle = store_ref
-            .cf_handle(DB_PAYLOAD_CF)
-            .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
-        let iterator = store_ref.iterator_cf(cf_handle, IteratorMode::Start);
-        for (key, val) in iterator {
-            let do_continue = callback(
-                serde_cbor::from_slice(&key)?,
-                &serde_cbor::from_slice(&val)?,
-            )?;
-            if !do_continue {
-                return Ok(());
-            }
-        }
-        Ok(())
+        self.database
+            .borrow()
+            .iterate_over_column_family(DB_PAYLOAD_CF, |(key, val)| {
+                let point_offset: PointOffsetType = match serde_cbor::from_slice(key) {
+                    Ok(p) => p,
+                    Err(err) => {
+                        return DatabaseIterationResult::Break(Err(OperationError::from(err)))
+                    }
+                };
+                let payload: Payload = match serde_cbor::from_slice(val) {
+                    Ok(p) => p,
+                    Err(err) => {
+                        return DatabaseIterationResult::Break(Err(OperationError::from(err)))
+                    }
+                };
+                match callback(point_offset, &payload) {
+                    Ok(do_continue) => {
+                        if do_continue {
+                            DatabaseIterationResult::Continue
+                        } else {
+                            DatabaseIterationResult::Break(Ok(()))
+                        }
+                    }
+                    Err(err) => DatabaseIterationResult::Break(Err(err)),
+                }
+            })
     }
 }
 
@@ -133,13 +130,12 @@ impl PayloadStorage for OnDiskPayloadStorage {
     }
 
     fn wipe(&mut self) -> OperationResult<()> {
-        let mut store_ref = self.store.borrow_mut();
-        store_ref.drop_cf(DB_PAYLOAD_CF)?;
-        store_ref.create_cf(DB_PAYLOAD_CF, &db_options())?;
-        Ok(())
+        self.database
+            .borrow_mut()
+            .recreate_column_family(DB_PAYLOAD_CF)
     }
 
     fn flush(&self) -> OperationResult<()> {
-        flush_db(&self.store, DB_PAYLOAD_CF)
+        self.database.borrow().flush(DB_PAYLOAD_CF)
     }
 }
