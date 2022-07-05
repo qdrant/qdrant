@@ -3115,6 +3115,7 @@ dependencies = [
  "tar",
  "tempdir",
  "thiserror",
+ "tokio",
  "uuid",
  "walkdir",
 ]

@@ -9,6 +9,7 @@ use crate::vector_storage::ScoredPointOffset;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
+use tokio::runtime::Handle;
 
 /// Trait for vector searching
 pub trait VectorIndex {
@@ -20,6 +21,15 @@ pub trait VectorIndex {
         top: usize,
         params: Option<&SearchParams>,
     ) -> Vec<ScoredPointOffset>;
+
+    fn batch_search(
+        &self,
+        vectors: &[Vec<VectorElementType>],
+        filters: &[Option<Filter>],
+        top: usize,
+        params: Option<&SearchParams>,
+        runtime_handle: &Handle,
+    ) -> Vec<Vec<ScoredPointOffset>>;
 
     /// Force internal index rebuild.
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()>;

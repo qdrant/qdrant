@@ -57,12 +57,12 @@ impl SegmentBuilder {
                 self_segment.version = cmp::max(self_segment.version(), other.version());
 
                 let other_id_tracker = other.id_tracker.borrow();
-                let other_vector_storage = other.vector_storage.borrow();
-                let other_payload_index = other.payload_index.borrow();
+                let other_vector_storage = other.vector_storage.read();
+                let other_payload_index = other.payload_index.read();
 
                 let mut id_tracker = self_segment.id_tracker.borrow_mut();
-                let mut vector_storage = self_segment.vector_storage.borrow_mut();
-                let mut payload_index = self_segment.payload_index.borrow_mut();
+                let mut vector_storage = self_segment.vector_storage.write();
+                let mut payload_index = self_segment.payload_index.write();
 
                 let new_internal_range = vector_storage.update_from(&*other_vector_storage)?;
 
@@ -109,7 +109,7 @@ impl SegmentBuilder {
                     }
                 }
 
-                for (field, payload_schema) in other.payload_index.borrow().indexed_fields() {
+                for (field, payload_schema) in other.payload_index.read().indexed_fields() {
                     self.indexed_fields.insert(field, payload_schema);
                 }
 
@@ -134,7 +134,7 @@ impl SegmentBuilder {
                 }
             }
 
-            segment.vector_index.borrow_mut().build_index(stopped)?;
+            segment.vector_index.build_index(stopped)?;
 
             segment.flush()?;
             // Now segment is going to be evicted from RAM

@@ -14,11 +14,13 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use atomic_refcell::AtomicRefCell;
+use parking_lot::RwLock;
 use schemars::_serde_json::Value;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use tokio::runtime::Handle;
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -174,14 +176,14 @@ impl PayloadIndex for PlainPayloadIndex {
 }
 
 pub struct PlainIndex {
-    vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
-    payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    vector_storage: Arc<RwLock<VectorStorageSS>>,
+    payload_index: Arc<RwLock<StructPayloadIndex>>,
 }
 
 impl PlainIndex {
     pub fn new(
-        vector_storage: Arc<AtomicRefCell<VectorStorageSS>>,
-        payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+        vector_storage: Arc<RwLock<VectorStorageSS>>,
+        payload_index: Arc<RwLock<StructPayloadIndex>>,
     ) -> PlainIndex {
         PlainIndex {
             vector_storage,
@@ -200,14 +202,25 @@ impl VectorIndex for PlainIndex {
     ) -> Vec<ScoredPointOffset> {
         match filter {
             Some(filter) => {
-                let borrowed_payload_index = self.payload_index.borrow();
+                let borrowed_payload_index = self.payload_index.read();
                 let mut filtered_ids = borrowed_payload_index.query_points(filter);
                 self.vector_storage
-                    .borrow()
+                    .read()
                     .score_points(vector, &mut filtered_ids, top)
             }
-            None => self.vector_storage.borrow().score_all(vector, top),
+            None => self.vector_storage.read().score_all(vector, top),
         }
+    }
+
+    fn batch_search(
+        &self,
+        vectors: &[Vec<VectorElementType>],
+        filters: &[Option<Filter>],
+        top: usize,
+        params: Option<&SearchParams>,
+        runtime_handle: &Handle,
+    ) -> Vec<Vec<ScoredPointOffset>> {
+        todo!()
     }
 
     fn build_index(&mut self, _stopped: &AtomicBool) -> OperationResult<()> {

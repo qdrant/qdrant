@@ -40,6 +40,7 @@ bitvec = "1.0.0"
 seahash = "4.1.0"
 json-patch = "0.2.6"
 tar = "0.4.38"
+tokio = {version = "~1.19", features = ["full"]}
 
 [[bench]]
 name = "vector_search"

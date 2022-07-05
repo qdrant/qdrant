@@ -17,6 +17,7 @@ use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitVec;
+use parking_lot::RwLock;
 use std::mem::size_of;
 use std::sync::Arc;
 
@@ -87,7 +88,7 @@ pub fn open_simple_vector_storage(
     store: Arc<AtomicRefCell<DB>>,
     dim: usize,
     distance: Distance,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageSS>>> {
+) -> OperationResult<Arc<RwLock<VectorStorageSS>>> {
     let mut vectors = ChunkedVectors::new(dim);
     let mut deleted = BitVec::new();
     let mut deleted_count = 0;
@@ -118,9 +119,7 @@ pub fn open_simple_vector_storage(
     );
 
     match distance {
-        Distance::Cosine => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
-            CosineMetric,
-        > {
+        Distance::Cosine => Ok(Arc::new(RwLock::new(SimpleVectorStorage::<CosineMetric> {
             dim,
             metric: PhantomData,
             vectors,
@@ -128,9 +127,7 @@ pub fn open_simple_vector_storage(
             deleted_count,
             store,
         }))),
-        Distance::Euclid => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
-            EuclidMetric,
-        > {
+        Distance::Euclid => Ok(Arc::new(RwLock::new(SimpleVectorStorage::<EuclidMetric> {
             dim,
             metric: PhantomData,
             vectors,
@@ -138,7 +135,7 @@ pub fn open_simple_vector_storage(
             deleted_count,
             store,
         }))),
-        Distance::Dot => Ok(Arc::new(AtomicRefCell::new(SimpleVectorStorage::<
+        Distance::Dot => Ok(Arc::new(RwLock::new(SimpleVectorStorage::<
             DotProductMetric,
         > {
             dim,

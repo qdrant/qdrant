@@ -5,7 +5,7 @@ use crate::spaces::tools::peek_top_largest_scores_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
 use crate::vector_storage::mmap_vectors::MmapVectors;
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageSS};
-use atomic_refcell::AtomicRefCell;
+use parking_lot::RwLock;
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
 use std::marker::PhantomData;
@@ -84,7 +84,7 @@ pub fn open_memmap_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageSS>>> {
+) -> OperationResult<Arc<RwLock<VectorStorageSS>>> {
     create_dir_all(path)?;
 
     let vectors_path = path.join("matrix.dat");
@@ -93,23 +93,19 @@ pub fn open_memmap_vector_storage(
     let mmap_store = MmapVectors::open(&vectors_path, &deleted_path, dim)?;
 
     match distance {
-        Distance::Cosine => Ok(Arc::new(AtomicRefCell::new(MemmapVectorStorage::<
-            CosineMetric,
-        > {
+        Distance::Cosine => Ok(Arc::new(RwLock::new(MemmapVectorStorage::<CosineMetric> {
             vectors_path,
             deleted_path,
             mmap_store: Some(mmap_store),
             metric: PhantomData,
         }))),
-        Distance::Euclid => Ok(Arc::new(AtomicRefCell::new(MemmapVectorStorage::<
-            EuclidMetric,
-        > {
+        Distance::Euclid => Ok(Arc::new(RwLock::new(MemmapVectorStorage::<EuclidMetric> {
             vectors_path,
             deleted_path,
             mmap_store: Some(mmap_store),
             metric: PhantomData,
         }))),
-        Distance::Dot => Ok(Arc::new(AtomicRefCell::new(MemmapVectorStorage::<
+        Distance::Dot => Ok(Arc::new(RwLock::new(MemmapVectorStorage::<
             DotProductMetric,
         > {
             vectors_path,

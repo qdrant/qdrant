@@ -18,6 +18,7 @@ use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::VectorStorageSS;
 use atomic_refcell::AtomicRefCell;
 use log::info;
+use parking_lot::RwLock;
 use std::fs::{create_dir_all, File};
 use std::io::Read;
 use std::path::Path;
@@ -41,7 +42,7 @@ fn create_segment(
 
     let id_tracker = sp(SimpleIdTracker::open(database.clone())?);
 
-    let vector_storage: Arc<AtomicRefCell<VectorStorageSS>> = match config.storage_type {
+    let vector_storage: Arc<RwLock<VectorStorageSS>> = match config.storage_type {
         StorageType::InMemory => {
             open_simple_vector_storage(database.clone(), config.vector_size, config.distance)?
         }
@@ -55,23 +56,21 @@ fn create_segment(
         PayloadStorageType::OnDisk => sp(OnDiskPayloadStorage::open(database.clone())?.into()),
     };
 
-    let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
-        payload_storage,
-        id_tracker.clone(),
-        &payload_index_path,
-    )?);
+    let payload_index: Arc<RwLock<StructPayloadIndex>> = Arc::new(RwLock::new(
+        StructPayloadIndex::open(payload_storage, id_tracker.clone(), &payload_index_path)?,
+    ));
 
-    let vector_index: Arc<AtomicRefCell<VectorIndexSS>> = match config.index {
-        Indexes::Plain { .. } => sp(PlainIndex::new(
+    let vector_index: Arc<VectorIndexSS> = match config.index {
+        Indexes::Plain { .. } => Arc::new(PlainIndex::new(
             vector_storage.clone(),
             payload_index.clone(),
         )),
-        Indexes::Hnsw(hnsw_config) => sp(HNSWIndex::open(
+        Indexes::Hnsw(hnsw_config) => Arc::new(Arc::new(HNSWIndex::open(
             &vector_index_path,
             vector_storage.clone(),
             payload_index.clone(),
-            hnsw_config,
-        )?),
+            RwLock::new(hnsw_config),
+        )?)),
     };
 
     let segment_type = match config.index {
