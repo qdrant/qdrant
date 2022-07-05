@@ -1,28 +1,31 @@
-use crate::common::rocksdb_operations::{Database, DatabaseIterationResult, DB_PAYLOAD_CF};
+use crate::common::rocksdb_operations::{
+    Database, DatabaseColumn, DatabaseIterationResult, DB_PAYLOAD_CF,
+};
 use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
-use atomic_refcell::AtomicRefCell;
-use std::sync::Arc;
 
 use serde_json::Value;
 
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::payload_storage::PayloadStorage;
 
+use atomic_refcell::AtomicRefCell;
+use std::sync::Arc;
+
 /// On-disk implementation of `PayloadStorage`.
 /// Persists all changes to disk using `store`, does not keep payload in memory
 pub struct OnDiskPayloadStorage {
-    database: Arc<AtomicRefCell<Database>>,
+    database: DatabaseColumn,
 }
 
 impl OnDiskPayloadStorage {
     pub fn open(database: Arc<AtomicRefCell<Database>>) -> OperationResult<Self> {
+        let database = DatabaseColumn::new(database, DB_PAYLOAD_CF);
         Ok(OnDiskPayloadStorage { database })
     }
 
     pub fn remove_from_storage(&self, point_id: PointOffsetType) -> OperationResult<()> {
         self.database
-            .borrow()
-            .remove(DB_PAYLOAD_CF, &serde_cbor::to_vec(&point_id).unwrap())
+            .remove(&serde_cbor::to_vec(&point_id).unwrap())
     }
 
     pub fn update_storage(
@@ -30,8 +33,7 @@ impl OnDiskPayloadStorage {
         point_id: PointOffsetType,
         payload: &Payload,
     ) -> OperationResult<()> {
-        self.database.borrow().put(
-            DB_PAYLOAD_CF,
+        self.database.put(
             &serde_cbor::to_vec(&point_id).unwrap(),
             &serde_cbor::to_vec(payload).unwrap(),
         )
@@ -40,8 +42,7 @@ impl OnDiskPayloadStorage {
     pub fn read_payload(&self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         let key = serde_cbor::to_vec(&point_id).unwrap();
         self.database
-            .borrow()
-            .get_pinned(DB_PAYLOAD_CF, &key, |raw| serde_cbor::from_slice(raw))?
+            .get_pinned(&key, |raw| serde_cbor::from_slice(raw))?
             .transpose()
             .map_err(OperationError::from)
     }
@@ -50,32 +51,26 @@ impl OnDiskPayloadStorage {
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        self.database
-            .borrow()
-            .iterate_over_column_family(DB_PAYLOAD_CF, |(key, val)| {
-                let point_offset: PointOffsetType = match serde_cbor::from_slice(key) {
-                    Ok(p) => p,
-                    Err(err) => {
-                        return DatabaseIterationResult::Break(Err(OperationError::from(err)))
+        self.database.iterate_over_column_family(|(key, val)| {
+            let point_offset: PointOffsetType = match serde_cbor::from_slice(key) {
+                Ok(p) => p,
+                Err(err) => return DatabaseIterationResult::Break(Err(OperationError::from(err))),
+            };
+            let payload: Payload = match serde_cbor::from_slice(val) {
+                Ok(p) => p,
+                Err(err) => return DatabaseIterationResult::Break(Err(OperationError::from(err))),
+            };
+            match callback(point_offset, &payload) {
+                Ok(do_continue) => {
+                    if do_continue {
+                        DatabaseIterationResult::Continue
+                    } else {
+                        DatabaseIterationResult::Break(Ok(()))
                     }
-                };
-                let payload: Payload = match serde_cbor::from_slice(val) {
-                    Ok(p) => p,
-                    Err(err) => {
-                        return DatabaseIterationResult::Break(Err(OperationError::from(err)))
-                    }
-                };
-                match callback(point_offset, &payload) {
-                    Ok(do_continue) => {
-                        if do_continue {
-                            DatabaseIterationResult::Continue
-                        } else {
-                            DatabaseIterationResult::Break(Ok(()))
-                        }
-                    }
-                    Err(err) => DatabaseIterationResult::Break(Err(err)),
                 }
-            })
+                Err(err) => DatabaseIterationResult::Break(Err(err)),
+            }
+        })
     }
 }
 
@@ -130,12 +125,10 @@ impl PayloadStorage for OnDiskPayloadStorage {
     }
 
     fn wipe(&mut self) -> OperationResult<()> {
-        self.database
-            .borrow_mut()
-            .recreate_column_family(DB_PAYLOAD_CF)
+        self.database.recreate_column_family()
     }
 
     fn flush(&self) -> OperationResult<()> {
-        self.database.borrow().flush(DB_PAYLOAD_CF)
+        self.database.flush()
     }
 }

@@ -227,7 +227,7 @@ mod tests {
     fn test_condition_checker() {
         let dir = TempDir::new("db_dir").unwrap();
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_default_column_families(dir.path(), true).unwrap(),
+            Database::new(dir.path(), true, true).unwrap(),
         ));
 
         let payload: Payload = json!(

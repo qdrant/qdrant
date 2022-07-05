@@ -1,5 +1,5 @@
 use crate::common::rocksdb_operations::{
-    Database, DatabaseIterationResult, DB_MAPPING_CF, DB_VERSIONS_CF,
+    Database, DatabaseColumn, DatabaseIterationResult, DB_MAPPING_CF, DB_VERSIONS_CF,
 };
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTracker;
@@ -54,7 +54,8 @@ pub struct SimpleIdTracker {
     external_to_internal: BTreeMap<PointIdType, PointOffsetType>,
     external_to_version: HashMap<PointIdType, SeqNumberType>,
     max_internal_id: PointOffsetType,
-    database: Arc<AtomicRefCell<Database>>,
+    mapping_database: DatabaseColumn,
+    versions_database: DatabaseColumn,
 }
 
 impl SimpleIdTracker {
@@ -64,43 +65,42 @@ impl SimpleIdTracker {
         let mut external_to_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut max_internal_id = 0;
 
-        database
-            .borrow()
-            .iterate_over_column_family(DB_MAPPING_CF, |(key, val)| {
-                let external_id = Self::restore_key(key);
-                let internal_id: PointOffsetType = bincode::deserialize(val).unwrap();
-                let replaced = internal_to_external.insert(internal_id, external_id);
-                if let Some(replaced_id) = replaced {
-                    // Fixing corrupted mapping - this id should be recovered from WAL
-                    // This should not happen in normal operation, but it can happen if
-                    // the database is corrupted.
-                    log::warn!(
-                        "removing duplicated external id {} in internal id {}",
-                        external_id,
-                        replaced_id
-                    );
-                    external_to_internal.remove(&replaced_id);
-                }
-                external_to_internal.insert(external_id, internal_id);
-                max_internal_id = max_internal_id.max(internal_id);
-                DatabaseIterationResult::Continue
-            })?;
+        let mapping_database = DatabaseColumn::new(database.clone(), DB_MAPPING_CF);
+        mapping_database.iterate_over_column_family(|(key, val)| {
+            let external_id = Self::restore_key(key);
+            let internal_id: PointOffsetType = bincode::deserialize(val).unwrap();
+            let replaced = internal_to_external.insert(internal_id, external_id);
+            if let Some(replaced_id) = replaced {
+                // Fixing corrupted mapping - this id should be recovered from WAL
+                // This should not happen in normal operation, but it can happen if
+                // the database is corrupted.
+                log::warn!(
+                    "removing duplicated external id {} in internal id {}",
+                    external_id,
+                    replaced_id
+                );
+                external_to_internal.remove(&replaced_id);
+            }
+            external_to_internal.insert(external_id, internal_id);
+            max_internal_id = max_internal_id.max(internal_id);
+            DatabaseIterationResult::Continue
+        })?;
 
-        database
-            .borrow()
-            .iterate_over_column_family(DB_VERSIONS_CF, |(key, val)| {
-                let external_id = Self::restore_key(key);
-                let version: SeqNumberType = bincode::deserialize(val).unwrap();
-                external_to_version.insert(external_id, version);
-                DatabaseIterationResult::Continue
-            })?;
+        let versions_database = DatabaseColumn::new(database, DB_VERSIONS_CF);
+        versions_database.iterate_over_column_family(|(key, val)| {
+            let external_id = Self::restore_key(key);
+            let version: SeqNumberType = bincode::deserialize(val).unwrap();
+            external_to_version.insert(external_id, version);
+            DatabaseIterationResult::Continue
+        })?;
 
         Ok(SimpleIdTracker {
             internal_to_external,
             external_to_internal,
             external_to_version,
             max_internal_id,
-            database,
+            mapping_database,
+            versions_database,
         })
     }
 
@@ -125,8 +125,7 @@ impl IdTracker for SimpleIdTracker {
         version: SeqNumberType,
     ) -> OperationResult<()> {
         self.external_to_version.insert(external_id, version);
-        self.database.borrow().put(
-            DB_VERSIONS_CF,
+        self.versions_database.put(
             &Self::store_key(&external_id),
             &bincode::serialize(&version).unwrap(),
         )?;
@@ -150,8 +149,7 @@ impl IdTracker for SimpleIdTracker {
         self.internal_to_external.insert(internal_id, external_id);
         self.max_internal_id = self.max_internal_id.max(internal_id);
 
-        self.database.borrow().put(
-            DB_MAPPING_CF,
+        self.mapping_database.put(
             &Self::store_key(&external_id),
             &bincode::serialize(&internal_id).unwrap(),
         )?;
@@ -166,12 +164,10 @@ impl IdTracker for SimpleIdTracker {
             Some(x) => self.internal_to_external.remove(&x),
             None => None,
         };
-        self.database
-            .borrow()
-            .remove(DB_MAPPING_CF, &Self::store_key(&external_id))?;
-        self.database
-            .borrow()
-            .remove(DB_VERSIONS_CF, &Self::store_key(&external_id))?;
+        self.mapping_database
+            .remove(&Self::store_key(&external_id))?;
+        self.versions_database
+            .remove(&Self::store_key(&external_id))?;
         Ok(())
     }
 
@@ -208,19 +204,21 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn flush_mapping(&self) -> OperationResult<()> {
-        self.database.borrow().flush(DB_MAPPING_CF)
+        self.mapping_database.flush()
     }
 
     fn flush_versions(&self) -> OperationResult<()> {
-        self.database.borrow().flush(DB_VERSIONS_CF)
+        self.versions_database.flush()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use atomic_refcell::AtomicRefCell;
     use itertools::Itertools;
     use serde::de::DeserializeOwned;
+    use std::sync::Arc;
     use tempdir::TempDir;
 
     fn check_bincode_serialization<
@@ -245,7 +243,7 @@ mod tests {
     fn test_iterator() {
         let dir = TempDir::new("storage_dir").unwrap();
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_default_column_families(dir.path(), true).unwrap(),
+            Database::new(dir.path(), true, true).unwrap(),
         ));
 
         let mut id_tracker = SimpleIdTracker::open(db).unwrap();

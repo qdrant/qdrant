@@ -4,7 +4,9 @@ use std::ops::Range;
 use log::debug;
 use serde::{Deserialize, Serialize};
 
-use crate::common::rocksdb_operations::{Database, DatabaseIterationResult, DB_VECTOR_CF};
+use crate::common::rocksdb_operations::{
+    Database, DatabaseColumn, DatabaseIterationResult, DB_VECTOR_CF,
+};
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::tools::peek_top_largest_scores_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
@@ -26,7 +28,7 @@ pub struct SimpleVectorStorage<TMetric: Metric> {
     vectors: ChunkedVectors,
     deleted: BitVec,
     deleted_count: usize,
-    database: Arc<AtomicRefCell<Database>>,
+    database: DatabaseColumn,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -91,23 +93,22 @@ pub fn open_simple_vector_storage(
     let mut deleted = BitVec::new();
     let mut deleted_count = 0;
 
-    database
-        .borrow()
-        .iterate_over_column_family(DB_VECTOR_CF, |(key, value)| {
-            let point_id: PointOffsetType = bincode::deserialize(key).unwrap();
-            let stored_record: StoredRecord = bincode::deserialize(value).unwrap();
-            if stored_record.deleted {
-                deleted_count += 1;
-            }
+    let database = DatabaseColumn::new(database, DB_VECTOR_CF);
+    database.iterate_over_column_family(|(key, value)| {
+        let point_id: PointOffsetType = bincode::deserialize(key).unwrap();
+        let stored_record: StoredRecord = bincode::deserialize(value).unwrap();
+        if stored_record.deleted {
+            deleted_count += 1;
+        }
 
-            while deleted.len() <= (point_id as usize) {
-                deleted.push(false);
-            }
+        while deleted.len() <= (point_id as usize) {
+            deleted.push(false);
+        }
 
-            deleted.set(point_id as usize, stored_record.deleted);
-            vectors.insert(point_id, &stored_record.vector);
-            DatabaseIterationResult::Continue
-        })?;
+        deleted.set(point_id as usize, stored_record.deleted);
+        vectors.insert(point_id, &stored_record.vector);
+        DatabaseIterationResult::Continue
+    })?;
 
     debug!("Segment vectors: {}", vectors.len());
     debug!(
@@ -161,8 +162,7 @@ where
             vector: v.to_vec(), // ToDo: try to reduce number of vector copies
         };
 
-        self.database.borrow().put(
-            DB_VECTOR_CF,
+        self.database.put(
             &bincode::serialize(&point_id).unwrap(),
             &bincode::serialize(&record).unwrap(),
         )?;
@@ -255,7 +255,7 @@ where
     }
 
     fn flush(&self) -> OperationResult<()> {
-        self.database.borrow().flush(DB_VECTOR_CF)
+        self.database.flush()
     }
 
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
@@ -332,7 +332,7 @@ mod tests {
     fn test_score_points() {
         let dir = TempDir::new("storage_dir").unwrap();
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_default_column_families(dir.path(), true).unwrap(),
+            Database::new(dir.path(), true, true).unwrap(),
         ));
         let distance = Distance::Dot;
         let dim = 4;

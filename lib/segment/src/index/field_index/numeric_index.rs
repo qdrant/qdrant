@@ -6,7 +6,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use serde_json::Value;
 
-use crate::common::rocksdb_operations::{Database, DatabaseIterationResult};
+use crate::common::rocksdb_operations::{Database, DatabaseColumn, DatabaseIterationResult};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
@@ -90,8 +90,7 @@ impl ToRangeValue for IntPayloadType {
 
 pub struct NumericIndex<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> {
     map: BTreeMap<Vec<u8>, u32>,
-    database: Arc<AtomicRefCell<Database>>,
-    store_cf_name: String,
+    database: DatabaseColumn,
     histogram: Histogram,
     points_count: usize,
     max_values_per_point: usize,
@@ -102,8 +101,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     pub fn new(database: Arc<AtomicRefCell<Database>>, field: &str) -> Self {
         Self {
             map: BTreeMap::new(),
-            database,
-            store_cf_name: Self::storage_cf_name(field),
+            database: DatabaseColumn::new(database, &Self::storage_cf_name(field)),
             histogram: Histogram::new(HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION),
             points_count: 0,
             max_values_per_point: 1,
@@ -116,16 +114,12 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 
     pub fn recreate(&self) -> OperationResult<()> {
-        self.database
-            .borrow_mut()
-            .recreate_column_family(&self.store_cf_name)
+        self.database.recreate_column_family()
     }
 
     fn add_value(&mut self, id: PointOffsetType, value: T) -> OperationResult<()> {
         let key = value.encode_key(id);
-        self.database
-            .borrow()
-            .put(&self.store_cf_name, &key, id.to_be_bytes())?;
+        self.database.put(&key, id.to_be_bytes())?;
         Self::add_to_map(&mut self.map, &mut self.histogram, key, id);
         Ok(())
     }
@@ -151,35 +145,28 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 
     pub fn load(&mut self) -> OperationResult<bool> {
-        if !self
-            .database
-            .borrow()
-            .has_column_family(&self.store_cf_name)?
-        {
+        if !self.database.has_column_family()? {
             return Ok(false);
         };
 
-        self.database.borrow().iterate_over_column_family(
-            &self.store_cf_name,
-            |(key, value)| {
-                let value_idx = u32::from_be_bytes(value.as_ref().try_into().unwrap());
-                let (idx, value) = T::decode_key(key);
-                if idx != value_idx {
-                    return DatabaseIterationResult::Break(Err(OperationError::service_error(
-                        "incorrect key value",
-                    )));
-                }
+        self.database.iterate_over_column_family(|(key, value)| {
+            let value_idx = u32::from_be_bytes(value.as_ref().try_into().unwrap());
+            let (idx, value) = T::decode_key(key);
+            if idx != value_idx {
+                return DatabaseIterationResult::Break(Err(OperationError::service_error(
+                    "incorrect key value",
+                )));
+            }
 
-                if self.point_to_values.len() <= idx as usize {
-                    self.point_to_values.resize(idx as usize + 1, Vec::new())
-                }
+            if self.point_to_values.len() <= idx as usize {
+                self.point_to_values.resize(idx as usize + 1, Vec::new())
+            }
 
-                self.point_to_values[idx as usize].push(value);
+            self.point_to_values[idx as usize].push(value);
 
-                Self::add_to_map(&mut self.map, &mut self.histogram, key.to_vec(), idx);
-                DatabaseIterationResult::<()>::Continue
-            },
-        )?;
+            Self::add_to_map(&mut self.map, &mut self.histogram, key.to_vec(), idx);
+            DatabaseIterationResult::<()>::Continue
+        })?;
         for values in &self.point_to_values {
             if !values.is_empty() {
                 self.points_count += 1;
@@ -190,7 +177,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 
     pub fn flush(&self) -> OperationResult<()> {
-        self.database.borrow().flush(&self.store_cf_name)
+        self.database.flush()
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
@@ -202,7 +189,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
 
         for value in &removed_values {
             let key = value.encode_key(idx);
-            self.database.borrow().remove(&self.store_cf_name, &key)?;
+            self.database.remove(&key)?;
             Self::remove_from_map(&mut self.map, &mut self.histogram, key);
         }
 
@@ -346,9 +333,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Payload
     }
 
     fn clear(self) -> OperationResult<()> {
-        self.database
-            .borrow_mut()
-            .recreate_column_family(&self.store_cf_name)
+        self.database.recreate_column_family()
     }
 
     fn flush(&self) -> OperationResult<()> {
@@ -545,7 +530,7 @@ mod tests {
     fn get_index() -> (TempDir, NumericIndex<f64>) {
         let tmp_dir = TempDir::new("test_numeric_index").unwrap();
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_existing_column_families(tmp_dir.path(), true).unwrap(),
+            Database::new(tmp_dir.path(), false, true).unwrap(),
         ));
         let index: NumericIndex<_> = NumericIndex::new(db, COLUMN_NAME);
         index.recreate().unwrap();
@@ -730,7 +715,7 @@ mod tests {
 
         index.flush().unwrap();
 
-        let db_ref = index.database.clone();
+        let db_ref = index.database.database.clone();
         let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME);
         new_index.load().unwrap();
 

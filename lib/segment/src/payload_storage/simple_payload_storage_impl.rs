@@ -3,7 +3,6 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::common::rocksdb_operations::DB_PAYLOAD_CF;
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::PayloadStorage;
@@ -54,13 +53,11 @@ impl PayloadStorage for SimplePayloadStorage {
 
     fn wipe(&mut self) -> OperationResult<()> {
         self.payload = HashMap::new();
-        self.database
-            .borrow_mut()
-            .recreate_column_family(DB_PAYLOAD_CF)
+        self.database.recreate_column_family()
     }
 
     fn flush(&self) -> OperationResult<()> {
-        self.database.borrow().flush(DB_PAYLOAD_CF)
+        self.database.flush()
     }
 }
 
@@ -77,7 +74,7 @@ mod tests {
     fn test_wipe() {
         let dir = TempDir::new("db_dir").unwrap();
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_default_column_families(dir.path(), true).unwrap(),
+            Database::new(dir.path(), true, true).unwrap(),
         ));
 
         let mut storage = SimplePayloadStorage::open(db).unwrap();
@@ -119,7 +116,7 @@ mod tests {
         let payload: Payload = serde_json::from_str(data).unwrap();
         let dir = TempDir::new("storage_dir").unwrap();
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_default_column_families(dir.path(), true).unwrap(),
+            Database::new(dir.path(), true, true).unwrap(),
         ));
         let mut storage = SimplePayloadStorage::open(db).unwrap();
         storage.assign(100, &payload).unwrap();

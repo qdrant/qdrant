@@ -110,7 +110,7 @@ mod tests {
     fn test_storage() {
         let dir = TempDir::new("storage_dir").unwrap();
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_default_column_families(dir.path(), true).unwrap(),
+            Database::new(dir.path(), true, true).unwrap(),
         ));
 
         let mut storage: PayloadStorageEnum = SimplePayloadStorage::open(db).unwrap().into();
@@ -129,7 +129,7 @@ mod tests {
     fn test_on_disk_storage() {
         let dir = TempDir::new("storage_dir").unwrap();
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_default_column_families(dir.path(), true).unwrap(),
+            Database::new(dir.path(), true, true).unwrap(),
         ));
 
         {

@@ -38,11 +38,13 @@ fn create_segment(
         Indexes::Hnsw { .. } => SegmentType::Indexed,
     };
     let appendable_flag =
-    segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
+        segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
 
-    let database = Arc::new(AtomicRefCell::new(
-        Database::new_with_default_column_families(segment_path, appendable_flag)?,
-    ));
+    let database = Arc::new(AtomicRefCell::new(Database::new(
+        segment_path,
+        true,
+        appendable_flag,
+    )?));
 
     let payload_index_path = segment_path.join("payload_index");
     let vector_storage_path = segment_path.join("vector_storage");
