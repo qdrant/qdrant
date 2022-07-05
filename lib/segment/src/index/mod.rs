@@ -1,4 +1,4 @@
-mod field_index;
+pub mod field_index;
 pub mod hnsw_index;
 mod index_base;
 mod key_encoding;

@@ -11,8 +11,8 @@ use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
-    PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
-    UpdateResult,
+    CountRequest, CountResult, PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult,
+    SearchRequest, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::{ChannelService, Collection, CollectionShardDistribution};
@@ -436,6 +436,31 @@ impl TableOfContent {
         let collection = self.get_collection(collection_name).await?;
         collection
             .search(request, self.search_runtime.handle(), shard_selection)
+            .await
+            .map_err(|err| err.into())
+    }
+
+    /// Count points in the collection.
+    ///
+    /// # Arguments
+    ///
+    /// * `collection_name` - in what collection do we count
+    /// * `request` - [`CountRequest`]
+    /// * `shard_selection` - which local shard to use
+    ///
+    /// # Result
+    ///
+    /// Number of points in the collection.
+    ///
+    pub async fn count(
+        &self,
+        collection_name: &str,
+        request: CountRequest,
+        shard_selection: Option<ShardId>,
+    ) -> Result<CountResult, StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+        collection
+            .count(request, shard_selection)
             .await
             .map_err(|err| err.into())
     }

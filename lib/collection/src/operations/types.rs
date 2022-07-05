@@ -224,6 +224,31 @@ pub struct RecommendRequest {
     pub score_threshold: Option<ScoreType>,
 }
 
+/// Count Request
+/// Counts the number of points which satisfy the given filter.
+/// If filter is not provided, the count of all points in the collection will be returned.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct CountRequest {
+    /// Look only for points which satisfies this conditions
+    pub filter: Option<Filter>,
+    /// If true, count exact number of points. If false, count approximate number of points faster.
+    /// Approximate count might be unreliable during the indexing process. Default: true
+    #[serde(default = "default_exact_count")]
+    pub exact: bool,
+}
+
+pub fn default_exact_count() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct CountResult {
+    /// Number of points which satisfy the conditions
+    pub count: usize,
+}
+
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
 pub enum CollectionError {

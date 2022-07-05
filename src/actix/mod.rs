@@ -12,6 +12,7 @@ use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Res
 use std::sync::Arc;
 use storage::Dispatcher;
 
+use crate::actix::api::count_api::count_points;
 use crate::actix::api::recommend_api::recommend_points;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::search_points;
@@ -74,6 +75,7 @@ pub fn init(dispatcher: Arc<Dispatcher>, settings: Settings) -> std::io::Result<
                 .service(scroll_points)
                 .service(search_points)
                 .service(recommend_points)
+                .service(count_points)
         })
         .workers(max_web_workers(&settings))
         .bind(format!(

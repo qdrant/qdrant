@@ -1430,6 +1430,18 @@ pub struct RecommendPoints {
     #[prost(uint64, optional, tag="10")]
     pub offset: ::core::option::Option<u64>,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CountPoints {
+    /// name of the collection
+    #[prost(string, tag="1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Filter conditions - return only those points that satisfy the specified conditions
+    #[prost(message, optional, tag="2")]
+    pub filter: ::core::option::Option<Filter>,
+    /// If `true` - return exact count, if `false` - return approximate count
+    #[prost(bool, optional, tag="3")]
+    pub exact: ::core::option::Option<bool>,
+}
 // ---------------------------------------------
 // ---------------- RPC Response ---------------
 // ---------------------------------------------
@@ -1478,6 +1490,14 @@ pub struct SearchResponse {
     pub time: f64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CountResponse {
+    #[prost(message, optional, tag="1")]
+    pub result: ::core::option::Option<CountResult>,
+    /// Time spent to process
+    #[prost(double, tag="2")]
+    pub time: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollResponse {
     /// Use this offset for the next query
     #[prost(message, optional, tag="1")]
@@ -1487,6 +1507,11 @@ pub struct ScrollResponse {
     /// Time spent to process
     #[prost(double, tag="3")]
     pub time: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CountResult {
+    #[prost(uint64, tag="1")]
+    pub count: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RetrievedPoint {
@@ -1980,6 +2005,25 @@ pub mod points_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Recommend");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        ///
+        ///Count points in collection with given filtering conditions
+        pub async fn count(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CountPoints>,
+        ) -> Result<tonic::Response<super::CountResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Count");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -2055,6 +2099,12 @@ pub mod points_server {
             &self,
             request: tonic::Request<super::RecommendPoints>,
         ) -> Result<tonic::Response<super::RecommendResponse>, tonic::Status>;
+        ///
+        ///Count points in collection with given filtering conditions
+        async fn count(
+            &self,
+            request: tonic::Request<super::CountPoints>,
+        ) -> Result<tonic::Response<super::CountResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct PointsServer<T: Points> {
@@ -2515,6 +2565,42 @@ pub mod points_server {
                     };
                     Box::pin(fut)
                 }
+                "/qdrant.Points/Count" => {
+                    #[allow(non_camel_case_types)]
+                    struct CountSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::CountPoints>
+                    for CountSvc<T> {
+                        type Response = super::CountResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CountPoints>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).count(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CountSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 _ => {
                     Box::pin(async move {
                         Ok(
@@ -2628,6 +2714,13 @@ pub struct RecommendPointsInternal {
 pub struct GetPointsInternal {
     #[prost(message, optional, tag="1")]
     pub get_points: ::core::option::Option<GetPoints>,
+    #[prost(uint32, tag="2")]
+    pub shard_id: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CountPointsInternal {
+    #[prost(message, optional, tag="1")]
+    pub count_points: ::core::option::Option<CountPoints>,
     #[prost(uint32, tag="2")]
     pub shard_id: u32,
 }
@@ -2866,6 +2959,25 @@ pub mod points_internal_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn count(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CountPointsInternal>,
+        ) -> Result<tonic::Response<super::CountResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/Count",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
         pub async fn recommend(
             &mut self,
             request: impl tonic::IntoRequest<super::RecommendPointsInternal>,
@@ -2949,6 +3061,10 @@ pub mod points_internal_server {
             &self,
             request: tonic::Request<super::ScrollPointsInternal>,
         ) -> Result<tonic::Response<super::ScrollResponse>, tonic::Status>;
+        async fn count(
+            &self,
+            request: tonic::Request<super::CountPointsInternal>,
+        ) -> Result<tonic::Response<super::CountResponse>, tonic::Status>;
         async fn recommend(
             &self,
             request: tonic::Request<super::RecommendPointsInternal>,
@@ -3350,6 +3466,44 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = ScrollSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/Count" => {
+                    #[allow(non_camel_case_types)]
+                    struct CountSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::CountPointsInternal>
+                    for CountSvc<T> {
+                        type Response = super::CountResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CountPointsInternal>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).count(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CountSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

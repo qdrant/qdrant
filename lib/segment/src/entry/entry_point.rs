@@ -1,4 +1,5 @@
 use crate::common::file_operations::FileStorageError;
+use crate::index::field_index::CardinalityEstimation;
 use crate::types::{
     Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
@@ -210,6 +211,9 @@ pub trait SegmentEntry {
 
     /// Return number of vectors in this segment
     fn points_count(&self) -> usize;
+
+    /// Estimate points count in this segment for given filter.
+    fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation;
 
     fn vector_dim(&self) -> usize;
 

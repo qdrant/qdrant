@@ -4,6 +4,7 @@ use crate::entry::entry_point::{
     get_service_error, OperationError, OperationResult, SegmentEntry, SegmentFailedState,
 };
 use crate::id_tracker::IdTrackerSS;
+use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndexSS};
 use crate::types::{
@@ -506,6 +507,24 @@ impl SegmentEntry for Segment {
 
     fn points_count(&self) -> usize {
         self.id_tracker.borrow().points_count()
+    }
+
+    fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
+        match filter {
+            None => {
+                let total_count = self.points_count();
+                CardinalityEstimation {
+                    primary_clauses: vec![],
+                    min: total_count,
+                    exp: total_count,
+                    max: total_count,
+                }
+            }
+            Some(filter) => {
+                let payload_index = self.payload_index.borrow();
+                payload_index.estimate_cardinality(filter)
+            }
+        }
     }
 
     fn deleted_count(&self) -> usize {

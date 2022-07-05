@@ -46,6 +46,9 @@
 - [points.proto](#points-proto)
     - [ClearPayloadPoints](#qdrant-ClearPayloadPoints)
     - [Condition](#qdrant-Condition)
+    - [CountPoints](#qdrant-CountPoints)
+    - [CountResponse](#qdrant-CountResponse)
+    - [CountResult](#qdrant-CountResult)
     - [CreateFieldIndexCollection](#qdrant-CreateFieldIndexCollection)
     - [DeleteFieldIndexCollection](#qdrant-DeleteFieldIndexCollection)
     - [DeletePayloadPoints](#qdrant-DeletePayloadPoints)
@@ -741,6 +744,54 @@ The JSON representation for `Value` is JSON value.
 | isEmpty | [IsEmptyCondition](#qdrant-IsEmptyCondition) |  |  |
 | hasId | [HasIdCondition](#qdrant-HasIdCondition) |  |  |
 | filter | [Filter](#qdrant-Filter) |  |  |
+
+
+
+
+
+
+<a name="qdrant-CountPoints"></a>
+
+### CountPoints
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | name of the collection |
+| filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
+| exact | [bool](#bool) | optional | If `true` - return exact count, if `false` - return approximate count |
+
+
+
+
+
+
+<a name="qdrant-CountResponse"></a>
+
+### CountResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [CountResult](#qdrant-CountResult) |  |  |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
+<a name="qdrant-CountResult"></a>
+
+### CountResult
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| count | [uint64](#uint64) |  |  |
 
 
 
@@ -1495,6 +1546,7 @@ The JSON representation for `Value` is JSON value.
 | Search | [SearchPoints](#qdrant-SearchPoints) | [SearchResponse](#qdrant-SearchResponse) | Retrieve closest points based on vector similarity and given filtering conditions |
 | Scroll | [ScrollPoints](#qdrant-ScrollPoints) | [ScrollResponse](#qdrant-ScrollResponse) | Iterate over all or filtered points points |
 | Recommend | [RecommendPoints](#qdrant-RecommendPoints) | [RecommendResponse](#qdrant-RecommendResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples. |
+| Count | [CountPoints](#qdrant-CountPoints) | [CountResponse](#qdrant-CountResponse) | Count points in collection with given filtering conditions |
 
  
 

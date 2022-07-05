@@ -1,6 +1,7 @@
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
+use segment::index::field_index::CardinalityEstimation;
 use segment::segment_constructor::load_segment;
 use segment::types::{
     Condition, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
@@ -360,6 +361,27 @@ impl SegmentEntry for ProxySegment {
         count -= deleted_points_count;
         count += write_segment_count;
         count
+    }
+
+    fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
+        let deleted_points_count = self.deleted_points_count.load(Ordering::Relaxed);
+        let wrapped_segment_count = self
+            .wrapped_segment
+            .get()
+            .read()
+            .estimate_points_count(filter);
+        CardinalityEstimation {
+            primary_clauses: vec![],
+            min: wrapped_segment_count
+                .min
+                .saturating_sub(deleted_points_count),
+            exp: wrapped_segment_count
+                .exp
+                .saturating_sub(deleted_points_count),
+            max: wrapped_segment_count
+                .max
+                .saturating_sub(deleted_points_count),
+        }
     }
 
     fn deleted_count(&self) -> usize {

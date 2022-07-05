@@ -10,11 +10,13 @@ use collection::operations::{
     types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus},
     CollectionUpdateOperations,
 };
-use segment::types::{Condition, HasIdCondition, Payload, PointIdType, WithPayloadInterface};
+use segment::types::{
+    Condition, FieldCondition, Filter, HasIdCondition, Payload, PointIdType, WithPayloadInterface,
+};
 
 use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
 use collection::operations::point_ops::Batch;
-use collection::operations::types::PointRequest;
+use collection::operations::types::{CountRequest, PointRequest};
 
 mod common;
 
@@ -138,6 +140,22 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         }
         Err(err) => panic!("search failed: {:?}", err),
     }
+
+    let count_request = CountRequest {
+        filter: Some(Filter::new_must(Condition::Field(FieldCondition {
+            key: "k".to_string(),
+            r#match: Some(serde_json::from_str(r#"{ "value": "v2" }"#).unwrap()),
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            values_count: None,
+        }))),
+        exact: true,
+    };
+
+    let count_res = collection.count(count_request, None).await.unwrap();
+    assert_eq!(count_res.count, 1);
+
     collection.before_drop().await;
 }
 

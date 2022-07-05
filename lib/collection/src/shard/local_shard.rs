@@ -1,5 +1,5 @@
 use arc_swap::ArcSwap;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -35,7 +35,7 @@ use crate::shard::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shard::ShardOperation;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
-use crate::{CollectionId, PointRequest, SearchRequest, ShardId};
+use crate::{CollectionId, CountRequest, CountResult, PointRequest, SearchRequest, ShardId};
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
 
@@ -582,6 +582,40 @@ impl ShardOperation for &LocalShard {
             processed_res.collect()
         };
         Ok(top_result)
+    }
+
+    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+        let segments = self.segments().read();
+        let some_segment = segments.iter().next();
+
+        if some_segment.is_none() {
+            return Ok(CountResult { count: 0 });
+        }
+
+        let total_count = if request.exact {
+            let all_points: HashSet<_> = segments
+                .iter()
+                .flat_map(|(_id, segment)| {
+                    segment
+                        .get()
+                        .read()
+                        .read_filtered(None, usize::MAX, request.filter.as_ref())
+                })
+                .collect();
+            all_points.len()
+        } else {
+            segments
+                .iter()
+                .map(|(_id, segment)| {
+                    segment
+                        .get()
+                        .read()
+                        .estimate_points_count(request.filter.as_ref())
+                        .exp
+                })
+                .sum()
+        };
+        Ok(CountResult { count: total_count })
     }
 
     async fn retrieve(
