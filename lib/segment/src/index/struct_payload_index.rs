@@ -134,6 +134,7 @@ impl StructPayloadIndex {
         payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         path: &Path,
+        is_appendable: bool,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
         let config_path = PayloadConfig::get_config_path(path);
@@ -144,7 +145,7 @@ impl StructPayloadIndex {
         };
 
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_existing_column_families(path)?,
+            Database::new_with_existing_column_families(path, is_appendable)?,
         ));
 
         let mut index = StructPayloadIndex {

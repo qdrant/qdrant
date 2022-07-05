@@ -33,8 +33,15 @@ fn create_segment(
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<Segment> {
+    let segment_type = match config.index {
+        Indexes::Plain { .. } => SegmentType::Plain,
+        Indexes::Hnsw { .. } => SegmentType::Indexed,
+    };
+    let appendable_flag =
+    segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
+
     let database = Arc::new(AtomicRefCell::new(
-        Database::new_with_default_column_families(segment_path)?,
+        Database::new_with_default_column_families(segment_path, appendable_flag)?,
     ));
 
     let payload_index_path = segment_path.join("payload_index");
@@ -61,6 +68,7 @@ fn create_segment(
         payload_storage,
         id_tracker.clone(),
         &payload_index_path,
+        appendable_flag,
     )?);
 
     let vector_index: Arc<AtomicRefCell<VectorIndexSS>> = match config.index {
@@ -75,14 +83,6 @@ fn create_segment(
             hnsw_config,
         )?),
     };
-
-    let segment_type = match config.index {
-        Indexes::Plain { .. } => SegmentType::Plain,
-        Indexes::Hnsw { .. } => SegmentType::Indexed,
-    };
-
-    let appendable_flag =
-        segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
 
     Ok(Segment {
         version,

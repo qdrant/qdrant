@@ -332,7 +332,7 @@ mod tests {
     fn test_score_points() {
         let dir = TempDir::new("storage_dir").unwrap();
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_default_column_families(dir.path()).unwrap(),
+            Database::new_with_default_column_families(dir.path(), true).unwrap(),
         ));
         let distance = Distance::Dot;
         let dim = 4;

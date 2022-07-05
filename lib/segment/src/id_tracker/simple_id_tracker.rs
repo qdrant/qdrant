@@ -245,7 +245,7 @@ mod tests {
     fn test_iterator() {
         let dir = TempDir::new("storage_dir").unwrap();
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_default_column_families(dir.path()).unwrap(),
+            Database::new_with_default_column_families(dir.path(), true).unwrap(),
         ));
 
         let mut id_tracker = SimpleIdTracker::open(db).unwrap();

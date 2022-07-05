@@ -330,7 +330,7 @@ mod tests {
         {
             let dir2 = TempDir::new("db_dir").unwrap();
             let db = Arc::new(AtomicRefCell::new(
-                Database::new_with_default_column_families(dir2.path()).unwrap(),
+                Database::new_with_default_column_families(dir2.path(), true).unwrap(),
             ));
             let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
@@ -355,7 +355,7 @@ mod tests {
         {
             let dir2 = TempDir::new("db_dir").unwrap();
             let db = Arc::new(AtomicRefCell::new(
-                Database::new_with_default_column_families(dir2.path()).unwrap(),
+                Database::new_with_default_column_families(dir2.path(), true).unwrap(),
             ));
             let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
@@ -400,7 +400,7 @@ mod tests {
         {
             let dir2 = TempDir::new("db_dir").unwrap();
             let db = Arc::new(AtomicRefCell::new(
-                Database::new_with_default_column_families(dir2.path()).unwrap(),
+                Database::new_with_default_column_families(dir2.path(), true).unwrap(),
             ));
             let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {

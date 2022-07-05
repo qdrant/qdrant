@@ -21,24 +21,25 @@ pub enum DatabaseIterationResult<T> {
 }
 
 impl Database {
-    pub fn new_with_default_column_families(path: &Path) -> OperationResult<Self> {
+    pub fn new_with_default_column_families(path: &Path, is_appendable: bool) -> OperationResult<Self> {
         Self::new_with_column_families(
             path,
             &[DB_VECTOR_CF, DB_PAYLOAD_CF, DB_MAPPING_CF, DB_VERSIONS_CF],
+            is_appendable,
         )
     }
 
-    pub fn new_with_existing_column_families(path: &Path) -> OperationResult<Self> {
+    pub fn new_with_existing_column_families(path: &Path, is_appendable: bool) -> OperationResult<Self> {
         let db_file = path.join("CURRENT");
         let existing_column_families = if db_file.exists() {
             DB::list_cf(&Self::get_options(), path)?
         } else {
             vec![]
         };
-        Self::new_with_column_families(path, &existing_column_families)
+        Self::new_with_column_families(path, &existing_column_families, is_appendable)
     }
 
-    pub fn new_with_column_families<I, N>(path: &Path, column_families: I) -> OperationResult<Self>
+    pub fn new_with_column_families<I, N>(path: &Path, column_families: I, is_appendable: bool) -> OperationResult<Self>
     where
         I: IntoIterator<Item = N>,
         N: AsRef<str>,

@@ -574,7 +574,7 @@ mod tests {
     fn build_random_index(num_points: usize, num_geo_values: usize) -> GeoMapIndex {
         let tmp_dir = TempDir::new("test_dir").unwrap();
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_existing_column_families(&tmp_dir.path().join("test_db")).unwrap(),
+            Database::new_with_existing_column_families(&tmp_dir.path(), true).unwrap(),
         ));
 
         let mut rnd = StdRng::seed_from_u64(42);
@@ -684,7 +684,7 @@ mod tests {
     fn match_cardinality_point_with_multi_far_geo_payload() {
         let tmp_dir = TempDir::new("test_dir").unwrap();
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_existing_column_families(&tmp_dir.path().join("test_db")).unwrap(),
+            Database::new_with_existing_column_families(&tmp_dir.path(), true).unwrap(),
         ));
 
         let mut index = GeoMapIndex::new(db, FIELD_NAME);
@@ -747,7 +747,7 @@ mod tests {
     fn match_cardinality_point_with_multi_close_geo_payload() {
         let tmp_dir = TempDir::new("test_dir").unwrap();
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_existing_column_families(&tmp_dir.path().join("test_db")).unwrap(),
+            Database::new_with_existing_column_families(&tmp_dir.path(), true).unwrap(),
         ));
 
         let mut index = GeoMapIndex::new(db, FIELD_NAME);
@@ -784,7 +784,7 @@ mod tests {
         let tmp_dir = TempDir::new("test_dir").unwrap();
         {
             let db = Arc::new(AtomicRefCell::new(
-                Database::new_with_existing_column_families(&tmp_dir.path().join("test_db"))
+                Database::new_with_existing_column_families(&tmp_dir.path(), true)
                     .unwrap(),
             ));
 
@@ -808,7 +808,7 @@ mod tests {
         }
 
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_existing_column_families(&tmp_dir.path().join("test_db")).unwrap(),
+            Database::new_with_existing_column_families(&tmp_dir.path(), true).unwrap(),
         ));
         let mut new_index = GeoMapIndex::new(db, FIELD_NAME);
         new_index.load().unwrap();

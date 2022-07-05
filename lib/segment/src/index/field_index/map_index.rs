@@ -369,7 +369,7 @@ mod tests {
         data: &[Vec<N>],
         path: &Path,
     ) {
-        let db = Database::new_with_existing_column_families(path).unwrap();
+        let db = Database::new_with_existing_column_families(path, true).unwrap();
         let mut index = MapIndex::<N>::new(Arc::new(AtomicRefCell::new(db)), FIELD_NAME);
         index.recreate().unwrap();
         for (idx, values) in data.iter().enumerate() {
@@ -384,7 +384,7 @@ mod tests {
         data: &[Vec<N>],
         path: &Path,
     ) {
-        let db = Database::new_with_existing_column_families(path).unwrap();
+        let db = Database::new_with_existing_column_families(path, true).unwrap();
         let mut index = MapIndex::<N>::new(Arc::new(AtomicRefCell::new(db)), FIELD_NAME);
         index.load().unwrap();
         for (idx, values) in data.iter().enumerate() {

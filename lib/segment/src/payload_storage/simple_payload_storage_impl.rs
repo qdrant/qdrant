@@ -77,7 +77,7 @@ mod tests {
     fn test_wipe() {
         let dir = TempDir::new("db_dir").unwrap();
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_default_column_families(dir.path()).unwrap(),
+            Database::new_with_default_column_families(dir.path(), true).unwrap(),
         ));
 
         let mut storage = SimplePayloadStorage::open(db).unwrap();
@@ -119,7 +119,7 @@ mod tests {
         let payload: Payload = serde_json::from_str(data).unwrap();
         let dir = TempDir::new("storage_dir").unwrap();
         let db = Arc::new(AtomicRefCell::new(
-            Database::new_with_default_column_families(dir.path()).unwrap(),
+            Database::new_with_default_column_families(dir.path(), true).unwrap(),
         ));
         let mut storage = SimplePayloadStorage::open(db).unwrap();
         storage.assign(100, &payload).unwrap();
