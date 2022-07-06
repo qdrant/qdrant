@@ -1,6 +1,6 @@
 use crate::entry::entry_point::{OperationError, OperationResult};
-use atomic_refcell::AtomicRefCell;
-use rocksdb::{LogLevel, Options, WriteOptions, DB};
+use atomic_refcell::{AtomicRef, AtomicRefCell};
+use rocksdb::{ColumnFamily, LogLevel, Options, WriteOptions, DB};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -46,14 +46,16 @@ impl Database {
         } else {
             let db_file = path.join("CURRENT");
             if db_file.exists() {
-                DB::list_cf(&Self::get_options(), path)
-                    .map_err(|err| OperationError::service_error(&format!("RocksDB list_cf error: {}", err)))?
+                DB::list_cf(&Self::get_options(), path).map_err(|err| {
+                    OperationError::service_error(&format!("RocksDB list_cf error: {}", err))
+                })?
             } else {
                 vec![]
             }
         };
-        let db = DB::open_cf(&Self::get_options(), path, &column_families)
-            .map_err(|err| OperationError::service_error(&format!("RocksDB open_cf error: {}", err)))?;
+        let db = DB::open_cf(&Self::get_options(), path, &column_families).map_err(|err| {
+            OperationError::service_error(&format!("RocksDB open_cf error: {}", err))
+        })?;
         Ok(Self { db, is_appendable })
     }
 
@@ -94,13 +96,12 @@ impl DatabaseColumn {
             ));
         }
         let db = self.database.borrow();
-        let cf_handle = db
-            .db
-            .cf_handle(&self.column_name)
-            .ok_or_else(|| OperationError::service_error("COLUMN"))?;
+        let cf_handle = self.get_column_family(&db)?;
         db.db
             .put_cf_opt(cf_handle, key, value, &Self::get_write_options())
-            .map_err(|err| OperationError::service_error(&format!("RocksDB put_cf error: {}", err)))?;
+            .map_err(|err| {
+                OperationError::service_error(&format!("RocksDB put_cf error: {}", err))
+            })?;
         if *self.put_fixed_key.borrow() {
             db.db
                 .put_cf_opt(
@@ -109,7 +110,12 @@ impl DatabaseColumn {
                     FIXED_VALUE,
                     &Self::get_write_options(),
                 )
-                .map_err(|err| OperationError::service_error(&format!("RocksDB put_cf (fixed key) error: {}", err)))?;
+                .map_err(|err| {
+                    OperationError::service_error(&format!(
+                        "RocksDB put_cf (fixed key) error: {}",
+                        err
+                    ))
+                })?;
             *self.put_fixed_key.borrow_mut() = false;
         }
         Ok(())
@@ -120,14 +126,13 @@ impl DatabaseColumn {
         F: FnOnce(&[u8]) -> T,
     {
         let db = self.database.borrow();
-        let cf_handle = db
-            .db
-            .cf_handle(&self.column_name)
-            .ok_or_else(|| OperationError::service_error("COLUMN"))?;
+        let cf_handle = self.get_column_family(&db)?;
         let result = db
             .db
             .get_pinned_cf(cf_handle, key)
-            .map_err(|err| OperationError::service_error(&format!("RocksDB get_pinned_cf error: {}", err)))?
+            .map_err(|err| {
+                OperationError::service_error(&format!("RocksDB get_pinned_cf error: {}", err))
+            })?
             .map(|value| f(&value));
         Ok(result)
     }
@@ -137,13 +142,10 @@ impl DatabaseColumn {
         K: AsRef<[u8]>,
     {
         let db = self.database.borrow();
-        let cf_handle = db
-            .db
-            .cf_handle(&self.column_name)
-            .ok_or_else(|| OperationError::service_error("COLUMN"))?;
-        db.db
-            .delete_cf(cf_handle, key)
-            .map_err(|err| OperationError::service_error(&format!("RocksDB delete_cf error: {}", err)))?;
+        let cf_handle = self.get_column_family(&db)?;
+        db.db.delete_cf(cf_handle, key).map_err(|err| {
+            OperationError::service_error(&format!("RocksDB delete_cf error: {}", err))
+        })?;
         Ok(())
     }
 
@@ -153,11 +155,7 @@ impl DatabaseColumn {
         T: Default,
     {
         let db = self.database.borrow();
-        let cf_handle = db
-            .db
-            .cf_handle(&self.column_name)
-            .ok_or_else(|| OperationError::service_error("COLUMN"))?;
-
+        let cf_handle = self.get_column_family(&db)?;
         let mut iter = db.db.raw_iterator_cf(&cf_handle);
         iter.seek_to_first();
 
@@ -166,9 +164,9 @@ impl DatabaseColumn {
                 .key()
                 .ok_or_else(|| OperationError::service_error("RocksDB iterator invalid key"))?;
             if key != FIXED_KEY {
-                let value = iter
-                    .value()
-                    .ok_or_else(|| OperationError::service_error("RocksDB iterator invalid value"))?;
+                let value = iter.value().ok_or_else(|| {
+                    OperationError::service_error("RocksDB iterator invalid value")
+                })?;
                 match f((key, value)) {
                     DatabaseIterationResult::Break(result) => return result,
                     DatabaseIterationResult::Continue => {}
@@ -181,15 +179,11 @@ impl DatabaseColumn {
 
     pub fn flush(&self) -> OperationResult<()> {
         let db = self.database.borrow();
-        let column_family = db.db.cf_handle(&self.column_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "COLUMN"
-            ))
-        })?;
+        let column_family = self.get_column_family(&db)?;
 
-        db.db
-            .flush_cf(column_family)
-            .map_err(|err| OperationError::service_error(&format!("RocksDB flush_cf error: {}", err)))?;
+        db.db.flush_cf(column_family).map_err(|err| {
+            OperationError::service_error(&format!("RocksDB flush_cf error: {}", err))
+        })?;
         if db.is_appendable {
             *self.put_fixed_key.borrow_mut() = true;
         }
@@ -201,7 +195,9 @@ impl DatabaseColumn {
         if db.db.cf_handle(&self.column_name).is_none() {
             db.db
                 .create_cf(&self.column_name, &Database::get_options())
-                .map_err(|err| OperationError::service_error(&format!("RocksDB create_cf error: {}", err)))?;
+                .map_err(|err| {
+                    OperationError::service_error(&format!("RocksDB create_cf error: {}", err))
+                })?;
         }
         Ok(())
     }
@@ -214,9 +210,9 @@ impl DatabaseColumn {
     pub fn remove_column_family(&self) -> OperationResult<()> {
         let mut db = self.database.borrow_mut();
         if db.db.cf_handle(&self.column_name).is_some() {
-            db.db
-                .drop_cf(&self.column_name)
-                .map_err(|err| OperationError::service_error(&format!("RocksDB drop_cf error: {}", err)))?;
+            db.db.drop_cf(&self.column_name).map_err(|err| {
+                OperationError::service_error(&format!("RocksDB drop_cf error: {}", err))
+            })?;
         }
         Ok(())
     }
@@ -231,5 +227,17 @@ impl DatabaseColumn {
         write_options.set_sync(false);
         write_options.disable_wal(true);
         write_options
+    }
+
+    fn get_column_family<'a, 'b>(
+        &self,
+        db: &'a AtomicRef<'b, Database>,
+    ) -> OperationResult<&'a ColumnFamily> {
+        db.db.cf_handle(&self.column_name).ok_or_else(|| {
+            OperationError::service_error(&format!(
+                "RocksDB cf_handle error: Cannot find column family {}",
+                &self.column_name
+            ))
+        })
     }
 }
