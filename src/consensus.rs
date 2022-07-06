@@ -73,6 +73,8 @@ impl Consensus {
         // State might be initialized but the node might be shutdown without actually syncing or committing anything.
         let is_new_deployment = state_just_initialized || state_ref.hard_state().term == 0;
         if is_new_deployment {
+            let leader_established_in_ms =
+                config.tick_period_ms * raft_config.max_election_tick() as u64;
             Self::init(
                 &state_ref,
                 bootstrap_peer.clone(),
@@ -82,6 +84,7 @@ impl Consensus {
                 &runtime,
                 sender.clone(),
                 is_leader_established.clone(),
+                leader_established_in_ms,
             )
             .context("Failed to initialize Consensus for new Raft state")?;
         } else {
@@ -118,6 +121,7 @@ impl Consensus {
         runtime: &Runtime,
         sender: SyncSender<Message>,
         is_leader_established: Arc<IsReady>,
+        leader_established_in_ms: u64,
     ) -> anyhow::Result<()> {
         if let Some(bootstrap_peer) = bootstrap_peer {
             log::debug!("Bootstrapping from peer with address: {bootstrap_peer}");
@@ -136,6 +140,8 @@ impl Consensus {
             log::debug!(
                 "Bootstrapping is disabled. Assuming this peer is the first in the network"
             );
+            let tick_period = config.tick_period_ms;
+            log::info!("With current tick period of {tick_period}ms, leader will be established in approximately {leader_established_in_ms}ms. To avoid rejected operations - add peers and submit operations only after this period.");
             // First peer needs to add its own address
             let message = Message::FromClient(serde_cbor::to_vec(&ConsensusOperations::AddPeer(
                 state_ref.this_peer_id(),
