@@ -1,9 +1,11 @@
 mod conversions;
 pub mod local_shard;
 pub mod local_shard_operations;
+pub mod proxy_shard;
 pub mod remote_shard;
 pub mod shard_config;
 
+use crate::shard::proxy_shard::ProxyShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::{
     CollectionInfo, CollectionResult, CollectionUpdateOperations, CountRequest, CountResult,
@@ -24,6 +26,7 @@ pub type ShardId = u32;
 pub enum Shard {
     Local(LocalShard),
     Remote(RemoteShard),
+    Proxy(ProxyShard),
 }
 
 impl Shard {
@@ -31,6 +34,7 @@ impl Shard {
         match self {
             Shard::Local(local_shard) => Arc::new(local_shard),
             Shard::Remote(remote_shard) => Arc::new(remote_shard),
+            Shard::Proxy(proxy_shard) => Arc::new(proxy_shard),
         }
     }
 
@@ -38,6 +42,7 @@ impl Shard {
         match self {
             Shard::Local(local_shard) => local_shard.before_drop().await,
             Shard::Remote(_) => (),
+            Shard::Proxy(proxy_shard) => proxy_shard.before_drop().await,
         }
     }
 
@@ -45,6 +50,7 @@ impl Shard {
         match self {
             Shard::Local(_) => this_peer_id,
             Shard::Remote(remote) => remote.peer_id,
+            Shard::Proxy(_) => this_peer_id,
         }
     }
 }
