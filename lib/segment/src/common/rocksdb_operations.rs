@@ -99,7 +99,12 @@ impl DatabaseColumn {
             .map_err(|_| OperationError::service_error(""))?;
         if *self.put_fixed_key.borrow() {
             db.db
-                .put_cf_opt(cf_handle, FIXED_KEY, FIXED_VALUE, &Self::get_write_options())
+                .put_cf_opt(
+                    cf_handle,
+                    FIXED_KEY,
+                    FIXED_VALUE,
+                    &Self::get_write_options(),
+                )
                 .map_err(|_| OperationError::service_error(""))?;
             *self.put_fixed_key.borrow_mut() = false;
         }
