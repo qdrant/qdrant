@@ -1,5 +1,6 @@
 mod conversions;
 pub mod local_shard;
+pub mod local_shard_operations;
 pub mod remote_shard;
 pub mod shard_config;
 
