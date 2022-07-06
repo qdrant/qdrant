@@ -1,4 +1,5 @@
 use std::cmp::max;
+use std::collections::BTreeSet;
 use std::fs::remove_file;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -10,13 +11,14 @@ use arc_swap::ArcSwap;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
+use segment::index::field_index::CardinalityEstimation;
 use tokio::fs::{copy, create_dir_all};
 use tokio::runtime::{self, Runtime};
 use tokio::sync::{mpsc, mpsc::UnboundedSender, Mutex, RwLock as TokioRwLock};
 
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
-use segment::types::{PayloadStorageType, SegmentConfig};
+use segment::types::{Filter, PayloadStorageType, PointIdType, SegmentConfig};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
@@ -429,6 +431,47 @@ impl LocalShard {
             ))
         })?;
         Ok(())
+    }
+
+    pub async fn estimate_cardinality<'a>(
+        &'a self,
+        filter: Option<&'a Filter>,
+    ) -> CollectionResult<CardinalityEstimation> {
+        let segments = self.segments().read();
+        let some_segment = segments.iter().next();
+
+        if some_segment.is_none() {
+            return Ok(CardinalityEstimation::exact(0));
+        }
+        let cardinality = segments
+            .iter()
+            .map(|(_id, segment)| segment.get().read().estimate_points_count(filter))
+            .fold(CardinalityEstimation::exact(0), |acc, x| {
+                CardinalityEstimation {
+                    primary_clauses: vec![],
+                    min: acc.min + x.min,
+                    exp: acc.exp + x.exp,
+                    max: acc.max + x.max,
+                }
+            });
+        Ok(cardinality)
+    }
+
+    pub async fn read_filtered<'a>(
+        &'a self,
+        filter: Option<&'a Filter>,
+    ) -> CollectionResult<BTreeSet<PointIdType>> {
+        let segments = self.segments().read();
+        let some_segment = segments.iter().next();
+
+        if some_segment.is_none() {
+            return Ok(Default::default());
+        }
+        let all_points: BTreeSet<_> = segments
+            .iter()
+            .flat_map(|(_id, segment)| segment.get().read().read_filtered(None, usize::MAX, filter))
+            .collect();
+        Ok(all_points)
     }
 }
 
