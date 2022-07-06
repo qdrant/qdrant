@@ -16,8 +16,6 @@ pub const DB_VERSIONS_CF: &str = "version";
 pub const FIXED_KEY: &[u8] = &[1; 32];
 pub const FIXED_VALUE: &[u8] = &[0];
 
-pub const LIST_CF_ERROR: &str = "version";
-
 pub struct Database {
     db: DB,
     is_appendable: bool,
