@@ -558,9 +558,7 @@ mod tests {
 
     fn build_random_index(num_points: usize, num_geo_values: usize) -> GeoMapIndex {
         let tmp_dir = TempDir::new("test_dir").unwrap();
-        let db = Arc::new(AtomicRefCell::new(
-            Database::new(&tmp_dir.path(), false, true).unwrap(),
-        ));
+        let db = Database::new(&tmp_dir.path(), false, true).unwrap();
 
         let mut rnd = StdRng::seed_from_u64(42);
         let mut index = GeoMapIndex::new(db, FIELD_NAME);
@@ -668,9 +666,7 @@ mod tests {
     #[test]
     fn match_cardinality_point_with_multi_far_geo_payload() {
         let tmp_dir = TempDir::new("test_dir").unwrap();
-        let db = Arc::new(AtomicRefCell::new(
-            Database::new(&tmp_dir.path(), false, true).unwrap(),
-        ));
+        let db = Database::new(&tmp_dir.path(), false, true).unwrap();
 
         let mut index = GeoMapIndex::new(db, FIELD_NAME);
 
@@ -731,9 +727,7 @@ mod tests {
     #[test]
     fn match_cardinality_point_with_multi_close_geo_payload() {
         let tmp_dir = TempDir::new("test_dir").unwrap();
-        let db = Arc::new(AtomicRefCell::new(
-            Database::new(&tmp_dir.path(), false, true).unwrap(),
-        ));
+        let db = Database::new(&tmp_dir.path(), false, true).unwrap();
 
         let mut index = GeoMapIndex::new(db, FIELD_NAME);
 
@@ -768,9 +762,7 @@ mod tests {
     fn load_from_disk() {
         let tmp_dir = TempDir::new("test_dir").unwrap();
         {
-            let db = Arc::new(AtomicRefCell::new(
-                Database::new(&tmp_dir.path(), false, true).unwrap(),
-            ));
+            let db = Database::new(&tmp_dir.path(), false, true).unwrap();
 
             let mut index = GeoMapIndex::new(db, FIELD_NAME);
 
@@ -791,9 +783,7 @@ mod tests {
             drop(index);
         }
 
-        let db = Arc::new(AtomicRefCell::new(
-            Database::new(&tmp_dir.path(), false, true).unwrap(),
-        ));
+        let db = Database::new(&tmp_dir.path(), false, true).unwrap();
         let mut new_index = GeoMapIndex::new(db, FIELD_NAME);
         new_index.load().unwrap();
 

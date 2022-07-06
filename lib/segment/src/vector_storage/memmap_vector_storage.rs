@@ -329,9 +329,7 @@ mod tests {
 
         {
             let dir2 = TempDir::new("db_dir").unwrap();
-            let db = Arc::new(AtomicRefCell::new(
-                Database::new(dir2.path(), true, true).unwrap(),
-            ));
+            let db = Database::new(dir2.path(), true, true).unwrap();
             let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
@@ -354,9 +352,7 @@ mod tests {
 
         {
             let dir2 = TempDir::new("db_dir").unwrap();
-            let db = Arc::new(AtomicRefCell::new(
-                Database::new(dir2.path(), true, true).unwrap(),
-            ));
+            let db = Database::new(dir2.path(), true, true).unwrap();
             let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
@@ -399,9 +395,7 @@ mod tests {
 
         {
             let dir2 = TempDir::new("db_dir").unwrap();
-            let db = Arc::new(AtomicRefCell::new(
-                Database::new(dir2.path(), true, true).unwrap(),
-            ));
+            let db = Database::new(dir2.path(), true, true).unwrap();
             let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();

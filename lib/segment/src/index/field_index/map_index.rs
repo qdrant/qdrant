@@ -354,7 +354,7 @@ mod tests {
         path: &Path,
     ) {
         let db = Database::new(path, false, true).unwrap();
-        let mut index = MapIndex::<N>::new(Arc::new(AtomicRefCell::new(db)), FIELD_NAME);
+        let mut index = MapIndex::<N>::new(db, FIELD_NAME);
         index.recreate().unwrap();
         for (idx, values) in data.iter().enumerate() {
             index
@@ -369,7 +369,7 @@ mod tests {
         path: &Path,
     ) {
         let db = Database::new(path, false, true).unwrap();
-        let mut index = MapIndex::<N>::new(Arc::new(AtomicRefCell::new(db)), FIELD_NAME);
+        let mut index = MapIndex::<N>::new(db, FIELD_NAME);
         index.load().unwrap();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<N> = HashSet::from_iter(

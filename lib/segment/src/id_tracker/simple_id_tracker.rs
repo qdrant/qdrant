@@ -215,10 +215,8 @@ impl IdTracker for SimpleIdTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atomic_refcell::AtomicRefCell;
     use itertools::Itertools;
     use serde::de::DeserializeOwned;
-    use std::sync::Arc;
     use tempdir::TempDir;
 
     fn check_bincode_serialization<
@@ -242,9 +240,7 @@ mod tests {
     #[test]
     fn test_iterator() {
         let dir = TempDir::new("storage_dir").unwrap();
-        let db = Arc::new(AtomicRefCell::new(
-            Database::new(dir.path(), true, true).unwrap(),
-        ));
+        let db = Database::new(dir.path(), true, true).unwrap();
 
         let mut id_tracker = SimpleIdTracker::open(db).unwrap();
 

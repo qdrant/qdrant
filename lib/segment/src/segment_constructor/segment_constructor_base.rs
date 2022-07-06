@@ -40,11 +40,7 @@ fn create_segment(
     let appendable_flag =
         segment_type == SegmentType::Plain {} && config.storage_type == StorageType::InMemory;
 
-    let database = Arc::new(AtomicRefCell::new(Database::new(
-        segment_path,
-        true,
-        appendable_flag,
-    )?));
+    let database = Database::new(segment_path, true, appendable_flag)?;
 
     let payload_index_path = segment_path.join("payload_index");
     let vector_storage_path = segment_path.join("vector_storage");

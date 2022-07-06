@@ -529,9 +529,7 @@ mod tests {
 
     fn get_index() -> (TempDir, NumericIndex<f64>) {
         let tmp_dir = TempDir::new("test_numeric_index").unwrap();
-        let db = Arc::new(AtomicRefCell::new(
-            Database::new(tmp_dir.path(), false, true).unwrap(),
-        ));
+        let db = Database::new(tmp_dir.path(), false, true).unwrap();
         let index: NumericIndex<_> = NumericIndex::new(db, COLUMN_NAME);
         index.recreate().unwrap();
         (tmp_dir, index)

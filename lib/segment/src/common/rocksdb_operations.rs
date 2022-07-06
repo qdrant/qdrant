@@ -35,7 +35,11 @@ pub enum DatabaseIterationResult<T> {
 }
 
 impl Database {
-    pub fn new(path: &Path, default_columns: bool, is_appendable: bool) -> OperationResult<Self> {
+    pub fn new(
+        path: &Path,
+        default_columns: bool,
+        is_appendable: bool,
+    ) -> OperationResult<Arc<AtomicRefCell<Self>>> {
         let column_families: Vec<String> = if default_columns {
             vec![
                 DB_VECTOR_CF.to_string(),
@@ -56,7 +60,7 @@ impl Database {
         let db = DB::open_cf(&Self::get_options(), path, &column_families).map_err(|err| {
             OperationError::service_error(&format!("RocksDB open_cf error: {}", err))
         })?;
-        Ok(Self { db, is_appendable })
+        Ok(Arc::new(AtomicRefCell::new(Self { db, is_appendable })))
     }
 
     fn get_options() -> Options {

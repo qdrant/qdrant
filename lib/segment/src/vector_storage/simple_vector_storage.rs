@@ -331,9 +331,7 @@ mod tests {
     #[test]
     fn test_score_points() {
         let dir = TempDir::new("storage_dir").unwrap();
-        let db = Arc::new(AtomicRefCell::new(
-            Database::new(dir.path(), true, true).unwrap(),
-        ));
+        let db = Database::new(dir.path(), true, true).unwrap();
         let distance = Distance::Dot;
         let dim = 4;
         let storage = open_simple_vector_storage(db, dim, distance).unwrap();

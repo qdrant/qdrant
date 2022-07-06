@@ -66,16 +66,12 @@ mod tests {
     use super::*;
 
     use crate::common::rocksdb_operations::Database;
-    use atomic_refcell::AtomicRefCell;
-    use std::sync::Arc;
     use tempdir::TempDir;
 
     #[test]
     fn test_wipe() {
         let dir = TempDir::new("db_dir").unwrap();
-        let db = Arc::new(AtomicRefCell::new(
-            Database::new(dir.path(), true, true).unwrap(),
-        ));
+        let db = Database::new(dir.path(), true, true).unwrap();
 
         let mut storage = SimplePayloadStorage::open(db).unwrap();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
@@ -115,9 +111,7 @@ mod tests {
 
         let payload: Payload = serde_json::from_str(data).unwrap();
         let dir = TempDir::new("storage_dir").unwrap();
-        let db = Arc::new(AtomicRefCell::new(
-            Database::new(dir.path(), true, true).unwrap(),
-        ));
+        let db = Database::new(dir.path(), true, true).unwrap();
         let mut storage = SimplePayloadStorage::open(db).unwrap();
         storage.assign(100, &payload).unwrap();
         let pload = storage.payload(100).unwrap();

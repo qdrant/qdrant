@@ -26,7 +26,7 @@ fn init_vector_storage(
     num: usize,
     dist: Distance,
 ) -> Arc<AtomicRefCell<VectorStorageSS>> {
-    let db = Arc::new(AtomicRefCell::new(Database::new(path, true, true).unwrap()));
+    let db = Database::new(path, true, true).unwrap();
     let storage = open_simple_vector_storage(db, dim, dist).unwrap();
     {
         let mut borrowed_storage = storage.borrow_mut();

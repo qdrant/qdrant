@@ -144,11 +144,7 @@ impl StructPayloadIndex {
             PayloadConfig::default()
         };
 
-        let db = Arc::new(AtomicRefCell::new(Database::new(
-            path,
-            false,
-            is_appendable,
-        )?));
+        let db = Database::new(path, false, is_appendable)?;
 
         let mut index = StructPayloadIndex {
             payload,

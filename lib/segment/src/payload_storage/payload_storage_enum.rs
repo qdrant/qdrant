@@ -102,16 +102,12 @@ mod tests {
     use super::*;
     use crate::common::rocksdb_operations::Database;
     use crate::types::Payload;
-    use atomic_refcell::AtomicRefCell;
-    use std::sync::Arc;
     use tempdir::TempDir;
 
     #[test]
     fn test_storage() {
         let dir = TempDir::new("storage_dir").unwrap();
-        let db = Arc::new(AtomicRefCell::new(
-            Database::new(dir.path(), true, true).unwrap(),
-        ));
+        let db = Database::new(dir.path(), true, true).unwrap();
 
         let mut storage: PayloadStorageEnum = SimplePayloadStorage::open(db).unwrap().into();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
@@ -128,9 +124,7 @@ mod tests {
     #[test]
     fn test_on_disk_storage() {
         let dir = TempDir::new("storage_dir").unwrap();
-        let db = Arc::new(AtomicRefCell::new(
-            Database::new(dir.path(), true, true).unwrap(),
-        ));
+        let db = Database::new(dir.path(), true, true).unwrap();
 
         {
             let mut storage: PayloadStorageEnum =
