@@ -713,8 +713,8 @@ mod tests {
 
         index.flush().unwrap();
 
-        let db_ref = index.database.database.clone();
-        let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME);
+        let mut new_index: NumericIndex<f64> =
+            NumericIndex::new(index.database.database, COLUMN_NAME);
         new_index.load().unwrap();
 
         test_cond(
