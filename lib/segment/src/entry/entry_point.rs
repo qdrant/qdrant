@@ -5,7 +5,6 @@ use crate::types::{
     VectorElementType, WithPayload,
 };
 use atomicwrites::Error as AtomicIoError;
-use rocksdb::Error;
 use std::collections::HashMap;
 use std::io::Error as IoError;
 use std::path::PathBuf;
@@ -89,12 +88,6 @@ impl<E> From<AtomicIoError<E>> for OperationError {
 impl From<IoError> for OperationError {
     fn from(err: IoError) -> Self {
         OperationError::service_error(&format!("IO Error: {}", err))
-    }
-}
-
-impl From<Error> for OperationError {
-    fn from(err: Error) -> Self {
-        OperationError::service_error(&format!("persistence error: {}", err))
     }
 }
 
