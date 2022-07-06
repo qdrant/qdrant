@@ -24,6 +24,7 @@ pub struct Database {
 pub struct DatabaseColumn {
     pub database: Arc<AtomicRefCell<Database>>,
     pub column_name: String,
+    pub put_fixed_key: AtomicRefCell<bool>,
 }
 
 pub enum DatabaseIterationResult<T> {
@@ -74,6 +75,7 @@ impl DatabaseColumn {
         Self {
             database,
             column_name: column_name.to_string(),
+            put_fixed_key: AtomicRefCell::new(false),
         }
     }
 
@@ -95,6 +97,12 @@ impl DatabaseColumn {
         db.db
             .put_cf_opt(cf_handle, key, value, &Self::get_write_options())
             .map_err(|_| OperationError::service_error(""))?;
+        if *self.put_fixed_key.borrow() {
+            db.db
+                .put_cf_opt(cf_handle, FIXED_KEY, FIXED_VALUE, &Self::get_write_options())
+                .map_err(|_| OperationError::service_error(""))?;
+            *self.put_fixed_key.borrow_mut() = false;
+        }
         Ok(())
     }
 
@@ -163,18 +171,10 @@ impl DatabaseColumn {
             ))
         })?;
 
-        if db.is_appendable {
-            db.db
-                .put_cf_opt(
-                    column_family,
-                    FIXED_KEY,
-                    FIXED_VALUE,
-                    &Self::get_write_options(),
-                )
-                .map_err(|_| OperationError::service_error(""))?;
-        }
-
         db.db.flush_cf(column_family)?;
+        if db.is_appendable {
+            *self.put_fixed_key.borrow_mut() = true;
+        }
         Ok(())
     }
 
