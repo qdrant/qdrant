@@ -4,6 +4,7 @@ pub mod payload_ops;
 pub mod point_ops;
 pub mod snapshot_ops;
 pub mod types;
+pub mod operation_effect;
 
 use std::collections::HashMap;
 
