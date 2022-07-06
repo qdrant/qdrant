@@ -155,7 +155,6 @@ fn main() -> anyhow::Result<()> {
         // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
         // logs from it to `log` crate
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
-
         let (mut consensus, message_sender) = Consensus::new(
             &slog_logger,
             consensus_state,

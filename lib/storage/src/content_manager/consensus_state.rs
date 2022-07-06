@@ -35,7 +35,7 @@ use super::errors::StorageError;
 use super::CollectionContainer;
 
 const COLLECTIONS_META_WAL_DIR: &str = "collections_meta_wal";
-const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
+pub const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 
 pub mod prelude {
     use crate::content_manager::toc::TableOfContent;
