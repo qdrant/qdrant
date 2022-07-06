@@ -65,6 +65,10 @@ message HnswConfigDiff {
   Note: 1Kb = 1 vector of size 256
   */
   optional uint64 full_scan_threshold = 3;
+  /*
+  Number of parallel threads used for background index building. If 0 - auto selection.
+   */
+  optional uint64 max_indexing_threads = 4;
 }
 
 message WalConfigDiff {

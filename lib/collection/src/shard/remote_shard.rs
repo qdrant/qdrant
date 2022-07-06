@@ -10,17 +10,18 @@ use crate::shard::shard_config::ShardConfig;
 use crate::shard::{PeerId, ShardId, ShardOperation};
 use crate::{
     ChannelService, CollectionError, CollectionId, CollectionInfo, CollectionResult,
-    CollectionUpdateOperations, PointRequest, Record, SearchRequest, UpdateResult,
+    CollectionUpdateOperations, CountRequest, CountResult, PointRequest, Record, SearchRequest,
+    UpdateResult,
 };
 use api::grpc::qdrant::{
     collections_internal_client::CollectionsInternalClient,
-    points_internal_client::PointsInternalClient, GetCollectionInfoRequest,
-    GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal, ScrollPoints,
-    ScrollPointsInternal, SearchPoints, SearchPointsInternal,
+    points_internal_client::PointsInternalClient, CountPoints, CountPointsInternal,
+    GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
+    ScrollPoints, ScrollPointsInternal, SearchPoints, SearchPointsInternal,
 };
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tonic::transport::Channel;
@@ -62,7 +63,6 @@ impl RemoteShard {
         channel_service: ChannelService,
     ) -> CollectionResult<Self> {
         // initialize remote shard config file
-        ShardConfig::init_file(&shard_path)?;
         let shard_config = ShardConfig::new_remote(peer_id);
         shard_config.save(&shard_path)?;
         Ok(RemoteShard::new(
@@ -71,6 +71,16 @@ impl RemoteShard {
             peer_id,
             channel_service,
         ))
+    }
+
+    pub fn restore_snapshot(_snapshot_path: &Path) {
+        // NO extra actions needed for remote shards
+    }
+
+    pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
+        let shard_config = ShardConfig::new_remote(self.peer_id);
+        shard_config.save(target_path)?;
+        Ok(())
     }
 
     fn current_address(&self) -> CollectionResult<Uri> {
@@ -253,6 +263,31 @@ impl ShardOperation for &RemoteShard {
             .map(|scored| scored.try_into())
             .collect();
         result.map_err(|e| e.into())
+    }
+
+    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+        let mut client = self.points_client().await?;
+
+        let count_points = CountPoints {
+            collection_name: self.collection_id.clone(),
+            filter: request.filter.clone().map(|f| f.into()),
+            exact: Some(request.exact),
+        };
+
+        let request = tonic::Request::new(CountPointsInternal {
+            count_points: Some(count_points),
+            shard_id: self.id,
+        });
+        let response = client.count(request).await?;
+        let count_response = response.into_inner();
+        count_response.result.map_or_else(
+            || {
+                Err(CollectionError::service_error(
+                    "Unexpected empty CountResult".to_string(),
+                ))
+            },
+            |count_result| Ok(count_result.into()),
+        )
     }
 
     async fn retrieve(

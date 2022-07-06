@@ -1,10 +1,13 @@
 use crate::config::{CollectionParams, WalConfig};
 use crate::operations::config_diff::{HnswConfigDiff, WalConfigDiff};
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
-use crate::operations::point_ops::{FilterSelector, PointIdsList, PointStruct, PointsSelector};
+use crate::operations::point_ops::{
+    Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector,
+};
 use crate::operations::types::{CollectionStatus, OptimizersStatus, UpdateStatus};
 use crate::{
-    CollectionConfig, CollectionInfo, OptimizersConfig, OptimizersConfigDiff, Record, UpdateResult,
+    CollectionConfig, CollectionInfo, CountResult, OptimizersConfig, OptimizersConfigDiff, Record,
+    UpdateResult,
 };
 use api::grpc::conversions::{payload_to_proto, proto_to_payloads};
 use itertools::Itertools;
@@ -97,6 +100,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     m: Some(config.hnsw_config.m as u64),
                     ef_construct: Some(config.hnsw_config.ef_construct as u64),
                     full_scan_threshold: Some(config.hnsw_config.full_scan_threshold as u64),
+                    max_indexing_threads: Some(config.hnsw_config.max_indexing_threads as u64),
                 }),
                 optimizer_config: Some(api::grpc::qdrant::OptimizersConfigDiff {
                     deleted_threshold: Some(config.optimizer_config.deleted_threshold),
@@ -314,6 +318,32 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
     }
 }
 
+impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
+    type Error = Status;
+
+    fn try_from(value: Batch) -> Result<Self, Self::Error> {
+        let mut points = Vec::new();
+        for (i, p_id) in value.ids.into_iter().enumerate() {
+            let id = Some(p_id.into());
+            let vector = value.vectors.get(i).cloned();
+            let payload = value.payloads.as_ref().and_then(|payloads| {
+                payloads.get(i).map(|payload| match payload {
+                    None => HashMap::new(),
+                    Some(payload) => payload_to_proto(payload.clone()),
+                })
+            });
+            let point = api::grpc::qdrant::PointStruct {
+                id,
+                vector: vector.unwrap_or_default(),
+                payload: payload.unwrap_or_default(),
+            };
+            points.push(point);
+        }
+
+        Ok(points)
+    }
+}
+
 impl TryFrom<api::grpc::qdrant::PointsSelector> for PointsSelector {
     type Error = Status;
 
@@ -359,5 +389,21 @@ impl TryFrom<api::grpc::qdrant::UpdateResult> for UpdateResult {
                 _ => return Err(Status::invalid_argument("Malformed UpdateStatus type")),
             },
         })
+    }
+}
+
+impl From<api::grpc::qdrant::CountResult> for CountResult {
+    fn from(value: api::grpc::qdrant::CountResult) -> Self {
+        Self {
+            count: value.count as usize,
+        }
+    }
+}
+
+impl From<CountResult> for api::grpc::qdrant::CountResult {
+    fn from(value: CountResult) -> Self {
+        Self {
+            count: value.count as u64,
+        }
     }
 }

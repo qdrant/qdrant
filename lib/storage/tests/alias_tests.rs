@@ -24,6 +24,12 @@ mod tests {
 
         let config = StorageConfig {
             storage_path: storage_dir.path().to_str().unwrap().to_string(),
+            snapshots_path: storage_dir
+                .path()
+                .join("snapshots")
+                .to_str()
+                .unwrap()
+                .to_string(),
             on_disk_payload: false,
             optimizers: OptimizersConfig {
                 deleted_threshold: 0.5,

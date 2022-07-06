@@ -27,7 +27,13 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
         collection.before_drop().await;
     }
     for _i in 0..5 {
-        let mut collection = load_local_collection("test".to_string(), collection_dir.path()).await;
+        let collection_path = collection_dir.path();
+        let mut collection = load_local_collection(
+            "test".to_string(),
+            collection_path,
+            &collection_path.join("snapshots"),
+        )
+        .await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
@@ -42,7 +48,13 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
         collection.before_drop().await;
     }
 
-    let mut collection = load_local_collection("test".to_string(), collection_dir.path()).await;
+    let collection_path = collection_dir.path();
+    let mut collection = load_local_collection(
+        "test".to_string(),
+        collection_path,
+        &collection_path.join("snapshots"),
+    )
+    .await;
     assert_eq!(collection.info(None).await.unwrap().vectors_count, 2);
     collection.before_drop().await;
 }
@@ -70,8 +82,13 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
             .unwrap();
         collection.before_drop().await;
     }
-
-    let mut collection = load_local_collection("test".to_string(), collection_dir.path()).await;
+    let collection_path = collection_dir.path();
+    let mut collection = load_local_collection(
+        "test".to_string(),
+        collection_path,
+        &collection_path.join("snapshots"),
+    )
+    .await;
 
     let res = collection
         .scroll_by(
@@ -134,7 +151,13 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         collection.before_drop().await;
     }
 
-    let mut collection = load_local_collection("test".to_string(), collection_dir.path()).await;
+    let collection_path = collection_dir.path();
+    let mut collection = load_local_collection(
+        "test".to_string(),
+        collection_path,
+        &collection_path.join("snapshots"),
+    )
+    .await;
 
     // Test res with filter payload
     let res_with_custom_payload = collection

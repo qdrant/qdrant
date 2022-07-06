@@ -24,20 +24,20 @@ pub const HNSW_GRAPH_FILE: &str = "graph.bin";
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct GraphLayers {
-    max_level: usize,
-    m: usize,
-    m0: usize,
-    ef_construct: usize,
-    level_factor: f64,
+    pub(super) max_level: usize,
+    pub(super) m: usize,
+    pub(super) m0: usize,
+    pub(super) ef_construct: usize,
+    pub(super) level_factor: f64,
     // Exclude points according to "not closer than base" heuristic?
-    use_heuristic: bool,
+    pub(super) use_heuristic: bool,
     // Factor of level probability
-    links_layers: Vec<LayersContainer>,
-    entry_points: EntryPoints,
+    pub(super) links_layers: Vec<LayersContainer>,
+    pub(super) entry_points: EntryPoints,
 
     // Fields used on construction phase only
     #[serde(skip)]
-    visited_pool: VisitedPool,
+    pub(super) visited_pool: VisitedPool,
 }
 
 /// Object contains links between nodes for HNSW search
@@ -506,6 +506,7 @@ mod tests {
     use crate::fixtures::index_fixtures::{
         random_vector, FakeFilterContext, TestRawScorerProducer,
     };
+    use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
     use crate::types::VectorElementType;
@@ -591,42 +592,6 @@ mod tests {
 
     const M: usize = 8;
 
-    fn create_graph_layer<TMetric: Metric, R>(
-        num_vectors: usize,
-        dim: usize,
-        use_heuristic: bool,
-        rng: &mut R,
-    ) -> (TestRawScorerProducer<TMetric>, GraphLayers)
-    where
-        R: Rng + ?Sized,
-    {
-        let m = M;
-        let ef_construct = 16;
-        let entry_points_num = 10;
-
-        let vector_holder = TestRawScorerProducer::<TMetric>::new(dim, num_vectors, rng);
-
-        let mut graph_layers = GraphLayers::new(
-            num_vectors,
-            m,
-            m * 2,
-            ef_construct,
-            entry_points_num,
-            use_heuristic,
-        );
-
-        for idx in 0..(num_vectors as PointOffsetType) {
-            let fake_filter_context = FakeFilterContext {};
-            let added_vector = vector_holder.vectors.get(idx).to_vec();
-            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
-            let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
-            let level = graph_layers.get_random_layer(rng);
-            graph_layers.link_new_point(idx, level, scorer);
-        }
-
-        (vector_holder, graph_layers)
-    }
-
     #[test]
     fn test_search_on_level() {
         let dim = 8;
@@ -686,7 +651,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         let (vector_holder, graph_layers) =
-            create_graph_layer::<CosineMetric, _>(num_vectors, dim, false, &mut rng);
+            create_graph_layer_fixture::<CosineMetric, _>(num_vectors, M, dim, false, &mut rng);
 
         let query = random_vector(&mut rng, dim);
 
@@ -714,7 +679,7 @@ mod tests {
         type M = CosineMetric;
 
         let (vector_holder, graph_layers) =
-            create_graph_layer::<M, _>(num_vectors, dim, false, &mut rng);
+            create_graph_layer_fixture::<M, _>(num_vectors, M, dim, false, &mut rng);
 
         let main_entry = graph_layers
             .entry_points
@@ -733,8 +698,9 @@ mod tests {
 
         let total_links_0: usize = graph_layers.links_layers.iter().map(|x| x[0].len()).sum();
 
+        eprintln!("total_links_0 = {:#?}", total_links_0);
+        eprintln!("num_vectors = {:#?}", num_vectors);
         assert!(total_links_0 > 0);
-
         assert!(total_links_0 as f64 / num_vectors as f64 > M as f64);
 
         let top = 5;
@@ -844,7 +810,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         let (vector_holder, graph_layers) =
-            create_graph_layer::<CosineMetric, _>(num_vectors, dim, true, &mut rng);
+            create_graph_layer_fixture::<CosineMetric, _>(num_vectors, M, dim, true, &mut rng);
 
         let graph_json = serde_json::to_string_pretty(&graph_layers).unwrap();
 

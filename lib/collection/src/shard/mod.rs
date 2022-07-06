@@ -5,8 +5,8 @@ pub mod shard_config;
 
 use crate::shard::remote_shard::RemoteShard;
 use crate::{
-    CollectionInfo, CollectionResult, CollectionUpdateOperations, LocalShard, PeerId, PointRequest,
-    Record, SearchRequest, UpdateResult,
+    CollectionInfo, CollectionResult, CollectionUpdateOperations, CountRequest, CountResult,
+    LocalShard, PeerId, PointRequest, Record, SearchRequest, UpdateResult,
 };
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
@@ -73,6 +73,8 @@ pub trait ShardOperation {
         request: Arc<SearchRequest>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>>;
+
+    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult>;
 
     async fn retrieve(
         &self,

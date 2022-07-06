@@ -69,6 +69,7 @@ mod tests {
             m,
             ef_construct,
             full_scan_threshold,
+            max_indexing_threads: 2,
         };
 
         let mut hnsw_index = HNSWIndex::open(

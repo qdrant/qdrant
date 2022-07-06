@@ -2,6 +2,9 @@ storage:
   # Where to store all the data
   storage_path: ./storage
 
+  # Where to store snapshots
+  snapshots_path: ./snapshots
+
   # If true - point's payload will not be stored in memory.
   # It will be read from the disk every time it is requested.
   # This setting saves RAM by (slightly) increasing the response time.
@@ -61,8 +64,8 @@ storage:
     # Interval between forced flushes.
     flush_interval_sec: 10
     
-    # Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used
-    max_optimization_threads: 0
+    # Max number of threads, which can be used for optimization. If 0 - auto selection.
+    max_optimization_threads: 1
 
   # Default parameters of HNSW Index. Could be override for each collection individually
   hnsw_index:
@@ -75,6 +78,8 @@ storage:
     # in this case full-scan search should be preferred by query planner and additional indexing is not required.
     # Note: 1Kb = 1 vector of size 256
     full_scan_threshold_kb: 10000
+    # Number of parallel threads used for background index building. If 0 - auto selection.
+    max_indexing_threads: 0
 
 service:
 

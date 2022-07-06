@@ -16,6 +16,7 @@ service PointsInternal {
   rpc DeleteFieldIndex (DeleteFieldIndexCollectionInternal) returns (PointsOperationResponse) {}
   rpc Search (SearchPointsInternal) returns (SearchResponse) {}
   rpc Scroll (ScrollPointsInternal) returns (ScrollResponse) {}
+  rpc Count (CountPointsInternal) returns (CountResponse) {}
   rpc Recommend (RecommendPointsInternal) returns (RecommendResponse) {}
   rpc Get (GetPointsInternal) returns (GetResponse) {}
 }
@@ -72,5 +73,10 @@ message RecommendPointsInternal {
 
 message GetPointsInternal {
   GetPoints get_points = 1;
+  uint32 shard_id = 2;
+}
+
+message CountPointsInternal {
+  CountPoints count_points = 1;
   uint32 shard_id = 2;
 }

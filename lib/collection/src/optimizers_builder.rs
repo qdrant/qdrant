@@ -77,12 +77,12 @@ pub fn build_optimizers(
     let threshold_config = OptimizerThresholds {
         memmap_threshold: optimizers_config.memmap_threshold,
         indexing_threshold: optimizers_config.indexing_threshold,
+        max_segment_size: optimizers_config.max_segment_size,
     };
 
     Arc::new(vec![
         Arc::new(MergeOptimizer::new(
             optimizers_config.get_number_segments(),
-            optimizers_config.max_segment_size,
             threshold_config.clone(),
             segments_path.clone(),
             temp_segments_path.clone(),

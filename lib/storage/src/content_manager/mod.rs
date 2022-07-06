@@ -1,3 +1,8 @@
+use self::{
+    collection_meta_ops::CollectionMetaOperations, consensus_state::CollectionsSnapshot,
+    errors::StorageError,
+};
+
 mod alias_mapping;
 pub mod collection_meta_ops;
 mod collections_ops;
@@ -27,4 +32,17 @@ pub mod consensus_ops {
             serde_cbor::from_slice(entry.get_data())
         }
     }
+}
+
+/// Collection container abstraction for consensus
+/// Used to mock ToC in consensus state tests
+pub trait CollectionContainer {
+    fn perform_collection_meta_op(
+        &self,
+        operation: CollectionMetaOperations,
+    ) -> Result<bool, StorageError>;
+
+    fn collections_snapshot(&self) -> CollectionsSnapshot;
+
+    fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError>;
 }
