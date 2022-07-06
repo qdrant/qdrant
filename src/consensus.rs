@@ -60,6 +60,16 @@ impl Consensus {
             ..Default::default()
         };
         raft_config.validate()?;
+        let op_wait = storage::content_manager::consensus_state::DEFAULT_META_OP_WAIT;
+        // Commit might take up to 4 ticks as:
+        // 1 tick - send proposal to leader
+        // 2 tick - leader sends append entries to peers
+        // 3 tick - peer answers leader, that entry is persisted
+        // 4 tick - leader increases commit index and sends it
+        if 4 * Duration::from_millis(config.tick_period_ms) > op_wait {
+            log::warn!("With current tick period of {}ms, operation commit time might exceed default wait timeout: {}ms",
+                 config.tick_period_ms, op_wait.as_millis())
+        }
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .thread_name_fn(|| {
                 static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
