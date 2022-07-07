@@ -18,18 +18,6 @@ pub struct CreateFieldIndex {
     pub field_type: Option<PayloadSchemaType>,
 }
 
-// Deprecated
-pub async fn do_update_points(
-    toc: &TableOfContent,
-    collection_name: &str,
-    operation: CollectionUpdateOperations,
-    shard_selection: Option<ShardId>,
-    wait: bool,
-) -> Result<UpdateResult, StorageError> {
-    toc.update(collection_name, operation, shard_selection, wait)
-        .await
-}
-
 pub async fn do_upsert_points(
     toc: &TableOfContent,
     collection_name: &str,
