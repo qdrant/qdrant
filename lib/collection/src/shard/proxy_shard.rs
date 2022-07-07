@@ -135,7 +135,7 @@ impl ShardOperation for &ProxyShard {
                 PointsOperationEffect::Empty => {}
                 PointsOperationEffect::Some(points) => {
                     for point in points {
-                        // points updates are recorded but never trigger in `changed_alot` 
+                        // points updates are recorded but never trigger in `changed_alot`
                         changed_points_guard.insert(point);
                     }
                 }
