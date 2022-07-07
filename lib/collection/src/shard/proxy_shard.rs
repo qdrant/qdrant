@@ -1,6 +1,7 @@
 use crate::operations::operation_effect::{
     EstimateOperationEffectArea, OperationEffectArea, PointsOperationEffect,
 };
+use crate::update_handler::UpdateSignal;
 use crate::{
     CollectionError, CollectionInfo, CollectionResult, CollectionUpdateOperations, CountRequest,
     CountResult, LocalShard, PointRequest, Record, SearchRequest, ShardOperation, UpdateResult,
@@ -17,7 +18,6 @@ use std::time::Duration;
 use tokio::runtime::Handle;
 use tokio::sync::{oneshot, RwLock};
 use tokio::time::timeout;
-use crate::update_handler::UpdateSignal;
 
 type ChangedPointsSet = Arc<RwLock<HashSet<PointIdType>>>;
 
@@ -80,7 +80,8 @@ impl ProxyShard {
                 attempt += 1;
                 if attempt_timeout > UPDATE_QUEUE_CLEAR_MAX_TIMEOUT {
                     return Err(CollectionError::service_error(
-                        "Timeout while waiting for the wrapped shard to finish the update queue".to_string(),
+                        "Timeout while waiting for the wrapped shard to finish the update queue"
+                            .to_string(),
                     ));
                 }
                 continue;
@@ -92,7 +93,8 @@ impl ProxyShard {
         changed_points_guard.clear();
 
         // Clear changed_alot flag
-        self.changed_alot.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.changed_alot
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 
