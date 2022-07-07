@@ -214,16 +214,16 @@ impl VectorIndex for PlainIndex {
 
     fn batch_search(
         &self,
-        vectors: &[Vec<VectorElementType>],
-        filters: &[Option<Filter>],
-        top: usize,
-        params: Option<&SearchParams>,
-        runtime_handle: &Handle,
+        _vectors: &[Vec<VectorElementType>],
+        _filters: &[Option<Filter>],
+        _top: usize,
+        _params: Option<&SearchParams>,
+        _runtime_handle: &Handle,
     ) -> Vec<Vec<ScoredPointOffset>> {
         todo!()
     }
 
-    fn build_index(&mut self, _stopped: &AtomicBool) -> OperationResult<()> {
+    fn build_index(&self, _stopped: &AtomicBool) -> OperationResult<()> {
         Ok(())
     }
 }

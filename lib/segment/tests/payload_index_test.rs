@@ -96,7 +96,7 @@ mod tests {
                 .unwrap();
         }
 
-        for (field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
+        for (field, indexes) in struct_segment.payload_index.read().field_indexes.iter() {
             for index in indexes {
                 assert!(index.indexed_points() < num_points as usize);
                 if field != FLICKING_KEY {
@@ -126,17 +126,17 @@ mod tests {
 
         let estimation_struct = struct_segment
             .payload_index
-            .borrow()
+            .read()
             .estimate_cardinality(&filter);
 
         let estimation_plain = plain_segment
             .payload_index
-            .borrow()
+            .read()
             .estimate_cardinality(&filter);
 
         let real_number = plain_segment
             .payload_index
-            .borrow()
+            .read()
             .query_points(&filter)
             .count();
 
@@ -175,14 +175,14 @@ mod tests {
 
         let estimation = struct_segment
             .payload_index
-            .borrow()
+            .read()
             .estimate_cardinality(&filter);
 
-        let payload_index = struct_segment.payload_index.borrow();
+        let payload_index = struct_segment.payload_index.read();
         let filter_context = payload_index.filter_context(&filter);
         let exact = struct_segment
             .vector_storage
-            .borrow()
+            .read()
             .iter_ids()
             .filter(|x| filter_context.check(*x))
             .collect_vec()
@@ -235,13 +235,13 @@ mod tests {
 
             let estimation = struct_segment
                 .payload_index
-                .borrow()
+                .read()
                 .estimate_cardinality(&query_filter);
 
             assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
             assert!(estimation.exp <= estimation.max, "{:#?}", estimation);
             assert!(
-                estimation.max <= struct_segment.vector_storage.borrow().vector_count() as usize,
+                estimation.max <= struct_segment.vector_storage.read().vector_count() as usize,
                 "{:#?}",
                 estimation
             );
@@ -305,13 +305,13 @@ mod tests {
 
             let estimation = plain_segment
                 .payload_index
-                .borrow()
+                .read()
                 .estimate_cardinality(&query_filter);
 
             assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
             assert!(estimation.exp <= estimation.max, "{:#?}", estimation);
             assert!(
-                estimation.max <= struct_segment.vector_storage.borrow().vector_count() as usize,
+                estimation.max <= struct_segment.vector_storage.read().vector_count() as usize,
                 "{:#?}",
                 estimation
             );
@@ -329,13 +329,13 @@ mod tests {
 
             let estimation = struct_segment
                 .payload_index
-                .borrow()
+                .read()
                 .estimate_cardinality(&query_filter);
 
             assert!(estimation.min <= estimation.exp, "{:#?}", estimation);
             assert!(estimation.exp <= estimation.max, "{:#?}", estimation);
             assert!(
-                estimation.max <= struct_segment.vector_storage.borrow().vector_count() as usize,
+                estimation.max <= struct_segment.vector_storage.read().vector_count() as usize,
                 "{:#?}",
                 estimation
             );

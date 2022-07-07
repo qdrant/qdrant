@@ -65,12 +65,12 @@ fn create_segment(
             vector_storage.clone(),
             payload_index.clone(),
         )),
-        Indexes::Hnsw(hnsw_config) => Arc::new(Arc::new(HNSWIndex::open(
+        Indexes::Hnsw(hnsw_config) => Arc::new(HNSWIndex::open(
             &vector_index_path,
             vector_storage.clone(),
             payload_index.clone(),
-            RwLock::new(hnsw_config),
-        )?)),
+            hnsw_config,
+        )?),
     };
 
     let segment_type = match config.index {

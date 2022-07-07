@@ -315,7 +315,7 @@ mod tests {
         let dir = TempDir::new("storage_dir").unwrap();
 
         let storage = open_memmap_vector_storage(dir.path(), 4, dist).unwrap();
-        let mut borrowed_storage = storage.borrow_mut();
+        let mut borrowed_storage = storage.write();
 
         let vec1 = vec![1.0, 0.0, 1.0, 1.0];
         let vec2 = vec![1.0, 0.0, 1.0, 0.0];
@@ -328,12 +328,12 @@ mod tests {
             let db = open_db(dir2.path()).unwrap();
             let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
-                let mut borrowed_storage2 = storage2.borrow_mut();
+                let mut borrowed_storage2 = storage2.write();
                 borrowed_storage2.put_vector(vec1).unwrap();
                 borrowed_storage2.put_vector(vec2.clone()).unwrap();
                 borrowed_storage2.put_vector(vec3.clone()).unwrap();
             }
-            borrowed_storage.update_from(&*storage2.borrow()).unwrap();
+            borrowed_storage.update_from(&*storage2.read()).unwrap();
         }
 
         assert_eq!(borrowed_storage.vector_count(), 3);
@@ -351,11 +351,11 @@ mod tests {
             let db = open_db(dir2.path()).unwrap();
             let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
-                let mut borrowed_storage2 = storage2.borrow_mut();
+                let mut borrowed_storage2 = storage2.write();
                 borrowed_storage2.put_vector(vec4).unwrap();
                 borrowed_storage2.put_vector(vec5).unwrap();
             }
-            borrowed_storage.update_from(&*storage2.borrow()).unwrap();
+            borrowed_storage.update_from(&*storage2.read()).unwrap();
         }
 
         assert_eq!(borrowed_storage.vector_count(), 4);
@@ -381,7 +381,7 @@ mod tests {
         let dist = Distance::Dot;
         let dir = TempDir::new("storage_dir").unwrap();
         let storage = open_memmap_vector_storage(dir.path(), 4, dist).unwrap();
-        let mut borrowed_storage = storage.borrow_mut();
+        let mut borrowed_storage = storage.write();
 
         let vec1 = vec![1.0, 0.0, 1.0, 1.0];
         let vec2 = vec![1.0, 0.0, 1.0, 0.0];
@@ -394,14 +394,14 @@ mod tests {
             let db = open_db(dir2.path()).unwrap();
             let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
-                let mut borrowed_storage2 = storage2.borrow_mut();
+                let mut borrowed_storage2 = storage2.write();
                 borrowed_storage2.put_vector(vec1).unwrap();
                 borrowed_storage2.put_vector(vec2).unwrap();
                 borrowed_storage2.put_vector(vec3).unwrap();
                 borrowed_storage2.put_vector(vec4).unwrap();
                 borrowed_storage2.put_vector(vec5).unwrap();
             }
-            borrowed_storage.update_from(&*storage2.borrow()).unwrap();
+            borrowed_storage.update_from(&*storage2.read()).unwrap();
         }
 
         let query = vec![-1.0, -1.0, -1.0, -1.0];

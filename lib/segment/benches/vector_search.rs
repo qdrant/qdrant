@@ -1,5 +1,5 @@
-use atomic_refcell::AtomicRefCell;
 use criterion::{criterion_group, criterion_main, Criterion};
+use parking_lot::RwLock;
 use rand::distributions::Standard;
 use rand::Rng;
 use std::path::Path;
@@ -25,11 +25,11 @@ fn init_vector_storage(
     dim: usize,
     num: usize,
     dist: Distance,
-) -> Arc<AtomicRefCell<VectorStorageSS>> {
+) -> Arc<RwLock<VectorStorageSS>> {
     let db = open_db(path).unwrap();
     let storage = open_simple_vector_storage(db, dim, dist).unwrap();
     {
-        let mut borrowed_storage = storage.borrow_mut();
+        let mut borrowed_storage = storage.write();
         for _i in 0..num {
             let vector: Vec<VectorElementType> = random_vector(dim);
             borrowed_storage.put_vector(vector).unwrap();
@@ -44,7 +44,7 @@ fn benchmark_naive(c: &mut Criterion) {
 
     let dist = Distance::Dot;
     let storage = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
-    let borrowed_storage = storage.borrow();
+    let borrowed_storage = storage.read();
 
     let mut group = c.benchmark_group("storage-score-all");
     group.sample_size(1000);

@@ -341,7 +341,7 @@ mod tests {
         let distance = Distance::Dot;
         let dim = 4;
         let storage = open_simple_vector_storage(db, dim, distance).unwrap();
-        let mut borrowed_storage = storage.borrow_mut();
+        let mut borrowed_storage = storage.write();
 
         let vec0 = vec![1.0, 0.0, 1.0, 1.0];
         let vec1 = vec![1.0, 0.0, 1.0, 0.0];

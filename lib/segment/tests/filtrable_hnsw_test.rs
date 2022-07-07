@@ -71,7 +71,7 @@ mod tests {
             full_scan_threshold,
         };
 
-        let mut hnsw_index = HNSWIndex::open(
+        let hnsw_index = HNSWIndex::open(
             hnsw_dir.path(),
             segment.vector_storage.clone(),
             payload_index_ptr.clone(),
@@ -82,10 +82,10 @@ mod tests {
         hnsw_index.build_index(&stopped).unwrap();
 
         payload_index_ptr
-            .borrow_mut()
+            .write()
             .set_indexed(int_key, PayloadSchemaType::Integer)
             .unwrap();
-        let borrowed_payload_index = payload_index_ptr.borrow();
+        let borrowed_payload_index = payload_index_ptr.read();
         let blocks = borrowed_payload_index
             .payload_blocks(int_key, indexing_threshold)
             .collect_vec();
@@ -98,7 +98,7 @@ mod tests {
 
         let mut coverage: HashMap<PointOffsetType, usize> = Default::default();
         for block in &blocks {
-            let px = payload_index_ptr.borrow();
+            let px = payload_index_ptr.read();
             let filter = Filter::new_must(Condition::Field(block.condition.clone()));
             let points = px.query_points(&filter);
             for point in points {
@@ -151,11 +151,7 @@ mod tests {
                 Some(&SearchParams { hnsw_ef: Some(ef) }),
             );
 
-            let plain_result =
-                segment
-                    .vector_index
-                    .borrow()
-                    .search(&query, filter_query, top, None);
+            let plain_result = segment.vector_index.search(&query, filter_query, top, None);
 
             if plain_result == index_result {
                 hits += 1;

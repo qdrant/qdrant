@@ -32,7 +32,7 @@ pub trait VectorIndex {
     ) -> Vec<Vec<ScoredPointOffset>>;
 
     /// Force internal index rebuild.
-    fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()>;
+    fn build_index(&self, stopped: &AtomicBool) -> OperationResult<()>;
 }
 
 pub trait PayloadIndex {

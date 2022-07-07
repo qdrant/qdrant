@@ -25,12 +25,13 @@ use std::sync::Arc;
 const HNSW_USE_HEURISTIC: bool = true;
 const BYTES_IN_KB: usize = 1024;
 
+#[derive(Clone)]
 pub struct HNSWIndex {
     vector_storage: Arc<RwLock<VectorStorageSS>>,
     payload_index: Arc<RwLock<StructPayloadIndex>>,
     config: Arc<RwLock<HnswGraphConfig>>,
     path: PathBuf,
-    graph: RwLock<GraphLayers>,
+    graph: Arc<RwLock<GraphLayers>>,
 }
 
 impl HNSWIndex {
@@ -38,7 +39,7 @@ impl HNSWIndex {
         path: &Path,
         vector_storage: Arc<RwLock<VectorStorageSS>>,
         payload_index: Arc<RwLock<StructPayloadIndex>>,
-        hnsw_config: RwLock<HnswConfig>,
+        hnsw_config: HnswConfig,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
 
@@ -46,14 +47,10 @@ impl HNSWIndex {
         let config = if config_path.exists() {
             HnswGraphConfig::load(&config_path)?
         } else {
-            let indexing_threshold = hnsw_config.read().full_scan_threshold * BYTES_IN_KB
+            let indexing_threshold = hnsw_config.full_scan_threshold * BYTES_IN_KB
                 / (vector_storage.read().vector_dim() * VECTOR_ELEMENT_SIZE);
 
-            HnswGraphConfig::new(
-                hnsw_config.read().m,
-                hnsw_config.read().ef_construct,
-                indexing_threshold,
-            )
+            HnswGraphConfig::new(hnsw_config.m, hnsw_config.ef_construct, indexing_threshold)
         };
 
         let graph_path = GraphLayers::get_path(path);
@@ -62,7 +59,7 @@ impl HNSWIndex {
         } else {
             let borrowed_vector_storage = vector_storage.read();
             let total_points = borrowed_vector_storage.total_vector_count();
-            let vector_per_threshold = hnsw_config.read().full_scan_threshold * BYTES_IN_KB
+            let vector_per_threshold = hnsw_config.full_scan_threshold * BYTES_IN_KB
                 / (borrowed_vector_storage.vector_dim() * VECTOR_ELEMENT_SIZE);
             GraphLayers::new(
                 borrowed_vector_storage.total_vector_count(),
@@ -79,7 +76,7 @@ impl HNSWIndex {
             payload_index,
             config: Arc::new(RwLock::new(config)),
             path: path.to_owned(),
-            graph,
+            graph: Arc::new(RwLock::new(graph)),
         })
     }
 
@@ -90,7 +87,7 @@ impl HNSWIndex {
 
     fn save_graph(&self) -> OperationResult<()> {
         let graph_path = GraphLayers::get_path(&self.path);
-        self.graph.save(&graph_path)
+        self.graph.write().save(&graph_path)
     }
 
     pub fn save(&self) -> OperationResult<()> {
@@ -125,7 +122,7 @@ impl HNSWIndex {
             let points_scorer =
                 FilteredScorer::new(raw_scorer.as_ref(), Some(block_condition_checker));
 
-            let level = self.graph.point_level(block_point_id);
+            let level = self.graph.read().point_level(block_point_id);
             graph.link_new_point(block_point_id, level, points_scorer);
         }
     }
@@ -152,11 +149,11 @@ impl HNSWIndex {
 
         let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
 
-        self.graph.search(top, ef, points_scorer)
+        self.graph.read().search(top, ef, points_scorer)
     }
 }
 
-impl VectorIndex for Arc<HNSWIndex> {
+impl VectorIndex for HNSWIndex {
     fn search(
         &self,
         vector: &[VectorElementType],
@@ -212,38 +209,23 @@ impl VectorIndex for Arc<HNSWIndex> {
 
     fn batch_search(
         &self,
-        vectors: &[Vec<VectorElementType>],
-        filters: &[Option<Filter>],
-        top: usize,
-        params: Option<&SearchParams>,
-        runtime_handle: &Handle,
+        _vectors: &[Vec<VectorElementType>],
+        _filters: &[Option<Filter>],
+        _top: usize,
+        _params: Option<&SearchParams>,
+        _runtime_handle: &Handle,
     ) -> Vec<Vec<ScoredPointOffset>> {
-        let result = vectors
-            .into_iter()
-            .zip(filters.into_iter())
-            .map(|(vector, filter)| {
-                search(
-                    self.clone(),
-                    vector.to_owned(),
-                    filter.to_owned(),
-                    top,
-                    params.cloned(),
-                )
-            })
-            .map(|f| runtime_handle.spawn(f));
-
         todo!()
     }
 
-    fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
+    fn build_index(&self, stopped: &AtomicBool) -> OperationResult<()> {
         // Build main index graph
-        let vector_storage = self.vector_storage.write();
         let mut rng = thread_rng();
 
-        let total_points = vector_storage.total_vector_count();
+        let total_points = self.vector_storage.read().total_vector_count();
 
         debug!("building hnsw for {}", total_points);
-        let graph = GraphLayers::new(
+        let mut graph = GraphLayers::new(
             total_points,
             self.config.read().m,
             self.config.read().m0,
@@ -252,25 +234,33 @@ impl VectorIndex for Arc<HNSWIndex> {
             HNSW_USE_HEURISTIC,
         );
 
-        self.graph = graph;
+        {
+            let mut w = self.graph.write();
+            std::mem::swap(&mut *w, &mut graph);
+        }
 
-        for vector_id in vector_storage.iter_ids() {
-            if stopped.load(Ordering::Relaxed) {
-                return Err(OperationError::Cancelled {
-                    description: "Cancelled by external thread".to_string(),
-                });
+        {
+            let vector_storage = self.vector_storage.write();
+            for vector_id in vector_storage.iter_ids() {
+                if stopped.load(Ordering::Relaxed) {
+                    return Err(OperationError::Cancelled {
+                        description: "Cancelled by external thread".to_string(),
+                    });
+                }
+                let vector = vector_storage.get_vector(vector_id).unwrap();
+                let raw_scorer = vector_storage.raw_scorer(vector);
+                let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
+
+                let level = self.graph.read().get_random_layer(&mut rng);
+                self.graph
+                    .write()
+                    .link_new_point(vector_id, level, points_scorer);
             }
-            let vector = vector_storage.get_vector(vector_id).unwrap();
-            let raw_scorer = vector_storage.raw_scorer(vector);
-            let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
-
-            let level = self.graph.get_random_layer(&mut rng);
-            self.graph.link_new_point(vector_id, level, points_scorer);
         }
 
         debug!("finish main graph");
 
-        let total_vectors_count = vector_storage.total_vector_count();
+        let total_vectors_count = self.vector_storage.read().total_vector_count();
         let mut block_condition_checker = BuildConditionChecker::new(total_vectors_count);
 
         let payload_index = self.payload_index.read();
@@ -287,6 +277,7 @@ impl VectorIndex for Arc<HNSWIndex> {
                         description: "Cancelled by external thread".to_string(),
                     });
                 }
+
                 // ToDo: re-use graph layer for same payload
                 let mut additional_graph = GraphLayers::new_with_params(
                     self.vector_storage.read().total_vector_count(),
@@ -297,12 +288,13 @@ impl VectorIndex for Arc<HNSWIndex> {
                     HNSW_USE_HEURISTIC,
                     false,
                 );
+
                 self.build_filtered_graph(
                     &mut additional_graph,
                     payload_block.condition,
                     &mut block_condition_checker,
                 );
-                self.graph.merge_from_other(additional_graph);
+                self.graph.write().merge_from_other(additional_graph);
             }
         }
         debug!("finish additional payload field indexing");
@@ -310,8 +302,9 @@ impl VectorIndex for Arc<HNSWIndex> {
     }
 }
 
+#[allow(dead_code)]
 async fn search(
-    index: Arc<HNSWIndex>,
+    index: HNSWIndex,
     vector: Vec<VectorElementType>,
     filter: Option<Filter>,
     top: usize,

@@ -124,7 +124,7 @@ fn test_move_points_to_copy_on_write() {
         eprintln!("{} -> {}", idx, internal);
     }
 
-    let internal_ids = vector_storage.borrow().iter_ids().collect_vec();
+    let internal_ids = vector_storage.read().iter_ids().collect_vec();
 
     eprintln!("internal_ids = {:#?}", internal_ids);
 
