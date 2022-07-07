@@ -826,8 +826,10 @@ impl Collection {
                 DiffConfig::update(optimizer_config_diff, &config.optimizer_config)?;
         }
         for shard in self.all_shards() {
-            if let Shard::Local(shard) = shard {
-                shard.on_optimizer_config_update().await?;
+            match shard {
+                Shard::Local(shard) => shard.on_optimizer_config_update().await?,
+                Shard::Proxy(shard) => shard.on_optimizer_config_update().await?,
+                Shard::Remote(_) => {} // Do nothing for remote shards
             }
         }
         self.config.read().await.save(&self.path)?;
@@ -847,8 +849,10 @@ impl Collection {
             config.optimizer_config = optimizer_config;
         }
         for shard in self.all_shards() {
-            if let Shard::Local(shard) = shard {
-                shard.on_optimizer_config_update().await?;
+            match shard {
+                Shard::Local(shard) => shard.on_optimizer_config_update().await?,
+                Shard::Remote(_) => {} // Do nothing for remote shards
+                Shard::Proxy(proxy) => proxy.on_optimizer_config_update().await?,
             }
         }
         self.config.read().await.save(&self.path)?;
