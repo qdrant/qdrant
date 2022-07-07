@@ -426,6 +426,7 @@ impl Collection {
                 id
             ))),
             Some(shard @ Shard::Local(_)) => Ok(shard),
+            Some(shard @ Shard::Proxy(_)) => Ok(shard),
         }
     }
 
@@ -953,6 +954,9 @@ impl Collection {
             match shard {
                 Shard::Local(local_shard) => {
                     local_shard.create_snapshot(&shard_snapshot_path).await?;
+                }
+                Shard::Proxy(proxy_shard) => {
+                    proxy_shard.create_snapshot(&shard_snapshot_path).await?;
                 }
                 Shard::Remote(remote_shard) => {
                     // copy shard directory to snapshot directory
