@@ -149,7 +149,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
             return Ok(false);
         };
 
-        for (key, value) in self.db_wrapper.iter() {
+        for (key, value) in self.db_wrapper.iter()? {
             let value_idx = u32::from_be_bytes(value.as_ref().try_into().unwrap());
             let (idx, value) = T::decode_key(&key);
             if idx != value_idx {

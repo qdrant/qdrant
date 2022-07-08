@@ -51,7 +51,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
             return Ok(false);
         };
         self.indexed_points = 0;
-        for (record, _) in self.db_wrapper.iter() {
+        for (record, _) in self.db_wrapper.iter()? {
             let record = std::str::from_utf8(&record).map_err(|_| {
                 OperationError::service_error("Index load error: UTF8 error while DB parsing")
             })?;

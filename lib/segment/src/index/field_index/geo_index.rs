@@ -79,7 +79,7 @@ impl GeoMapIndex {
             return Ok(false);
         };
 
-        for (key, value) in self.db_wrapper.iter() {
+        for (key, value) in self.db_wrapper.iter()? {
             let key_str = std::str::from_utf8(&key).map_err(|_| {
                 OperationError::service_error("Index load error: UTF8 error while DB parsing")
             })?;

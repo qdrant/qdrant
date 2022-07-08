@@ -92,7 +92,7 @@ pub fn open_simple_vector_storage(
     let mut deleted_count = 0;
 
     let db_wrapper = DatabaseColumnWrapper::new(database, DB_VECTOR_CF);
-    for (key, value) in db_wrapper.iter() {
+    for (key, value) in db_wrapper.iter()? {
         let point_id: PointOffsetType = bincode::deserialize(&key)
             .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
         let stored_record: StoredRecord = bincode::deserialize(&value)

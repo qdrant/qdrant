@@ -49,7 +49,7 @@ impl OnDiskPayloadStorage {
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        for (key, val) in self.db_wrapper.iter() {
+        for (key, val) in self.db_wrapper.iter()? {
             let do_continue = callback(
                 serde_cbor::from_slice(&key)?,
                 &serde_cbor::from_slice(&val)?,

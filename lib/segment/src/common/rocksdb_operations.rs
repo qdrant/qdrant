@@ -166,18 +166,25 @@ impl DatabaseColumnWrapper {
 
     pub fn iter<'a: 'b, 'b>(
         &self,
-    ) -> ArcAtomicRefCellIterator<Database, DatabaseColumnIterator<'a, 'b>> {
+    ) -> OperationResult<ArcAtomicRefCellIterator<Database, DatabaseColumnIterator<'a, 'b>>> {
+        let db = self.database.borrow();
+        // check column existing
+        self.get_column_family(&db)?;
         let column_name = self.column_name.clone();
-        ArcAtomicRefCellIterator::new(self.database.clone(), move |db| {
-            let handle = db.db.cf_handle(&column_name).unwrap();
-            let mut iter = db.db.raw_iterator_cf(&handle);
-            iter.seek_to_first();
-            DatabaseColumnIterator {
-                handle,
-                iter,
-                just_seeked: true,
-            }
-        })
+        Ok(ArcAtomicRefCellIterator::new(
+            self.database.clone(),
+            move |db| {
+                // column existsing is already checked
+                let handle = db.db.cf_handle(&column_name).unwrap();
+                let mut iter = db.db.raw_iterator_cf(&handle);
+                iter.seek_to_first();
+                DatabaseColumnIterator {
+                    handle,
+                    iter,
+                    just_seeked: true,
+                }
+            },
+        ))
     }
 
     pub fn flush(&self) -> OperationResult<()> {

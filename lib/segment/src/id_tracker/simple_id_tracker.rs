@@ -66,7 +66,7 @@ impl SimpleIdTracker {
         let mut max_internal_id = 0;
 
         let mapping_db_wrapper = DatabaseColumnWrapper::new(database.clone(), DB_MAPPING_CF);
-        for (key, val) in mapping_db_wrapper.iter() {
+        for (key, val) in mapping_db_wrapper.iter()? {
             let external_id = Self::restore_key(&key);
             let internal_id: PointOffsetType = bincode::deserialize(&val).unwrap();
             let replaced = internal_to_external.insert(internal_id, external_id);
@@ -86,7 +86,7 @@ impl SimpleIdTracker {
         }
 
         let versions_db_wrapper = DatabaseColumnWrapper::new(database, DB_VERSIONS_CF);
-        for (key, val) in versions_db_wrapper.iter() {
+        for (key, val) in versions_db_wrapper.iter()? {
             let external_id = Self::restore_key(&key);
             let version: SeqNumberType = bincode::deserialize(&val).unwrap();
             external_to_version.insert(external_id, version);

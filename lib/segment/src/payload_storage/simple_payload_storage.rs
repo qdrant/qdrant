@@ -18,7 +18,7 @@ impl SimplePayloadStorage {
         let mut payload_map: HashMap<PointOffsetType, Payload> = Default::default();
 
         let db_wrapper = DatabaseColumnWrapper::new(database, DB_PAYLOAD_CF);
-        for (key, val) in db_wrapper.iter() {
+        for (key, val) in db_wrapper.iter()? {
             let point_id: PointOffsetType = serde_cbor::from_slice(&key)
                 .map_err(|_| OperationError::service_error("cannot deserialize point id"))?;
             let payload: Payload = serde_cbor::from_slice(&val)
