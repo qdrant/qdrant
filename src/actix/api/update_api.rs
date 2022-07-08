@@ -1,14 +1,13 @@
 use crate::actix::helpers::process_response;
 use crate::common::points::{
     do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_set_payload, do_update_points, do_upsert_points, CreateFieldIndex,
+    do_set_payload, do_upsert_points, CreateFieldIndex,
 };
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{delete, post, put, web, Responder};
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
-use collection::operations::CollectionUpdateOperations;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -17,24 +16,6 @@ use storage::content_manager::toc::TableOfContent;
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct UpdateParam {
     pub wait: Option<bool>,
-}
-
-// Deprecated
-#[post("/collections/{name}")]
-pub async fn update_points(
-    toc: web::Data<Arc<TableOfContent>>,
-    path: web::Path<String>,
-    operation: web::Json<CollectionUpdateOperations>,
-    params: Query<UpdateParam>,
-) -> impl Responder {
-    let collection_name = path.into_inner();
-    let operation = operation.into_inner();
-    let wait = params.wait.unwrap_or(false);
-    let timing = Instant::now();
-
-    let response =
-        do_update_points(&toc.into_inner(), &collection_name, operation, None, wait).await;
-    process_response(response, timing)
 }
 
 #[put("/collections/{name}/points")]
@@ -155,8 +136,7 @@ pub async fn delete_field_index(
 
 // Configure services
 pub fn config_update_api(cfg: &mut web::ServiceConfig) {
-    cfg.service(update_points)
-        .service(upsert_points)
+    cfg.service(upsert_points)
         .service(delete_points)
         .service(set_payload)
         .service(delete_payload)

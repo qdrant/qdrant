@@ -426,6 +426,7 @@ impl Collection {
                 id
             ))),
             Some(shard @ Shard::Local(_)) => Ok(shard),
+            Some(shard @ Shard::Proxy(_)) => Ok(shard),
         }
     }
 
@@ -825,8 +826,10 @@ impl Collection {
                 DiffConfig::update(optimizer_config_diff, &config.optimizer_config)?;
         }
         for shard in self.all_shards() {
-            if let Shard::Local(shard) = shard {
-                shard.on_optimizer_config_update().await?;
+            match shard {
+                Shard::Local(shard) => shard.on_optimizer_config_update().await?,
+                Shard::Proxy(shard) => shard.on_optimizer_config_update().await?,
+                Shard::Remote(_) => {} // Do nothing for remote shards
             }
         }
         self.config.read().await.save(&self.path)?;
@@ -846,8 +849,10 @@ impl Collection {
             config.optimizer_config = optimizer_config;
         }
         for shard in self.all_shards() {
-            if let Shard::Local(shard) = shard {
-                shard.on_optimizer_config_update().await?;
+            match shard {
+                Shard::Local(shard) => shard.on_optimizer_config_update().await?,
+                Shard::Remote(_) => {} // Do nothing for remote shards
+                Shard::Proxy(proxy) => proxy.on_optimizer_config_update().await?,
             }
         }
         self.config.read().await.save(&self.path)?;
@@ -953,6 +958,9 @@ impl Collection {
             match shard {
                 Shard::Local(local_shard) => {
                     local_shard.create_snapshot(&shard_snapshot_path).await?;
+                }
+                Shard::Proxy(proxy_shard) => {
+                    proxy_shard.create_snapshot(&shard_snapshot_path).await?;
                 }
                 Shard::Remote(remote_shard) => {
                     // copy shard directory to snapshot directory

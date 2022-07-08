@@ -60,6 +60,16 @@ impl Consensus {
             ..Default::default()
         };
         raft_config.validate()?;
+        let op_wait = storage::content_manager::consensus_state::DEFAULT_META_OP_WAIT;
+        // Commit might take up to 4 ticks as:
+        // 1 tick - send proposal to leader
+        // 2 tick - leader sends append entries to peers
+        // 3 tick - peer answers leader, that entry is persisted
+        // 4 tick - leader increases commit index and sends it
+        if 4 * Duration::from_millis(config.tick_period_ms) > op_wait {
+            log::warn!("With current tick period of {}ms, operation commit time might exceed default wait timeout: {}ms",
+                 config.tick_period_ms, op_wait.as_millis())
+        }
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .thread_name_fn(|| {
                 static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
@@ -73,6 +83,8 @@ impl Consensus {
         // State might be initialized but the node might be shutdown without actually syncing or committing anything.
         let is_new_deployment = state_just_initialized || state_ref.hard_state().term == 0;
         if is_new_deployment {
+            let leader_established_in_ms =
+                config.tick_period_ms * raft_config.max_election_tick() as u64;
             Self::init(
                 &state_ref,
                 bootstrap_peer.clone(),
@@ -82,6 +94,7 @@ impl Consensus {
                 &runtime,
                 sender.clone(),
                 is_leader_established.clone(),
+                leader_established_in_ms,
             )
             .context("Failed to initialize Consensus for new Raft state")?;
         } else {
@@ -118,6 +131,7 @@ impl Consensus {
         runtime: &Runtime,
         sender: SyncSender<Message>,
         is_leader_established: Arc<IsReady>,
+        leader_established_in_ms: u64,
     ) -> anyhow::Result<()> {
         if let Some(bootstrap_peer) = bootstrap_peer {
             log::debug!("Bootstrapping from peer with address: {bootstrap_peer}");
@@ -136,6 +150,8 @@ impl Consensus {
             log::debug!(
                 "Bootstrapping is disabled. Assuming this peer is the first in the network"
             );
+            let tick_period = config.tick_period_ms;
+            log::info!("With current tick period of {tick_period}ms, leader will be established in approximately {leader_established_in_ms}ms. To avoid rejected operations - add peers and submit operations only after this period.");
             // First peer needs to add its own address
             let message = Message::FromClient(serde_cbor::to_vec(&ConsensusOperations::AddPeer(
                 state_ref.this_peer_id(),

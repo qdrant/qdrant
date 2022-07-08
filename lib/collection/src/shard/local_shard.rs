@@ -1,43 +1,35 @@
-use arc_swap::ArcSwap;
-use std::collections::{HashMap, HashSet};
+use std::cmp::max;
+use std::collections::BTreeSet;
+use std::fs::remove_file;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
 
-use async_trait::async_trait;
+use arc_swap::ArcSwap;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
-use std::cmp::max;
-use std::fs::remove_file;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use segment::index::field_index::CardinalityEstimation;
 use tokio::fs::{copy, create_dir_all};
-use tokio::runtime::{self, Handle, Runtime};
-use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot, Mutex, RwLock as TokioRwLock};
+use tokio::runtime::{self, Runtime};
+use tokio::sync::{mpsc, mpsc::UnboundedSender, Mutex, RwLock as TokioRwLock};
 
-use segment::types::{
-    ExtendedPointId, Filter, PayloadIndexInfo, PayloadKeyType, PayloadStorageType, ScoredPoint,
-    SegmentConfig, SegmentType, WithPayload, WithPayloadInterface,
-};
+use segment::segment::Segment;
+use segment::segment_constructor::{build_segment, load_segment};
+use segment::types::{Filter, PayloadStorageType, PointIdType, SegmentConfig};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
-use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::config::CollectionConfig;
-use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CollectionStatus, OptimizersStatus, Record,
-    UpdateResult, UpdateStatus,
-};
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
 use crate::shard::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
-use crate::shard::ShardOperation;
-use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
+use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
-use crate::{CollectionId, CountRequest, CountResult, PointRequest, SearchRequest, ShardId};
-use segment::segment::Segment;
-use segment::segment_constructor::{build_segment, load_segment};
+use crate::{CollectionId, ShardId};
 
 /// LocalShard
 ///
@@ -45,14 +37,14 @@ use segment::segment_constructor::{build_segment, load_segment};
 ///
 /// Holds all object, required for collection functioning
 pub struct LocalShard {
-    segments: Arc<RwLock<SegmentHolder>>,
-    config: Arc<TokioRwLock<CollectionConfig>>,
-    wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-    update_handler: Arc<Mutex<UpdateHandler>>,
-    runtime_handle: Option<Runtime>,
-    update_sender: ArcSwap<UnboundedSender<UpdateSignal>>,
-    path: PathBuf,
-    before_drop_called: bool,
+    pub(super) segments: Arc<RwLock<SegmentHolder>>,
+    pub(super) config: Arc<TokioRwLock<CollectionConfig>>,
+    pub(super) wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+    pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
+    pub(super) runtime_handle: Option<Runtime>,
+    pub(super) update_sender: ArcSwap<UnboundedSender<UpdateSignal>>,
+    pub(super) path: PathBuf,
+    pub(super) before_drop_called: bool,
 }
 
 /// Shard holds information about segments and WAL.
@@ -114,7 +106,7 @@ impl LocalShard {
         }
     }
 
-    fn segments(&self) -> &RwLock<SegmentHolder> {
+    pub(super) fn segments(&self) -> &RwLock<SegmentHolder> {
         self.segments.deref()
     }
 
@@ -440,191 +432,46 @@ impl LocalShard {
         })?;
         Ok(())
     }
-}
 
-#[async_trait]
-#[allow(unused_variables)]
-impl ShardOperation for &LocalShard {
-    /// Imply interior mutability.
-    /// Performs update operation on this collection asynchronously.
-    /// Explicitly waits for result to be updated.
-    async fn update(
-        &self,
-        operation: CollectionUpdateOperations,
-        wait: bool,
-    ) -> CollectionResult<UpdateResult> {
-        let (callback_sender, callback_receiver) = if wait {
-            let (tx, rx) = oneshot::channel();
-            (Some(tx), Some(rx))
-        } else {
-            (None, None)
-        };
-
-        let operation_id = {
-            let mut wal_lock = self.wal.lock().await;
-            let operation_id = wal_lock.write(&operation)?;
-            self.update_sender
-                .load()
-                .send(UpdateSignal::Operation(OperationData {
-                    op_num: operation_id,
-                    operation,
-                    sender: callback_sender,
-                }))?;
-            operation_id
-        };
-
-        if let Some(receiver) = callback_receiver {
-            let _res = receiver.await??;
-            Ok(UpdateResult {
-                operation_id,
-                status: UpdateStatus::Completed,
-            })
-        } else {
-            Ok(UpdateResult {
-                operation_id,
-                status: UpdateStatus::Acknowledged,
-            })
-        }
-    }
-
-    async fn scroll_by(
-        &self,
-        offset: Option<ExtendedPointId>,
-        limit: usize,
-        with_payload_interface: &WithPayloadInterface,
-        with_vector: bool,
-        filter: Option<&Filter>,
-    ) -> CollectionResult<Vec<Record>> {
-        // ToDo: Make faster points selection with a set
-        let segments = self.segments();
-        let point_ids = segments
-            .read()
-            .iter()
-            .flat_map(|(_, segment)| segment.get().read().read_filtered(offset, limit, filter))
-            .sorted()
-            .dedup()
-            .take(limit)
-            .collect_vec();
-
-        let with_payload = WithPayload::from(with_payload_interface);
-        let mut points =
-            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector).await?;
-        points.sort_by_key(|point| point.id);
-
-        Ok(points)
-    }
-
-    /// Collect overview information about the shard
-    async fn info(&self) -> CollectionResult<CollectionInfo> {
-        let collection_config = self.config.read().await.clone();
-        let segments = self.segments.read();
-        let mut vectors_count = 0;
-        let mut points_count = 0;
-        let mut segments_count = 0;
-        let mut ram_size = 0;
-        let mut disk_size = 0;
-        let mut status = CollectionStatus::Green;
-        let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
-        for (_idx, segment) in segments.iter() {
-            segments_count += 1;
-            let segment_info = segment.get().read().info();
-            if segment_info.segment_type == SegmentType::Special {
-                status = CollectionStatus::Yellow;
-            }
-            vectors_count += segment_info.num_vectors;
-            points_count += segment_info.num_points;
-            disk_size += segment_info.disk_usage_bytes;
-            ram_size += segment_info.ram_usage_bytes;
-            for (key, val) in segment_info.index_schema {
-                schema.insert(key, val);
-            }
-        }
-        if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
-            status = CollectionStatus::Red;
-        }
-
-        let optimizer_status = match &segments.optimizer_errors {
-            None => OptimizersStatus::Ok,
-            Some(error) => OptimizersStatus::Error(error.to_string()),
-        };
-
-        Ok(CollectionInfo {
-            status,
-            optimizer_status,
-            vectors_count,
-            points_count,
-            segments_count,
-            disk_data_size: disk_size,
-            ram_data_size: ram_size,
-            config: collection_config,
-            payload_schema: schema,
-        })
-    }
-
-    async fn search(
-        &self,
-        request: Arc<SearchRequest>,
-        search_runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
-        let res = SegmentsSearcher::search(self.segments(), request.clone(), search_runtime_handle)
-            .await?;
-        let distance = self.config.read().await.params.distance;
-        let processed_res = res.into_iter().map(|mut scored_point| {
-            scored_point.score = distance.postprocess_score(scored_point.score);
-            scored_point
-        });
-
-        let top_result = if let Some(threshold) = request.score_threshold {
-            processed_res
-                .take_while(|scored_point| distance.check_threshold(scored_point.score, threshold))
-                .collect()
-        } else {
-            processed_res.collect()
-        };
-        Ok(top_result)
-    }
-
-    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+    pub async fn estimate_cardinality<'a>(
+        &'a self,
+        filter: Option<&'a Filter>,
+    ) -> CollectionResult<CardinalityEstimation> {
         let segments = self.segments().read();
         let some_segment = segments.iter().next();
 
         if some_segment.is_none() {
-            return Ok(CountResult { count: 0 });
+            return Ok(CardinalityEstimation::exact(0));
         }
-
-        let total_count = if request.exact {
-            let all_points: HashSet<_> = segments
-                .iter()
-                .flat_map(|(_id, segment)| {
-                    segment
-                        .get()
-                        .read()
-                        .read_filtered(None, usize::MAX, request.filter.as_ref())
-                })
-                .collect();
-            all_points.len()
-        } else {
-            segments
-                .iter()
-                .map(|(_id, segment)| {
-                    segment
-                        .get()
-                        .read()
-                        .estimate_points_count(request.filter.as_ref())
-                        .exp
-                })
-                .sum()
-        };
-        Ok(CountResult { count: total_count })
+        let cardinality = segments
+            .iter()
+            .map(|(_id, segment)| segment.get().read().estimate_points_count(filter))
+            .fold(CardinalityEstimation::exact(0), |acc, x| {
+                CardinalityEstimation {
+                    primary_clauses: vec![],
+                    min: acc.min + x.min,
+                    exp: acc.exp + x.exp,
+                    max: acc.max + x.max,
+                }
+            });
+        Ok(cardinality)
     }
 
-    async fn retrieve(
-        &self,
-        request: Arc<PointRequest>,
-        with_payload: &WithPayload,
-        with_vector: bool,
-    ) -> CollectionResult<Vec<Record>> {
-        SegmentsSearcher::retrieve(self.segments(), &request.ids, with_payload, with_vector).await
+    pub async fn read_filtered<'a>(
+        &'a self,
+        filter: Option<&'a Filter>,
+    ) -> CollectionResult<BTreeSet<PointIdType>> {
+        let segments = self.segments().read();
+        let some_segment = segments.iter().next();
+
+        if some_segment.is_none() {
+            return Ok(Default::default());
+        }
+        let all_points: BTreeSet<_> = segments
+            .iter()
+            .flat_map(|(_id, segment)| segment.get().read().read_filtered(None, usize::MAX, filter))
+            .collect();
+        Ok(all_points)
     }
 }
 

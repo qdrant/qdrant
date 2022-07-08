@@ -1,7 +1,7 @@
 use crate::common::points::{
     do_clear_payload, do_count_points, do_create_index, do_delete_index, do_delete_payload,
     do_delete_points, do_get_points, do_scroll_points, do_search_points, do_set_payload,
-    do_update_points, CreateFieldIndex,
+    do_upsert_points, CreateFieldIndex,
 };
 use api::grpc::conversions::proto_to_payloads;
 use api::grpc::qdrant::{
@@ -11,11 +11,10 @@ use api::grpc::qdrant::{
     ScrollResponse, SearchPoints, SearchResponse, SetPayloadPoints, UpsertPoints,
 };
 use collection::operations::payload_ops::DeletePayload;
-use collection::operations::point_ops::{PointInsertOperations, PointOperations};
+use collection::operations::point_ops::PointInsertOperations;
 use collection::operations::types::{
     default_exact_count, PointRequest, ScrollRequest, SearchRequest,
 };
-use collection::operations::CollectionUpdateOperations;
 use collection::shard::ShardId;
 use segment::types::PayloadSchemaType;
 use std::time::Instant;
@@ -43,18 +42,13 @@ pub async fn upsert(
         wait,
         points,
     } = upsert_points;
-
     let points = points
         .into_iter()
         .map(|point| point.try_into())
         .collect::<Result<_, _>>()?;
-
-    let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-        PointInsertOperations::PointsList(points),
-    ));
-
+    let operation = PointInsertOperations::PointsList(points);
     let timing = Instant::now();
-    let result = do_update_points(
+    let result = do_upsert_points(
         toc,
         &collection_name,
         operation,

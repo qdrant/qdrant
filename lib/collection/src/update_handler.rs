@@ -42,6 +42,8 @@ pub enum UpdateSignal {
     Stop,
     /// Empty signal used to trigger optimizers
     Nop,
+    /// Ensures that previous updates are applied
+    Plunger(oneshot::Sender<()>),
 }
 
 /// Signal, used to inform Optimization process
@@ -358,6 +360,11 @@ impl UpdateHandler {
                             "Can't notify optimizers, assume process is dead. Restart is required"
                         );
                         })
+                }
+                UpdateSignal::Plunger(callback_sender) => {
+                    callback_sender.send(()).unwrap_or_else(|_| {
+                        debug!("Can't notify sender, assume nobody is waiting anymore");
+                    });
                 }
             }
         }
