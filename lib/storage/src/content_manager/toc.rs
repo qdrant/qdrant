@@ -381,16 +381,39 @@ impl TableOfContent {
         }
     }
 
+    // lifetime required by rustc as Rust 1.62
     pub async fn get_collection<'a>(
-        &'a self,
-        collection_name: &str,
-    ) -> Result<RwLockReadGuard<'a, Collection>, StorageError> {
+        &self,
+        collection_name: &'a str,
+    ) -> Result<RwLockReadGuard<Collection>, StorageError> {
         let read_collection = self.collections.read().await;
         let real_collection_name = self.resolve_name(collection_name).await?;
         // resolve_name already checked collection existence, unwrap is safe here
         Ok(RwLockReadGuard::map(read_collection, |collection| {
             collection.get(&real_collection_name).unwrap()
         }))
+    }
+
+    /// Initiate shard transfer.
+    ///
+    /// Fails if the collection does not exist
+    pub async fn initiate_shard_transfer(
+        &'_ self, // lifetime required by rustc as Rust 1.62
+        collection_name: String,
+        shard_id: ShardId,
+    ) -> Result<(), StorageError> {
+        log::info!(
+            "Initiating shard {}:{} for receiving transfer",
+            collection_name,
+            shard_id
+        );
+        let real_collection_name = self.resolve_name(&collection_name).await?;
+        let mut write_collections = self.collections.write().await;
+        log::info!("Real name {}", real_collection_name);
+        //safe unwrap because the existence is checked in `resolve_name`
+        let collection = write_collections.get_mut(&real_collection_name).unwrap();
+        collection.initiate_shard_transfer(shard_id).await?;
+        Ok(())
     }
 
     /// Recommend points using positive and negative example from the request

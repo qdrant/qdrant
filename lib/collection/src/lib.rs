@@ -15,6 +15,7 @@ use crate::operations::types::{CountRequest, CountResult, PointRequest};
 use crate::operations::OperationToShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::{ShardConfig, ShardType};
+use crate::shard::shard_transfer::ShardTransfer;
 use crate::shard::ShardOperation;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use config::CollectionConfig;
@@ -258,6 +259,7 @@ impl StorageVersion for CollectionVersion {
 pub struct Collection {
     id: CollectionId,
     shards: HashMap<ShardId, Shard>,
+    shard_transfers: HashMap<ShardId, ShardTransfer>,
     ring: HashRing<ShardId>,
     config: Arc<RwLock<CollectionConfig>>,
     /// Tracks whether `before_drop` fn has been called.
@@ -322,6 +324,7 @@ impl Collection {
         Ok(Self {
             id,
             shards,
+            shard_transfers: Default::default(),
             ring,
             config: shared_config,
             before_drop_called: false,
@@ -403,6 +406,7 @@ impl Collection {
         Self {
             id,
             shards,
+            shard_transfers: Default::default(), // TODO load existing `shard_transfers`
             ring,
             config: shared_config,
             before_drop_called: false,
@@ -413,6 +417,10 @@ impl Collection {
 
     pub fn shard_by_id(&self, id: ShardId) -> Option<&Shard> {
         self.shards.get(&id)
+    }
+
+    pub fn shard_transfer_by_id(&self, id: ShardId) -> Option<&ShardTransfer> {
+        self.shard_transfers.get(&id)
     }
 
     fn local_shard_by_id(&self, id: ShardId) -> CollectionResult<&Shard> {
@@ -427,6 +435,14 @@ impl Collection {
             ))),
             Some(shard @ Shard::Local(_)) => Ok(shard),
             Some(shard @ Shard::Proxy(_)) => Ok(shard),
+        }
+    }
+
+    /// A shard transfer must have a corresponding RemoteShard defined
+    pub fn transfer_shard_by_id(&self, id: ShardId) -> Option<&LocalShard> {
+        match (self.shards.get(&id), self.shard_transfers.get(&id)) {
+            (Some(Shard::Remote(_)), Some(shard_transfer)) => Some(shard_transfer.inner_shard()),
+            _ => None,
         }
     }
 
@@ -447,14 +463,26 @@ impl Collection {
         self.shards.values()
     }
 
+    /// Handle collection updates from peers.
+    ///
+    /// Shard transfer aware.
     pub async fn update_from_peer(
         &self,
         operation: CollectionUpdateOperations,
         shard_selection: ShardId,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        let local_shard = self.local_shard_by_id(shard_selection)?;
-        local_shard.get().update(operation.clone(), wait).await
+        let target_shard = match self.local_shard_by_id(shard_selection) {
+            Ok(local_shard) => local_shard.get(),
+            Err(err) => {
+                // verify if maybe it targets a shard transfer
+                match self.transfer_shard_by_id(shard_selection) {
+                    None => return Err(err),
+                    Some(shard_transfer) => Arc::new(shard_transfer),
+                }
+            }
+        };
+        target_shard.update(operation.clone(), wait).await
     }
 
     pub async fn update_from_client(
@@ -895,6 +923,12 @@ impl Collection {
             .map(|(_, shard)| shard.before_drop())
             .collect();
         futures.collect::<Vec<()>>().await;
+        let futures: FuturesUnordered<_> = self
+            .shard_transfers
+            .iter_mut()
+            .map(|(_, shard)| shard.before_drop())
+            .collect();
+        futures.collect::<Vec<()>>().await;
         self.before_drop_called = true
     }
 
@@ -1020,6 +1054,32 @@ impl Collection {
         }
 
         Ok(())
+    }
+
+    /// Initiate shard transfer
+    pub async fn initiate_shard_transfer(&mut self, shard_id: ShardId) -> CollectionResult<()> {
+        // check if shard transfer already present
+        if self.shard_transfers.contains_key(&shard_id) {
+            return Err(CollectionError::NotFound {
+                what: format!(
+                    "A shard transfer is already in-progress for shard {}",
+                    shard_id
+                ),
+            });
+        }
+        // validate that the shard is known as a remote shard
+        if let Some(Shard::Remote(_)) = self.shards.get(&shard_id) {
+            let collection_id = self.id.clone();
+            let transfer_shard =
+                ShardTransfer::new(shard_id, collection_id, &self.path, self.config.clone())
+                    .await?;
+            self.shard_transfers.insert(shard_id, transfer_shard);
+            Ok(())
+        } else {
+            Err(CollectionError::BadRequest {
+                description: "A shard transfer must target an existing remote shard".to_string(),
+            })
+        }
     }
 }
 

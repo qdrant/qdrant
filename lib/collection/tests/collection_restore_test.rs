@@ -23,7 +23,8 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
     {
-        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+        let mut collection =
+            simple_collection_fixture(collection_dir.path(), shard_number, 0).await;
         collection.before_drop().await;
     }
     for _i in 0..5 {
@@ -68,7 +69,8 @@ async fn test_collection_payload_reloading() {
 async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
     {
-        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+        let mut collection =
+            simple_collection_fixture(collection_dir.path(), shard_number, 0).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
@@ -133,7 +135,8 @@ async fn test_collection_payload_custom_payload() {
 async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
     {
-        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+        let mut collection =
+            simple_collection_fixture(collection_dir.path(), shard_number, 0).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![0.into(), 1.into()],

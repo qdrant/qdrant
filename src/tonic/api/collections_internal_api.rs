@@ -1,7 +1,12 @@
 use crate::tonic::api::collections_common::get;
 use api::grpc::qdrant::collections_internal_server::CollectionsInternal;
-use api::grpc::qdrant::{GetCollectionInfoRequestInternal, GetCollectionInfoResponse};
+use api::grpc::qdrant::{
+    CollectionOperationResponse, GetCollectionInfoRequestInternal, GetCollectionInfoResponse,
+    InitiateShardTransferRequest,
+};
 use std::sync::Arc;
+use std::time::Instant;
+use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
@@ -35,5 +40,27 @@ impl CollectionsInternal for CollectionsInternalService {
             Some(shard_id),
         )
         .await
+    }
+
+    async fn initiate(
+        &self,
+        request: Request<InitiateShardTransferRequest>,
+    ) -> Result<Response<CollectionOperationResponse>, Status> {
+        let timing = Instant::now();
+        let InitiateShardTransferRequest {
+            collection_name,
+            shard_id,
+        } = request.into_inner();
+
+        self.toc
+            .initiate_shard_transfer(collection_name, shard_id)
+            .await
+            .map_err(error_to_status)?;
+
+        let response = CollectionOperationResponse {
+            result: true,
+            time: timing.elapsed().as_secs_f64(),
+        };
+        Ok(Response::new(response))
     }
 }

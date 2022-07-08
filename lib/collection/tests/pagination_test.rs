@@ -16,7 +16,7 @@ async fn test_collection_paginated_search() {
 async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     let collection_dir = tempdir::TempDir::new("test_collection_paginated_search").unwrap();
 
-    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number, 0).await;
 
     // Upload 1000 random vectors to the collection
     let mut points = Vec::new();

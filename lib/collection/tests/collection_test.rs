@@ -29,7 +29,7 @@ async fn test_collection_updater() {
 async fn test_collection_updater_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
-    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number, 0).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
@@ -93,7 +93,7 @@ async fn test_collection_search_with_payload_and_vector() {
 async fn test_collection_search_with_payload_and_vector_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
-    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number, 0).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
@@ -170,7 +170,8 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
     {
-        let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+        let mut collection =
+            simple_collection_fixture(collection_dir.path(), shard_number, 0).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             Batch {
                 ids: vec![0, 1, 2, 3, 4]
@@ -291,7 +292,7 @@ async fn test_recommendation_api() {
 
 async fn test_recommendation_api_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
-    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number, 0).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
@@ -352,7 +353,7 @@ async fn test_read_api() {
 
 async fn test_read_api_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
-    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number, 0).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         Batch {
@@ -409,7 +410,7 @@ async fn test_collection_delete_points_by_filter() {
 async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) {
     let collection_dir = TempDir::new("collection").unwrap();
 
-    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+    let mut collection = simple_collection_fixture(collection_dir.path(), shard_number, 0).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
@@ -479,4 +480,22 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     assert_eq!(result.points.get(1).unwrap().id, 2.into());
     assert_eq!(result.points.get(2).unwrap().id, 4.into());
     collection.before_drop().await;
+}
+
+#[tokio::test]
+async fn test_collection_initiate_shard_transfer() {
+    let collection_dir = TempDir::new("collection").unwrap();
+
+    let mut collection = simple_collection_fixture(collection_dir.path(), 2, 1).await;
+    // shard 0 is local and 1 is remote
+    collection.initiate_shard_transfer(1).await.unwrap();
+    // all shards defined
+    assert!(collection.shard_by_id(0).is_some());
+    assert!(collection.shard_by_id(1).is_some());
+    // one shard transfer defined
+    assert!(collection.shard_transfer_by_id(0).is_none());
+    assert!(collection.shard_transfer_by_id(1).is_some());
+    // check that it is seen as valid transfer
+    assert!(collection.transfer_shard_by_id(1).is_some());
+    collection.before_drop().await
 }

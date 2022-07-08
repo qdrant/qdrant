@@ -4,6 +4,7 @@ pub mod local_shard_operations;
 pub mod proxy_shard;
 pub mod remote_shard;
 pub mod shard_config;
+pub mod shard_transfer;
 
 use crate::shard::proxy_shard::ProxyShard;
 use crate::shard::remote_shard::RemoteShard;

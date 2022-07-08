@@ -879,6 +879,15 @@ pub struct GetCollectionInfoRequestInternal {
     #[prost(uint32, tag="2")]
     pub shard_id: u32,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InitiateShardTransferRequest {
+    /// Name of the collection
+    #[prost(string, tag="1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Id of the temporary shard
+    #[prost(uint32, tag="2")]
+    pub shard_id: u32,
+}
 /// Generated client implementations.
 pub mod collections_internal_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -943,6 +952,8 @@ pub mod collections_internal_client {
             self.inner = self.inner.accept_gzip();
             self
         }
+        ///
+        ///Get collection info
         pub async fn get(
             &mut self,
             request: impl tonic::IntoRequest<super::GetCollectionInfoRequestInternal>,
@@ -962,6 +973,27 @@ pub mod collections_internal_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        ///
+        ///Initiate shard transfer
+        pub async fn initiate(
+            &mut self,
+            request: impl tonic::IntoRequest<super::InitiateShardTransferRequest>,
+        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.CollectionsInternal/Initiate",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -971,10 +1003,18 @@ pub mod collections_internal_server {
     ///Generated trait containing gRPC methods that should be implemented for use with CollectionsInternalServer.
     #[async_trait]
     pub trait CollectionsInternal: Send + Sync + 'static {
+        ///
+        ///Get collection info
         async fn get(
             &self,
             request: tonic::Request<super::GetCollectionInfoRequestInternal>,
         ) -> Result<tonic::Response<super::GetCollectionInfoResponse>, tonic::Status>;
+        ///
+        ///Initiate shard transfer
+        async fn initiate(
+            &self,
+            request: tonic::Request<super::InitiateShardTransferRequest>,
+        ) -> Result<tonic::Response<super::CollectionOperationResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct CollectionsInternalServer<T: CollectionsInternal> {
@@ -1053,6 +1093,44 @@ pub mod collections_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.CollectionsInternal/Initiate" => {
+                    #[allow(non_camel_case_types)]
+                    struct InitiateSvc<T: CollectionsInternal>(pub Arc<T>);
+                    impl<
+                        T: CollectionsInternal,
+                    > tonic::server::UnaryService<super::InitiateShardTransferRequest>
+                    for InitiateSvc<T> {
+                        type Response = super::CollectionOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::InitiateShardTransferRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).initiate(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = InitiateSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
