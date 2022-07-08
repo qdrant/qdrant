@@ -15,6 +15,13 @@ pub const DB_PAYLOAD_CF: &str = "payload";
 pub const DB_MAPPING_CF: &str = "mapping";
 pub const DB_VERSIONS_CF: &str = "version";
 
+/// Each rocksdb column contains this key with constant value
+/// This is needed to avoid trivial move compaction:
+/// https://github.com/facebook/rocksdb/wiki/Compaction-Trivial-Move
+/// Trivial move compaction makes a bug when user writes data slowly.
+/// When user makes 1 write between flush calls, trivial move compaction makes sst file for each user write
+/// and it appears a ton of sst files.
+/// Manual compaction works slowly that's why we use this fixed key-value pair to avoid using trivial move compaction
 pub const FIXED_KEY: &[u8] = &[0xff, 0x07, 0xaf, 0x90, 0x7b, 0x07, 0x55, 0xd0];
 pub const FIXED_VALUE: &[u8] = &[0];
 
