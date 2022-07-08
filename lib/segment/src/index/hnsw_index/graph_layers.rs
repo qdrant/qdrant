@@ -6,14 +6,11 @@ use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedList, VisitedPool};
 use crate::spaces::tools::FixedLengthPriorityQueue;
-use crate::types::{PointOffsetType, ScoreType};
+use crate::types::PointOffsetType;
 use crate::vector_storage::ScoredPointOffset;
 use itertools::Itertools;
-use rand::distributions::Uniform;
-use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::cmp::{max, min};
-use std::collections::BinaryHeap;
+use std::cmp::max;
 use std::path::{Path, PathBuf};
 
 pub type LinkContainer = Vec<PointOffsetType>;
@@ -117,30 +114,6 @@ impl GraphLayers {
         }
     }
 
-    /// Generate random level for a new point, according to geometric distribution
-    pub fn get_random_layer<R>(&self, rng: &mut R) -> usize
-    where
-        R: Rng + ?Sized,
-    {
-        let distribution = Uniform::new(0.0, 1.0);
-        let sample: f64 = rng.sample(distribution);
-        let picked_level = -sample.ln() * self.level_factor;
-        picked_level.round() as usize
-    }
-
-    fn set_levels(&mut self, point_id: PointOffsetType, level: usize) {
-        if self.links_layers.len() <= point_id as usize {
-            self.links_layers.resize(point_id as usize, vec![]);
-        }
-        let point_layers = &mut self.links_layers[point_id as usize];
-        while point_layers.len() <= level {
-            let mut links = vec![];
-            links.reserve(self.m);
-            point_layers.push(links);
-        }
-        self.max_level = max(level, self.max_level);
-    }
-
     /// Greedy search for closest points within a single graph layer
     fn _search_on_level(
         &self,
@@ -236,201 +209,6 @@ impl GraphLayers {
         current_point
     }
 
-    /// Connect new point to links, so that links contains only closest points
-    fn connect_new_point<F>(
-        links: &mut LinkContainer,
-        new_point_id: PointOffsetType,
-        target_point_id: PointOffsetType,
-        level_m: usize,
-        mut score_internal: F,
-    ) where
-        F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
-    {
-        // ToDo: binary search here ? (most likely does not worth it)
-        let new_to_target = score_internal(target_point_id, new_point_id);
-
-        let mut id_to_insert = links.len();
-        for (i, &item) in links.iter().enumerate() {
-            let target_to_link = score_internal(target_point_id, item);
-            if target_to_link < new_to_target {
-                id_to_insert = i;
-                break;
-            }
-        }
-
-        if links.len() < level_m {
-            links.insert(id_to_insert, new_point_id);
-        } else if id_to_insert != links.len() {
-            links.pop();
-            links.insert(id_to_insert, new_point_id);
-        }
-    }
-
-    /// <https://github.com/nmslib/hnswlib/issues/99>
-    fn select_candidate_with_heuristic_from_sorted<F>(
-        candidates: impl Iterator<Item = ScoredPointOffset>,
-        m: usize,
-        mut score_internal: F,
-    ) -> Vec<PointOffsetType>
-    where
-        F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
-    {
-        let mut result_list = vec![];
-        result_list.reserve(m);
-        for current_closest in candidates {
-            if result_list.len() >= m {
-                break;
-            }
-            let mut is_good = true;
-            for &selected_point in &result_list {
-                let dist_to_already_selected = score_internal(current_closest.idx, selected_point);
-                if dist_to_already_selected > current_closest.score {
-                    is_good = false;
-                    break;
-                }
-            }
-            if is_good {
-                result_list.push(current_closest.idx);
-            }
-        }
-
-        result_list
-    }
-
-    /// <https://github.com/nmslib/hnswlib/issues/99>
-    fn select_candidates_with_heuristic<F>(
-        candidates: FixedLengthPriorityQueue<ScoredPointOffset>,
-        m: usize,
-        score_internal: F,
-    ) -> Vec<PointOffsetType>
-    where
-        F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
-    {
-        let closest_iter = candidates.into_iter();
-        Self::select_candidate_with_heuristic_from_sorted(closest_iter, m, score_internal)
-    }
-
-    pub fn link_new_point(
-        &mut self,
-        point_id: PointOffsetType,
-        level: usize,
-        mut points_scorer: FilteredScorer,
-    ) {
-        // Check if there is an suitable entry point
-        //   - entry point level if higher or equal
-        //   - it satisfies filters
-
-        self.set_levels(point_id, level);
-
-        let entry_point_opt = self.entry_points.new_point(point_id, level, |point_id| {
-            points_scorer.check_point(point_id)
-        });
-        match entry_point_opt {
-            // New point is a new empty entry (for this filter, at least)
-            // We can't do much here, so just quit
-            None => {}
-
-            // Entry point found.
-            Some(entry_point) => {
-                let mut level_entry = if entry_point.level > level {
-                    // The entry point is higher than a new point
-                    // Let's find closest one on same level
-
-                    // greedy search for a single closest point
-                    self.search_entry(
-                        entry_point.point_id,
-                        entry_point.level,
-                        level,
-                        &mut points_scorer,
-                    )
-                } else {
-                    ScoredPointOffset {
-                        idx: entry_point.point_id,
-                        score: points_scorer.score_internal(point_id, entry_point.point_id),
-                    }
-                };
-                // minimal common level for entry points
-                let linking_level = min(level, entry_point.level);
-
-                for curr_level in (0..=linking_level).rev() {
-                    let level_m = self.get_m(curr_level);
-                    let existing_links = &self.links_layers[point_id as usize][curr_level];
-
-                    let nearest_points = self.search_on_level(
-                        level_entry,
-                        curr_level,
-                        self.ef_construct,
-                        &mut points_scorer,
-                        existing_links,
-                    );
-
-                    let scorer = |a, b| points_scorer.score_internal(a, b);
-
-                    if self.use_heuristic {
-                        let selected_nearest =
-                            Self::select_candidates_with_heuristic(nearest_points, level_m, scorer);
-                        self.links_layers[point_id as usize][curr_level]
-                            .clone_from(&selected_nearest);
-
-                        for &other_point in &selected_nearest {
-                            let other_point_links =
-                                &mut self.links_layers[other_point as usize][curr_level];
-                            if other_point_links.len() < level_m {
-                                // If linked point is lack of neighbours
-                                other_point_links.push(point_id);
-                            } else {
-                                let mut candidates = BinaryHeap::with_capacity(level_m + 1);
-                                candidates.push(ScoredPointOffset {
-                                    idx: point_id,
-                                    score: scorer(point_id, other_point),
-                                });
-                                for other_point_link in
-                                    other_point_links.iter().take(level_m).copied()
-                                {
-                                    candidates.push(ScoredPointOffset {
-                                        idx: other_point_link,
-                                        score: scorer(other_point_link, other_point),
-                                    });
-                                }
-                                let selected_candidates =
-                                    Self::select_candidate_with_heuristic_from_sorted(
-                                        candidates.into_sorted_vec().into_iter().rev(),
-                                        level_m,
-                                        scorer,
-                                    );
-                                other_point_links.clear(); // this do not free memory, which is good
-                                for selected in selected_candidates.iter().copied() {
-                                    other_point_links.push(selected);
-                                }
-                            }
-                        }
-                    } else {
-                        for nearest_point in &nearest_points {
-                            Self::connect_new_point(
-                                &mut self.links_layers[point_id as usize][curr_level],
-                                nearest_point.idx,
-                                point_id,
-                                level_m,
-                                scorer,
-                            );
-
-                            Self::connect_new_point(
-                                &mut self.links_layers[nearest_point.idx as usize][curr_level],
-                                point_id,
-                                nearest_point.idx,
-                                level_m,
-                                scorer,
-                            );
-                            if nearest_point.score > level_entry.score {
-                                level_entry = *nearest_point;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     pub fn merge_from_other(&mut self, other: GraphLayers) {
         let mut visited_list = self.visited_pool.get(self.num_points());
         if other.links_layers.len() > self.links_layers.len() {
@@ -508,17 +286,18 @@ mod tests {
     };
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
-    use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
+    use crate::spaces::simple::{CosineMetric, DotProductMetric/*, EuclidMetric*/};
     use crate::types::VectorElementType;
-    use crate::vector_storage::RawScorer;
+    //use crate::vector_storage::RawScorer;
     use itertools::Itertools;
     use rand::rngs::StdRng;
-    use rand::seq::SliceRandom;
+    //use rand::seq::SliceRandom;
     use rand::SeedableRng;
     use std::fs::File;
     use std::io::Write;
     use tempdir::TempDir;
 
+    /*
     #[test]
     fn test_connect_new_point() {
         let num_points = 10;
@@ -576,6 +355,7 @@ mod tests {
         }
         assert_eq!(graph_layers.links(0, 0), &vec![1, 2, 3, 4, 5, 6]);
     }
+    */
 
     fn search_in_graph(
         query: &[VectorElementType],
@@ -720,6 +500,7 @@ mod tests {
         assert_eq!(reference_top.into_vec(), graph_search);
     }
 
+    /*
     #[test]
     #[ignore]
     fn test_hnsw_graph_properties() {
@@ -758,7 +539,9 @@ mod tests {
         let avg_connectivity = total_edges as f64 / NUM_VECTORS as f64;
         eprintln!("avg_connectivity = {:#?}", avg_connectivity);
     }
+    */
 
+    /*
     #[test]
     #[ignore]
     fn test_candidate_selection_heuristics() {
@@ -800,6 +583,7 @@ mod tests {
             eprintln!("selected_candidates = {}", x);
         }
     }
+    */
 
     #[test]
     #[ignore]

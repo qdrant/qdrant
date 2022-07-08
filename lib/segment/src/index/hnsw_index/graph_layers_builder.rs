@@ -1,6 +1,6 @@
 use crate::common::utils::rev_range;
 use crate::index::hnsw_index::entry_points::EntryPoints;
-use crate::index::hnsw_index::graph_layers::{GraphLayers, LinkContainer};
+use crate::index::hnsw_index::graph_layers::{GraphLayers, LinkContainer, LinkContainerRef};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedList, VisitedPool};
@@ -15,7 +15,6 @@ use std::collections::BinaryHeap;
 use std::sync::atomic::AtomicUsize;
 
 pub type LockedLinkContainer = RwLock<LinkContainer>;
-pub type LinkContainerRef<'a> = &'a [PointOffsetType];
 pub type LockedLayersContainer = Vec<LockedLinkContainer>;
 
 /// Same as `GraphLayers`,  but allows to build in parallel
