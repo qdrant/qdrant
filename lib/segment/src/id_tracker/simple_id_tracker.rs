@@ -1,5 +1,5 @@
 use crate::common::rocksdb_operations::{
-    Database, DatabaseColumn, DatabaseIterationResult, DB_MAPPING_CF, DB_VERSIONS_CF,
+    Database, DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF,
 };
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTracker;
@@ -54,8 +54,8 @@ pub struct SimpleIdTracker {
     external_to_internal: BTreeMap<PointIdType, PointOffsetType>,
     external_to_version: HashMap<PointIdType, SeqNumberType>,
     max_internal_id: PointOffsetType,
-    mapping_database: DatabaseColumn,
-    versions_database: DatabaseColumn,
+    mapping_db_wrapper: DatabaseColumnWrapper,
+    versions_db_wrapper: DatabaseColumnWrapper,
 }
 
 impl SimpleIdTracker {
@@ -65,10 +65,10 @@ impl SimpleIdTracker {
         let mut external_to_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut max_internal_id = 0;
 
-        let mapping_database = DatabaseColumn::new(database.clone(), DB_MAPPING_CF);
-        mapping_database.iterate_over_column_family(|(key, val)| {
-            let external_id = Self::restore_key(key);
-            let internal_id: PointOffsetType = bincode::deserialize(val).unwrap();
+        let mapping_db_wrapper = DatabaseColumnWrapper::new(database.clone(), DB_MAPPING_CF);
+        for (key, val) in mapping_db_wrapper.iter() {
+            let external_id = Self::restore_key(&key);
+            let internal_id: PointOffsetType = bincode::deserialize(&val).unwrap();
             let replaced = internal_to_external.insert(internal_id, external_id);
             if let Some(replaced_id) = replaced {
                 // Fixing corrupted mapping - this id should be recovered from WAL
@@ -83,24 +83,22 @@ impl SimpleIdTracker {
             }
             external_to_internal.insert(external_id, internal_id);
             max_internal_id = max_internal_id.max(internal_id);
-            DatabaseIterationResult::Continue
-        })?;
+        }
 
-        let versions_database = DatabaseColumn::new(database, DB_VERSIONS_CF);
-        versions_database.iterate_over_column_family(|(key, val)| {
-            let external_id = Self::restore_key(key);
-            let version: SeqNumberType = bincode::deserialize(val).unwrap();
+        let versions_db_wrapper = DatabaseColumnWrapper::new(database, DB_VERSIONS_CF);
+        for (key, val) in versions_db_wrapper.iter() {
+            let external_id = Self::restore_key(&key);
+            let version: SeqNumberType = bincode::deserialize(&val).unwrap();
             external_to_version.insert(external_id, version);
-            DatabaseIterationResult::Continue
-        })?;
+        }
 
         Ok(SimpleIdTracker {
             internal_to_external,
             external_to_internal,
             external_to_version,
             max_internal_id,
-            mapping_database,
-            versions_database,
+            mapping_db_wrapper,
+            versions_db_wrapper,
         })
     }
 
@@ -125,7 +123,7 @@ impl IdTracker for SimpleIdTracker {
         version: SeqNumberType,
     ) -> OperationResult<()> {
         self.external_to_version.insert(external_id, version);
-        self.versions_database.put(
+        self.versions_db_wrapper.put(
             &Self::store_key(&external_id),
             &bincode::serialize(&version).unwrap(),
         )?;
@@ -149,7 +147,7 @@ impl IdTracker for SimpleIdTracker {
         self.internal_to_external.insert(internal_id, external_id);
         self.max_internal_id = self.max_internal_id.max(internal_id);
 
-        self.mapping_database.put(
+        self.mapping_db_wrapper.put(
             &Self::store_key(&external_id),
             &bincode::serialize(&internal_id).unwrap(),
         )?;
@@ -164,9 +162,9 @@ impl IdTracker for SimpleIdTracker {
             Some(x) => self.internal_to_external.remove(&x),
             None => None,
         };
-        self.mapping_database
+        self.mapping_db_wrapper
             .remove(&Self::store_key(&external_id))?;
-        self.versions_database
+        self.versions_db_wrapper
             .remove(&Self::store_key(&external_id))?;
         Ok(())
     }
@@ -204,11 +202,11 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn flush_mapping(&self) -> OperationResult<()> {
-        self.mapping_database.flush()
+        self.mapping_db_wrapper.flush()
     }
 
     fn flush_versions(&self) -> OperationResult<()> {
-        self.versions_database.flush()
+        self.versions_db_wrapper.flush()
     }
 }
 

@@ -53,11 +53,11 @@ impl PayloadStorage for SimplePayloadStorage {
 
     fn wipe(&mut self) -> OperationResult<()> {
         self.payload = HashMap::new();
-        self.database.recreate_column_family()
+        self.db_wrapper.recreate_column_family()
     }
 
     fn flush(&self) -> OperationResult<()> {
-        self.database.flush()
+        self.db_wrapper.flush()
     }
 }
 

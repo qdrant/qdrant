@@ -6,7 +6,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use serde_json::Value;
 
-use crate::common::rocksdb_operations::{Database, DatabaseColumn, DatabaseIterationResult};
+use crate::common::rocksdb_operations::{Database, DatabaseColumnWrapper};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
@@ -90,7 +90,7 @@ impl ToRangeValue for IntPayloadType {
 
 pub struct NumericIndex<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> {
     map: BTreeMap<Vec<u8>, u32>,
-    database: DatabaseColumn,
+    db_wrapper: DatabaseColumnWrapper,
     histogram: Histogram,
     points_count: usize,
     max_values_per_point: usize,
@@ -101,7 +101,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     pub fn new(database: Arc<AtomicRefCell<Database>>, field: &str) -> Self {
         Self {
             map: BTreeMap::new(),
-            database: DatabaseColumn::new(database, &Self::storage_cf_name(field)),
+            db_wrapper: DatabaseColumnWrapper::new(database, &Self::storage_cf_name(field)),
             histogram: Histogram::new(HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION),
             points_count: 0,
             max_values_per_point: 1,
@@ -114,12 +114,12 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 
     pub fn recreate(&self) -> OperationResult<()> {
-        self.database.recreate_column_family()
+        self.db_wrapper.recreate_column_family()
     }
 
     fn add_value(&mut self, id: PointOffsetType, value: T) -> OperationResult<()> {
         let key = value.encode_key(id);
-        self.database.put(&key, id.to_be_bytes())?;
+        self.db_wrapper.put(&key, id.to_be_bytes())?;
         Self::add_to_map(&mut self.map, &mut self.histogram, key, id);
         Ok(())
     }
@@ -145,17 +145,15 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 
     pub fn load(&mut self) -> OperationResult<bool> {
-        if !self.database.has_column_family()? {
+        if !self.db_wrapper.has_column_family()? {
             return Ok(false);
         };
 
-        self.database.iterate_over_column_family(|(key, value)| {
+        for (key, value) in self.db_wrapper.iter() {
             let value_idx = u32::from_be_bytes(value.as_ref().try_into().unwrap());
-            let (idx, value) = T::decode_key(key);
+            let (idx, value) = T::decode_key(&key);
             if idx != value_idx {
-                return DatabaseIterationResult::Break(Err(OperationError::service_error(
-                    "incorrect key value",
-                )));
+                return Err(OperationError::service_error("incorrect key value"));
             }
 
             if self.point_to_values.len() <= idx as usize {
@@ -165,8 +163,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
             self.point_to_values[idx as usize].push(value);
 
             Self::add_to_map(&mut self.map, &mut self.histogram, key.to_vec(), idx);
-            DatabaseIterationResult::<()>::Continue
-        })?;
+        }
         for values in &self.point_to_values {
             if !values.is_empty() {
                 self.points_count += 1;
@@ -177,7 +174,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 
     pub fn flush(&self) -> OperationResult<()> {
-        self.database.flush()
+        self.db_wrapper.flush()
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
@@ -189,7 +186,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
 
         for value in &removed_values {
             let key = value.encode_key(idx);
-            self.database.remove(&key)?;
+            self.db_wrapper.remove(&key)?;
             Self::remove_from_map(&mut self.map, &mut self.histogram, key);
         }
 
@@ -333,7 +330,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Payload
     }
 
     fn clear(self) -> OperationResult<()> {
-        self.database.recreate_column_family()
+        self.db_wrapper.recreate_column_family()
     }
 
     fn flush(&self) -> OperationResult<()> {
@@ -714,7 +711,7 @@ mod tests {
         index.flush().unwrap();
 
         let mut new_index: NumericIndex<f64> =
-            NumericIndex::new(index.database.database, COLUMN_NAME);
+            NumericIndex::new(index.db_wrapper.database, COLUMN_NAME);
         new_index.load().unwrap();
 
         test_cond(

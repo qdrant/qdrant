@@ -1,4 +1,4 @@
-use crate::common::rocksdb_operations::{Database, DatabaseColumn, DatabaseIterationResult};
+use crate::common::rocksdb_operations::{Database, DatabaseColumnWrapper};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{
     circle_hashes, common_hash_prefix, encode_max_precision, geo_hash_to_box, rectangle_hashes,
@@ -49,7 +49,7 @@ pub struct GeoMapIndex {
     points_count: usize,
     values_count: usize,
     max_values_per_point: usize,
-    database: DatabaseColumn,
+    db_wrapper: DatabaseColumnWrapper,
 }
 
 impl GeoMapIndex {
@@ -62,7 +62,7 @@ impl GeoMapIndex {
             points_count: 0,
             values_count: 0,
             max_values_per_point: 1,
-            database: DatabaseColumn::new(database, &Self::storage_cf_name(field)),
+            db_wrapper: DatabaseColumnWrapper::new(database, &Self::storage_cf_name(field)),
         }
     }
 
@@ -71,32 +71,21 @@ impl GeoMapIndex {
     }
 
     pub fn recreate(&self) -> OperationResult<()> {
-        self.database.recreate_column_family()
+        self.db_wrapper.recreate_column_family()
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        if !self.database.has_column_family()? {
+        if !self.db_wrapper.has_column_family()? {
             return Ok(false);
         };
 
-        self.database.iterate_over_column_family(|(key, value)| {
-            let key_str = match std::str::from_utf8(key) {
-                Ok(key) => key,
-                Err(_) => {
-                    return DatabaseIterationResult::Break(Err(OperationError::service_error(
-                        "Index load error: UTF8 error while DB parsing",
-                    )))
-                }
-            };
+        for (key, value) in self.db_wrapper.iter() {
+            let key_str = std::str::from_utf8(&key).map_err(|_| {
+                OperationError::service_error("Index load error: UTF8 error while DB parsing")
+            })?;
 
-            let (geo_hash, idx) = match Self::decode_db_key(key_str) {
-                Ok(decoded) => decoded,
-                Err(err) => return DatabaseIterationResult::Break(Err(err)),
-            };
-            let geo_point = match Self::decode_db_value(value) {
-                Ok(geo_point) => geo_point,
-                Err(err) => return DatabaseIterationResult::Break(Err(err)),
-            };
+            let (geo_hash, idx) = Self::decode_db_key(key_str)?;
+            let geo_point = Self::decode_db_value(value)?;
 
             if self.point_to_values.len() <= idx as usize {
                 self.point_to_values.resize(idx as usize + 1, Vec::new())
@@ -108,8 +97,7 @@ impl GeoMapIndex {
 
             self.point_to_values[idx as usize].push(geo_point);
             self.points_map.entry(geo_hash).or_default().insert(idx);
-            DatabaseIterationResult::Continue
-        })?;
+        }
         Ok(true)
     }
 
@@ -155,7 +143,7 @@ impl GeoMapIndex {
     }
 
     pub fn flush(&self) -> OperationResult<()> {
-        self.database.flush()
+        self.db_wrapper.flush()
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<GeoPoint>> {
@@ -244,7 +232,7 @@ impl GeoMapIndex {
             if let Some(ref offsets) = hash_points {
                 for point_offset in offsets.iter() {
                     let key = Self::encode_db_key(removed_geo_hash, *point_offset);
-                    self.database.remove(&key)?;
+                    self.db_wrapper.remove(&key)?;
                 }
             }
 
@@ -304,7 +292,7 @@ impl GeoMapIndex {
 
             geo_hashes.push(added_geo_hash);
 
-            self.database.put(&key, &value)?;
+            self.db_wrapper.put(&key, &value)?;
         }
 
         for geo_hash in &geo_hashes {
@@ -433,7 +421,7 @@ impl PayloadFieldIndex for GeoMapIndex {
     }
 
     fn clear(self) -> OperationResult<()> {
-        self.database.remove_column_family()
+        self.db_wrapper.remove_column_family()
     }
 
     fn flush(&self) -> OperationResult<()> {

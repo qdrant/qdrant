@@ -1,7 +1,9 @@
+use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use rocksdb::{ColumnFamily, LogLevel, Options, WriteOptions, DB};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
@@ -13,30 +15,31 @@ pub const DB_PAYLOAD_CF: &str = "payload";
 pub const DB_MAPPING_CF: &str = "mapping";
 pub const DB_VERSIONS_CF: &str = "version";
 
-pub const FIXED_KEY: &[u8] = &[1; 32];
+pub const FIXED_KEY: &[u8] = &[0xff, 0x07, 0xaf, 0x90, 0x7b, 0x07, 0x55, 0xd0];
 pub const FIXED_VALUE: &[u8] = &[0];
 
 pub struct Database {
     db: DB,
-    is_appendable: bool,
+    allow_add_new_keys: bool,
 }
 
-pub struct DatabaseColumn {
+pub struct DatabaseColumnWrapper {
     pub database: Arc<AtomicRefCell<Database>>,
     pub column_name: String,
-    pub put_fixed_key: AtomicRefCell<bool>,
+    pub put_fixed_key: AtomicBool,
 }
 
-pub enum DatabaseIterationResult<T> {
-    Break(OperationResult<T>),
-    Continue,
+pub struct DatabaseColumnIterator<'a: 'b, 'b> {
+    pub handle: &'a ColumnFamily,
+    pub iter: rocksdb::DBRawIterator<'b>,
+    pub just_seeked: bool,
 }
 
 impl Database {
     pub fn new(
         path: &Path,
         default_columns: bool,
-        is_appendable: bool,
+        allow_add_new_keys: bool,
     ) -> OperationResult<Arc<AtomicRefCell<Self>>> {
         let column_families: Vec<String> = if default_columns {
             vec![
@@ -58,7 +61,10 @@ impl Database {
         let db = DB::open_cf(&Self::get_options(), path, &column_families).map_err(|err| {
             OperationError::service_error(&format!("RocksDB open_cf error: {}", err))
         })?;
-        Ok(Arc::new(AtomicRefCell::new(Self { db, is_appendable })))
+        Ok(Arc::new(AtomicRefCell::new(Self {
+            db,
+            allow_add_new_keys,
+        })))
     }
 
     fn get_options() -> Options {
@@ -78,12 +84,12 @@ impl Database {
     }
 }
 
-impl DatabaseColumn {
+impl DatabaseColumnWrapper {
     pub fn new(database: Arc<AtomicRefCell<Database>>, column_name: &str) -> Self {
         Self {
             database,
             column_name: column_name.to_string(),
-            put_fixed_key: AtomicRefCell::new(false),
+            put_fixed_key: AtomicBool::new(false),
         }
     }
 
@@ -104,7 +110,7 @@ impl DatabaseColumn {
             .map_err(|err| {
                 OperationError::service_error(&format!("RocksDB put_cf error: {}", err))
             })?;
-        if *self.put_fixed_key.borrow() {
+        if self.put_fixed_key.load(Ordering::Relaxed) {
             db.db
                 .put_cf_opt(
                     cf_handle,
@@ -118,7 +124,7 @@ impl DatabaseColumn {
                         err
                     ))
                 })?;
-            *self.put_fixed_key.borrow_mut() = false;
+            self.put_fixed_key.store(false, Ordering::Relaxed);
         }
         Ok(())
     }
@@ -151,32 +157,20 @@ impl DatabaseColumn {
         Ok(())
     }
 
-    pub fn iterate_over_column_family<T, F>(&self, mut f: F) -> OperationResult<T>
-    where
-        F: FnMut((&[u8], &[u8])) -> DatabaseIterationResult<T>,
-        T: Default,
-    {
-        let db = self.database.borrow();
-        let cf_handle = self.get_column_family(&db)?;
-        let mut iter = db.db.raw_iterator_cf(&cf_handle);
-        iter.seek_to_first();
-
-        while iter.valid() {
-            let key = iter
-                .key()
-                .ok_or_else(|| OperationError::service_error("RocksDB iterator invalid key"))?;
-            if key != FIXED_KEY {
-                let value = iter.value().ok_or_else(|| {
-                    OperationError::service_error("RocksDB iterator invalid value")
-                })?;
-                match f((key, value)) {
-                    DatabaseIterationResult::Break(result) => return result,
-                    DatabaseIterationResult::Continue => {}
-                }
+    pub fn iter<'a: 'b, 'b>(
+        &self,
+    ) -> ArcAtomicRefCellIterator<Database, DatabaseColumnIterator<'a, 'b>> {
+        let column_name = self.column_name.clone();
+        ArcAtomicRefCellIterator::new(self.database.clone(), move |db| {
+            let handle = db.db.cf_handle(&column_name).unwrap();
+            let mut iter = db.db.raw_iterator_cf(&handle);
+            iter.seek_to_first();
+            DatabaseColumnIterator {
+                handle,
+                iter,
+                just_seeked: true,
             }
-            iter.next();
-        }
-        Ok(T::default())
+        })
     }
 
     pub fn flush(&self) -> OperationResult<()> {
@@ -186,8 +180,8 @@ impl DatabaseColumn {
         db.db.flush_cf(column_family).map_err(|err| {
             OperationError::service_error(&format!("RocksDB flush_cf error: {}", err))
         })?;
-        if db.is_appendable {
-            *self.put_fixed_key.borrow_mut() = true;
+        if db.allow_add_new_keys {
+            self.put_fixed_key.store(true, Ordering::Relaxed);
         }
         Ok(())
     }
@@ -241,5 +235,40 @@ impl DatabaseColumn {
                 &self.column_name
             ))
         })
+    }
+}
+
+impl<'a: 'b, 'b> Iterator for DatabaseColumnIterator<'a, 'b> {
+    type Item = (Box<[u8]>, Box<[u8]>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if !self.iter.valid() {
+            return None;
+        }
+
+        // Initial call to next() after seeking should not move the iterator
+        // or the first item will not be returned
+        if self.just_seeked {
+            self.just_seeked = false;
+        } else {
+            self.iter.next();
+        }
+
+        if self.iter.valid() {
+            // .key() only ever return None if valid == false, which we've just checked
+            if self.iter.key().unwrap() == FIXED_KEY {
+                self.iter.next();
+            }
+        }
+
+        if self.iter.valid() {
+            // .key() and .value() only ever return None if valid == false, which we've just checked
+            Some((
+                Box::from(self.iter.key().unwrap()),
+                Box::from(self.iter.value().unwrap()),
+            ))
+        } else {
+            None
+        }
     }
 }
