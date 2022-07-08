@@ -136,6 +136,8 @@ impl LocalShard {
             )
         });
 
+        let mut load_handlers = vec![];
+
         for entry in segment_dirs {
             let segments_path = entry.unwrap().path();
             if segments_path.ends_with("deleted") {
@@ -147,14 +149,19 @@ impl LocalShard {
                 });
                 continue;
             }
-            let segment = match load_segment(&segments_path) {
-                Ok(x) => x,
-                Err(err) => panic!(
-                    "Can't load segments from {}, error: {}",
-                    segments_path.to_str().unwrap(),
-                    err
-                ),
-            };
+            load_handlers.push(thread::spawn(move || load_segment(&segments_path)));
+        }
+
+        for handler in load_handlers {
+            let res = handler.join();
+            if let Err(err) = res {
+                panic!("Can't load segment {:?}", err);
+            }
+            let res = res.unwrap();
+            if let Err(res) = res {
+                panic!("Can't load segment {:?}", res);
+            }
+            let segment = res.unwrap();
             segment_holder.add(segment);
         }
 
