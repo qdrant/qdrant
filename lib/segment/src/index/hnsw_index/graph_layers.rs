@@ -25,7 +25,6 @@ pub struct GraphLayers {
     pub(super) m: usize,
     pub(super) m0: usize,
     pub(super) ef_construct: usize,
-    pub(super) level_factor: f64,
     // Exclude points according to "not closer than base" heuristic?
     pub(super) use_heuristic: bool,
     // Factor of level probability
@@ -65,7 +64,6 @@ impl GraphLayers {
             m,
             m0,
             ef_construct,
-            level_factor: 1.0 / (m as f64).ln(),
             use_heuristic,
             links_layers,
             entry_points: EntryPoints::new(entry_points_num),
