@@ -42,7 +42,10 @@ impl GraphLayersBase for GraphLayersBuilder {
         self.visited_pool.return_back(visited_list);
     }
 
-    fn links_map<F>(&self, point_id: PointOffsetType, level: usize, mut f: F) where F: FnMut(PointOffsetType) {
+    fn links_map<F>(&self, point_id: PointOffsetType, level: usize, mut f: F)
+    where
+        F: FnMut(PointOffsetType),
+    {
         let links = self.links_layers[point_id as usize][level].read();
         for link in links.iter() {
             f(*link);

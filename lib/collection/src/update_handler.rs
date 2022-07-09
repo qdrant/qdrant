@@ -279,7 +279,9 @@ impl UpdateHandler {
         while let Some(signal) = receiver.recv().await {
             match signal {
                 OptimizerSignal::Nop | OptimizerSignal::Operation(_) => {
-                    if signal != OptimizerSignal::Nop && optimization_handles.lock().await.len() >= max_handles {
+                    if signal != OptimizerSignal::Nop
+                        && optimization_handles.lock().await.len() >= max_handles
+                    {
                         continue;
                     }
                     // We skip the check for number of optimization handles here

@@ -37,7 +37,9 @@ pub trait GraphLayersBase {
 
     fn return_visited_list_to_pool(&self, visited_list: VisitedList);
 
-    fn links_map<F>(&self, point_id: PointOffsetType, level: usize, f: F) where F: FnMut(PointOffsetType);
+    fn links_map<F>(&self, point_id: PointOffsetType, level: usize, f: F)
+    where
+        F: FnMut(PointOffsetType);
 
     /// Get M based on current level
     fn get_m(&self, level: usize) -> usize;
@@ -126,7 +128,7 @@ pub trait GraphLayersBase {
                 self.links_map(current_point.idx, level, |link| {
                     links.push(link);
                 });
-                
+
                 let scores = points_scorer.score_points(&mut links, limit);
                 scores.iter().copied().for_each(|score_point| {
                     if score_point.score > current_point.score {
@@ -149,7 +151,10 @@ impl GraphLayersBase for GraphLayers {
         self.visited_pool.return_back(visited_list);
     }
 
-    fn links_map<F>(&self, point_id: PointOffsetType, level: usize, mut f: F) where F: FnMut(PointOffsetType) {
+    fn links_map<F>(&self, point_id: PointOffsetType, level: usize, mut f: F)
+    where
+        F: FnMut(PointOffsetType),
+    {
         for link in &self.links_layers[point_id as usize][level] {
             f(*link);
         }
@@ -204,14 +209,7 @@ impl GraphLayers {
         ef_construct: usize,
         entry_points_num: usize, // Depends on number of points
     ) -> Self {
-        Self::new_with_params(
-            num_vectors,
-            m,
-            m0,
-            ef_construct,
-            entry_points_num,
-            true,
-        )
+        Self::new_with_params(num_vectors, m, m0, ef_construct, entry_points_num, true)
     }
 
     fn num_points(&self) -> usize {
@@ -299,7 +297,7 @@ mod tests {
     };
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
-    use crate::spaces::simple::{CosineMetric, DotProductMetric/*, EuclidMetric*/};
+    use crate::spaces::simple::{CosineMetric, DotProductMetric /*, EuclidMetric*/};
     use crate::types::VectorElementType;
     //use crate::vector_storage::RawScorer;
     use itertools::Itertools;

@@ -25,7 +25,8 @@ fn build_index<TMetric: Metric>(
     let mut rng = thread_rng();
 
     let vector_holder = TestRawScorerProducer::<TMetric>::new(DIM, num_vectors, &mut rng);
-    let mut graph_layers_builder = GraphLayersBuilder::new(num_vectors, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
+    let mut graph_layers_builder =
+        GraphLayersBuilder::new(num_vectors, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
     let fake_filter_context = FakeFilterContext {};
     for idx in 0..(num_vectors as PointOffsetType) {
         let added_vector = vector_holder.vectors.get(idx).to_vec();
