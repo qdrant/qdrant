@@ -6,7 +6,7 @@ pub mod graph_layers;
 pub mod hnsw;
 pub mod point_scorer;
 mod search_context;
-
 pub mod graph_layers_builder;
+
 #[cfg(test)]
 mod tests;

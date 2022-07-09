@@ -1,8 +1,6 @@
-use crate::common::utils::rev_range;
 use crate::index::hnsw_index::entry_points::EntryPoints;
-use crate::index::hnsw_index::graph_layers::{GraphLayers, LinkContainer, LinkContainerRef};
+use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase, LinkContainer};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedList, VisitedPool};
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
@@ -24,15 +22,40 @@ pub struct GraphLayersBuilder {
     m: usize,
     m0: usize,
     ef_construct: usize,
+    // Factor of level probability
     level_factor: f64,
     // Exclude points according to "not closer than base" heuristic?
     use_heuristic: bool,
-    // Factor of level probability
     links_layers: Vec<LockedLayersContainer>,
     entry_points: Mutex<EntryPoints>,
 
     // Fields used on construction phase only
     visited_pool: VisitedPool,
+}
+
+impl GraphLayersBase for GraphLayersBuilder {
+    fn get_visited_list_from_pool(&self) -> VisitedList {
+        self.visited_pool.get(self.num_points())
+    }
+
+    fn return_visited_list_to_pool(&self, visited_list: VisitedList) {
+        self.visited_pool.return_back(visited_list);
+    }
+
+    fn links_map<F>(&self, point_id: PointOffsetType, level: usize, mut f: F) where F: FnMut(PointOffsetType) {
+        let links = self.links_layers[point_id as usize][level].read();
+        for link in links.iter() {
+            f(*link);
+        }
+    }
+
+    fn get_m(&self, level: usize) -> usize {
+        if level == 0 {
+            self.m0
+        } else {
+            self.m
+        }
+    }
 }
 
 impl GraphLayersBuilder {
@@ -109,15 +132,6 @@ impl GraphLayersBuilder {
         self.links_layers.len()
     }
 
-    /// Get M based on current level
-    fn get_m(&self, level: usize) -> usize {
-        if level == 0 {
-            self.m0
-        } else {
-            self.m
-        }
-    }
-
     /// Generate random level for a new point, according to geometric distribution
     pub fn get_random_layer<R>(&self, rng: &mut R) -> usize
     where
@@ -147,106 +161,6 @@ impl GraphLayersBuilder {
         }
         self.max_level
             .fetch_max(level, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    /// Greedy search for closest points within a single graph layer
-    fn _search_on_level(
-        &self,
-        searcher: &mut SearchContext,
-        level: usize,
-        visited_list: &mut VisitedList,
-        points_scorer: &mut FilteredScorer,
-    ) {
-        let limit = self.get_m(level);
-        let mut points_ids: Vec<PointOffsetType> = Vec::with_capacity(2 * limit);
-
-        while let Some(candidate) = searcher.candidates.pop() {
-            if candidate.score < searcher.lower_bound() {
-                break;
-            }
-
-            points_ids.clear();
-            {
-                let links = self.links_layers[candidate.idx as usize][level].read();
-                for link in links.iter() {
-                    if !visited_list.check_and_update_visited(*link) {
-                        points_ids.push(*link);
-                    }
-                }
-            }
-
-            let scores = points_scorer.score_points(&mut points_ids, limit);
-            scores
-                .iter()
-                .copied()
-                .for_each(|score_point| searcher.process_candidate(score_point));
-        }
-    }
-
-    fn search_on_level(
-        &self,
-        level_entry: ScoredPointOffset,
-        level: usize,
-        ef: usize,
-        points_scorer: &mut FilteredScorer,
-        existing_links: LinkContainerRef,
-    ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
-        let mut visited_list = self.visited_pool.get(self.num_points());
-        visited_list.check_and_update_visited(level_entry.idx);
-        let mut search_context = SearchContext::new(level_entry, ef);
-
-        self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
-
-        for &existing_link in existing_links {
-            if !visited_list.check(existing_link) {
-                search_context.process_candidate(ScoredPointOffset {
-                    idx: existing_link,
-                    score: points_scorer.score_point(existing_link),
-                });
-            }
-        }
-
-        self.visited_pool.return_back(visited_list);
-        search_context.nearest
-    }
-
-    /// Greedy searches for entry point of level `target_level`.
-    /// Beam size is 1.
-    fn search_entry(
-        &self,
-        entry_point: PointOffsetType,
-        top_level: usize,
-        target_level: usize,
-        points_scorer: &mut FilteredScorer,
-    ) -> ScoredPointOffset {
-        let mut links: Vec<PointOffsetType> = Vec::with_capacity(2 * self.get_m(0));
-
-        let mut current_point = ScoredPointOffset {
-            idx: entry_point,
-            score: points_scorer.score_point(entry_point),
-        };
-        for level in rev_range(top_level, target_level) {
-            let limit = self.get_m(level);
-
-            let mut changed = true;
-            while changed {
-                changed = false;
-
-                links.clear();
-                {
-                    let stored_links = self.links_layers[current_point.idx as usize][level].read();
-                    links.extend_from_slice(&stored_links);
-                }
-                let scores = points_scorer.score_points(&mut links, limit);
-                scores.iter().copied().for_each(|score_point| {
-                    if score_point.score > current_point.score {
-                        changed = true;
-                        current_point = score_point;
-                    }
-                });
-            }
-        }
-        current_point
     }
 
     /// Connect new point to links, so that links contains only closest points
