@@ -25,8 +25,6 @@ pub struct GraphLayers {
     pub(super) m: usize,
     pub(super) m0: usize,
     pub(super) ef_construct: usize,
-    // Exclude points according to "not closer than base" heuristic?
-    pub(super) use_heuristic: bool,
     // Factor of level probability
     pub(super) links_layers: Vec<LayersContainer>,
     pub(super) entry_points: EntryPoints,
@@ -40,13 +38,12 @@ pub struct GraphLayers {
 ///
 /// Assume all scores are similarities. Larger score = closer points
 impl GraphLayers {
-    pub fn new_with_params(
+    fn new_with_params(
         num_vectors: usize, // Initial number of points in index
         m: usize,           // Expected M for non-first layer
         m0: usize,          // Expected M for first layer
         ef_construct: usize,
         entry_points_num: usize, // Depends on number of points
-        use_heuristic: bool,
         reserve: bool,
     ) -> Self {
         let mut links_layers: Vec<LayersContainer> = vec![];
@@ -64,7 +61,6 @@ impl GraphLayers {
             m,
             m0,
             ef_construct,
-            use_heuristic,
             links_layers,
             entry_points: EntryPoints::new(entry_points_num),
             visited_pool: VisitedPool::new(),
@@ -77,7 +73,6 @@ impl GraphLayers {
         m0: usize,          // Expected M for first layer
         ef_construct: usize,
         entry_points_num: usize, // Depends on number of points
-        use_heuristic: bool,
     ) -> Self {
         Self::new_with_params(
             num_vectors,
@@ -85,7 +80,6 @@ impl GraphLayers {
             m0,
             ef_construct,
             entry_points_num,
-            use_heuristic,
             true,
         )
     }
@@ -384,7 +378,7 @@ mod tests {
             TestRawScorerProducer::<DotProductMetric>::new(dim, num_vectors, &mut rng);
 
         let mut graph_layers =
-            GraphLayers::new(num_vectors, m, m * 2, ef_construct, entry_points_num, false);
+            GraphLayers::new(num_vectors, m, m * 2, ef_construct, entry_points_num);
 
         graph_layers.links_layers[0][0] = vec![1, 2, 3, 4, 5, 6];
 

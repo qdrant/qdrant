@@ -48,7 +48,6 @@ impl GraphLayersBuilder {
             m: self.m,
             m0: self.m0,
             ef_construct: self.ef_construct,
-            use_heuristic: self.use_heuristic,
             links_layers: unlocker_links_layers,
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,

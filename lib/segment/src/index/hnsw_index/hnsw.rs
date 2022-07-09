@@ -74,7 +74,6 @@ impl HNSWIndex {
                 config.m0,
                 config.ef_construct,
                 max(1, total_points / vector_per_threshold * 10),
-                HNSW_USE_HEURISTIC,
             )
         };
 
