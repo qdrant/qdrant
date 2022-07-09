@@ -385,12 +385,11 @@ mod tests {
     use crate::spaces::simple::{CosineMetric, EuclidMetric};
     use crate::types::VectorElementType;
     use crate::vector_storage::RawScorer;
+    use itertools::Itertools;
     use rand::prelude::StdRng;
+    use rand::seq::SliceRandom;
     use rand::SeedableRng;
     use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-
-    use itertools::Itertools;
-    use rand::seq::SliceRandom;
 
     const M: usize = 8;
 

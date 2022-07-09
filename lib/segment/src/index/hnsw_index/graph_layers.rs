@@ -301,7 +301,6 @@ mod tests {
     use crate::types::VectorElementType;
     use itertools::Itertools;
     use rand::rngs::StdRng;
-    //use rand::seq::SliceRandom;
     use rand::SeedableRng;
     use std::fs::File;
     use std::io::Write;
