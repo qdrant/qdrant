@@ -382,10 +382,15 @@ mod tests {
     use super::*;
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
-    use crate::spaces::simple::CosineMetric;
+    use crate::spaces::simple::{CosineMetric, EuclidMetric};
+    use crate::types::VectorElementType;
+    use crate::vector_storage::RawScorer;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+
+    use itertools::Itertools;
+    use rand::seq::SliceRandom;
 
     const M: usize = 8;
 
@@ -622,5 +627,143 @@ mod tests {
         let graph_search = graph.search(top, ef, scorer);
 
         assert_eq!(reference_top.into_vec(), graph_search);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_hnsw_graph_properties() {
+        const NUM_VECTORS: usize = 5_000;
+        const DIM: usize = 16;
+        const M: usize = 16;
+        const EF_CONSTRUCT: usize = 64;
+        const USE_HEURISTIC: bool = true;
+
+        let mut rng = StdRng::seed_from_u64(42);
+
+        let vector_holder = TestRawScorerProducer::<CosineMetric>::new(DIM, NUM_VECTORS, &mut rng);
+        let mut graph_layers_builder =
+            GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
+        let fake_filter_context = FakeFilterContext {};
+        for idx in 0..(NUM_VECTORS as PointOffsetType) {
+            let added_vector = vector_holder.vectors.get(idx).to_vec();
+            let raw_scorer = vector_holder.get_raw_scorer(added_vector);
+            let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
+            let level = graph_layers_builder.get_random_layer(&mut rng);
+            graph_layers_builder.set_levels(idx, level);
+            graph_layers_builder.link_new_point(idx, scorer);
+        }
+        let graph_layers = graph_layers_builder.into_graph_layers();
+
+        let number_layers = graph_layers.links_layers.len();
+        eprintln!("number_layers = {:#?}", number_layers);
+
+        let max_layers = graph_layers.links_layers.iter().map(|x| x.len()).max();
+        eprintln!("max_layers = {:#?}", max_layers);
+
+        eprintln!(
+            "graph_layers.links_layers[910] = {:#?}",
+            graph_layers.links_layers[910]
+        );
+
+        let total_edges: usize = graph_layers.links_layers.iter().map(|x| x[0].len()).sum();
+        let avg_connectivity = total_edges as f64 / NUM_VECTORS as f64;
+        eprintln!("avg_connectivity = {:#?}", avg_connectivity);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_candidate_selection_heuristics() {
+        const NUM_VECTORS: usize = 100;
+        const DIM: usize = 16;
+        const M: usize = 16;
+
+        let mut rng = StdRng::seed_from_u64(42);
+
+        let vector_holder = TestRawScorerProducer::<EuclidMetric>::new(DIM, NUM_VECTORS, &mut rng);
+
+        let mut candidates: FixedLengthPriorityQueue<ScoredPointOffset> =
+            FixedLengthPriorityQueue::new(NUM_VECTORS);
+
+        let new_vector_to_insert = random_vector(&mut rng, DIM);
+
+        let scorer = vector_holder.get_raw_scorer(new_vector_to_insert);
+
+        for i in 0..NUM_VECTORS {
+            candidates.push(ScoredPointOffset {
+                idx: i as PointOffsetType,
+                score: scorer.score_point(i as PointOffsetType),
+            });
+        }
+
+        let sorted_candidates = candidates.into_vec();
+
+        for x in sorted_candidates.iter().take(M) {
+            eprintln!("sorted_candidates = ({}, {})", x.idx, x.score);
+        }
+
+        let selected_candidates = GraphLayersBuilder::select_candidate_with_heuristic_from_sorted(
+            sorted_candidates.into_iter(),
+            M,
+            |a, b| scorer.score_internal(a, b),
+        );
+
+        for x in selected_candidates.iter() {
+            eprintln!("selected_candidates = {}", x);
+        }
+    }
+
+    #[test]
+    fn test_connect_new_point() {
+        let num_points = 10;
+        let m = 6;
+        let ef_construct = 32;
+
+        // See illustration in docs
+        let points: Vec<Vec<VectorElementType>> = vec![
+            vec![21.79, 7.18],  // Target
+            vec![20.58, 5.46],  // 1  B - yes
+            vec![21.19, 4.51],  // 2  C
+            vec![24.73, 8.24],  // 3  D - yes
+            vec![24.55, 9.98],  // 4  E
+            vec![26.11, 6.85],  // 5  F
+            vec![17.64, 11.14], // 6  G - yes
+            vec![14.97, 11.52], // 7  I
+            vec![14.97, 9.60],  // 8  J
+            vec![16.23, 14.32], // 9  H
+            vec![12.69, 19.13], // 10 K
+        ];
+
+        let scorer = |a: PointOffsetType, b: PointOffsetType| {
+            -((points[a as usize][0] - points[b as usize][0]).powi(2)
+                + (points[a as usize][1] - points[b as usize][1]).powi(2))
+            .sqrt()
+        };
+
+        let mut insert_ids = (1..points.len() as PointOffsetType).collect_vec();
+
+        let mut candidates = FixedLengthPriorityQueue::new(insert_ids.len());
+        for &id in &insert_ids {
+            candidates.push(ScoredPointOffset {
+                idx: id,
+                score: scorer(0, id),
+            });
+        }
+
+        let res = GraphLayersBuilder::select_candidates_with_heuristic(candidates, m, scorer);
+
+        assert_eq!(&res, &vec![1, 3, 6]);
+
+        let mut rng = StdRng::seed_from_u64(42);
+
+        let graph_layers_builder = GraphLayersBuilder::new(num_points, m, m, ef_construct, 1, true);
+        insert_ids.shuffle(&mut rng);
+        for &id in &insert_ids {
+            let level_m = graph_layers_builder.get_m(0);
+            let mut links = graph_layers_builder.links_layers[0][0].write();
+            GraphLayersBuilder::connect_new_point(&mut links, id, 0, level_m, scorer)
+        }
+        let mut result = Vec::new();
+        graph_layers_builder.links_map(0, 0, |link| result.push(link));
+        assert_eq!(&result, &vec![1, 2, 3, 4, 5, 6]);
     }
 }
