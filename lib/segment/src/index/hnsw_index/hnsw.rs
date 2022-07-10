@@ -10,6 +10,7 @@ use crate::types::{
     FieldCondition, Filter, HnswConfig, SearchParams, VectorElementType, VECTOR_ELEMENT_SIZE,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
+use futures::future::try_join_all;
 use log::debug;
 use tokio::runtime::Handle;
 
@@ -209,13 +210,20 @@ impl VectorIndex for HNSWIndex {
 
     fn batch_search(
         &self,
-        _vectors: &[Vec<VectorElementType>],
-        _filters: &[Option<Filter>],
-        _top: usize,
-        _params: Option<&SearchParams>,
-        _runtime_handle: &Handle,
+        vectors: &[Vec<VectorElementType>],
+        filters: &[Option<Filter>],
+        top: usize,
+        params: Option<&SearchParams>,
+        runtime_handle: &Handle,
     ) -> Vec<Vec<ScoredPointOffset>> {
-        todo!()
+        runtime_handle.block_on(batch_search(
+            self.clone(),
+            vectors,
+            filters,
+            top,
+            params,
+            runtime_handle,
+        ))
     }
 
     fn build_index(&self, stopped: &AtomicBool) -> OperationResult<()> {
@@ -302,7 +310,33 @@ impl VectorIndex for HNSWIndex {
     }
 }
 
-#[allow(dead_code)]
+async fn batch_search(
+    index: HNSWIndex,
+    vectors: &[Vec<VectorElementType>],
+    filters: &[Option<Filter>],
+    top: usize,
+    params: Option<&SearchParams>,
+    runtime_handle: &Handle,
+) -> Vec<Vec<ScoredPointOffset>> {
+    let batch_result_futures = vectors
+        .iter()
+        .zip(filters.iter())
+        .map(|(vector, filter)| {
+            search(
+                index.clone(),
+                vector.to_owned(),
+                filter.to_owned(),
+                top,
+                params.cloned(),
+            )
+        })
+        .map(|f| runtime_handle.spawn(f));
+
+    let batch_result = try_join_all(batch_result_futures).await.unwrap();
+
+    batch_result
+}
+
 async fn search(
     index: HNSWIndex,
     vector: Vec<VectorElementType>,

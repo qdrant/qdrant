@@ -41,6 +41,7 @@ seahash = "4.1.0"
 json-patch = "0.2.6"
 tar = "0.4.38"
 tokio = {version = "~1.19", features = ["full"]}
+futures = "0.3.21"
 
 [[bench]]
 name = "vector_search"
