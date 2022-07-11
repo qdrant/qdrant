@@ -87,7 +87,7 @@ fn default_log_level() -> String {
 }
 
 fn default_timeout_ms() -> u64 {
-    1000
+    1000 * 60
 }
 
 fn default_tick_period_ms() -> u64 {
