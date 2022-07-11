@@ -129,48 +129,54 @@ impl ShardOperation for &RemoteShard {
         let response = match operation {
             CollectionUpdateOperations::PointOperation(point_ops) => match point_ops {
                 PointOperations::UpsertPoints(point_insert_operations) => {
-                    let request =
-                        tonic::Request::new(internal_upsert_points(point_insert_operations, self)?);
+                    let request = tonic::Request::new(internal_upsert_points(
+                        point_insert_operations,
+                        self,
+                        wait,
+                    )?);
                     client.upsert(request).await?
                 }
                 PointOperations::DeletePoints { ids } => {
-                    let request = tonic::Request::new(internal_delete_points(ids, self));
+                    let request = tonic::Request::new(internal_delete_points(ids, self, wait));
                     client.delete(request).await?
                 }
                 PointOperations::DeletePointsByFilter(filter) => {
                     let request =
-                        tonic::Request::new(internal_delete_points_by_filter(filter, self));
+                        tonic::Request::new(internal_delete_points_by_filter(filter, self, wait));
                     client.delete(request).await?
                 }
             },
             CollectionUpdateOperations::PayloadOperation(payload_ops) => match payload_ops {
                 PayloadOps::SetPayload(set_payload) => {
-                    let request = tonic::Request::new(internal_set_payload(set_payload, self));
+                    let request =
+                        tonic::Request::new(internal_set_payload(set_payload, self, wait));
                     client.set_payload(request).await?
                 }
                 PayloadOps::DeletePayload(delete_payload) => {
                     let request =
-                        tonic::Request::new(internal_delete_payload(delete_payload, self));
+                        tonic::Request::new(internal_delete_payload(delete_payload, self, wait));
                     client.delete_payload(request).await?
                 }
                 PayloadOps::ClearPayload { points } => {
-                    let request = tonic::Request::new(internal_clear_payload(points, self));
+                    let request = tonic::Request::new(internal_clear_payload(points, self, wait));
                     client.clear_payload(request).await?
                 }
                 PayloadOps::ClearPayloadByFilter(filter) => {
                     let request =
-                        tonic::Request::new(internal_clear_payload_by_filter(filter, self));
+                        tonic::Request::new(internal_clear_payload_by_filter(filter, self, wait));
                     client.clear_payload(request).await?
                 }
             },
             CollectionUpdateOperations::FieldIndexOperation(field_index_op) => match field_index_op
             {
                 FieldIndexOperations::CreateIndex(create_index) => {
-                    let request = tonic::Request::new(internal_create_index(create_index, self));
+                    let request =
+                        tonic::Request::new(internal_create_index(create_index, self, wait));
                     client.create_field_index(request).await?
                 }
                 FieldIndexOperations::DeleteIndex(delete_index) => {
-                    let request = tonic::Request::new(internal_delete_index(delete_index, self));
+                    let request =
+                        tonic::Request::new(internal_delete_index(delete_index, self, wait));
                     client.delete_field_index(request).await?
                 }
             },
