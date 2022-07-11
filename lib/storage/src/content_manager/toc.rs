@@ -190,8 +190,7 @@ impl TableOfContent {
         let CreateCollection {
             vector_size,
             distance,
-            // Can be safely ignored as `collection_shard_distribution` already has more accurate information
-            shard_number: _shard_number,
+            shard_number,
             on_disk_payload,
             hnsw_config: hnsw_config_diff,
             wal_config: wal_config_diff,
@@ -207,6 +206,13 @@ impl TableOfContent {
         let collection_path = self.create_collection_path(collection_name).await?;
         let snapshots_path = self.create_snapshots_path(collection_name).await?;
 
+        if let Some(shard_number) = shard_number {
+            assert_eq!(
+                shard_number as usize,
+                collection_shard_distribution.shard_count(),
+                "If shard number was supplied then this exact number should be used in a distribution"
+            )
+        }
         let collection_params = CollectionParams {
             vector_size,
             distance,
