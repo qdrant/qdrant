@@ -74,7 +74,6 @@ impl HNSWIndex {
                 config.m0,
                 config.ef_construct,
                 max(1, total_points / vector_per_threshold * 10),
-                HNSW_USE_HEURISTIC,
             )
         };
 
@@ -107,7 +106,7 @@ impl HNSWIndex {
         &self,
         pool: &ThreadPool,
         stopped: &AtomicBool,
-        graph: &mut GraphLayersBuilder,
+        graph_layers_builder: &mut GraphLayersBuilder,
         condition: FieldCondition,
         block_filter_list: &mut VisitedList,
     ) -> OperationResult<()> {
@@ -127,7 +126,7 @@ impl HNSWIndex {
         for block_point_id in points_to_index.iter().copied() {
             // Use same levels, as in the original graph
             let level = self.graph.point_level(block_point_id);
-            graph.set_levels(block_point_id, level);
+            graph_layers_builder.set_levels(block_point_id, level);
         }
 
         pool.install(|| {
@@ -148,7 +147,7 @@ impl HNSWIndex {
                     let points_scorer =
                         FilteredScorer::new(raw_scorer.as_ref(), Some(&block_condition_checker));
 
-                    graph.link_new_point(block_point_id, points_scorer);
+                    graph_layers_builder.link_new_point(block_point_id, points_scorer);
                     Ok(())
                 })
         })
