@@ -31,12 +31,12 @@ def get_port() -> int:
         return s.getsockname()[1]
 
 
-def get_env(p2p_port: int, gRPC_port: int, http_port: int) -> dict[str, str]:
+def get_env(p2p_port: int, grpc_port: int, http_port: int) -> dict[str, str]:
     env = os.environ.copy()
     env["QDRANT__CLUSTER__ENABLED"] = "true"
     env["QDRANT__CLUSTER__P2P__PORT"] = str(p2p_port)
     env["QDRANT__SERVICE__HTTP_PORT"] = str(http_port)
-    env["QDRANT__SERVICE__GRPC_PORT"] = str(gRPC_port)
+    env["QDRANT__SERVICE__GRPC_PORT"] = str(grpc_port)
     return env
 
 
@@ -65,9 +65,9 @@ def get_qdrant_exec() -> str:
 # Starts a peer and returns its api_uri
 def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str) -> str:
     p2p_port = get_port()
-    gRPC_port = get_port()
+    grpc_port = get_port()
     http_port = get_port()
-    env = get_env(p2p_port, gRPC_port, http_port)
+    env = get_env(p2p_port, grpc_port, http_port)
     log_file = open(log_file, "w")
     processes.append(
         Popen([get_qdrant_exec(), "--bootstrap", bootstrap_uri], env=env, cwd=peer_dir, stderr=log_file))
@@ -77,9 +77,9 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str) -> str:
 # Starts a peer and returns its api_uri and p2p_uri
 def start_first_peer(peer_dir: Path, log_file: str) -> Tuple[str, str]:
     p2p_port = get_port()
-    gRPC_port = get_port()
+    grpc_port = get_port()
     http_port = get_port()
-    env = get_env(p2p_port, gRPC_port, http_port)
+    env = get_env(p2p_port, grpc_port, http_port)
     log_file = open(log_file, "w")
     bootstrap_uri = get_uri(p2p_port)
     processes.append(
