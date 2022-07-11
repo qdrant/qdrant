@@ -207,7 +207,7 @@ impl TableOfContent {
         let snapshots_path = self.create_snapshots_path(collection_name).await?;
 
         if let Some(shard_number) = shard_number {
-            assert_eq!(
+            debug_assert_eq!(
                 shard_number as usize,
                 collection_shard_distribution.shard_count(),
                 "If shard number was supplied then this exact number should be used in a distribution"
