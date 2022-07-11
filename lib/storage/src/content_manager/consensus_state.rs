@@ -390,6 +390,10 @@ impl<C: CollectionContainer> ConsensusState<C> {
         self.persistent.read().peer_address_by_id()
     }
 
+    pub fn peer_count(&self) -> usize {
+        self.persistent.read().peer_address_by_id.read().len()
+    }
+
     pub fn append_entries(&self, entries: Vec<RaftEntry>) -> Result<(), StorageError> {
         self.wal.lock().append_entries(entries)
     }

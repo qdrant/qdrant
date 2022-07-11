@@ -206,14 +206,20 @@ impl TableOfContent {
         let collection_path = self.create_collection_path(collection_name).await?;
         let snapshots_path = self.create_snapshots_path(collection_name).await?;
 
+        if let Some(shard_number) = shard_number {
+            debug_assert_eq!(
+                shard_number as usize,
+                collection_shard_distribution.shard_count(),
+                "If shard number was supplied then this exact number should be used in a distribution"
+            )
+        }
         let collection_params = CollectionParams {
             vector_size,
             distance,
-            shard_number: NonZeroU32::new(shard_number.unwrap_or(1)).ok_or(
-                StorageError::BadInput {
+            shard_number: NonZeroU32::new(collection_shard_distribution.shard_count() as u32)
+                .ok_or(StorageError::BadInput {
                     description: "`shard_number` cannot be 0".to_string(),
-                },
-            )?,
+                })?,
             on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
         };
         let wal_config = match wal_config_diff {
@@ -351,8 +357,7 @@ impl TableOfContent {
             CollectionMetaOperations::CreateCollectionDistributed(operation, distribution) => {
                 let local = distribution.local_shards_for(self.this_peer_id);
                 let remote = distribution.remote_shards_for(self.this_peer_id);
-                let collection_shard_distribution =
-                    CollectionShardDistribution::Distribution { local, remote };
+                let collection_shard_distribution = CollectionShardDistribution::new(local, remote);
                 self.create_collection(
                     &operation.collection_name,
                     operation.create_collection,
@@ -361,10 +366,13 @@ impl TableOfContent {
                 .await
             }
             CollectionMetaOperations::CreateCollection(operation) => {
+                let distribution = CollectionShardDistribution::all_local(
+                    operation.create_collection.shard_number,
+                );
                 self.create_collection(
                     &operation.collection_name,
                     operation.create_collection,
-                    CollectionShardDistribution::AllLocal,
+                    distribution,
                 )
                 .await
             }
@@ -663,8 +671,12 @@ impl TableOfContent {
     pub async fn suggest_shard_distribution(
         &self,
         op: &CreateCollectionOperation,
+        suggested_shard_number: u32,
     ) -> ShardDistributionProposal {
-        let shard_number = op.create_collection.shard_number.unwrap_or(1);
+        let shard_number = op
+            .create_collection
+            .shard_number
+            .unwrap_or(suggested_shard_number);
         let known_peers: Vec<_> = self
             .channel_service
             .id_to_address
