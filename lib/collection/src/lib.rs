@@ -141,28 +141,22 @@ impl State {
 }
 
 #[derive(Debug)]
-pub enum CollectionShardDistribution {
-    AllLocal,
-    Distribution {
-        local: Vec<ShardId>,
-        remote: Vec<(ShardId, PeerId)>,
-    },
+pub struct CollectionShardDistribution {
+    pub local: Vec<ShardId>,
+    pub remote: Vec<(ShardId, PeerId)>,
 }
 
 impl CollectionShardDistribution {
-    fn from_collections(local: Vec<ShardId>, remote: Vec<(ShardId, PeerId)>) -> Self {
-        Self::Distribution { local, remote }
+    pub fn new(local: Vec<ShardId>, remote: Vec<(ShardId, PeerId)>) -> Self {
+        Self { local, remote }
     }
 
-    /// Unpack the distribution into separate local and remote peers.
-    /// If `AllLocal`, it defaults to assigning `config_shard_number` locally.
-    fn unpack_or_default(self, config_shard_number: u32) -> (Vec<ShardId>, Vec<(ShardId, PeerId)>) {
-        match self {
-            CollectionShardDistribution::AllLocal => (
-                (0..config_shard_number).collect::<Vec<ShardId>>(),
-                Vec::new(),
-            ),
-            CollectionShardDistribution::Distribution { local, remote } => (local, remote),
+    pub fn all_local(shard_number: Option<u32>) -> Self {
+        Self {
+            // This method is called only when distributed deployment is disabled
+            // so if not specified it will suggest 1 shard per collection for better performance.
+            local: (0..shard_number.unwrap_or(1)).collect(),
+            remote: vec![],
         }
     }
 
@@ -190,7 +184,7 @@ impl CollectionShardDistribution {
             .clone()
             .collect();
 
-        CollectionShardDistribution::Distribution { local, remote }
+        Self { local, remote }
     }
 
     /// Read remote & local shard info from file system
@@ -215,7 +209,11 @@ impl CollectionShardDistribution {
             }
         }
 
-        Ok(Self::from_collections(local_shards, remote_shards))
+        Ok(Self::new(local_shards, remote_shards))
+    }
+
+    pub fn shard_count(&self) -> usize {
+        self.local.len() + self.remote.len()
     }
 }
 
@@ -283,11 +281,9 @@ impl Collection {
         config.save(path)?;
         let mut ring = HashRing::new();
         let mut shards: HashMap<ShardId, Shard> = HashMap::new();
-        let (local_shards, remote_shards) =
-            shard_distribution.unpack_or_default(config.params.shard_number.get());
 
         let shared_config = Arc::new(RwLock::new(config.clone()));
-        for shard_id in local_shards {
+        for shard_id in shard_distribution.local {
             let shard_path = create_shard_dir(path, shard_id).await?;
             let shard =
                 LocalShard::build(shard_id, id.clone(), &shard_path, shared_config.clone()).await;
@@ -306,7 +302,7 @@ impl Collection {
             ring.add(shard_id);
         }
 
-        for (shard_id, peer_id) in remote_shards {
+        for (shard_id, peer_id) in shard_distribution.remote {
             let shard_path = create_shard_dir(path, shard_id).await?;
             let shard = RemoteShard::init(
                 shard_id,
@@ -365,24 +361,8 @@ impl Collection {
         let shard_distribution = CollectionShardDistribution::from_local_state(path)
             .expect("Can't infer shard distribution from local shard configurations");
 
-        let (local_shards, remote_shards) = match shard_distribution {
-            CollectionShardDistribution::AllLocal => {
-                unreachable!("Expected shard distribution on load")
-            }
-            CollectionShardDistribution::Distribution { local, remote } => (local, remote),
-        };
-
-        let total_shards = local_shards.len() + remote_shards.len();
-        let configured_shards = config.params.shard_number.get() as usize;
-
-        assert_eq!(
-            total_shards, configured_shards,
-            "Expected {} shards, found {}",
-            configured_shards, total_shards
-        );
-
         let shared_config = Arc::new(RwLock::new(config));
-        for shard_id in local_shards {
+        for shard_id in shard_distribution.local {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
                 shard_id,
@@ -394,7 +374,7 @@ impl Collection {
             ring.add(shard_id);
         }
 
-        for (shard_id, peer_id) in remote_shards {
+        for (shard_id, peer_id) in shard_distribution.remote {
             let shard = RemoteShard::new(shard_id, id.clone(), peer_id, channel_service.clone());
             shards.insert(shard_id, Shard::Remote(shard));
             ring.add(shard_id);

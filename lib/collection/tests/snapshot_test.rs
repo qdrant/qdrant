@@ -39,10 +39,7 @@ async fn test_snapshot_collection() {
         collection_dir.path(),
         snapshots_path.path(),
         &config,
-        CollectionShardDistribution::Distribution {
-            local: vec![0, 1],
-            remote: vec![(2, 10000)],
-        },
+        CollectionShardDistribution::new(vec![0, 1], vec![(2, 10000)]),
         ChannelService::default(),
     )
     .await

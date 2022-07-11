@@ -85,7 +85,11 @@ impl Dispatcher {
         if let Some(state) = self.consensus_state.as_ref() {
             let op = match operation {
                 CollectionMetaOperations::CreateCollection(op) => {
-                    let shard_distribution = self.toc.suggest_shard_distribution(&op).await;
+                    let number_of_peers = state.0.peer_count();
+                    let shard_distribution = self
+                        .toc
+                        .suggest_shard_distribution(&op, number_of_peers as u32)
+                        .await;
                     CollectionMetaOperations::CreateCollectionDistributed(op, shard_distribution)
                 }
                 op => op,

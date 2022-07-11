@@ -69,7 +69,7 @@ pub async fn new_local_collection(
         path,
         snapshots_path,
         config,
-        CollectionShardDistribution::AllLocal,
+        CollectionShardDistribution::all_local(Some(config.params.shard_number.into())),
         ChannelService::default(),
     )
     .await
