@@ -478,7 +478,7 @@ impl Collection {
             ))
         })?;
         if let Shard::Remote(shard) = self.shards.get_mut(&shard_id).ok_or_else(|| {
-            CollectionError::service_error("Shard {shard_id} is abscent".to_owned())
+            CollectionError::service_error("Shard {shard_id} is absent".to_owned())
         })? {
             shard.peer_id = transfer.to;
         }
