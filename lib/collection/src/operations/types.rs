@@ -385,13 +385,13 @@ impl From<tonic::Status> for CollectionError {
     fn from(err: tonic::Status) -> Self {
         match err.code() {
             tonic::Code::InvalidArgument => CollectionError::BadInput {
-                description: "InvalidArgument".to_string(),
+                description: format!("InvalidArgument: {}", err),
             },
             tonic::Code::NotFound => CollectionError::BadRequest {
-                description: "NotFound".to_string(),
+                description: format!("NotFound: {}", err),
             },
             tonic::Code::Internal => CollectionError::ServiceError {
-                error: "Internal error".to_string(),
+                error: format!("Internal error: {}", err),
             },
             other => CollectionError::ServiceError {
                 error: format!("Tonic status error: {}", other),
