@@ -372,7 +372,10 @@ impl From<UpdateResult> for api::grpc::qdrant::UpdateResult {
     fn from(value: UpdateResult) -> Self {
         Self {
             operation_id: value.operation_id,
-            status: value.status as i32,
+            status: match value.status {
+                UpdateStatus::Acknowledged => api::grpc::qdrant::UpdateStatus::Acknowledged as i32,
+                UpdateStatus::Completed => api::grpc::qdrant::UpdateStatus::Completed as i32,
+            },
         }
     }
 }

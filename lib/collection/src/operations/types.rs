@@ -88,8 +88,6 @@ pub struct CollectionInfo {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateStatus {
-    /// Unknown update status
-    Unknown,
     /// Request is saved to WAL and will be process in a queue
     Acknowledged,
     /// Request is completed, changes are actual
