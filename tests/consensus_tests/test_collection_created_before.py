@@ -38,4 +38,4 @@ def test_collection_before_peers_added(tmp_path: pathlib.Path):
     wait_for_uniform_cluster_status(peer_api_uris, leader)
 
     # Check that it exists on all peers
-    assert_collection_exists_on_all_peers("test_collection", peer_api_uris)
+    assert collection_exists_on_all_peers("test_collection", peer_api_uris)

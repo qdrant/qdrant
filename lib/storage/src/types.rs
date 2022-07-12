@@ -19,12 +19,18 @@ pub struct PerformanceConfig {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct StorageConfig {
     pub storage_path: String,
+    #[serde(default = "default_snapshots_path")]
+    pub snapshots_path: String,
     #[serde(default = "default_on_disk_payload")]
     pub on_disk_payload: bool,
     pub optimizers: OptimizersConfig,
     pub wal: WalConfig,
     pub performance: PerformanceConfig,
     pub hnsw_index: HnswConfig,
+}
+
+fn default_snapshots_path() -> String {
+    "./snapshots".to_string()
 }
 
 fn default_on_disk_payload() -> bool {
@@ -55,6 +61,8 @@ pub struct RaftInfo {
     pub leader: Option<u64>,
     /// Role of this peer in the current term
     pub role: Option<StateRole>,
+    /// Is this peer a voter or a learner
+    pub is_voter: bool,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, Serialize, JsonSchema, Deserialize)]

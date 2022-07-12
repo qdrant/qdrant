@@ -56,7 +56,6 @@ fn create_segment(
     };
 
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
-        id_tracker.clone(),
         payload_storage,
         id_tracker.clone(),
         &payload_index_path,

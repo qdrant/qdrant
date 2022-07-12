@@ -19,6 +19,7 @@ use segment::types::{
 use crate::{config::CollectionConfig, wal::WalError};
 use segment::common::file_operations::FileStorageError;
 use std::collections::HashMap;
+use std::time::SystemTimeError;
 use tonic::codegen::http::uri::InvalidUri;
 
 /// Type of vector in API
@@ -70,6 +71,8 @@ pub struct CollectionInfo {
     pub optimizer_status: OptimizersStatus,
     /// Number of vectors in collection
     pub vectors_count: usize,
+    /// Number of points in collection
+    pub points_count: usize,
     /// Number of segments in collection
     pub segments_count: usize,
     /// Disk space, used by collection
@@ -142,7 +145,7 @@ pub struct ScrollResult {
 /// Search request.
 /// Holds all conditions and parameters for the search of most similar points by vector similarity
 /// given the filtering restrictions.
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequest {
     /// Look for vectors closest to this
@@ -152,7 +155,13 @@ pub struct SearchRequest {
     /// Additional search params
     pub params: Option<SearchParams>,
     /// Max number of result to return
-    pub top: usize,
+    #[serde(alias = "top")]
+    pub limit: usize,
+    /// Offset of the first result to return.
+    /// May be used to paginate results.
+    /// Note: large offset values may cause performance issues.
+    #[serde(default)]
+    pub offset: usize,
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
@@ -196,7 +205,13 @@ pub struct RecommendRequest {
     /// Additional search params
     pub params: Option<SearchParams>,
     /// Max number of result to return
-    pub top: usize,
+    #[serde(alias = "top")]
+    pub limit: usize,
+    /// Offset of the first result to return.
+    /// May be used to paginate results.
+    /// Note: large offset values may cause performance issues.
+    #[serde(default)]
+    pub offset: usize,
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
@@ -209,13 +224,40 @@ pub struct RecommendRequest {
     pub score_threshold: Option<ScoreType>,
 }
 
+/// Count Request
+/// Counts the number of points which satisfy the given filter.
+/// If filter is not provided, the count of all points in the collection will be returned.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct CountRequest {
+    /// Look only for points which satisfies this conditions
+    pub filter: Option<Filter>,
+    /// If true, count exact number of points. If false, count approximate number of points faster.
+    /// Approximate count might be unreliable during the indexing process. Default: true
+    #[serde(default = "default_exact_count")]
+    pub exact: bool,
+}
+
+pub fn default_exact_count() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct CountResult {
+    /// Number of points which satisfy the conditions
+    pub count: usize,
+}
+
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
 pub enum CollectionError {
     #[error("Wrong input: {description}")]
     BadInput { description: String },
+    #[error("{what} not found")]
+    NotFound { what: String },
     #[error("No point with id {missed_point_id} found")]
-    NotFound { missed_point_id: PointIdType },
+    PointNotFound { missed_point_id: PointIdType },
     #[error("Service internal error: {error}")]
     ServiceError { error: String },
     #[error("Bad request: {description}")]
@@ -244,13 +286,23 @@ impl CollectionError {
     }
 }
 
+impl From<SystemTimeError> for CollectionError {
+    fn from(error: SystemTimeError) -> CollectionError {
+        CollectionError::ServiceError {
+            error: format!("System time error: {}", error),
+        }
+    }
+}
+
 impl From<OperationError> for CollectionError {
     fn from(err: OperationError) -> Self {
         match err {
             OperationError::WrongVector { .. } => Self::BadInput {
                 description: format!("{}", err),
             },
-            OperationError::PointIdError { missed_point_id } => Self::NotFound { missed_point_id },
+            OperationError::PointIdError { missed_point_id } => {
+                Self::PointNotFound { missed_point_id }
+            }
             OperationError::ServiceError { description } => {
                 Self::ServiceError { error: description }
             }

@@ -8,14 +8,16 @@ use std::{
 };
 
 use crate::operations::config_diff::DiffConfig;
-use crate::operations::types::PointRequest;
+use crate::operations::snapshot_ops::{
+    get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
+};
+use crate::operations::types::{CountRequest, CountResult, PointRequest};
 use crate::operations::OperationToShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::ShardOperation;
 use crate::telemetry::CollectionTelemetry;
 use api::grpc::transport_channel_pool::TransportChannelPool;
-use collection_manager::collection_managers::CollectionSearcher;
 use config::CollectionConfig;
 use futures::future::{join_all, try_join_all};
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
@@ -42,6 +44,8 @@ use segment::{
 };
 use serde::{Deserialize, Serialize};
 use shard::{local_shard::LocalShard, Shard, ShardId};
+use tar::Builder as TarBuilder;
+use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 use tonic::transport::Uri;
@@ -54,7 +58,7 @@ pub mod optimizers_builder;
 pub mod shard;
 pub mod telemetry;
 mod update_handler;
-mod wal;
+pub mod wal;
 
 #[cfg(test)]
 mod tests;
@@ -261,6 +265,7 @@ pub struct Collection {
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
     path: PathBuf,
+    snapshots_path: PathBuf,
     telemetry: CollectionTelemetry,
 }
 
@@ -272,6 +277,7 @@ impl Collection {
     pub async fn new(
         id: CollectionId,
         path: &Path,
+        snapshots_path: &Path,
         config: &CollectionConfig,
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
@@ -325,13 +331,17 @@ impl Collection {
             config: shared_config,
             before_drop_called: false,
             path: path.to_owned(),
+            snapshots_path: snapshots_path.to_owned(),
             telemetry: CollectionTelemetry::new(id, config.clone(), start_time.elapsed()),
         })
     }
 
-    pub async fn load(id: CollectionId, path: &Path, channel_service: ChannelService) -> Self {
-        let start_time = std::time::Instant::now();
-
+    pub async fn load(
+        id: CollectionId,
+        path: &Path,
+        snapshots_path: &Path,
+        channel_service: ChannelService,
+    ) -> Self {
         let stored_version_opt = CollectionVersion::load(path)
             .unwrap_or_else(|err| panic!("Can't read collection version {}", err));
 
@@ -403,14 +413,13 @@ impl Collection {
             config: shared_config,
             before_drop_called: false,
             path: path.to_owned(),
+            snapshots_path: snapshots_path.to_owned(),
             telemetry: CollectionTelemetry::new(id, config, start_time.elapsed()),
         }
     }
 
-    fn shard_by_id(&self, id: ShardId) -> &Shard {
-        self.shards
-            .get(&id)
-            .expect("Shard is guaranteed to be added when id is added to the ring.")
+    pub fn shard_by_id(&self, id: ShardId) -> Option<&Shard> {
+        self.shards.get(&id)
     }
 
     fn local_shard_by_id(&self, id: ShardId) -> CollectionResult<&Shard> {
@@ -424,6 +433,7 @@ impl Collection {
                 id
             ))),
             Some(shard @ Shard::Local(_)) => Ok(shard),
+            Some(shard @ Shard::Proxy(_)) => Ok(shard),
         }
     }
 
@@ -463,7 +473,7 @@ impl Collection {
         let shard_ops: Vec<_> = match operation.split_by_shard(&self.ring) {
             OperationToShard::ByShard(by_shard) => by_shard
                 .into_iter()
-                .map(|(shard_id, operation)| (self.shard_by_id(shard_id).get(), operation))
+                .map(|(shard_id, operation)| (self.shard_by_id(shard_id).unwrap().get(), operation))
                 .collect(),
             OperationToShard::ToAll(operation) => self
                 .all_shards()
@@ -502,7 +512,6 @@ impl Collection {
     pub async fn recommend_by(
         &self,
         request: RecommendRequest,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
@@ -526,7 +535,6 @@ impl Collection {
                     with_payload: Some(WithPayloadInterface::Bool(true)),
                     with_vector: true,
                 },
-                segment_searcher,
                 shard_selection,
             )
             .await?;
@@ -537,7 +545,7 @@ impl Collection {
 
         for &point_id in &reference_vectors_ids {
             if !vectors_map.contains_key(&point_id) {
-                return Err(CollectionError::NotFound {
+                return Err(CollectionError::PointNotFound {
                     missed_point_id: point_id,
                 });
             }
@@ -583,23 +591,18 @@ impl Collection {
             with_payload: request.with_payload.clone(),
             with_vector: request.with_vector,
             params: request.params,
-            top: request.top,
+            limit: request.limit,
             score_threshold: request.score_threshold,
+            offset: request.offset,
         };
 
-        self.search(
-            search_request,
-            segment_searcher,
-            search_runtime_handle,
-            shard_selection,
-        )
-        .await
+        self.search(search_request, search_runtime_handle, shard_selection)
+            .await
     }
 
-    pub async fn search(
+    async fn _search(
         &self,
         request: SearchRequest,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
@@ -607,23 +610,121 @@ impl Collection {
         let target_shards = self.target_shards(shard_selection)?;
         let all_searches = target_shards
             .iter()
-            .map(|shard| shard.search(request.clone(), segment_searcher, search_runtime_handle));
+            .map(|shard| shard.search(request.clone(), search_runtime_handle));
 
         let all_searches_res = try_join_all(all_searches).await?.into_iter().flatten();
         let distance = self.config.read().await.params.distance;
 
-        let top_result = match distance.distance_order() {
-            Order::LargeBetter => peek_top_largest_scores_iterable(all_searches_res, request.top),
-            Order::SmallBetter => peek_top_smallest_scores_iterable(all_searches_res, request.top),
+        let mut top_result = match distance.distance_order() {
+            Order::LargeBetter => {
+                peek_top_largest_scores_iterable(all_searches_res, request.limit + request.offset)
+            }
+            Order::SmallBetter => {
+                peek_top_smallest_scores_iterable(all_searches_res, request.limit + request.offset)
+            }
         };
 
+        if request.offset > 0 {
+            // Remove offset from top result.
+            top_result.drain(..request.offset);
+        }
         Ok(top_result)
+    }
+
+    async fn fill_search_result_with_payload(
+        &self,
+        search_result: Vec<ScoredPoint>,
+        with_payload: Option<WithPayloadInterface>,
+        with_vector: bool,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        let retrieve_request = PointRequest {
+            ids: search_result.iter().map(|x| x.id).collect(),
+            with_payload,
+            with_vector,
+        };
+        let retrieved_records = self.retrieve(retrieve_request, shard_selection).await?;
+        let mut records_map: HashMap<ExtendedPointId, Record> = retrieved_records
+            .into_iter()
+            .map(|rec| (rec.id, rec))
+            .collect();
+        let enriched_result = search_result
+            .into_iter()
+            .filter_map(|mut scored_point| {
+                // Points might get deleted between search and retrieve.
+                // But it's not a problem, because we don't want to return deleted points.
+                // So we just filter out them.
+                records_map.remove(&scored_point.id).map(|record| {
+                    scored_point.payload = record.payload;
+                    scored_point.vector = record.vector;
+                    scored_point
+                })
+            })
+            .collect();
+        Ok(enriched_result)
+    }
+
+    pub async fn search(
+        &self,
+        request: SearchRequest,
+        search_runtime_handle: &Handle,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        // A factor which determines if we need to use the 2-step search or not
+        // Should be adjusted based on usage statistics.
+        const PAYLOAD_TRANSFERS_FACTOR_THRESHOLD: usize = 10;
+
+        let is_payload_required = if let Some(with_payload) = &request.with_payload {
+            with_payload.is_required()
+        } else {
+            false
+        };
+
+        let metadata_required = is_payload_required || request.with_vector;
+
+        // Number of records we need to retrieve to fill the search result.
+        let require_transfers = self.shards.len() * (request.limit + request.offset);
+        // Actually used number of records.
+        let used_transfers = request.limit;
+
+        let is_required_transfer_large_enough =
+            require_transfers > used_transfers * PAYLOAD_TRANSFERS_FACTOR_THRESHOLD;
+
+        if metadata_required && is_required_transfer_large_enough {
+            // If there is an significant offset, we need to retrieve the whole result
+            // set without payload first and then retrieve the payload.
+            // It is required to do this because the payload might be too large to send over the
+            // network.
+            let mut without_payload_request = request.clone();
+            without_payload_request.with_payload = None;
+            without_payload_request.with_vector = false;
+            let without_payload_result = self
+                ._search(
+                    without_payload_request,
+                    search_runtime_handle,
+                    shard_selection,
+                )
+                .await?;
+            let filled_result = self
+                .fill_search_result_with_payload(
+                    without_payload_result,
+                    request.with_payload.clone(),
+                    request.with_vector,
+                    shard_selection,
+                )
+                .await?;
+            Ok(filled_result)
+        } else {
+            let result = self
+                ._search(request, search_runtime_handle, shard_selection)
+                .await?;
+            Ok(result)
+        }
     }
 
     pub async fn scroll_by(
         &self,
         request: ScrollRequest,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequest::default();
@@ -650,7 +751,6 @@ impl Collection {
         let target_shards = self.target_shards(shard_selection)?;
         let scroll_futures = target_shards.iter().map(|shard| {
             shard.scroll_by(
-                segment_searcher,
                 offset,
                 limit,
                 &with_payload_interface,
@@ -680,10 +780,26 @@ impl Collection {
         })
     }
 
+    pub async fn count(
+        &self,
+        request: CountRequest,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<CountResult> {
+        let request = Arc::new(request);
+        let target_shards = self.target_shards(shard_selection)?;
+        let count_futures = target_shards
+            .iter()
+            .map(|shard| shard.count(request.clone()));
+        let counts: Vec<_> = try_join_all(count_futures).await?.into_iter().collect();
+
+        let total_count = counts.iter().map(|x| x.count).sum::<usize>();
+        let aggregated_count = CountResult { count: total_count };
+        Ok(aggregated_count)
+    }
+
     pub async fn retrieve(
         &self,
         request: PointRequest,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<Record>> {
         let with_payload_interface = request
@@ -694,14 +810,9 @@ impl Collection {
         let with_vector = request.with_vector;
         let request = Arc::new(request);
         let target_shards = self.target_shards(shard_selection)?;
-        let retrieve_futures = target_shards.iter().map(|shard| {
-            shard.retrieve(
-                request.clone(),
-                segment_searcher,
-                &with_payload,
-                with_vector,
-            )
-        });
+        let retrieve_futures = target_shards
+            .iter()
+            .map(|shard| shard.retrieve(request.clone(), &with_payload, with_vector));
 
         let all_shard_collection_results = try_join_all(retrieve_futures).await?;
         let points = all_shard_collection_results.into_iter().flatten().collect();
@@ -722,8 +833,10 @@ impl Collection {
                 DiffConfig::update(optimizer_config_diff, &config.optimizer_config)?;
         }
         for shard in self.all_shards() {
-            if let Shard::Local(shard) = shard {
-                shard.on_optimizer_config_update().await?;
+            match shard {
+                Shard::Local(shard) => shard.on_optimizer_config_update().await?,
+                Shard::Proxy(shard) => shard.on_optimizer_config_update().await?,
+                Shard::Remote(_) => {} // Do nothing for remote shards
             }
         }
         self.config.read().await.save(&self.path)?;
@@ -743,8 +856,10 @@ impl Collection {
             config.optimizer_config = optimizer_config;
         }
         for shard in self.all_shards() {
-            if let Shard::Local(shard) = shard {
-                shard.on_optimizer_config_update().await?;
+            match shard {
+                Shard::Local(shard) => shard.on_optimizer_config_update().await?,
+                Shard::Remote(_) => {} // Do nothing for remote shards
+                Shard::Proxy(proxy) => proxy.on_optimizer_config_update().await?,
             }
         }
         self.config.read().await.save(&self.path)?;
@@ -770,6 +885,7 @@ impl Collection {
                 info.optimizer_status =
                     max(info.optimizer_status.clone(), shard_info.optimizer_status);
                 info.vectors_count += shard_info.vectors_count;
+                info.points_count += shard_info.points_count;
                 info.segments_count += shard_info.segments_count;
                 info.disk_data_size += shard_info.disk_data_size;
                 info.ram_data_size += shard_info.ram_data_size;
@@ -823,6 +939,107 @@ impl Collection {
         telemetry.disk_data_size = info.disk_data_size;
         telemetry.ram_data_size = info.ram_data_size;
         Some(telemetry)
+    }
+
+    pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {
+        list_snapshots_in_directory(&self.snapshots_path).await
+    }
+
+    pub async fn get_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
+        let snapshot_path = self.snapshots_path.join(snapshot_name);
+        if !snapshot_path.exists() {
+            return Err(CollectionError::NotFound {
+                what: format!("Snapshot {}", snapshot_name),
+            });
+        }
+        Ok(snapshot_path)
+    }
+
+    pub async fn create_snapshot(&self, temp_dir: &Path) -> CollectionResult<SnapshotDescription> {
+        let snapshot_name = format!(
+            "{}-{}.snapshot",
+            self.name(),
+            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
+        );
+        let snapshot_path = self.snapshots_path.join(&snapshot_name);
+
+        let snapshot_path_tmp = snapshot_path.with_extension("tmp");
+
+        let snapshot_path_with_tmp_extension = temp_dir.join(&snapshot_name).with_extension("tmp");
+        let snapshot_path_with_arc_extension = temp_dir.join(snapshot_name).with_extension("arc");
+
+        create_dir_all(&snapshot_path_with_tmp_extension).await?;
+
+        // Create snapshot of each shard
+        for (shard_id, shard) in self.shards.iter() {
+            let shard_snapshot_path =
+                snapshot_path_with_tmp_extension.join(format!("{}", shard_id));
+            create_dir_all(&shard_snapshot_path).await?;
+            match shard {
+                Shard::Local(local_shard) => {
+                    local_shard.create_snapshot(&shard_snapshot_path).await?;
+                }
+                Shard::Proxy(proxy_shard) => {
+                    proxy_shard.create_snapshot(&shard_snapshot_path).await?;
+                }
+                Shard::Remote(remote_shard) => {
+                    // copy shard directory to snapshot directory
+                    remote_shard.create_snapshot(&shard_snapshot_path).await?;
+                }
+            }
+        }
+
+        CollectionVersion::save(&snapshot_path_with_tmp_extension)?;
+        self.config
+            .read()
+            .await
+            .save(&snapshot_path_with_tmp_extension)?;
+
+        // have to use std here, cause TarBuilder is not async
+        let file = std::fs::File::create(&snapshot_path_with_arc_extension)?;
+        let mut builder = TarBuilder::new(file);
+        // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
+        builder.append_dir_all(".", &snapshot_path_with_tmp_extension)?;
+        builder.finish()?;
+
+        // remove temporary snapshot directory
+        remove_dir_all(&snapshot_path_with_tmp_extension).await?;
+
+        // move snapshot to permanent location
+        // We can't move right away, because snapshot folder can be on another mounting point.
+        // We can't copy to the target location directly, cause copy is not atomic.
+        copy(&snapshot_path_with_arc_extension, &snapshot_path_tmp).await?;
+        rename(&snapshot_path_tmp, &snapshot_path).await?;
+        remove_file(snapshot_path_with_arc_extension).await?;
+
+        get_snapshot_description(&snapshot_path).await
+    }
+
+    pub fn restore_snapshot(snapshot_path: &Path, target_dir: &Path) -> CollectionResult<()> {
+        // decompress archive
+        let archive_file = std::fs::File::open(snapshot_path).unwrap();
+        let mut ar = tar::Archive::new(archive_file);
+        ar.unpack(target_dir)?;
+
+        let config = CollectionConfig::load(target_dir).unwrap_or_else(|err| {
+            panic!(
+                "Can't read collection config due to {}\nat {}",
+                err,
+                target_dir.to_str().unwrap()
+            )
+        });
+        let configured_shards = config.params.shard_number.get();
+
+        for shard_id in 0..configured_shards {
+            let shard_path = shard_path(target_dir, shard_id);
+            let shard_config = ShardConfig::load(&shard_path)?;
+            match shard_config.r#type {
+                ShardType::Local => LocalShard::restore_snapshot(&shard_path)?,
+                ShardType::Remote { .. } => RemoteShard::restore_snapshot(&shard_path),
+            }
+        }
+
+        Ok(())
     }
 }
 

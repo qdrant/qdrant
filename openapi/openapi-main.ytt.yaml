@@ -301,6 +301,29 @@ paths:
             type: string
       responses: #@ response(array(reference("ScoredPoint")))
 
+  /collections/{collection_name}/points/count:
+    post:
+      tags:
+        - points
+      summary: Count points
+      description: Count points which matches given filtering condition
+      operationId: count_points
+      requestBody:
+        description: Request counts of points which matches given filtering condition
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CountRequest"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to count in
+          required: true
+          schema:
+            type: string
+      responses: #@ response(reference("CountResult"))
+
 components:
   schemas:
     ErrorResponse:

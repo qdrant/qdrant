@@ -1,42 +1,35 @@
-use arc_swap::ArcSwap;
-use std::collections::HashMap;
+use std::cmp::max;
+use std::collections::BTreeSet;
+use std::fs::remove_file;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
 
-use async_trait::async_trait;
+use arc_swap::ArcSwap;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
-use std::cmp::max;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::fs::create_dir_all;
-use tokio::runtime::{self, Handle, Runtime};
-use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot, Mutex, RwLock as TokioRwLock};
+use segment::index::field_index::CardinalityEstimation;
+use tokio::fs::{copy, create_dir_all};
+use tokio::runtime::{self, Runtime};
+use tokio::sync::{mpsc, mpsc::UnboundedSender, Mutex, RwLock as TokioRwLock};
 
-use segment::types::{
-    ExtendedPointId, Filter, PayloadIndexInfo, PayloadKeyType, PayloadStorageType, ScoredPoint,
-    SegmentConfig, SegmentType, WithPayload, WithPayloadInterface,
-};
+use segment::segment::Segment;
+use segment::segment_constructor::{build_segment, load_segment};
+use segment::types::{Filter, PayloadStorageType, PointIdType, SegmentConfig};
 
-use crate::collection_manager::collection_managers::CollectionSearcher;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::config::CollectionConfig;
-use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CollectionStatus, OptimizersStatus, Record,
-    UpdateResult, UpdateStatus,
-};
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
-use crate::shard::shard_config::ShardConfig;
-use crate::shard::ShardOperation;
-use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
+use crate::shard::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
+use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
-use crate::{CollectionId, PointRequest, SearchRequest, ShardId};
-use segment::segment_constructor::{build_segment, load_segment};
-use std::fs::{read_dir, remove_dir_all};
+use crate::{CollectionId, ShardId};
 
 /// LocalShard
 ///
@@ -44,14 +37,14 @@ use std::fs::{read_dir, remove_dir_all};
 ///
 /// Holds all object, required for collection functioning
 pub struct LocalShard {
-    segments: Arc<RwLock<SegmentHolder>>,
-    config: Arc<TokioRwLock<CollectionConfig>>,
-    wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
-    update_handler: Arc<Mutex<UpdateHandler>>,
-    runtime_handle: Option<Runtime>,
-    update_sender: ArcSwap<UnboundedSender<UpdateSignal>>,
-    path: PathBuf,
-    before_drop_called: bool,
+    pub(super) segments: Arc<RwLock<SegmentHolder>>,
+    pub(super) config: Arc<TokioRwLock<CollectionConfig>>,
+    pub(super) wal: Arc<Mutex<SerdeWal<CollectionUpdateOperations>>>,
+    pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
+    pub(super) runtime_handle: Option<Runtime>,
+    pub(super) update_sender: ArcSwap<UnboundedSender<UpdateSignal>>,
+    pub(super) path: PathBuf,
+    pub(super) before_drop_called: bool,
 }
 
 /// Shard holds information about segments and WAL.
@@ -93,6 +86,7 @@ impl LocalShard {
             segment_holder.clone(),
             locked_wal.clone(),
             config.optimizer_config.flush_interval_sec,
+            config.optimizer_config.max_optimization_threads,
         );
 
         let (update_sender, update_receiver) = mpsc::unbounded_channel();
@@ -112,7 +106,7 @@ impl LocalShard {
         }
     }
 
-    fn segments(&self) -> &RwLock<SegmentHolder> {
+    pub(super) fn segments(&self) -> &RwLock<SegmentHolder> {
         self.segments.deref()
     }
 
@@ -134,7 +128,7 @@ impl LocalShard {
         )
         .expect("Can't read WAL");
 
-        let segment_dirs = read_dir(&segments_path).unwrap_or_else(|err| {
+        let segment_dirs = std::fs::read_dir(&segments_path).unwrap_or_else(|err| {
             panic!(
                 "Can't read segments directory due to {}\nat {}",
                 err,
@@ -145,7 +139,7 @@ impl LocalShard {
         for entry in segment_dirs {
             let segments_path = entry.unwrap().path();
             if segments_path.ends_with("deleted") {
-                remove_dir_all(&segments_path).unwrap_or_else(|_| {
+                std::fs::remove_dir_all(&segments_path).unwrap_or_else(|_| {
                     panic!(
                         "Can't remove marked-for-remove segment {}",
                         segments_path.to_str().unwrap()
@@ -205,7 +199,6 @@ impl LocalShard {
         shared_config: Arc<TokioRwLock<CollectionConfig>>,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
-        ShardConfig::init_file(shard_path)?;
         let local_shard_config = ShardConfig::new_local();
         local_shard_config.save(shard_path)?;
 
@@ -378,161 +371,107 @@ impl LocalShard {
 
         self.before_drop_called = true;
     }
-}
 
-#[async_trait]
-#[allow(unused_variables)]
-impl ShardOperation for &LocalShard {
-    /// Imply interior mutability.
-    /// Performs update operation on this collection asynchronously.
-    /// Explicitly waits for result to be updated.
-    async fn update(
-        &self,
-        operation: CollectionUpdateOperations,
-        wait: bool,
-    ) -> CollectionResult<UpdateResult> {
-        let (callback_sender, callback_receiver) = if wait {
-            let (tx, rx) = oneshot::channel();
-            (Some(tx), Some(rx))
-        } else {
-            (None, None)
-        };
-
-        let operation_id = {
-            let mut wal_lock = self.wal.lock().await;
-            let operation_id = wal_lock.write(&operation)?;
-            self.update_sender
-                .load()
-                .send(UpdateSignal::Operation(OperationData {
-                    op_num: operation_id,
-                    operation,
-                    sender: callback_sender,
-                }))?;
-            operation_id
-        };
-
-        if let Some(receiver) = callback_receiver {
-            let _res = receiver.await??;
-            Ok(UpdateResult {
-                operation_id,
-                status: UpdateStatus::Completed,
-            })
-        } else {
-            Ok(UpdateResult {
-                operation_id,
-                status: UpdateStatus::Acknowledged,
-            })
+    pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
+        // recover segments
+        let segments_path = LocalShard::segments_path(snapshot_path);
+        // iterate over segments directory and recover each segment
+        for entry in std::fs::read_dir(segments_path)? {
+            let entry_path = entry?.path();
+            if entry_path.extension().map(|s| s == "tar").unwrap_or(false) {
+                let segment_id_opt = entry_path
+                    .file_stem()
+                    .map(|s| s.to_str().unwrap().to_owned());
+                if segment_id_opt.is_none() {
+                    return Err(CollectionError::ServiceError {
+                        error: "Segment ID is empty".to_string(),
+                    });
+                }
+                let segment_id = segment_id_opt.unwrap();
+                Segment::restore_snapshot(&entry_path, &segment_id)?;
+                remove_file(&entry_path)?;
+            }
         }
+        Ok(())
     }
 
-    async fn scroll_by(
-        &self,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
-        offset: Option<ExtendedPointId>,
-        limit: usize,
-        with_payload_interface: &WithPayloadInterface,
-        with_vector: bool,
-        filter: Option<&Filter>,
-    ) -> CollectionResult<Vec<Record>> {
-        // ToDo: Make faster points selection with a set
-        let segments = self.segments();
-        let point_ids = segments
+    /// create snapshot for local shard into `target_path`
+    pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
+        let snapshot_shard_path = target_path;
+
+        // snapshot all shard's segment
+        let snapshot_segments_shard_path = snapshot_shard_path.join("segments");
+        create_dir_all(&snapshot_segments_shard_path).await?;
+        self.segments
             .read()
+            .snapshot_all_segments(&snapshot_segments_shard_path)?;
+
+        // snapshot all shard's WAL
+        self.snapshot_wal(snapshot_shard_path).await?;
+
+        // copy shard's config
+        let shard_config_path = ShardConfig::get_config_path(&self.path);
+        let target_shard_config_path = snapshot_shard_path.join(SHARD_CONFIG_FILE);
+        copy(&shard_config_path, &target_shard_config_path).await?;
+        Ok(())
+    }
+
+    /// snapshot WAL
+    ///
+    /// copies all WAL files into `snapshot_shard_path/wal`
+    pub async fn snapshot_wal(&self, snapshot_shard_path: &Path) -> CollectionResult<()> {
+        // lock wal during snapshot
+        let _wal_guard = self.wal.lock().await;
+        let source_wal_path = self.path.join("wal");
+        let options = fs_extra::dir::CopyOptions::new();
+        fs_extra::dir::copy(&source_wal_path, snapshot_shard_path, &options).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Error while copy WAL {:?} {}",
+                snapshot_shard_path, err
+            ))
+        })?;
+        Ok(())
+    }
+
+    pub async fn estimate_cardinality<'a>(
+        &'a self,
+        filter: Option<&'a Filter>,
+    ) -> CollectionResult<CardinalityEstimation> {
+        let segments = self.segments().read();
+        let some_segment = segments.iter().next();
+
+        if some_segment.is_none() {
+            return Ok(CardinalityEstimation::exact(0));
+        }
+        let cardinality = segments
             .iter()
-            .flat_map(|(_, segment)| segment.get().read().read_filtered(offset, limit, filter))
-            .sorted()
-            .dedup()
-            .take(limit)
-            .collect_vec();
-
-        let with_payload = WithPayload::from(with_payload_interface);
-        let mut points = segment_searcher
-            .retrieve(segments, &point_ids, &with_payload, with_vector)
-            .await?;
-        points.sort_by_key(|point| point.id);
-
-        Ok(points)
+            .map(|(_id, segment)| segment.get().read().estimate_points_count(filter))
+            .fold(CardinalityEstimation::exact(0), |acc, x| {
+                CardinalityEstimation {
+                    primary_clauses: vec![],
+                    min: acc.min + x.min,
+                    exp: acc.exp + x.exp,
+                    max: acc.max + x.max,
+                }
+            });
+        Ok(cardinality)
     }
 
-    /// Collect overview information about the shard
-    async fn info(&self) -> CollectionResult<CollectionInfo> {
-        let collection_config = self.config.read().await.clone();
-        let segments = self.segments.read();
-        let mut vectors_count = 0;
-        let mut segments_count = 0;
-        let mut ram_size = 0;
-        let mut disk_size = 0;
-        let mut status = CollectionStatus::Green;
-        let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
-        for (_idx, segment) in segments.iter() {
-            segments_count += 1;
-            let segment_info = segment.get().read().info();
-            if segment_info.segment_type == SegmentType::Special {
-                status = CollectionStatus::Yellow;
-            }
-            vectors_count += segment_info.num_vectors;
-            disk_size += segment_info.disk_usage_bytes;
-            ram_size += segment_info.ram_usage_bytes;
-            for (key, val) in segment_info.index_schema {
-                schema.insert(key, val);
-            }
+    pub async fn read_filtered<'a>(
+        &'a self,
+        filter: Option<&'a Filter>,
+    ) -> CollectionResult<BTreeSet<PointIdType>> {
+        let segments = self.segments().read();
+        let some_segment = segments.iter().next();
+
+        if some_segment.is_none() {
+            return Ok(Default::default());
         }
-        if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
-            status = CollectionStatus::Red;
-        }
-
-        let optimizer_status = match &segments.optimizer_errors {
-            None => OptimizersStatus::Ok,
-            Some(error) => OptimizersStatus::Error(error.to_string()),
-        };
-
-        Ok(CollectionInfo {
-            status,
-            optimizer_status,
-            vectors_count,
-            segments_count,
-            disk_data_size: disk_size,
-            ram_data_size: ram_size,
-            config: collection_config,
-            payload_schema: schema,
-        })
-    }
-
-    async fn search(
-        &self,
-        request: Arc<SearchRequest>,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
-        search_runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
-        let res = segment_searcher
-            .search(self.segments(), request.clone(), search_runtime_handle)
-            .await?;
-        let distance = self.config.read().await.params.distance;
-        let processed_res = res.into_iter().map(|mut scored_point| {
-            scored_point.score = distance.postprocess_score(scored_point.score);
-            scored_point
-        });
-
-        let top_result = if let Some(threshold) = request.score_threshold {
-            processed_res
-                .take_while(|scored_point| distance.check_threshold(scored_point.score, threshold))
-                .collect()
-        } else {
-            processed_res.collect()
-        };
-        Ok(top_result)
-    }
-
-    async fn retrieve(
-        &self,
-        request: Arc<PointRequest>,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
-        with_payload: &WithPayload,
-        with_vector: bool,
-    ) -> CollectionResult<Vec<Record>> {
-        segment_searcher
-            .retrieve(self.segments(), &request.ids, with_payload, with_vector)
-            .await
+        let all_points: BTreeSet<_> = segments
+            .iter()
+            .flat_map(|(_id, segment)| segment.get().read().read_filtered(None, usize::MAX, filter))
+            .collect();
+        Ok(all_points)
     }
 }
 

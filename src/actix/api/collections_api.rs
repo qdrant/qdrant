@@ -41,19 +41,6 @@ async fn get_collection(
     process_response(response, timing)
 }
 
-// Deprecated
-#[post("/collections")]
-async fn update_collections(
-    dispatcher: web::Data<Arc<Dispatcher>>,
-    operation: web::Json<CollectionMetaOperations>,
-) -> impl Responder {
-    let timing = Instant::now();
-    let response = dispatcher
-        .submit_collection_meta_op(operation.0, None)
-        .await;
-    process_response(response, timing)
-}
-
 #[put("/collections/{name}")]
 async fn create_collection(
     dispatcher: web::Data<Arc<Dispatcher>>,
@@ -133,7 +120,6 @@ async fn update_aliases(
 pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
     cfg.service(get_collections)
         .service(get_collection)
-        .service(update_collections)
         .service(create_collection)
         .service(update_collection)
         .service(delete_collection)

@@ -1,0 +1,76 @@
+#@ load("openapi.lib.yml", "response", "reference", "type", "array")
+
+paths:
+
+  /collections/{collection_name}/snapshots:
+    get:
+      tags:
+        - collections
+      summary: List snapshots
+      description: Get list of snapshots for a collection
+      operationId: list_snapshots
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+      responses: #@ response(array(reference("SnapshotDescription")))
+
+    post:
+      tags:
+        - collections
+      summary: Create snapshot
+      description: Create new snapshot for a collection
+      operationId: create_snapshot
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection for which to create a snapshot
+          required: true
+          schema:
+            type: string
+      responses: #@ response(reference("SnapshotDescription"))
+
+  /collections/{collection_name}/snapshots/{snapshot_name}:
+    get:
+      tags:
+        - collections
+      summary: Download snapshot
+      description: Download specified snapshot from a collection as a file
+      operationId: get_snapshot
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+        - name: snapshot_name
+          in: path
+          description: Name of the snapshot to download
+          required: true
+          schema:
+            type: string
+
+      responses:
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        4XX:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        '200':
+          description: Snapshot file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary

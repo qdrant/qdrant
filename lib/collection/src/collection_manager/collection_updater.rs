@@ -76,10 +76,9 @@ mod tests {
 
     use segment::types::{Payload, WithPayload};
 
-    use crate::collection_manager::collection_managers::CollectionSearcher;
     use crate::collection_manager::fixtures::build_test_holder;
+    use crate::collection_manager::segments_searcher::SegmentsSearcher;
     use crate::collection_manager::segments_updater::upsert_points;
-    use crate::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 
     use super::*;
     use crate::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
@@ -90,8 +89,6 @@ mod tests {
         let dir = TempDir::new("segment_dir").unwrap();
 
         let segments = build_test_holder(dir.path());
-        let searcher = SimpleCollectionSearcher::new();
-
         let points = vec![1.into(), 500.into()];
 
         let vectors = vec![vec![2., 2., 2., 2.], vec![2., 0., 2., 0.]];
@@ -99,15 +96,14 @@ mod tests {
         let res = upsert_points(&segments, 100, &points, &vectors, &None);
         assert!(matches!(res, Ok(1)));
 
-        let records = searcher
-            .retrieve(
-                &segments,
-                &[1.into(), 2.into(), 500.into()],
-                &WithPayload::from(true),
-                true,
-            )
-            .await
-            .unwrap();
+        let records = SegmentsSearcher::retrieve(
+            &segments,
+            &[1.into(), 2.into(), 500.into()],
+            &WithPayload::from(true),
+            true,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(records.len(), 3);
 
@@ -131,15 +127,14 @@ mod tests {
         )
         .unwrap();
 
-        let records = searcher
-            .retrieve(
-                &segments,
-                &[1.into(), 2.into(), 500.into()],
-                &WithPayload::from(true),
-                true,
-            )
-            .await
-            .unwrap();
+        let records = SegmentsSearcher::retrieve(
+            &segments,
+            &[1.into(), 2.into(), 500.into()],
+            &WithPayload::from(true),
+            true,
+        )
+        .await
+        .unwrap();
 
         for record in records {
             let _v = record.vector.unwrap();
@@ -151,7 +146,6 @@ mod tests {
     async fn test_payload_ops() {
         let dir = TempDir::new("segment_dir").unwrap();
         let segments = build_test_holder(dir.path());
-        let searcher = SimpleCollectionSearcher::new();
 
         let payload: Payload = serde_json::from_str(r#"{"color":"red"}"#).unwrap();
 
@@ -167,8 +161,7 @@ mod tests {
         )
         .unwrap();
 
-        let res = searcher
-            .retrieve(&segments, &points, &WithPayload::from(true), false)
+        let res = SegmentsSearcher::retrieve(&segments, &points, &WithPayload::from(true), false)
             .await
             .unwrap();
 
@@ -195,19 +188,19 @@ mod tests {
         )
         .unwrap();
 
-        let res = searcher
-            .retrieve(&segments, &[3.into()], &WithPayload::from(true), false)
-            .await
-            .unwrap();
+        let res =
+            SegmentsSearcher::retrieve(&segments, &[3.into()], &WithPayload::from(true), false)
+                .await
+                .unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
 
         // Test clear payload
 
-        let res = searcher
-            .retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
-            .await
-            .unwrap();
+        let res =
+            SegmentsSearcher::retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
+                .await
+                .unwrap();
         assert_eq!(res.len(), 1);
         assert!(res[0].payload.as_ref().unwrap().contains_key("color"));
 
@@ -219,10 +212,10 @@ mod tests {
             },
         )
         .unwrap();
-        let res = searcher
-            .retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
-            .await
-            .unwrap();
+        let res =
+            SegmentsSearcher::retrieve(&segments, &[2.into()], &WithPayload::from(true), false)
+                .await
+                .unwrap();
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
     }

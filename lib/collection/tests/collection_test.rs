@@ -10,12 +10,13 @@ use collection::operations::{
     types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus},
     CollectionUpdateOperations,
 };
-use segment::types::{Condition, HasIdCondition, Payload, PointIdType, WithPayloadInterface};
+use segment::types::{
+    Condition, FieldCondition, Filter, HasIdCondition, Payload, PointIdType, WithPayloadInterface,
+};
 
 use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
-use collection::collection_manager::simple_collection_searcher::SimpleCollectionSearcher;
 use collection::operations::point_ops::Batch;
-use collection::operations::types::PointRequest;
+use collection::operations::types::{CountRequest, PointRequest};
 
 mod common;
 
@@ -63,13 +64,13 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         with_vector: false,
         filter: None,
         params: None,
-        top: 3,
+        limit: 3,
+        offset: 0,
         score_threshold: None,
     };
 
-    let segment_searcher = SimpleCollectionSearcher::new();
     let search_res = collection
-        .search(search_request, &segment_searcher, &Handle::current(), None)
+        .search(search_request, &Handle::current(), None)
         .await;
 
     match search_res {
@@ -121,13 +122,13 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         with_vector: true,
         filter: None,
         params: None,
-        top: 3,
+        limit: 3,
+        offset: 0,
         score_threshold: None,
     };
 
-    let segment_searcher = SimpleCollectionSearcher::new();
     let search_res = collection
-        .search(search_request, &segment_searcher, &Handle::current(), None)
+        .search(search_request, &Handle::current(), None)
         .await;
 
     match search_res {
@@ -139,6 +140,22 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         }
         Err(err) => panic!("search failed: {:?}", err),
     }
+
+    let count_request = CountRequest {
+        filter: Some(Filter::new_must(Condition::Field(FieldCondition {
+            key: "k".to_string(),
+            r#match: Some(serde_json::from_str(r#"{ "value": "v2" }"#).unwrap()),
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            values_count: None,
+        }))),
+        exact: true,
+    };
+
+    let count_res = collection.count(count_request, None).await.unwrap();
+    assert_eq!(count_res.count, 1);
+
     collection.before_drop().await;
 }
 
@@ -192,18 +209,19 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         collection.before_drop().await;
     }
 
-    let mut loaded_collection =
-        load_local_collection("test".to_string(), collection_dir.path()).await;
-    let segment_searcher = SimpleCollectionSearcher::new();
+    let collection_path = collection_dir.path();
+    let mut loaded_collection = load_local_collection(
+        "test".to_string(),
+        collection_path,
+        &collection_path.join("snapshots"),
+    )
+    .await;
     let request = PointRequest {
         ids: vec![1.into(), 2.into()],
         with_payload: Some(WithPayloadInterface::Bool(true)),
         with_vector: true,
     };
-    let retrieved = loaded_collection
-        .retrieve(request, &segment_searcher, None)
-        .await
-        .unwrap();
+    let retrieved = loaded_collection.retrieve(request, None).await.unwrap();
 
     assert_eq!(retrieved.len(), 2);
 
@@ -301,7 +319,6 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         .update_from_client(insert_points, true)
         .await
         .unwrap();
-    let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection
         .recommend_by(
             RecommendRequest {
@@ -309,12 +326,12 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
                 negative: vec![8.into()],
                 filter: None,
                 params: None,
-                top: 5,
+                limit: 5,
+                offset: 0,
                 with_payload: None,
                 with_vector: false,
                 score_threshold: None,
             },
-            &segment_searcher,
             &Handle::current(),
             None,
         )
@@ -364,7 +381,6 @@ async fn test_read_api_with_shards(shard_number: u32) {
         .await
         .unwrap();
 
-    let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection
         .scroll_by(
             ScrollRequest {
@@ -374,7 +390,6 @@ async fn test_read_api_with_shards(shard_number: u32) {
                 with_payload: Some(WithPayloadInterface::Bool(true)),
                 with_vector: false,
             },
-            &segment_searcher,
             None,
         )
         .await
@@ -444,7 +459,6 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
         Err(err) => panic!("operation failed: {:?}", err),
     }
 
-    let segment_searcher = SimpleCollectionSearcher::new();
     let result = collection
         .scroll_by(
             ScrollRequest {
@@ -454,7 +468,6 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
                 with_payload: Some(WithPayloadInterface::Bool(false)),
                 with_vector: false,
             },
-            &segment_searcher,
             None,
         )
         .await

@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package qdrant;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+service Snapshots {
+  /*
+ Create snapshot
+  */
+  rpc Create (CreateSnapshotRequest) returns (CreateSnapshotResponse) {}
+  /*
+  List snapshots
+   */
+  rpc List (ListSnapshotsRequest) returns (ListSnapshotsResponse) {}
+}
+
+message CreateSnapshotRequest {
+  string collection_name = 1; // Name of the collection
+}
+
+message ListSnapshotsRequest {
+  string collection_name = 1; // Name of the collection
+}
+
+
+message SnapshotDescription {
+  string name = 1; // Name of the snapshot
+  google.protobuf.Timestamp creation_time = 2; // Creation time of the snapshot
+  int64 size = 3; // Size of the snapshot in bytes
+}
+
+message CreateSnapshotResponse {
+  SnapshotDescription snapshot_description = 1;
+  double time = 2; // Time spent to process
+}
+
+message ListSnapshotsResponse {
+  repeated SnapshotDescription snapshot_descriptions = 1;
+  double time = 2; // Time spent to process
+}

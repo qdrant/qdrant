@@ -7,15 +7,18 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dev-dependencies]
-pprof = { version = "0.9", features = ["flamegraph", "prost-codec"] }
+pprof = { version = "0.10", features = ["flamegraph", "prost-codec"] }
 tempdir = "0.3.7"
 criterion = "0.3"
 rmp-serde = "~1.1"
 rand_distr = "0.4.3"
+walkdir = "2.3.2"
 
 [dependencies]
 
 parking_lot = "0.12"
+rayon = "1.5.3"
+num_cpus = "1.13"
 itertools = "0.10"
 rocksdb = { version = "0.18.0", default-features = false, features = [ "snappy" ] }
 uuid = { version = "1.1", features = ["v4", "serde"] }
@@ -30,14 +33,16 @@ atomicwrites = "0.3.1"
 memmap = "0.7.0"
 schemars = { version = "0.8.10", features = ["uuid1", "preserve_order"] }
 log = "0.4"
-geo = "0.21.0"
+geo = "0.22.1"
 geohash = "0.12.0"
 num-traits = "0.2.15"
 num-derive = "0.3.3"
 rand = "0.8"
-bit-vec = "0.6"
+bitvec = "1.0.0"
 seahash = "4.1.0"
 json-patch = "0.2.6"
+tar = "0.4.38"
+fs_extra = "1.2.0"
 
 [[bench]]
 name = "vector_search"

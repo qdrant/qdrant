@@ -1,7 +1,9 @@
 tests/
 target/
 storage/
+snapshots/
 lib/segment/target
 lib/api/target
 lib/collection/target
 lib/storage/target
+*.tar

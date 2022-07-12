@@ -32,10 +32,16 @@ use wal::Wal;
 use super::alias_mapping::AliasMapping;
 use super::consensus_ops::ConsensusOperations;
 use super::errors::StorageError;
-use super::toc::TableOfContent;
+use super::CollectionContainer;
 
 const COLLECTIONS_META_WAL_DIR: &str = "collections_meta_wal";
-const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
+pub const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
+
+pub mod prelude {
+    use crate::content_manager::toc::TableOfContent;
+
+    pub type ConsensusState = super::ConsensusState<TableOfContent>;
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SnapshotData {
@@ -44,7 +50,7 @@ pub struct SnapshotData {
     pub address_by_id: PeerAddressById,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct CollectionsSnapshot {
     pub collections: HashMap<CollectionId, collection::State>,
     pub aliases: AliasMapping,
@@ -128,29 +134,32 @@ impl ConsensusOpWal {
     }
 }
 
-pub struct ConsensusState {
+pub struct ConsensusState<C: CollectionContainer> {
     pub persistent: RwLock<Persistent>,
     wal: Mutex<ConsensusOpWal>,
     soft_state: RwLock<Option<SoftState>>,
-    toc: Arc<TableOfContent>,
+    toc: Arc<C>,
     on_consensus_op_apply:
         Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
     propose_sender: Mutex<Sender<Vec<u8>>>,
+    first_voter: RwLock<Option<PeerId>>,
 }
 
-impl ConsensusState {
+impl<C: CollectionContainer> ConsensusState<C> {
     pub fn new(
         persistent_state: Persistent,
-        toc: Arc<TableOfContent>,
+        toc: Arc<C>,
         propose_sender: Sender<Vec<u8>>,
+        storage_path: &str,
     ) -> Self {
         Self {
             persistent: RwLock::new(persistent_state),
-            wal: Mutex::new(ConsensusOpWal::new(toc.storage_path())),
+            wal: Mutex::new(ConsensusOpWal::new(storage_path)),
             soft_state: RwLock::new(None),
             toc,
             on_consensus_op_apply: Default::default(),
             propose_sender: Mutex::new(propose_sender),
+            first_voter: Default::default(),
         }
     }
 
@@ -160,6 +169,17 @@ impl ConsensusState {
 
     pub fn this_peer_id(&self) -> PeerId {
         self.persistent.read().this_peer_id
+    }
+
+    pub fn first_voter(&self) -> PeerId {
+        match self.first_voter.read().as_ref() {
+            Some(id) => *id,
+            None => self.this_peer_id(),
+        }
+    }
+
+    pub fn set_first_voter(&self, id: PeerId) {
+        *self.first_voter.write() = Some(id);
     }
 
     pub fn cluster_status(&self) -> ClusterStatus {
@@ -182,6 +202,7 @@ impl ConsensusState {
         let leader = soft_state.as_ref().map(|state| state.leader_id);
         let role = soft_state.as_ref().map(|state| state.raft_state.into());
         let peer_id = persistent.this_peer_id;
+        let is_voter = persistent.state.conf_state.get_voters().contains(&peer_id);
         ClusterStatus::Enabled(ClusterInfo {
             peer_id,
             peers,
@@ -191,6 +212,7 @@ impl ConsensusState {
                 pending_operations,
                 leader,
                 role,
+                is_voter,
             },
         })
     }
@@ -276,7 +298,7 @@ impl ConsensusState {
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
         let result = match operation {
             ConsensusOperations::CollectionMeta(operation) => {
-                self.toc.perform_collection_meta_op_sync(*operation)
+                self.toc.perform_collection_meta_op(*operation)
             }
             ConsensusOperations::AddPeer(peer_id, uri) => self
                 .add_peer(
@@ -317,8 +339,18 @@ impl ConsensusState {
             .apply_state_update(move |state| state.hard_state = hard_state)
     }
 
+    pub fn set_conf_state(&self, conf_state: raft::eraftpb::ConfState) -> Result<(), StorageError> {
+        self.persistent
+            .write()
+            .apply_state_update(move |state| state.conf_state = conf_state)
+    }
+
     pub fn hard_state(&self) -> raft::eraftpb::HardState {
         self.persistent.read().state().hard_state.clone()
+    }
+
+    pub fn conf_state(&self) -> raft::eraftpb::ConfState {
+        self.persistent.read().state().conf_state.clone()
     }
 
     pub fn set_commit_index(&self, index: u64) -> Result<(), StorageError> {
@@ -354,10 +386,6 @@ impl ConsensusState {
             )??
     }
 
-    pub fn is_new_deployment(&self) -> bool {
-        self.persistent.read().is_new()
-    }
-
     pub fn peer_address_by_id(&self) -> PeerAddressById {
         self.persistent.read().peer_address_by_id()
     }
@@ -365,9 +393,13 @@ impl ConsensusState {
     pub fn append_entries(&self, entries: Vec<RaftEntry>) -> Result<(), StorageError> {
         self.wal.lock().append_entries(entries)
     }
+
+    pub fn last_applied_entry(&self) -> Option<u64> {
+        self.persistent.read().last_applied_entry()
+    }
 }
 
-impl Storage for ConsensusState {
+impl<C: CollectionContainer> Storage for ConsensusState<C> {
     fn initial_state(&self) -> raft::Result<RaftState> {
         Ok(self.persistent.read().state.clone())
     }
@@ -380,6 +412,17 @@ impl Storage for ConsensusState {
         _context: GetEntriesContext,
     ) -> raft::Result<Vec<RaftEntry>> {
         let max_size: Option<_> = max_size.into();
+        if low < self.first_index()? {
+            return Err(raft::Error::Store(raft::StorageError::Compacted));
+        }
+
+        if high > self.last_index()? + 1 {
+            panic!(
+                "index out of bound (last: {}, high: {})",
+                self.last_index()? + 1,
+                high
+            );
+        }
         self.wal.lock().entries(low, high, max_size)
     }
 
@@ -409,7 +452,7 @@ impl Storage for ConsensusState {
     }
 
     fn snapshot(&self, request_index: u64, _to: u64) -> raft::Result<raft::eraftpb::Snapshot> {
-        let collections_data = self.toc.collections_snapshot_sync();
+        let collections_data = self.toc.collections_snapshot();
         let persistent = self.persistent.read();
         let raft_state = persistent.state().clone();
         if raft_state.hard_state.commit >= request_index {
@@ -434,18 +477,18 @@ impl Storage for ConsensusState {
 }
 
 #[derive(Clone)]
-pub struct ConsensusStateRef(pub Arc<ConsensusState>);
+pub struct ConsensusStateRef(pub Arc<prelude::ConsensusState>);
 
 impl Deref for ConsensusStateRef {
-    type Target = ConsensusState;
+    type Target = prelude::ConsensusState;
 
     fn deref(&self) -> &Self::Target {
         self.0.deref()
     }
 }
 
-impl From<ConsensusState> for ConsensusStateRef {
-    fn from(state: ConsensusState) -> Self {
+impl From<prelude::ConsensusState> for ConsensusStateRef {
+    fn from(state: prelude::ConsensusState) -> Self {
         Self(Arc::new(state))
     }
 }
@@ -538,6 +581,7 @@ impl EntryApplyProgressQueue {
 pub struct Persistent {
     #[serde(with = "RaftStateDef")]
     state: RaftState,
+    #[serde(default)] // TODO quick fix to avoid breaking the compat. with 0.8.1
     latest_snapshot_meta: SnapshotMetadataSer,
     apply_progress_queue: EntryApplyProgressQueue,
     #[serde(with = "serialize_peer_addresses")]
@@ -545,8 +589,6 @@ pub struct Persistent {
     this_peer_id: u64,
     #[serde(skip)]
     path: PathBuf,
-    #[serde(skip)]
-    new: bool,
 }
 
 impl Persistent {
@@ -572,25 +614,25 @@ impl Persistent {
         self.save()
     }
 
+    /// Returns state and if it was initialized for the first time
     pub fn load_or_init(
         storage_path: impl AsRef<Path>,
         first_peer: bool,
-    ) -> Result<Self, StorageError> {
+    ) -> Result<(Self, bool), StorageError> {
         create_dir_all(storage_path.as_ref())?;
         let path = storage_path.as_ref().join(STATE_FILE_NAME);
-        let state = if path.exists() {
+        let (state, just_initialized) = if path.exists() {
             log::info!("Loading raft state from {}", path.display());
-            Self::load(path)?
+            (Self::load(path)?, false)
         } else {
             log::info!("Initializing new raft state at {}", path.display());
-            Self::init(path, first_peer)?
+            (Self::init(path, first_peer)?, true)
         };
-        log::debug!("State: {:?}", state);
-        Ok(state)
-    }
-
-    pub fn is_new(&self) -> bool {
-        self.new
+        log::debug!(
+            "State: {:?}. Is just initialized: {just_initialized}",
+            state
+        );
+        Ok((state, just_initialized))
     }
 
     pub fn unapplied_entities_count(&self) -> usize {
@@ -665,7 +707,7 @@ impl Persistent {
     /// It is `None` if distributed deployment is disabled
     fn init(path: PathBuf, first_peer: bool) -> Result<Self, StorageError> {
         let this_peer_id = rand::random();
-        let learners = if first_peer {
+        let voters = if first_peer {
             vec![this_peer_id]
         } else {
             // `Some(false)` - Leave empty the network topology for the peer, if it is not starting a network itself.
@@ -678,11 +720,10 @@ impl Persistent {
                 hard_state: HardState::default(),
                 // For network with 1 node, set it as voter.
                 // First vec is voters, second is learners.
-                conf_state: ConfState::from((learners, vec![])),
+                conf_state: ConfState::from((voters, vec![])),
             },
             apply_progress_queue: Default::default(),
             peer_address_by_id: Default::default(),
-            r#new: true,
             this_peer_id,
             path,
             latest_snapshot_meta: Default::default(),
@@ -695,7 +736,6 @@ impl Persistent {
         let file = File::open(&path)?;
         let mut state: Self = serde_cbor::from_reader(&file)?;
         state.path = path;
-        state.r#new = false;
         Ok(state)
     }
 
@@ -792,14 +832,21 @@ pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
 
 #[cfg(test)]
 mod tests {
-    use raft::eraftpb::Entry;
+    use proptest::prelude::*;
+    use raft::{
+        eraftpb::Entry,
+        storage::{MemStorage, Storage},
+    };
 
-    use super::{ConsensusOpWal, EntryApplyProgressQueue, Persistent};
+    use std::sync::{mpsc, Arc};
+
+    use super::{ConsensusOpWal, ConsensusState, EntryApplyProgressQueue, Persistent};
+    use crate::content_manager::CollectionContainer;
 
     #[test]
     fn update_is_applied() {
         let dir = tempdir::TempDir::new("raft_state_test").unwrap();
-        let mut state = Persistent::load_or_init(dir.path(), false).unwrap();
+        let (mut state, _) = Persistent::load_or_init(dir.path(), false).unwrap();
         assert_eq!(state.state().hard_state.commit, 0);
         state
             .apply_state_update(|state| state.hard_state.commit = 1)
@@ -821,13 +868,15 @@ mod tests {
     #[test]
     fn state_is_loaded() {
         let dir = tempdir::TempDir::new("raft_state_test").unwrap();
-        let mut state = Persistent::load_or_init(dir.path(), false).unwrap();
+        let (mut state, just_initialized) = Persistent::load_or_init(dir.path(), false).unwrap();
+        assert!(just_initialized);
         state
             .apply_state_update(|state| state.hard_state.commit = 1)
             .unwrap();
         assert_eq!(state.state().hard_state.commit, 1);
 
-        let state_loaded = Persistent::load_or_init(dir.path(), false).unwrap();
+        let (state_loaded, initialized) = Persistent::load_or_init(dir.path(), false).unwrap();
+        assert!(!initialized);
         assert_eq!(state_loaded.state().hard_state.commit, 1);
     }
 
@@ -886,5 +935,90 @@ mod tests {
         .unwrap();
         // Even when `max_size` is `0` this fn should return at least 1 entry
         assert_eq!(wal.entries(4, 5, Some(0)).unwrap().len(), 1)
+    }
+
+    struct NoCollections;
+
+    impl CollectionContainer for NoCollections {
+        fn perform_collection_meta_op(
+            &self,
+            _operation: crate::content_manager::collection_meta_ops::CollectionMetaOperations,
+        ) -> Result<bool, crate::content_manager::errors::StorageError> {
+            Ok(true)
+        }
+
+        fn collections_snapshot(&self) -> super::CollectionsSnapshot {
+            super::CollectionsSnapshot::default()
+        }
+
+        fn apply_collections_snapshot(
+            &self,
+            _data: super::CollectionsSnapshot,
+        ) -> Result<(), crate::content_manager::errors::StorageError> {
+            Ok(())
+        }
+    }
+
+    fn setup_storages(
+        entries: Vec<Entry>,
+        path: &std::path::Path,
+    ) -> (ConsensusState<NoCollections>, MemStorage) {
+        let (persistent, _) = Persistent::load_or_init(path, true).unwrap();
+        let (sender, _) = mpsc::channel();
+        let consensus_state = ConsensusState::new(
+            persistent,
+            Arc::new(NoCollections),
+            sender,
+            path.to_str().unwrap(),
+        );
+        let mem_storage = MemStorage::new();
+        mem_storage.wl().append(entries.as_ref()).unwrap();
+        consensus_state.append_entries(entries).unwrap();
+        (consensus_state, mem_storage)
+    }
+
+    prop_compose! {
+        fn gen_entries(min_entries: u64, max_entries: u64)(n in min_entries..max_entries, inc_term_every in 1u64..max_entries) -> Vec<Entry> {
+            (1..(n+1)).into_iter().map(|index| Entry {index, term: 1 + index/inc_term_every, ..Default::default()}).collect::<Vec<Entry>>()
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn check_first_and_last_indexes(entries in gen_entries(0, 100)) {
+            let dir = tempdir::TempDir::new("raft_state_test").unwrap();
+            let (consensus_state, mem_storage) = setup_storages(entries, dir.path());
+            prop_assert_eq!(mem_storage.last_index(), consensus_state.last_index());
+            prop_assert_eq!(mem_storage.first_index(), consensus_state.first_index());
+        }
+
+        #[test]
+        fn check_term(entries in gen_entries(0, 100), id in 0u64..100) {
+            let dir = tempdir::TempDir::new("raft_state_test").unwrap();
+            let (consensus_state, mem_storage) = setup_storages(entries, dir.path());
+            prop_assert_eq!(mem_storage.term(id), consensus_state.term(id))
+        }
+
+        #[test]
+        fn check_entries(entries in gen_entries(1, 100),
+                low in 0u64..100,
+                len in 1u64..100,
+                max_size in proptest::option::of(proptest::num::u64::ANY)
+            ) {
+            let dir = tempdir::TempDir::new("raft_state_test").unwrap();
+            let (consensus_state, mem_storage) = setup_storages(entries, dir.path());
+            let mut high = low + len;
+            let last_index = mem_storage.last_index().unwrap();
+            if high > last_index + 1 {
+                high = last_index + 1;
+            }
+            let mut low = low;
+            if low > last_index {
+                low = last_index;
+            }
+            let context_1 = raft::storage::GetEntriesContext::empty(false);
+            let context_2 = raft::storage::GetEntriesContext::empty(false);
+            prop_assert_eq!(mem_storage.entries(low, high, max_size, context_1), consensus_state.entries(low, high, max_size, context_2));
+        }
     }
 }

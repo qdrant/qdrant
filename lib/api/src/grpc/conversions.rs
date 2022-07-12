@@ -12,6 +12,7 @@ use crate::grpc::qdrant::{
 };
 
 use crate::grpc::qdrant::value::Kind;
+use chrono::{NaiveDateTime, Timelike};
 use segment::types::{PayloadSelector, WithPayloadInterface};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
@@ -605,6 +606,14 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
             m: hnsw_config.m.unwrap_or_default() as usize,
             ef_construct: hnsw_config.ef_construct.unwrap_or_default() as usize,
             full_scan_threshold: hnsw_config.full_scan_threshold.unwrap_or_default() as usize,
+            max_indexing_threads: hnsw_config.max_indexing_threads.unwrap_or_default() as usize,
         }
+    }
+}
+
+pub fn date_time_to_proto(date_time: NaiveDateTime) -> prost_types::Timestamp {
+    prost_types::Timestamp {
+        seconds: date_time.timestamp(), // number of non-leap seconds since the midnight on January 1, 1970.
+        nanos: date_time.nanosecond() as i32,
     }
 }

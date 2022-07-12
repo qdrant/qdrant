@@ -10,18 +10,18 @@ use crate::shard::shard_config::ShardConfig;
 use crate::shard::{PeerId, ShardId, ShardOperation};
 use crate::{
     ChannelService, CollectionError, CollectionId, CollectionInfo, CollectionResult,
-    CollectionSearcher, CollectionUpdateOperations, PointRequest, Record, SearchRequest,
+    CollectionUpdateOperations, CountRequest, CountResult, PointRequest, Record, SearchRequest,
     UpdateResult,
 };
 use api::grpc::qdrant::{
     collections_internal_client::CollectionsInternalClient,
-    points_internal_client::PointsInternalClient, GetCollectionInfoRequest,
-    GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal, ScrollPoints,
-    ScrollPointsInternal, SearchPoints, SearchPointsInternal,
+    points_internal_client::PointsInternalClient, CountPoints, CountPointsInternal,
+    GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
+    ScrollPoints, ScrollPointsInternal, SearchPoints, SearchPointsInternal,
 };
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tonic::transport::Channel;
@@ -63,7 +63,6 @@ impl RemoteShard {
         channel_service: ChannelService,
     ) -> CollectionResult<Self> {
         // initialize remote shard config file
-        ShardConfig::init_file(&shard_path)?;
         let shard_config = ShardConfig::new_remote(peer_id);
         shard_config.save(&shard_path)?;
         Ok(RemoteShard::new(
@@ -72,6 +71,16 @@ impl RemoteShard {
             peer_id,
             channel_service,
         ))
+    }
+
+    pub fn restore_snapshot(_snapshot_path: &Path) {
+        // NO extra actions needed for remote shards
+    }
+
+    pub async fn create_snapshot(&self, target_path: &Path) -> CollectionResult<()> {
+        let shard_config = ShardConfig::new_remote(self.peer_id);
+        shard_config.save(target_path)?;
+        Ok(())
     }
 
     fn current_address(&self) -> CollectionResult<Uri> {
@@ -178,7 +187,6 @@ impl ShardOperation for &RemoteShard {
 
     async fn scroll_by(
         &self,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         offset: Option<ExtendedPointId>,
         limit: usize,
         with_payload_interface: &WithPayloadInterface,
@@ -228,7 +236,6 @@ impl ShardOperation for &RemoteShard {
     async fn search(
         &self,
         request: Arc<SearchRequest>,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let mut client = self.points_client().await?;
@@ -237,11 +244,12 @@ impl ShardOperation for &RemoteShard {
             collection_name: self.collection_id.clone(),
             vector: request.vector.clone(),
             filter: request.filter.clone().map(|f| f.into()),
-            top: request.top as u64,
+            limit: request.limit as u64,
             with_vector: Some(request.with_vector),
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
             params: request.params.map(|sp| sp.into()),
             score_threshold: request.score_threshold,
+            offset: Some(request.offset as u64),
         };
         let request = tonic::Request::new(SearchPointsInternal {
             search_points: Some(search_points),
@@ -257,10 +265,34 @@ impl ShardOperation for &RemoteShard {
         result.map_err(|e| e.into())
     }
 
+    async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
+        let mut client = self.points_client().await?;
+
+        let count_points = CountPoints {
+            collection_name: self.collection_id.clone(),
+            filter: request.filter.clone().map(|f| f.into()),
+            exact: Some(request.exact),
+        };
+
+        let request = tonic::Request::new(CountPointsInternal {
+            count_points: Some(count_points),
+            shard_id: self.id,
+        });
+        let response = client.count(request).await?;
+        let count_response = response.into_inner();
+        count_response.result.map_or_else(
+            || {
+                Err(CollectionError::service_error(
+                    "Unexpected empty CountResult".to_string(),
+                ))
+            },
+            |count_result| Ok(count_result.into()),
+        )
+    }
+
     async fn retrieve(
         &self,
         request: Arc<PointRequest>,
-        segment_searcher: &(dyn CollectionSearcher + Sync),
         with_payload: &WithPayload,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>> {

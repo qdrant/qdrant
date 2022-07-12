@@ -1,14 +1,16 @@
 use crate::common::file_operations::FileStorageError;
+use crate::index::field_index::CardinalityEstimation;
 use crate::types::{
     Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
     VectorElementType, WithPayload,
 };
 use atomicwrites::Error as AtomicIoError;
+use rayon::ThreadPoolBuildError;
 use rocksdb::Error;
 use std::collections::HashMap;
 use std::io::Error as IoError;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::result;
 use thiserror::Error;
 
@@ -51,6 +53,14 @@ pub struct SegmentFailedState {
     pub version: SeqNumberType,
     pub point_id: Option<PointIdType>,
     pub error: OperationError,
+}
+
+impl From<ThreadPoolBuildError> for OperationError {
+    fn from(error: ThreadPoolBuildError) -> Self {
+        OperationError::ServiceError {
+            description: format!("{}", error),
+        }
+    }
 }
 
 impl From<FileStorageError> for OperationError {
@@ -101,6 +111,12 @@ impl From<Error> for OperationError {
 impl From<serde_json::Error> for OperationError {
     fn from(err: serde_json::Error) -> Self {
         OperationError::service_error(&format!("Json error: {}", err))
+    }
+}
+
+impl From<fs_extra::error::Error> for OperationError {
+    fn from(err: fs_extra::error::Error) -> Self {
+        OperationError::service_error(&format!("File system error: {}", err))
     }
 }
 
@@ -194,7 +210,10 @@ pub trait SegmentEntry {
     fn has_point(&self, point_id: PointIdType) -> bool;
 
     /// Return number of vectors in this segment
-    fn vectors_count(&self) -> usize;
+    fn points_count(&self) -> usize;
+
+    /// Estimate points count in this segment for given filter.
+    fn estimate_points_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation;
 
     fn vector_dim(&self) -> usize;
 
@@ -250,4 +269,14 @@ pub trait SegmentEntry {
         op_num: SeqNumberType,
         filter: &'a Filter,
     ) -> OperationResult<usize>;
+
+    /// Take a snapshot of the segment.
+    ///
+    /// Creates a tar archive of the segment directory into `snapshot_dir_path`.
+    fn take_snapshot(&self, snapshot_dir_path: &Path) -> OperationResult<()>;
+
+    /// Copy the segment directory structure into `target_dir_path`
+    ///
+    /// Return the `Path` of the copy
+    fn copy_segment_directory(&self, target_dir_path: &Path) -> OperationResult<PathBuf>;
 }

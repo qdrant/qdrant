@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
 use collection::operations::types::{
-    CollectionInfo, PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult,
-    SearchRequest, UpdateResult,
+    CollectionInfo, CountRequest, CountResult, PointRequest, RecommendRequest, Record,
+    ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
 };
 use segment::types::ScoredPoint;
 use storage::content_manager::collection_meta_ops::{
@@ -14,6 +14,7 @@ use storage::content_manager::collection_meta_ops::{
 use crate::common::points::CreateFieldIndex;
 use api::grpc::models::CollectionsResponse;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
+use collection::operations::snapshot_ops::SnapshotDescription;
 use storage::types::ClusterStatus;
 
 mod actix;
@@ -43,6 +44,9 @@ struct AllDefinitions {
     aj: SetPayload,
     ak: DeletePayload,
     al: ClusterStatus,
+    am: SnapshotDescription,
+    an: CountRequest,
+    ao: CountResult,
 }
 
 fn save_schema<T: JsonSchema>() {

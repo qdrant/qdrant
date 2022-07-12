@@ -4,12 +4,14 @@ use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::collections_internal_api::CollectionsInternalService;
 use crate::tonic::api::points_api::PointsService;
 use crate::tonic::api::points_internal_api::PointsInternalService;
+use crate::tonic::api::snapshots_api::SnapshotsService;
 use ::api::grpc::models::VersionInfo;
 use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
 use ::api::grpc::qdrant::collections_server::CollectionsServer;
 use ::api::grpc::qdrant::points_internal_server::PointsInternalServer;
 use ::api::grpc::qdrant::points_server::PointsServer;
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
+use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
 use ::api::grpc::qdrant::{HealthCheckReply, HealthCheckRequest};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -48,6 +50,7 @@ pub fn init(dispatcher: Arc<Dispatcher>, host: String, grpc_port: u16) -> std::i
             let service = QdrantService::default();
             let collections_service = CollectionsService::new(dispatcher.clone());
             let points_service = PointsService::new(dispatcher.toc().clone());
+            let snapshot_service = SnapshotsService::new(dispatcher.toc().clone());
 
             log::info!("Qdrant gRPC listening on {}", grpc_port);
 
@@ -55,6 +58,7 @@ pub fn init(dispatcher: Arc<Dispatcher>, host: String, grpc_port: u16) -> std::i
                 .add_service(QdrantServer::new(service))
                 .add_service(CollectionsServer::new(collections_service))
                 .add_service(PointsServer::new(points_service))
+                .add_service(SnapshotsServer::new(snapshot_service))
                 .serve_with_shutdown(socket, async {
                     signal::ctrl_c().await.unwrap();
                     log::debug!("Stopping gRPC");

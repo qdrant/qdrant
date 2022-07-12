@@ -31,6 +31,9 @@ impl From<CollectionError> for StorageError {
             err @ CollectionError::NotFound { .. } => StorageError::NotFound {
                 description: format!("{err}"),
             },
+            err @ CollectionError::PointNotFound { .. } => StorageError::NotFound {
+                description: format!("{err}"),
+            },
             CollectionError::ServiceError { error } => {
                 StorageError::ServiceError { description: error }
             }

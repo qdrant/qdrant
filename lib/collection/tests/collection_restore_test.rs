@@ -2,13 +2,10 @@ use itertools::Itertools;
 use serde_json::Value;
 use tempdir::TempDir;
 
-use collection::{
-    collection_manager::simple_collection_searcher::SimpleCollectionSearcher,
-    operations::{
-        point_ops::{Batch, PointInsertOperations, PointOperations},
-        types::ScrollRequest,
-        CollectionUpdateOperations,
-    },
+use collection::operations::{
+    point_ops::{Batch, PointInsertOperations, PointOperations},
+    types::ScrollRequest,
+    CollectionUpdateOperations,
 };
 use segment::types::{PayloadSelectorExclude, WithPayloadInterface};
 
@@ -30,7 +27,13 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
         collection.before_drop().await;
     }
     for _i in 0..5 {
-        let mut collection = load_local_collection("test".to_string(), collection_dir.path()).await;
+        let collection_path = collection_dir.path();
+        let mut collection = load_local_collection(
+            "test".to_string(),
+            collection_path,
+            &collection_path.join("snapshots"),
+        )
+        .await;
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperations::PointsBatch(Batch {
                 ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
@@ -45,7 +48,13 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
         collection.before_drop().await;
     }
 
-    let mut collection = load_local_collection("test".to_string(), collection_dir.path()).await;
+    let collection_path = collection_dir.path();
+    let mut collection = load_local_collection(
+        "test".to_string(),
+        collection_path,
+        &collection_path.join("snapshots"),
+    )
+    .await;
     assert_eq!(collection.info(None).await.unwrap().vectors_count, 2);
     collection.before_drop().await;
 }
@@ -73,10 +82,14 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
             .unwrap();
         collection.before_drop().await;
     }
+    let collection_path = collection_dir.path();
+    let mut collection = load_local_collection(
+        "test".to_string(),
+        collection_path,
+        &collection_path.join("snapshots"),
+    )
+    .await;
 
-    let mut collection = load_local_collection("test".to_string(), collection_dir.path()).await;
-
-    let searcher = SimpleCollectionSearcher::new();
     let res = collection
         .scroll_by(
             ScrollRequest {
@@ -86,7 +99,6 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
                 with_payload: Some(WithPayloadInterface::Bool(true)),
                 with_vector: true,
             },
-            &searcher,
             None,
         )
         .await
@@ -139,9 +151,14 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         collection.before_drop().await;
     }
 
-    let mut collection = load_local_collection("test".to_string(), collection_dir.path()).await;
+    let collection_path = collection_dir.path();
+    let mut collection = load_local_collection(
+        "test".to_string(),
+        collection_path,
+        &collection_path.join("snapshots"),
+    )
+    .await;
 
-    let searcher = SimpleCollectionSearcher::new();
     // Test res with filter payload
     let res_with_custom_payload = collection
         .scroll_by(
@@ -152,7 +169,6 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
                 with_payload: Some(WithPayloadInterface::Fields(vec![String::from("k2")])),
                 with_vector: true,
             },
-            &searcher,
             None,
         )
         .await
@@ -184,7 +200,6 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
                 with_payload: Some(PayloadSelectorExclude::new(vec!["k1".to_string()]).into()),
                 with_vector: false,
             },
-            &searcher,
             None,
         )
         .await

@@ -13,8 +13,12 @@ use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 use atomic_refcell::AtomicRefCell;
 use log::debug;
 
+use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::visited_pool::VisitedList;
 use rand::thread_rng;
+use rayon::prelude::*;
+use rayon::ThreadPool;
 use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
@@ -48,7 +52,12 @@ impl HNSWIndex {
             let indexing_threshold = hnsw_config.full_scan_threshold * BYTES_IN_KB
                 / (vector_storage.borrow().vector_dim() * VECTOR_ELEMENT_SIZE);
 
-            HnswGraphConfig::new(hnsw_config.m, hnsw_config.ef_construct, indexing_threshold)
+            HnswGraphConfig::new(
+                hnsw_config.m,
+                hnsw_config.ef_construct,
+                indexing_threshold,
+                hnsw_config.max_indexing_threads,
+            )
         };
 
         let graph_path = GraphLayers::get_path(path);
@@ -96,33 +105,53 @@ impl HNSWIndex {
 
     pub fn build_filtered_graph(
         &self,
-        graph: &mut GraphLayers,
+        pool: &ThreadPool,
+        stopped: &AtomicBool,
+        graph: &mut GraphLayersBuilder,
         condition: FieldCondition,
-        block_condition_checker: &mut BuildConditionChecker,
-    ) {
-        block_condition_checker.filter_list.next_iteration();
+        block_filter_list: &mut VisitedList,
+    ) -> OperationResult<()> {
+        block_filter_list.next_iteration();
 
         let filter = Filter::new_must(Field(condition));
 
         let payload_index = self.payload_index.borrow();
         let vector_storage = self.vector_storage.borrow();
 
-        for block_point_id in payload_index.query_points(&filter) {
-            block_condition_checker
-                .filter_list
-                .check_and_update_visited(block_point_id);
+        let points_to_index: Vec<_> = payload_index.query_points(&filter).collect();
+
+        for block_point_id in points_to_index.iter().copied() {
+            block_filter_list.check_and_update_visited(block_point_id);
         }
 
-        for block_point_id in payload_index.query_points(&filter) {
-            let vector = vector_storage.get_vector(block_point_id).unwrap();
-            let raw_scorer = vector_storage.raw_scorer(vector);
-            block_condition_checker.current_point = block_point_id;
-            let points_scorer =
-                FilteredScorer::new(raw_scorer.as_ref(), Some(block_condition_checker));
-
+        for block_point_id in points_to_index.iter().copied() {
+            // Use same levels, as in the original graph
             let level = self.graph.point_level(block_point_id);
-            graph.link_new_point(block_point_id, level, points_scorer);
+            graph.set_levels(block_point_id, level);
         }
+
+        pool.install(|| {
+            points_to_index
+                .into_par_iter()
+                .try_for_each(|block_point_id| {
+                    if stopped.load(Ordering::Relaxed) {
+                        return Err(OperationError::Cancelled {
+                            description: "Cancelled by external thread".to_string(),
+                        });
+                    }
+                    let vector = vector_storage.get_vector(block_point_id).unwrap();
+                    let raw_scorer = vector_storage.raw_scorer(vector);
+                    let block_condition_checker = BuildConditionChecker {
+                        filter_list: block_filter_list,
+                        current_point: block_point_id,
+                    };
+                    let points_scorer =
+                        FilteredScorer::new(raw_scorer.as_ref(), Some(&block_condition_checker));
+
+                    graph.link_new_point(block_point_id, points_scorer);
+                    Ok(())
+                })
+        })
     }
 
     pub fn search_with_graph(
@@ -213,7 +242,7 @@ impl VectorIndex for HNSWIndex {
         let total_points = vector_storage.total_vector_count();
 
         debug!("building hnsw for {}", total_points);
-        self.graph = GraphLayers::new(
+        let mut graph_layers_builder = GraphLayersBuilder::new(
             total_points,
             self.config.m,
             self.config.m0,
@@ -222,41 +251,64 @@ impl VectorIndex for HNSWIndex {
             HNSW_USE_HEURISTIC,
         );
 
+        let mut ids = vec![];
         for vector_id in vector_storage.iter_ids() {
-            if stopped.load(Ordering::Relaxed) {
-                return Err(OperationError::Cancelled {
-                    description: "Cancelled by external thread".to_string(),
-                });
-            }
-            let vector = vector_storage.get_vector(vector_id).unwrap();
-            let raw_scorer = vector_storage.raw_scorer(vector);
-            let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
-
-            let level = self.graph.get_random_layer(&mut rng);
-            self.graph.link_new_point(vector_id, level, points_scorer);
+            let level = graph_layers_builder.get_random_layer(&mut rng);
+            graph_layers_builder.set_levels(vector_id, level);
+            ids.push(vector_id);
         }
+
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(self.config.max_rayon_threads())
+            .build()?;
+
+        pool.install(|| {
+            ids.into_par_iter().try_for_each(|vector_id| {
+                if stopped.load(Ordering::Relaxed) {
+                    return Err(OperationError::Cancelled {
+                        description: "Cancelled by external thread".to_string(),
+                    });
+                }
+                let vector = vector_storage.get_vector(vector_id).unwrap();
+                let raw_scorer = vector_storage.raw_scorer(vector);
+                let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
+
+                graph_layers_builder.link_new_point(vector_id, points_scorer);
+                Ok(())
+            })
+        })?;
+
+        self.graph = graph_layers_builder.into_graph_layers();
 
         debug!("finish main graph");
 
         let total_vectors_count = vector_storage.total_vector_count();
-        let mut block_condition_checker = BuildConditionChecker::new(total_vectors_count);
+        let mut block_filter_list = VisitedList::new(total_vectors_count);
 
         let payload_index = self.payload_index.borrow();
 
         for (field, _) in payload_index.indexed_fields() {
             debug!("building additional index for field {}", &field);
 
-            // ToDo: Think about using connectivity threshold (based on 1/m0) instead of `indexing_threshold`
-            for payload_block in
-                payload_index.payload_blocks(&field, self.config.indexing_threshold)
-            {
+            // It is expected, that graph will become disconnected less than
+            // $1/m$ points left.
+            // So blocks larger than $1/m$ are not needed.
+            // We add multiplier for the extra safety.
+            let percolation_multiplier = 2;
+            let max_block_size = total_points / self.config.m * percolation_multiplier;
+            let min_block_size = self.config.indexing_threshold;
+
+            for payload_block in payload_index.payload_blocks(&field, min_block_size) {
                 if stopped.load(Ordering::Relaxed) {
                     return Err(OperationError::Cancelled {
                         description: "Cancelled by external thread".to_string(),
                     });
                 }
+                if payload_block.cardinality > max_block_size {
+                    continue;
+                }
                 // ToDo: re-use graph layer for same payload
-                let mut additional_graph = GraphLayers::new_with_params(
+                let mut additional_graph = GraphLayersBuilder::new_with_params(
                     self.vector_storage.borrow().total_vector_count(),
                     self.config.m,
                     self.config.m0,
@@ -266,11 +318,14 @@ impl VectorIndex for HNSWIndex {
                     false,
                 );
                 self.build_filtered_graph(
+                    &pool,
+                    stopped,
                     &mut additional_graph,
                     payload_block.condition,
-                    &mut block_condition_checker,
-                );
-                self.graph.merge_from_other(additional_graph);
+                    &mut block_filter_list,
+                )?;
+                self.graph
+                    .merge_from_other(additional_graph.into_graph_layers());
             }
         }
         debug!("finish additional payload field indexing");

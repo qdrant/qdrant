@@ -1,7 +1,8 @@
 use collection::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointOperations, PointsSelector};
 use collection::operations::types::{
-    PointRequest, Record, ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
+    CountRequest, CountResult, PointRequest, Record, ScrollRequest, ScrollResult, SearchRequest,
+    UpdateResult,
 };
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::shard::ShardId;
@@ -15,18 +16,6 @@ use storage::content_manager::toc::TableOfContent;
 pub struct CreateFieldIndex {
     pub field_name: String,
     pub field_type: Option<PayloadSchemaType>,
-}
-
-// Deprecated
-pub async fn do_update_points(
-    toc: &TableOfContent,
-    collection_name: &str,
-    operation: CollectionUpdateOperations,
-    shard_selection: Option<ShardId>,
-    wait: bool,
-) -> Result<UpdateResult, StorageError> {
-    toc.update(collection_name, operation, shard_selection, wait)
-        .await
 }
 
 pub async fn do_upsert_points(
@@ -147,6 +136,15 @@ pub async fn do_search_points(
     shard_selection: Option<ShardId>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     toc.search(collection_name, request, shard_selection).await
+}
+
+pub async fn do_count_points(
+    toc: &TableOfContent,
+    collection_name: &str,
+    request: CountRequest,
+    shard_selection: Option<ShardId>,
+) -> Result<CountResult, StorageError> {
+    toc.count(collection_name, request, shard_selection).await
 }
 
 pub async fn do_get_points(

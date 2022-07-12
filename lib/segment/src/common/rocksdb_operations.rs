@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 const DB_MAX_LOG_SIZE: usize = 1024 * 1024; // 1 mb
+const DB_MAX_OPEN_FILES: usize = 256;
 
 pub const DB_VECTOR_CF: &str = "vector";
 pub const DB_PAYLOAD_CF: &str = "payload";
@@ -19,6 +20,7 @@ pub fn db_options() -> Options {
     options.set_recycle_log_file_num(2);
     options.set_max_log_file_size(DB_MAX_LOG_SIZE);
     options.create_missing_column_families(true);
+    options.set_max_open_files(DB_MAX_OPEN_FILES as i32);
     #[cfg(debug_assertions)]
     {
         options.set_paranoid_checks(true);
