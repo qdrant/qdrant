@@ -160,7 +160,7 @@ pub struct DeleteCollectionOperation(pub String);
 pub enum ShardTransferOperations {
     Start { to: PeerId },
     Finish,
-    Abort,
+    Abort { reason: String },
 }
 
 /// Enumeration of all possible collection update operations

@@ -413,7 +413,10 @@ impl TableOfContent {
                 collection.start_shard_transfer(shard, to, self.this_peer_id)
             }
             ShardTransferOperations::Finish => collection.finish_shard_transfer(shard),
-            ShardTransferOperations::Abort => collection.abort_shard_transfer(shard),
+            ShardTransferOperations::Abort { reason } => {
+                log::warn!("Aborting shard transfer: {reason}");
+                collection.abort_shard_transfer(shard)
+            }
         }?;
         Ok(())
     }
