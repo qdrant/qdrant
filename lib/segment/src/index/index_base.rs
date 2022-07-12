@@ -28,7 +28,7 @@ pub trait VectorIndex {
         filters: &[Option<Filter>],
         top: usize,
         params: Option<&SearchParams>,
-        runtime_handle: &Handle,
+        runtime_handle: Handle,
     ) -> Vec<Vec<ScoredPointOffset>>;
 
     /// Force internal index rebuild.

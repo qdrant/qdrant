@@ -109,10 +109,11 @@ fn batch_search_benchmark(c: &mut Criterion) {
                     BatchSearchRequest {
                         batch: batch_query.clone(),
                         params: None,
-                        top: 0,
                         with_payload: None,
                         with_vector: false,
                         score_threshold: None,
+                        offset: 0,
+                        limit: 0,
                     },
                     None,
                 ))

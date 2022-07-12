@@ -22,6 +22,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tar::Builder;
+use tokio::runtime::Handle;
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
@@ -349,6 +350,75 @@ impl SegmentEntry for Segment {
                     payload,
                     vector,
                 })
+            })
+            .collect();
+        res
+    }
+
+    fn batch_search(
+        &self,
+        vector: &[Vec<VectorElementType>],
+        with_payload: &WithPayload,
+        with_vector: bool,
+        filter: Vec<Option<Filter>>,
+        top: usize,
+        params: Option<&SearchParams>,
+        runtime_handle: Handle,
+    ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        let internal_result =
+            self.vector_index
+                .batch_search(vector, filter.as_slice(), top, params, runtime_handle);
+
+        let id_tracker = self.id_tracker.borrow();
+
+        let res: OperationResult<Vec<Vec<ScoredPoint>>> = internal_result
+            .iter()
+            .map(|result| {
+                let res: OperationResult<Vec<ScoredPoint>> = result
+                    .iter()
+                    .map(|&scored_point_offset| {
+                        let point_offset = scored_point_offset.idx;
+                        let point_id = id_tracker.external_id(point_offset).ok_or_else(|| {
+                            OperationError::service_error(&format!(
+                                "Corrupter id_tracker, no external value for {}",
+                                scored_point_offset.idx
+                            ))
+                        })?;
+                        let point_version = id_tracker.version(point_id).ok_or_else(|| {
+                            OperationError::service_error(&format!(
+                                "Corrupter id_tracker, no version for point {}",
+                                point_id
+                            ))
+                        })?;
+                        let payload = if with_payload.enable {
+                            let initial_payload = self.payload_by_offset(point_offset)?;
+                            let processed_payload = if let Some(i) = &with_payload.payload_selector
+                            {
+                                i.process(initial_payload)
+                            } else {
+                                initial_payload
+                            };
+                            Some(processed_payload)
+                        } else {
+                            None
+                        };
+
+                        let vector = if with_vector {
+                            Some(self.vector_by_offset(point_offset)?)
+                        } else {
+                            None
+                        };
+
+                        Ok(ScoredPoint {
+                            id: point_id,
+                            version: point_version,
+                            score: scored_point_offset.score,
+                            payload,
+                            vector,
+                        })
+                    })
+                    .collect();
+                res
             })
             .collect();
         res

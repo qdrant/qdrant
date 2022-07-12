@@ -1390,9 +1390,6 @@ pub struct SearchPointsBatch {
     /// query batch
     #[prost(message, repeated, tag="3")]
     pub batch: ::prost::alloc::vec::Vec<Query>,
-    /// Max number of result
-    #[prost(uint64, tag="5")]
-    pub top: u64,
     /// Return point vector with the result.
     #[prost(bool, optional, tag="6")]
     pub with_vector: ::core::option::Option<bool>,
@@ -1405,6 +1402,12 @@ pub struct SearchPointsBatch {
     /// If provided - cut off results with worse scores
     #[prost(float, optional, tag="9")]
     pub score_threshold: ::core::option::Option<f32>,
+    /// Max number of result
+    #[prost(uint64, tag="10")]
+    pub limit: u64,
+    /// Offset of the result
+    #[prost(uint64, optional, tag="11")]
+    pub offset: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollPoints {

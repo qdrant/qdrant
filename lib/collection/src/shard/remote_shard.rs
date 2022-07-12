@@ -274,7 +274,8 @@ impl ShardOperation for &RemoteShard {
                     filter: q.filter.clone().map(|f| f.into()),
                 })
                 .collect(),
-            top: request.top as u64,
+            limit: request.limit as u64,
+            offset: Some(request.offset as u64),
             with_vector: Some(request.with_vector),
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
             params: request.params.map(|sp| sp.into()),

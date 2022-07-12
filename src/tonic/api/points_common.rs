@@ -323,7 +323,8 @@ pub async fn search_batch(
     let SearchPointsBatch {
         collection_name,
         batch,
-        top,
+        limit,
+        offset,
         with_vector,
         with_payload,
         params,
@@ -342,7 +343,8 @@ pub async fn search_batch(
     let search_request = BatchSearchRequest {
         batch: query_batch,
         params: params.map(|p| p.into()),
-        top: top as usize,
+        limit: limit as usize,
+        offset: offset.map(|v| v as usize).unwrap_or(0),
         with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
         with_vector: with_vector.unwrap_or(false),
         score_threshold,

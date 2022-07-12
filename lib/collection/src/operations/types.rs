@@ -194,8 +194,6 @@ pub struct BatchSearchRequest {
     pub batch: Vec<Query>,
     /// Additional search params
     pub params: Option<SearchParams>,
-    /// Max number of result to return
-    pub top: usize,
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
     /// Whether to return the point vector with the result?
@@ -206,6 +204,14 @@ pub struct BatchSearchRequest {
     /// Score of the returned result might be higher or smaller than the threshold depending on the
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
     pub score_threshold: Option<ScoreType>,
+    /// Max number of result to return
+    #[serde(alias = "top")]
+    pub limit: usize,
+    /// Offset of the first result to return.
+    /// May be used to paginate results.
+    /// Note: large offset values may cause performance issues.
+    #[serde(default)]
+    pub offset: usize,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

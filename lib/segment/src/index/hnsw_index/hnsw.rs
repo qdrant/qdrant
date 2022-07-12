@@ -214,7 +214,7 @@ impl VectorIndex for HNSWIndex {
         filters: &[Option<Filter>],
         top: usize,
         params: Option<&SearchParams>,
-        runtime_handle: &Handle,
+        runtime_handle: Handle,
     ) -> Vec<Vec<ScoredPointOffset>> {
         runtime_handle.block_on(batch_search(
             self.clone(),
@@ -222,7 +222,7 @@ impl VectorIndex for HNSWIndex {
             filters,
             top,
             params,
-            runtime_handle,
+            runtime_handle.clone(),
         ))
     }
 
@@ -316,7 +316,7 @@ async fn batch_search(
     filters: &[Option<Filter>],
     top: usize,
     params: Option<&SearchParams>,
-    runtime_handle: &Handle,
+    runtime_handle: Handle,
 ) -> Vec<Vec<ScoredPointOffset>> {
     let batch_result_futures = vectors
         .iter()

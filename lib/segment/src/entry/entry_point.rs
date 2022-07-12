@@ -11,6 +11,7 @@ use std::io::Error as IoError;
 use std::path::PathBuf;
 use std::result;
 use thiserror::Error;
+use tokio::runtime::Handle;
 
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
@@ -135,6 +136,18 @@ pub trait SegmentEntry {
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<Vec<ScoredPoint>>;
+
+    #[allow(clippy::too_many_arguments)]
+    fn batch_search(
+        &self,
+        vector: &[Vec<VectorElementType>],
+        with_payload: &WithPayload,
+        with_vector: bool,
+        filter: Vec<Option<Filter>>,
+        top: usize,
+        params: Option<&SearchParams>,
+        runtime_handle: Handle,
+    ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
 
     fn upsert_point(
         &mut self,

@@ -722,8 +722,12 @@ impl Collection {
 
         let top_results: Vec<Vec<ScoredPoint>> = all_searches_res
             .map(|res| match distance.distance_order() {
-                Order::LargeBetter => peek_top_largest_scores_iterable(res, request.top),
-                Order::SmallBetter => peek_top_smallest_scores_iterable(res, request.top),
+                Order::LargeBetter => {
+                    peek_top_largest_scores_iterable(res, request.limit + request.offset)
+                }
+                Order::SmallBetter => {
+                    peek_top_smallest_scores_iterable(res, request.limit + request.offset)
+                }
             })
             .collect();
 

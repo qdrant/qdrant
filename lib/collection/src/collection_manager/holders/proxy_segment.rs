@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use tokio::runtime::Handle;
 
 type LockedRmSet = Arc<RwLock<HashSet<PointIdType>>>;
 type LockedFieldsSet = Arc<RwLock<HashSet<PayloadKeyType>>>;
@@ -498,6 +499,19 @@ impl SegmentEntry for ProxySegment {
 
     fn vector_dim(&self) -> usize {
         self.write_segment.get().read().vector_dim()
+    }
+
+    fn batch_search(
+        &self,
+        _vector: &[Vec<VectorElementType>],
+        _with_payload: &WithPayload,
+        _with_vector: bool,
+        _filter: Vec<Option<Filter>>,
+        _top: usize,
+        _params: Option<&SearchParams>,
+        _runtime_handle: Handle,
+    ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        todo!()
     }
 }
 

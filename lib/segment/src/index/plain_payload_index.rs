@@ -218,7 +218,7 @@ impl VectorIndex for PlainIndex {
         _filters: &[Option<Filter>],
         _top: usize,
         _params: Option<&SearchParams>,
-        _runtime_handle: &Handle,
+        _runtime_handle: Handle,
     ) -> Vec<Vec<ScoredPointOffset>> {
         todo!()
     }

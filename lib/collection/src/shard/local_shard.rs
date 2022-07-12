@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::thread;
 
 use async_trait::async_trait;
-use futures::future::try_join_all;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -528,27 +527,33 @@ impl ShardOperation for &LocalShard {
         request: Arc<BatchSearchRequest>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let batch_result_futures = request
-            .batch
-            .iter()
-            .map(|query| SearchRequest {
-                vector: query.vector.clone(),
-                filter: query.filter.clone(),
-                params: request.params,
-                limit: 0,
-                offset: 0,
-                with_payload: request.with_payload.clone(),
-                with_vector: request.with_vector,
-                score_threshold: request.score_threshold,
-            })
-            .map(|request| self.search(Arc::new(request), search_runtime_handle));
+        let res =
+            SegmentsSearcher::batch_search(self.segments(), request.clone(), search_runtime_handle)
+                .await?;
 
-        let batch_result = try_join_all(batch_result_futures)
-            .await?
+        let distance = self.config.read().await.params.distance;
+
+        let all_top_result = res
             .into_iter()
+            .map(|res| {
+                let processed_res = res.into_iter().map(|mut scored_point| {
+                    scored_point.score = distance.postprocess_score(scored_point.score);
+                    scored_point
+                });
+
+                if let Some(threshold) = request.score_threshold {
+                    processed_res
+                        .take_while(|scored_point| {
+                            distance.check_threshold(scored_point.score, threshold)
+                        })
+                        .collect()
+                } else {
+                    processed_res.collect()
+                }
+            })
             .collect();
 
-        Ok(batch_result)
+        Ok(all_top_result)
     }
 
     async fn retrieve(

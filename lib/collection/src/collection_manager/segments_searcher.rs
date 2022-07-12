@@ -11,7 +11,7 @@ use segment::spaces::tools::peek_top_largest_scores_iterable;
 use segment::types::{PointIdType, ScoredPoint, SeqNumberType, WithPayload, WithPayloadInterface};
 
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{BatchSearchRequest, CollectionResult};
 use crate::operations::types::{Record, SearchRequest};
 
 /// Simple implementation of segment manager
@@ -75,6 +75,82 @@ impl SegmentsSearcher {
         Ok(top_scores)
     }
 
+    pub async fn batch_search(
+        segments: &RwLock<SegmentHolder>,
+        request: Arc<BatchSearchRequest>,
+        runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        // Using { } block to ensure segments variable is dropped in the end of it
+        // and is not transferred across the all_searches.await? boundary as it
+        // does not impl Send trait
+        let searches: Vec<_> = {
+            let segments = segments.read();
+
+            let some_segment = segments.iter().next();
+
+            if some_segment.is_none() {
+                return Ok(vec![]);
+            }
+
+            segments
+                .iter()
+                .map(|(_id, segment)| {
+                    batch_search_in_segment(
+                        segment.clone(),
+                        request.clone(),
+                        runtime_handle.clone(),
+                    )
+                })
+                .map(|f| runtime_handle.spawn(f))
+                .collect()
+        };
+
+        let all_searches = try_join_all(searches);
+        let all_search_results = all_searches.await?;
+
+        match all_search_results
+            .iter()
+            .filter_map(|res| res.to_owned().err())
+            .next()
+        {
+            None => {}
+            Some(error) => return Err(error),
+        }
+
+        let mut points = Vec::new();
+        for _ in 0..request.batch.len() {
+            points.push(Vec::new());
+        }
+
+        for result in all_search_results {
+            for (i, v) in result.unwrap().iter().cloned().enumerate() {
+                points[i].extend(v);
+            }
+        }
+
+        let mut seen_idx: HashSet<PointIdType> = HashSet::new();
+
+        let res = points
+            .into_iter()
+            .map(|result| {
+                peek_top_largest_scores_iterable(
+                    result
+                        .into_iter()
+                        .sorted_by_key(|a| (a.id, 1 - a.version as i64)) // Prefer higher version first
+                        .dedup_by(|a, b| a.id == b.id) // Keep only highest version
+                        .filter(|scored| {
+                            let res = seen_idx.contains(&scored.id);
+                            seen_idx.insert(scored.id);
+                            !res
+                        }),
+                    request.limit + request.offset,
+                )
+            })
+            .collect();
+
+        Ok(res)
+    }
+
     pub async fn retrieve(
         segments: &RwLock<SegmentHolder>,
         points: &[PointIdType],
@@ -136,6 +212,34 @@ async fn search_in_segment(
         request.filter.as_ref(),
         request.limit + request.offset,
         request.params.as_ref(),
+    )?;
+
+    Ok(res)
+}
+
+async fn batch_search_in_segment(
+    segment: LockedSegment,
+    request: Arc<BatchSearchRequest>,
+    runtime_handle: Handle,
+) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+    let with_payload_interface = request
+        .with_payload
+        .as_ref()
+        .unwrap_or(&WithPayloadInterface::Bool(false));
+    let with_payload = WithPayload::from(with_payload_interface);
+    let with_vector = request.with_vector;
+
+    let vectors = request.batch.iter().map(|q| q.vector.clone()).collect_vec();
+    let filters = request.batch.iter().map(|q| q.filter.clone()).collect_vec();
+
+    let res = segment.get().read().batch_search(
+        &vectors,
+        &with_payload,
+        with_vector,
+        filters,
+        request.limit + request.offset,
+        request.params.as_ref(),
+        runtime_handle,
     )?;
 
     Ok(res)
