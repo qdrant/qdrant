@@ -387,8 +387,12 @@ impl TryFrom<api::grpc::qdrant::UpdateResult> for UpdateResult {
         Ok(Self {
             operation_id: value.operation_id,
             status: match value.status {
-                1 => UpdateStatus::Acknowledged,
-                2 => UpdateStatus::Completed,
+                status if status == api::grpc::qdrant::UpdateStatus::Acknowledged as i32 => {
+                    UpdateStatus::Acknowledged
+                }
+                status if status == api::grpc::qdrant::UpdateStatus::Completed as i32 => {
+                    UpdateStatus::Completed
+                }
                 _ => return Err(Status::invalid_argument("Malformed UpdateStatus type")),
             },
         })
