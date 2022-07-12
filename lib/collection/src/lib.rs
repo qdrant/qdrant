@@ -16,6 +16,7 @@ use crate::operations::OperationToShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::ShardOperation;
+use crate::telemetry::CollectionTelemetry;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use config::CollectionConfig;
 use futures::future::{join_all, try_join_all};
@@ -55,6 +56,7 @@ pub mod config;
 pub mod operations;
 pub mod optimizers_builder;
 pub mod shard;
+pub mod telemetry;
 mod update_handler;
 pub mod wal;
 
@@ -262,6 +264,7 @@ pub struct Collection {
     before_drop_called: bool,
     path: PathBuf,
     snapshots_path: PathBuf,
+    telemetry: CollectionTelemetry,
 }
 
 impl Collection {
@@ -277,6 +280,8 @@ impl Collection {
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
     ) -> Result<Self, CollectionError> {
+        let start_time = std::time::Instant::now();
+
         CollectionVersion::save(path)?;
         config.save(path)?;
         let mut ring = HashRing::new();
@@ -316,13 +321,14 @@ impl Collection {
         }
 
         Ok(Self {
-            id,
+            id: id.clone(),
             shards,
             ring,
             config: shared_config,
             before_drop_called: false,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
+            telemetry: CollectionTelemetry::new(id, config.clone(), start_time.elapsed()),
         })
     }
 
@@ -332,6 +338,7 @@ impl Collection {
         snapshots_path: &Path,
         channel_service: ChannelService,
     ) -> Self {
+        let start_time = std::time::Instant::now();
         let stored_version_opt = CollectionVersion::load(path)
             .unwrap_or_else(|err| panic!("Can't read collection version {}", err));
 
@@ -361,7 +368,7 @@ impl Collection {
         let shard_distribution = CollectionShardDistribution::from_local_state(path)
             .expect("Can't infer shard distribution from local shard configurations");
 
-        let shared_config = Arc::new(RwLock::new(config));
+        let shared_config = Arc::new(RwLock::new(config.clone()));
         for shard_id in shard_distribution.local {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
@@ -381,13 +388,14 @@ impl Collection {
         }
 
         Self {
-            id,
+            id: id.clone(),
             shards,
             ring,
             config: shared_config,
             before_drop_called: false,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
+            telemetry: CollectionTelemetry::new(id, config, start_time.elapsed()),
         }
     }
 
@@ -899,6 +907,19 @@ impl Collection {
         state
             .apply(this_peer_id, self, collection_path, channel_service)
             .await
+    }
+
+    pub async fn get_telemetry_data(&self) -> Option<CollectionTelemetry> {
+        let info = self.info(None).await.ok()?;
+        let mut telemetry = self.telemetry.clone();
+        telemetry.config = info.config;
+        telemetry.status = info.status;
+        telemetry.optimizer_status = info.optimizer_status;
+        telemetry.vectors_count = info.vectors_count;
+        telemetry.segments_count = info.segments_count;
+        telemetry.disk_data_size = info.disk_data_size;
+        telemetry.ram_data_size = info.ram_data_size;
+        Some(telemetry)
     }
 
     pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {

@@ -1,12 +1,18 @@
+use collection::telemetry::CollectionTelemetry;
 use serde::Serialize;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
+use std::sync::Arc;
+use storage::Dispatcher;
 use uuid::Uuid;
 
 use crate::settings::Settings;
 
 pub struct UserTelemetryCollector {
     process_id: Uuid,
-    settings: Option<Settings>,
+    settings: Settings,
+    dispatcher: Arc<Dispatcher>,
 }
 
 #[derive(Serialize, Clone)]
@@ -73,28 +79,58 @@ pub struct UserTelemetryData {
     app: UserTelemetryApp,
     system: UserTelemetrySystem,
     configs: UserTelemetryConfigs,
+    collections: Vec<CollectionTelemetry>,
+}
+
+pub fn telemetry_hash(s: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    s.hash(&mut hasher);
+    hasher.finish().to_string()
+}
+
+pub fn telemetry_round(cnt: usize) -> usize {
+    let leading_zeros = cnt.leading_zeros();
+    let skip_bytes_count = if leading_zeros > 4 {
+        leading_zeros - 4
+    } else {
+        0
+    };
+    (cnt >> skip_bytes_count) << skip_bytes_count
+}
+
+impl UserTelemetryData {
+    pub fn anonymize(&mut self) {
+        for collection in &mut self.collections {
+            collection.id = telemetry_hash(&collection.id);
+            collection.vectors_count = telemetry_round(collection.vectors_count);
+            collection.segments_count = telemetry_round(collection.segments_count);
+            collection.disk_data_size = telemetry_round(collection.disk_data_size);
+            collection.ram_data_size = telemetry_round(collection.ram_data_size);
+        }
+    }
 }
 
 impl UserTelemetryCollector {
-    pub fn new() -> Self {
+    pub fn new(settings: Settings, dispatcher: Arc<Dispatcher>) -> Self {
         Self {
             process_id: Uuid::new_v4(),
-            settings: None,
+            settings,
+            dispatcher,
         }
     }
 
-    pub fn put_settings(&mut self, settings: Settings) {
-        self.settings = Some(settings);
-    }
-
     #[allow(dead_code)]
-    pub fn prepare_data(&self) -> UserTelemetryData {
-        UserTelemetryData {
+    pub async fn prepare_data(&self) -> UserTelemetryData {
+        let collections = self.dispatcher.get_telemetry_data().await;
+        let mut telemetry_data = UserTelemetryData {
             id: self.process_id.to_string(),
             app: self.get_app_data(),
             system: self.get_system_data(),
             configs: self.get_configs_data(),
-        }
+            collections,
+        };
+        telemetry_data.anonymize();
+        telemetry_data
     }
 
     fn get_app_data(&self) -> UserTelemetryApp {
@@ -154,10 +190,7 @@ impl UserTelemetryCollector {
     }
 
     fn get_configs_data(&self) -> UserTelemetryConfigs {
-        let settings = self
-            .settings
-            .clone()
-            .expect("User settings have been not provided");
+        let settings = self.settings.clone();
         UserTelemetryConfigs {
             service_config: UserTelemetryServiceConfig {
                 grpc_enable: settings.service.grpc_port.is_some(),

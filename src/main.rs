@@ -100,10 +100,6 @@ fn main() -> anyhow::Result<()> {
 
     welcome();
 
-    // create user telemetry collector and put settings to telemetry
-    let mut telemetry_collector = UserTelemetryCollector::new();
-    telemetry_collector.put_settings(settings.clone());
-
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it
     let runtime = create_search_runtime(settings.storage.performance.max_search_threads)
@@ -150,6 +146,9 @@ fn main() -> anyhow::Result<()> {
         dispatcher = dispatcher.with_consensus(consensus_state.clone());
     }
     let dispatcher_arc = Arc::new(dispatcher);
+
+    let _telemetry_collector =
+        UserTelemetryCollector::new(settings.clone(), dispatcher_arc.clone());
 
     if settings.cluster.enabled {
         // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward

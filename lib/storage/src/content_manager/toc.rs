@@ -15,6 +15,7 @@ use collection::operations::types::{
     SearchRequest, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
+use collection::telemetry::CollectionTelemetry;
 use collection::{ChannelService, Collection, CollectionShardDistribution};
 use segment::types::ScoredPoint;
 
@@ -703,6 +704,19 @@ impl TableOfContent {
             shard_distribution.distribution
         );
         shard_distribution
+    }
+
+    pub async fn get_telemetry_data(&self) -> Vec<CollectionTelemetry> {
+        let mut result = Vec::new();
+        let all_collections = self.all_collections().await;
+        for collection_name in &all_collections {
+            if let Ok(collection) = self.get_collection(collection_name).await {
+                if let Some(collection) = collection.get_telemetry_data().await {
+                    result.push(collection);
+                }
+            }
+        }
+        result
     }
 }
 
