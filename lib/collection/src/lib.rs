@@ -368,7 +368,7 @@ impl Collection {
         let shard_distribution = CollectionShardDistribution::from_local_state(path)
             .expect("Can't infer shard distribution from local shard configurations");
 
-        let shared_config = Arc::new(RwLock::new(config));
+        let shared_config = Arc::new(RwLock::new(config.clone()));
         for shard_id in shard_distribution.local {
             let shard_path = shard_path(path, shard_id);
             shards.insert(
