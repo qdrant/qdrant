@@ -342,6 +342,7 @@ impl Collection {
         snapshots_path: &Path,
         channel_service: ChannelService,
     ) -> Self {
+        let start_time = std::time::Instant::now();
         let stored_version_opt = CollectionVersion::load(path)
             .unwrap_or_else(|err| panic!("Can't read collection version {}", err));
 
