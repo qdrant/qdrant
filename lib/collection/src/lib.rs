@@ -254,6 +254,11 @@ impl StorageVersion for CollectionVersion {
     }
 }
 
+struct ShardTransfer {
+    _from: PeerId,
+    to: PeerId,
+}
+
 /// Collection's data is split into several shards.
 pub struct Collection {
     id: CollectionId,
@@ -265,6 +270,7 @@ pub struct Collection {
     path: PathBuf,
     snapshots_path: PathBuf,
     telemetry: CollectionTelemetry,
+    shard_transfers: HashMap<ShardId, ShardTransfer>,
 }
 
 impl Collection {
@@ -328,6 +334,7 @@ impl Collection {
             before_drop_called: false,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
+            shard_transfers: Default::default(),
             telemetry: CollectionTelemetry::new(id, config.clone(), start_time.elapsed()),
         })
     }
@@ -395,6 +402,8 @@ impl Collection {
             before_drop_called: false,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
+            // TODO: Need to be persisted on disk in case of restart?
+            shard_transfers: Default::default(),
             telemetry: CollectionTelemetry::new(id, config, start_time.elapsed()),
         }
     }
@@ -433,6 +442,52 @@ impl Collection {
 
     pub fn all_shards(&self) -> impl Iterator<Item = &Shard> {
         self.shards.values()
+    }
+
+    fn send_shard(&mut self, _shard_id: ShardId) {
+        todo!()
+    }
+
+    pub fn start_shard_transfer(
+        &mut self,
+        shard_id: ShardId,
+        to_peer: PeerId,
+        this_peer: PeerId,
+    ) -> CollectionResult<()> {
+        let shard = self.shard_by_id(shard_id).ok_or_else(|| {
+            CollectionError::service_error("Shard {shard_id} is abscent".to_owned())
+        })?;
+        let from_peer = shard.peer_id(this_peer);
+        self.shard_transfers.insert(
+            shard_id,
+            ShardTransfer {
+                _from: from_peer,
+                to: to_peer,
+            },
+        );
+        if from_peer == this_peer {
+            self.send_shard(shard_id);
+        }
+        Ok(())
+    }
+
+    pub fn finish_shard_transfer(&mut self, shard_id: ShardId) -> CollectionResult<()> {
+        let transfer = self.shard_transfers.remove(&shard_id).ok_or_else(|| {
+            CollectionError::service_error(format!(
+                "Shard transfer data for {shard_id} is abscent at the end of the transfer."
+            ))
+        })?;
+        if let Shard::Remote(shard) = self.shards.get_mut(&shard_id).ok_or_else(|| {
+            CollectionError::service_error("Shard {shard_id} is absent".to_owned())
+        })? {
+            shard.peer_id = transfer.to;
+        }
+        Ok(())
+    }
+
+    pub fn abort_shard_transfer(&mut self, shard_id: ShardId) -> CollectionResult<()> {
+        self.shard_transfers.remove(&shard_id);
+        todo!("Handle for sender and receiver")
     }
 
     pub async fn update_from_peer(

@@ -15,11 +15,13 @@ use collection::operations::types::{
     SearchRequest, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
-use collection::telemetry::CollectionTelemetry;
-use collection::{ChannelService, Collection, CollectionShardDistribution};
+use collection::{
+    telemetry::CollectionTelemetry, ChannelService, Collection, CollectionId,
+    CollectionShardDistribution,
+};
 use segment::types::ScoredPoint;
 
-use super::collection_meta_ops::CreateCollectionOperation;
+use super::collection_meta_ops::{CreateCollectionOperation, ShardTransferOperations};
 use super::{consensus_state, CollectionContainer};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::content_manager::{
@@ -387,7 +389,36 @@ impl TableOfContent {
             CollectionMetaOperations::ChangeAliases(operation) => {
                 self.update_aliases(operation).await
             }
+            CollectionMetaOperations::TransferShard(collection, shard, operation) => self
+                .handle_transfer(collection, shard, operation)
+                .await
+                .map(|()| true),
         }
+    }
+
+    pub async fn handle_transfer(
+        &self,
+        collection: CollectionId,
+        shard: ShardId,
+        transfer: ShardTransferOperations,
+    ) -> Result<(), StorageError> {
+        let mut collections = self.collections.write().await;
+        let collection = collections.get_mut(&collection).ok_or_else(|| {
+            StorageError::service_error(&format!(
+                "Collection {collection} should be present at the time of shard transfer."
+            ))
+        })?;
+        match transfer {
+            ShardTransferOperations::Start { to } => {
+                collection.start_shard_transfer(shard, to, self.this_peer_id)
+            }
+            ShardTransferOperations::Finish => collection.finish_shard_transfer(shard),
+            ShardTransferOperations::Abort { reason } => {
+                log::warn!("Aborting shard transfer: {reason}");
+                collection.abort_shard_transfer(shard)
+            }
+        }?;
+        Ok(())
     }
 
     pub async fn get_collection<'a>(
