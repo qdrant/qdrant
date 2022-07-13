@@ -231,10 +231,11 @@ impl VectorIndex for HNSWIndex {
                     // if cardinality is small - use plain index
                     let _timer =
                         TelemetryOperationTimer::new(&self.small_cardinality_search_telemetry);
-                    let mut filtered_ids = payload_index.query_points(query_filter);
+                    let filtered_ids: Vec<_> = payload_index.query_points(query_filter).collect();
+
                     return vectors
                         .iter()
-                        .map(|vector| vector_storage.score_points(vector, &mut filtered_ids, top))
+                        .map(|vector| vector_storage.score_points(vector, &mut filtered_ids.iter(), top))
                         .collect();
                 }
 
@@ -265,10 +266,10 @@ impl VectorIndex for HNSWIndex {
                     let _timer = TelemetryOperationTimer::new(
                         &self.negative_check_cardinality_search_telemetry,
                     );
-                    let mut filtered_ids = payload_index.query_points(query_filter);
+                    let filtered_ids: Vec<_> = payload_index.query_points(query_filter).collect();
                     vectors
                         .iter()
-                        .map(|vector| vector_storage.score_points(vector, &mut filtered_ids, top))
+                        .map(|vector| vector_storage.score_points(vector, &mut filtered_ids.iter().copied(), top))
                         .collect()
                     // vector_storage.score_points(vector, &mut filtered_ids, top)
                 };
