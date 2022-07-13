@@ -279,11 +279,14 @@ mod tests {
         };
 
         let points = PointInsertOperations::PointsList(
-            ids.iter().zip(vectors.iter()).map(|(id, vector)| PointStruct {
-                id: *id,
-                vector: vector.clone(),
-                payload: None,
-            }).collect()
+            ids.iter()
+                .zip(vectors.iter())
+                .map(|(id, vector)| PointStruct {
+                    id: *id,
+                    vector: vector.clone(),
+                    payload: None,
+                })
+                .collect(),
         );
 
         let mut ring = HashRing::new();
@@ -300,7 +303,11 @@ mod tests {
             OperationToShard::ByShard(by_shard) => {
                 for (shard_id, batch) in by_shard {
                     shard_to_batch_ids.insert(shard_id, batch.ids.len());
-                    eprintln!("{shard_id} => {batch_size}", shard_id = shard_id, batch_size = batch.ids.len());
+                    eprintln!(
+                        "{shard_id} => {batch_size}",
+                        shard_id = shard_id,
+                        batch_size = batch.ids.len()
+                    );
                 }
             }
             OperationToShard::ToAll(_) => panic!("Should not be all"),
@@ -315,7 +322,11 @@ mod tests {
                         PointInsertOperations::PointsBatch(_) => panic!("Should not be batch"),
                         PointInsertOperations::PointsList(points_list) => {
                             shard_to_list_ids.insert(shard_id, points_list.len());
-                            eprintln!("{shard_id} => {size}", shard_id = shard_id, size = points_list.len());
+                            eprintln!(
+                                "{shard_id} => {size}",
+                                shard_id = shard_id,
+                                size = points_list.len()
+                            );
                         }
                     }
                 }
