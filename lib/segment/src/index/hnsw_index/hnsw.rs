@@ -236,7 +236,11 @@ impl VectorIndex for HNSWIndex {
                     return vectors
                         .iter()
                         .map(|vector| {
-                            vector_storage.score_points(vector, &mut filtered_ids.iter().copied(), top)
+                            vector_storage.score_points(
+                                vector,
+                                &mut filtered_ids.iter().copied(),
+                                top,
+                            )
                         })
                         .collect();
                 }
