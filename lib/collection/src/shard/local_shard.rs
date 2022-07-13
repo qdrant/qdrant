@@ -13,16 +13,17 @@ use parking_lot::RwLock;
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
-use segment::types::{Filter, PayloadStorageType, PointIdType, SegmentConfig};
+use segment::types::{Filter, PayloadStorageType, PointIdType, ScoredPoint, SegmentConfig};
 use tokio::fs::{copy, create_dir_all};
-use tokio::runtime::{self, Runtime};
+use tokio::runtime::{self, Handle, Runtime};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{mpsc, Mutex, RwLock as TokioRwLock};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
+use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::config::CollectionConfig;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, SearchRequestBatch};
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
 use crate::shard::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
@@ -548,6 +549,37 @@ impl LocalShard {
             segments,
             optimizers,
         }
+    }
+
+    pub async fn search_batch(
+        &self,
+        request: Arc<SearchRequestBatch>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let res =
+            SegmentsSearcher::search_batch(self.segments(), request.clone(), search_runtime_handle)
+                .await?;
+        let distance = self.config.read().await.params.distance;
+        let top_results = res
+            .into_iter()
+            .map(|vector_res| {
+                let processed_res = vector_res.into_iter().map(|mut scored_point| {
+                    scored_point.score = distance.postprocess_score(scored_point.score);
+                    scored_point
+                });
+
+                if let Some(threshold) = request.score_threshold {
+                    processed_res
+                        .take_while(|scored_point| {
+                            distance.check_threshold(scored_point.score, threshold)
+                        })
+                        .collect()
+                } else {
+                    processed_res.collect()
+                }
+            })
+            .collect();
+        Ok(top_results)
     }
 }
 

@@ -157,9 +157,9 @@ mod tests {
                 segment
                     .vector_index
                     .borrow()
-                    .search(&query, filter_query, top, None);
+                    .search(&[&query], filter_query, top, None);
 
-            if plain_result == index_result {
+            if plain_result.get(0).unwrap() == &index_result {
                 hits += 1;
             }
         }

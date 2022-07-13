@@ -27,7 +27,7 @@ use crate::types::{
     PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
     SegmentState, SegmentType, SeqNumberType, VectorElementType, WithPayload,
 };
-use crate::vector_storage::VectorStorageSS;
+use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
@@ -278,44 +278,16 @@ impl Segment {
             false
         }
     }
-}
 
-/// This is a basic implementation of `SegmentEntry`,
-/// meaning that it implements the _actual_ operations with data and not any kind of proxy or wrapping
-impl SegmentEntry for Segment {
-    fn version(&self) -> SeqNumberType {
-        self.version
-    }
-
-    fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
-        self.id_tracker.borrow().version(point_id)
-    }
-
-    fn search(
+    /// Converts raw ScoredPointOffset search result into ScoredPoint result
+    fn process_search_result(
         &self,
-        vector: &[VectorElementType],
+        internal_result: &[ScoredPointOffset],
         with_payload: &WithPayload,
         with_vector: bool,
-        filter: Option<&Filter>,
-        top: usize,
-        params: Option<&SearchParams>,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        let expected_vector_dim = self.vector_storage.borrow().vector_dim();
-        if expected_vector_dim != vector.len() {
-            return Err(OperationError::WrongVector {
-                expected_dim: expected_vector_dim,
-                received_dim: vector.len(),
-            });
-        }
-
-        let internal_result = self
-            .vector_index
-            .borrow()
-            .search(vector, filter, top, params);
-
         let id_tracker = self.id_tracker.borrow();
-
-        let res: OperationResult<Vec<ScoredPoint>> = internal_result
+        internal_result
             .iter()
             .map(|&scored_point_offset| {
                 let point_offset = scored_point_offset.idx;
@@ -357,7 +329,77 @@ impl SegmentEntry for Segment {
                     vector,
                 })
             })
+            .collect()
+    }
+}
+
+/// This is a basic implementation of `SegmentEntry`,
+/// meaning that it implements the _actual_ operations with data and not any kind of proxy or wrapping
+impl SegmentEntry for Segment {
+    fn version(&self) -> SeqNumberType {
+        self.version
+    }
+
+    fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
+        self.id_tracker.borrow().version(point_id)
+    }
+
+    fn search(
+        &self,
+        vector: &[VectorElementType],
+        with_payload: &WithPayload,
+        with_vector: bool,
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        let expected_vector_dim = self.vector_storage.borrow().vector_dim();
+        if vector.len() != expected_vector_dim {
+            return Err(OperationError::WrongVector {
+                expected_dim: expected_vector_dim,
+                received_dim: vector.len(),
+            });
+        }
+
+        let internal_result = &self
+            .vector_index
+            .borrow()
+            .search(&[vector], filter, top, params)[0];
+
+        self.process_search_result(internal_result, with_payload, with_vector)
+    }
+
+    fn search_batch(
+        &self,
+        vectors: &[&[VectorElementType]],
+        with_payload: &WithPayload,
+        with_vector: bool,
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        let expected_vector_dim = self.vector_storage.borrow().vector_dim();
+        for vector in vectors {
+            if vector.len() != expected_vector_dim {
+                return Err(OperationError::WrongVector {
+                    expected_dim: expected_vector_dim,
+                    received_dim: vector.len(),
+                });
+            }
+        }
+
+        let internal_results = self
+            .vector_index
+            .borrow()
+            .search(vectors, filter, top, params);
+
+        let res = internal_results
+            .iter()
+            .map(|internal_result| {
+                self.process_search_result(internal_result, with_payload, with_vector)
+            })
             .collect();
+
         res
     }
 

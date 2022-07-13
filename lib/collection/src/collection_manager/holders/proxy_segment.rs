@@ -198,6 +198,18 @@ impl SegmentEntry for ProxySegment {
         Ok(wrapped_result)
     }
 
+    fn search_batch(
+        &self,
+        _vectors: &[&[VectorElementType]],
+        _with_payload: &WithPayload,
+        _with_vector: bool,
+        _filter: Option<&Filter>,
+        _top: usize,
+        _params: Option<&SearchParams>,
+    ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        todo!()
+    }
+
     fn upsert_point(
         &mut self,
         op_num: SeqNumberType,

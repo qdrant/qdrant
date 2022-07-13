@@ -196,20 +196,31 @@ impl PlainIndex {
 impl VectorIndex for PlainIndex {
     fn search(
         &self,
-        vector: &[VectorElementType],
+        vectors: &[&[VectorElementType]],
         filter: Option<&Filter>,
         top: usize,
         _params: Option<&SearchParams>,
-    ) -> Vec<ScoredPointOffset> {
+    ) -> Vec<Vec<ScoredPointOffset>> {
         match filter {
             Some(filter) => {
                 let borrowed_payload_index = self.payload_index.borrow();
-                let mut filtered_ids = borrowed_payload_index.query_points(filter);
-                self.vector_storage
-                    .borrow()
-                    .score_points(vector, &mut filtered_ids, top)
+                let filtered_ids_vec: Vec<_> =
+                    borrowed_payload_index.query_points(filter).collect();
+                vectors
+                    .iter()
+                    .map(|vector| {
+                        self.vector_storage.borrow().score_points(
+                            vector,
+                            &mut filtered_ids_vec.iter().copied(),
+                            top,
+                        )
+                    })
+                    .collect()
             }
-            None => self.vector_storage.borrow().score_all(vector, top),
+            None => vectors
+                .iter()
+                .map(|vector| self.vector_storage.borrow().score_all(vector, top))
+                .collect(),
         }
     }
 

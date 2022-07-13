@@ -6,11 +6,13 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::entry::entry_point::OperationError;
 use segment::spaces::tools::peek_top_largest_scores_iterable;
-use segment::types::{PointIdType, ScoredPoint, SeqNumberType, WithPayload, WithPayloadInterface};
+use segment::types::{
+    PointIdType, ScoredPoint, SeqNumberType, VectorElementType, WithPayload, WithPayloadInterface,
+};
 use tokio::runtime::Handle;
 
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
-use crate::operations::types::{CollectionResult, Record, SearchRequest};
+use crate::operations::types::{CollectionResult, Record, SearchRequest, SearchRequestBatch};
 
 /// Simple implementation of segment manager
 ///  - rebuild segment for memory optimization purposes
@@ -73,6 +75,73 @@ impl SegmentsSearcher {
         Ok(top_scores)
     }
 
+    pub async fn search_batch(
+        segments: &RwLock<SegmentHolder>,
+        request: Arc<SearchRequestBatch>,
+        runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        // Using { } block to ensure segments variable is dropped in the end of it
+        // and is not transferred across the all_searches.await? boundary as it
+        // does not impl Send trait
+        let searches: Vec<_> = {
+            let segments = segments.read();
+
+            let some_segment = segments.iter().next();
+
+            if some_segment.is_none() {
+                return Ok(vec![]);
+            }
+
+            segments
+                .iter()
+                .map(|(_id, segment)| search_batch_in_segment(segment.clone(), request.clone()))
+                .map(|f| runtime_handle.spawn(f))
+                .collect()
+        };
+
+        let all_searches = try_join_all(searches);
+        let all_search_results: Vec<CollectionResult<Vec<Vec<ScoredPoint>>>> = all_searches.await?;
+
+        match all_search_results
+            .iter()
+            .filter_map(|res| res.to_owned().err())
+            .next()
+        {
+            None => {}
+            Some(error) => return Err(error),
+        }
+
+        let mut seen_idx: HashSet<PointIdType> = HashSet::new();
+
+        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; request.vectors.len()];
+        for segment_result in all_search_results {
+            let segment_result = segment_result.unwrap();
+            for (idx, query_res) in segment_result.into_iter().enumerate() {
+                merged_results[idx].extend(query_res);
+            }
+        }
+
+        let top_scores = merged_results
+            .into_iter()
+            .map(|all_search_results_per_vector| {
+                peek_top_largest_scores_iterable(
+                    all_search_results_per_vector
+                        .into_iter()
+                        .sorted_by_key(|a| (a.id, 1 - a.version as i64)) // Prefer higher version first
+                        .dedup_by(|a, b| a.id == b.id) // Keep only highest version
+                        .filter(|scored| {
+                            let res = seen_idx.contains(&scored.id);
+                            seen_idx.insert(scored.id);
+                            !res
+                        }),
+                    request.limit + request.offset,
+                )
+            })
+            .collect();
+
+        Ok(top_scores)
+    }
+
     pub async fn retrieve(
         segments: &RwLock<SegmentHolder>,
         points: &[PointIdType],
@@ -129,6 +198,32 @@ async fn search_in_segment(
 
     let res = segment.get().read().search(
         &request.vector,
+        &with_payload,
+        with_vector,
+        request.filter.as_ref(),
+        request.limit + request.offset,
+        request.params.as_ref(),
+    )?;
+
+    Ok(res)
+}
+
+async fn search_batch_in_segment(
+    segment: LockedSegment,
+    request: Arc<SearchRequestBatch>,
+) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+    let with_payload_interface = request
+        .with_payload
+        .as_ref()
+        .unwrap_or(&WithPayloadInterface::Bool(false));
+    let with_payload = WithPayload::from(with_payload_interface);
+    let with_vector = request.with_vector;
+
+    let vectors: Vec<&[VectorElementType]> =
+        request.vectors.iter().map(|x| x.as_ref()).collect_vec();
+
+    let res = segment.get().read().search_batch(
+        &vectors,
         &with_payload,
         with_vector,
         request.filter.as_ref(),

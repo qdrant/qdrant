@@ -828,6 +828,7 @@ dependencies = [
  "num_cpus",
  "ordered-float",
  "parking_lot",
+ "pprof",
  "rand",
  "rmp-serde",
  "schemars",
