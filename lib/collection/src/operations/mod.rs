@@ -43,6 +43,7 @@ pub enum CollectionUpdateOperations {
 
 /// A mapping of operation to shard.
 /// Is a result of splitting one operation into several shards by corresponding PointIds
+#[derive(Debug)]
 pub enum OperationToShard<O> {
     ByShard(Vec<(ShardId, O)>),
     ToAll(O),

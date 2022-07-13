@@ -263,6 +263,68 @@ impl From<Vec<PointStruct>> for PointOperations {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use segment::types::VectorElementType;
+
+    #[test]
+    fn test_split_batch_by_shard() {
+        let ids: Vec<_> = (0..500).map(|i| PointIdType::from(i)).collect();
+        let vectors: Vec<_> = (0..500)
+            .map(|i| vec![1.0 + i as VectorElementType, 2.0 + i as VectorElementType])
+            .collect();
+
+        let batch = Batch {
+            ids: ids.clone(),
+            vectors: vectors.clone(),
+            payloads: None,
+        };
+
+        let points = PointInsertOperations::PointsList(
+            ids.iter().zip(vectors.iter()).map(|(id, vector)| PointStruct {
+                id: *id,
+                vector: vector.clone(),
+                payload: None,
+            }).collect()
+        );
+
+        let mut ring = HashRing::new();
+
+        ring.add(0);
+        ring.add(1);
+        ring.add(2);
+
+        let batches_by_shard = batch.split_by_shard(&ring);
+
+        let mut shard_to_batch_ids = HashMap::new();
+
+        match batches_by_shard {
+            OperationToShard::ByShard(by_shard) => {
+                for (shard_id, batch) in by_shard {
+                    shard_to_batch_ids.insert(shard_id, batch.ids.len());
+                    eprintln!("{shard_id} => {batch_size}", shard_id = shard_id, batch_size = batch.ids.len());
+                }
+            }
+            OperationToShard::ToAll(_) => panic!("Should not be all"),
+        }
+        eprintln!("-----");
+        let points_by_shard = points.split_by_shard(&ring);
+        let mut shard_to_list_ids = HashMap::new();
+        match points_by_shard {
+            OperationToShard::ByShard(by_shard) => {
+                for (shard_id, points) in by_shard {
+                    match points {
+                        PointInsertOperations::PointsBatch(_) => panic!("Should not be batch"),
+                        PointInsertOperations::PointsList(points_list) => {
+                            shard_to_list_ids.insert(shard_id, points_list.len());
+                            eprintln!("{shard_id} => {size}", shard_id = shard_id, size = points_list.len());
+                        }
+                    }
+                }
+            }
+            OperationToShard::ToAll(_) => panic!("Should not be all"),
+        }
+
+        assert_eq!(shard_to_batch_ids, shard_to_list_ids);
+    }
 
     #[test]
     fn validate_batch() {
