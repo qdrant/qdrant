@@ -2,10 +2,6 @@ use crate::operations::operation_effect::{
     EstimateOperationEffectArea, OperationEffectArea, PointsOperationEffect,
 };
 use crate::update_handler::UpdateSignal;
-use crate::{
-    CollectionError, CollectionInfo, CollectionResult, CollectionUpdateOperations, CountRequest,
-    CountResult, LocalShard, PointRequest, Record, SearchRequest, ShardOperation, UpdateResult,
-};
 use async_trait::async_trait;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
@@ -18,6 +14,10 @@ use std::time::Duration;
 use tokio::runtime::Handle;
 use tokio::sync::{oneshot, RwLock};
 use tokio::time::timeout;
+use crate::operations::CollectionUpdateOperations;
+use crate::operations::types::{CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record, SearchRequest, UpdateResult};
+use crate::shard::local_shard::LocalShard;
+use crate::shard::ShardOperation;
 
 type ChangedPointsSet = Arc<RwLock<HashSet<PointIdType>>>;
 

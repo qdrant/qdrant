@@ -1,5 +1,4 @@
-use collection::shard::{Shard, ShardId};
-use collection::PeerId;
+use collection::shard::{PeerId, Shard, ShardId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;

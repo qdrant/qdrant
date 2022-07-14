@@ -1,6 +1,5 @@
 use crate::operations::payload_ops::PayloadOps;
-use crate::operations::point_ops;
-use crate::CollectionUpdateOperations;
+use crate::operations::{CollectionUpdateOperations, point_ops};
 use segment::types::{Filter, PointIdType};
 
 /// Structure to define what part of the shard are affected by the operation

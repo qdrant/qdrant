@@ -27,9 +27,9 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
 use crate::shard::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
+use crate::shard::{CollectionId, ShardId};
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
-use crate::{CollectionId, ShardId};
 
 /// LocalShard
 ///

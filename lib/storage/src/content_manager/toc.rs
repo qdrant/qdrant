@@ -15,13 +15,11 @@ use collection::operations::types::{
     SearchRequest, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
-use collection::{
-    collection_state, telemetry::CollectionTelemetry, ChannelService, Collection, CollectionId,
-};
+use collection::collection::Collection;
 use segment::types::ScoredPoint;
 
 use super::collection_meta_ops::{CreateCollectionOperation, ShardTransferOperations};
-use super::{consensus_state, CollectionContainer};
+use super::{CollectionContainer, consensus_state};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::content_manager::{
     alias_mapping::AliasPersistence,
@@ -35,8 +33,9 @@ use crate::content_manager::{
 };
 use crate::types::{PeerAddressById, StorageConfig};
 use collection::shard::collection_shard_distribution::CollectionShardDistribution;
-use collection::shard::ShardId;
-use collection::PeerId;
+use collection::shard::{ChannelService, CollectionId, PeerId, ShardId};
+use collection::collection_state;
+use collection::telemetry::CollectionTelemetry;
 
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const SNAPSHOTS_TMP_DIR: &str = "snapshots_tmp";
@@ -613,7 +612,7 @@ impl TableOfContent {
     }
 
     pub async fn collections_snapshot(&self) -> consensus_state::CollectionsSnapshot {
-        let mut collections: HashMap<collection::CollectionId, collection_state::State> =
+        let mut collections: HashMap<CollectionId, collection_state::State> =
             HashMap::new();
         for (id, collection) in self.collections.read().await.iter() {
             collections.insert(id.clone(), collection.state(self.this_peer_id()).await);

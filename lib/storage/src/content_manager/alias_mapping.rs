@@ -5,13 +5,14 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use collection::shard::CollectionId;
 
 pub const ALIAS_MAPPING_CONFIG_FILE: &str = "data.json";
 
 type Alias = String;
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Default)]
-pub struct AliasMapping(HashMap<Alias, collection::CollectionId>);
+pub struct AliasMapping(HashMap<Alias, CollectionId>);
 
 impl AliasMapping {
     pub fn load(path: &Path) -> Result<Self, StorageError> {

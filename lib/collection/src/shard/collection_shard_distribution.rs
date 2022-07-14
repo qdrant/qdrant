@@ -1,6 +1,9 @@
-use crate::{CollectionConfig, CollectionResult, PeerId, ShardConfig, ShardId, ShardType};
 use std::collections::HashMap;
 use std::path::Path;
+use crate::config::CollectionConfig;
+use crate::operations::types::CollectionResult;
+use crate::shard::{PeerId, shard_path, ShardId};
+use crate::shard::shard_config::{ShardConfig, ShardType};
 
 #[derive(Debug)]
 pub struct CollectionShardDistribution {
@@ -63,7 +66,7 @@ impl CollectionShardDistribution {
         let mut remote_shards = Vec::new();
 
         for shard_id in 0..shard_number {
-            let shard_path = crate::shard_path(collection_path, shard_id);
+            let shard_path = shard_path(collection_path, shard_id);
             let shard_config = ShardConfig::load(&shard_path)?;
             match shard_config.r#type {
                 ShardType::Local => local_shards.push(shard_id),

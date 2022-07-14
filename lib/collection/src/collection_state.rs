@@ -1,11 +1,12 @@
-use crate::{
-    ChannelService, Collection, CollectionConfig, CollectionResult, PeerId, RemoteShard, Shard,
-    ShardId,
-};
 use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use crate::collection::Collection;
+use crate::config::CollectionConfig;
+use crate::operations::types::CollectionResult;
+use crate::shard::{ChannelService, create_shard_dir, PeerId, Shard, ShardId};
+use crate::shard::remote_shard::RemoteShard;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct State {
@@ -64,7 +65,7 @@ impl State {
                     } else {
                         // missing remote shard
                         let collection_id = collection.id.clone();
-                        let shard_path = crate::create_shard_dir(collection_path, shard_id).await?;
+                        let shard_path = create_shard_dir(collection_path, shard_id).await?;
                         let shard = RemoteShard::init(
                             shard_id,
                             collection_id,

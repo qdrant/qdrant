@@ -8,7 +8,6 @@ mod snapshots;
 mod tonic;
 mod user_telemetry;
 
-use collection::ChannelService;
 use consensus::Consensus;
 use log::LevelFilter;
 use slog::Drain;
@@ -23,6 +22,7 @@ use storage::Dispatcher;
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
+use collection::shard::ChannelService;
 use storage::content_manager::toc::TableOfContent;
 
 use crate::common::helpers::create_search_runtime;

@@ -1,11 +1,12 @@
-use crate::ShardId;
-use crate::{hash_ring::HashRing, operations::types::VectorType};
+use crate::hash_ring::HashRing;
+use crate::operations::types::VectorType;
 use schemars::gen::SchemaGenerator;
 use schemars::schema::{ObjectValidation, Schema, SchemaObject, SubschemaValidation};
 use schemars::JsonSchema;
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use crate::shard::ShardId;
 
 use super::{
     point_to_shard, split_iter_by_shard,

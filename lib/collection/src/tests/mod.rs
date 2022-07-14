@@ -3,7 +3,7 @@ use crate::collection_manager::fixtures::{
 };
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
 use crate::update_handler::{Optimizer, UpdateHandler};
-use crate::Collection;
+use crate::collection::Collection;
 use futures::future::join_all;
 use itertools::Itertools;
 use parking_lot::RwLock;
