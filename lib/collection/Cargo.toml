@@ -1,6 +1,6 @@
 [package]
 name = "collection"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Qdrant Team <info@qdrant.tech>"]
 edition = "2021"
 
@@ -46,4 +46,5 @@ schemars = { version = "0.8.10", features = ["uuid1", "preserve_order", "chrono"
 num_cpus = "1.13.1"
 tar = "0.4.38"
 fs_extra = "1.2.0"
+semver = "1.0.12"
 

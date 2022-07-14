@@ -7,21 +7,27 @@ use std::{
     sync::Arc,
 };
 
-use crate::operations::config_diff::DiffConfig;
-use crate::operations::snapshot_ops::{
-    get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
+use crate::{
+    hash_ring::HashRing,
+    operations::{
+        config_diff::DiffConfig,
+        snapshot_ops::{
+            get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
+        },
+        types::{CountRequest, CountResult, PointRequest},
+        OperationToShard,
+    },
+    shard::{
+        remote_shard::RemoteShard,
+        shard_config::{ShardConfig, ShardType},
+        ShardOperation,
+    },
+    telemetry::CollectionTelemetry,
 };
-use crate::operations::types::{CountRequest, CountResult, PointRequest};
-use crate::operations::OperationToShard;
-use crate::shard::remote_shard::RemoteShard;
-use crate::shard::shard_config::{ShardConfig, ShardType};
-use crate::shard::ShardOperation;
-use crate::telemetry::CollectionTelemetry;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use config::CollectionConfig;
 use futures::future::{join_all, try_join_all};
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
-use hashring::HashRing;
 use itertools::Itertools;
 use operations::{
     config_diff::OptimizersConfigDiff,
@@ -42,6 +48,7 @@ use segment::{
         WithPayload, WithPayloadInterface,
     },
 };
+use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use shard::{local_shard::LocalShard, Shard, ShardId};
 use tar::Builder as TarBuilder;
@@ -53,6 +60,7 @@ use tonic::transport::Uri;
 pub mod collection_manager;
 mod common;
 pub mod config;
+mod hash_ring;
 pub mod operations;
 pub mod optimizers_builder;
 pub mod shard;
@@ -62,6 +70,8 @@ pub mod wal;
 
 #[cfg(test)]
 mod tests;
+
+const HASH_RING_SHARD_SCALE: u32 = 100;
 
 pub type CollectionId = String;
 
@@ -290,7 +300,7 @@ impl Collection {
 
         CollectionVersion::save(path)?;
         config.save(path)?;
-        let mut ring = HashRing::new();
+        let mut ring = HashRing::fair(HASH_RING_SHARD_SCALE);
         let mut shards: HashMap<ShardId, Shard> = HashMap::new();
 
         let shared_config = Arc::new(RwLock::new(config.clone()));
@@ -339,6 +349,19 @@ impl Collection {
         })
     }
 
+    fn can_upgrade_storage(stored: &Version, app: &Version) -> bool {
+        VersionReq {
+            comparators: vec![semver::Comparator {
+                op: semver::Op::Caret,
+                major: stored.major,
+                minor: Some(stored.minor),
+                patch: Some(stored.patch),
+                pre: stored.pre.clone(),
+            }],
+        }
+        .matches(app)
+    }
+
     pub async fn load(
         id: CollectionId,
         path: &Path,
@@ -346,18 +369,21 @@ impl Collection {
         channel_service: ChannelService,
     ) -> Self {
         let start_time = std::time::Instant::now();
-        let stored_version_opt = CollectionVersion::load(path)
-            .unwrap_or_else(|err| panic!("Can't read collection version {}", err));
-
-        if let Some(stored_version) = stored_version_opt {
-            if stored_version != CollectionVersion::current() {
-                log::info!(
-                    "Migrating collection {} -> {}",
-                    stored_version,
-                    CollectionVersion::current()
-                );
+        let mut stored_version = CollectionVersion::load(path)
+            .expect("Can't read collection version")
+            .parse()
+            .expect("Failed to parse stored collection version as semver");
+        let app_version: Version = CollectionVersion::current()
+            .parse()
+            .expect("Failed to parse current collection version as semver");
+        if stored_version != app_version {
+            if Self::can_upgrade_storage(&stored_version, &app_version) {
+                log::info!("Migrating collection {stored_version} -> {app_version}",);
                 CollectionVersion::save(path)
                     .unwrap_or_else(|err| panic!("Can't save collection version {}", err));
+                stored_version = app_version;
+            } else {
+                log::info!("Cannot upgrade version {stored_version} to {app_version}. Attempting to use {stored_version}")
             }
         }
 
@@ -369,7 +395,14 @@ impl Collection {
             )
         });
 
-        let mut ring = HashRing::new();
+        // 0.4.0 is the collection version at which we introduced fair hash ring
+        let mut ring = if stored_version >= Version::new(0, 4, 0) {
+            log::debug!("Using fair hash ring with scale: {HASH_RING_SHARD_SCALE}");
+            HashRing::fair(HASH_RING_SHARD_SCALE)
+        } else {
+            log::debug!("Using raw hash ring");
+            HashRing::raw()
+        };
         let mut shards = HashMap::new();
 
         let shard_distribution = CollectionShardDistribution::from_local_state(path)
