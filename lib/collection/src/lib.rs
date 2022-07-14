@@ -7,36 +7,39 @@ use std::{
     sync::Arc,
 };
 
-use crate::{
-    hash_ring::HashRing,
-    operations::{
-        config_diff::DiffConfig,
-        snapshot_ops::{
-            get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
-        },
-        types::{CountRequest, CountResult, PointRequest},
-        OperationToShard,
-    },
-    shard::{
-        remote_shard::RemoteShard,
-        shard_config::{ShardConfig, ShardType},
-        ShardOperation,
-    },
-    telemetry::CollectionTelemetry,
-};
+use crate::collection_state::State;
+use crate::hash_ring::HashRing;
+use crate::operations::config_diff::DiffConfig;
+use crate::operations::snapshot_ops::get_snapshot_description;
+use crate::operations::snapshot_ops::list_snapshots_in_directory;
+use crate::operations::snapshot_ops::SnapshotDescription;
+use crate::operations::types::CountRequest;
+use crate::operations::types::CountResult;
+use crate::operations::types::PointRequest;
+use crate::operations::OperationToShard;
+use crate::shard::remote_shard::RemoteShard;
+use crate::shard::shard_config::ShardConfig;
+use crate::shard::shard_config::ShardType;
+use crate::shard::ShardOperation;
+use crate::telemetry::CollectionTelemetry;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use config::CollectionConfig;
 use futures::future::{join_all, try_join_all};
 use futures::{stream::futures_unordered::FuturesUnordered, StreamExt};
 use itertools::Itertools;
-use operations::{
-    config_diff::OptimizersConfigDiff,
-    types::{
-        CollectionError, CollectionInfo, CollectionResult, RecommendRequest, Record, ScrollRequest,
-        ScrollResult, SearchRequest, UpdateResult,
-    },
-    CollectionUpdateOperations, SplitByShard, Validate,
-};
+use operations::config_diff::OptimizersConfigDiff;
+use operations::types::CollectionError;
+use operations::types::CollectionInfo;
+use operations::types::CollectionResult;
+use operations::types::RecommendRequest;
+use operations::types::Record;
+use operations::types::ScrollRequest;
+use operations::types::ScrollResult;
+use operations::types::SearchRequest;
+use operations::types::UpdateResult;
+use operations::CollectionUpdateOperations;
+use operations::SplitByShard;
+use operations::Validate;
 use optimizers_builder::OptimizersConfig;
 use segment::common::version::StorageVersion;
 use segment::spaces::tools::peek_top_smallest_scores_iterable;
@@ -49,7 +52,6 @@ use segment::{
     },
 };
 use semver::{Version, VersionReq};
-use serde::{Deserialize, Serialize};
 use shard::{local_shard::LocalShard, Shard, ShardId};
 use tar::Builder as TarBuilder;
 use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
@@ -58,6 +60,7 @@ use tokio::sync::RwLock;
 use tonic::transport::Uri;
 
 pub mod collection_manager;
+pub mod collection_state;
 mod common;
 pub mod config;
 mod hash_ring;
@@ -76,81 +79,6 @@ const HASH_RING_SHARD_SCALE: u32 = 100;
 pub type CollectionId = String;
 
 pub type PeerId = u64;
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct State {
-    pub config: CollectionConfig,
-    pub shard_to_peer: HashMap<ShardId, PeerId>,
-}
-
-impl State {
-    pub async fn apply(
-        self,
-        this_peer_id: PeerId,
-        collection: &mut Collection,
-        collection_path: &Path,
-        channel_service: ChannelService,
-    ) -> CollectionResult<()> {
-        Self::apply_config(self.config, collection).await?;
-        Self::apply_shard_to_peer(
-            self.shard_to_peer,
-            this_peer_id,
-            collection,
-            collection_path,
-            channel_service,
-        )
-        .await
-    }
-
-    async fn apply_config(
-        config: CollectionConfig,
-        collection: &mut Collection,
-    ) -> CollectionResult<()> {
-        log::warn!("Applying only optimizers config snapshot. Other config updates are not yet implemented.");
-        collection
-            .update_optimizer_params(config.optimizer_config)
-            .await
-    }
-
-    async fn apply_shard_to_peer(
-        shard_to_peer: HashMap<ShardId, PeerId>,
-        this_peer_id: PeerId,
-        collection: &mut Collection,
-        collection_path: &Path,
-        channel_service: ChannelService,
-    ) -> CollectionResult<()> {
-        for (shard_id, peer_id) in shard_to_peer {
-            match collection.shards.get(&shard_id) {
-                Some(shard) => {
-                    if shard.peer_id(this_peer_id) != peer_id {
-                        // shard registered on a different peer
-                        log::warn!("Shard movement between peers is not yet implemented. Failed to move shard {shard_id} to peer {peer_id}")
-                    }
-                }
-                None => {
-                    if peer_id == this_peer_id {
-                        // missing local shard
-                        log::warn!("Shard addition is not yet implemented. Failed to add local shard {shard_id}");
-                    } else {
-                        // missing remote shard
-                        let collection_id = collection.id.clone();
-                        let shard_path = create_shard_dir(collection_path, shard_id).await?;
-                        let shard = RemoteShard::init(
-                            shard_id,
-                            collection_id,
-                            peer_id,
-                            shard_path,
-                            channel_service.clone(),
-                        )?;
-                        collection.shards.insert(shard_id, Shard::Remote(shard));
-                        collection.ring.add(shard_id);
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-}
 
 #[derive(Debug)]
 pub struct CollectionShardDistribution {
