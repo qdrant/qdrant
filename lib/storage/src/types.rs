@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use collection::config::WalConfig;
 use collection::optimizers_builder::OptimizersConfig;
+use collection::shard::PeerId;
 use schemars::JsonSchema;
 use segment::types::HnswConfig;
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
-use collection::shard::PeerId;
 
 pub type PeerAddressById = HashMap<PeerId, Uri>;
 

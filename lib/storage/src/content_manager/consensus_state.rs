@@ -13,7 +13,8 @@ use std::{
 
 use crate::types::{ClusterInfo, ClusterStatus, PeerAddressById, PeerInfo, RaftInfo};
 use atomicwrites::{AtomicFile, OverwriteBehavior::AllowOverwrite};
-use collection::{collection_state};
+use collection::collection_state;
+use collection::shard::{CollectionId, PeerId};
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::{ConfChangeV2, SnapshotMetadata};
@@ -28,7 +29,6 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tonic::transport::Uri;
 use wal::Wal;
-use collection::shard::{CollectionId, PeerId};
 
 use super::alias_mapping::AliasMapping;
 use super::consensus_ops::ConsensusOperations;

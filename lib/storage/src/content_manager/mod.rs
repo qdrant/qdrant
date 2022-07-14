@@ -14,9 +14,9 @@ pub mod toc;
 
 pub mod consensus_ops {
     use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
+    use collection::shard::PeerId;
     use raft::eraftpb::Entry as RaftEntry;
     use serde::{Deserialize, Serialize};
-    use collection::shard::PeerId;
 
     /// Operation that should pass consensus
     #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]

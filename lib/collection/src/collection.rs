@@ -927,4 +927,3 @@ fn avg_vectors<'a>(
 
     avg_vector
 }
-

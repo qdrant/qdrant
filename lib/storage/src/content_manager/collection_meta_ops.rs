@@ -1,4 +1,5 @@
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
+use collection::shard::{CollectionId, PeerId};
 use collection::{
     operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff},
     shard::ShardId,
@@ -6,7 +7,6 @@ use collection::{
 use schemars::JsonSchema;
 use segment::types::Distance;
 use serde::{Deserialize, Serialize};
-use collection::shard::{CollectionId, PeerId};
 
 // *Operation wrapper structure is only required for better OpenAPI generation
 

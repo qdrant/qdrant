@@ -1,5 +1,9 @@
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::PointOperations;
+use crate::operations::types::{
+    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
+    Record, SearchRequest, UpdateResult,
+};
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use crate::shard::conversions::{
     internal_clear_payload, internal_clear_payload_by_filter, internal_create_index,
@@ -22,7 +26,6 @@ use tokio::runtime::Handle;
 use tonic::transport::Channel;
 use tonic::transport::Uri;
 use tonic::Status;
-use crate::operations::types::{CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record, SearchRequest, UpdateResult};
 
 /// RemoteShard
 ///

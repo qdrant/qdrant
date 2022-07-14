@@ -4,14 +4,17 @@ use crate::operations::point_ops::PointsSelector::PointIdsSelector;
 use crate::operations::point_ops::{
     Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector,
 };
-use crate::operations::types::{CollectionInfo, CollectionStatus, CountResult, OptimizersStatus, Record, UpdateResult, UpdateStatus};
+use crate::operations::types::{
+    CollectionInfo, CollectionStatus, CountResult, OptimizersStatus, Record, UpdateResult,
+    UpdateStatus,
+};
 
+use crate::optimizers_builder::OptimizersConfig;
 use api::grpc::conversions::{payload_to_proto, proto_to_payloads};
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use tonic::Status;
-use crate::optimizers_builder::OptimizersConfig;
 
 impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
     fn from(value: api::grpc::qdrant::HnswConfigDiff) -> Self {

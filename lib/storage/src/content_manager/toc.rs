@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard};
 
+use collection::collection::Collection;
 use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -15,11 +16,10 @@ use collection::operations::types::{
     SearchRequest, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
-use collection::collection::Collection;
 use segment::types::ScoredPoint;
 
 use super::collection_meta_ops::{CreateCollectionOperation, ShardTransferOperations};
-use super::{CollectionContainer, consensus_state};
+use super::{consensus_state, CollectionContainer};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::content_manager::{
     alias_mapping::AliasPersistence,
@@ -32,9 +32,9 @@ use crate::content_manager::{
     errors::StorageError,
 };
 use crate::types::{PeerAddressById, StorageConfig};
+use collection::collection_state;
 use collection::shard::collection_shard_distribution::CollectionShardDistribution;
 use collection::shard::{ChannelService, CollectionId, PeerId, ShardId};
-use collection::collection_state;
 use collection::telemetry::CollectionTelemetry;
 
 pub const COLLECTIONS_DIR: &str = "collections";
@@ -612,8 +612,7 @@ impl TableOfContent {
     }
 
     pub async fn collections_snapshot(&self) -> consensus_state::CollectionsSnapshot {
-        let mut collections: HashMap<CollectionId, collection_state::State> =
-            HashMap::new();
+        let mut collections: HashMap<CollectionId, collection_state::State> = HashMap::new();
         for (id, collection) in self.collections.read().await.iter() {
             collections.insert(id.clone(), collection.state(self.this_peer_id()).await);
         }
