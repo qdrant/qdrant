@@ -16,7 +16,7 @@ use collection::operations::types::{
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::{
-    telemetry::CollectionTelemetry, ChannelService, Collection, CollectionId,
+    collection_state, telemetry::CollectionTelemetry, ChannelService, Collection, CollectionId,
     CollectionShardDistribution,
 };
 use segment::types::ScoredPoint;
@@ -613,7 +613,8 @@ impl TableOfContent {
     }
 
     pub async fn collections_snapshot(&self) -> consensus_state::CollectionsSnapshot {
-        let mut collections: HashMap<collection::CollectionId, collection::State> = HashMap::new();
+        let mut collections: HashMap<collection::CollectionId, collection_state::State> =
+            HashMap::new();
         for (id, collection) in self.collections.read().await.iter() {
             collections.insert(id.clone(), collection.state(self.this_peer_id()).await);
         }
