@@ -1,6 +1,8 @@
 use crate::config::CollectionConfig;
 use crate::shard::ShardId;
-use segment::telemetry::{telemetry_hash, SegmentTelemetry, TelemetryOperationStatistics};
+use segment::telemetry::{
+    telemetry_hash, Anonymize, SegmentTelemetry, TelemetryOperationStatistics,
+};
 use serde::Serialize;
 
 #[derive(Serialize, Clone)]
@@ -33,24 +35,35 @@ impl CollectionTelemetry {
             shards: Vec::new(),
         }
     }
+}
 
-    pub fn anonymize(&mut self) {
-        self.id = telemetry_hash(&self.id);
-        for shard in &mut self.shards {
-            match shard {
-                ShardTelemetry::Local { segments } => {
-                    for segment in segments.iter_mut() {
-                        segment.anonymize()
-                    }
-                }
-                ShardTelemetry::Remote {
-                    searches, updates, ..
-                } => {
-                    searches.anonymize();
-                    updates.anonymize();
-                }
-                _ => {}
-            }
+impl Anonymize for CollectionTelemetry {
+    fn anonymize(&self) -> Self {
+        Self {
+            id: telemetry_hash(&self.id),
+            config: self.config.clone(),
+            init_time: self.init_time,
+            shards: self.shards.iter().map(|shard| shard.anonymize()).collect(),
+        }
+    }
+}
+
+impl Anonymize for ShardTelemetry {
+    fn anonymize(&self) -> Self {
+        match self {
+            ShardTelemetry::Local { segments } => ShardTelemetry::Local {
+                segments: segments.iter().map(|segment| segment.anonymize()).collect(),
+            },
+            ShardTelemetry::Remote {
+                searches,
+                updates,
+                shard_id,
+            } => ShardTelemetry::Remote {
+                shard_id: *shard_id,
+                searches: searches.anonymize(),
+                updates: updates.anonymize(),
+            },
+            ShardTelemetry::Proxy {} => ShardTelemetry::Proxy {},
         }
     }
 }

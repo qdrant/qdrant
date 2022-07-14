@@ -5,6 +5,10 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+pub trait Anonymize {
+    fn anonymize(&self) -> Self;
+}
+
 #[derive(Serialize, Clone)]
 pub struct SegmentTelemetry {
     pub info: SegmentInfo,
@@ -44,16 +48,28 @@ pub struct TelemetryOperationTimer {
     success: bool,
 }
 
-impl SegmentTelemetry {
-    pub fn anonymize(&mut self) {
-        self.config.vector_size = telemetry_round(self.config.vector_size);
+impl Anonymize for SegmentTelemetry {
+    fn anonymize(&self) -> Self {
+        let mut anonymized = Self {
+            info: self.info.clone(),
+            config: self.config.clone(),
+            vector_index: self.vector_index.clone(),
+            payload_field_indices: self.payload_field_indices.clone(),
+        };
+        anonymized.config.vector_size = telemetry_round(self.config.vector_size);
+        anonymized
     }
 }
 
-impl TelemetryOperationStatistics {
-    pub fn anonymize(&mut self) {
-        self.ok_count = telemetry_round(self.ok_count);
-        self.fail_count = telemetry_round(self.fail_count);
+impl Anonymize for TelemetryOperationStatistics {
+    fn anonymize(&self) -> Self {
+        Self {
+            ok_count: telemetry_round(self.ok_count),
+            fail_count: telemetry_round(self.fail_count),
+            ok_avg_time: self.ok_avg_time,
+            ok_min_time: self.ok_min_time,
+            ok_max_time: self.ok_max_time,
+        }
     }
 }
 

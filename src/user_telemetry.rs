@@ -1,4 +1,5 @@
 use collection::telemetry::CollectionTelemetry;
+use segment::telemetry::Anonymize;
 use serde::Serialize;
 use std::path::Path;
 use std::sync::Arc;
@@ -80,10 +81,18 @@ pub struct UserTelemetryData {
     collections: Vec<CollectionTelemetry>,
 }
 
-impl UserTelemetryData {
-    pub fn anonymize(&mut self) {
-        for collection in &mut self.collections {
-            collection.anonymize();
+impl Anonymize for UserTelemetryData {
+    fn anonymize(&self) -> Self {
+        UserTelemetryData {
+            id: self.id.clone(),
+            app: self.app.clone(),
+            system: self.system.clone(),
+            configs: self.configs.clone(),
+            collections: self
+                .collections
+                .iter()
+                .map(|collection| collection.anonymize())
+                .collect(),
         }
     }
 }
@@ -100,15 +109,13 @@ impl UserTelemetryCollector {
     #[allow(dead_code)]
     pub async fn prepare_data(&self) -> UserTelemetryData {
         let collections = self.dispatcher.get_telemetry_data().await;
-        let mut telemetry_data = UserTelemetryData {
+        UserTelemetryData {
             id: self.process_id.to_string(),
             app: self.get_app_data(),
             system: self.get_system_data(),
             configs: self.get_configs_data(),
             collections,
-        };
-        telemetry_data.anonymize();
-        telemetry_data
+        }
     }
 
     fn get_app_data(&self) -> UserTelemetryApp {
