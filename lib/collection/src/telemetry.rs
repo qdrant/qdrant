@@ -1,18 +1,27 @@
 use crate::config::CollectionConfig;
-use crate::operations::types::{CollectionStatus, OptimizersStatus};
+use crate::shard::ShardId;
+use segment::telemetry::{telemetry_hash, SegmentTelemetry, TelemetryOperationStatistics};
 use serde::Serialize;
+
+#[derive(Serialize, Clone)]
+pub enum ShardTelemetry {
+    Remote {
+        shard_id: ShardId,
+        searches: TelemetryOperationStatistics,
+        updates: TelemetryOperationStatistics,
+    },
+    Local {
+        segments: Vec<SegmentTelemetry>,
+    },
+    Proxy {},
+}
 
 #[derive(Serialize, Clone)]
 pub struct CollectionTelemetry {
     pub id: String,
     pub config: CollectionConfig,
     pub init_time: std::time::Duration,
-    pub status: CollectionStatus,
-    pub optimizer_status: OptimizersStatus,
-    pub vectors_count: usize,
-    pub segments_count: usize,
-    pub disk_data_size: usize,
-    pub ram_data_size: usize,
+    pub shards: Vec<ShardTelemetry>,
 }
 
 impl CollectionTelemetry {
@@ -21,12 +30,27 @@ impl CollectionTelemetry {
             id,
             config,
             init_time,
-            status: CollectionStatus::Green,
-            optimizer_status: OptimizersStatus::Ok,
-            vectors_count: 0,
-            segments_count: 0,
-            disk_data_size: 0,
-            ram_data_size: 0,
+            shards: Vec::new(),
+        }
+    }
+
+    pub fn anonymize(&mut self) {
+        self.id = telemetry_hash(&self.id);
+        for shard in &mut self.shards {
+            match shard {
+                ShardTelemetry::Local { segments } => {
+                    for segment in segments.iter_mut() {
+                        segment.anonymize()
+                    }
+                }
+                ShardTelemetry::Remote {
+                    searches, updates, ..
+                } => {
+                    searches.anonymize();
+                    updates.anonymize();
+                }
+                _ => {}
+            }
         }
     }
 }

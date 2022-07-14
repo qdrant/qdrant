@@ -18,6 +18,7 @@ use crate::index::key_encoding::{
     decode_f64_key_ascending, decode_i64_key_ascending, encode_f64_key_ascending,
     encode_i64_key_ascending,
 };
+use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType, Range,
 };
@@ -352,6 +353,10 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         map.range((Excluded(key), Unbounded))
             .next()
             .map(|(key, _)| Self::key_to_histogram_point(key))
+    }
+
+    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {}
     }
 }
 

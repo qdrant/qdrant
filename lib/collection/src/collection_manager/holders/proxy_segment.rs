@@ -3,6 +3,7 @@ use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment_constructor::load_segment;
+use segment::telemetry::SegmentTelemetry;
 use segment::types::{
     Condition, Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
@@ -579,6 +580,10 @@ impl SegmentEntry for ProxySegment {
             .get()
             .read()
             .copy_segment_directory(target_dir_path)
+    }
+
+    fn get_telemetry_data(&self) -> SegmentTelemetry {
+        self.wrapped_segment.get().read().get_telemetry_data()
     }
 }
 

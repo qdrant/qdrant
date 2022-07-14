@@ -5,6 +5,10 @@ use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::index::{PayloadIndex, VectorIndex};
+use crate::telemetry::{
+    TelemetryOperationAggregator, TelemetryOperationStatistics, TelemetryOperationTimer,
+    VectorIndexTelemetry,
+};
 use crate::types::Condition::Field;
 use crate::types::{
     FieldCondition, Filter, HnswConfig, SearchParams, VectorElementType, VECTOR_ELEMENT_SIZE,
@@ -23,7 +27,7 @@ use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 const HNSW_USE_HEURISTIC: bool = true;
 const BYTES_IN_KB: usize = 1024;
@@ -34,6 +38,10 @@ pub struct HNSWIndex {
     config: HnswGraphConfig,
     path: PathBuf,
     graph: GraphLayers,
+    small_cardinality_search_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
+    large_cardinality_search_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
+    positive_check_cardinality_search_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
+    negative_check_cardinality_search_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
 }
 
 impl HNSWIndex {
@@ -83,6 +91,10 @@ impl HNSWIndex {
             config,
             path: path.to_owned(),
             graph,
+            small_cardinality_search_telemetry: TelemetryOperationAggregator::new(),
+            large_cardinality_search_telemetry: TelemetryOperationAggregator::new(),
+            positive_check_cardinality_search_telemetry: TelemetryOperationAggregator::new(),
+            negative_check_cardinality_search_telemetry: TelemetryOperationAggregator::new(),
         })
     }
 
@@ -203,12 +215,16 @@ impl VectorIndex for HNSWIndex {
 
                 if query_cardinality.max < self.config.indexing_threshold {
                     // if cardinality is small - use plain index
+                    let _timer =
+                        TelemetryOperationTimer::new(&self.small_cardinality_search_telemetry);
                     let mut filtered_ids = payload_index.query_points(query_filter);
                     return vector_storage.score_points(vector, &mut filtered_ids, top);
                 }
 
                 if query_cardinality.min > self.config.indexing_threshold {
                     // if cardinality is high enough - use HNSW index
+                    let _timer =
+                        TelemetryOperationTimer::new(&self.large_cardinality_search_telemetry);
                     return self.search_with_graph(vector, filter, top, params);
                 }
 
@@ -223,9 +239,15 @@ impl VectorIndex for HNSWIndex {
                     vector_storage.vector_count(),
                 ) {
                     // if cardinality is high enough - use HNSW index
+                    let _timer = TelemetryOperationTimer::new(
+                        &self.positive_check_cardinality_search_telemetry,
+                    );
                     self.search_with_graph(vector, filter, top, params)
                 } else {
                     // if cardinality is small - use plain index
+                    let _timer = TelemetryOperationTimer::new(
+                        &self.negative_check_cardinality_search_telemetry,
+                    );
                     let mut filtered_ids = payload_index.query_points(query_filter);
                     vector_storage.score_points(vector, &mut filtered_ids, top)
                 };
@@ -329,5 +351,38 @@ impl VectorIndex for HNSWIndex {
         }
         debug!("finish additional payload field indexing");
         self.save()
+    }
+
+    fn get_telemetry_data(&self) -> VectorIndexTelemetry {
+        VectorIndexTelemetry {
+            small_cardinality_searches: if let Ok(aggregator) =
+                self.small_cardinality_search_telemetry.lock()
+            {
+                aggregator.get_statistics()
+            } else {
+                TelemetryOperationStatistics::default()
+            },
+            large_cardinality_searches: if let Ok(aggregator) =
+                self.large_cardinality_search_telemetry.lock()
+            {
+                aggregator.get_statistics()
+            } else {
+                TelemetryOperationStatistics::default()
+            },
+            positive_check_cardinality_searches: if let Ok(aggregator) =
+                self.positive_check_cardinality_search_telemetry.lock()
+            {
+                aggregator.get_statistics()
+            } else {
+                TelemetryOperationStatistics::default()
+            },
+            negative_check_cardinality_searches: if let Ok(aggregator) =
+                self.negative_check_cardinality_search_telemetry.lock()
+            {
+                aggregator.get_statistics()
+            } else {
+                TelemetryOperationStatistics::default()
+            },
+        }
     }
 }

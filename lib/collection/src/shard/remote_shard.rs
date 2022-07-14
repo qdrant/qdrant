@@ -8,6 +8,7 @@ use crate::shard::conversions::{
 };
 use crate::shard::shard_config::ShardConfig;
 use crate::shard::{PeerId, ShardId, ShardOperation};
+use crate::telemetry::ShardTelemetry;
 use crate::{
     ChannelService, CollectionError, CollectionId, CollectionInfo, CollectionResult,
     CollectionUpdateOperations, CountRequest, CountResult, PointRequest, Record, SearchRequest,
@@ -20,9 +21,10 @@ use api::grpc::qdrant::{
     ScrollPoints, ScrollPointsInternal, SearchPoints, SearchPointsInternal,
 };
 use async_trait::async_trait;
+use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::runtime::Handle;
 use tonic::transport::Channel;
 use tonic::transport::Uri;
@@ -36,6 +38,8 @@ pub struct RemoteShard {
     pub(crate) collection_id: CollectionId,
     pub peer_id: PeerId,
     channel_service: ChannelService,
+    searches_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
+    updates_telemetry: Arc<Mutex<TelemetryOperationAggregator>>,
 }
 
 impl RemoteShard {
@@ -51,6 +55,8 @@ impl RemoteShard {
             collection_id,
             peer_id,
             channel_service,
+            searches_telemetry: TelemetryOperationAggregator::new(),
+            updates_telemetry: TelemetryOperationAggregator::new(),
         }
     }
 
@@ -114,6 +120,22 @@ impl RemoteShard {
             .await?;
         Ok(CollectionsInternalClient::new(pooled_channel))
     }
+
+    pub fn get_telemetry_data(&self) -> ShardTelemetry {
+        ShardTelemetry::Remote {
+            shard_id: self.id,
+            searches: if let Ok(searches) = self.searches_telemetry.lock() {
+                searches.get_statistics()
+            } else {
+                Default::default()
+            },
+            updates: if let Ok(searches) = self.updates_telemetry.lock() {
+                searches.get_statistics()
+            } else {
+                Default::default()
+            },
+        }
+    }
 }
 
 #[async_trait]
@@ -124,6 +146,8 @@ impl ShardOperation for &RemoteShard {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
+        let mut timer = TelemetryOperationTimer::new(&self.updates_telemetry);
+        timer.set_success(false);
         let mut client = self.points_client().await?;
 
         let response = match operation {
@@ -187,7 +211,10 @@ impl ShardOperation for &RemoteShard {
             None => Err(CollectionError::service_error(
                 "Malformed UpdateResult type".to_string(),
             )),
-            Some(update_result) => update_result.try_into().map_err(|e: Status| e.into()),
+            Some(update_result) => {
+                timer.set_success(true);
+                update_result.try_into().map_err(|e: Status| e.into())
+            }
         }
     }
 
@@ -244,6 +271,8 @@ impl ShardOperation for &RemoteShard {
         request: Arc<SearchRequest>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
+        let mut timer = TelemetryOperationTimer::new(&self.searches_telemetry);
+        timer.set_success(false);
         let mut client = self.points_client().await?;
 
         let search_points = SearchPoints {
@@ -268,7 +297,11 @@ impl ShardOperation for &RemoteShard {
             .into_iter()
             .map(|scored| scored.try_into())
             .collect();
-        result.map_err(|e| e.into())
+        let result = result.map_err(|e| e.into());
+        if result.is_ok() {
+            timer.set_success(true);
+        }
+        result
     }
 
     async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {

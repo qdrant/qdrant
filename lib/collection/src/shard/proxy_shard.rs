@@ -1,6 +1,7 @@
 use crate::operations::operation_effect::{
     EstimateOperationEffectArea, OperationEffectArea, PointsOperationEffect,
 };
+use crate::telemetry::ShardTelemetry;
 use crate::update_handler::UpdateSignal;
 use crate::{
     CollectionError, CollectionInfo, CollectionResult, CollectionUpdateOperations, CountRequest,
@@ -101,6 +102,10 @@ impl ProxyShard {
     /// Forward `before_drop` to `wrapped_shard`
     pub async fn before_drop(&mut self) {
         self.wrapped_shard.before_drop().await
+    }
+
+    pub fn get_telemetry_data(&self) -> ShardTelemetry {
+        ShardTelemetry::Proxy {}
     }
 }
 

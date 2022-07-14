@@ -1,5 +1,6 @@
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
+use crate::telemetry::{TelemetryOperationStatistics, VectorIndexTelemetry};
 use crate::types::{
     Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
     SearchParams, VectorElementType,
@@ -212,6 +213,15 @@ impl VectorIndex for PlainIndex {
 
     fn build_index(&mut self, _stopped: &AtomicBool) -> OperationResult<()> {
         Ok(())
+    }
+
+    fn get_telemetry_data(&self) -> VectorIndexTelemetry {
+        VectorIndexTelemetry {
+            small_cardinality_searches: TelemetryOperationStatistics::default(),
+            large_cardinality_searches: TelemetryOperationStatistics::default(),
+            positive_check_cardinality_searches: TelemetryOperationStatistics::default(),
+            negative_check_cardinality_searches: TelemetryOperationStatistics::default(),
+        }
     }
 }
 

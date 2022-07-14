@@ -965,15 +965,11 @@ impl Collection {
     }
 
     pub async fn get_telemetry_data(&self) -> Option<CollectionTelemetry> {
-        let info = self.info(None).await.ok()?;
         let mut telemetry = self.telemetry.clone();
-        telemetry.config = info.config;
-        telemetry.status = info.status;
-        telemetry.optimizer_status = info.optimizer_status;
-        telemetry.vectors_count = info.vectors_count;
-        telemetry.segments_count = info.segments_count;
-        telemetry.disk_data_size = info.disk_data_size;
-        telemetry.ram_data_size = info.ram_data_size;
+        telemetry.shards.clear();
+        for shard in self.all_shards() {
+            telemetry.shards.push(shard.get_telemetry_data());
+        }
         Some(telemetry)
     }
 

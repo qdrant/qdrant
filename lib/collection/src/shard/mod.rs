@@ -7,6 +7,7 @@ pub mod shard_config;
 
 use crate::shard::proxy_shard::ProxyShard;
 use crate::shard::remote_shard::RemoteShard;
+use crate::telemetry::ShardTelemetry;
 use crate::{
     CollectionInfo, CollectionResult, CollectionUpdateOperations, CountRequest, CountResult,
     LocalShard, PeerId, PointRequest, Record, SearchRequest, UpdateResult,
@@ -51,6 +52,14 @@ impl Shard {
             Shard::Local(_) => this_peer_id,
             Shard::Remote(remote) => remote.peer_id,
             Shard::Proxy(_) => this_peer_id,
+        }
+    }
+
+    pub fn get_telemetry_data(&self) -> ShardTelemetry {
+        match self {
+            Shard::Local(local_shard) => local_shard.get_telemetry_data(),
+            Shard::Remote(remote_shard) => remote_shard.get_telemetry_data(),
+            Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(),
         }
     }
 }
