@@ -1,10 +1,9 @@
-use hashring::HashRing;
 use schemars::JsonSchema;
 use segment::types::{Filter, Payload, PayloadKeyType, PointIdType};
 use serde;
 use serde::{Deserialize, Serialize};
 
-use crate::ShardId;
+use crate::{hash_ring::HashRing, ShardId};
 
 use super::{split_iter_by_shard, OperationToShard, SplitByShard};
 

@@ -827,7 +827,7 @@ dependencies = [
 
 [[package]]
 name = "collection"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "api",
  "arc-swap",
@@ -850,6 +850,7 @@ dependencies = [
  "rmp-serde",
  "schemars",
  "segment",
+ "semver 1.0.12",
  "serde",
  "serde_cbor",
  "serde_json",

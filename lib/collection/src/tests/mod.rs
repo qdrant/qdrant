@@ -3,6 +3,7 @@ use crate::collection_manager::fixtures::{
 };
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
 use crate::update_handler::{Optimizer, UpdateHandler};
+use crate::Collection;
 use futures::future::join_all;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -110,4 +111,16 @@ async fn test_cancel_optimization() {
             LockedSegment::Proxy(_) => panic!("segment is not restored"),
         }
     }
+}
+
+#[test]
+fn check_version_upgrade() {
+    assert!(!Collection::can_upgrade_storage(
+        &"0.3.1".parse().unwrap(),
+        &"0.4.0".parse().unwrap()
+    ));
+    assert!(Collection::can_upgrade_storage(
+        &"0.4.0".parse().unwrap(),
+        &"0.4.1".parse().unwrap()
+    ));
 }

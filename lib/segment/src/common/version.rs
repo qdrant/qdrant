@@ -12,15 +12,12 @@ pub trait StorageVersion {
     // since the package version is provided at compile time
     fn current() -> String;
 
-    fn load(path: &Path) -> FileOperationResult<Option<String>> {
+    fn load(path: &Path) -> FileOperationResult<String> {
         let version_file = path.join(VERSION_FILE);
         let mut contents = String::new();
-        if !version_file.exists() {
-            return Ok(None);
-        }
         let mut file = File::open(version_file)?;
         file.read_to_string(&mut contents)?;
-        Ok(Some(contents))
+        Ok(contents)
     }
 
     fn save(path: &Path) -> FileOperationResult<()> {
