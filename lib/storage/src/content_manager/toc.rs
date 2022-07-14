@@ -17,7 +17,6 @@ use collection::operations::types::{
 use collection::operations::CollectionUpdateOperations;
 use collection::{
     collection_state, telemetry::CollectionTelemetry, ChannelService, Collection, CollectionId,
-    CollectionShardDistribution,
 };
 use segment::types::ScoredPoint;
 
@@ -35,6 +34,7 @@ use crate::content_manager::{
     errors::StorageError,
 };
 use crate::types::{PeerAddressById, StorageConfig};
+use collection::shard::collection_shard_distribution::CollectionShardDistribution;
 use collection::shard::ShardId;
 use collection::PeerId;
 

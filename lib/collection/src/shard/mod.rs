@@ -1,3 +1,4 @@
+pub mod collection_shard_distribution;
 mod conversions;
 pub mod local_shard;
 pub mod local_shard_operations;
