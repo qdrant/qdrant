@@ -25,8 +25,9 @@ use crate::operations::snapshot_ops::{
     get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
 };
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
+    CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
+    CountResult, PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult,
+    SearchRequest, ShardInfo, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;
@@ -726,6 +727,24 @@ impl Collection {
                 info.payload_schema
                     .extend(shard_info.payload_schema.drain());
             });
+        Ok(info)
+    }
+
+    pub async fn cluster_info(&self) -> CollectionResult<CollectionClusterInfo> {
+        let shard_count = self.shards.len();
+        let mut shard_info = Vec::with_capacity(shard_count);
+        for (shard_id, shard) in &self.shards {
+            let shard_id = *shard_id;
+            match shard {
+                Shard::Local(_) => shard_info.push(ShardInfo::Local { shard_id }),
+                Shard::Remote(rs) => shard_info.push(ShardInfo::Remote {
+                    shard_id,
+                    peer_id: rs.peer_id,
+                }),
+                Shard::Proxy(_) => shard_info.push(ShardInfo::Local { shard_id }),
+            }
+        }
+        let info = CollectionClusterInfo { shards: shard_info };
         Ok(info)
     }
 

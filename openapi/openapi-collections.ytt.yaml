@@ -184,3 +184,19 @@ paths:
           schema:
             type: boolean
       responses: #@ response(reference("UpdateResult"))
+
+  /collections/{collection_name}/cluster:
+    get:
+      tags:
+        - collections
+      summary: Collection cluster info
+      description: Get cluster information for a collection
+      operationId: get_cluster_info
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to retrieve the cluster info for
+          required: true
+          schema:
+            type: string
+      responses: #@ response(reference("CollectionClusterInfo"))

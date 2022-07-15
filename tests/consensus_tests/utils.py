@@ -110,6 +110,17 @@ def print_clusters_info(peer_api_uris: [str]):
         print(json.dumps(get_cluster_info(uri), indent=4))
 
 
+def get_collection_cluster_info(peer_api_uri: str, collection_name: str) -> dict:
+    r = requests.get(f"{peer_api_uri}/collections/{collection_name}/cluster")
+    assert_http_ok(r)
+    res = r.json()["result"]
+    return res
+
+
+def print_collection_cluster_info(peer_api_uri: str, collection_name: str):
+    print(json.dumps(get_collection_cluster_info(peer_api_uri, collection_name), indent=4))
+
+
 def get_leader(peer_api_uri: str) -> str:
     r = requests.get(f"{peer_api_uri}/cluster")
     assert_http_ok(r)

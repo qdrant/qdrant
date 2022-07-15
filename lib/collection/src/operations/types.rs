@@ -20,6 +20,7 @@ use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
 
 use crate::config::CollectionConfig;
+use crate::shard::{PeerId, ShardId};
 use crate::wal::WalError;
 
 /// Type of vector in API
@@ -83,6 +84,21 @@ pub struct CollectionInfo {
     pub config: CollectionConfig,
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
+}
+
+/// Current clustering distribution for the collection
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct CollectionClusterInfo {
+    pub shards: Vec<ShardInfo>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShardInfo {
+    /// Local shard with `shard_id` id
+    Local { shard_id: ShardId },
+    /// Remote shard with `shard_id` id on `peer_id` peer
+    Remote { shard_id: ShardId, peer_id: PeerId },
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
