@@ -1,3 +1,5 @@
+use serde_json::Value;
+
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::map_index::MapIndex;
@@ -6,7 +8,6 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType,
 };
-use serde_json::Value;
 
 pub trait PayloadFieldIndex {
     /// Return number of points with at least one value indexed in here

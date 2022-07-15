@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
-
 use collection::operations::types::SearchRequest;
 use storage::content_manager::toc::TableOfContent;
 

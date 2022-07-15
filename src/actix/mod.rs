@@ -2,16 +2,17 @@ pub mod api;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
 
-use crate::actix::api::cluster_api::config_cluster_api;
-use crate::actix::api::collections_api::config_collections_api;
+use std::sync::Arc;
+
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_cors::Cors;
 use actix_web::middleware::{Condition, Logger};
 use actix_web::web::Data;
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
-use std::sync::Arc;
 use storage::Dispatcher;
 
+use crate::actix::api::cluster_api::config_cluster_api;
+use crate::actix::api::collections_api::config_collections_api;
 use crate::actix::api::count_api::count_points;
 use crate::actix::api::recommend_api::recommend_points;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};

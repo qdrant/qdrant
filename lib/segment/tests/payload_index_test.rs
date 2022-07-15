@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
@@ -16,7 +18,6 @@ mod tests {
         IsEmptyCondition, Payload, PayloadField, PayloadSchemaType, Range, SegmentConfig,
         StorageType, WithPayload,
     };
-    use std::path::Path;
     use tempdir::TempDir;
 
     fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {

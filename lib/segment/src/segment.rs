@@ -1,3 +1,15 @@
+use std::collections::HashMap;
+use std::fs::{remove_dir_all, rename, File};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+use atomic_refcell::AtomicRefCell;
+use atomicwrites::{AllowOverwrite, AtomicFile};
+use fs_extra::dir::{copy_with_progress, CopyOptions, TransitProcess};
+use rocksdb::DB;
+use tar::Builder;
+
 use crate::common::version::StorageVersion;
 use crate::entry::entry_point::OperationError::ServiceError;
 use crate::entry::entry_point::{
@@ -13,16 +25,6 @@ use crate::types::{
     SegmentState, SegmentType, SeqNumberType, VectorElementType, WithPayload,
 };
 use crate::vector_storage::VectorStorageSS;
-use atomic_refcell::AtomicRefCell;
-use atomicwrites::{AllowOverwrite, AtomicFile};
-use fs_extra::dir::{copy_with_progress, CopyOptions, TransitProcess};
-use rocksdb::DB;
-use std::collections::HashMap;
-use std::fs::{remove_dir_all, rename, File};
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use tar::Builder;
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
@@ -777,14 +779,16 @@ impl SegmentEntry for Segment {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
+    use tar::Archive;
+    use tempdir::TempDir;
+    use walkdir::WalkDir;
+
     use super::*;
     use crate::entry::entry_point::SegmentEntry;
     use crate::segment_constructor::build_segment;
     use crate::types::{Distance, Indexes, SegmentConfig, StorageType};
-    use std::fs;
-    use tar::Archive;
-    use tempdir::TempDir;
-    use walkdir::WalkDir;
 
     // no longer valid since users are now allowed to store arbitrary json objects.
     // TODO(gvelo): add tests for invalid payload types on indexed fields.

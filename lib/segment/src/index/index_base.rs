@@ -1,3 +1,8 @@
+use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
+
+use serde_json::Value;
+
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::payload_storage::FilterContext;
@@ -6,9 +11,6 @@ use crate::types::{
     SearchParams, VectorElementType,
 };
 use crate::vector_storage::ScoredPointOffset;
-use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
 
 /// Trait for vector searching
 pub trait VectorIndex {

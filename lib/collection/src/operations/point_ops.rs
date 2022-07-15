@@ -1,18 +1,16 @@
-use crate::hash_ring::HashRing;
-use crate::operations::types::VectorType;
-use crate::shard::ShardId;
+use std::collections::HashMap;
+
 use schemars::gen::SchemaGenerator;
 use schemars::schema::{ObjectValidation, Schema, SchemaObject, SubschemaValidation};
 use schemars::JsonSchema;
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
-use super::{
-    point_to_shard, split_iter_by_shard,
-    types::{CollectionError, CollectionResult},
-    OperationToShard, SplitByShard, Validate,
-};
+use super::types::{CollectionError, CollectionResult};
+use super::{point_to_shard, split_iter_by_shard, OperationToShard, SplitByShard, Validate};
+use crate::hash_ring::HashRing;
+use crate::operations::types::VectorType;
+use crate::shard::ShardId;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]

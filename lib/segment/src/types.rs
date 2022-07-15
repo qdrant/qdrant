@@ -1,13 +1,3 @@
-use crate::common::utils;
-use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
-use geo::prelude::HaversineDistance;
-use geo::Point;
-use itertools::Itertools;
-use ordered_float::OrderedFloat;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Formatter;
@@ -15,7 +5,19 @@ use std::mem::size_of;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
+
+use geo::prelude::HaversineDistance;
+use geo::Point;
+use itertools::Itertools;
+use ordered_float::OrderedFloat;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use uuid::Uuid;
+
+use crate::common::utils;
+use crate::spaces::metric::Metric;
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 
 /// Type of point index inside a segment
 pub type PointOffsetType = u32;
@@ -1095,12 +1097,12 @@ impl Filter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    use crate::common::utils::remove_value_from_json_map;
     use serde::de::DeserializeOwned;
     use serde_json;
     use serde_json::json;
+
+    use super::*;
+    use crate::common::utils::remove_value_from_json_map;
 
     #[allow(dead_code)]
     fn check_rms_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(

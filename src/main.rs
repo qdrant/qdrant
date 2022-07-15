@@ -8,22 +8,22 @@ mod snapshots;
 mod tonic;
 mod user_telemetry;
 
-use consensus::Consensus;
-use log::LevelFilter;
-use slog::Drain;
 use std::io::Error;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef, Persistent};
-use storage::Dispatcher;
 
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
 use collection::shard::ChannelService;
+use consensus::Consensus;
+use log::LevelFilter;
+use slog::Drain;
+use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef, Persistent};
 use storage::content_manager::toc::TableOfContent;
+use storage::Dispatcher;
 
 use crate::common::helpers::create_search_runtime;
 use crate::greeting::welcome;
@@ -234,8 +234,9 @@ fn main() -> anyhow::Result<()> {
 
     #[cfg(feature = "service_debug")]
     {
-        use parking_lot::deadlock;
         use std::fmt::Write;
+
+        use parking_lot::deadlock;
 
         const DEADLOCK_CHECK_PERIOD: Duration = Duration::from_secs(10);
 

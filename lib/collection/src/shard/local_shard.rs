@@ -12,13 +12,13 @@ use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::index::field_index::CardinalityEstimation;
-use tokio::fs::{copy, create_dir_all};
-use tokio::runtime::{self, Runtime};
-use tokio::sync::{mpsc, mpsc::UnboundedSender, Mutex, RwLock as TokioRwLock};
-
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{Filter, PayloadStorageType, PointIdType, SegmentConfig};
+use tokio::fs::{copy, create_dir_all};
+use tokio::runtime::{self, Runtime};
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc, Mutex, RwLock as TokioRwLock};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;

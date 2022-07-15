@@ -1,26 +1,25 @@
 use std::collections::HashSet;
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering;
-use std::sync::mpsc;
-use std::sync::mpsc::Receiver;
-use std::sync::mpsc::RecvTimeoutError;
-use std::sync::mpsc::SyncSender;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender};
+use std::sync::{mpsc, Arc};
 use std::thread;
-use std::time::Duration;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
-use api::grpc::qdrant::{raft_client::RaftClient, PeerId, RaftMessage as GrpcRaftMessage};
+use api::grpc::qdrant::raft_client::RaftClient;
+use api::grpc::qdrant::{PeerId, RaftMessage as GrpcRaftMessage};
+use api::grpc::transport_channel_pool::TransportChannelPool;
+use raft::eraftpb::Message as RaftMessage;
+use raft::prelude::*;
+use raft::{SoftState, StateRole};
+use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::consensus_state::ConsensusStateRef;
-use storage::content_manager::{consensus_ops::ConsensusOperations, errors::StorageError};
+use storage::content_manager::errors::StorageError;
+use tokio::runtime::Runtime;
+use tonic::transport::Uri;
 
 use crate::common::helpers::IsReady;
 use crate::settings::ConsensusConfig;
-use api::grpc::transport_channel_pool::TransportChannelPool;
-use raft::{eraftpb::Message as RaftMessage, prelude::*, SoftState, StateRole};
-use tokio::runtime::Runtime;
-use tonic::transport::Uri;
 
 type Node = RawNode<ConsensusStateRef>;
 
@@ -522,26 +521,26 @@ async fn send_message(
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, thread, time::Duration};
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration;
 
-    use crate::settings::ConsensusConfig;
     use api::grpc::transport_channel_pool::TransportChannelPool;
     use collection::shard::ChannelService;
     use segment::types::Distance;
     use slog::Drain;
-    use storage::{
-        content_manager::{
-            collection_meta_ops::{
-                CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
-            },
-            consensus_state::{ConsensusState, ConsensusStateRef, Persistent},
-            toc::TableOfContent,
-        },
-        Dispatcher,
+    use storage::content_manager::collection_meta_ops::{
+        CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
     };
+    use storage::content_manager::consensus_state::{
+        ConsensusState, ConsensusStateRef, Persistent,
+    };
+    use storage::content_manager::toc::TableOfContent;
+    use storage::Dispatcher;
     use tempdir::TempDir;
 
     use super::Consensus;
+    use crate::settings::ConsensusConfig;
 
     #[test]
     fn collection_creation_passes_consensus() {

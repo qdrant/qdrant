@@ -1,6 +1,7 @@
+use serde::Serialize;
+
 use crate::config::CollectionConfig;
 use crate::operations::types::{CollectionStatus, OptimizersStatus};
-use serde::Serialize;
 
 #[derive(Serialize, Clone)]
 pub struct CollectionTelemetry {

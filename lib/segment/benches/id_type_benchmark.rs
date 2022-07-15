@@ -1,9 +1,10 @@
 mod prof;
 
+use std::collections::{BTreeMap, HashMap};
+
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]

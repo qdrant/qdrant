@@ -1,8 +1,9 @@
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+
 use collection::shard::{PeerId, Shard, ShardId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::cmp::Reverse;
-use std::collections::BinaryHeap;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 struct PeerShardCount {

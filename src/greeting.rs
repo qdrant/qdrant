@@ -1,7 +1,8 @@
+use std::env;
+
 use api::grpc::models::VersionInfo;
 use atty::Stream;
 use colored::Colorize;
-use std::env;
 
 /// Prints welcome message
 #[rustfmt::skip]

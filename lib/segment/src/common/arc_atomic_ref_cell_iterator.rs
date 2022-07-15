@@ -1,5 +1,6 @@
-use atomic_refcell::AtomicRefCell;
 use std::sync::Arc;
+
+use atomic_refcell::AtomicRefCell;
 
 /// Intermediate data structure intended to help returning an iterator
 /// which depends on some guarded internal object.

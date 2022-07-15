@@ -1,13 +1,12 @@
-use atomicwrites::AtomicFile;
-use atomicwrites::Error as AtomicIoError;
-use atomicwrites::OverwriteBehavior::AllowOverwrite;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use std::fs::File;
-use std::io::Error as IoError;
-use std::io::{BufWriter, Read, Write};
+use std::io::{BufWriter, Error as IoError, Read, Write};
 use std::path::Path;
 use std::result;
+
+use atomicwrites::OverwriteBehavior::AllowOverwrite;
+use atomicwrites::{AtomicFile, Error as AtomicIoError};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone)]

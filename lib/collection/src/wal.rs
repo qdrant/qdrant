@@ -1,15 +1,14 @@
 extern crate serde_cbor;
 extern crate wal;
 
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::result;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
 use thiserror::Error;
-use wal::Wal;
-use wal::WalOptions;
+use wal::{Wal, WalOptions};
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Error, Debug)]
@@ -122,6 +121,7 @@ mod tests {
 
     use std::fs;
     use std::os::unix::fs::MetadataExt;
+
     use tempdir::TempDir;
 
     #[test]

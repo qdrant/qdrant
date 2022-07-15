@@ -1,9 +1,11 @@
-use crate::types::{GeoBoundingBox, GeoPoint, GeoRadius};
+use std::ops::Range;
+
 use geo::algorithm::haversine_distance::HaversineDistance;
 use geo::{Coordinate, Point};
 use geohash::{decode, decode_bbox, encode, Direction, GeohashError};
 use itertools::Itertools;
-use std::ops::Range;
+
+use crate::types::{GeoBoundingBox, GeoPoint, GeoRadius};
 
 pub type GeoHash = String;
 
@@ -283,9 +285,10 @@ fn minimum_bounding_rectangle_for_circle(circle: &GeoRadius) -> GeoBoundingBox {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
+
+    use super::*;
 
     const BERLIN: GeoPoint = GeoPoint {
         lat: 52.52437,

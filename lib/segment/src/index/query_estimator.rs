@@ -3,10 +3,12 @@
 //! Filter query is used e.g. for determining how would be faster to process the query:
 //! - use vector index or payload index first
 
+use std::cmp::{max, min};
+
+use itertools::Itertools;
+
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
 use crate::types::{Condition, Filter};
-use itertools::Itertools;
-use std::cmp::{max, min};
 
 pub fn combine_should_estimations(
     estimations: &[CardinalityEstimation],
@@ -169,10 +171,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::types::{FieldCondition, HasIdCondition};
     use std::collections::HashSet;
     use std::iter::FromIterator;
+
+    use super::*;
+    use crate::types::{FieldCondition, HasIdCondition};
 
     const TOTAL: usize = 1000;
 

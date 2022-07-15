@@ -1,7 +1,8 @@
-use rand::seq::SliceRandom;
 use std::collections::HashMap;
 use std::time::Duration;
 use std::vec::Vec;
+
+use rand::seq::SliceRandom;
 use tonic::transport::{Channel, Error, Uri};
 
 /// Holds a pool of channels established for a set of URIs.

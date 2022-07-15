@@ -15,6 +15,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Install miniml nightly (only for fmt)
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: nightly
+        components: rustfmt
     - name: Install minimal stable
       uses: actions-rs/toolchain@v1
       with:
@@ -32,6 +38,6 @@ jobs:
       run: .github/scripts/protoc.sh
       shell: bash
     - name: Check code formatting
-      run: cargo fmt --all -- --check
+      run: cargo +nightly fmt --all -- --check
     - name: Check cargo clippy warnings
       run: cargo clippy --workspace --all-targets --all-features -- -D warnings

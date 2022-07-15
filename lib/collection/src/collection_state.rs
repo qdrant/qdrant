@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
 use crate::collection::Collection;
 use crate::config::CollectionConfig;
 use crate::operations::types::CollectionResult;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::{create_shard_dir, ChannelService, PeerId, Shard, ShardId};
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct State {

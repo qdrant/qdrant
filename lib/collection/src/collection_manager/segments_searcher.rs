@@ -5,14 +5,12 @@ use futures::future::try_join_all;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::entry::entry_point::OperationError;
-use tokio::runtime::Handle;
-
 use segment::spaces::tools::peek_top_largest_scores_iterable;
 use segment::types::{PointIdType, ScoredPoint, SeqNumberType, WithPayload, WithPayloadInterface};
+use tokio::runtime::Handle;
 
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
-use crate::operations::types::CollectionResult;
-use crate::operations::types::{Record, SearchRequest};
+use crate::operations::types::{CollectionResult, Record, SearchRequest};
 
 /// Simple implementation of segment manager
 ///  - rebuild segment for memory optimization purposes
@@ -145,9 +143,8 @@ async fn search_in_segment(
 mod tests {
     use tempdir::TempDir;
 
-    use crate::collection_manager::fixtures::build_test_holder;
-
     use super::*;
+    use crate::collection_manager::fixtures::build_test_holder;
 
     #[tokio::test]
     async fn test_segments_search() {

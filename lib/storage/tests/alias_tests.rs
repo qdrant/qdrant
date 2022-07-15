@@ -4,17 +4,13 @@ mod tests {
 
     use collection::optimizers_builder::OptimizersConfig;
     use segment::types::Distance;
-    use storage::{
-        content_manager::{
-            collection_meta_ops::{
-                ChangeAliasesOperation, CollectionMetaOperations, CreateAlias, CreateCollection,
-                CreateCollectionOperation, DeleteAlias, RenameAlias,
-            },
-            toc::TableOfContent,
-        },
-        types::{PerformanceConfig, StorageConfig},
-        Dispatcher,
+    use storage::content_manager::collection_meta_ops::{
+        ChangeAliasesOperation, CollectionMetaOperations, CreateAlias, CreateCollection,
+        CreateCollectionOperation, DeleteAlias, RenameAlias,
     };
+    use storage::content_manager::toc::TableOfContent;
+    use storage::types::{PerformanceConfig, StorageConfig};
+    use storage::Dispatcher;
     use tempdir::TempDir;
     use tokio::runtime::Runtime;
 

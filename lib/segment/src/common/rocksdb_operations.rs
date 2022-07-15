@@ -1,7 +1,8 @@
-use atomic_refcell::AtomicRefCell;
-use rocksdb::{Error, LogLevel, Options, WriteOptions, DB};
 use std::path::Path;
 use std::sync::Arc;
+
+use atomic_refcell::AtomicRefCell;
+use rocksdb::{Error, LogLevel, Options, WriteOptions, DB};
 
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 const DB_MAX_LOG_SIZE: usize = 1024 * 1024; // 1 mb

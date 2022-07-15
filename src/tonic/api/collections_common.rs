@@ -1,10 +1,12 @@
-use crate::common::collections::do_get_collection;
+use std::time::Instant;
+
 use api::grpc::qdrant::{GetCollectionInfoRequest, GetCollectionInfoResponse};
 use collection::shard::ShardId;
-use std::time::Instant;
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Response, Status};
+
+use crate::common::collections::do_get_collection;
 
 pub async fn get(
     toc: &TableOfContent,

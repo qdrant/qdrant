@@ -2,16 +2,18 @@ mod fixtures;
 
 #[cfg(test)]
 mod tests {
-    use crate::fixtures::segment::{build_segment_1, build_segment_2, empty_segment};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
     use itertools::Itertools;
     use segment::entry::entry_point::{OperationError, SegmentEntry};
     use segment::segment::Segment;
     use segment::segment_constructor::segment_builder::SegmentBuilder;
     use segment::types::{Indexes, SegmentConfig};
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
-    use std::time::{Duration, Instant};
     use tempdir::TempDir;
+
+    use crate::fixtures::segment::{build_segment_1, build_segment_2, empty_segment};
 
     #[test]
     fn test_building_new_segment() {

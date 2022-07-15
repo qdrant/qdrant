@@ -1,13 +1,18 @@
-use crate::consensus;
+use std::sync::mpsc::SyncSender;
+use std::sync::{Arc, Mutex};
+
+use api::grpc::qdrant::raft_server::Raft;
 use api::grpc::qdrant::{
-    raft_server::Raft, AddPeerToKnownMessage, AllPeers, Peer, PeerId,
-    RaftMessage as RaftMessageBytes, Uri as UriStr,
+    AddPeerToKnownMessage, AllPeers, Peer, PeerId, RaftMessage as RaftMessageBytes, Uri as UriStr,
 };
 use itertools::Itertools;
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Message as RaftMessage};
-use std::sync::{mpsc::SyncSender, Arc, Mutex};
-use storage::{content_manager::consensus_ops::ConsensusOperations, Dispatcher};
-use tonic::{async_trait, transport::Uri, Request, Response, Status};
+use storage::content_manager::consensus_ops::ConsensusOperations;
+use storage::Dispatcher;
+use tonic::transport::Uri;
+use tonic::{async_trait, Request, Response, Status};
+
+use crate::consensus;
 
 pub struct RaftService {
     message_sender: Mutex<SyncSender<consensus::Message>>,

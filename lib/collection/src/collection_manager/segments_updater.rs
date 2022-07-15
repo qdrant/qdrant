@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
+use itertools::Itertools;
 use parking_lot::{RwLock, RwLockWriteGuard};
-
+use segment::entry::entry_point::{OperationResult, SegmentEntry};
 use segment::types::{
     Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
     SeqNumberType, VectorElementType,
@@ -12,8 +13,6 @@ use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations};
 use crate::operations::types::{CollectionError, CollectionResult, VectorType};
 use crate::operations::FieldIndexOperations;
-use itertools::Itertools;
-use segment::entry::entry_point::{OperationResult, SegmentEntry};
 
 /// A collection of functions for updating points and payloads stored in segments
 

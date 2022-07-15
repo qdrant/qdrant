@@ -6,10 +6,15 @@ pub mod proxy_shard;
 pub mod remote_shard;
 pub mod shard_config;
 
-use crate::shard::proxy_shard::ProxyShard;
-use crate::shard::remote_shard::RemoteShard;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use api::grpc::transport_channel_pool::TransportChannelPool;
+use async_trait::async_trait;
+use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
+use tokio::runtime::Handle;
+use tonic::transport::Uri;
 
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
@@ -17,12 +22,8 @@ use crate::operations::types::{
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shard::local_shard::LocalShard;
-use api::grpc::transport_channel_pool::TransportChannelPool;
-use async_trait::async_trait;
-use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
-use std::sync::Arc;
-use tokio::runtime::Handle;
-use tonic::transport::Uri;
+use crate::shard::proxy_shard::ProxyShard;
+use crate::shard::remote_shard::RemoteShard;
 
 pub type ShardId = u32;
 

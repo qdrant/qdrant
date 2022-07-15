@@ -1,15 +1,11 @@
-use crate::types::{Distance, ScoreType, VectorElementType};
-
 use super::metric::Metric;
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use super::simple_sse::*;
-
 #[cfg(target_arch = "x86_64")]
 use super::simple_avx::*;
-
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use super::simple_neon::*;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use super::simple_sse::*;
+use crate::types::{Distance, ScoreType, VectorElementType};
 
 #[cfg(target_arch = "x86_64")]
 const MIN_DIM_SIZE_AVX: usize = 32;

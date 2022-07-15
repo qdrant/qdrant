@@ -1,6 +1,7 @@
+use std::env;
+
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
-use std::env;
 use storage::types::StorageConfig;
 
 #[derive(Debug, Deserialize, Clone)]

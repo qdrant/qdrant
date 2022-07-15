@@ -1,9 +1,10 @@
-use collection::telemetry::CollectionTelemetry;
-use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::Arc;
+
+use collection::telemetry::CollectionTelemetry;
+use serde::Serialize;
 use storage::Dispatcher;
 use uuid::Uuid;
 
