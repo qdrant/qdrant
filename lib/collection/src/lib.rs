@@ -3,7 +3,7 @@ pub mod collection_manager;
 pub mod collection_state;
 mod common;
 pub mod config;
-mod hash_ring;
+pub mod hash_ring;
 pub mod operations;
 pub mod optimizers_builder;
 pub mod shard;

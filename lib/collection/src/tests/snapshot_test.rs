@@ -1,14 +1,23 @@
 use std::num::NonZeroU32;
 
-use collection::collection::Collection;
-use collection::config::{CollectionConfig, CollectionParams, WalConfig};
-use collection::shard::collection_shard_distribution::CollectionShardDistribution;
-use collection::shard::{ChannelService, Shard};
+use crate::collection::Collection;
+use crate::config::{CollectionConfig, CollectionParams, WalConfig};
+use crate::shard::collection_shard_distribution::CollectionShardDistribution;
+use crate::shard::{ChannelService, Shard};
 use segment::types::Distance;
+use crate::optimizers_builder::OptimizersConfig;
 
-use crate::common::TEST_OPTIMIZERS_CONFIG;
+const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
+    deleted_threshold: 0.9,
+    vacuum_min_vector_number: 1000,
+    default_segment_number: 2,
+    max_segment_size: 100_000,
+    memmap_threshold: 100_000,
+    indexing_threshold: 50_000,
+    flush_interval_sec: 30,
+    max_optimization_threads: 2,
+};
 
-mod common;
 
 #[tokio::test]
 async fn test_snapshot_collection() {
@@ -69,11 +78,13 @@ async fn test_snapshot_collection() {
     )
     .await;
 
-    let shard_0 = recovered_collection.shard_by_id(0).unwrap();
+    let shards_holder = &recovered_collection.shards;
+
+    let shard_0 = shards_holder.get(&0).unwrap();
     assert!(matches!(shard_0, Shard::Local(_)));
-    let shard_1 = recovered_collection.shard_by_id(1).unwrap();
+    let shard_1 = shards_holder.get(&1).unwrap();
     assert!(matches!(shard_1, Shard::Local(_)));
-    let shard_2 = recovered_collection.shard_by_id(2).unwrap();
+    let shard_2 = shards_holder.get(&2).unwrap();
     assert!(matches!(shard_2, Shard::Remote(_)));
 
     collection.before_drop().await;

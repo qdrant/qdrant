@@ -40,6 +40,7 @@ use crate::shard::{
     create_shard_dir, shard_path, ChannelService, CollectionId, PeerId, Shard, ShardId,
     ShardOperation, ShardTransfer, HASH_RING_SHARD_SCALE,
 };
+use crate::shard::shard_holder::ShardHolder;
 use crate::telemetry::CollectionTelemetry;
 
 struct CollectionVersion;

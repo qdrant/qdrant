@@ -5,6 +5,7 @@ pub mod local_shard_operations;
 pub mod proxy_shard;
 pub mod remote_shard;
 pub mod shard_config;
+pub mod shard_holder;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
