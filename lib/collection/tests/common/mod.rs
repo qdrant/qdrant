@@ -1,3 +1,6 @@
+use std::num::NonZeroU32;
+use std::path::Path;
+
 use collection::collection::Collection;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::types::CollectionError;
@@ -5,8 +8,6 @@ use collection::optimizers_builder::OptimizersConfig;
 use collection::shard::collection_shard_distribution::CollectionShardDistribution;
 use collection::shard::{ChannelService, CollectionId};
 use segment::types::Distance;
-use std::num::NonZeroU32;
-use std::path::Path;
 
 /// Test collections for this upper bound of shards.
 /// Testing with more shards is problematic due to `number of open files problem`

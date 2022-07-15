@@ -1,22 +1,19 @@
-use itertools::Itertools;
 use std::collections::HashSet;
 
-use tempdir::TempDir;
-use tokio::runtime::Handle;
-
-use collection::operations::{
-    payload_ops::{PayloadOps, SetPayload},
-    point_ops::{PointOperations, PointStruct},
-    types::{RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus},
-    CollectionUpdateOperations,
+use collection::operations::payload_ops::{PayloadOps, SetPayload};
+use collection::operations::point_ops::{Batch, PointOperations, PointStruct};
+use collection::operations::types::{
+    CountRequest, PointRequest, RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus,
 };
+use collection::operations::CollectionUpdateOperations;
+use itertools::Itertools;
 use segment::types::{
     Condition, FieldCondition, Filter, HasIdCondition, Payload, PointIdType, WithPayloadInterface,
 };
+use tempdir::TempDir;
+use tokio::runtime::Handle;
 
 use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
-use collection::operations::point_ops::Batch;
-use collection::operations::types::{CountRequest, PointRequest};
 
 mod common;
 

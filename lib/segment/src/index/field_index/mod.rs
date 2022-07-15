@@ -1,5 +1,6 @@
-use crate::types::{FieldCondition, IsEmptyCondition, PointOffsetType};
 use std::collections::HashSet;
+
+use crate::types::{FieldCondition, IsEmptyCondition, PointOffsetType};
 
 mod field_index_base;
 pub mod geo_hash;

@@ -4,10 +4,8 @@ use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use tokio::runtime::Runtime;
-use tokio::sync::{RwLock, RwLockReadGuard};
-
 use collection::collection::Collection;
+use collection::collection_state;
 use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -16,26 +14,25 @@ use collection::operations::types::{
     SearchRequest, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
-use segment::types::ScoredPoint;
-
-use super::collection_meta_ops::{CreateCollectionOperation, ShardTransferOperations};
-use super::{consensus_state, CollectionContainer};
-use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::content_manager::{
-    alias_mapping::AliasPersistence,
-    collection_meta_ops::{
-        AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
-        CreateAliasOperation, CreateCollection, DeleteAlias, DeleteAliasOperation, RenameAlias,
-        RenameAliasOperation, UpdateCollection,
-    },
-    collections_ops::{Checker, Collections},
-    errors::StorageError,
-};
-use crate::types::{PeerAddressById, StorageConfig};
-use collection::collection_state;
 use collection::shard::collection_shard_distribution::CollectionShardDistribution;
 use collection::shard::{ChannelService, CollectionId, PeerId, ShardId};
 use collection::telemetry::CollectionTelemetry;
+use segment::types::ScoredPoint;
+use tokio::runtime::Runtime;
+use tokio::sync::{RwLock, RwLockReadGuard};
+
+use super::collection_meta_ops::{CreateCollectionOperation, ShardTransferOperations};
+use super::{consensus_state, CollectionContainer};
+use crate::content_manager::alias_mapping::AliasPersistence;
+use crate::content_manager::collection_meta_ops::{
+    AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
+    CreateAliasOperation, CreateCollection, DeleteAlias, DeleteAliasOperation, RenameAlias,
+    RenameAliasOperation, UpdateCollection,
+};
+use crate::content_manager::collections_ops::{Checker, Collections};
+use crate::content_manager::errors::StorageError;
+use crate::content_manager::shard_distribution::ShardDistributionProposal;
+use crate::types::{PeerAddressById, StorageConfig};
 
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const SNAPSHOTS_TMP_DIR: &str = "snapshots_tmp";

@@ -1,8 +1,10 @@
-use crate::common::file_operations::{FileOperationResult, FileStorageError};
-use atomicwrites::{AllowOverwrite, AtomicFile};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
+
+use atomicwrites::{AllowOverwrite, AtomicFile};
+
+use crate::common::file_operations::{FileOperationResult, FileStorageError};
 
 pub const VERSION_FILE: &str = "version.info";
 

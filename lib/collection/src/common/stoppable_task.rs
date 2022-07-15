@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
+
 use tokio::task::JoinHandle;
 
 pub struct StoppableTaskHandle<T> {
@@ -54,9 +55,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::thread;
     use std::time::Duration;
+
+    use super::*;
 
     const STEP_MILLIS: u64 = 5;
 

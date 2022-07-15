@@ -6,10 +6,9 @@ use std::path::Path;
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use schemars::JsonSchema;
+use segment::types::{Distance, HnswConfig};
 use serde::{Deserialize, Serialize};
 use wal::WalOptions;
-
-use segment::types::{Distance, HnswConfig};
 
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::optimizers_builder::OptimizersConfig;

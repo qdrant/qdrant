@@ -1,24 +1,23 @@
 use std::collections::{BTreeSet, HashMap};
+use std::fmt::Display;
 use std::hash::Hash;
 use std::iter;
+use std::str::FromStr;
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
+use rocksdb::{IteratorMode, DB};
 use serde_json::Value;
 
 use crate::common::rocksdb_operations::{db_write_options, recreate_cf};
 use crate::entry::entry_point::{OperationError, OperationResult};
-use crate::index::field_index::PayloadFieldIndex;
 use crate::index::field_index::{
-    CardinalityEstimation, PayloadBlockCondition, PrimaryCondition, ValueIndexer,
+    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
 use crate::types::{
     FieldCondition, IntPayloadType, Match, MatchValue, PayloadKeyType, PointOffsetType,
     ValueVariants,
 };
-use atomic_refcell::AtomicRefCell;
-use rocksdb::{IteratorMode, DB};
-use std::fmt::Display;
-use std::str::FromStr;
-use std::sync::Arc;
 
 /// HashMap-based type of index
 pub struct MapIndex<N: Hash + Eq + Clone + Display> {
@@ -365,14 +364,15 @@ impl ValueIndexer<IntPayloadType> for MapIndex<IntPayloadType> {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::rocksdb_operations::open_db_with_existing_cf;
     use std::collections::HashSet;
     use std::fmt::Debug;
     use std::iter::FromIterator;
     use std::path::Path;
+
     use tempdir::TempDir;
 
     use super::*;
+    use crate::common::rocksdb_operations::open_db_with_existing_cf;
 
     const FIELD_NAME: &str = "test";
 

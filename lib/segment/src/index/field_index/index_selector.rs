@@ -1,11 +1,13 @@
+use std::sync::Arc;
+
+use atomic_refcell::AtomicRefCell;
+use rocksdb::DB;
+
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::map_index::MapIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::FieldIndex;
 use crate::types::{FloatPayloadType, IntPayloadType, PayloadSchemaType};
-use atomic_refcell::AtomicRefCell;
-use rocksdb::DB;
-use std::sync::Arc;
 
 /// Selects index types based on field type
 pub fn index_selector(

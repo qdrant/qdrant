@@ -1,3 +1,11 @@
+use std::cmp::min;
+use std::collections::BinaryHeap;
+use std::sync::atomic::AtomicUsize;
+
+use parking_lot::{Mutex, RwLock};
+use rand::distributions::Uniform;
+use rand::Rng;
+
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase, LinkContainer};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
@@ -5,12 +13,6 @@ use crate::index::visited_pool::{VisitedList, VisitedPool};
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::{PointOffsetType, ScoreType};
 use crate::vector_storage::ScoredPointOffset;
-use parking_lot::{Mutex, RwLock};
-use rand::distributions::Uniform;
-use rand::Rng;
-use std::cmp::min;
-use std::collections::BinaryHeap;
-use std::sync::atomic::AtomicUsize;
 
 pub type LockedLinkContainer = RwLock<LinkContainer>;
 pub type LockedLayersContainer = Vec<LockedLinkContainer>;
@@ -375,21 +377,21 @@ impl GraphLayersBuilder {
 
 #[cfg(test)]
 mod tests {
-    use crate::fixtures::index_fixtures::{
-        random_vector, FakeFilterContext, TestRawScorerProducer,
-    };
-
-    use super::*;
-    use crate::index::hnsw_index::tests::create_graph_layer_fixture;
-    use crate::spaces::metric::Metric;
-    use crate::spaces::simple::{CosineMetric, EuclidMetric};
-    use crate::types::VectorElementType;
-    use crate::vector_storage::RawScorer;
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::seq::SliceRandom;
     use rand::SeedableRng;
     use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+
+    use super::*;
+    use crate::fixtures::index_fixtures::{
+        random_vector, FakeFilterContext, TestRawScorerProducer,
+    };
+    use crate::index::hnsw_index::tests::create_graph_layer_fixture;
+    use crate::spaces::metric::Metric;
+    use crate::spaces::simple::{CosineMetric, EuclidMetric};
+    use crate::types::VectorElementType;
+    use crate::vector_storage::RawScorer;
 
     const M: usize = 8;
 

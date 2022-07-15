@@ -1,10 +1,8 @@
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
-
 use crate::index::query_optimization::optimized_filter::{check_optimized_filter, OptimizedFilter};
 use crate::index::query_optimization::optimizer::{optimize_filter, IndexesMap};
 use crate::index::query_optimization::payload_provider::PayloadProvider;
-
 use crate::payload_storage::FilterContext;
 use crate::types::{Condition, Filter, PointOffsetType};
 

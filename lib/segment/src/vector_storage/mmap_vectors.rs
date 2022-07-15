@@ -1,11 +1,13 @@
-use crate::common::error_logging::LogError;
-use crate::entry::entry_point::OperationResult;
-use crate::types::{PointOffsetType, VectorElementType};
-use memmap::{Mmap, MmapMut, MmapOptions};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::mem::{size_of, transmute};
 use std::path::Path;
+
+use memmap::{Mmap, MmapMut, MmapOptions};
+
+use crate::common::error_logging::LogError;
+use crate::entry::entry_point::OperationResult;
+use crate::types::{PointOffsetType, VectorElementType};
 
 const HEADER_SIZE: usize = 4;
 const DELETED_HEADER: &[u8; 4] = b"drop";

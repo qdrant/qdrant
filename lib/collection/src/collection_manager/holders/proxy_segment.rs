@@ -1,4 +1,10 @@
-use crate::collection_manager::holders::segment_holder::LockedSegment;
+use std::cmp::max;
+use std::collections::{HashMap, HashSet};
+use std::fs::{create_dir_all, remove_dir_all};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
 use segment::index::field_index::CardinalityEstimation;
@@ -8,13 +14,9 @@ use segment::types::{
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
     VectorElementType, WithPayload,
 };
-use std::cmp::max;
-use std::collections::{HashMap, HashSet};
-use std::fs::{create_dir_all, remove_dir_all};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 use uuid::Uuid;
+
+use crate::collection_manager::holders::segment_holder::LockedSegment;
 
 type LockedRmSet = Arc<RwLock<HashSet<PointIdType>>>;
 type LockedFieldsSet = Arc<RwLock<HashSet<PayloadKeyType>>>;
@@ -584,11 +586,13 @@ impl SegmentEntry for ProxySegment {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::read_dir;
+
+    use segment::types::FieldCondition;
+    use tempdir::TempDir;
+
     use super::*;
     use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
-    use segment::types::FieldCondition;
-    use std::fs::read_dir;
-    use tempdir::TempDir;
 
     #[test]
     fn test_writing() {

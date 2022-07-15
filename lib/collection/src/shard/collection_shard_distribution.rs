@@ -1,9 +1,10 @@
+use std::collections::HashMap;
+use std::path::Path;
+
 use crate::config::CollectionConfig;
 use crate::operations::types::CollectionResult;
 use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::{shard_path, PeerId, ShardId};
-use std::collections::HashMap;
-use std::path::Path;
 
 #[derive(Debug)]
 pub struct CollectionShardDistribution {

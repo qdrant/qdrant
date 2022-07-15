@@ -1,10 +1,11 @@
+use serde_json::Value;
+
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::PayloadStorage;
 use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
-use serde_json::Value;
 
 pub enum PayloadStorageEnum {
     InMemoryPayloadStorage(InMemoryPayloadStorage),
@@ -99,10 +100,11 @@ impl PayloadStorage for PayloadStorageEnum {
 
 #[cfg(test)]
 mod tests {
+    use tempdir::TempDir;
+
     use super::*;
     use crate::common::rocksdb_operations::open_db;
     use crate::types::Payload;
-    use tempdir::TempDir;
 
     #[test]
     fn test_storage() {

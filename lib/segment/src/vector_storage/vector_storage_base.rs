@@ -1,9 +1,11 @@
-use crate::entry::entry_point::OperationResult;
-use crate::types::{PointOffsetType, ScoreType, VectorElementType};
-use ordered_float::OrderedFloat;
-use rand::Rng;
 use std::cmp::Ordering;
 use std::ops::Range;
+
+use ordered_float::OrderedFloat;
+use rand::Rng;
+
+use crate::entry::entry_point::OperationResult;
+use crate::types::{PointOffsetType, ScoreType, VectorElementType};
 
 #[derive(Copy, Clone, PartialEq, Debug, Default)]
 pub struct ScoredPointOffset {

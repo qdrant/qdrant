@@ -1,24 +1,23 @@
 use std::marker::PhantomData;
+use std::mem::size_of;
 use std::ops::Range;
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
+use bitvec::prelude::BitVec;
 use log::debug;
 use rocksdb::{IteratorMode, DB};
 use serde::{Deserialize, Serialize};
 
+use super::chunked_vectors::ChunkedVectors;
+use super::vector_storage_base::VectorStorage;
 use crate::common::rocksdb_operations::{db_write_options, DB_VECTOR_CF};
 use crate::entry::entry_point::OperationResult;
+use crate::spaces::metric::Metric;
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_scores_iterable;
 use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
 use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorageSS};
-
-use super::chunked_vectors::ChunkedVectors;
-use super::vector_storage_base::VectorStorage;
-use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
-use atomic_refcell::AtomicRefCell;
-use bitvec::prelude::BitVec;
-use std::mem::size_of;
-use std::sync::Arc;
 
 /// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleVectorStorage<TMetric: Metric> {

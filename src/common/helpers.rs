@@ -1,5 +1,6 @@
-use parking_lot::{Condvar, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+use parking_lot::{Condvar, Mutex};
 use tokio::runtime;
 use tokio::runtime::Runtime;
 
@@ -62,11 +63,12 @@ impl IsReady {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::Arc;
     use std::thread;
     use std::thread::sleep;
     use std::time::Duration;
+
+    use super::*;
 
     #[test]
     fn test_is_ready() {

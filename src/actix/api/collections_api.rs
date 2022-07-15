@@ -1,16 +1,18 @@
-use crate::actix::helpers::process_response;
-use crate::common::collections::*;
+use std::sync::Arc;
+use std::time::Duration;
+
 use actix_web::rt::time::Instant;
 use actix_web::{delete, get, patch, post, put, web, Responder};
 use serde::Deserialize;
-use std::sync::Arc;
-use std::time::Duration;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
     DeleteCollectionOperation, UpdateCollection, UpdateCollectionOperation,
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::Dispatcher;
+
+use crate::actix::helpers::process_response;
+use crate::common::collections::*;
 
 #[derive(Debug, Deserialize)]
 struct WaitTimeout {
@@ -128,8 +130,9 @@ pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
 
 #[cfg(test)]
 mod tests {
-    use super::WaitTimeout;
     use actix_web::web::Query;
+
+    use super::WaitTimeout;
 
     #[test]
     fn timeout_is_deserialized() {

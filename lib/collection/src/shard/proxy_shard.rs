@@ -1,3 +1,17 @@
+use std::collections::HashSet;
+use std::path::Path;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use std::time::Duration;
+
+use async_trait::async_trait;
+use segment::types::{
+    ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
+};
+use tokio::runtime::Handle;
+use tokio::sync::{oneshot, RwLock};
+use tokio::time::timeout;
+
 use crate::operations::operation_effect::{
     EstimateOperationEffectArea, OperationEffectArea, PointsOperationEffect,
 };
@@ -9,18 +23,6 @@ use crate::operations::CollectionUpdateOperations;
 use crate::shard::local_shard::LocalShard;
 use crate::shard::ShardOperation;
 use crate::update_handler::UpdateSignal;
-use async_trait::async_trait;
-use segment::types::{
-    ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
-};
-use std::collections::HashSet;
-use std::path::Path;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::runtime::Handle;
-use tokio::sync::{oneshot, RwLock};
-use tokio::time::timeout;
 
 type ChangedPointsSet = Arc<RwLock<HashSet<PointIdType>>>;
 

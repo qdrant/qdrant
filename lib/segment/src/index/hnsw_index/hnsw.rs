@@ -1,29 +1,30 @@
+use std::cmp::max;
+use std::fs::create_dir_all;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+use atomic_refcell::AtomicRefCell;
+use log::debug;
+use rand::thread_rng;
+use rayon::prelude::*;
+use rayon::ThreadPool;
+
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
+use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::sample_estimation::sample_check_cardinality;
+use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::visited_pool::VisitedList;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::types::Condition::Field;
 use crate::types::{
     FieldCondition, Filter, HnswConfig, SearchParams, VectorElementType, VECTOR_ELEMENT_SIZE,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
-use atomic_refcell::AtomicRefCell;
-use log::debug;
-
-use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::visited_pool::VisitedList;
-use rand::thread_rng;
-use rayon::prelude::*;
-use rayon::ThreadPool;
-use std::cmp::max;
-use std::fs::create_dir_all;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 const HNSW_USE_HEURISTIC: bool = true;
 const BYTES_IN_KB: usize = 1024;

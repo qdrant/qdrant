@@ -2,12 +2,14 @@ mod fixtures;
 
 #[cfg(test)]
 mod tests {
-    use crate::fixtures::segment::build_segment_1;
-    use segment::entry::entry_point::SegmentEntry;
-    use segment::types::{Condition, Filter, WithPayload};
     use std::collections::HashSet;
     use std::iter::FromIterator;
+
+    use segment::entry::entry_point::SegmentEntry;
+    use segment::types::{Condition, Filter, WithPayload};
     use tempdir::TempDir;
+
+    use crate::fixtures::segment::build_segment_1;
 
     #[test]
     fn test_point_exclusion() {

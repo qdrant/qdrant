@@ -1,20 +1,19 @@
-use tonic::{Request, Response, Status};
+use std::sync::Arc;
 
 use api::grpc::qdrant::points_server::Points;
-
-use crate::tonic::api::points_common::{
-    clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
-    recommend, scroll, search, set_payload, upsert,
-};
 use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints, GetPoints, GetResponse,
     PointsOperationResponse, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
     SearchPoints, SearchResponse, SetPayloadPoints, UpsertPoints,
 };
-use std::sync::Arc;
-
 use storage::content_manager::toc::TableOfContent;
+use tonic::{Request, Response, Status};
+
+use crate::tonic::api::points_common::{
+    clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
+    recommend, scroll, search, set_payload, upsert,
+};
 
 pub struct PointsService {
     toc: Arc<TableOfContent>,

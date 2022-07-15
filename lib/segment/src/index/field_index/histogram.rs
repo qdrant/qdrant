@@ -1,8 +1,9 @@
-use itertools::Itertools;
 use std::cmp::{max, min, Ordering};
 use std::collections::BTreeMap;
 use std::collections::Bound::{Excluded, Included, Unbounded};
 use std::ops::Bound;
+
+use itertools::Itertools;
 
 const MIN_BUCKET_SIZE: usize = 10;
 
@@ -612,15 +613,17 @@ impl Histogram {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use itertools::Itertools;
-    use rand::prelude::StdRng;
-    use rand::{Rng, SeedableRng};
-    use rand_distr::StandardNormal;
     use std::cell::Cell;
     use std::collections::BTreeSet;
     use std::io;
     use std::io::Write;
+
+    use itertools::Itertools;
+    use rand::prelude::StdRng;
+    use rand::{Rng, SeedableRng};
+    use rand_distr::StandardNormal;
+
+    use super::*;
 
     #[allow(dead_code)]
     fn print_results(points_index: &BTreeSet<Point>, histogram: &Histogram, pnt: Option<Point>) {

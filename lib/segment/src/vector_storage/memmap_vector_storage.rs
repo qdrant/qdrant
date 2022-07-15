@@ -1,11 +1,3 @@
-use crate::entry::entry_point::OperationResult;
-use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
-use crate::spaces::tools::peek_top_largest_scores_iterable;
-use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
-use crate::vector_storage::mmap_vectors::MmapVectors;
-use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageSS};
-use atomic_refcell::AtomicRefCell;
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
 use std::marker::PhantomData;
@@ -13,6 +5,16 @@ use std::mem::size_of;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+use atomic_refcell::AtomicRefCell;
+
+use crate::entry::entry_point::OperationResult;
+use crate::spaces::metric::Metric;
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
+use crate::spaces::tools::peek_top_largest_scores_iterable;
+use crate::types::{Distance, PointOffsetType, ScoreType, VectorElementType};
+use crate::vector_storage::mmap_vectors::MmapVectors;
+use crate::vector_storage::{RawScorer, ScoredPointOffset, VectorStorage, VectorStorageSS};
 
 fn vf_to_u8<T>(v: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * size_of::<T>()) }
@@ -307,11 +309,13 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::mem::transmute;
+
+    use tempdir::TempDir;
+
     use super::*;
     use crate::common::rocksdb_operations::open_db;
     use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
-    use std::mem::transmute;
-    use tempdir::TempDir;
 
     #[test]
     fn test_basic_persistence() {

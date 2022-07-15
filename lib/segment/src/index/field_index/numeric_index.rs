@@ -552,13 +552,13 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::rocksdb_operations::open_db_with_existing_cf;
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
     use tempdir::TempDir;
 
     use super::*;
+    use crate::common::rocksdb_operations::open_db_with_existing_cf;
 
     const COLUMN_NAME: &str = "test";
 

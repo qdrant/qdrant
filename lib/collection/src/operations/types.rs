@@ -1,27 +1,26 @@
+use std::collections::HashMap;
+use std::result;
+use std::time::SystemTimeError;
+
 use futures::io;
 use schemars::JsonSchema;
-use serde;
-use serde::{Deserialize, Serialize};
-use serde_json::Error as JsonError;
-use std::result;
-use thiserror::Error;
-use tokio::{
-    sync::{mpsc::error::SendError, oneshot::error::RecvError as OneshotRecvError},
-    task::JoinError,
-};
-
+use segment::common::file_operations::FileStorageError;
 use segment::entry::entry_point::OperationError;
 use segment::types::{
     Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, ScoreType, SearchParams,
     SeqNumberType, VectorElementType, WithPayloadInterface,
 };
+use serde;
+use serde::{Deserialize, Serialize};
+use serde_json::Error as JsonError;
+use thiserror::Error;
+use tokio::sync::mpsc::error::SendError;
+use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
+use tokio::task::JoinError;
+use tonic::codegen::http::uri::InvalidUri;
 
 use crate::config::CollectionConfig;
 use crate::wal::WalError;
-use segment::common::file_operations::FileStorageError;
-use std::collections::HashMap;
-use std::time::SystemTimeError;
-use tonic::codegen::http::uri::InvalidUri;
 
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;

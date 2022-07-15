@@ -1,3 +1,13 @@
+use std::cmp::{max, min};
+use std::collections::{BTreeMap, HashSet};
+use std::str::FromStr;
+use std::sync::Arc;
+
+use atomic_refcell::AtomicRefCell;
+use itertools::Itertools;
+use rocksdb::{IteratorMode, DB};
+use serde_json::Value;
+
 use crate::common::rocksdb_operations::{db_write_options, recreate_cf};
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{
@@ -11,14 +21,6 @@ use crate::index::field_index::{
 use crate::types::{
     FieldCondition, GeoBoundingBox, GeoPoint, GeoRadius, PayloadKeyType, PointOffsetType,
 };
-use atomic_refcell::AtomicRefCell;
-use itertools::Itertools;
-use rocksdb::{IteratorMode, DB};
-use serde_json::Value;
-use std::cmp::{max, min};
-use std::collections::{BTreeMap, HashSet};
-use std::str::FromStr;
-use std::sync::Arc;
 
 /// Max number of sub-regions computed for an input geo query
 // TODO discuss value, should it be dynamically computed?
@@ -545,15 +547,16 @@ impl PayloadFieldIndex for GeoMapIndex {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::common::rocksdb_operations::open_db_with_existing_cf;
-    use crate::fixtures::payload_fixtures::random_geo_payload;
-    use crate::types::GeoRadius;
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use serde_json::json;
     use tempdir::TempDir;
+
+    use super::*;
+    use crate::common::rocksdb_operations::open_db_with_existing_cf;
+    use crate::fixtures::payload_fixtures::random_geo_payload;
+    use crate::types::GeoRadius;
 
     const NYC: GeoPoint = GeoPoint {
         lat: 40.75798,

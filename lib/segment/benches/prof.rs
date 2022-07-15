@@ -1,5 +1,7 @@
+use std::fs::File;
 use std::io::Write;
-use std::{fs::File, os::raw::c_int, path::Path};
+use std::os::raw::c_int;
+use std::path::Path;
 
 use criterion::profiler::Profiler;
 use pprof::flamegraph::TextTruncateDirection;
