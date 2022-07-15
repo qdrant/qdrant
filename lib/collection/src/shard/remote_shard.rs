@@ -1,18 +1,17 @@
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::PointOperations;
-use crate::operations::FieldIndexOperations;
+use crate::operations::types::{
+    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
+    Record, SearchRequest, UpdateResult,
+};
+use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use crate::shard::conversions::{
     internal_clear_payload, internal_clear_payload_by_filter, internal_create_index,
     internal_delete_index, internal_delete_payload, internal_delete_points,
     internal_delete_points_by_filter, internal_set_payload, internal_upsert_points,
 };
 use crate::shard::shard_config::ShardConfig;
-use crate::shard::{PeerId, ShardId, ShardOperation};
-use crate::{
-    ChannelService, CollectionError, CollectionId, CollectionInfo, CollectionResult,
-    CollectionUpdateOperations, CountRequest, CountResult, PointRequest, Record, SearchRequest,
-    UpdateResult,
-};
+use crate::shard::{ChannelService, CollectionId, PeerId, ShardId, ShardOperation};
 use api::grpc::qdrant::{
     collections_internal_client::CollectionsInternalClient,
     points_internal_client::PointsInternalClient, CountPoints, CountPointsInternal,

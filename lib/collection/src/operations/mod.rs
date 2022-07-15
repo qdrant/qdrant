@@ -8,7 +8,8 @@ pub mod types;
 
 use std::collections::HashMap;
 
-use crate::{hash_ring::HashRing, ShardId};
+use crate::hash_ring::HashRing;
+use crate::shard::ShardId;
 use schemars::JsonSchema;
 use segment::types::{ExtendedPointId, PayloadSchemaType};
 use serde::{Deserialize, Serialize};

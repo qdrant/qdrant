@@ -1,4 +1,4 @@
-use crate::CollectionResult;
+use crate::operations::types::CollectionResult;
 use api::grpc::conversions::date_time_to_proto;
 use chrono::NaiveDateTime;
 use schemars::JsonSchema;

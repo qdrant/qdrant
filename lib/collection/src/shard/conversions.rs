@@ -1,8 +1,8 @@
 use crate::operations::payload_ops::{DeletePayload, SetPayload};
 use crate::operations::point_ops::PointInsertOperations;
+use crate::operations::types::CollectionResult;
 use crate::operations::CreateIndex;
 use crate::shard::remote_shard::RemoteShard;
-use crate::CollectionResult;
 use api::grpc::conversions::payload_to_proto;
 use api::grpc::qdrant::points_selector::PointsSelectorOneOf;
 use api::grpc::qdrant::{

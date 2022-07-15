@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::{RwLock, RwLockReadGuard};
 
+use collection::collection::Collection;
 use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -15,10 +16,6 @@ use collection::operations::types::{
     SearchRequest, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
-use collection::{
-    telemetry::CollectionTelemetry, ChannelService, Collection, CollectionId,
-    CollectionShardDistribution,
-};
 use segment::types::ScoredPoint;
 
 use super::collection_meta_ops::{CreateCollectionOperation, ShardTransferOperations};
@@ -35,8 +32,10 @@ use crate::content_manager::{
     errors::StorageError,
 };
 use crate::types::{PeerAddressById, StorageConfig};
-use collection::shard::ShardId;
-use collection::PeerId;
+use collection::collection_state;
+use collection::shard::collection_shard_distribution::CollectionShardDistribution;
+use collection::shard::{ChannelService, CollectionId, PeerId, ShardId};
+use collection::telemetry::CollectionTelemetry;
 
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const SNAPSHOTS_TMP_DIR: &str = "snapshots_tmp";
@@ -613,7 +612,7 @@ impl TableOfContent {
     }
 
     pub async fn collections_snapshot(&self) -> consensus_state::CollectionsSnapshot {
-        let mut collections: HashMap<collection::CollectionId, collection::State> = HashMap::new();
+        let mut collections: HashMap<CollectionId, collection_state::State> = HashMap::new();
         for (id, collection) in self.collections.read().await.iter() {
             collections.insert(id.clone(), collection.state(self.this_peer_id()).await);
         }

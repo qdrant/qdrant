@@ -1,11 +1,14 @@
 use crate::operations::operation_effect::{
     EstimateOperationEffectArea, OperationEffectArea, PointsOperationEffect,
 };
-use crate::update_handler::UpdateSignal;
-use crate::{
-    CollectionError, CollectionInfo, CollectionResult, CollectionUpdateOperations, CountRequest,
-    CountResult, LocalShard, PointRequest, Record, SearchRequest, ShardOperation, UpdateResult,
+use crate::operations::types::{
+    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
+    Record, SearchRequest, UpdateResult,
 };
+use crate::operations::CollectionUpdateOperations;
+use crate::shard::local_shard::LocalShard;
+use crate::shard::ShardOperation;
+use crate::update_handler::UpdateSignal;
 use async_trait::async_trait;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,

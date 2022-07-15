@@ -1,7 +1,8 @@
 use crate::common::TEST_OPTIMIZERS_CONFIG;
+use collection::collection::Collection;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
-use collection::shard::Shard;
-use collection::{ChannelService, Collection, CollectionShardDistribution};
+use collection::shard::collection_shard_distribution::CollectionShardDistribution;
+use collection::shard::{ChannelService, Shard};
 use segment::types::Distance;
 use std::num::NonZeroU32;
 

@@ -1,7 +1,9 @@
+use collection::collection::Collection;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::types::CollectionError;
 use collection::optimizers_builder::OptimizersConfig;
-use collection::{ChannelService, Collection, CollectionId, CollectionShardDistribution};
+use collection::shard::collection_shard_distribution::CollectionShardDistribution;
+use collection::shard::{ChannelService, CollectionId};
 use segment::types::Distance;
 use std::num::NonZeroU32;
 use std::path::Path;
