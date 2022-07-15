@@ -1,13 +1,14 @@
 use std::collections::HashSet;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::RecvTimeoutError;
+use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
-use std::{
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
-    },
-    thread,
-    time::{Duration, Instant},
-};
+use std::thread;
+use std::time::Duration;
+use std::time::Instant;
 
 use anyhow::Context;
 use api::grpc::qdrant::{raft_client::RaftClient, PeerId, RaftMessage as GrpcRaftMessage};
@@ -477,7 +478,7 @@ fn handle_committed_entries(
 }
 
 async fn who_is(
-    peer_id: collection::PeerId,
+    peer_id: collection::shard::PeerId,
     bootstrap_uri: Option<Uri>,
     config: Arc<ConsensusConfig>,
 ) -> anyhow::Result<Uri> {
@@ -525,7 +526,7 @@ mod tests {
 
     use crate::settings::ConsensusConfig;
     use api::grpc::transport_channel_pool::TransportChannelPool;
-    use collection::ChannelService;
+    use collection::shard::ChannelService;
     use segment::types::Distance;
     use slog::Drain;
     use storage::{

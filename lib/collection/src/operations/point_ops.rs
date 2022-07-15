@@ -1,6 +1,6 @@
+use crate::hash_ring::HashRing;
 use crate::operations::types::VectorType;
-use crate::ShardId;
-use hashring::HashRing;
+use crate::shard::ShardId;
 use schemars::gen::SchemaGenerator;
 use schemars::schema::{ObjectValidation, Schema, SchemaObject, SubschemaValidation};
 use schemars::JsonSchema;

@@ -16,7 +16,8 @@ use segment::types::{
     SeqNumberType, VectorElementType, WithPayloadInterface,
 };
 
-use crate::{config::CollectionConfig, wal::WalError};
+use crate::config::CollectionConfig;
+use crate::wal::WalError;
 use segment::common::file_operations::FileStorageError;
 use std::collections::HashMap;
 use std::time::SystemTimeError;

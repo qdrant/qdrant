@@ -1,8 +1,8 @@
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
+use collection::shard::{CollectionId, PeerId};
 use collection::{
     operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff},
     shard::ShardId,
-    CollectionId, PeerId,
 };
 use schemars::JsonSchema;
 use segment::types::Distance;

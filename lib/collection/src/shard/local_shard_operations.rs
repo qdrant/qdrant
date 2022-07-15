@@ -1,10 +1,12 @@
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
-use crate::operations::types::{CollectionStatus, OptimizersStatus, UpdateStatus};
-use crate::update_handler::{OperationData, UpdateSignal};
-use crate::{
-    CollectionInfo, CollectionResult, CollectionUpdateOperations, CountRequest, CountResult,
-    LocalShard, PointRequest, Record, SearchRequest, ShardOperation, UpdateResult,
+use crate::operations::types::{
+    CollectionInfo, CollectionResult, CollectionStatus, CountRequest, CountResult,
+    OptimizersStatus, PointRequest, Record, SearchRequest, UpdateResult, UpdateStatus,
 };
+use crate::operations::CollectionUpdateOperations;
+use crate::shard::local_shard::LocalShard;
+use crate::shard::ShardOperation;
+use crate::update_handler::{OperationData, UpdateSignal};
 use async_trait::async_trait;
 use itertools::Itertools;
 use segment::types::{

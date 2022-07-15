@@ -19,7 +19,8 @@ processes = []
 def every_test():
     yield
     print()
-    for p in processes:
+    while len(processes) > 0:
+        p = processes.pop(0)
         print(f"Killing {p.pid}")
         p.kill()
 

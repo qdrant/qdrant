@@ -1,4 +1,4 @@
-use collection::Collection;
+use collection::collection::Collection;
 use log::info;
 use std::fs::{remove_dir_all, rename};
 use std::path::Path;

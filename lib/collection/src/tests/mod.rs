@@ -1,3 +1,4 @@
+use crate::collection::Collection;
 use crate::collection_manager::fixtures::{
     get_indexing_optimizer, get_merge_optimizer, random_segment,
 };
@@ -110,4 +111,16 @@ async fn test_cancel_optimization() {
             LockedSegment::Proxy(_) => panic!("segment is not restored"),
         }
     }
+}
+
+#[test]
+fn check_version_upgrade() {
+    assert!(!Collection::can_upgrade_storage(
+        &"0.3.1".parse().unwrap(),
+        &"0.4.0".parse().unwrap()
+    ));
+    assert!(Collection::can_upgrade_storage(
+        &"0.4.0".parse().unwrap(),
+        &"0.4.1".parse().unwrap()
+    ));
 }

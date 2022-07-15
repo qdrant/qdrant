@@ -13,7 +13,8 @@ use std::{
 
 use crate::types::{ClusterInfo, ClusterStatus, PeerAddressById, PeerInfo, RaftInfo};
 use atomicwrites::{AtomicFile, OverwriteBehavior::AllowOverwrite};
-use collection::{CollectionId, PeerId};
+use collection::collection_state;
+use collection::shard::{CollectionId, PeerId};
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::{ConfChangeV2, SnapshotMetadata};
@@ -52,7 +53,7 @@ pub struct SnapshotData {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct CollectionsSnapshot {
-    pub collections: HashMap<CollectionId, collection::State>,
+    pub collections: HashMap<CollectionId, collection_state::State>,
     pub aliases: AliasMapping,
 }
 
