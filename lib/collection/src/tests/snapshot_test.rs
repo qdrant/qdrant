@@ -1,11 +1,12 @@
 use std::num::NonZeroU32;
 
+use segment::types::Distance;
+
 use crate::collection::Collection;
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
+use crate::optimizers_builder::OptimizersConfig;
 use crate::shard::collection_shard_distribution::CollectionShardDistribution;
 use crate::shard::{ChannelService, Shard};
-use segment::types::Distance;
-use crate::optimizers_builder::OptimizersConfig;
 
 const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
@@ -17,7 +18,6 @@ const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     flush_interval_sec: 30,
     max_optimization_threads: 2,
 };
-
 
 #[tokio::test]
 async fn test_snapshot_collection() {

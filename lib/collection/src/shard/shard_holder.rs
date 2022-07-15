@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
+use tokio::sync::{RwLock, RwLockReadGuard};
+
 use crate::hash_ring::HashRing;
 use crate::shard::{Shard, ShardId, ShardTransfer};
-use std::collections::HashMap;
-use tokio::sync::{RwLock, RwLockReadGuard};
 
 pub struct ShardHolder {
     shards: RwLock<HashMap<ShardId, Shard>>,
@@ -43,13 +45,13 @@ impl ShardHolder {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use tempdir::TempDir;
-    use crate::shard::ChannelService;
-    use crate::shard::remote_shard::RemoteShard;
+
     use super::*;
+    use crate::shard::remote_shard::RemoteShard;
+    use crate::shard::ChannelService;
 
     #[tokio::test]
     async fn test_shard_holder() {
@@ -61,7 +63,8 @@ mod tests {
             123,
             shard_dir.path().to_owned(),
             ChannelService::default(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let shard_holder = ShardHolder::new(HashRing::fair(100));
         shard_holder.add_shard(2, Shard::Remote(shard));
@@ -69,19 +72,15 @@ mod tests {
         let retrieved_shard = shard_holder.get_shard(2).await;
 
         match retrieved_shard {
-            Some(shard) => {
-                match &*shard {
-                    Shard::Remote(shard) => {
-                        assert_eq!(shard.id, 2);
-                    }
-                    _ => panic!("Wrong shard type"),
+            Some(shard) => match &*shard {
+                Shard::Remote(shard) => {
+                    assert_eq!(shard.id, 2);
                 }
-            }
+                _ => panic!("Wrong shard type"),
+            },
             None => {
                 panic!("Shard not found");
             }
         }
-
-
     }
 }
