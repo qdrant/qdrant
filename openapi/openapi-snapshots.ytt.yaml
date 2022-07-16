@@ -5,6 +5,7 @@ paths:
   /collections/{collection_name}/snapshots:
     get:
       tags:
+        - snapshots
         - collections
       summary: List snapshots
       description: Get list of snapshots for a collection
@@ -20,6 +21,7 @@ paths:
 
     post:
       tags:
+        - snapshots
         - collections
       summary: Create snapshot
       description: Create new snapshot for a collection
@@ -36,6 +38,7 @@ paths:
   /collections/{collection_name}/snapshots/{snapshot_name}:
     get:
       tags:
+        - snapshots
         - collections
       summary: Download snapshot
       description: Download specified snapshot from a collection as a file
@@ -47,6 +50,62 @@ paths:
           required: true
           schema:
             type: string
+        - name: snapshot_name
+          in: path
+          description: Name of the snapshot to download
+          required: true
+          schema:
+            type: string
+
+      responses:
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        4XX:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        '200':
+          description: Snapshot file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /snapshots:
+    get:
+      tags:
+        - snapshots
+        - collections
+      summary: List of full snapshots
+      description: Get list of snapshots of the whole storage
+      operationId: list_full_snapshots
+      responses: #@ response(array(reference("SnapshotDescription")))
+
+    post:
+      tags:
+        - snapshots
+        - collections
+      summary: Create full snapshot
+      description: Create new snapshot of the whole storage
+      operationId: create_full_snapshot
+      responses: #@ response(reference("SnapshotDescription"))
+
+  /snapshots/{snapshot_name}:
+    get:
+      tags:
+        - snapshots
+        - collections
+      summary: Download full snapshot
+      description: Download specified snapshot of the whole storage as a file
+      operationId: get_full_snapshot
+      parameters:
         - name: snapshot_name
           in: path
           description: Name of the snapshot to download
