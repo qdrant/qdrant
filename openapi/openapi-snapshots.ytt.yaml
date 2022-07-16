@@ -7,7 +7,7 @@ paths:
       tags:
         - snapshots
         - collections
-      summary: List snapshots
+      summary: List collection snapshots
       description: Get list of snapshots for a collection
       operationId: list_snapshots
       parameters:
@@ -23,7 +23,7 @@ paths:
       tags:
         - snapshots
         - collections
-      summary: Create snapshot
+      summary: Create collection snapshot
       description: Create new snapshot for a collection
       operationId: create_snapshot
       parameters:
@@ -40,7 +40,7 @@ paths:
       tags:
         - snapshots
         - collections
-      summary: Download snapshot
+      summary: Download collection snapshot
       description: Download specified snapshot from a collection as a file
       operationId: get_snapshot
       parameters:
@@ -83,7 +83,7 @@ paths:
       tags:
         - snapshots
         - collections
-      summary: List of full snapshots
+      summary: List of storage snapshots
       description: Get list of snapshots of the whole storage
       operationId: list_full_snapshots
       responses: #@ response(array(reference("SnapshotDescription")))
@@ -92,7 +92,7 @@ paths:
       tags:
         - snapshots
         - collections
-      summary: Create full snapshot
+      summary: Create storage snapshot
       description: Create new snapshot of the whole storage
       operationId: create_full_snapshot
       responses: #@ response(reference("SnapshotDescription"))
@@ -102,7 +102,7 @@ paths:
       tags:
         - snapshots
         - collections
-      summary: Download full snapshot
+      summary: Download storage snapshot
       description: Download specified snapshot of the whole storage as a file
       operationId: get_full_snapshot
       parameters:

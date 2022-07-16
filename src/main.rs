@@ -66,7 +66,7 @@ struct Args {
     /// Path to snapshot of multiple collections.
     /// Format: <snapshot_file_path>
     #[clap(long, value_name = "PATH")]
-    full_snapshot: Option<String>,
+    storage_snapshot: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {
