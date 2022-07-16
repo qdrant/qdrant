@@ -1,24 +1,30 @@
 use std::collections::HashMap;
+use std::ops::Deref;
 
 use tokio::sync::{RwLock, RwLockReadGuard};
 
 use crate::hash_ring::HashRing;
+use crate::operations::{OperationToShard, SplitByShard};
 use crate::shard::{Shard, ShardId, ShardTransfer};
 
 pub struct ShardHolder {
-    shards: RwLock<HashMap<ShardId, Shard>>,
-    shard_transfers: RwLock<HashMap<ShardId, ShardTransfer>>,
-    ring: RwLock<HashRing<ShardId>>,
+    shards: HashMap<ShardId, Shard>,
+    shard_transfers: HashMap<ShardId, ShardTransfer>,
+    ring: HashRing<ShardId>,
 }
 
-impl ShardHolder {
+pub struct LockedShardHolder(RwLock<ShardHolder>);
+
+impl LockedShardHolder {
     pub fn new(hashring: HashRing<ShardId>) -> Self {
-        Self {
-            shards: RwLock::new(HashMap::new()),
-            shard_transfers: RwLock::new(HashMap::new()),
-            ring: RwLock::new(hashring),
-        }
+        LockedShardHolder(RwLock::new(ShardHolder {
+            shards: HashMap::new(),
+            shard_transfers: HashMap::new(),
+            ring: hashring,
+        }))
     }
+
+
 
     pub async fn add_shard(&self, shard_id: ShardId, shard: Shard) {
         let mut shards = self.shards.write().await;
@@ -42,6 +48,11 @@ impl ShardHolder {
         } else {
             None
         }
+    }
+
+    pub async fn split_by_shard<O: SplitByShard>(&self, operation: O) -> OperationToShard<O> {
+        let ring = self.ring.read().await;
+        operation.split_by_shard(ring.deref())
     }
 }
 
@@ -67,7 +78,7 @@ mod tests {
         .unwrap();
 
         let shard_holder = ShardHolder::new(HashRing::fair(100));
-        shard_holder.add_shard(2, Shard::Remote(shard));
+        shard_holder.add_shard(2, Shard::Remote(shard)).await;
 
         let retrieved_shard = shard_holder.get_shard(2).await;
 

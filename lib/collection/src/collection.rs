@@ -36,7 +36,6 @@ use crate::shard::collection_shard_distribution::CollectionShardDistribution;
 use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::{ShardConfig, ShardType};
-use crate::shard::shard_holder::ShardHolder;
 use crate::shard::{
     create_shard_dir, shard_path, ChannelService, CollectionId, PeerId, Shard, ShardId,
     ShardOperation, ShardTransfer, HASH_RING_SHARD_SCALE,
