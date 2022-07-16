@@ -59,11 +59,7 @@ pub fn recover_snapshots(mapping: &[String], force: bool, storage_dir: &str) {
     }
 }
 
-pub fn recover_full_snapshot(
-    snapshot_path: &str,
-    storage_dir: &str,
-    force: bool,
-) {
+pub fn recover_full_snapshot(snapshot_path: &str, storage_dir: &str, force: bool) {
     let temporary_dir = Path::new(storage_dir).join("snapshots_recovery_tmp");
     std::fs::create_dir_all(&temporary_dir).unwrap();
 
@@ -88,7 +84,6 @@ pub fn recover_full_snapshot(
             )
         })
         .collect();
-
 
     // Launch regular recovery of snapshots
     recover_snapshots(&mapping, force, storage_dir);

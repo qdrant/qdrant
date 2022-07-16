@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use collection::operations::snapshot_ops::{get_snapshot_description, list_snapshots_in_directory, SnapshotDescription};
+use collection::operations::snapshot_ops::{
+    get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
+};
 use tar::Builder as TarBuilder;
 use tokio::io::AsyncWriteExt;
 
@@ -21,9 +23,11 @@ pub async fn get_full_snapshot_path(
     Ok(snapshot_path)
 }
 
-pub async fn do_list_full_snapshots(toc: &TableOfContent) -> Result<Vec<SnapshotDescription>, StorageError> {
+pub async fn do_list_full_snapshots(
+    toc: &TableOfContent,
+) -> Result<Vec<SnapshotDescription>, StorageError> {
     let snapshots_path = Path::new(toc.snapshots_path());
-    Ok(list_snapshots_in_directory(&snapshots_path).await?)
+    Ok(list_snapshots_in_directory(snapshots_path).await?)
 }
 
 pub async fn do_create_full_snapshot(
@@ -79,4 +83,3 @@ pub async fn do_create_full_snapshot(
 
     Ok(get_snapshot_description(&full_snapshot_path).await?)
 }
-

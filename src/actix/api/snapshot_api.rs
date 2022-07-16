@@ -3,8 +3,10 @@ use std::sync::Arc;
 use actix_files::NamedFile;
 use actix_web::rt::time::Instant;
 use actix_web::{get, post, web, Responder, Result};
+use storage::content_manager::snapshots::{
+    do_create_full_snapshot, do_list_full_snapshots, get_full_snapshot_path,
+};
 use storage::content_manager::toc::TableOfContent;
-use storage::content_manager::snapshots::{do_create_full_snapshot, do_list_full_snapshots, get_full_snapshot_path};
 
 use crate::actix::helpers::{
     collection_into_actix_error, process_response, storage_into_actix_error,
@@ -12,7 +14,9 @@ use crate::actix::helpers::{
 use crate::common::collections::*;
 
 pub async fn do_get_full_snapshot(toc: &TableOfContent, snapshot_name: &str) -> Result<NamedFile> {
-    let file_name = get_full_snapshot_path(toc, snapshot_name).await.map_err(storage_into_actix_error)?;
+    let file_name = get_full_snapshot_path(toc, snapshot_name)
+        .await
+        .map_err(storage_into_actix_error)?;
 
     Ok(NamedFile::open(file_name)?)
 }

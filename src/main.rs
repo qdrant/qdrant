@@ -94,7 +94,7 @@ fn main() -> anyhow::Result<()> {
     log_builder.init();
     let args = Args::parse();
 
-    if let Some(full_snapshot) = args.full_snapshot {
+    if let Some(full_snapshot) = args.storage_snapshot {
         recover_full_snapshot(
             &full_snapshot,
             &settings.storage.storage_path,
