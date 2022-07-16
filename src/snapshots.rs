@@ -79,8 +79,8 @@ pub fn recover_full_snapshot(snapshot_path: &str, storage_dir: &str, force: bool
         .map(|(collection_name, snapshot_file)| {
             format!(
                 "{}:{}",
+                temporary_dir.join(snapshot_file).to_str().unwrap(),
                 collection_name,
-                temporary_dir.join(snapshot_file).to_str().unwrap()
             )
         })
         .collect();
