@@ -2,11 +2,14 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use api::grpc::qdrant::snapshots_server::Snapshots;
-use api::grpc::qdrant::{CreateFullSnapshotRequest, CreateSnapshotRequest, CreateSnapshotResponse, ListFullSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse};
+use api::grpc::qdrant::{
+    CreateFullSnapshotRequest, CreateSnapshotRequest, CreateSnapshotResponse,
+    ListFullSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
+};
 use storage::content_manager::conversions::error_to_status;
+use storage::content_manager::snapshots::{do_create_full_snapshot, do_list_full_snapshots};
 use storage::content_manager::toc::TableOfContent;
 use tonic::{async_trait, Request, Response, Status};
-use storage::content_manager::snapshots::{do_create_full_snapshot, do_list_full_snapshots};
 
 use crate::common::collections::{do_create_snapshot, do_list_snapshots};
 
@@ -53,7 +56,10 @@ impl Snapshots for SnapshotsService {
         }))
     }
 
-    async fn create_full(&self, _request: Request<CreateFullSnapshotRequest>) -> Result<Response<CreateSnapshotResponse>, Status> {
+    async fn create_full(
+        &self,
+        _request: Request<CreateFullSnapshotRequest>,
+    ) -> Result<Response<CreateSnapshotResponse>, Status> {
         let timing = Instant::now();
         let response = do_create_full_snapshot(&self.toc)
             .await
@@ -64,7 +70,10 @@ impl Snapshots for SnapshotsService {
         }))
     }
 
-    async fn list_full(&self, _request: Request<ListFullSnapshotsRequest>) -> Result<Response<ListSnapshotsResponse>, Status> {
+    async fn list_full(
+        &self,
+        _request: Request<ListFullSnapshotsRequest>,
+    ) -> Result<Response<ListSnapshotsResponse>, Status> {
         let timing = Instant::now();
         let snapshots = do_list_full_snapshots(&self.toc)
             .await
