@@ -36,6 +36,7 @@ use crate::types::{PeerAddressById, StorageConfig};
 
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const SNAPSHOTS_TMP_DIR: &str = "snapshots_tmp";
+pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
 
 /// The main object of the service. It holds all objects, required for proper functioning.
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
@@ -116,6 +117,10 @@ impl TableOfContent {
 
     pub fn storage_path(&self) -> &str {
         &self.storage_config.storage_path
+    }
+
+    pub fn snapshots_path(&self) -> &str {
+        &self.storage_config.snapshots_path
     }
 
     fn collection_snapshots_path(snapshots_path: &Path, collection_name: &str) -> PathBuf {

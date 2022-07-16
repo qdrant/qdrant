@@ -48,6 +48,7 @@ actix-cors = "0.6.1"
 actix-files = "0.6.1"
 tonic = "0.7.2"
 num-traits = "0.2.15"
+tar = "0.4.38"
 
 # Consensus related crates
 raft = { git = "https://github.com/tikv/raft-rs", rev = "52d84aac8734369d81c2d77413ea3ab8e58e0af9", features = ["prost-codec"], default-features = false }

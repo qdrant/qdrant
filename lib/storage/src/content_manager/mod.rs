@@ -10,6 +10,7 @@ pub mod conversions;
 pub mod errors;
 pub mod shard_distribution;
 pub mod toc;
+pub mod snapshots;
 
 pub mod consensus_ops {
     use collection::shard::PeerId;

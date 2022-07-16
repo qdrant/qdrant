@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::{remove_dir_all, rename};
 use std::path::Path;
 
@@ -12,8 +13,8 @@ use storage::content_manager::toc::COLLECTIONS_DIR;
 /// * `mapping` - [ "<path>:<collection_name>" ]
 /// * `force` - if true, allow to overwrite collections from snapshots
 ///
-pub fn recover_snapshots(mapping: &[String], force: bool, collections_dir: &str) {
-    let collection_dir_path = Path::new(collections_dir).join(COLLECTIONS_DIR);
+pub fn recover_snapshots(mapping: &[String], force: bool, storage_dir: &str) {
+    let collection_dir_path = Path::new(storage_dir).join(COLLECTIONS_DIR);
     for snapshot_params in mapping {
         let mut split = snapshot_params.split(':');
         let path = split
@@ -56,4 +57,42 @@ pub fn recover_snapshots(mapping: &[String], force: bool, collections_dir: &str)
         }
         rename(&collection_temp_path, &collection_path).unwrap();
     }
+}
+
+pub fn recover_full_snapshot(
+    snapshot_path: &str,
+    storage_dir: &str,
+    force: bool,
+) {
+    let temporary_dir = Path::new(storage_dir).join("snapshots_recovery_tmp");
+    std::fs::create_dir_all(&temporary_dir).unwrap();
+
+    // Un-tar snapshot into temporary directory
+    let archive_file = std::fs::File::open(snapshot_path).unwrap();
+    let mut ar = tar::Archive::new(archive_file);
+    ar.unpack(&temporary_dir).unwrap();
+
+    // Read configuration file with snapshot-to-collection mapping
+    let config_path = temporary_dir.join("config.json");
+    let config_file = std::fs::File::open(&config_path).unwrap();
+    let config_json: HashMap<String, String> = serde_json::from_reader(config_file).unwrap();
+
+    // Create mapping from the configuration file
+    let mapping: Vec<String> = config_json
+        .iter()
+        .map(|(collection_name, snapshot_file)| {
+            format!(
+                "{}:{}",
+                collection_name,
+                temporary_dir.join(snapshot_file).to_str().unwrap()
+            )
+        })
+        .collect();
+
+
+    // Launch regular recovery of snapshots
+    recover_snapshots(&mapping, force, storage_dir);
+
+    // Remove temporary directory
+    remove_dir_all(&temporary_dir).unwrap();
 }
