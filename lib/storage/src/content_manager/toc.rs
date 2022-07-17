@@ -406,7 +406,9 @@ impl TableOfContent {
         })?;
         match transfer {
             ShardTransferOperations::Start { to } => {
-                collection.start_shard_transfer(shard, to, self.this_peer_id).await
+                collection
+                    .start_shard_transfer(shard, to, self.this_peer_id)
+                    .await
             }
             ShardTransferOperations::Finish => collection.finish_shard_transfer(shard).await,
             ShardTransferOperations::Abort { reason } => {
