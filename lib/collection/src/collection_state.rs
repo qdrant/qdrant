@@ -19,7 +19,7 @@ impl State {
     pub async fn apply(
         self,
         this_peer_id: PeerId,
-        collection: &mut Collection,
+        collection: &Collection,
         collection_path: &Path,
         channel_service: ChannelService,
     ) -> CollectionResult<()> {
@@ -36,7 +36,7 @@ impl State {
 
     async fn apply_config(
         config: CollectionConfig,
-        collection: &mut Collection,
+        collection: &Collection,
     ) -> CollectionResult<()> {
         log::warn!("Applying only optimizers config snapshot. Other config updates are not yet implemented.");
         collection
@@ -47,7 +47,7 @@ impl State {
     async fn apply_shard_to_peer(
         shard_to_peer: HashMap<ShardId, PeerId>,
         this_peer_id: PeerId,
-        collection: &mut Collection,
+        collection: &Collection,
         collection_path: &Path,
         channel_service: ChannelService,
     ) -> CollectionResult<()> {

@@ -628,7 +628,7 @@ impl TableOfContent {
         self.collection_management_runtime.block_on(async {
             let mut collections = self.collections.write().await;
             for (id, state) in &data.collections {
-                let collection = collections.get_mut(id);
+                let collection = collections.get(id);
                 match collection {
                     // Update state if collection present locally
                     Some(collection) => {

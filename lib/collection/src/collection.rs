@@ -748,7 +748,7 @@ impl Collection {
     }
 
     pub async fn apply_state(
-        &mut self,
+        &self,
         state: State,
         this_peer_id: PeerId,
         collection_path: &Path,
