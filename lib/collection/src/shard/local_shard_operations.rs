@@ -21,7 +21,7 @@ use crate::shard::ShardOperation;
 use crate::update_handler::{OperationData, UpdateSignal};
 
 #[async_trait]
-impl ShardOperation for &LocalShard {
+impl ShardOperation for LocalShard {
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.

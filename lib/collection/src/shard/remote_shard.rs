@@ -119,7 +119,7 @@ impl RemoteShard {
 
 #[async_trait]
 #[allow(unused_variables)]
-impl ShardOperation for &RemoteShard {
+impl ShardOperation for RemoteShard {
     async fn update(
         &self,
         operation: CollectionUpdateOperations,

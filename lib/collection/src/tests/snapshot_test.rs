@@ -78,14 +78,16 @@ async fn test_snapshot_collection() {
     )
     .await;
 
-    let shards_holder = &recovered_collection.shards;
+    {
+        let shards_holder = &recovered_collection.shards_holder.read().await;
 
-    let shard_0 = shards_holder.get(&0).unwrap();
-    assert!(matches!(shard_0, Shard::Local(_)));
-    let shard_1 = shards_holder.get(&1).unwrap();
-    assert!(matches!(shard_1, Shard::Local(_)));
-    let shard_2 = shards_holder.get(&2).unwrap();
-    assert!(matches!(shard_2, Shard::Remote(_)));
+        let shard_0 = shards_holder.get_shard(&0).unwrap();
+        assert!(matches!(shard_0, Shard::Local(_)));
+        let shard_1 = shards_holder.get_shard(&1).unwrap();
+        assert!(matches!(shard_1, Shard::Local(_)));
+        let shard_2 = shards_holder.get_shard(&2).unwrap();
+        assert!(matches!(shard_2, Shard::Remote(_)));
+    }
 
     collection.before_drop().await;
     recovered_collection.before_drop().await;

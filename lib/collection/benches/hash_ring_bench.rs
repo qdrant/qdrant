@@ -16,14 +16,14 @@ fn hash_ring_bench(c: &mut Criterion) {
 
     let mut rnd = rand::thread_rng();
 
-    group.bench_function(format!("hash-ring-fair"), |b| {
+    group.bench_function("hash-ring-fair", |b| {
         b.iter(|| {
             let point = rnd.gen_range(0..100000);
             let _shard = ring_fair.get(&point);
         })
     });
 
-    group.bench_function(format!("hash-ring-raw"), |b| {
+    group.bench_function("hash-ring-raw", |b| {
         b.iter(|| {
             let point = rnd.gen_range(0..100000);
             let _shard = ring_raw.get(&point);
