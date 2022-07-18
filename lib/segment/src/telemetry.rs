@@ -7,6 +7,9 @@ use serde::Serialize;
 
 use crate::types::{SegmentConfig, SegmentInfo};
 
+const AVG_DATASET_LEN: usize = 128;
+const SLIDING_WINDOW_LEN: usize = 8;
+
 pub trait Anonymize {
     fn anonymize(&self) -> Self;
 }
@@ -35,13 +38,14 @@ pub struct TelemetryOperationStatistics {
     pub ok_count: usize,
     pub fail_count: usize,
     pub ok_avg_time: Duration,
-    pub ok_min_time: Duration,
-    pub ok_max_time: Duration,
 }
 
 pub struct TelemetryOperationAggregator {
     ok_count: usize,
     fail_count: usize,
+    timings: [f32; AVG_DATASET_LEN],
+    timing_index: usize,
+    timing_loops: usize,
 }
 
 pub struct TelemetryOperationTimer {
@@ -71,8 +75,6 @@ impl Anonymize for TelemetryOperationStatistics {
             ok_count: telemetry_round(self.ok_count),
             fail_count: telemetry_round(self.fail_count),
             ok_avg_time: self.ok_avg_time,
-            ok_min_time: self.ok_min_time,
-            ok_max_time: self.ok_max_time,
         }
     }
 }
@@ -104,26 +106,60 @@ impl TelemetryOperationAggregator {
         Arc::new(Mutex::new(Self {
             ok_count: 0,
             fail_count: 0,
+            timings: [0.; AVG_DATASET_LEN],
+            timing_index: 0,
+            timing_loops: 0,
         }))
     }
 
-    pub fn add_operation_result(&mut self, success: bool, _duration: Duration) {
+    pub fn add_operation_result(&mut self, success: bool, duration: Duration) {
         if success {
             self.ok_count += 1;
+            self.timings[self.timing_index] = duration.as_micros() as f32;
+            self.timing_index += 1;
+            if self.timing_index >= AVG_DATASET_LEN {
+                self.timing_index = 0;
+                self.timing_loops += 1;
+            }
         } else {
             self.fail_count += 1;
         }
     }
 
     pub fn get_statistics(&self) -> TelemetryOperationStatistics {
-        // todo(ivan): choose calculating avg time method
         TelemetryOperationStatistics {
             ok_count: self.ok_count,
             fail_count: self.fail_count,
-            ok_avg_time: Duration::default(),
-            ok_min_time: Duration::default(),
-            ok_max_time: Duration::default(),
+            ok_avg_time: self.calculate_avg(),
         }
+    }
+
+    fn calculate_avg(&self) -> Duration {
+        let data: Vec<f32> = if self.timing_loops > 0 {
+            let mut result = Vec::new();
+            result.extend_from_slice(&self.timings[self.timing_index..]);
+            result.extend_from_slice(&self.timings[..self.timing_index]);
+            result
+        } else {
+            self.timings[..self.timing_index].to_vec()
+        };
+
+        let mut sliding_window_avg = vec![0.; data.len()];
+        for i in 0..data.len() {
+            let from = if i < SLIDING_WINDOW_LEN {
+                0
+            } else {
+                SLIDING_WINDOW_LEN - i
+            };
+            sliding_window_avg[i] = Self::simple_moving_average(&data[from..i + 1]);
+        }
+
+        let avg = Self::simple_moving_average(&sliding_window_avg);
+        Duration::from_micros(avg as u64)
+    }
+
+    fn simple_moving_average(data: &[f32]) -> f32 {
+        data.iter().sum::<f32>() / data.len() as f32
     }
 }
 
