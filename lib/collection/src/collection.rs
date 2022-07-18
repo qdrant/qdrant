@@ -258,17 +258,39 @@ impl Collection {
         todo!("Handle for sender and receiver")
     }
 
+    pub async fn initiate_temporary_shard(&self, shard_id: ShardId) -> CollectionResult<()> {
+        let mut shards_holder = self.shards_holder.write().await;
+        shards_holder
+            .initiate_temporary_shard(self.id.clone(), &self.path, self.config.clone(), shard_id)
+            .await
+    }
+
+    /// Handle collection updates from peers.
+    ///
+    /// Shard transfer aware.
     pub async fn update_from_peer(
         &self,
         operation: CollectionUpdateOperations,
         shard_selection: ShardId,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        let local_shard = self
-            .shards_holder
-            .local_shard_by_id(shard_selection)
-            .await?;
-        local_shard.get().update(operation.clone(), wait).await
+        let local_shard = self.shards_holder.local_shard_by_id(shard_selection).await;
+
+        let target_shard = match local_shard {
+            Ok(local_shard) => local_shard,
+            Err(err) => {
+                // verify if maybe it targets a temporary shard
+                match self
+                    .shards_holder
+                    .valid_temporary_shard_by_id(shard_selection)
+                    .await
+                {
+                    None => return Err(err),
+                    Some(temporary_shard) => temporary_shard,
+                }
+            }
+        };
+        target_shard.get().update(operation.clone(), wait).await
     }
 
     pub async fn update_from_client(
