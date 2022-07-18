@@ -3760,72 +3760,61 @@
         "description": "Current clustering distribution for the collection",
         "type": "object",
         "required": [
-          "shards"
+          "local_shards",
+          "remote_shards",
+          "shard_count"
         ],
         "properties": {
-          "shards": {
+          "shard_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "local_shards": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ShardInfo"
+              "$ref": "#/components/schemas/LocalShardInfo"
+            }
+          },
+          "remote_shards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RemoteShardInfo"
             }
           }
         }
       },
-      "ShardInfo": {
-        "oneOf": [
-          {
-            "description": "Local shard with `shard_id` id",
-            "type": "object",
-            "required": [
-              "local"
-            ],
-            "properties": {
-              "local": {
-                "type": "object",
-                "required": [
-                  "shard_id"
-                ],
-                "properties": {
-                  "shard_id": {
-                    "type": "integer",
-                    "format": "uint32",
-                    "minimum": 0
-                  }
-                }
-              }
-            },
-            "additionalProperties": false
-          },
-          {
-            "description": "Remote shard with `shard_id` id on `peer_id` peer",
-            "type": "object",
-            "required": [
-              "remote"
-            ],
-            "properties": {
-              "remote": {
-                "type": "object",
-                "required": [
-                  "peer_id",
-                  "shard_id"
-                ],
-                "properties": {
-                  "shard_id": {
-                    "type": "integer",
-                    "format": "uint32",
-                    "minimum": 0
-                  },
-                  "peer_id": {
-                    "type": "integer",
-                    "format": "uint64",
-                    "minimum": 0
-                  }
-                }
-              }
-            },
-            "additionalProperties": false
+      "LocalShardInfo": {
+        "type": "object",
+        "required": [
+          "shard_id"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
           }
-        ]
+        }
+      },
+      "RemoteShardInfo": {
+        "type": "object",
+        "required": [
+          "peer_id",
+          "shard_id"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        }
       }
     }
   }
