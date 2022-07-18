@@ -1,9 +1,11 @@
-use crate::types::{SegmentConfig, SegmentInfo};
-use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+use serde::Serialize;
+
+use crate::types::{SegmentConfig, SegmentInfo};
 
 pub trait Anonymize {
     fn anonymize(&self) -> Self;

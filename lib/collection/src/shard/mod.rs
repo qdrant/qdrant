@@ -16,7 +16,6 @@ use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayl
 use tokio::runtime::Handle;
 use tonic::transport::Uri;
 
-use crate::telemetry::ShardTelemetry;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
     Record, SearchRequest, UpdateResult,
@@ -25,6 +24,7 @@ use crate::operations::CollectionUpdateOperations;
 use crate::shard::local_shard::LocalShard;
 use crate::shard::proxy_shard::ProxyShard;
 use crate::shard::remote_shard::RemoteShard;
+use crate::telemetry::ShardTelemetry;
 
 pub type ShardId = u32;
 

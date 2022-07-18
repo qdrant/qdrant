@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, Arc};
+use std::sync::{Arc, Mutex};
 
 use api::grpc::qdrant::collections_internal_client::CollectionsInternalClient;
 use api::grpc::qdrant::points_internal_client::PointsInternalClient;
@@ -9,13 +9,12 @@ use api::grpc::qdrant::{
     SearchPointsInternal,
 };
 use async_trait::async_trait;
-use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
 use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
+use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
 use tokio::runtime::Handle;
 use tonic::transport::{Channel, Uri};
 use tonic::Status;
 
-use crate::telemetry::ShardTelemetry;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::PointOperations;
 use crate::operations::types::{
@@ -30,6 +29,7 @@ use crate::shard::conversions::{
 };
 use crate::shard::shard_config::ShardConfig;
 use crate::shard::{ChannelService, CollectionId, PeerId, ShardId, ShardOperation};
+use crate::telemetry::ShardTelemetry;
 
 /// RemoteShard
 ///

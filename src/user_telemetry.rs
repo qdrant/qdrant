@@ -1,7 +1,8 @@
-use segment::telemetry::Anonymize;
 use std::path::Path;
 use std::sync::Arc;
+
 use collection::telemetry::CollectionTelemetry;
+use segment::telemetry::Anonymize;
 use serde::Serialize;
 use storage::Dispatcher;
 use uuid::Uuid;
