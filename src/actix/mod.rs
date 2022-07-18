@@ -1,8 +1,9 @@
+pub mod actix_telemetry;
 pub mod api;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_cors::Cors;
@@ -19,6 +20,7 @@ use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::search_points;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
+use crate::common::user_telemetry::UserTelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
 
 fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error::Error {
@@ -46,7 +48,11 @@ pub async fn index() -> impl Responder {
 }
 
 #[allow(dead_code)]
-pub fn init(dispatcher: Arc<Dispatcher>, settings: Settings) -> std::io::Result<()> {
+pub fn init(
+    dispatcher: Arc<Dispatcher>,
+    telemetry_collector: Arc<Mutex<UserTelemetryCollector>>,
+    settings: Settings,
+) -> std::io::Result<()> {
     actix_web::rt::System::new().block_on(async {
         let toc_data = web::Data::new(dispatcher.toc().clone());
         let dispatcher_data = web::Data::new(dispatcher);
@@ -58,6 +64,9 @@ pub fn init(dispatcher: Arc<Dispatcher>, settings: Settings) -> std::io::Result<
 
             App::new()
                 .wrap(Condition::new(settings.service.enable_cors, cors))
+                .wrap(actix_telemetry::ActixTelemetryTransform::new(
+                    telemetry_collector.clone(),
+                ))
                 .wrap(Logger::default())
                 .app_data(dispatcher_data.clone())
                 .app_data(toc_data.clone())
