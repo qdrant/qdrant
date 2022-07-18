@@ -49,5 +49,5 @@ pub async fn do_get_collection_cluster(
     name: &str,
 ) -> Result<CollectionClusterInfo, StorageError> {
     let collection = toc.get_collection(name).await?;
-    Ok(collection.cluster_info().await?)
+    Ok(collection.cluster_info(toc.this_peer_id).await?)
 }

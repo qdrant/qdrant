@@ -89,21 +89,31 @@ pub struct CollectionInfo {
 /// Current clustering distribution for the collection
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CollectionClusterInfo {
+    /// ID of this peer
+    pub peer_id: PeerId,
+    /// Total number of shards
     pub shard_count: usize,
+    /// Local shards
     pub local_shards: Vec<LocalShardInfo>,
+    /// Remote shards
     pub remote_shards: Vec<RemoteShardInfo>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct LocalShardInfo {
+    /// Local shard id
     pub shard_id: ShardId,
+    /// Number of points in the shard
+    pub points_count: usize,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct RemoteShardInfo {
+    /// Remote shard id
     pub shard_id: ShardId,
+    /// Remote peer id
     pub peer_id: PeerId,
 }
 

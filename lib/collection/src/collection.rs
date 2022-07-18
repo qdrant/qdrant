@@ -730,19 +730,37 @@ impl Collection {
         Ok(info)
     }
 
-    pub async fn cluster_info(&self) -> CollectionResult<CollectionClusterInfo> {
+    pub async fn cluster_info(&self, peer_id: PeerId) -> CollectionResult<CollectionClusterInfo> {
         let shard_count = self.shards.len();
         let mut local_shards = Vec::new();
         let mut remote_shards = Vec::new();
+        let count_request = Arc::new(CountRequest {
+            filter: None,
+            exact: true,
+        });
         for (shard_id, shard) in &self.shards {
             let shard_id = *shard_id;
             match shard {
-                Shard::Local(_) => local_shards.push(LocalShardInfo { shard_id }),
+                Shard::Local(ls) => {
+                    let count_result = ls.count(count_request.clone()).await?;
+                    let points_count = count_result.count;
+                    local_shards.push(LocalShardInfo {
+                        shard_id,
+                        points_count,
+                    })
+                }
                 Shard::Remote(rs) => remote_shards.push(RemoteShardInfo {
                     shard_id,
                     peer_id: rs.peer_id,
                 }),
-                Shard::Proxy(_) => local_shards.push(LocalShardInfo { shard_id }),
+                Shard::Proxy(ls) => {
+                    let count_result = ls.count(count_request.clone()).await?;
+                    let points_count = count_result.count;
+                    local_shards.push(LocalShardInfo {
+                        shard_id,
+                        points_count,
+                    })
+                }
             }
         }
         // sort by shard_id
@@ -750,6 +768,7 @@ impl Collection {
         remote_shards.sort_by_key(|k| k.shard_id);
 
         let info = CollectionClusterInfo {
+            peer_id,
             shard_count,
             local_shards,
             remote_shards,

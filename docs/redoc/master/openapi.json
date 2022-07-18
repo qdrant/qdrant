@@ -3761,22 +3761,32 @@
         "type": "object",
         "required": [
           "local_shards",
+          "peer_id",
           "remote_shards",
           "shard_count"
         ],
         "properties": {
+          "peer_id": {
+            "description": "ID of this peer",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
           "shard_count": {
+            "description": "Total number of shards",
             "type": "integer",
             "format": "uint",
             "minimum": 0
           },
           "local_shards": {
+            "description": "Local shards",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/LocalShardInfo"
             }
           },
           "remote_shards": {
+            "description": "Remote shards",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/RemoteShardInfo"
@@ -3787,12 +3797,20 @@
       "LocalShardInfo": {
         "type": "object",
         "required": [
+          "points_count",
           "shard_id"
         ],
         "properties": {
           "shard_id": {
+            "description": "Local shard id",
             "type": "integer",
             "format": "uint32",
+            "minimum": 0
+          },
+          "points_count": {
+            "description": "Number of points in the shard",
+            "type": "integer",
+            "format": "uint",
             "minimum": 0
           }
         }
@@ -3805,11 +3823,13 @@
         ],
         "properties": {
           "shard_id": {
+            "description": "Remote shard id",
             "type": "integer",
             "format": "uint32",
             "minimum": 0
           },
           "peer_id": {
+            "description": "Remote peer id",
             "type": "integer",
             "format": "uint64",
             "minimum": 0
