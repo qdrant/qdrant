@@ -145,24 +145,9 @@ impl LockedShardHolder {
         Self(RwLock::new(shard_holder))
     }
 
-    pub async fn add_shard(&self, shard_id: ShardId, shard: Shard) {
-        let mut holder = self.0.write().await;
-        holder.add_shard(shard_id, shard).await;
-    }
-
-    pub async fn remove_shard(&self, shard_id: ShardId) -> Option<Shard> {
-        let mut holder = self.0.write().await;
-        holder.remove_shard(shard_id).await
-    }
-
-    pub async fn get_shard(&self, shard_id: ShardId) -> Option<RwLockReadGuard<'_, Shard>> {
+    async fn get_shard(&self, shard_id: ShardId) -> Option<RwLockReadGuard<'_, Shard>> {
         let holder = self.0.read().await;
         RwLockReadGuard::try_map(holder, |h| h.shards.get(&shard_id)).ok()
-    }
-
-    pub async fn split_by_shard<O: SplitByShard>(&self, operation: O) -> OperationToShard<O> {
-        let holder = self.0.read().await;
-        operation.split_by_shard(&holder.ring)
     }
 
     pub async fn local_shard_by_id(
@@ -216,10 +201,11 @@ mod tests {
         )
         .unwrap();
 
-        let shard_holder = LockedShardHolder::new(ShardHolder::new(HashRing::fair(100)));
+        let mut shard_holder = ShardHolder::new(HashRing::fair(100));
         shard_holder.add_shard(2, Shard::Remote(shard)).await;
+        let locked_shard_holder = LockedShardHolder::new(shard_holder);
 
-        let retrieved_shard = shard_holder.get_shard(2).await;
+        let retrieved_shard = locked_shard_holder.get_shard(2).await;
 
         match retrieved_shard {
             Some(shard) => match &*shard {
