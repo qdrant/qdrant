@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use collection::shard::{PeerId, Shard, ShardId};
+use collection::shard::{PeerId, ShardId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -34,9 +34,8 @@ impl ShardDistributionProposal {
     /// It will propose to allocate shards so that all peers have the same number of shards at the end.
     pub fn new(
         config_shard_number: u32,
-        this_peer_id: PeerId,
         known_peers: &[PeerId],
-        known_shards: Vec<&Shard>,
+        known_shards: Vec<(ShardId, PeerId)>,
     ) -> Self {
         // min number of shard_count on top to make this a min-heap
         let mut min_heap: BinaryHeap<Reverse<PeerShardCount>> =
@@ -46,18 +45,9 @@ impl ShardDistributionProposal {
         for &peer in known_peers {
             let shard_count_on_peer = known_shards
                 .iter()
-                .filter(|shard| match shard {
-                    Shard::Remote(remote_shard) if remote_shard.peer_id == peer => true,
-                    Shard::Local(_) if this_peer_id == peer => true,
-                    _ => false,
-                })
+                .filter(|(_shard_id, peer_id)| *peer_id == peer)
                 .count();
             min_heap.push(Reverse(PeerShardCount::new(shard_count_on_peer, peer)))
-        }
-
-        // no known peers with shards - add minimal entry for this peer so it gets all the shards
-        if min_heap.is_empty() {
-            min_heap.push(Reverse(PeerShardCount::new(1, this_peer_id)))
         }
 
         let mut distribution: Vec<(ShardId, PeerId)> =
@@ -95,5 +85,32 @@ impl ShardDistributionProposal {
             .filter(|(_shard, peer)| peer != &peer_id)
             .copied()
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_distribution() {
+        let known_peers = vec![1, 2, 3, 4];
+        let distribution = ShardDistributionProposal::new(6, &known_peers, vec![]);
+
+        // Check it distribution is as even as possible
+        let mut shard_counts: Vec<usize> = vec![0; known_peers.len()];
+        for (_shard_id, peer_id) in &distribution.distribution {
+            let peer_offset = known_peers
+                .iter()
+                .enumerate()
+                .find(|(_, x)| *x == peer_id)
+                .unwrap()
+                .0;
+            shard_counts[peer_offset] += 1;
+        }
+
+        assert_eq!(shard_counts.iter().sum::<usize>(), 6);
+        assert_eq!(shard_counts.iter().min(), Some(&1));
+        assert_eq!(shard_counts.iter().max(), Some(&2));
     }
 }

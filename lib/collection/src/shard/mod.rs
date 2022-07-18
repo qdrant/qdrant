@@ -5,6 +5,7 @@ pub mod local_shard_operations;
 pub mod proxy_shard;
 pub mod remote_shard;
 pub mod shard_config;
+pub mod shard_holder;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -39,11 +40,11 @@ pub enum Shard {
 }
 
 impl Shard {
-    pub fn get(&self) -> Arc<dyn ShardOperation + Sync + Send + '_> {
+    pub fn get(&self) -> &(dyn ShardOperation + Sync + Send + '_) {
         match self {
-            Shard::Local(local_shard) => Arc::new(local_shard),
-            Shard::Remote(remote_shard) => Arc::new(remote_shard),
-            Shard::Proxy(proxy_shard) => Arc::new(proxy_shard),
+            Shard::Local(local_shard) => local_shard,
+            Shard::Remote(remote_shard) => remote_shard,
+            Shard::Proxy(proxy_shard) => proxy_shard,
         }
     }
 
@@ -108,13 +109,13 @@ pub type PeerId = u64;
 
 #[derive(Clone)]
 pub struct ChannelService {
-    pub id_to_address: Arc<parking_lot::RwLock<HashMap<u64, Uri>>>,
+    pub id_to_address: Arc<parking_lot::RwLock<HashMap<PeerId, Uri>>>,
     pub channel_pool: Arc<TransportChannelPool>,
 }
 
 impl ChannelService {
     pub fn new(
-        id_to_address: Arc<parking_lot::RwLock<HashMap<u64, Uri>>>,
+        id_to_address: Arc<parking_lot::RwLock<HashMap<PeerId, Uri>>>,
         channel_pool: Arc<TransportChannelPool>,
     ) -> Self {
         Self {
@@ -133,6 +134,7 @@ impl Default for ChannelService {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ShardTransfer {
     pub from: PeerId,
     pub to: PeerId,

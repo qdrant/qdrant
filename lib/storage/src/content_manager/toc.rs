@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
@@ -406,12 +406,14 @@ impl TableOfContent {
         })?;
         match transfer {
             ShardTransferOperations::Start { to } => {
-                collection.start_shard_transfer(shard, to, self.this_peer_id)
+                collection
+                    .start_shard_transfer(shard, to, self.this_peer_id)
+                    .await
             }
-            ShardTransferOperations::Finish => collection.finish_shard_transfer(shard),
+            ShardTransferOperations::Finish => collection.finish_shard_transfer(shard).await,
             ShardTransferOperations::Abort { reason } => {
                 log::warn!("Aborting shard transfer: {reason}");
-                collection.abort_shard_transfer(shard)
+                collection.abort_shard_transfer(shard).await
             }
         }?;
         Ok(())
@@ -626,7 +628,7 @@ impl TableOfContent {
         self.collection_management_runtime.block_on(async {
             let mut collections = self.collections.write().await;
             for (id, state) in &data.collections {
-                let collection = collections.get_mut(id);
+                let collection = collections.get(id);
                 match collection {
                     // Update state if collection present locally
                     Some(collection) => {
@@ -705,24 +707,18 @@ impl TableOfContent {
             .create_collection
             .shard_number
             .unwrap_or(suggested_shard_number);
-        let known_peers: Vec<_> = self
+        let mut known_peers_set: HashSet<_> = self
             .channel_service
             .id_to_address
             .read()
             .keys()
             .copied()
             .collect();
-        let known_collections = self.collections.read().await;
-        let known_shards: Vec<_> = known_collections
-            .iter()
-            .flat_map(|(_, col)| col.all_shards())
-            .collect();
-        let shard_distribution = ShardDistributionProposal::new(
-            shard_number,
-            self.this_peer_id(),
-            &known_peers,
-            known_shards,
-        );
+        known_peers_set.insert(self.this_peer_id());
+        let known_peers: Vec<_> = known_peers_set.into_iter().collect();
+
+        let shard_distribution = ShardDistributionProposal::new(shard_number, &known_peers, vec![]);
+
         log::debug!(
             "Suggesting distribution for {} shards for collection '{}' among {} peers {:?}",
             shard_number,

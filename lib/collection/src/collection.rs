@@ -4,8 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use futures::future::{join_all, try_join_all};
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
 use itertools::Itertools;
 use segment::common::version::StorageVersion;
 use segment::spaces::tools::{peek_top_largest_scores_iterable, peek_top_smallest_scores_iterable};
@@ -30,15 +28,16 @@ use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
     RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
 };
-use crate::operations::{CollectionUpdateOperations, OperationToShard, SplitByShard, Validate};
+use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shard::collection_shard_distribution::CollectionShardDistribution;
 use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::{ShardConfig, ShardType};
+use crate::shard::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shard::{
     create_shard_dir, shard_path, ChannelService, CollectionId, PeerId, Shard, ShardId,
-    ShardOperation, ShardTransfer, HASH_RING_SHARD_SCALE,
+    HASH_RING_SHARD_SCALE,
 };
 use crate::telemetry::CollectionTelemetry;
 
@@ -53,15 +52,13 @@ impl StorageVersion for CollectionVersion {
 /// Collection's data is split into several shards.
 pub struct Collection {
     pub(crate) id: CollectionId,
-    pub(crate) shards: HashMap<ShardId, Shard>,
-    pub(crate) ring: HashRing<ShardId>,
+    pub(crate) shards_holder: Arc<LockedShardHolder>,
     config: Arc<RwLock<CollectionConfig>>,
     /// Tracks whether `before_drop` fn has been called.
     before_drop_called: bool,
     path: PathBuf,
     snapshots_path: PathBuf,
     telemetry: CollectionTelemetry,
-    shard_transfers: HashMap<ShardId, ShardTransfer>,
 }
 
 impl Collection {
@@ -81,51 +78,61 @@ impl Collection {
 
         CollectionVersion::save(path)?;
         config.save(path)?;
-        let mut ring = HashRing::fair(HASH_RING_SHARD_SCALE);
-        let mut shards: HashMap<ShardId, Shard> = HashMap::new();
+
+        let mut shard_holder = ShardHolder::new(HashRing::fair(HASH_RING_SHARD_SCALE));
 
         let shared_config = Arc::new(RwLock::new(config.clone()));
         for shard_id in shard_distribution.local {
-            let shard_path = create_shard_dir(path, shard_id).await?;
-            let shard =
-                LocalShard::build(shard_id, id.clone(), &shard_path, shared_config.clone()).await;
+            let shard_path = create_shard_dir(path, shard_id).await;
+            let shard = match shard_path {
+                Ok(shard_path) => {
+                    LocalShard::build(shard_id, id.clone(), &shard_path, shared_config.clone())
+                        .await
+                }
+                Err(e) => Err(e),
+            };
+
             let shard = match shard {
                 Ok(shard) => shard,
                 Err(err) => {
-                    let futures: FuturesUnordered<_> = shards
-                        .iter_mut()
-                        .map(|(_, shard)| shard.before_drop())
-                        .collect();
-                    futures.collect::<Vec<()>>().await;
+                    shard_holder.before_drop().await;
                     return Err(err);
                 }
             };
-            shards.insert(shard_id, Shard::Local(shard));
-            ring.add(shard_id);
+            shard_holder.add_shard(shard_id, Shard::Local(shard)).await;
         }
 
         for (shard_id, peer_id) in shard_distribution.remote {
-            let shard_path = create_shard_dir(path, shard_id).await?;
-            let shard = RemoteShard::init(
-                shard_id,
-                id.clone(),
-                peer_id,
-                shard_path,
-                channel_service.clone(),
-            )?;
-            shards.insert(shard_id, Shard::Remote(shard));
-            ring.add(shard_id);
+            let shard = create_shard_dir(path, shard_id)
+                .await
+                .and_then(|shard_path| {
+                    RemoteShard::init(
+                        shard_id,
+                        id.clone(),
+                        peer_id,
+                        shard_path,
+                        channel_service.clone(),
+                    )
+                });
+            let shard = match shard {
+                Ok(shard) => shard,
+                Err(err) => {
+                    shard_holder.before_drop().await;
+                    return Err(err);
+                }
+            };
+            shard_holder.add_shard(shard_id, Shard::Remote(shard)).await;
         }
+
+        let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
 
         Ok(Self {
             id: id.clone(),
-            shards,
-            ring,
+            shards_holder: locked_shard_holder,
             config: shared_config,
             before_drop_called: false,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
-            shard_transfers: Default::default(),
             telemetry: CollectionTelemetry::new(id, config.clone(), start_time.elapsed()),
         })
     }
@@ -177,14 +184,14 @@ impl Collection {
         });
 
         // 0.4.0 is the collection version at which we introduced fair hash ring
-        let mut ring = if stored_version >= Version::new(0, 4, 0) {
+        let ring = if stored_version >= Version::new(0, 4, 0) {
             log::debug!("Using fair hash ring with scale: {HASH_RING_SHARD_SCALE}");
             HashRing::fair(HASH_RING_SHARD_SCALE)
         } else {
             log::debug!("Using raw hash ring");
             HashRing::raw()
         };
-        let mut shards = HashMap::new();
+        let mut shard_holder = ShardHolder::new(ring);
 
         let shard_distribution = CollectionShardDistribution::from_local_state(path)
             .expect("Can't infer shard distribution from local shard configurations");
@@ -192,115 +199,61 @@ impl Collection {
         let shared_config = Arc::new(RwLock::new(config.clone()));
         for shard_id in shard_distribution.local {
             let shard_path = shard_path(path, shard_id);
-            shards.insert(
-                shard_id,
-                Shard::Local(
-                    LocalShard::load(shard_id, id.clone(), &shard_path, shared_config.clone())
-                        .await,
-                ),
-            );
-            ring.add(shard_id);
+            shard_holder
+                .add_shard(
+                    shard_id,
+                    Shard::Local(
+                        LocalShard::load(shard_id, id.clone(), &shard_path, shared_config.clone())
+                            .await,
+                    ),
+                )
+                .await;
         }
 
         for (shard_id, peer_id) in shard_distribution.remote {
             let shard = RemoteShard::new(shard_id, id.clone(), peer_id, channel_service.clone());
-            shards.insert(shard_id, Shard::Remote(shard));
-            ring.add(shard_id);
+            shard_holder.add_shard(shard_id, Shard::Remote(shard)).await;
         }
+
+        let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
 
         Self {
             id: id.clone(),
-            shards,
-            ring,
+            shards_holder: locked_shard_holder,
             config: shared_config,
             before_drop_called: false,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
-            // TODO: Need to be persisted on disk in case of restart?
-            shard_transfers: Default::default(),
             telemetry: CollectionTelemetry::new(id, config, start_time.elapsed()),
         }
     }
 
-    pub fn shard_by_id(&self, id: ShardId) -> Option<&Shard> {
-        self.shards.get(&id)
-    }
-
-    fn local_shard_by_id(&self, id: ShardId) -> CollectionResult<&Shard> {
-        match self.shards.get(&id) {
-            None => Err(CollectionError::bad_shard_selection(format!(
-                "Shard {} does not exist",
-                id
-            ))),
-            Some(Shard::Remote(_)) => Err(CollectionError::bad_shard_selection(format!(
-                "Shard {} is not local on peer",
-                id
-            ))),
-            Some(shard @ Shard::Local(_)) => Ok(shard),
-            Some(shard @ Shard::Proxy(_)) => Ok(shard),
-        }
-    }
-
-    fn target_shards(
-        &self,
-        shard_selection: Option<ShardId>,
-    ) -> CollectionResult<Vec<Arc<dyn ShardOperation + Sync + Send + '_>>> {
-        match shard_selection {
-            None => Ok(self.all_shards().map(|shard| shard.get()).collect()),
-            Some(shard_selection) => {
-                let local_shard = self.local_shard_by_id(shard_selection)?;
-                Ok(vec![local_shard.get()])
-            }
-        }
-    }
-
-    pub fn all_shards(&self) -> impl Iterator<Item = &Shard> {
-        self.shards.values()
-    }
-
-    fn send_shard(&mut self, _shard_id: ShardId) {
+    fn send_shard(&self, _shard_id: ShardId) {
         todo!()
     }
 
-    pub fn start_shard_transfer(
-        &mut self,
+    pub async fn start_shard_transfer(
+        &self,
         shard_id: ShardId,
         to_peer: PeerId,
         this_peer: PeerId,
     ) -> CollectionResult<()> {
-        let shard = self.shard_by_id(shard_id).ok_or_else(|| {
-            CollectionError::service_error("Shard {shard_id} is abscent".to_owned())
-        })?;
-        let from_peer = shard.peer_id(this_peer);
-        self.shard_transfers.insert(
-            shard_id,
-            ShardTransfer {
-                from: from_peer,
-                to: to_peer,
-            },
-        );
-        if from_peer == this_peer {
+        let mut shards_holder = self.shards_holder.write().await;
+        let transfer = shards_holder.start_shard_transfer(shard_id, to_peer, this_peer)?;
+        if transfer.from == this_peer {
             self.send_shard(shard_id);
         }
         Ok(())
     }
 
-    pub fn finish_shard_transfer(&mut self, shard_id: ShardId) -> CollectionResult<()> {
-        let transfer = self.shard_transfers.remove(&shard_id).ok_or_else(|| {
-            CollectionError::service_error(format!(
-                "Shard transfer data for {shard_id} is abscent at the end of the transfer."
-            ))
-        })?;
-        if let Shard::Remote(shard) = self.shards.get_mut(&shard_id).ok_or_else(|| {
-            CollectionError::service_error("Shard {shard_id} is absent".to_owned())
-        })? {
-            shard.peer_id = transfer.to;
-        }
-        Ok(())
+    pub async fn finish_shard_transfer(&self, shard_id: ShardId) -> CollectionResult<()> {
+        let mut shards_holder = self.shards_holder.write().await;
+        shards_holder.finish_transfer(shard_id)
     }
 
-    pub fn abort_shard_transfer(&mut self, shard_id: ShardId) -> CollectionResult<()> {
-        self.shard_transfers.remove(&shard_id);
+    pub async fn abort_shard_transfer(&mut self, _shard_id: ShardId) -> CollectionResult<()> {
+        let mut _shards_holder = self.shards_holder.write().await;
+        // self.shard_transfers.remove(&shard_id);
         todo!("Handle for sender and receiver")
     }
 
@@ -310,7 +263,10 @@ impl Collection {
         shard_selection: ShardId,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        let local_shard = self.local_shard_by_id(shard_selection)?;
+        let local_shard = self
+            .shards_holder
+            .local_shard_by_id(shard_selection)
+            .await?;
         local_shard.get().update(operation.clone(), wait).await
     }
 
@@ -320,20 +276,17 @@ impl Collection {
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
         operation.validate()?;
-        let shard_ops: Vec<_> = match operation.split_by_shard(&self.ring) {
-            OperationToShard::ByShard(by_shard) => by_shard
+
+        let mut results = {
+            let shards_holder = self.shards_holder.read().await;
+            let shard_to_op = shards_holder.split_by_shard(operation).await;
+
+            let shard_requests = shard_to_op
                 .into_iter()
-                .map(|(shard_id, operation)| (self.shard_by_id(shard_id).unwrap().get(), operation))
-                .collect(),
-            OperationToShard::ToAll(operation) => self
-                .all_shards()
-                .map(|shard| (shard.get(), operation.clone()))
-                .collect(),
+                .map(move |(shard, operation)| shard.get().update(operation, wait));
+            join_all(shard_requests).await
         };
-        let shard_requests = shard_ops
-            .iter()
-            .map(move |(shard, operation)| shard.update(operation.clone(), wait));
-        let mut results = join_all(shard_requests).await;
+
         let with_error = results
             .iter()
             .filter(|result| matches!(result, Err(_)))
@@ -344,9 +297,10 @@ impl Collection {
                 .into_iter()
                 .find(|result| matches!(result, Err(_)))
                 .unwrap();
-            if with_error < self.shards.len() {
+            let num_shards = self.shards_holder.read().await.len();
+            if with_error < num_shards {
                 err.map_err(|err| CollectionError::InconsistentFailure {
-                    shards_total: self.shards.len() as u32,
+                    shards_total: num_shards as u32,
                     shards_failed: with_error as u32,
                     first_err: format!("{err}"),
                 })
@@ -457,14 +411,17 @@ impl Collection {
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let request = Arc::new(request);
-        let target_shards = self.target_shards(shard_selection)?;
-        let all_searches = target_shards
-            .iter()
-            .map(|shard| shard.search(request.clone(), search_runtime_handle));
 
-        let all_searches_res = try_join_all(all_searches).await?.into_iter().flatten();
+        let all_searches_res = {
+            let shard_holder = self.shards_holder.read().await;
+            let target_shards = shard_holder.target_shards(shard_selection)?;
+            let all_searches = target_shards
+                .iter()
+                .map(|shard| shard.get().search(request.clone(), search_runtime_handle));
+            try_join_all(all_searches).await?.into_iter().flatten()
+        };
+
         let distance = self.config.read().await.params.distance;
-
         let mut top_result = match distance.distance_order() {
             Order::LargeBetter => {
                 peek_top_largest_scores_iterable(all_searches_res, request.limit + request.offset)
@@ -533,7 +490,8 @@ impl Collection {
         let metadata_required = is_payload_required || request.with_vector;
 
         // Number of records we need to retrieve to fill the search result.
-        let require_transfers = self.shards.len() * (request.limit + request.offset);
+        let require_transfers =
+            self.shards_holder.read().await.len() * (request.limit + request.offset);
         // Actually used number of records.
         let used_transfers = request.limit;
 
@@ -597,20 +555,22 @@ impl Collection {
 
         // Needed to return next page offset.
         let limit = limit + 1;
+        let retrieved_points: Vec<_> = {
+            let shards_holder = self.shards_holder.read().await;
+            let target_shards = shards_holder.target_shards(shard_selection)?;
+            let scroll_futures = target_shards.into_iter().map(|shard| {
+                shard.get().scroll_by(
+                    offset,
+                    limit,
+                    &with_payload_interface,
+                    with_vector,
+                    request.filter.as_ref(),
+                )
+            });
 
-        let target_shards = self.target_shards(shard_selection)?;
-        let scroll_futures = target_shards.iter().map(|shard| {
-            shard.scroll_by(
-                offset,
-                limit,
-                &with_payload_interface,
-                with_vector,
-                request.filter.as_ref(),
-            )
-        });
-
-        let mut points: Vec<_> = try_join_all(scroll_futures)
-            .await?
+            try_join_all(scroll_futures).await?
+        };
+        let mut points: Vec<_> = retrieved_points
             .into_iter()
             .flatten()
             .sorted_by_key(|point| point.id)
@@ -636,11 +596,15 @@ impl Collection {
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<CountResult> {
         let request = Arc::new(request);
-        let target_shards = self.target_shards(shard_selection)?;
-        let count_futures = target_shards
-            .iter()
-            .map(|shard| shard.count(request.clone()));
-        let counts: Vec<_> = try_join_all(count_futures).await?.into_iter().collect();
+
+        let counts: Vec<_> = {
+            let shards_holder = self.shards_holder.read().await;
+            let target_shards = shards_holder.target_shards(shard_selection)?;
+            let count_futures = target_shards
+                .into_iter()
+                .map(|shard| shard.get().count(request.clone()));
+            try_join_all(count_futures).await?.into_iter().collect()
+        };
 
         let total_count = counts.iter().map(|x| x.count).sum::<usize>();
         let aggregated_count = CountResult { count: total_count };
@@ -659,12 +623,16 @@ impl Collection {
         let with_payload = WithPayload::from(with_payload_interface);
         let with_vector = request.with_vector;
         let request = Arc::new(request);
-        let target_shards = self.target_shards(shard_selection)?;
-        let retrieve_futures = target_shards
-            .iter()
-            .map(|shard| shard.retrieve(request.clone(), &with_payload, with_vector));
-
-        let all_shard_collection_results = try_join_all(retrieve_futures).await?;
+        let all_shard_collection_results = {
+            let shard_holder = self.shards_holder.read().await;
+            let target_shards = shard_holder.target_shards(shard_selection)?;
+            let retrieve_futures = target_shards.into_iter().map(|shard| {
+                shard
+                    .get()
+                    .retrieve(request.clone(), &with_payload, with_vector)
+            });
+            try_join_all(retrieve_futures).await?
+        };
         let points = all_shard_collection_results.into_iter().flatten().collect();
         Ok(points)
     }
@@ -682,11 +650,14 @@ impl Collection {
             config.optimizer_config =
                 DiffConfig::update(optimizer_config_diff, &config.optimizer_config)?;
         }
-        for shard in self.all_shards() {
-            match shard {
-                Shard::Local(shard) => shard.on_optimizer_config_update().await?,
-                Shard::Proxy(shard) => shard.on_optimizer_config_update().await?,
-                Shard::Remote(_) => {} // Do nothing for remote shards
+        {
+            let shard_holder = self.shards_holder.read().await;
+            for shard in shard_holder.all_shards() {
+                match shard {
+                    Shard::Local(shard) => shard.on_optimizer_config_update().await?,
+                    Shard::Proxy(shard) => shard.on_optimizer_config_update().await?,
+                    Shard::Remote(_) => {} // Do nothing for remote shards
+                }
             }
         }
         self.config.read().await.save(&self.path)?;
@@ -705,11 +676,14 @@ impl Collection {
             let mut config = self.config.write().await;
             config.optimizer_config = optimizer_config;
         }
-        for shard in self.all_shards() {
-            match shard {
-                Shard::Local(shard) => shard.on_optimizer_config_update().await?,
-                Shard::Remote(_) => {} // Do nothing for remote shards
-                Shard::Proxy(proxy) => proxy.on_optimizer_config_update().await?,
+        {
+            let shard_holder = self.shards_holder.read().await;
+            for shard in shard_holder.all_shards() {
+                match shard {
+                    Shard::Local(shard) => shard.on_optimizer_config_update().await?,
+                    Shard::Remote(_) => {} // Do nothing for remote shards
+                    Shard::Proxy(proxy) => proxy.on_optimizer_config_update().await?,
+                }
             }
         }
         self.config.read().await.save(&self.path)?;
@@ -717,17 +691,27 @@ impl Collection {
     }
 
     pub async fn info(&self, shard_selection: Option<ShardId>) -> CollectionResult<CollectionInfo> {
-        let target_shards = self.target_shards(shard_selection)?;
-        let first_shard = target_shards
-            .first()
-            .ok_or_else(|| CollectionError::ServiceError {
-                error: "There are no shards for selected collection".to_string(),
-            })?;
+        let (all_shard_collection_results, mut info) = {
+            let shards_holder = self.shards_holder.read().await;
 
-        let mut info = first_shard.info().await?;
-        let info_futures = target_shards.iter().skip(1).map(|shard| shard.info());
+            let target_shards = shards_holder.target_shards(shard_selection)?;
 
-        let all_shard_collection_results = try_join_all(info_futures).await?;
+            let first_shard =
+                *target_shards
+                    .first()
+                    .ok_or_else(|| CollectionError::ServiceError {
+                        error: "There are no shards for selected collection".to_string(),
+                    })?;
+
+            let info = first_shard.get().info().await?;
+            let info_futures = target_shards
+                .into_iter()
+                .skip(1)
+                .map(|shard| shard.get().info());
+
+            (try_join_all(info_futures).await?, info)
+        };
+
         all_shard_collection_results
             .into_iter()
             .for_each(|mut shard_info| {
@@ -746,12 +730,7 @@ impl Collection {
     }
 
     pub async fn before_drop(&mut self) {
-        let futures: FuturesUnordered<_> = self
-            .shards
-            .iter_mut()
-            .map(|(_, shard)| shard.before_drop())
-            .collect();
-        futures.collect::<Vec<()>>().await;
+        self.shards_holder.write().await.before_drop().await;
         self.before_drop_called = true
     }
 
@@ -759,15 +738,17 @@ impl Collection {
         State {
             config: self.config.read().await.clone(),
             shard_to_peer: self
-                .shards
-                .iter()
+                .shards_holder
+                .read()
+                .await
+                .get_shards()
                 .map(|(shard_id, shard)| (*shard_id, shard.peer_id(this_peer_id)))
                 .collect(),
         }
     }
 
     pub async fn apply_state(
-        &mut self,
+        &self,
         state: State,
         this_peer_id: PeerId,
         collection_path: &Path,
@@ -820,21 +801,24 @@ impl Collection {
 
         create_dir_all(&snapshot_path_with_tmp_extension).await?;
 
-        // Create snapshot of each shard
-        for (shard_id, shard) in self.shards.iter() {
-            let shard_snapshot_path =
-                snapshot_path_with_tmp_extension.join(format!("{}", shard_id));
-            create_dir_all(&shard_snapshot_path).await?;
-            match shard {
-                Shard::Local(local_shard) => {
-                    local_shard.create_snapshot(&shard_snapshot_path).await?;
-                }
-                Shard::Proxy(proxy_shard) => {
-                    proxy_shard.create_snapshot(&shard_snapshot_path).await?;
-                }
-                Shard::Remote(remote_shard) => {
-                    // copy shard directory to snapshot directory
-                    remote_shard.create_snapshot(&shard_snapshot_path).await?;
+        {
+            let shards_holder = self.shards_holder.read().await;
+            // Create snapshot of each shard
+            for (shard_id, shard) in shards_holder.get_shards() {
+                let shard_snapshot_path =
+                    snapshot_path_with_tmp_extension.join(format!("{}", shard_id));
+                create_dir_all(&shard_snapshot_path).await?;
+                match shard {
+                    Shard::Local(local_shard) => {
+                        local_shard.create_snapshot(&shard_snapshot_path).await?;
+                    }
+                    Shard::Proxy(proxy_shard) => {
+                        proxy_shard.create_snapshot(&shard_snapshot_path).await?;
+                    }
+                    Shard::Remote(remote_shard) => {
+                        // copy shard directory to snapshot directory
+                        remote_shard.create_snapshot(&shard_snapshot_path).await?;
+                    }
                 }
             }
         }
@@ -890,6 +874,18 @@ impl Collection {
         }
 
         Ok(())
+    }
+
+    pub async fn shards_distribution(&self, local_peer_id: PeerId) -> Vec<(ShardId, PeerId)> {
+        let shard_holder = self.shards_holder.read().await;
+        shard_holder
+            .get_shards()
+            .map(|(shard_id, shard)| match shard {
+                Shard::Local(_local_shard) => (*shard_id, local_peer_id),
+                Shard::Proxy(_proxy_shard) => (*shard_id, local_peer_id),
+                Shard::Remote(remote_shard) => (*shard_id, remote_shard.peer_id),
+            })
+            .collect()
     }
 }
 
