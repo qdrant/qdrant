@@ -685,11 +685,12 @@
     "/collections/{collection_name}/cluster": {
       "get": {
         "tags": [
-          "collections"
+          "collections",
+          "cluster"
         ],
         "summary": "Collection cluster info",
         "description": "Get cluster information for a collection",
-        "operationId": "get_cluster_info",
+        "operationId": "collection_cluster_info",
         "parameters": [
           {
             "name": "collection_name",
@@ -959,8 +960,7 @@
     "/snapshots": {
       "get": {
         "tags": [
-          "snapshots",
-          "collections"
+          "snapshots"
         ],
         "summary": "List of storage snapshots",
         "description": "Get list of snapshots of the whole storage",
@@ -1019,8 +1019,7 @@
       },
       "post": {
         "tags": [
-          "snapshots",
-          "collections"
+          "snapshots"
         ],
         "summary": "Create storage snapshot",
         "description": "Create new snapshot of the whole storage",
@@ -1078,8 +1077,7 @@
     "/snapshots/{snapshot_name}": {
       "get": {
         "tags": [
-          "snapshots",
-          "collections"
+          "snapshots"
         ],
         "summary": "Download storage snapshot",
         "description": "Download specified snapshot of the whole storage as a file",

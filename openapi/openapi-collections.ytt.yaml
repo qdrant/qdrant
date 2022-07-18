@@ -189,9 +189,10 @@ paths:
     get:
       tags:
         - collections
+        - cluster
       summary: Collection cluster info
       description: Get cluster information for a collection
-      operationId: get_cluster_info
+      operationId: collection_cluster_info
       parameters:
         - name: collection_name
           in: path
