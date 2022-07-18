@@ -23,6 +23,7 @@ use crate::operations::CollectionUpdateOperations;
 use crate::shard::local_shard::LocalShard;
 use crate::shard::ShardOperation;
 use crate::update_handler::UpdateSignal;
+use crate::telemetry::ShardTelemetry;
 
 type ChangedPointsSet = Arc<RwLock<HashSet<PointIdType>>>;
 

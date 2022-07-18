@@ -1,8 +1,6 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use segment::telemetry::Anonymize;
 use std::path::Path;
 use std::sync::Arc;
-
 use collection::telemetry::CollectionTelemetry;
 use serde::Serialize;
 use storage::Dispatcher;

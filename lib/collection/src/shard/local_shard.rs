@@ -30,6 +30,7 @@ use crate::shard::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shard::{CollectionId, ShardId};
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
+use crate::telemetry::ShardTelemetry;
 
 /// LocalShard
 ///

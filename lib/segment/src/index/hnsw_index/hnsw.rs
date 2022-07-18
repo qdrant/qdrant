@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use atomic_refcell::AtomicRefCell;
 use log::debug;

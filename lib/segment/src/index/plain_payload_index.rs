@@ -7,6 +7,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use schemars::_serde_json::Value;
 
+use crate::telemetry::{TelemetryOperationStatistics, VectorIndexTelemetry};
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTrackerSS;
