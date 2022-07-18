@@ -26,8 +26,8 @@ use crate::operations::snapshot_ops::{
 };
 use crate::operations::types::{
     CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
-    CountResult, PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult,
-    SearchRequest, ShardInfo, UpdateResult,
+    CountResult, LocalShardInfo, PointRequest, RecommendRequest, Record, RemoteShardInfo,
+    ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;
@@ -732,19 +732,28 @@ impl Collection {
 
     pub async fn cluster_info(&self) -> CollectionResult<CollectionClusterInfo> {
         let shard_count = self.shards.len();
-        let mut shard_info = Vec::with_capacity(shard_count);
+        let mut local_shards = Vec::new();
+        let mut remote_shards = Vec::new();
         for (shard_id, shard) in &self.shards {
             let shard_id = *shard_id;
             match shard {
-                Shard::Local(_) => shard_info.push(ShardInfo::Local { shard_id }),
-                Shard::Remote(rs) => shard_info.push(ShardInfo::Remote {
+                Shard::Local(_) => local_shards.push(LocalShardInfo { shard_id }),
+                Shard::Remote(rs) => remote_shards.push(RemoteShardInfo {
                     shard_id,
                     peer_id: rs.peer_id,
                 }),
-                Shard::Proxy(_) => shard_info.push(ShardInfo::Local { shard_id }),
+                Shard::Proxy(_) => local_shards.push(LocalShardInfo { shard_id }),
             }
         }
-        let info = CollectionClusterInfo { shards: shard_info };
+        // sort by shard_id
+        local_shards.sort_by_key(|k| k.shard_id);
+        remote_shards.sort_by_key(|k| k.shard_id);
+
+        let info = CollectionClusterInfo {
+            shard_count,
+            local_shards,
+            remote_shards,
+        };
         Ok(info)
     }
 

@@ -49,7 +49,7 @@ def test_collection_sharding(tmp_path: pathlib.Path):
 
     # Check collection's cluster info
     collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], "test_collection")
-    assert len(collection_cluster_info["shards"]) == N_SHARDS
+    assert collection_cluster_info["shard_count"] == N_SHARDS
 
     # Create points in first peer's collection
     r = requests.put(

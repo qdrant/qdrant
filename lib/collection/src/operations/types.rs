@@ -89,16 +89,22 @@ pub struct CollectionInfo {
 /// Current clustering distribution for the collection
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CollectionClusterInfo {
-    pub shards: Vec<ShardInfo>,
+    pub shard_count: usize,
+    pub local_shards: Vec<LocalShardInfo>,
+    pub remote_shards: Vec<RemoteShardInfo>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum ShardInfo {
-    /// Local shard with `shard_id` id
-    Local { shard_id: ShardId },
-    /// Remote shard with `shard_id` id on `peer_id` peer
-    Remote { shard_id: ShardId, peer_id: PeerId },
+pub struct LocalShardInfo {
+    pub shard_id: ShardId,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct RemoteShardInfo {
+    pub shard_id: ShardId,
+    pub peer_id: PeerId,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
