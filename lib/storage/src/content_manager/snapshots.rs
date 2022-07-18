@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use serde::{Deserialize, Serialize};
 
 use collection::operations::snapshot_ops::{
     get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
@@ -9,6 +10,16 @@ use tokio::io::AsyncWriteExt;
 
 use crate::content_manager::toc::FULL_SNAPSHOT_FILE_NAME;
 use crate::{StorageError, TableOfContent};
+
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SnapshotConfig {
+    /// Map collection name to snapshot file name
+    pub collections_mapping: HashMap<String, String>,
+    /// Aliases for collections <alias>:<collection_name>
+    #[serde(default)]
+    pub collections_aliases: HashMap<String, String>,
+}
 
 pub async fn get_full_snapshot_path(
     toc: &TableOfContent,
@@ -52,13 +63,25 @@ pub async fn do_create_full_snapshot(
         })
         .collect();
 
+
+    let mut alias_mapping: HashMap<String, String> = Default::default();
+    for collection_name in &all_collections {
+        for alias in toc.collection_aliases(collection_name).await? {
+            alias_mapping.insert(alias.to_string(), collection_name.to_string());
+        }
+    }
+
     let config_path = snapshot_dir.join(format!("config-{current_time}.json"));
 
     {
+        let snapshot_config = SnapshotConfig {
+            collections_mapping: collection_name_to_snapshot_path,
+            collections_aliases: alias_mapping,
+        };
         let mut config_file = tokio::fs::File::create(&config_path).await?;
         config_file
             .write_all(
-                serde_json::to_string_pretty(&collection_name_to_snapshot_path)
+                serde_json::to_string_pretty(&snapshot_config)
                     .unwrap()
                     .as_bytes(),
             )

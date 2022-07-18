@@ -2,7 +2,7 @@ use self::collection_meta_ops::CollectionMetaOperations;
 use self::consensus_state::CollectionsSnapshot;
 use self::errors::StorageError;
 
-mod alias_mapping;
+pub mod alias_mapping;
 pub mod collection_meta_ops;
 mod collections_ops;
 pub mod consensus_state;

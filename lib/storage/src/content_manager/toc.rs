@@ -34,6 +34,7 @@ use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::types::{PeerAddressById, StorageConfig};
 
+pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const SNAPSHOTS_TMP_DIR: &str = "snapshots_tmp";
 pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
@@ -95,7 +96,7 @@ impl TableOfContent {
 
             collections.insert(collection_name, collection);
         }
-        let alias_path = Path::new(&storage_config.storage_path).join("aliases");
+        let alias_path = Path::new(&storage_config.storage_path).join(ALIASES_PATH);
         let alias_persistence =
             AliasPersistence::open(alias_path).expect("Can't open database by the provided config");
         TableOfContent {

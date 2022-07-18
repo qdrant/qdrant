@@ -1,10 +1,11 @@
-use std::collections::HashMap;
 use std::fs::{remove_dir_all, rename};
 use std::path::Path;
 
 use collection::collection::Collection;
 use log::info;
-use storage::content_manager::toc::COLLECTIONS_DIR;
+use storage::content_manager::alias_mapping::AliasPersistence;
+use storage::content_manager::snapshots::SnapshotConfig;
+use storage::content_manager::toc::{ALIASES_PATH, COLLECTIONS_DIR};
 
 /// Recover snapshots from the given arguments
 ///
@@ -71,10 +72,11 @@ pub fn recover_full_snapshot(snapshot_path: &str, storage_dir: &str, force: bool
     // Read configuration file with snapshot-to-collection mapping
     let config_path = temporary_dir.join("config.json");
     let config_file = std::fs::File::open(&config_path).unwrap();
-    let config_json: HashMap<String, String> = serde_json::from_reader(config_file).unwrap();
+    let config_json: SnapshotConfig = serde_json::from_reader(config_file).unwrap();
 
     // Create mapping from the configuration file
     let mapping: Vec<String> = config_json
+        .collections_mapping
         .iter()
         .map(|(collection_name, snapshot_file)| {
             format!(
@@ -87,6 +89,19 @@ pub fn recover_full_snapshot(snapshot_path: &str, storage_dir: &str, force: bool
 
     // Launch regular recovery of snapshots
     recover_snapshots(&mapping, force, storage_dir);
+
+    let alias_path = Path::new(storage_dir).join(ALIASES_PATH);
+    let mut alias_persistence =
+        AliasPersistence::open(alias_path).expect("Can't open database by the provided config");
+    for (alias, collection_name) in config_json.collections_aliases {
+        if alias_persistence.get(&alias).is_some() && !force {
+            panic!(
+                "Alias {} already exists. Use --force-snapshot to overwrite it.",
+                alias
+            );
+        }
+        alias_persistence.insert(alias, collection_name).unwrap();
+    }
 
     // Remove temporary directory
     remove_dir_all(&temporary_dir).unwrap();
