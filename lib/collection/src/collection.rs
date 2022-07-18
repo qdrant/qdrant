@@ -25,8 +25,9 @@ use crate::operations::snapshot_ops::{
     get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
 };
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    RecommendRequest, Record, ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
+    CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
+    CountResult, LocalShardInfo, PointRequest, RecommendRequest, Record, RemoteShardInfo,
+    ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;
@@ -37,7 +38,7 @@ use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shard::{
     create_shard_dir, shard_path, ChannelService, CollectionId, PeerId, Shard, ShardId,
-    HASH_RING_SHARD_SCALE,
+    ShardOperation, HASH_RING_SHARD_SCALE,
 };
 use crate::telemetry::CollectionTelemetry;
 
@@ -726,6 +727,53 @@ impl Collection {
                 info.payload_schema
                     .extend(shard_info.payload_schema.drain());
             });
+        Ok(info)
+    }
+
+    pub async fn cluster_info(&self, peer_id: PeerId) -> CollectionResult<CollectionClusterInfo> {
+        let shards = self.shards_holder.read().await;
+        let shard_count = shards.len();
+        let mut local_shards = Vec::new();
+        let mut remote_shards = Vec::new();
+        let count_request = Arc::new(CountRequest {
+            filter: None,
+            exact: true,
+        });
+        for (shard_id, shard) in shards.get_shards() {
+            let shard_id = *shard_id;
+            match shard {
+                Shard::Local(ls) => {
+                    let count_result = ls.count(count_request.clone()).await?;
+                    let points_count = count_result.count;
+                    local_shards.push(LocalShardInfo {
+                        shard_id,
+                        points_count,
+                    })
+                }
+                Shard::Remote(rs) => remote_shards.push(RemoteShardInfo {
+                    shard_id,
+                    peer_id: rs.peer_id,
+                }),
+                Shard::Proxy(ls) => {
+                    let count_result = ls.count(count_request.clone()).await?;
+                    let points_count = count_result.count;
+                    local_shards.push(LocalShardInfo {
+                        shard_id,
+                        points_count,
+                    })
+                }
+            }
+        }
+        // sort by shard_id
+        local_shards.sort_by_key(|k| k.shard_id);
+        remote_shards.sort_by_key(|k| k.shard_id);
+
+        let info = CollectionClusterInfo {
+            peer_id,
+            shard_count,
+            local_shards,
+            remote_shards,
+        };
         Ok(info)
     }
 

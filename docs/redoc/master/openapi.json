@@ -682,6 +682,75 @@
         }
       }
     },
+    "/collections/{collection_name}/cluster": {
+      "get": {
+        "tags": [
+          "collections"
+        ],
+        "summary": "Collection cluster info",
+        "description": "Get cluster information for a collection",
+        "operationId": "get_cluster_info",
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to retrieve the cluster info for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/CollectionClusterInfo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections/{collection_name}/snapshots": {
       "get": {
         "tags": [
@@ -3864,6 +3933,86 @@
             "description": "Number of points which satisfy the conditions",
             "type": "integer",
             "format": "uint",
+            "minimum": 0
+          }
+        }
+      },
+      "CollectionClusterInfo": {
+        "description": "Current clustering distribution for the collection",
+        "type": "object",
+        "required": [
+          "local_shards",
+          "peer_id",
+          "remote_shards",
+          "shard_count"
+        ],
+        "properties": {
+          "peer_id": {
+            "description": "ID of this peer",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "shard_count": {
+            "description": "Total number of shards",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "local_shards": {
+            "description": "Local shards",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LocalShardInfo"
+            }
+          },
+          "remote_shards": {
+            "description": "Remote shards",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RemoteShardInfo"
+            }
+          }
+        }
+      },
+      "LocalShardInfo": {
+        "type": "object",
+        "required": [
+          "points_count",
+          "shard_id"
+        ],
+        "properties": {
+          "shard_id": {
+            "description": "Local shard id",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "points_count": {
+            "description": "Number of points in the shard",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
+      },
+      "RemoteShardInfo": {
+        "type": "object",
+        "required": [
+          "peer_id",
+          "shard_id"
+        ],
+        "properties": {
+          "shard_id": {
+            "description": "Remote shard id",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "peer_id": {
+            "description": "Remote peer id",
+            "type": "integer",
+            "format": "uint64",
             "minimum": 0
           }
         }

@@ -48,7 +48,7 @@ pub struct TableOfContent {
     search_runtime: Runtime,
     collection_management_runtime: Runtime,
     alias_persistence: RwLock<AliasPersistence>,
-    this_peer_id: PeerId,
+    pub this_peer_id: PeerId,
     channel_service: ChannelService,
 }
 

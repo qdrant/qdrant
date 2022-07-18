@@ -118,6 +118,17 @@ async fn update_aliases(
     process_response(response, timing)
 }
 
+#[get("/collections/{name}/cluster")]
+async fn get_cluster_info(
+    toc: web::Data<Arc<TableOfContent>>,
+    path: web::Path<String>,
+) -> impl Responder {
+    let name = path.into_inner();
+    let timing = Instant::now();
+    let response = do_get_collection_cluster(&toc.into_inner(), &name).await;
+    process_response(response, timing)
+}
+
 // Configure services
 pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
     cfg.service(get_collections)
@@ -125,7 +136,8 @@ pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
         .service(create_collection)
         .service(update_collection)
         .service(delete_collection)
-        .service(update_aliases);
+        .service(update_aliases)
+        .service(get_cluster_info);
 }
 
 #[cfg(test)]
