@@ -1,9 +1,10 @@
-use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::binary_heap::Iter as BinaryHeapIter;
 use std::collections::BinaryHeap;
 use std::iter::Rev;
 use std::vec::IntoIter as VecIntoIter;
+
+use serde::{Deserialize, Serialize};
 
 /// This is a MinHeap by default - it will keep the largest elements, pop smallest
 #[derive(Deserialize, Serialize, Clone, Debug)]

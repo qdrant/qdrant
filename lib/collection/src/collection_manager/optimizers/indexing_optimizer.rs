@@ -215,11 +215,11 @@ mod tests {
     use parking_lot::lock_api::RwLock;
     use rand::thread_rng;
     use segment::fixtures::index_fixtures::random_vector;
+    use segment::types::{Payload, PayloadSchemaType, StorageType};
     use serde_json::json;
     use tempdir::TempDir;
 
-    use segment::types::{Payload, PayloadSchemaType, StorageType};
-
+    use super::*;
     use crate::collection_manager::fixtures::random_segment;
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
     use crate::collection_manager::segments_updater::{
@@ -227,8 +227,6 @@ mod tests {
     };
     use crate::operations::point_ops::{Batch, PointInsertOperations, PointOperations};
     use crate::operations::{CreateIndex, FieldIndexOperations};
-
-    use super::*;
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();

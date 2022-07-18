@@ -1,9 +1,5 @@
-use tonic::{Request, Response, Status};
+use std::sync::Arc;
 
-use crate::tonic::api::points_common::{
-    clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
-    recommend, scroll, search, set_payload, upsert,
-};
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CountPointsInternal, CountResponse,
@@ -13,8 +9,13 @@ use api::grpc::qdrant::{
     ScrollResponse, SearchPointsInternal, SearchResponse, SetPayloadPointsInternal,
     UpsertPointsInternal,
 };
-use std::sync::Arc;
 use storage::content_manager::toc::TableOfContent;
+use tonic::{Request, Response, Status};
+
+use crate::tonic::api::points_common::{
+    clear_payload, count, create_field_index, delete, delete_field_index, delete_payload, get,
+    recommend, scroll, search, set_payload, upsert,
+};
 
 /// This API is intended for P2P communication within a distributed deployment.
 pub struct PointsInternalService {

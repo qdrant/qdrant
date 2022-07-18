@@ -1,13 +1,15 @@
-use crate::common::collections::{do_create_snapshot, do_list_snapshots};
+use std::sync::Arc;
+use std::time::Instant;
+
 use api::grpc::qdrant::snapshots_server::Snapshots;
 use api::grpc::qdrant::{
     CreateSnapshotRequest, CreateSnapshotResponse, ListSnapshotsRequest, ListSnapshotsResponse,
 };
-use std::sync::Arc;
-use std::time::Instant;
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 use tonic::{async_trait, Request, Response, Status};
+
+use crate::common::collections::{do_create_snapshot, do_list_snapshots};
 
 pub struct SnapshotsService {
     toc: Arc<TableOfContent>,

@@ -1,9 +1,10 @@
 //! Contains functions for interpreting filter queries and defining if given points pass the conditions
 
+use serde_json::Value;
+
 use crate::types::{
     GeoBoundingBox, GeoRadius, Match, MatchValue, Range, ValueVariants, ValuesCount,
 };
-use serde_json::Value;
 
 pub trait ValueChecker {
     fn check_match(&self, payload: &Value) -> bool;
@@ -86,9 +87,10 @@ impl ValueChecker for ValuesCount {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
     use crate::types::GeoPoint;
-    use serde_json::json;
 
     #[test]
     fn test_geo_matching() {

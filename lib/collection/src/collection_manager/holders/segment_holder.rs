@@ -1,21 +1,20 @@
 use std::cmp::{max, min};
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::ops::Mul;
+use std::path::Path;
 use std::sync::Arc;
+use std::thread::sleep;
+use std::time::Duration;
 
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
-
 use segment::entry::entry_point::{OperationError, OperationResult, SegmentEntry};
 use segment::segment::Segment;
 use segment::types::{PointIdType, SeqNumberType};
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::operations::types::CollectionError;
-use std::ops::Mul;
-use std::path::Path;
-use std::thread::sleep;
-use std::time::Duration;
 
 pub type SegmentId = usize;
 
@@ -431,16 +430,15 @@ impl<'s> SegmentHolder {
 
 #[cfg(test)]
 mod tests {
-    use tempdir::TempDir;
+    use std::fs::read_dir;
+    use std::{thread, time};
 
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
     use segment::types::Distance;
-
-    use crate::collection_manager::fixtures::{build_segment_1, build_segment_2};
+    use tempdir::TempDir;
 
     use super::*;
-    use std::fs::read_dir;
-    use std::{thread, time};
+    use crate::collection_manager::fixtures::{build_segment_1, build_segment_2};
 
     #[test]
     fn test_add_and_swap() {

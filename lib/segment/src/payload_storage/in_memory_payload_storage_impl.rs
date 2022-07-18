@@ -1,4 +1,3 @@
-use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
 use std::collections::HashMap;
 
 use serde_json::Value;
@@ -6,6 +5,7 @@ use serde_json::Value;
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::PayloadStorage;
+use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
 
 impl PayloadStorage for InMemoryPayloadStorage {
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
@@ -56,12 +56,14 @@ impl PayloadStorage for InMemoryPayloadStorage {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
+    use serde_json::json;
+
     use super::*;
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::payload_storage::query_checker::check_payload;
     use crate::types::{Condition, FieldCondition, Filter, OwnedPayloadRef};
-    use serde_json::json;
-    use std::cell::RefCell;
 
     #[test]
     fn test_condition_checking() {

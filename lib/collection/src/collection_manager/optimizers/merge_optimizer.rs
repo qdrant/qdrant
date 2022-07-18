@@ -1,3 +1,9 @@
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+
+use itertools::Itertools;
+use segment::types::{HnswConfig, SegmentType, VECTOR_ELEMENT_SIZE};
+
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
@@ -5,10 +11,6 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
-use itertools::Itertools;
-use segment::types::{HnswConfig, SegmentType, VECTOR_ELEMENT_SIZE};
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
 
 const BYTES_IN_KB: usize = 1024;
 
@@ -125,13 +127,15 @@ impl SegmentOptimizer for MergeOptimizer {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+
+    use parking_lot::RwLock;
+    use tempdir::TempDir;
+
     use super::*;
     use crate::collection_manager::fixtures::{get_merge_optimizer, random_segment};
     use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
-    use parking_lot::RwLock;
-    use std::sync::atomic::AtomicBool;
-    use std::sync::Arc;
-    use tempdir::TempDir;
 
     #[test]
     fn test_max_merge_size() {

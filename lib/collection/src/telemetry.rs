@@ -1,9 +1,7 @@
-use crate::config::CollectionConfig;
-use crate::shard::ShardId;
-use segment::telemetry::{
-    telemetry_hash, Anonymize, SegmentTelemetry, TelemetryOperationStatistics,
-};
 use serde::Serialize;
+
+use crate::config::CollectionConfig;
+use crate::operations::types::{CollectionStatus, OptimizersStatus};
 
 #[derive(Serialize, Clone)]
 pub enum ShardTelemetry {

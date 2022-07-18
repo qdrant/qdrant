@@ -1,9 +1,7 @@
 use parking_lot::RwLock;
-
 use segment::types::SeqNumberType;
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
-
 use crate::collection_manager::segments_updater::*;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
@@ -72,15 +70,13 @@ impl CollectionUpdater {
 
 #[cfg(test)]
 mod tests {
+    use segment::types::{Payload, WithPayload};
     use tempdir::TempDir;
 
-    use segment::types::{Payload, WithPayload};
-
+    use super::*;
     use crate::collection_manager::fixtures::build_test_holder;
     use crate::collection_manager::segments_searcher::SegmentsSearcher;
     use crate::collection_manager::segments_updater::upsert_points;
-
-    use super::*;
     use crate::operations::payload_ops::{DeletePayload, PayloadOps, SetPayload};
     use crate::operations::point_ops::PointOperations;
 

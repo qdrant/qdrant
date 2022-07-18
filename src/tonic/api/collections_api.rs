@@ -1,18 +1,18 @@
-use storage::Dispatcher;
-use tonic::{Request, Response, Status};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use crate::common::collections::*;
 use api::grpc::qdrant::collections_server::Collections;
 use api::grpc::qdrant::{
     ChangeAliases, CollectionOperationResponse, CreateCollection, DeleteCollection,
     GetCollectionInfoRequest, GetCollectionInfoResponse, ListCollectionsRequest,
     ListCollectionsResponse, UpdateCollection,
 };
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-
-use crate::tonic::api::collections_common::get;
 use storage::content_manager::conversions::error_to_status;
+use storage::Dispatcher;
+use tonic::{Request, Response, Status};
+
+use crate::common::collections::*;
+use crate::tonic::api::collections_common::get;
 
 pub struct CollectionsService {
     dispatcher: Arc<Dispatcher>,

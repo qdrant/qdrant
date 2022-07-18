@@ -1,9 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use crate::operations::types::CollectionResult;
-use crate::shard::PeerId;
 use segment::common::file_operations::{atomic_save_json, read_json};
 use serde::{Deserialize, Serialize};
+
+use crate::operations::types::CollectionResult;
+use crate::shard::PeerId;
 
 pub const SHARD_CONFIG_FILE: &str = "shard_config.json";
 

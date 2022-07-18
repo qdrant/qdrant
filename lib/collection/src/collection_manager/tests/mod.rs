@@ -1,17 +1,19 @@
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+use std::sync::Arc;
+
+use itertools::Itertools;
+use parking_lot::RwLock;
+use segment::entry::entry_point::SegmentEntry;
+use segment::types::{PayloadKeyType, PayloadSchemaType, PointIdType};
+use tempdir::TempDir;
+
 use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
 };
 use crate::collection_manager::segments_updater::upsert_points;
-use itertools::Itertools;
-use parking_lot::RwLock;
-use segment::entry::entry_point::SegmentEntry;
-use segment::types::{PayloadKeyType, PayloadSchemaType, PointIdType};
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
-use std::sync::Arc;
-use tempdir::TempDir;
 
 fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> SegmentId {
     let mut write_segments = segments.write();

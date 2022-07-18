@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::FieldIndex;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
@@ -8,7 +10,6 @@ use crate::types::{
     Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoRadius, Match, MatchValue,
     PointOffsetType, Range, ValueVariants,
 };
-use std::collections::HashSet;
 
 pub fn condition_converter<'a>(
     condition: &'a Condition,

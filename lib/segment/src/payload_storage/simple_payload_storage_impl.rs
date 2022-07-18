@@ -1,4 +1,3 @@
-use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
 use std::collections::HashMap;
 
 use serde_json::Value;
@@ -7,6 +6,7 @@ use crate::common::rocksdb_operations::{db_options, DB_PAYLOAD_CF};
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::PayloadStorage;
+use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
 
 impl PayloadStorage for SimplePayloadStorage {
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
@@ -69,10 +69,10 @@ impl PayloadStorage for SimplePayloadStorage {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    use crate::common::rocksdb_operations::open_db;
     use tempdir::TempDir;
+
+    use super::*;
+    use crate::common::rocksdb_operations::open_db;
 
     #[test]
     fn test_wipe() {

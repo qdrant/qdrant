@@ -8,13 +8,13 @@ pub mod types;
 
 use std::collections::HashMap;
 
-use crate::hash_ring::HashRing;
-use crate::shard::ShardId;
 use schemars::JsonSchema;
 use segment::types::{ExtendedPointId, PayloadSchemaType};
 use serde::{Deserialize, Serialize};
 
 use self::types::CollectionResult;
+use crate::hash_ring::HashRing;
+use crate::shard::ShardId;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -138,8 +138,9 @@ impl SplitByShard for CollectionUpdateOperations {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json;
+
+    use super::*;
 
     #[test]
     fn test_deserialize() {

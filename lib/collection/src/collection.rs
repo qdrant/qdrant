@@ -1,3 +1,24 @@
+use std::cmp::max;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use futures::future::{join_all, try_join_all};
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
+use itertools::Itertools;
+use segment::common::version::StorageVersion;
+use segment::spaces::tools::{peek_top_largest_scores_iterable, peek_top_smallest_scores_iterable};
+use segment::types::{
+    Condition, ExtendedPointId, Filter, HasIdCondition, Order, ScoredPoint, VectorElementType,
+    WithPayload, WithPayloadInterface,
+};
+use semver::{Version, VersionReq};
+use tar::Builder as TarBuilder;
+use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
+use tokio::runtime::Handle;
+use tokio::sync::RwLock;
+
 use crate::collection_state::State;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
@@ -20,25 +41,6 @@ use crate::shard::{
     ShardOperation, ShardTransfer, HASH_RING_SHARD_SCALE,
 };
 use crate::telemetry::CollectionTelemetry;
-use futures::future::{join_all, try_join_all};
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
-use itertools::Itertools;
-use segment::common::version::StorageVersion;
-use segment::spaces::tools::{peek_top_largest_scores_iterable, peek_top_smallest_scores_iterable};
-use segment::types::{
-    Condition, ExtendedPointId, Filter, HasIdCondition, Order, ScoredPoint, VectorElementType,
-    WithPayload, WithPayloadInterface,
-};
-use semver::{Version, VersionReq};
-use std::cmp::max;
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use tar::Builder as TarBuilder;
-use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
-use tokio::runtime::Handle;
-use tokio::sync::RwLock;
 
 struct CollectionVersion;
 

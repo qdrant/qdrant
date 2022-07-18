@@ -1,10 +1,9 @@
 mod api;
 
-use crate::tonic::api::collections_api::CollectionsService;
-use crate::tonic::api::collections_internal_api::CollectionsInternalService;
-use crate::tonic::api::points_api::PointsService;
-use crate::tonic::api::points_internal_api::PointsInternalService;
-use crate::tonic::api::snapshots_api::SnapshotsService;
+use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
 use ::api::grpc::models::VersionInfo;
 use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
 use ::api::grpc::qdrant::collections_server::CollectionsServer;
@@ -13,12 +12,16 @@ use ::api::grpc::qdrant::points_server::PointsServer;
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
 use ::api::grpc::qdrant::{HealthCheckReply, HealthCheckRequest};
-use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 use storage::Dispatcher;
 use tokio::{runtime, signal};
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::transport::Server;
+use tonic::{Request, Response, Status};
+
+use crate::tonic::api::collections_api::CollectionsService;
+use crate::tonic::api::collections_internal_api::CollectionsInternalService;
+use crate::tonic::api::points_api::PointsService;
+use crate::tonic::api::points_internal_api::PointsInternalService;
+use crate::tonic::api::snapshots_api::SnapshotsService;
 
 #[derive(Default)]
 pub struct QdrantService {}
@@ -75,8 +78,9 @@ pub fn init_internal(
     internal_grpc_port: u16,
     to_consensus: std::sync::mpsc::SyncSender<crate::consensus::Message>,
 ) -> std::io::Result<()> {
-    use crate::tonic::api::raft_api::RaftService;
     use ::api::grpc::qdrant::raft_server::RaftServer;
+
+    use crate::tonic::api::raft_api::RaftService;
 
     let toc = dispatcher.toc().clone();
     let tonic_runtime = runtime::Builder::new_multi_thread()

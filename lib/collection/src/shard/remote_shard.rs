@@ -1,3 +1,19 @@
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use api::grpc::qdrant::collections_internal_client::CollectionsInternalClient;
+use api::grpc::qdrant::points_internal_client::PointsInternalClient;
+use api::grpc::qdrant::{
+    CountPoints, CountPointsInternal, GetCollectionInfoRequest, GetCollectionInfoRequestInternal,
+    GetPoints, GetPointsInternal, ScrollPoints, ScrollPointsInternal, SearchPoints,
+    SearchPointsInternal,
+};
+use async_trait::async_trait;
+use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
+use tokio::runtime::Handle;
+use tonic::transport::{Channel, Uri};
+use tonic::Status;
+
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::PointOperations;
 use crate::operations::types::{
@@ -12,21 +28,6 @@ use crate::shard::conversions::{
 };
 use crate::shard::shard_config::ShardConfig;
 use crate::shard::{ChannelService, CollectionId, PeerId, ShardId, ShardOperation};
-use api::grpc::qdrant::{
-    collections_internal_client::CollectionsInternalClient,
-    points_internal_client::PointsInternalClient, CountPoints, CountPointsInternal,
-    GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
-    ScrollPoints, ScrollPointsInternal, SearchPoints, SearchPointsInternal,
-};
-use async_trait::async_trait;
-use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
-use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use tokio::runtime::Handle;
-use tonic::transport::Channel;
-use tonic::transport::Uri;
-use tonic::Status;
 
 /// RemoteShard
 ///

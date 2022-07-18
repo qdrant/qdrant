@@ -1,8 +1,8 @@
 #[cfg(target_feature = "neon")]
-use crate::types::{ScoreType, VectorElementType};
+use std::arch::aarch64::*;
 
 #[cfg(target_feature = "neon")]
-use std::arch::aarch64::*;
+use crate::types::{ScoreType, VectorElementType};
 
 #[cfg(target_feature = "neon")]
 pub(crate) unsafe fn euclid_similarity_neon(

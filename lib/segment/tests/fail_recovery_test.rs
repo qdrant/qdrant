@@ -2,10 +2,11 @@ mod fixtures;
 
 #[cfg(test)]
 mod tests {
-    use crate::fixtures::segment::empty_segment;
     use segment::entry::entry_point::{OperationError, SegmentEntry, SegmentFailedState};
     use serde_json::json;
     use tempdir::TempDir;
+
+    use crate::fixtures::segment::empty_segment;
 
     #[test]
     fn test_insert_fail_recovery() {

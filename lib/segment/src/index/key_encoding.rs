@@ -157,10 +157,11 @@ pub fn decode_i64_key_ascending(buf: &[u8]) -> (u32, i64) {
 
 #[cfg(test)]
 mod tests {
+    use std::cmp::Ordering;
+
     use crate::index::key_encoding::{
         decode_f64_ascending, decode_i64_ascending, encode_f64_ascending, encode_i64_ascending,
     };
-    use std::cmp::Ordering;
 
     #[test]
     fn test_encode_f64() {

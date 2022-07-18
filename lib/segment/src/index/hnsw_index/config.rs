@@ -1,7 +1,9 @@
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
 use crate::common::file_operations::{atomic_save_json, read_json};
 use crate::entry::entry_point::OperationResult;
-use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
 
 pub const HNSW_INDEX_CONFIG_FILE: &str = "hnsw_config.json";
 

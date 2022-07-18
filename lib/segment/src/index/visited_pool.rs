@@ -1,7 +1,8 @@
 //! Structures for fast and tread-safe way to check if some points were visited or not
 
-use crate::types::PointOffsetType;
 use parking_lot::RwLock;
+
+use crate::types::PointOffsetType;
 
 /// Max number of visited lists to preserve in memory
 /// If more than this number of concurrent requests occurred - new list will be created dynamically,

@@ -3,10 +3,9 @@ use segment::types::{Filter, Payload, PayloadKeyType, PointIdType};
 use serde;
 use serde::{Deserialize, Serialize};
 
+use super::{split_iter_by_shard, OperationToShard, SplitByShard};
 use crate::hash_ring::HashRing;
 use crate::shard::ShardId;
-
-use super::{split_iter_by_shard, OperationToShard, SplitByShard};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct SetPayload {
@@ -72,9 +71,10 @@ impl SplitByShard for SetPayload {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use segment::types::Payload;
     use serde_json::Value;
+
+    use super::*;
 
     #[test]
     fn test_serialization() {

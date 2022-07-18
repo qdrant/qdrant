@@ -1,7 +1,9 @@
+use std::cmp::Ordering;
+
+use serde::{Deserialize, Serialize};
+
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::PointOffsetType;
-use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct EntryPoint {
@@ -113,8 +115,9 @@ impl EntryPoints {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rand::Rng;
+
+    use super::*;
 
     #[test]
     fn test_entry_points() {

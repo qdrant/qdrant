@@ -1,3 +1,12 @@
+use std::fs::{create_dir_all, File};
+use std::io::Read;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+
+use atomic_refcell::AtomicRefCell;
+use log::info;
+use uuid::Uuid;
+
 use crate::common::rocksdb_operations::open_db;
 use crate::common::version::StorageVersion;
 use crate::entry::entry_point::{OperationError, OperationResult};
@@ -16,13 +25,6 @@ use crate::types::{
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::VectorStorageSS;
-use atomic_refcell::AtomicRefCell;
-use log::info;
-use std::fs::{create_dir_all, File};
-use std::io::Read;
-use std::path::Path;
-use std::sync::{Arc, Mutex};
-use uuid::Uuid;
 
 fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> {
     Arc::new(AtomicRefCell::new(t))

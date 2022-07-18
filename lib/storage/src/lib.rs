@@ -3,21 +3,25 @@
 //! It provides all functions, which could be used from REST (or any other interface), but do not
 //! implement any concrete interface.
 
-use std::{ops::Deref, sync::Arc, time::Duration};
+use std::ops::Deref;
+use std::sync::Arc;
+use std::time::Duration;
 
-use content_manager::{
-    collection_meta_ops::CollectionMetaOperations, consensus_ops::ConsensusOperations,
-    consensus_state::ConsensusStateRef, errors::StorageError, toc::TableOfContent,
-};
+use content_manager::collection_meta_ops::CollectionMetaOperations;
+use content_manager::consensus_ops::ConsensusOperations;
+use content_manager::consensus_state::ConsensusStateRef;
+use content_manager::errors::StorageError;
+use content_manager::toc::TableOfContent;
 use types::ClusterStatus;
 
 pub mod content_manager;
 pub mod types;
 
 pub mod serialize_peer_addresses {
+    use std::collections::HashMap;
+
     use itertools::Itertools;
     use serde::{self, de, Deserialize, Deserializer, Serialize, Serializer};
-    use std::collections::HashMap;
 
     use crate::types::PeerAddressById;
 

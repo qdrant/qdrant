@@ -1,30 +1,22 @@
 use std::cmp;
 use std::collections::HashMap;
-use std::fs::create_dir_all;
+use std::fs::{create_dir_all, File};
+use std::io::BufWriter;
 use std::ops::Deref;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{
-    fs::File,
-    io::BufWriter,
-    path::{Path, PathBuf},
-};
 
-use crate::types::{ClusterInfo, ClusterStatus, PeerAddressById, PeerInfo, RaftInfo};
-use atomicwrites::{AtomicFile, OverwriteBehavior::AllowOverwrite};
+use atomicwrites::AtomicFile;
+use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use collection::collection_state;
 use collection::shard::{CollectionId, PeerId};
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
-use raft::eraftpb::{ConfChangeV2, SnapshotMetadata};
+use raft::eraftpb::{ConfChangeV2, ConfState, Entry as RaftEntry, HardState, SnapshotMetadata};
 use raft::util::limit_size;
-use raft::{eraftpb::Entry as RaftEntry, SoftState, Storage};
-use raft::{
-    eraftpb::{ConfState, HardState},
-    RaftState,
-};
-use raft::{GetEntriesContext, RawNode};
+use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tonic::transport::Uri;
@@ -34,6 +26,7 @@ use super::alias_mapping::AliasMapping;
 use super::consensus_ops::ConsensusOperations;
 use super::errors::StorageError;
 use super::CollectionContainer;
+use crate::types::{ClusterInfo, ClusterStatus, PeerAddressById, PeerInfo, RaftInfo};
 
 const COLLECTIONS_META_WAL_DIR: &str = "collections_meta_wal";
 pub const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
@@ -588,6 +581,7 @@ pub struct Persistent {
     state: RaftState,
     #[serde(default)] // TODO quick fix to avoid breaking the compat. with 0.8.1
     latest_snapshot_meta: SnapshotMetadataSer,
+    #[serde(default)]
     apply_progress_queue: EntryApplyProgressQueue,
     #[serde(with = "serialize_peer_addresses")]
     pub peer_address_by_id: Arc<RwLock<PeerAddressById>>,
@@ -753,12 +747,15 @@ impl Persistent {
 }
 
 mod serialize_peer_addresses {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
     use http::Uri;
     use parking_lot::RwLock;
     use serde::{self, Deserializer, Serializer};
-    use std::{collections::HashMap, sync::Arc};
 
-    use crate::{serialize_peer_addresses, types::PeerAddressById};
+    use crate::serialize_peer_addresses;
+    use crate::types::PeerAddressById;
 
     pub fn serialize<S>(
         addresses: &Arc<RwLock<PeerAddressById>>,
@@ -837,13 +834,11 @@ pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
-    use raft::{
-        eraftpb::Entry,
-        storage::{MemStorage, Storage},
-    };
-
     use std::sync::{mpsc, Arc};
+
+    use proptest::prelude::*;
+    use raft::eraftpb::Entry;
+    use raft::storage::{MemStorage, Storage};
 
     use super::{ConsensusOpWal, ConsensusState, EntryApplyProgressQueue, Persistent};
     use crate::content_manager::CollectionContainer;

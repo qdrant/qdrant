@@ -72,11 +72,13 @@ fn prob_not_select(total: usize, avg: f64, selected: usize) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::collections::HashSet;
+
     use rand::prelude::StdRng;
     use rand::seq::SliceRandom;
     use rand::SeedableRng;
-    use std::collections::HashSet;
+
+    use super::*;
 
     fn simulate(uniq: usize, avg: usize, selected: usize) -> usize {
         let mut data: Vec<_> = vec![];

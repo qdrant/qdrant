@@ -1,15 +1,15 @@
+use std::path::Path;
+use std::sync::Arc;
+
 use atomic_refcell::AtomicRefCell;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::distributions::Standard;
 use rand::Rng;
-use std::path::Path;
-use std::sync::Arc;
-use tempdir::TempDir;
-
 use segment::common::rocksdb_operations::open_db;
 use segment::types::{Distance, VectorElementType};
 use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use segment::vector_storage::VectorStorageSS;
+use tempdir::TempDir;
 
 const NUM_VECTORS: usize = 50000;
 const DIM: usize = 1000; // Larger dimensionality - greater the SIMD advantage

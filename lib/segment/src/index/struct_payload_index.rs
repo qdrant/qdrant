@@ -2,21 +2,21 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, remove_file};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-
 use std::sync::Arc;
 
-use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
-use crate::common::rocksdb_operations::open_db_with_existing_cf;
 use atomic_refcell::AtomicRefCell;
 use log::debug;
 use rocksdb::DB;
 use schemars::_serde_json::Value;
 
+use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
+use crate::common::rocksdb_operations::open_db_with_existing_cf;
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;
-use crate::index::field_index::FieldIndex;
-use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
+use crate::index::field_index::{
+    CardinalityEstimation, FieldIndex, PayloadBlockCondition, PrimaryCondition,
+};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::query_estimator::estimate_filter;
 use crate::index::query_optimization::optimizer::IndexesMap;

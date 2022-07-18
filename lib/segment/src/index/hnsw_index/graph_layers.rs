@@ -1,3 +1,9 @@
+use std::cmp::max;
+use std::path::{Path, PathBuf};
+
+use itertools::Itertools;
+use serde::{Deserialize, Serialize};
+
 use crate::common::file_operations::{atomic_save_bin, read_bin};
 use crate::common::utils::rev_range;
 use crate::entry::entry_point::OperationResult;
@@ -8,10 +14,6 @@ use crate::index::visited_pool::{VisitedList, VisitedPool};
 use crate::spaces::tools::FixedLengthPriorityQueue;
 use crate::types::PointOffsetType;
 use crate::vector_storage::ScoredPointOffset;
-use itertools::Itertools;
-use serde::{Deserialize, Serialize};
-use std::cmp::max;
-use std::path::{Path, PathBuf};
 
 pub type LinkContainer = Vec<PointOffsetType>;
 pub type LinkContainerRef<'a> = &'a [PointOffsetType];
@@ -291,6 +293,14 @@ impl GraphLayers {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+    use std::io::Write;
+
+    use itertools::Itertools;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+    use tempdir::TempDir;
+
     use super::*;
     use crate::fixtures::index_fixtures::{
         random_vector, FakeFilterContext, TestRawScorerProducer,
@@ -299,12 +309,6 @@ mod tests {
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, DotProductMetric};
     use crate::types::VectorElementType;
-    use itertools::Itertools;
-    use rand::rngs::StdRng;
-    use rand::SeedableRng;
-    use std::fs::File;
-    use std::io::Write;
-    use tempdir::TempDir;
 
     fn search_in_graph(
         query: &[VectorElementType],

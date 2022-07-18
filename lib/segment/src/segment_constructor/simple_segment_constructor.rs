@@ -1,10 +1,9 @@
-use crate::segment::Segment;
-
-use crate::types::{Distance, Indexes, SegmentConfig};
+use std::path::Path;
 
 use crate::entry::entry_point::OperationResult;
+use crate::segment::Segment;
 use crate::segment_constructor::build_segment;
-use std::path::Path;
+use crate::types::{Distance, Indexes, SegmentConfig};
 
 /// Build new segment with plain index in given directory
 ///
@@ -31,10 +30,11 @@ pub fn build_simple_segment(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::entry::entry_point::{OperationError, SegmentEntry};
     use serde_json::json;
     use tempdir::TempDir;
+
+    use super::*;
+    use crate::entry::entry_point::{OperationError, SegmentEntry};
 
     #[test]
     fn test_create_simple_segment() {

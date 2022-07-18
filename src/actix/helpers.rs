@@ -1,9 +1,10 @@
+use std::fmt::Debug;
+
 use actix_web::rt::time::Instant;
 use actix_web::{error, Error, HttpResponse, Responder};
 use api::grpc::models::{ApiResponse, ApiStatus};
 use collection::operations::types::CollectionError;
 use serde::Serialize;
-use std::fmt::Debug;
 use storage::content_manager::errors::StorageError;
 
 pub fn collection_into_actix_error(err: CollectionError) -> Error {

@@ -1,9 +1,8 @@
-use actix_files::NamedFile;
 use std::sync::Arc;
 
+use actix_files::NamedFile;
 use actix_web::rt::time::Instant;
 use actix_web::{get, post, web, Responder, Result};
-
 use storage::content_manager::toc::TableOfContent;
 
 use crate::actix::helpers::{

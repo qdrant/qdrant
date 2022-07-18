@@ -1,7 +1,8 @@
+use std::fmt::Debug;
+
 use schemars::JsonSchema;
 use serde;
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
 
 #[derive(Serialize, Deserialize)]
 pub struct VersionInfo {

@@ -1,9 +1,10 @@
+use std::path::Path;
+
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::Distance;
 use serde_json::json;
-use std::path::Path;
 
 pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()
