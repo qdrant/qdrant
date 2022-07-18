@@ -2,13 +2,14 @@ use self::collection_meta_ops::CollectionMetaOperations;
 use self::consensus_state::CollectionsSnapshot;
 use self::errors::StorageError;
 
-mod alias_mapping;
+pub mod alias_mapping;
 pub mod collection_meta_ops;
 mod collections_ops;
 pub mod consensus_state;
 pub mod conversions;
 pub mod errors;
 pub mod shard_distribution;
+pub mod snapshots;
 pub mod toc;
 
 pub mod consensus_ops {

@@ -229,6 +229,8 @@ tags:
     description: Float-point vectors with payload.
   - name: cluster
     description: Service distributed setup
+  - name: snapshots
+    description: Storage and collections snapshots
 
 paths:
 

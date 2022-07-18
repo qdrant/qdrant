@@ -4083,6 +4083,12 @@ pub mod raft_server {
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateFullSnapshotRequest {
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListFullSnapshotsRequest {
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateSnapshotRequest {
     /// Name of the collection
     #[prost(string, tag="1")]
@@ -4187,7 +4193,7 @@ pub mod snapshots_client {
             self
         }
         ///
-        ///Create snapshot
+        ///Create collection snapshot
         pub async fn create(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateSnapshotRequest>,
@@ -4206,7 +4212,7 @@ pub mod snapshots_client {
             self.inner.unary(request.into_request(), path, codec).await
         }
         ///
-        ///List snapshots
+        ///List collection snapshots
         pub async fn list(
             &mut self,
             request: impl tonic::IntoRequest<super::ListSnapshotsRequest>,
@@ -4224,6 +4230,48 @@ pub mod snapshots_client {
             let path = http::uri::PathAndQuery::from_static("/qdrant.Snapshots/List");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        ///
+        ///Create full storage snapshot
+        pub async fn create_full(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateFullSnapshotRequest>,
+        ) -> Result<tonic::Response<super::CreateSnapshotResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Snapshots/CreateFull",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        ///
+        ///List full storage snapshots
+        pub async fn list_full(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListFullSnapshotsRequest>,
+        ) -> Result<tonic::Response<super::ListSnapshotsResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Snapshots/ListFull",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -4234,16 +4282,28 @@ pub mod snapshots_server {
     #[async_trait]
     pub trait Snapshots: Send + Sync + 'static {
         ///
-        ///Create snapshot
+        ///Create collection snapshot
         async fn create(
             &self,
             request: tonic::Request<super::CreateSnapshotRequest>,
         ) -> Result<tonic::Response<super::CreateSnapshotResponse>, tonic::Status>;
         ///
-        ///List snapshots
+        ///List collection snapshots
         async fn list(
             &self,
             request: tonic::Request<super::ListSnapshotsRequest>,
+        ) -> Result<tonic::Response<super::ListSnapshotsResponse>, tonic::Status>;
+        ///
+        ///Create full storage snapshot
+        async fn create_full(
+            &self,
+            request: tonic::Request<super::CreateFullSnapshotRequest>,
+        ) -> Result<tonic::Response<super::CreateSnapshotResponse>, tonic::Status>;
+        ///
+        ///List full storage snapshots
+        async fn list_full(
+            &self,
+            request: tonic::Request<super::ListFullSnapshotsRequest>,
         ) -> Result<tonic::Response<super::ListSnapshotsResponse>, tonic::Status>;
     }
     #[derive(Debug)]
@@ -4358,6 +4418,82 @@ pub mod snapshots_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = ListSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Snapshots/CreateFull" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateFullSvc<T: Snapshots>(pub Arc<T>);
+                    impl<
+                        T: Snapshots,
+                    > tonic::server::UnaryService<super::CreateFullSnapshotRequest>
+                    for CreateFullSvc<T> {
+                        type Response = super::CreateSnapshotResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CreateFullSnapshotRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).create_full(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CreateFullSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Snapshots/ListFull" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListFullSvc<T: Snapshots>(pub Arc<T>);
+                    impl<
+                        T: Snapshots,
+                    > tonic::server::UnaryService<super::ListFullSnapshotsRequest>
+                    for ListFullSvc<T> {
+                        type Response = super::ListSnapshotsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListFullSnapshotsRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).list_full(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ListFullSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
