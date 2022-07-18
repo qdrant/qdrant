@@ -1,16 +1,15 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
 
 use collection::operations::snapshot_ops::{
     get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
 };
+use serde::{Deserialize, Serialize};
 use tar::Builder as TarBuilder;
 use tokio::io::AsyncWriteExt;
 
 use crate::content_manager::toc::FULL_SNAPSHOT_FILE_NAME;
 use crate::{StorageError, TableOfContent};
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SnapshotConfig {
@@ -62,7 +61,6 @@ pub async fn do_create_full_snapshot(
             (collection_name.to_string(), snapshot_details.name.clone())
         })
         .collect();
-
 
     let mut alias_mapping: HashMap<String, String> = Default::default();
     for collection_name in &all_collections {
