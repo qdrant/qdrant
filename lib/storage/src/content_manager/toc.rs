@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
@@ -707,14 +707,15 @@ impl TableOfContent {
             .create_collection
             .shard_number
             .unwrap_or(suggested_shard_number);
-        let mut known_peers: Vec<_> = self
+        let mut known_peers_set: HashSet<_> = self
             .channel_service
             .id_to_address
             .read()
             .keys()
             .copied()
             .collect();
-        known_peers.push(self.this_peer_id());
+        known_peers_set.insert(self.this_peer_id());
+        let known_peers: Vec<_> = known_peers_set.into_iter().collect();
 
         let shard_distribution = ShardDistributionProposal::new(shard_number, &known_peers, vec![]);
 
