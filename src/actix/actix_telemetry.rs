@@ -33,8 +33,8 @@ where
         let telemetry_data = self.telemetry_data.clone();
         Box::pin(async move {
             let response = future.await?;
-            let status = response.response().status().as_u16() as usize;
-            telemetry_data.lock().unwrap().add_response(status);
+            let status = response.response().status().as_u16();
+            telemetry_data.lock().unwrap().add_response(status as usize);
             Ok(response)
         })
     }
