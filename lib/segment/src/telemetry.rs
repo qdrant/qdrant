@@ -52,14 +52,16 @@ pub struct TelemetryOperationTimer {
 
 impl Anonymize for SegmentTelemetry {
     fn anonymize(&self) -> Self {
-        let mut anonymized = Self {
-            info: self.info.clone(),
-            config: self.config.clone(),
-            vector_index: self.vector_index.clone(),
-            payload_field_indices: self.payload_field_indices.clone(),
-        };
-        anonymized.config.vector_size = telemetry_round(self.config.vector_size);
-        anonymized
+        Self {
+            info: self.info.anonymize(),
+            config: self.config.anonymize(),
+            vector_index: self.vector_index.anonymize(),
+            payload_field_indices: self
+                .payload_field_indices
+                .iter()
+                .map(|t| t.anonymize())
+                .collect(),
+        }
     }
 }
 
@@ -139,4 +141,52 @@ pub fn telemetry_round(cnt: usize) -> usize {
         0
     };
     (cnt >> skip_bytes_count) << skip_bytes_count
+}
+
+impl Anonymize for SegmentInfo {
+    fn anonymize(&self) -> Self {
+        SegmentInfo {
+            segment_type: self.segment_type,
+            num_vectors: telemetry_round(self.num_vectors),
+            num_points: telemetry_round(self.num_points),
+            num_deleted_vectors: telemetry_round(self.num_deleted_vectors),
+            ram_usage_bytes: self.ram_usage_bytes,
+            disk_usage_bytes: self.disk_usage_bytes,
+            is_appendable: self.is_appendable,
+            index_schema: self.index_schema.clone(),
+        }
+    }
+}
+
+impl Anonymize for SegmentConfig {
+    fn anonymize(&self) -> Self {
+        SegmentConfig {
+            vector_size: telemetry_round(self.vector_size),
+            distance: self.distance,
+            index: self.index,
+            storage_type: self.storage_type,
+            payload_storage_type: self.payload_storage_type,
+        }
+    }
+}
+
+impl Anonymize for VectorIndexTelemetry {
+    fn anonymize(&self) -> Self {
+        VectorIndexTelemetry {
+            small_cardinality_searches: self.small_cardinality_searches.anonymize(),
+            large_cardinality_searches: self.large_cardinality_searches.anonymize(),
+            positive_check_cardinality_searches: self
+                .positive_check_cardinality_searches
+                .anonymize(),
+            negative_check_cardinality_searches: self
+                .negative_check_cardinality_searches
+                .anonymize(),
+        }
+    }
+}
+
+impl Anonymize for PayloadIndexTelemetry {
+    fn anonymize(&self) -> Self {
+        PayloadIndexTelemetry {}
+    }
 }

@@ -42,7 +42,7 @@ impl Anonymize for CollectionTelemetry {
     fn anonymize(&self) -> Self {
         Self {
             id: telemetry_hash(&self.id),
-            config: self.config.clone(),
+            config: self.config.anonymize(),
             init_time: self.init_time,
             shards: self.shards.iter().map(|shard| shard.anonymize()).collect(),
         }
@@ -65,6 +65,17 @@ impl Anonymize for ShardTelemetry {
                 updates: updates.anonymize(),
             },
             ShardTelemetry::Proxy {} => ShardTelemetry::Proxy {},
+        }
+    }
+}
+
+impl Anonymize for CollectionConfig {
+    fn anonymize(&self) -> Self {
+        CollectionConfig {
+            params: self.params.clone(),
+            hnsw_config: self.hnsw_config,
+            optimizer_config: self.optimizer_config.clone(),
+            wal_config: self.wal_config.clone(),
         }
     }
 }

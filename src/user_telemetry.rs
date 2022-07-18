@@ -86,14 +86,88 @@ impl Anonymize for UserTelemetryData {
     fn anonymize(&self) -> Self {
         UserTelemetryData {
             id: self.id.clone(),
-            app: self.app.clone(),
-            system: self.system.clone(),
-            configs: self.configs.clone(),
+            app: self.app.anonymize(),
+            system: self.system.anonymize(),
+            configs: self.configs.anonymize(),
             collections: self
                 .collections
                 .iter()
                 .map(|collection| collection.anonymize())
                 .collect(),
+        }
+    }
+}
+
+impl Anonymize for UserTelemetryApp {
+    fn anonymize(&self) -> Self {
+        UserTelemetryApp {
+            version: self.version.clone(),
+            debug: self.debug,
+            web_feature: self.web_feature,
+            service_debug_feature: self.service_debug_feature,
+        }
+    }
+}
+
+impl Anonymize for UserTelemetrySystem {
+    fn anonymize(&self) -> Self {
+        UserTelemetrySystem {
+            distribution: self.distribution.clone(),
+            distribution_version: self.distribution_version.clone(),
+            is_docker: self.is_docker,
+            cores: self.cores,
+            ram_size: self.ram_size,
+            disk_size: self.disk_size,
+            cpu_flags: self.cpu_flags.clone(),
+        }
+    }
+}
+
+impl Anonymize for UserTelemetryConfigs {
+    fn anonymize(&self) -> Self {
+        UserTelemetryConfigs {
+            service_config: self.service_config.anonymize(),
+            cluster_config: self.cluster_config.anonymize(),
+        }
+    }
+}
+
+impl Anonymize for UserTelemetryServiceConfig {
+    fn anonymize(&self) -> Self {
+        UserTelemetryServiceConfig {
+            grpc_enable: self.grpc_enable,
+            max_request_size_mb: self.max_request_size_mb,
+            max_workers: self.max_workers,
+            enable_cors: self.enable_cors,
+        }
+    }
+}
+
+impl Anonymize for UserTelemetryClusterConfig {
+    fn anonymize(&self) -> Self {
+        UserTelemetryClusterConfig {
+            enabled: self.enabled,
+            grpc_timeout_ms: self.grpc_timeout_ms,
+            p2p: self.p2p.anonymize(),
+            consensus: self.consensus.anonymize(),
+        }
+    }
+}
+
+impl Anonymize for UserTelemetryP2pConfig {
+    fn anonymize(&self) -> Self {
+        UserTelemetryP2pConfig {
+            connection_pool_size: self.connection_pool_size,
+        }
+    }
+}
+
+impl Anonymize for UserTelemetryConsensusConfig {
+    fn anonymize(&self) -> Self {
+        UserTelemetryConsensusConfig {
+            max_message_queue_size: self.max_message_queue_size,
+            tick_period_ms: self.tick_period_ms,
+            bootstrap_timeout_sec: self.bootstrap_timeout_sec,
         }
     }
 }
