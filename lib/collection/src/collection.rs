@@ -38,7 +38,7 @@ use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shard::{
     create_shard_dir, shard_path, ChannelService, CollectionId, PeerId, Shard, ShardId,
-    HASH_RING_SHARD_SCALE,
+    ShardOperation, HASH_RING_SHARD_SCALE,
 };
 use crate::telemetry::CollectionTelemetry;
 
@@ -731,14 +731,15 @@ impl Collection {
     }
 
     pub async fn cluster_info(&self, peer_id: PeerId) -> CollectionResult<CollectionClusterInfo> {
-        let shard_count = self.shards.len();
+        let shards = self.shards_holder.read().await;
+        let shard_count = shards.len();
         let mut local_shards = Vec::new();
         let mut remote_shards = Vec::new();
         let count_request = Arc::new(CountRequest {
             filter: None,
             exact: true,
         });
-        for (shard_id, shard) in &self.shards {
+        for (shard_id, shard) in shards.get_shards() {
             let shard_id = *shard_id;
             match shard {
                 Shard::Local(ls) => {
