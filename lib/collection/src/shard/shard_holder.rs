@@ -10,6 +10,7 @@ use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::{OperationToShard, SplitByShard};
+use crate::save_on_disk::SaveOnDisk;
 use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::ShardType;
@@ -19,7 +20,7 @@ use crate::shard::{ChannelService, CollectionId, Shard, ShardId, ShardTransfer};
 
 pub struct ShardHolder {
     shards: HashMap<ShardId, Shard>,
-    shard_transfers: HashSet<ShardTransfer>,
+    shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     temporary_shards: HashMap<ShardId, Shard>,
     ring: HashRing<ShardId>,
 }
@@ -27,10 +28,19 @@ pub struct ShardHolder {
 pub struct LockedShardHolder(pub RwLock<ShardHolder>);
 
 impl ShardHolder {
-    pub fn new(hashring: HashRing<ShardId>) -> Self {
+    pub fn new(collection_path: &Path, hashring: HashRing<ShardId>) -> Self {
+        let shard_transfers = match SaveOnDisk::load_or_init(
+            collection_path.join("shard_transfers"),
+        ) {
+            Ok(shard_transfers) => shard_transfers,
+            Err(err) => {
+                log::error!("Failed to load or init shard_transfers file: {err}. Using default empty map of transfers.");
+                Default::default()
+            }
+        };
         Self {
             shards: HashMap::new(),
-            shard_transfers: HashSet::new(),
+            shard_transfers,
             temporary_shards: HashMap::new(),
             ring: hashring,
         }
@@ -297,6 +307,7 @@ mod tests {
     #[tokio::test]
     async fn test_shard_holder() {
         let shard_dir = TempDir::new("shard").unwrap();
+        let collection_dir = TempDir::new("collection").unwrap();
 
         let shard = RemoteShard::init(
             2,
@@ -307,7 +318,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut shard_holder = ShardHolder::new(HashRing::fair(100));
+        let mut shard_holder = ShardHolder::new(collection_dir.path(), HashRing::fair(100));
         shard_holder.add_shard(2, Shard::Remote(shard));
         let locked_shard_holder = LockedShardHolder::new(shard_holder);
 
