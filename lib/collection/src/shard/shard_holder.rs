@@ -201,16 +201,20 @@ impl LockedShardHolder {
         Self(RwLock::new(shard_holder))
     }
 
-    async fn get_shard(&self, shard_id: ShardId) -> Option<RwLockReadGuard<'_, Shard>> {
+    pub async fn get_shard(&self, shard_id: ShardId) -> Option<RwLockReadGuard<'_, Shard>> {
         let holder = self.0.read().await;
         RwLockReadGuard::try_map(holder, |h| h.shards.get(&shard_id)).ok()
     }
 
-    async fn get_temporary_shard(&self, shard_id: ShardId) -> Option<RwLockReadGuard<'_, Shard>> {
+    pub async fn get_temporary_shard(
+        &self,
+        shard_id: ShardId,
+    ) -> Option<RwLockReadGuard<'_, Shard>> {
         let holder = self.0.read().await;
         RwLockReadGuard::try_map(holder, |h| h.temporary_shards.get(&shard_id)).ok()
     }
 
+    /// Fails if the shard is not found or not local.
     pub async fn local_shard_by_id(
         &self,
         id: ShardId,
@@ -229,21 +233,6 @@ impl LockedShardHolder {
                     id
                 ))),
             },
-        }
-    }
-
-    /// A valid temporary shard must target an existing remote shard
-    pub async fn valid_temporary_shard_by_id(
-        &self,
-        id: ShardId,
-    ) -> Option<RwLockReadGuard<'_, Shard>> {
-        if let Some(shard) = self.get_shard(id).await {
-            match &*shard {
-                Shard::Remote(_) => self.get_temporary_shard(id).await,
-                _ => None,
-            }
-        } else {
-            None
         }
     }
 

@@ -274,22 +274,32 @@ impl Collection {
         shard_selection: ShardId,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        let local_shard = self.shards_holder.local_shard_by_id(shard_selection).await;
+        let shard_opt = self.shards_holder.get_shard(shard_selection).await;
 
-        let target_shard = match local_shard {
-            Ok(local_shard) => local_shard,
-            Err(err) => {
-                // verify if maybe it targets a temporary shard
-                match self
-                    .shards_holder
-                    .valid_temporary_shard_by_id(shard_selection)
-                    .await
-                {
-                    None => return Err(err),
-                    Some(temporary_shard) => temporary_shard,
-                }
+        let target_shard = match shard_opt {
+            None => {
+                return Err(CollectionError::bad_shard_selection(format!(
+                    "Shard {} does not exist",
+                    shard_selection
+                )))
             }
+            Some(shard) => match *shard {
+                Shard::Local(_) => shard,
+                Shard::Proxy(_) => shard,
+                Shard::Remote(_) => {
+                    // check temporary shards if the target is a remote shard
+                    let temporary_shard_opt = self
+                        .shards_holder
+                        .get_temporary_shard(shard_selection)
+                        .await;
+                    match temporary_shard_opt {
+                        None => shard, // forward to the remote shard
+                        Some(temp) => temp,
+                    }
+                }
+            },
         };
+
         target_shard.get().update(operation.clone(), wait).await
     }
 
