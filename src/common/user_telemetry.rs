@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use collection::telemetry::CollectionTelemetry;
 use segment::telemetry::Anonymize;
 use serde::Serialize;
 use storage::Dispatcher;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::settings::Settings;
@@ -227,7 +228,7 @@ impl UserTelemetryCollector {
             system: self.get_system_data(),
             configs: self.get_configs_data(),
             collections,
-            web: self.get_web_data(),
+            web: self.get_web_data().await,
         }
     }
 
@@ -311,10 +312,10 @@ impl UserTelemetryCollector {
         }
     }
 
-    fn get_web_data(&self) -> UserTelemetryWebData {
+    async fn get_web_data(&self) -> UserTelemetryWebData {
         let mut result = UserTelemetryWebData::default();
         for web_data in &self.web_workers_telemetry {
-            let lock = web_data.lock().unwrap();
+            let lock = web_data.lock().await;
             result.merge(&lock);
         }
         result

@@ -3,7 +3,7 @@ pub mod api;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_cors::Cors;
@@ -50,7 +50,7 @@ pub async fn index() -> impl Responder {
 #[allow(dead_code)]
 pub fn init(
     dispatcher: Arc<Dispatcher>,
-    telemetry_collector: Arc<Mutex<UserTelemetryCollector>>,
+    telemetry_collector: Arc<parking_lot::Mutex<UserTelemetryCollector>>,
     settings: Settings,
 ) -> std::io::Result<()> {
     actix_web::rt::System::new().block_on(async {

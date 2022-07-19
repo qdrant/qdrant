@@ -1,9 +1,10 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use actix_utils::future::{ready, Ready};
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::Error;
 use futures_util::future::LocalBoxFuture;
+use tokio::sync::Mutex;
 
 use crate::common::user_telemetry::{UserTelemetryCollector, UserTelemetryWebData};
 
@@ -13,7 +14,7 @@ pub struct ActixTelemetryService<S> {
 }
 
 pub struct ActixTelemetryTransform {
-    telemetry_collector: Arc<Mutex<UserTelemetryCollector>>,
+    telemetry_collector: Arc<parking_lot::Mutex<UserTelemetryCollector>>,
 }
 
 impl<S, B> Service<ServiceRequest> for ActixTelemetryService<S>
@@ -34,14 +35,14 @@ where
         Box::pin(async move {
             let response = future.await?;
             let status = response.response().status().as_u16();
-            telemetry_data.lock().unwrap().add_response(status as usize);
+            telemetry_data.lock().await.add_response(status as usize);
             Ok(response)
         })
     }
 }
 
 impl ActixTelemetryTransform {
-    pub fn new(telemetry_collector: Arc<Mutex<UserTelemetryCollector>>) -> Self {
+    pub fn new(telemetry_collector: Arc<parking_lot::Mutex<UserTelemetryCollector>>) -> Self {
         Self {
             telemetry_collector,
         }
@@ -66,7 +67,6 @@ where
             telemetry_data: self
                 .telemetry_collector
                 .lock()
-                .unwrap()
                 .create_web_worker_telemetry(),
         }))
     }

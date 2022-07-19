@@ -8,7 +8,7 @@ mod snapshots;
 mod tonic;
 
 use std::io::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -146,7 +146,7 @@ fn main() -> anyhow::Result<()> {
     }
     let dispatcher_arc = Arc::new(dispatcher);
 
-    let telemetry_collector = Arc::new(Mutex::new(UserTelemetryCollector::new(
+    let telemetry_collector = Arc::new(parking_lot::Mutex::new(UserTelemetryCollector::new(
         settings.clone(),
         dispatcher_arc.clone(),
     )));
