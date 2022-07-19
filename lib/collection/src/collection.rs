@@ -1006,7 +1006,7 @@ impl Collection {
                     }
                     Shard::Proxy(proxy_shard) => {
                         proxy_shard.create_snapshot(&shard_snapshot_path).await?;
-                    },
+                    }
                     Shard::ForwardProxy(proxy_shard) => {
                         proxy_shard.create_snapshot(&shard_snapshot_path).await?;
                     }
