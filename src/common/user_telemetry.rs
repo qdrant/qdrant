@@ -11,6 +11,8 @@ use uuid::Uuid;
 
 use crate::settings::Settings;
 
+pub type HttpStatusCode = u16;
+
 pub struct UserTelemetryCollector {
     process_id: Uuid,
     settings: Settings,
@@ -78,7 +80,7 @@ pub struct UserTelemetryConfigs {
 
 #[derive(Serialize, Clone, Default)]
 pub struct UserTelemetryWebData {
-    responses: HashMap<usize, usize>,
+    responses: HashMap<HttpStatusCode, usize>,
 }
 
 #[derive(Serialize, Clone)]
@@ -191,7 +193,7 @@ impl Anonymize for UserTelemetryWebData {
 }
 
 impl UserTelemetryWebData {
-    pub fn add_response(&mut self, status_code: usize) {
+    pub fn add_response(&mut self, status_code: HttpStatusCode) {
         *self.responses.entry(status_code).or_insert(0) += 1;
     }
 

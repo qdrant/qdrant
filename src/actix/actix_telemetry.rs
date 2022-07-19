@@ -39,7 +39,7 @@ where
         Box::pin(async move {
             let response = future.await?;
             let status = response.response().status().as_u16();
-            telemetry_data.lock().await.add_response(status as usize);
+            telemetry_data.lock().await.add_response(status);
             Ok(response)
         })
     }
