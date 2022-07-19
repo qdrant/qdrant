@@ -8,12 +8,12 @@ use segment::types::{
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
+use crate::operations::point_ops::{PointInsertOperations, PointOperations};
 use crate::operations::types::{
     CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
     SearchRequest, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
-use crate::operations::point_ops::{PointInsertOperations, PointOperations};
 use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::ShardOperation;
@@ -52,13 +52,10 @@ impl ForwardProxyShard {
         debug_assert!(batch_size > 0);
         let limit = batch_size + 1;
         let _update_lock = self.update_lock.lock().await;
-        let mut batch = self.wrapped_shard.scroll_by(
-            offset,
-            limit,
-            &WithPayloadInterface::Bool(true),
-            true,
-            None,
-        ).await?;
+        let mut batch = self
+            .wrapped_shard
+            .scroll_by(offset, limit, &WithPayloadInterface::Bool(true), true, None)
+            .await?;
         let next_page_offset = if batch.len() < limit {
             // This was the last page
             None
@@ -72,16 +69,16 @@ impl ForwardProxyShard {
         }
 
         let insert_points_operation = CollectionUpdateOperations::PointOperation(
-            PointOperations::UpsertPoints(
-                PointInsertOperations::PointsList(
-                    batch.into_iter().map(|point| point.into()).collect(),
-                )
-            )
+            PointOperations::UpsertPoints(PointInsertOperations::PointsList(
+                batch.into_iter().map(|point| point.into()).collect(),
+            )),
         );
 
         // We only need to wait for the last batch.
         let wait = next_page_offset.is_none();
-        self.remote_shard.update(insert_points_operation, wait).await?;
+        self.remote_shard
+            .update(insert_points_operation, wait)
+            .await?;
 
         Ok(next_page_offset)
     }
