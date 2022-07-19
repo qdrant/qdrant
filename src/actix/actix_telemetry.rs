@@ -17,6 +17,10 @@ pub struct ActixTelemetryTransform {
     telemetry_collector: Arc<parking_lot::Mutex<UserTelemetryCollector>>,
 }
 
+/// Actix telemetry service. It hooks every request and looks into response status code.
+/// 
+/// More about actix service with similar example
+/// https://actix.rs/docs/middleware/
 impl<S, B> Service<ServiceRequest> for ActixTelemetryService<S>
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
@@ -49,6 +53,10 @@ impl ActixTelemetryTransform {
     }
 }
 
+/// Actix telemetry transform. It's a builder for an actix service
+/// 
+/// More about actix transform with similar example
+/// https://actix.rs/docs/middleware/
 impl<S, B> Transform<S, ServiceRequest> for ActixTelemetryTransform
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
