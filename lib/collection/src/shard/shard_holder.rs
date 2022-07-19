@@ -175,6 +175,7 @@ impl ShardHolder {
                     Some(shard) => match *shard {
                         Shard::Local(_) => shard,
                         Shard::Proxy(_) => shard,
+                        Shard::ForwardProxy(_) => shard,
                         Shard::Remote(_) => {
                             // check temporary shards if the target is a remote shard
                             let temporary_shard_opt = self.get_temporary_shard(&shard_selection);
@@ -293,6 +294,7 @@ impl LockedShardHolder {
             Some(shard) => match &*shard {
                 Shard::Local(_) => Ok(shard),
                 Shard::Proxy(_) => Ok(shard),
+                Shard::ForwardProxy(_) => Ok(shard),
                 Shard::Remote(_) => Err(CollectionError::bad_shard_selection(format!(
                     "Shard {} is not local on peer",
                     id

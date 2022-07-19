@@ -18,6 +18,7 @@ pub enum ShardTelemetry {
         segments: Vec<SegmentTelemetry>,
     },
     Proxy {},
+    ForwardProxy {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -66,6 +67,7 @@ impl Anonymize for ShardTelemetry {
                 updates: updates.anonymize(),
             },
             ShardTelemetry::Proxy {} => ShardTelemetry::Proxy {},
+            ShardTelemetry::ForwardProxy {} => ShardTelemetry::ForwardProxy {},
         }
     }
 }

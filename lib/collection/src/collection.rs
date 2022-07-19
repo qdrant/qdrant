@@ -275,6 +275,7 @@ impl Collection {
                 }
                 Shard::Remote(_) => return Ok(()),
                 Shard::Proxy(_) => return Ok(()),
+                Shard::ForwardProxy(_) => return Ok(()),
             }
         }
 
@@ -351,6 +352,9 @@ impl Collection {
                     debug_assert!(false, "Remote shard should not be temporary");
                 }
                 Shard::Proxy(_) => {
+                    debug_assert!(false, "Proxy shard should not be temporary");
+                }
+                Shard::ForwardProxy(_) => {
                     debug_assert!(false, "Proxy shard should not be temporary");
                 }
             }
@@ -787,6 +791,7 @@ impl Collection {
                 match shard {
                     Shard::Local(shard) => shard.on_optimizer_config_update().await?,
                     Shard::Proxy(shard) => shard.on_optimizer_config_update().await?,
+                    Shard::ForwardProxy(shard) => shard.on_optimizer_config_update().await?,
                     Shard::Remote(_) => {} // Do nothing for remote shards
                 }
             }
@@ -817,6 +822,7 @@ impl Collection {
                     Shard::Local(shard) => shard.on_optimizer_config_update().await?,
                     Shard::Remote(_) => {} // Do nothing for remote shards
                     Shard::Proxy(proxy) => proxy.on_optimizer_config_update().await?,
+                    Shard::ForwardProxy(proxy) => proxy.on_optimizer_config_update().await?,
                 }
             }
         }
@@ -888,6 +894,14 @@ impl Collection {
                     peer_id: rs.peer_id,
                 }),
                 Shard::Proxy(ls) => {
+                    let count_result = ls.count(count_request.clone()).await?;
+                    let points_count = count_result.count;
+                    local_shards.push(LocalShardInfo {
+                        shard_id,
+                        points_count,
+                    })
+                }
+                Shard::ForwardProxy(ls) => {
                     let count_result = ls.count(count_request.clone()).await?;
                     let points_count = count_result.count;
                     local_shards.push(LocalShardInfo {
@@ -992,6 +1006,9 @@ impl Collection {
                     }
                     Shard::Proxy(proxy_shard) => {
                         proxy_shard.create_snapshot(&shard_snapshot_path).await?;
+                    },
+                    Shard::ForwardProxy(proxy_shard) => {
+                        proxy_shard.create_snapshot(&shard_snapshot_path).await?;
                     }
                     Shard::Remote(remote_shard) => {
                         // copy shard directory to snapshot directory
@@ -1062,6 +1079,7 @@ impl Collection {
             .map(|(shard_id, shard)| match shard {
                 Shard::Local(_local_shard) => (*shard_id, local_peer_id),
                 Shard::Proxy(_proxy_shard) => (*shard_id, local_peer_id),
+                Shard::ForwardProxy(_proxy_shard) => (*shard_id, local_peer_id),
                 Shard::Remote(remote_shard) => (*shard_id, remote_shard.peer_id),
             })
             .collect()

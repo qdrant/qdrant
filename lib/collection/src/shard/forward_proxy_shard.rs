@@ -17,6 +17,7 @@ use crate::operations::CollectionUpdateOperations;
 use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::ShardOperation;
+use crate::telemetry::ShardTelemetry;
 
 /// ForwardProxyShard
 ///
@@ -33,8 +34,7 @@ pub struct ForwardProxyShard {
 }
 
 impl ForwardProxyShard {
-    #[allow(unused)]
-    pub async fn new(wrapped_shard: LocalShard, remote_shard: RemoteShard) -> Self {
+    pub fn new(wrapped_shard: LocalShard, remote_shard: RemoteShard) -> Self {
         Self {
             wrapped_shard,
             remote_shard,
@@ -83,7 +83,7 @@ impl ForwardProxyShard {
         Ok(next_page_offset)
     }
 
-    pub async fn deconstruct(self) -> (LocalShard, RemoteShard) {
+    pub fn deconstruct(self) -> (LocalShard, RemoteShard) {
         (self.wrapped_shard, self.remote_shard)
     }
 
@@ -94,6 +94,10 @@ impl ForwardProxyShard {
 
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
         self.wrapped_shard.on_optimizer_config_update().await
+    }
+
+    pub fn get_telemetry_data(&self) -> ShardTelemetry {
+        ShardTelemetry::ForwardProxy {}
     }
 
     /// Forward `before_drop` to `wrapped_shard`
