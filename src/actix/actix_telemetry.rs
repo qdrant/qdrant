@@ -18,7 +18,7 @@ pub struct ActixTelemetryTransform {
 }
 
 /// Actix telemetry service. It hooks every request and looks into response status code.
-/// 
+///
 /// More about actix service with similar example
 /// https://actix.rs/docs/middleware/
 impl<S, B> Service<ServiceRequest> for ActixTelemetryService<S>
@@ -54,7 +54,7 @@ impl ActixTelemetryTransform {
 }
 
 /// Actix telemetry transform. It's a builder for an actix service
-/// 
+///
 /// More about actix transform with similar example
 /// https://actix.rs/docs/middleware/
 impl<S, B> Transform<S, ServiceRequest> for ActixTelemetryTransform
