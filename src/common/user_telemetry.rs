@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -5,14 +6,18 @@ use collection::telemetry::CollectionTelemetry;
 use segment::telemetry::Anonymize;
 use serde::Serialize;
 use storage::Dispatcher;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::settings::Settings;
+
+pub type HttpStatusCode = u16;
 
 pub struct UserTelemetryCollector {
     process_id: Uuid,
     settings: Settings,
     dispatcher: Arc<Dispatcher>,
+    web_workers_telemetry: Vec<Arc<Mutex<UserTelemetryWebData>>>,
 }
 
 #[derive(Serialize, Clone)]
@@ -73,6 +78,11 @@ pub struct UserTelemetryConfigs {
     cluster_config: UserTelemetryClusterConfig,
 }
 
+#[derive(Serialize, Clone, Default)]
+pub struct UserTelemetryWebData {
+    responses: HashMap<HttpStatusCode, usize>,
+}
+
 #[derive(Serialize, Clone)]
 pub struct UserTelemetryData {
     id: String,
@@ -80,6 +90,7 @@ pub struct UserTelemetryData {
     system: UserTelemetrySystem,
     configs: UserTelemetryConfigs,
     collections: Vec<CollectionTelemetry>,
+    web: UserTelemetryWebData,
 }
 
 impl Anonymize for UserTelemetryData {
@@ -94,6 +105,7 @@ impl Anonymize for UserTelemetryData {
                 .iter()
                 .map(|collection| collection.anonymize())
                 .collect(),
+            web: self.web.anonymize(),
         }
     }
 }
@@ -172,13 +184,41 @@ impl Anonymize for UserTelemetryConsensusConfig {
     }
 }
 
+impl Anonymize for UserTelemetryWebData {
+    fn anonymize(&self) -> Self {
+        UserTelemetryWebData {
+            responses: self.responses.clone(),
+        }
+    }
+}
+
+impl UserTelemetryWebData {
+    pub fn add_response(&mut self, status_code: HttpStatusCode) {
+        *self.responses.entry(status_code).or_insert(0) += 1;
+    }
+
+    pub fn merge(&mut self, other: &UserTelemetryWebData) {
+        for (status_code, count) in &other.responses {
+            *self.responses.entry(*status_code).or_insert(0) += *count;
+        }
+    }
+}
+
 impl UserTelemetryCollector {
     pub fn new(settings: Settings, dispatcher: Arc<Dispatcher>) -> Self {
         Self {
             process_id: Uuid::new_v4(),
             settings,
             dispatcher,
+            web_workers_telemetry: Vec::new(),
         }
+    }
+
+    pub fn create_web_worker_telemetry(&mut self) -> Arc<Mutex<UserTelemetryWebData>> {
+        let web_worker_telemetry = Arc::new(Mutex::new(UserTelemetryWebData::default()));
+        self.web_workers_telemetry
+            .push(web_worker_telemetry.clone());
+        web_worker_telemetry
     }
 
     #[allow(dead_code)]
@@ -190,6 +230,7 @@ impl UserTelemetryCollector {
             system: self.get_system_data(),
             configs: self.get_configs_data(),
             collections,
+            web: self.get_web_data().await,
         }
     }
 
@@ -271,5 +312,14 @@ impl UserTelemetryCollector {
                 },
             },
         }
+    }
+
+    async fn get_web_data(&self) -> UserTelemetryWebData {
+        let mut result = UserTelemetryWebData::default();
+        for web_data in &self.web_workers_telemetry {
+            let lock = web_data.lock().await;
+            result.merge(&lock);
+        }
+        result
     }
 }

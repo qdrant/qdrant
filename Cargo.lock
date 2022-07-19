@@ -2694,6 +2694,7 @@ version = "0.8.4"
 dependencies = [
  "actix-cors",
  "actix-files",
+ "actix-utils",
  "actix-web",
  "anyhow",
  "api",
@@ -2705,6 +2706,7 @@ dependencies = [
  "config",
  "env_logger",
  "futures",
+ "futures-util",
  "itertools",
  "log 0.4.17",
  "num-traits",

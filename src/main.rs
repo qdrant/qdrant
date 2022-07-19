@@ -6,7 +6,6 @@ mod greeting;
 mod settings;
 mod snapshots;
 mod tonic;
-mod user_telemetry;
 
 use std::io::Error;
 use std::sync::Arc;
@@ -26,10 +25,10 @@ use storage::content_manager::toc::TableOfContent;
 use storage::Dispatcher;
 
 use crate::common::helpers::create_search_runtime;
+use crate::common::user_telemetry::UserTelemetryCollector;
 use crate::greeting::welcome;
 use crate::settings::Settings;
 use crate::snapshots::recover_snapshots;
-use crate::user_telemetry::UserTelemetryCollector;
 
 /// Qdrant (read: quadrant ) is a vector similarity search engine.
 /// It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.
@@ -147,8 +146,10 @@ fn main() -> anyhow::Result<()> {
     }
     let dispatcher_arc = Arc::new(dispatcher);
 
-    let _telemetry_collector =
-        UserTelemetryCollector::new(settings.clone(), dispatcher_arc.clone());
+    let telemetry_collector = Arc::new(parking_lot::Mutex::new(UserTelemetryCollector::new(
+        settings.clone(),
+        dispatcher_arc.clone(),
+    )));
 
     if settings.cluster.enabled {
         // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
@@ -216,7 +217,7 @@ fn main() -> anyhow::Result<()> {
         let settings = settings.clone();
         let handle = thread::Builder::new()
             .name("web".to_string())
-            .spawn(move || actix::init(dispatcher_arc.clone(), settings))
+            .spawn(move || actix::init(dispatcher_arc.clone(), telemetry_collector, settings))
             .unwrap();
         handles.push(handle);
     }
