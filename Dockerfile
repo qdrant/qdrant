@@ -44,4 +44,4 @@ COPY --from=builder /qdrant/config ${APP}/config
 
 WORKDIR ${APP}
 
-CMD ["./qdrant"]
+ENTRYPOINT ["./qdrant"]
