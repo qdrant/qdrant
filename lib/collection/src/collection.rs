@@ -285,14 +285,7 @@ impl Collection {
         shard_id: ShardId,
     ) -> CollectionResult<PathBuf> {
         let shard_path = collection_path.join(format!("{shard_id}-temp"));
-        tokio::fs::create_dir_all(&shard_path)
-            .await
-            .map_err(|err| CollectionError::ServiceError {
-                error: format!(
-                    "Can't create shard {shard_id} temporary directory. Error: {}",
-                    err
-                ),
-            })?;
+        tokio::fs::create_dir_all(&shard_path).await?;
         Ok(shard_path)
     }
 
