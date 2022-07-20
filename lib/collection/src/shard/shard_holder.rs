@@ -1,18 +1,15 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::{OperationToShard, SplitByShard};
 use crate::shard::local_shard::LocalShard;
 use crate::shard::Shard::Local;
-use crate::shard::{CollectionId, PeerId, Shard, ShardId, ShardTransfer};
+use crate::shard::{PeerId, Shard, ShardId, ShardTransfer};
 
 pub struct ShardHolder {
     shards: HashMap<ShardId, Shard>,
@@ -75,46 +72,14 @@ impl ShardHolder {
         shard_ops
     }
 
-    /// Create directory to hold the temporary data for shard with `shard_id`
-    pub async fn create_temporary_shard_dir(
-        collection_path: &Path,
-        shard_id: ShardId,
-    ) -> CollectionResult<PathBuf> {
-        let shard_path = collection_path.join(format!("{shard_id}-temp"));
-        tokio::fs::create_dir_all(&shard_path)
-            .await
-            .map_err(|err| CollectionError::ServiceError {
-                error: format!(
-                    "Can't create shard {shard_id} temporary directory. Error: {}",
-                    err
-                ),
-            })?;
-        Ok(shard_path)
-    }
-
-    /// Initiate temporary shard
-    pub async fn initiate_temporary_shard(
-        &mut self,
-        collection_id: CollectionId,
-        collection_path: &Path,
-        shared_config: Arc<RwLock<CollectionConfig>>,
-        shard_id: ShardId,
-    ) -> CollectionResult<()> {
-        if self.temporary_shards.contains_key(&shard_id) {
-            log::info!("A temporary shard is already present for {}", shard_id);
-        }
-        // validate that the shard is known as a remote shard
-        if let Some(Shard::Remote(_)) = self.shards.get(&shard_id) {
-            let shard_path = Self::create_temporary_shard_dir(collection_path, shard_id).await?;
-            let temporary_shard =
-                LocalShard::build(shard_id, collection_id, &shard_path, shared_config).await?;
-            self.temporary_shards
-                .insert(shard_id, Local(temporary_shard));
-            Ok(())
-        } else {
-            Err(CollectionError::BadRequest {
-                description: "A shard transfer must target an existing remote shard".to_string(),
-            })
+    /// Add temporary shard
+    pub fn add_temporary_shard(&mut self, shard_id: ShardId, temporary_shard: LocalShard) {
+        if self
+            .temporary_shards
+            .insert(shard_id, Local(temporary_shard))
+            .is_some()
+        {
+            log::info!("A temporary shard was already present for {}", shard_id);
         }
     }
 
