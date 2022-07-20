@@ -1,11 +1,13 @@
+use std::marker::PhantomData;
+
+use bitvec::prelude::BitVec;
+use rand::Rng;
+
 use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
 use crate::types::{PointOffsetType, VectorElementType};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::simple_vector_storage::SimpleRawScorer;
-use bitvec::prelude::BitVec;
-use rand::Rng;
-use std::marker::PhantomData;
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
     (0..size).map(|_| rnd_gen.gen_range(0.0..1.0)).collect()

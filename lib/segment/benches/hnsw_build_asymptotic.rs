@@ -5,6 +5,7 @@ use itertools::Itertools;
 use rand::{thread_rng, Rng};
 use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
+use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::CosineMetric;
@@ -24,16 +25,18 @@ fn build_index<TMetric: Metric>(
     let mut rng = thread_rng();
 
     let vector_holder = TestRawScorerProducer::<TMetric>::new(DIM, num_vectors, &mut rng);
-    let mut graph_layers = GraphLayers::new(num_vectors, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
+    let mut graph_layers_builder =
+        GraphLayersBuilder::new(num_vectors, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
     let fake_filter_context = FakeFilterContext {};
     for idx in 0..(num_vectors as PointOffsetType) {
         let added_vector = vector_holder.vectors.get(idx).to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector);
         let scorer = FilteredScorer::new(&raw_scorer, Some(&fake_filter_context));
-        let level = graph_layers.get_random_layer(&mut rng);
-        graph_layers.link_new_point(idx, level, scorer);
+        let level = graph_layers_builder.get_random_layer(&mut rng);
+        graph_layers_builder.set_levels(idx, level);
+        graph_layers_builder.link_new_point(idx, scorer);
     }
-    (vector_holder, graph_layers)
+    (vector_holder, graph_layers_builder.into_graph_layers())
 }
 
 fn hnsw_build_asymptotic(c: &mut Criterion) {

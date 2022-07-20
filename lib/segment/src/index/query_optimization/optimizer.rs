@@ -1,3 +1,8 @@
+use std::cmp::Reverse;
+use std::collections::HashMap;
+
+use itertools::Itertools;
+
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::query_estimator::{
@@ -7,9 +12,6 @@ use crate::index::query_optimization::condition_converter::condition_converter;
 use crate::index::query_optimization::optimized_filter::{OptimizedCondition, OptimizedFilter};
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::types::{Condition, Filter, PayloadKeyType};
-use itertools::Itertools;
-use std::cmp::Reverse;
-use std::collections::HashMap;
 
 pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
 

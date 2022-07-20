@@ -1,11 +1,12 @@
-use crate::config::WalConfig;
-use crate::operations::types::CollectionResult;
-use crate::optimizers_builder::OptimizersConfig;
 use merge::Merge;
 use schemars::JsonSchema;
 use segment::types::HnswConfig;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+
+use crate::config::WalConfig;
+use crate::operations::types::CollectionResult;
+use crate::optimizers_builder::OptimizersConfig;
 
 // Structures for partial update of collection params
 // ToDo: Make auto-generated somehow...
@@ -138,9 +139,10 @@ pub fn update_config<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Seri
 
 #[cfg(test)]
 mod tests {
+    use segment::types::HnswConfig;
+
     use super::*;
     use crate::optimizers_builder::OptimizersConfig;
-    use segment::types::HnswConfig;
 
     #[test]
     fn test_hnsw_update() {

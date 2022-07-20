@@ -1,12 +1,14 @@
-use crate::types::{
-    Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, IsEmptyCondition, Payload,
-    PayloadField, Range as RangeCondition, ValuesCount, VectorElementType,
-};
+use std::ops::{Range, RangeInclusive};
+
 use itertools::Itertools;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use serde_json::{json, Value};
-use std::ops::{Range, RangeInclusive};
+
+use crate::types::{
+    Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, IsEmptyCondition, Payload,
+    PayloadField, Range as RangeCondition, ValuesCount, VectorElementType,
+};
 
 const ADJECTIVE: &[&str] = &[
     "jobless",

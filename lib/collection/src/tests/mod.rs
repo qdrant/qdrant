@@ -1,15 +1,20 @@
+mod snapshot_test;
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use futures::future::join_all;
+use itertools::Itertools;
+use parking_lot::RwLock;
+use tempdir::TempDir;
+use tokio::time::{sleep, Instant};
+
+use crate::collection::Collection;
 use crate::collection_manager::fixtures::{
     get_indexing_optimizer, get_merge_optimizer, random_segment,
 };
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
 use crate::update_handler::{Optimizer, UpdateHandler};
-use futures::future::join_all;
-use itertools::Itertools;
-use parking_lot::RwLock;
-use std::sync::Arc;
-use std::time::Duration;
-use tempdir::TempDir;
-use tokio::time::{sleep, Instant};
 
 #[tokio::test]
 async fn test_optimization_process() {
@@ -110,4 +115,16 @@ async fn test_cancel_optimization() {
             LockedSegment::Proxy(_) => panic!("segment is not restored"),
         }
     }
+}
+
+#[test]
+fn check_version_upgrade() {
+    assert!(!Collection::can_upgrade_storage(
+        &"0.3.1".parse().unwrap(),
+        &"0.4.0".parse().unwrap()
+    ));
+    assert!(Collection::can_upgrade_storage(
+        &"0.4.0".parse().unwrap(),
+        &"0.4.1".parse().unwrap()
+    ));
 }

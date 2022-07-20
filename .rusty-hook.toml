@@ -1,5 +1,5 @@
 [hooks]
-pre-push = "cargo fmt --all -- --check"
+pre-push = "cargo +nightly fmt --all -- --check"
 
 [logging]
 verbose = true

@@ -1,8 +1,5 @@
-use crate::common::points::{
-    do_clear_payload, do_count_points, do_create_index, do_delete_index, do_delete_payload,
-    do_delete_points, do_get_points, do_scroll_points, do_search_points, do_set_payload,
-    do_upsert_points, CreateFieldIndex,
-};
+use std::time::Instant;
+
 use api::grpc::conversions::proto_to_payloads;
 use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
@@ -17,10 +14,15 @@ use collection::operations::types::{
 };
 use collection::shard::ShardId;
 use segment::types::PayloadSchemaType;
-use std::time::Instant;
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Response, Status};
+
+use crate::common::points::{
+    do_clear_payload, do_count_points, do_create_index, do_delete_index, do_delete_payload,
+    do_delete_points, do_get_points, do_scroll_points, do_search_points, do_set_payload,
+    do_upsert_points, CreateFieldIndex,
+};
 
 pub fn points_operation_response(
     timing: Instant,

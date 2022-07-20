@@ -1,3 +1,9 @@
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+
+use ordered_float::OrderedFloat;
+use segment::types::{HnswConfig, SegmentType};
+
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
@@ -5,10 +11,6 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
-use ordered_float::OrderedFloat;
-use segment::types::{HnswConfig, SegmentType};
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
 
 /// Optimizer which looks for segments with hig amount of soft-deleted points.
 /// Used to free up space.
@@ -113,19 +115,20 @@ impl SegmentOptimizer for VacuumOptimizer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::collection_manager::fixtures::random_segment;
-    use crate::collection_manager::holders::segment_holder::SegmentHolder;
+    use std::num::NonZeroU32;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+
     use itertools::Itertools;
     use parking_lot::RwLock;
     use rand::Rng;
     use segment::types::Distance;
-    use serde_json::json;
-    use serde_json::Value;
-    use std::num::NonZeroU32;
-    use std::sync::atomic::AtomicBool;
-    use std::sync::Arc;
+    use serde_json::{json, Value};
     use tempdir::TempDir;
+
+    use super::*;
+    use crate::collection_manager::fixtures::random_segment;
+    use crate::collection_manager::holders::segment_holder::SegmentHolder;
 
     #[test]
     fn test_vacuum_conditions() {

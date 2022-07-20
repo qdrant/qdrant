@@ -1,9 +1,11 @@
-use crate::tonic::api::collections_common::get;
+use std::sync::Arc;
+
 use api::grpc::qdrant::collections_internal_server::CollectionsInternal;
 use api::grpc::qdrant::{GetCollectionInfoRequestInternal, GetCollectionInfoResponse};
-use std::sync::Arc;
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
+
+use crate::tonic::api::collections_common::get;
 
 pub struct CollectionsInternalService {
     toc: Arc<TableOfContent>,

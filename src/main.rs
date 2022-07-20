@@ -8,27 +8,27 @@ mod snapshots;
 mod tonic;
 mod user_telemetry;
 
-use collection::ChannelService;
-use consensus::Consensus;
-use log::LevelFilter;
-use slog::Drain;
 use std::io::Error;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef, Persistent};
-use storage::Dispatcher;
 
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
+use collection::shard::ChannelService;
+use consensus::Consensus;
+use log::LevelFilter;
+use slog::Drain;
+use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef, Persistent};
 use storage::content_manager::toc::TableOfContent;
+use storage::Dispatcher;
 
 use crate::common::helpers::create_search_runtime;
 use crate::greeting::welcome;
 use crate::settings::Settings;
-use crate::snapshots::recover_snapshots;
+use crate::snapshots::{recover_full_snapshot, recover_snapshots};
 use crate::user_telemetry::UserTelemetryCollector;
 
 /// Qdrant (read: quadrant ) is a vector similarity search engine.
@@ -60,8 +60,13 @@ struct Args {
 
     /// List of paths to snapshot files.
     /// Format: <snapshot_file_path>:<target_collection_name>
-    #[clap(long, value_name = "PATH:NAME")]
+    #[clap(long, value_name = "PATH:NAME", alias = "collection-snapshot")]
     snapshot: Option<Vec<String>>,
+
+    /// Path to snapshot of multiple collections.
+    /// Format: <snapshot_file_path>
+    #[clap(long, value_name = "PATH")]
+    storage_snapshot: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -89,7 +94,13 @@ fn main() -> anyhow::Result<()> {
     log_builder.init();
     let args = Args::parse();
 
-    if let Some(snapshots) = args.snapshot {
+    if let Some(full_snapshot) = args.storage_snapshot {
+        recover_full_snapshot(
+            &full_snapshot,
+            &settings.storage.storage_path,
+            args.force_snapshot,
+        );
+    } else if let Some(snapshots) = args.snapshot {
         // recover from snapshots
         recover_snapshots(
             &snapshots,
@@ -99,10 +110,6 @@ fn main() -> anyhow::Result<()> {
     }
 
     welcome();
-
-    // create user telemetry collector and put settings to telemetry
-    let mut telemetry_collector = UserTelemetryCollector::new();
-    telemetry_collector.put_settings(settings.clone());
 
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it
@@ -150,6 +157,9 @@ fn main() -> anyhow::Result<()> {
         dispatcher = dispatcher.with_consensus(consensus_state.clone());
     }
     let dispatcher_arc = Arc::new(dispatcher);
+
+    let _telemetry_collector =
+        UserTelemetryCollector::new(settings.clone(), dispatcher_arc.clone());
 
     if settings.cluster.enabled {
         // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
@@ -235,8 +245,9 @@ fn main() -> anyhow::Result<()> {
 
     #[cfg(feature = "service_debug")]
     {
-        use parking_lot::deadlock;
         use std::fmt::Write;
+
+        use parking_lot::deadlock;
 
         const DEADLOCK_CHECK_PERIOD: Duration = Duration::from_secs(10);
 

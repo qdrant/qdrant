@@ -1,3 +1,10 @@
+use std::path::Path;
+use std::sync::Arc;
+
+use atomic_refcell::AtomicRefCell;
+use rand::prelude::StdRng;
+use rand::SeedableRng;
+
 use crate::entry::entry_point::OperationResult;
 use crate::fixtures::payload_fixtures::{
     generate_diverse_payload, FLT_KEY, GEO_KEY, INT_KEY, STR_KEY,
@@ -10,11 +17,6 @@ use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::query_checker::SimpleConditionChecker;
 use crate::payload_storage::PayloadStorage;
 use crate::types::{PayloadSchemaType, PointIdType, PointOffsetType, SeqNumberType};
-use atomic_refcell::AtomicRefCell;
-use rand::prelude::StdRng;
-use rand::SeedableRng;
-use std::path::Path;
-use std::sync::Arc;
 
 /// Warn: Use for tests only
 ///

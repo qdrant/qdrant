@@ -12,13 +12,13 @@ use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::index::field_index::CardinalityEstimation;
-use tokio::fs::{copy, create_dir_all};
-use tokio::runtime::{self, Runtime};
-use tokio::sync::{mpsc, mpsc::UnboundedSender, Mutex, RwLock as TokioRwLock};
-
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{Filter, PayloadStorageType, PointIdType, SegmentConfig};
+use tokio::fs::{copy, create_dir_all};
+use tokio::runtime::{self, Runtime};
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc, Mutex, RwLock as TokioRwLock};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
@@ -27,9 +27,9 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::build_optimizers;
 use crate::shard::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
+use crate::shard::{CollectionId, ShardId};
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
-use crate::{CollectionId, ShardId};
 
 /// LocalShard
 ///
@@ -136,6 +136,8 @@ impl LocalShard {
             )
         });
 
+        let mut load_handlers = vec![];
+
         for entry in segment_dirs {
             let segments_path = entry.unwrap().path();
             if segments_path.ends_with("deleted") {
@@ -147,14 +149,19 @@ impl LocalShard {
                 });
                 continue;
             }
-            let segment = match load_segment(&segments_path) {
-                Ok(x) => x,
-                Err(err) => panic!(
-                    "Can't load segments from {}, error: {}",
-                    segments_path.to_str().unwrap(),
-                    err
-                ),
-            };
+            load_handlers.push(thread::spawn(move || load_segment(&segments_path)));
+        }
+
+        for handler in load_handlers {
+            let res = handler.join();
+            if let Err(err) = res {
+                panic!("Can't load segment {:?}", err);
+            }
+            let res = res.unwrap();
+            if let Err(res) = res {
+                panic!("Can't load segment {:?}", res);
+            }
+            let segment = res.unwrap();
             segment_holder.add(segment);
         }
 

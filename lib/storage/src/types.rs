@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use collection::config::WalConfig;
 use collection::optimizers_builder::OptimizersConfig;
-use collection::PeerId;
+use collection::shard::PeerId;
 use schemars::JsonSchema;
 use segment::types::HnswConfig;
 use serde::{Deserialize, Serialize};

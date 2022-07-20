@@ -1,6 +1,7 @@
+use std::env;
+
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
-use std::env;
 use storage::types::StorageConfig;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -87,7 +88,7 @@ fn default_log_level() -> String {
 }
 
 fn default_timeout_ms() -> u64 {
-    1000
+    1000 * 60
 }
 
 fn default_tick_period_ms() -> u64 {

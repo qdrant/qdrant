@@ -1,29 +1,30 @@
+use std::cmp::max;
+use std::fs::create_dir_all;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+use atomic_refcell::AtomicRefCell;
+use log::debug;
+use rand::thread_rng;
+use rayon::prelude::*;
+use rayon::ThreadPool;
+
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
+use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::sample_estimation::sample_check_cardinality;
+use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::visited_pool::VisitedList;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::types::Condition::Field;
 use crate::types::{
     FieldCondition, Filter, HnswConfig, SearchParams, VectorElementType, VECTOR_ELEMENT_SIZE,
 };
 use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
-use atomic_refcell::AtomicRefCell;
-use log::debug;
-
-use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::visited_pool::VisitedList;
-use rand::thread_rng;
-use rayon::prelude::*;
-use rayon::ThreadPool;
-use std::cmp::max;
-use std::fs::create_dir_all;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 const HNSW_USE_HEURISTIC: bool = true;
 const BYTES_IN_KB: usize = 1024;
@@ -74,7 +75,6 @@ impl HNSWIndex {
                 config.m0,
                 config.ef_construct,
                 max(1, total_points / vector_per_threshold * 10),
-                HNSW_USE_HEURISTIC,
             )
         };
 
@@ -107,7 +107,7 @@ impl HNSWIndex {
         &self,
         pool: &ThreadPool,
         stopped: &AtomicBool,
-        graph: &mut GraphLayersBuilder,
+        graph_layers_builder: &mut GraphLayersBuilder,
         condition: FieldCondition,
         block_filter_list: &mut VisitedList,
     ) -> OperationResult<()> {
@@ -127,7 +127,7 @@ impl HNSWIndex {
         for block_point_id in points_to_index.iter().copied() {
             // Use same levels, as in the original graph
             let level = self.graph.point_level(block_point_id);
-            graph.set_levels(block_point_id, level);
+            graph_layers_builder.set_levels(block_point_id, level);
         }
 
         pool.install(|| {
@@ -148,7 +148,7 @@ impl HNSWIndex {
                     let points_scorer =
                         FilteredScorer::new(raw_scorer.as_ref(), Some(&block_condition_checker));
 
-                    graph.link_new_point(block_point_id, points_scorer);
+                    graph_layers_builder.link_new_point(block_point_id, points_scorer);
                     Ok(())
                 })
         })

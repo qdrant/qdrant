@@ -1,5 +1,6 @@
-use crate::types::PointOffsetType;
 use std::cmp::{max, min};
+
+use crate::types::PointOffsetType;
 
 const MAX_ESTIMATED_POINTS: usize = 1000;
 
@@ -64,9 +65,10 @@ pub fn sample_check_cardinality(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
+
+    use super::*;
 
     #[test]
     fn test_confidence_interval() {

@@ -1,13 +1,10 @@
+use collection::operations::point_ops::{Batch, PointInsertOperations, PointOperations};
+use collection::operations::types::ScrollRequest;
+use collection::operations::CollectionUpdateOperations;
 use itertools::Itertools;
+use segment::types::{PayloadSelectorExclude, WithPayloadInterface};
 use serde_json::Value;
 use tempdir::TempDir;
-
-use collection::operations::{
-    point_ops::{Batch, PointInsertOperations, PointOperations},
-    types::ScrollRequest,
-    CollectionUpdateOperations,
-};
-use segment::types::{PayloadSelectorExclude, WithPayloadInterface};
 
 use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
 

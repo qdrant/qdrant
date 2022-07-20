@@ -1,16 +1,18 @@
-use crate::actix::helpers::process_response;
-use crate::common::collections::*;
+use std::sync::Arc;
+use std::time::Duration;
+
 use actix_web::rt::time::Instant;
 use actix_web::{delete, get, patch, post, put, web, Responder};
 use serde::Deserialize;
-use std::sync::Arc;
-use std::time::Duration;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
     DeleteCollectionOperation, UpdateCollection, UpdateCollectionOperation,
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::Dispatcher;
+
+use crate::actix::helpers::process_response;
+use crate::common::collections::*;
 
 #[derive(Debug, Deserialize)]
 struct WaitTimeout {
@@ -116,6 +118,17 @@ async fn update_aliases(
     process_response(response, timing)
 }
 
+#[get("/collections/{name}/cluster")]
+async fn get_cluster_info(
+    toc: web::Data<Arc<TableOfContent>>,
+    path: web::Path<String>,
+) -> impl Responder {
+    let name = path.into_inner();
+    let timing = Instant::now();
+    let response = do_get_collection_cluster(&toc.into_inner(), &name).await;
+    process_response(response, timing)
+}
+
 // Configure services
 pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
     cfg.service(get_collections)
@@ -123,13 +136,15 @@ pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
         .service(create_collection)
         .service(update_collection)
         .service(delete_collection)
-        .service(update_aliases);
+        .service(update_aliases)
+        .service(get_cluster_info);
 }
 
 #[cfg(test)]
 mod tests {
-    use super::WaitTimeout;
     use actix_web::web::Query;
+
+    use super::WaitTimeout;
 
     #[test]
     fn timeout_is_deserialized() {

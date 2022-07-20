@@ -1,7 +1,9 @@
-use crate::content_manager::errors::StorageError;
-use async_trait::async_trait;
-use collection::Collection;
 use std::collections::HashMap;
+
+use async_trait::async_trait;
+use collection::collection::Collection;
+
+use crate::content_manager::errors::StorageError;
 
 pub type Collections = HashMap<String, Collection>;
 

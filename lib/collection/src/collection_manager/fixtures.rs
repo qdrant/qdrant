@@ -3,12 +3,11 @@ use std::path::Path;
 
 use parking_lot::RwLock;
 use rand::Rng;
-use serde_json::json;
-
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{Distance, Payload, PointIdType, SeqNumberType};
+use serde_json::json;
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;

@@ -1,15 +1,17 @@
+use std::cmp::{max, min};
+use std::path::Path;
+use std::sync::Arc;
+
+use schemars::JsonSchema;
+use segment::types::HnswConfig;
+use serde::{Deserialize, Serialize};
+
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
 use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
 use crate::collection_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
 use crate::config::CollectionParams;
 use crate::update_handler::Optimizer;
-use schemars::JsonSchema;
-use segment::types::HnswConfig;
-use serde::{Deserialize, Serialize};
-use std::cmp::{max, min};
-use std::path::Path;
-use std::sync::Arc;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 pub struct OptimizersConfig {

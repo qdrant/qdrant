@@ -1,8 +1,10 @@
-use crate::common::file_operations::{FileOperationResult, FileStorageError};
-use atomicwrites::{AllowOverwrite, AtomicFile};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
+
+use atomicwrites::{AllowOverwrite, AtomicFile};
+
+use crate::common::file_operations::{FileOperationResult, FileStorageError};
 
 pub const VERSION_FILE: &str = "version.info";
 
@@ -12,15 +14,12 @@ pub trait StorageVersion {
     // since the package version is provided at compile time
     fn current() -> String;
 
-    fn load(path: &Path) -> FileOperationResult<Option<String>> {
+    fn load(path: &Path) -> FileOperationResult<String> {
         let version_file = path.join(VERSION_FILE);
         let mut contents = String::new();
-        if !version_file.exists() {
-            return Ok(None);
-        }
         let mut file = File::open(version_file)?;
         file.read_to_string(&mut contents)?;
-        Ok(Some(contents))
+        Ok(contents)
     }
 
     fn save(path: &Path) -> FileOperationResult<()> {

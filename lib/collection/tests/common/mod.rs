@@ -1,10 +1,13 @@
+use std::num::NonZeroU32;
+use std::path::Path;
+
+use collection::collection::Collection;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::types::CollectionError;
 use collection::optimizers_builder::OptimizersConfig;
-use collection::{ChannelService, Collection, CollectionId, CollectionShardDistribution};
+use collection::shard::collection_shard_distribution::CollectionShardDistribution;
+use collection::shard::{ChannelService, CollectionId};
 use segment::types::Distance;
-use std::num::NonZeroU32;
-use std::path::Path;
 
 /// Test collections for this upper bound of shards.
 /// Testing with more shards is problematic due to `number of open files problem`
@@ -69,7 +72,7 @@ pub async fn new_local_collection(
         path,
         snapshots_path,
         config,
-        CollectionShardDistribution::AllLocal,
+        CollectionShardDistribution::all_local(Some(config.params.shard_number.into())),
         ChannelService::default(),
     )
     .await

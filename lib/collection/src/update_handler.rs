@@ -1,3 +1,17 @@
+use std::cmp::min;
+use std::collections::HashSet;
+use std::sync::Arc;
+
+use itertools::Itertools;
+use log::{debug, error, info, trace, warn};
+use segment::entry::entry_point::OperationResult;
+use segment::types::SeqNumberType;
+use tokio::runtime::Handle;
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::sync::{oneshot, Mutex};
+use tokio::task::JoinHandle;
+use tokio::time::Duration;
+
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
@@ -5,20 +19,6 @@ use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::wal::SerdeWal;
-use itertools::Itertools;
-use log::{debug, error, info, trace, warn};
-use segment::entry::entry_point::OperationResult;
-use segment::types::SeqNumberType;
-use std::cmp::min;
-use std::collections::HashSet;
-use std::sync::Arc;
-use tokio::runtime::Handle;
-use tokio::sync::{
-    mpsc::{self, UnboundedReceiver, UnboundedSender},
-    oneshot, Mutex,
-};
-use tokio::task::JoinHandle;
-use tokio::time::Duration;
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
@@ -47,6 +47,7 @@ pub enum UpdateSignal {
 }
 
 /// Signal, used to inform Optimization process
+#[derive(PartialEq, Clone, Copy)]
 pub enum OptimizerSignal {
     /// Sequential number of the operation
     Operation(SeqNumberType),
@@ -277,27 +278,14 @@ impl UpdateHandler {
     ) {
         while let Some(signal) = receiver.recv().await {
             match signal {
-                OptimizerSignal::Nop => {
-                    // We skip the check for number of optimization handles here
-                    // Because `Nop` usually means that we need to force the optimization
-                    if Self::try_recover(segments.clone(), wal.clone())
-                        .await
-                        .is_err()
+                OptimizerSignal::Nop | OptimizerSignal::Operation(_) => {
+                    if signal != OptimizerSignal::Nop
+                        && optimization_handles.lock().await.len() >= max_handles
                     {
                         continue;
                     }
-                    Self::process_optimization(
-                        optimizers.clone(),
-                        segments.clone(),
-                        optimization_handles.clone(),
-                        sender.clone(),
-                    )
-                    .await;
-                }
-                OptimizerSignal::Operation(_) => {
-                    if optimization_handles.lock().await.len() >= max_handles {
-                        continue;
-                    }
+                    // We skip the check for number of optimization handles here
+                    // Because `Nop` usually means that we need to force the optimization
                     if Self::try_recover(segments.clone(), wal.clone())
                         .await
                         .is_err()

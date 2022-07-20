@@ -1,12 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use tokio::runtime::Runtime;
-use tokio::sync::{RwLock, RwLockReadGuard};
-
+use collection::collection::Collection;
+use collection::collection_state;
 use collection::config::{CollectionConfig, CollectionParams};
 use collection::operations::config_diff::DiffConfig;
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -15,28 +14,30 @@ use collection::operations::types::{
     SearchRequest, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
-use collection::{ChannelService, Collection, CollectionShardDistribution};
+use collection::shard::collection_shard_distribution::CollectionShardDistribution;
+use collection::shard::{ChannelService, CollectionId, PeerId, ShardId};
+use collection::telemetry::CollectionTelemetry;
 use segment::types::ScoredPoint;
+use tokio::runtime::Runtime;
+use tokio::sync::{RwLock, RwLockReadGuard};
 
-use super::collection_meta_ops::CreateCollectionOperation;
+use super::collection_meta_ops::{CreateCollectionOperation, ShardTransferOperations};
 use super::{consensus_state, CollectionContainer};
-use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::content_manager::{
-    alias_mapping::AliasPersistence,
-    collection_meta_ops::{
-        AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
-        CreateAliasOperation, CreateCollection, DeleteAlias, DeleteAliasOperation, RenameAlias,
-        RenameAliasOperation, UpdateCollection,
-    },
-    collections_ops::{Checker, Collections},
-    errors::StorageError,
+use crate::content_manager::alias_mapping::AliasPersistence;
+use crate::content_manager::collection_meta_ops::{
+    AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
+    CreateAliasOperation, CreateCollection, DeleteAlias, DeleteAliasOperation, RenameAlias,
+    RenameAliasOperation, UpdateCollection,
 };
+use crate::content_manager::collections_ops::{Checker, Collections};
+use crate::content_manager::errors::StorageError;
+use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::types::{PeerAddressById, StorageConfig};
-use collection::shard::ShardId;
-use collection::PeerId;
 
+pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const SNAPSHOTS_TMP_DIR: &str = "snapshots_tmp";
+pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
 
 /// The main object of the service. It holds all objects, required for proper functioning.
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
@@ -47,7 +48,7 @@ pub struct TableOfContent {
     search_runtime: Runtime,
     collection_management_runtime: Runtime,
     alias_persistence: RwLock<AliasPersistence>,
-    this_peer_id: PeerId,
+    pub this_peer_id: PeerId,
     channel_service: ChannelService,
 }
 
@@ -95,7 +96,7 @@ impl TableOfContent {
 
             collections.insert(collection_name, collection);
         }
-        let alias_path = Path::new(&storage_config.storage_path).join("aliases");
+        let alias_path = Path::new(&storage_config.storage_path).join(ALIASES_PATH);
         let alias_persistence =
             AliasPersistence::open(alias_path).expect("Can't open database by the provided config");
         TableOfContent {
@@ -117,6 +118,10 @@ impl TableOfContent {
 
     pub fn storage_path(&self) -> &str {
         &self.storage_config.storage_path
+    }
+
+    pub fn snapshots_path(&self) -> &str {
+        &self.storage_config.snapshots_path
     }
 
     fn collection_snapshots_path(snapshots_path: &Path, collection_name: &str) -> PathBuf {
@@ -206,14 +211,20 @@ impl TableOfContent {
         let collection_path = self.create_collection_path(collection_name).await?;
         let snapshots_path = self.create_snapshots_path(collection_name).await?;
 
+        if let Some(shard_number) = shard_number {
+            debug_assert_eq!(
+                shard_number as usize,
+                collection_shard_distribution.shard_count(),
+                "If shard number was supplied then this exact number should be used in a distribution"
+            )
+        }
         let collection_params = CollectionParams {
             vector_size,
             distance,
-            shard_number: NonZeroU32::new(shard_number.unwrap_or(1)).ok_or(
-                StorageError::BadInput {
+            shard_number: NonZeroU32::new(collection_shard_distribution.shard_count() as u32)
+                .ok_or(StorageError::BadInput {
                     description: "`shard_number` cannot be 0".to_string(),
-                },
-            )?,
+                })?,
             on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
         };
         let wal_config = match wal_config_diff {
@@ -351,8 +362,7 @@ impl TableOfContent {
             CollectionMetaOperations::CreateCollectionDistributed(operation, distribution) => {
                 let local = distribution.local_shards_for(self.this_peer_id);
                 let remote = distribution.remote_shards_for(self.this_peer_id);
-                let collection_shard_distribution =
-                    CollectionShardDistribution::Distribution { local, remote };
+                let collection_shard_distribution = CollectionShardDistribution::new(local, remote);
                 self.create_collection(
                     &operation.collection_name,
                     operation.create_collection,
@@ -361,10 +371,13 @@ impl TableOfContent {
                 .await
             }
             CollectionMetaOperations::CreateCollection(operation) => {
+                let distribution = CollectionShardDistribution::all_local(
+                    operation.create_collection.shard_number,
+                );
                 self.create_collection(
                     &operation.collection_name,
                     operation.create_collection,
-                    CollectionShardDistribution::AllLocal,
+                    distribution,
                 )
                 .await
             }
@@ -378,7 +391,38 @@ impl TableOfContent {
             CollectionMetaOperations::ChangeAliases(operation) => {
                 self.update_aliases(operation).await
             }
+            CollectionMetaOperations::TransferShard(collection, shard, operation) => self
+                .handle_transfer(collection, shard, operation)
+                .await
+                .map(|()| true),
         }
+    }
+
+    pub async fn handle_transfer(
+        &self,
+        collection: CollectionId,
+        shard: ShardId,
+        transfer: ShardTransferOperations,
+    ) -> Result<(), StorageError> {
+        let mut collections = self.collections.write().await;
+        let collection = collections.get_mut(&collection).ok_or_else(|| {
+            StorageError::service_error(&format!(
+                "Collection {collection} should be present at the time of shard transfer."
+            ))
+        })?;
+        match transfer {
+            ShardTransferOperations::Start { to } => {
+                collection
+                    .start_shard_transfer(shard, to, self.this_peer_id)
+                    .await
+            }
+            ShardTransferOperations::Finish => collection.finish_shard_transfer(shard).await,
+            ShardTransferOperations::Abort { reason } => {
+                log::warn!("Aborting shard transfer: {reason}");
+                collection.abort_shard_transfer(shard).await
+            }
+        }?;
+        Ok(())
     }
 
     pub async fn get_collection<'a>(
@@ -573,7 +617,7 @@ impl TableOfContent {
     }
 
     pub async fn collections_snapshot(&self) -> consensus_state::CollectionsSnapshot {
-        let mut collections: HashMap<collection::CollectionId, collection::State> = HashMap::new();
+        let mut collections: HashMap<CollectionId, collection_state::State> = HashMap::new();
         for (id, collection) in self.collections.read().await.iter() {
             collections.insert(id.clone(), collection.state(self.this_peer_id()).await);
         }
@@ -590,7 +634,7 @@ impl TableOfContent {
         self.collection_management_runtime.block_on(async {
             let mut collections = self.collections.write().await;
             for (id, state) in &data.collections {
-                let collection = collections.get_mut(id);
+                let collection = collections.get(id);
                 match collection {
                     // Update state if collection present locally
                     Some(collection) => {
@@ -663,26 +707,24 @@ impl TableOfContent {
     pub async fn suggest_shard_distribution(
         &self,
         op: &CreateCollectionOperation,
+        suggested_shard_number: u32,
     ) -> ShardDistributionProposal {
-        let shard_number = op.create_collection.shard_number.unwrap_or(1);
-        let known_peers: Vec<_> = self
+        let shard_number = op
+            .create_collection
+            .shard_number
+            .unwrap_or(suggested_shard_number);
+        let mut known_peers_set: HashSet<_> = self
             .channel_service
             .id_to_address
             .read()
             .keys()
             .copied()
             .collect();
-        let known_collections = self.collections.read().await;
-        let known_shards: Vec<_> = known_collections
-            .iter()
-            .flat_map(|(_, col)| col.all_shards())
-            .collect();
-        let shard_distribution = ShardDistributionProposal::new(
-            shard_number,
-            self.this_peer_id(),
-            &known_peers,
-            known_shards,
-        );
+        known_peers_set.insert(self.this_peer_id());
+        let known_peers: Vec<_> = known_peers_set.into_iter().collect();
+
+        let shard_distribution = ShardDistributionProposal::new(shard_number, &known_peers, vec![]);
+
         log::debug!(
             "Suggesting distribution for {} shards for collection '{}' among {} peers {:?}",
             shard_number,
@@ -691,6 +733,19 @@ impl TableOfContent {
             shard_distribution.distribution
         );
         shard_distribution
+    }
+
+    pub async fn get_telemetry_data(&self) -> Vec<CollectionTelemetry> {
+        let mut result = Vec::new();
+        let all_collections = self.all_collections().await;
+        for collection_name in &all_collections {
+            if let Ok(collection) = self.get_collection(collection_name).await {
+                if let Some(collection) = collection.get_telemetry_data().await {
+                    result.push(collection);
+                }
+            }
+        }
+        result
     }
 }
 

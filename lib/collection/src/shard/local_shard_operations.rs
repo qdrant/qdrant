@@ -1,23 +1,27 @@
-use crate::collection_manager::segments_searcher::SegmentsSearcher;
-use crate::operations::types::{CollectionStatus, OptimizersStatus, UpdateStatus};
-use crate::update_handler::{OperationData, UpdateSignal};
-use crate::{
-    CollectionInfo, CollectionResult, CollectionUpdateOperations, CountRequest, CountResult,
-    LocalShard, PointRequest, Record, SearchRequest, ShardOperation, UpdateResult,
-};
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use itertools::Itertools;
 use segment::types::{
     ExtendedPointId, Filter, PayloadIndexInfo, PayloadKeyType, ScoredPoint, SegmentType,
     WithPayload, WithPayloadInterface,
 };
-use std::collections::HashMap;
-use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
+use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::operations::types::{
+    CollectionInfo, CollectionResult, CollectionStatus, CountRequest, CountResult,
+    OptimizersStatus, PointRequest, Record, SearchRequest, UpdateResult, UpdateStatus,
+};
+use crate::operations::CollectionUpdateOperations;
+use crate::shard::local_shard::LocalShard;
+use crate::shard::ShardOperation;
+use crate::update_handler::{OperationData, UpdateSignal};
+
 #[async_trait]
-impl ShardOperation for &LocalShard {
+impl ShardOperation for LocalShard {
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.

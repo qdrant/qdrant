@@ -3,10 +3,10 @@ pub mod build_condition_checker;
 mod config;
 mod entry_points;
 pub mod graph_layers;
+pub mod graph_layers_builder;
 pub mod hnsw;
 pub mod point_scorer;
 mod search_context;
 
-mod graph_layers_builder;
 #[cfg(test)]
 mod tests;

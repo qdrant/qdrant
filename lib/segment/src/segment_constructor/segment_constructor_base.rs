@@ -1,4 +1,13 @@
-use crate::common::rocksdb_operations::Database;
+use std::fs::{create_dir_all, File};
+use std::io::Read;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+
+use atomic_refcell::AtomicRefCell;
+use log::info;
+use uuid::Uuid;
+
+use crate::common::rocksdb_operations::open_db;
 use crate::common::version::StorageVersion;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
@@ -16,13 +25,6 @@ use crate::types::{
 use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::VectorStorageSS;
-use atomic_refcell::AtomicRefCell;
-use log::info;
-use std::fs::{create_dir_all, File};
-use std::io::Read;
-use std::path::Path;
-use std::sync::{Arc, Mutex};
-use uuid::Uuid;
 
 fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> {
     Arc::new(AtomicRefCell::new(t))
@@ -99,17 +101,14 @@ fn create_segment(
 }
 
 pub fn load_segment(path: &Path) -> OperationResult<Segment> {
-    let stored_version_opt = SegmentVersion::load(path)?;
-
-    if let Some(stored_version) = stored_version_opt {
-        if stored_version != SegmentVersion::current() {
-            info!(
-                "Migrating segment {} -> {}",
-                stored_version,
-                SegmentVersion::current()
-            );
-            SegmentVersion::save(path)?
-        }
+    let stored_version = SegmentVersion::load(path)?;
+    if stored_version != SegmentVersion::current() {
+        info!(
+            "Migrating segment {} -> {}",
+            stored_version,
+            SegmentVersion::current()
+        );
+        SegmentVersion::save(path)?
     }
 
     let segment_config_path = path.join(SEGMENT_STATE_FILE);

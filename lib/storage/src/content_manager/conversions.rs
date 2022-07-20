@@ -1,3 +1,5 @@
+use tonic::Status;
+
 use crate::content_manager::collection_meta_ops::{
     AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
     CreateAliasOperation, CreateCollection, CreateCollectionOperation, DeleteAlias,
@@ -5,7 +7,6 @@ use crate::content_manager::collection_meta_ops::{
     UpdateCollection, UpdateCollectionOperation,
 };
 use crate::content_manager::errors::StorageError;
-use tonic::Status;
 
 pub fn error_to_status(error: StorageError) -> tonic::Status {
     let error_code = match &error {

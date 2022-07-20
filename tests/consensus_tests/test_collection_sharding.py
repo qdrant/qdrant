@@ -47,6 +47,10 @@ def test_collection_sharding(tmp_path: pathlib.Path):
     # Check that it exists on all peers
     wait_for_uniform_collection_existence("test_collection", peer_api_uris)
 
+    # Check collection's cluster info
+    collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], "test_collection")
+    assert collection_cluster_info["shard_count"] == N_SHARDS
+
     # Create points in first peer's collection
     r = requests.put(
         f"{peer_api_uris[0]}/collections/test_collection/points?wait=true", json={

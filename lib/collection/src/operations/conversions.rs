@@ -1,19 +1,21 @@
-use crate::config::{CollectionParams, WalConfig};
-use crate::operations::config_diff::{HnswConfigDiff, WalConfigDiff};
+use std::collections::HashMap;
+use std::num::NonZeroU32;
+
+use api::grpc::conversions::{payload_to_proto, proto_to_payloads};
+use itertools::Itertools;
+use tonic::Status;
+
+use crate::config::{CollectionConfig, CollectionParams, WalConfig};
+use crate::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
 use crate::operations::point_ops::{
     Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector,
 };
-use crate::operations::types::{CollectionStatus, OptimizersStatus, UpdateStatus};
-use crate::{
-    CollectionConfig, CollectionInfo, CountResult, OptimizersConfig, OptimizersConfigDiff, Record,
-    UpdateResult,
+use crate::operations::types::{
+    CollectionInfo, CollectionStatus, CountResult, OptimizersStatus, Record, UpdateResult,
+    UpdateStatus,
 };
-use api::grpc::conversions::{payload_to_proto, proto_to_payloads};
-use itertools::Itertools;
-use std::collections::HashMap;
-use std::num::NonZeroU32;
-use tonic::Status;
+use crate::optimizers_builder::OptimizersConfig;
 
 impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
     fn from(value: api::grpc::qdrant::HnswConfigDiff) -> Self {
@@ -372,7 +374,10 @@ impl From<UpdateResult> for api::grpc::qdrant::UpdateResult {
     fn from(value: UpdateResult) -> Self {
         Self {
             operation_id: value.operation_id,
-            status: value.status as i32,
+            status: match value.status {
+                UpdateStatus::Acknowledged => api::grpc::qdrant::UpdateStatus::Acknowledged as i32,
+                UpdateStatus::Completed => api::grpc::qdrant::UpdateStatus::Completed as i32,
+            },
         }
     }
 }
@@ -384,8 +389,12 @@ impl TryFrom<api::grpc::qdrant::UpdateResult> for UpdateResult {
         Ok(Self {
             operation_id: value.operation_id,
             status: match value.status {
-                1 => UpdateStatus::Acknowledged,
-                2 => UpdateStatus::Completed,
+                status if status == api::grpc::qdrant::UpdateStatus::Acknowledged as i32 => {
+                    UpdateStatus::Acknowledged
+                }
+                status if status == api::grpc::qdrant::UpdateStatus::Completed as i32 => {
+                    UpdateStatus::Completed
+                }
                 _ => return Err(Status::invalid_argument("Malformed UpdateStatus type")),
             },
         })

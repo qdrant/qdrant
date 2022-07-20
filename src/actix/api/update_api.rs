@@ -1,8 +1,5 @@
-use crate::actix::helpers::process_response;
-use crate::common::points::{
-    do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
-    do_set_payload, do_upsert_points, CreateFieldIndex,
-};
+use std::sync::Arc;
+
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{delete, post, put, web, Responder};
@@ -10,8 +7,13 @@ use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use storage::content_manager::toc::TableOfContent;
+
+use crate::actix::helpers::process_response;
+use crate::common::points::{
+    do_clear_payload, do_create_index, do_delete_index, do_delete_payload, do_delete_points,
+    do_set_payload, do_upsert_points, CreateFieldIndex,
+};
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct UpdateParam {

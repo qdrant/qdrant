@@ -1,23 +1,28 @@
-use crate::operations::operation_effect::{
-    EstimateOperationEffectArea, OperationEffectArea, PointsOperationEffect,
-};
-use crate::update_handler::UpdateSignal;
-use crate::{
-    CollectionError, CollectionInfo, CollectionResult, CollectionUpdateOperations, CountRequest,
-    CountResult, LocalShard, PointRequest, Record, SearchRequest, ShardOperation, UpdateResult,
-};
-use async_trait::async_trait;
-use segment::types::{
-    ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
-};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
+
+use async_trait::async_trait;
+use segment::types::{
+    ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
+};
 use tokio::runtime::Handle;
 use tokio::sync::{oneshot, RwLock};
 use tokio::time::timeout;
+
+use crate::operations::operation_effect::{
+    EstimateOperationEffectArea, OperationEffectArea, PointsOperationEffect,
+};
+use crate::operations::types::{
+    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
+    Record, SearchRequest, UpdateResult,
+};
+use crate::operations::CollectionUpdateOperations;
+use crate::shard::local_shard::LocalShard;
+use crate::shard::ShardOperation;
+use crate::update_handler::UpdateSignal;
 
 type ChangedPointsSet = Arc<RwLock<HashSet<PointIdType>>>;
 
@@ -105,7 +110,7 @@ impl ProxyShard {
 }
 
 #[async_trait]
-impl ShardOperation for &ProxyShard {
+impl ShardOperation for ProxyShard {
     /// Update `wrapped_shard` while keeping track of the changed points
     async fn update(
         &self,

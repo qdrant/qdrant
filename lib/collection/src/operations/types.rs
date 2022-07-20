@@ -1,26 +1,27 @@
+use std::collections::HashMap;
+use std::result;
+use std::time::SystemTimeError;
+
 use futures::io;
 use schemars::JsonSchema;
-use serde;
-use serde::{Deserialize, Serialize};
-use serde_json::Error as JsonError;
-use std::result;
-use thiserror::Error;
-use tokio::{
-    sync::{mpsc::error::SendError, oneshot::error::RecvError as OneshotRecvError},
-    task::JoinError,
-};
-
+use segment::common::file_operations::FileStorageError;
 use segment::entry::entry_point::OperationError;
 use segment::types::{
     Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, ScoreType, SearchParams,
     SeqNumberType, VectorElementType, WithPayloadInterface,
 };
-
-use crate::{config::CollectionConfig, wal::WalError};
-use segment::common::file_operations::FileStorageError;
-use std::collections::HashMap;
-use std::time::SystemTimeError;
+use serde;
+use serde::{Deserialize, Serialize};
+use serde_json::Error as JsonError;
+use thiserror::Error;
+use tokio::sync::mpsc::error::SendError;
+use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
+use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
+
+use crate::config::CollectionConfig;
+use crate::shard::{PeerId, ShardId};
+use crate::wal::WalError;
 
 /// Type of vector in API
 pub type VectorType = Vec<VectorElementType>;
@@ -83,6 +84,37 @@ pub struct CollectionInfo {
     pub config: CollectionConfig,
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
+}
+
+/// Current clustering distribution for the collection
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct CollectionClusterInfo {
+    /// ID of this peer
+    pub peer_id: PeerId,
+    /// Total number of shards
+    pub shard_count: usize,
+    /// Local shards
+    pub local_shards: Vec<LocalShardInfo>,
+    /// Remote shards
+    pub remote_shards: Vec<RemoteShardInfo>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct LocalShardInfo {
+    /// Local shard id
+    pub shard_id: ShardId,
+    /// Number of points in the shard
+    pub points_count: usize,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct RemoteShardInfo {
+    /// Remote shard id
+    pub shard_id: ShardId,
+    /// Remote peer id
+    pub peer_id: PeerId,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
@@ -385,13 +417,13 @@ impl From<tonic::Status> for CollectionError {
     fn from(err: tonic::Status) -> Self {
         match err.code() {
             tonic::Code::InvalidArgument => CollectionError::BadInput {
-                description: "InvalidArgument".to_string(),
+                description: format!("InvalidArgument: {}", err),
             },
             tonic::Code::NotFound => CollectionError::BadRequest {
-                description: "NotFound".to_string(),
+                description: format!("NotFound: {}", err),
             },
             tonic::Code::Internal => CollectionError::ServiceError {
-                error: "Internal error".to_string(),
+                error: format!("Internal error: {}", err),
             },
             other => CollectionError::ServiceError {
                 error: format!("Tonic status error: {}", other),

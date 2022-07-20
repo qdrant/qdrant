@@ -1,22 +1,23 @@
-use self::{
-    collection_meta_ops::CollectionMetaOperations, consensus_state::CollectionsSnapshot,
-    errors::StorageError,
-};
+use self::collection_meta_ops::CollectionMetaOperations;
+use self::consensus_state::CollectionsSnapshot;
+use self::errors::StorageError;
 
-mod alias_mapping;
+pub mod alias_mapping;
 pub mod collection_meta_ops;
 mod collections_ops;
 pub mod consensus_state;
 pub mod conversions;
 pub mod errors;
 pub mod shard_distribution;
+pub mod snapshots;
 pub mod toc;
 
 pub mod consensus_ops {
-    use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
-    use collection::PeerId;
+    use collection::shard::PeerId;
     use raft::eraftpb::Entry as RaftEntry;
     use serde::{Deserialize, Serialize};
+
+    use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
 
     /// Operation that should pass consensus
     #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]

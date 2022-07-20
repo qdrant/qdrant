@@ -1,5 +1,8 @@
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::sync::atomic::AtomicBool;
+
     use itertools::Itertools;
     use rand::{thread_rng, Rng};
     use segment::entry::entry_point::SegmentEntry;
@@ -13,8 +16,6 @@ mod tests {
         StorageType,
     };
     use serde_json::json;
-    use std::collections::HashMap;
-    use std::sync::atomic::AtomicBool;
     use tempdir::TempDir;
 
     #[test]

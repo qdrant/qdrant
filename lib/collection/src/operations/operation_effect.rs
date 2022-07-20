@@ -1,7 +1,7 @@
-use crate::operations::payload_ops::PayloadOps;
-use crate::operations::point_ops;
-use crate::CollectionUpdateOperations;
 use segment::types::{Filter, PointIdType};
+
+use crate::operations::payload_ops::PayloadOps;
+use crate::operations::{point_ops, CollectionUpdateOperations};
 
 /// Structure to define what part of the shard are affected by the operation
 pub enum OperationEffectArea {

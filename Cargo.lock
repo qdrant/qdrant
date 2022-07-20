@@ -555,9 +555,9 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "bitvec"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1489fcb93a5bb47da0462ca93ad252ad6af2145cce58d10d46a83931ba9f016b"
+checksum = "1bc2832c24239b0141d5674bb9174f9d68a8b5b3f2753311927c172ca46f7e9c"
 dependencies = [
  "funty",
  "radium",
@@ -770,9 +770,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "3.2.8"
+version = "3.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "190814073e85d238f31ff738fcb0bf6910cedeb73376c87cd69291028966fd83"
+checksum = "ab8b79fe3946ceb4a0b1c080b4018992b8d27e9ff363644c1c9b6387c854614d"
 dependencies = [
  "atty",
  "bitflags",
@@ -827,7 +827,7 @@ dependencies = [
 
 [[package]]
 name = "collection"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "api",
  "arc-swap",
@@ -850,6 +850,7 @@ dependencies = [
  "rmp-serde",
  "schemars",
  "segment",
+ "semver 1.0.12",
  "serde",
  "serde_cbor",
  "serde_json",
@@ -2698,7 +2699,7 @@ dependencies = [
  "api",
  "atty",
  "chrono",
- "clap 3.2.8",
+ "clap 3.2.12",
  "collection",
  "colored",
  "config",
@@ -2722,6 +2723,7 @@ dependencies = [
  "slog-stdlog",
  "storage",
  "sys-info",
+ "tar",
  "tempdir",
  "thiserror",
  "tokio",
@@ -3302,9 +3304,9 @@ checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
 name = "serde"
-version = "1.0.138"
+version = "1.0.139"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1578c6245786b9d168c5447eeacfb96856573ca56c9d68fdcf394be134882a47"
+checksum = "0171ebb889e45aa68b44aee0859b3eede84c6f5f5c228e6f140c0b2a0a46cad6"
 dependencies = [
  "serde_derive",
 ]
@@ -3321,9 +3323,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.138"
+version = "1.0.139"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "023e9b1467aef8a10fb88f25611870ada9800ef7e22afce356bb0d2387b6f27c"
+checksum = "dc1d3230c1de7932af58ad8ffbe1d784bd55efd5a9d84ac24f69c72d83543dfb"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3553,6 +3555,7 @@ dependencies = [
  "api",
  "async-trait",
  "atomicwrites",
+ "chrono",
  "collection",
  "http",
  "itertools",
@@ -3567,6 +3570,8 @@ dependencies = [
  "segment",
  "serde",
  "serde_cbor",
+ "serde_json",
+ "tar",
  "tempdir",
  "thiserror",
  "tokio",
@@ -3846,10 +3851,11 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tokio"
-version = "1.19.2"
+version = "1.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c51a52ed6686dd62c320f9b89299e9dfb46f730c7a48e635c19f21d116cb1439"
+checksum = "57aec3cfa4c296db7255446efb4928a6be304b431a806216105542a67b6ca82e"
 dependencies = [
+ "autocfg 1.1.0",
  "bytes",
  "libc",
  "memchr",

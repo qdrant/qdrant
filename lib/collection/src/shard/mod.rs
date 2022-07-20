@@ -1,20 +1,30 @@
+pub mod collection_shard_distribution;
 mod conversions;
 pub mod local_shard;
 pub mod local_shard_operations;
 pub mod proxy_shard;
 pub mod remote_shard;
 pub mod shard_config;
+pub mod shard_holder;
 
-use crate::shard::proxy_shard::ProxyShard;
-use crate::shard::remote_shard::RemoteShard;
-use crate::{
-    CollectionInfo, CollectionResult, CollectionUpdateOperations, CountRequest, CountResult,
-    LocalShard, PeerId, PointRequest, Record, SearchRequest, UpdateResult,
-};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use api::grpc::transport_channel_pool::TransportChannelPool;
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
-use std::sync::Arc;
 use tokio::runtime::Handle;
+use tonic::transport::Uri;
+
+use crate::operations::types::{
+    CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
+    Record, SearchRequest, UpdateResult,
+};
+use crate::operations::CollectionUpdateOperations;
+use crate::shard::local_shard::LocalShard;
+use crate::shard::proxy_shard::ProxyShard;
+use crate::shard::remote_shard::RemoteShard;
 
 pub type ShardId = u32;
 
@@ -30,11 +40,11 @@ pub enum Shard {
 }
 
 impl Shard {
-    pub fn get(&self) -> Arc<dyn ShardOperation + Sync + Send + '_> {
+    pub fn get(&self) -> &(dyn ShardOperation + Sync + Send + '_) {
         match self {
-            Shard::Local(local_shard) => Arc::new(local_shard),
-            Shard::Remote(remote_shard) => Arc::new(remote_shard),
-            Shard::Proxy(proxy_shard) => Arc::new(proxy_shard),
+            Shard::Local(local_shard) => local_shard,
+            Shard::Remote(remote_shard) => remote_shard,
+            Shard::Proxy(proxy_shard) => proxy_shard,
         }
     }
 
@@ -89,4 +99,60 @@ pub trait ShardOperation {
         with_payload: &WithPayload,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>>;
+}
+
+pub const HASH_RING_SHARD_SCALE: u32 = 100;
+
+pub type CollectionId = String;
+
+pub type PeerId = u64;
+
+#[derive(Clone)]
+pub struct ChannelService {
+    pub id_to_address: Arc<parking_lot::RwLock<HashMap<PeerId, Uri>>>,
+    pub channel_pool: Arc<TransportChannelPool>,
+}
+
+impl ChannelService {
+    pub fn new(
+        id_to_address: Arc<parking_lot::RwLock<HashMap<PeerId, Uri>>>,
+        channel_pool: Arc<TransportChannelPool>,
+    ) -> Self {
+        Self {
+            id_to_address,
+            channel_pool,
+        }
+    }
+}
+
+impl Default for ChannelService {
+    fn default() -> Self {
+        Self {
+            id_to_address: Arc::new(Default::default()),
+            channel_pool: Arc::new(Default::default()),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ShardTransfer {
+    pub from: PeerId,
+    pub to: PeerId,
+}
+
+pub fn shard_path(collection_path: &Path, shard_id: ShardId) -> PathBuf {
+    collection_path.join(format!("{shard_id}"))
+}
+
+pub async fn create_shard_dir(
+    collection_path: &Path,
+    shard_id: ShardId,
+) -> CollectionResult<PathBuf> {
+    let shard_path = shard_path(collection_path, shard_id);
+    tokio::fs::create_dir_all(&shard_path)
+        .await
+        .map_err(|err| CollectionError::ServiceError {
+            error: format!("Can't create shard {shard_id} directory. Error: {}", err),
+        })?;
+    Ok(shard_path)
 }

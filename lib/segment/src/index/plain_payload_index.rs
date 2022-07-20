@@ -1,11 +1,11 @@
-use crate::index::{PayloadIndex, VectorIndex};
-use crate::payload_storage::{ConditionCheckerSS, FilterContext};
-use crate::types::{
-    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
-    SearchParams, VectorElementType,
-};
-use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 use std::collections::HashMap;
+use std::fs::create_dir_all;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+
+use atomic_refcell::AtomicRefCell;
+use schemars::_serde_json::Value;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::entry::entry_point::OperationResult;
@@ -13,12 +13,13 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use atomic_refcell::AtomicRefCell;
-use schemars::_serde_json::Value;
-use std::fs::create_dir_all;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use crate::index::{PayloadIndex, VectorIndex};
+use crate::payload_storage::{ConditionCheckerSS, FilterContext};
+use crate::types::{
+    Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
+    SearchParams, VectorElementType,
+};
+use crate::vector_storage::{ScoredPointOffset, VectorStorageSS};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///

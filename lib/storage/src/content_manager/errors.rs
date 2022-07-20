@@ -1,6 +1,7 @@
+use std::io::Error as IoError;
+
 use collection::operations::types::CollectionError;
 use segment::common::file_operations::FileStorageError;
-use std::io::Error as IoError;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone)]

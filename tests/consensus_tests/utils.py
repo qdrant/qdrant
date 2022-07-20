@@ -19,7 +19,8 @@ processes = []
 def every_test():
     yield
     print()
-    for p in processes:
+    while len(processes) > 0:
+        p = processes.pop(0)
         print(f"Killing {p.pid}")
         p.kill()
 
@@ -31,11 +32,12 @@ def get_port() -> int:
         return s.getsockname()[1]
 
 
-def get_env(p2p_port: int, http_port: int) -> dict[str, str]:
+def get_env(p2p_port: int, grpc_port: int, http_port: int) -> dict[str, str]:
     env = os.environ.copy()
     env["QDRANT__CLUSTER__ENABLED"] = "true"
     env["QDRANT__CLUSTER__P2P__PORT"] = str(p2p_port)
     env["QDRANT__SERVICE__HTTP_PORT"] = str(http_port)
+    env["QDRANT__SERVICE__GRPC_PORT"] = str(grpc_port)
     return env
 
 
@@ -64,8 +66,9 @@ def get_qdrant_exec() -> str:
 # Starts a peer and returns its api_uri
 def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str) -> str:
     p2p_port = get_port()
+    grpc_port = get_port()
     http_port = get_port()
-    env = get_env(p2p_port, http_port)
+    env = get_env(p2p_port, grpc_port, http_port)
     log_file = open(log_file, "w")
     processes.append(
         Popen([get_qdrant_exec(), "--bootstrap", bootstrap_uri], env=env, cwd=peer_dir, stderr=log_file))
@@ -75,8 +78,9 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str) -> str:
 # Starts a peer and returns its api_uri and p2p_uri
 def start_first_peer(peer_dir: Path, log_file: str) -> Tuple[str, str]:
     p2p_port = get_port()
+    grpc_port = get_port()
     http_port = get_port()
-    env = get_env(p2p_port, http_port)
+    env = get_env(p2p_port, grpc_port, http_port)
     log_file = open(log_file, "w")
     bootstrap_uri = get_uri(p2p_port)
     processes.append(
@@ -104,6 +108,17 @@ def get_cluster_info(peer_api_uri: str) -> dict:
 def print_clusters_info(peer_api_uris: [str]):
     for uri in peer_api_uris:
         print(json.dumps(get_cluster_info(uri), indent=4))
+
+
+def get_collection_cluster_info(peer_api_uri: str, collection_name: str) -> dict:
+    r = requests.get(f"{peer_api_uri}/collections/{collection_name}/cluster")
+    assert_http_ok(r)
+    res = r.json()["result"]
+    return res
+
+
+def print_collection_cluster_info(peer_api_uri: str, collection_name: str):
+    print(json.dumps(get_collection_cluster_info(peer_api_uri, collection_name), indent=4))
 
 
 def get_leader(peer_api_uri: str) -> str:
