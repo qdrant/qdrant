@@ -6,7 +6,9 @@ use bincode;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::common::rocksdb_operations::{db_write_options, DB_MAPPING_CF, DB_VERSIONS_CF};
+use crate::common::rocksdb_operations::{
+    Database, DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF,
+};
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTracker;
 use crate::types::{ExtendedPointId, PointIdType, PointOffsetType, SeqNumberType};
@@ -217,7 +219,6 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
-    use crate::common::rocksdb_operations::open_db;
 
     fn check_bincode_serialization<
         T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug,

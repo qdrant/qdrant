@@ -66,7 +66,7 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
-    use crate::common::rocksdb_operations::open_db;
+    use crate::common::rocksdb_operations::Database;
 
     #[test]
     fn test_wipe() {

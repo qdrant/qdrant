@@ -7,7 +7,7 @@ use atomic_refcell::AtomicRefCell;
 use log::info;
 use uuid::Uuid;
 
-use crate::common::rocksdb_operations::open_db;
+use crate::common::rocksdb_operations::Database;
 use crate::common::version::StorageVersion;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;

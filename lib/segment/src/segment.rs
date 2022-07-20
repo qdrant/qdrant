@@ -7,9 +7,9 @@ use std::sync::{Arc, Mutex};
 use atomic_refcell::AtomicRefCell;
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use fs_extra::dir::{copy_with_progress, CopyOptions, TransitProcess};
-use rocksdb::DB;
 use tar::Builder;
 
+use crate::common::rocksdb_operations::Database;
 use crate::common::version::StorageVersion;
 use crate::entry::entry_point::OperationError::ServiceError;
 use crate::entry::entry_point::{

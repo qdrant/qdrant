@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use rocksdb::DB;
 
+use crate::common::rocksdb_operations::Database;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::map_index::MapIndex;
 use crate::index::field_index::numeric_index::NumericIndex;

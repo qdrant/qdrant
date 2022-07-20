@@ -5,7 +5,6 @@ use std::result;
 
 use atomicwrites::Error as AtomicIoError;
 use rayon::ThreadPoolBuildError;
-use rocksdb::Error;
 use thiserror::Error;
 
 use crate::common::file_operations::FileStorageError;

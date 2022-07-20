@@ -9,7 +9,7 @@ use log::debug;
 use schemars::_serde_json::Value;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
-use crate::common::rocksdb_operations::open_db_with_existing_cf;
+use crate::common::rocksdb_operations::Database;
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;

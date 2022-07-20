@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use super::chunked_vectors::ChunkedVectors;
 use super::vector_storage_base::VectorStorage;
-use crate::common::rocksdb_operations::{db_write_options, DB_VECTOR_CF};
-use crate::entry::entry_point::OperationResult;
+use crate::common::rocksdb_operations::{Database, DatabaseColumnWrapper, DB_VECTOR_CF};
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
 use crate::spaces::tools::peek_top_largest_scores_iterable;

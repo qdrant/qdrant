@@ -2,10 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use rocksdb::{IteratorMode, DB};
 
-use crate::common::rocksdb_operations::{db_write_options, DB_PAYLOAD_CF};
-use crate::entry::entry_point::OperationResult;
+use crate::common::rocksdb_operations::{Database, DatabaseColumnWrapper, DB_PAYLOAD_CF};
+use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::types::{Payload, PointOffsetType};
 
 /// In-memory implementation of `PayloadStorage`.

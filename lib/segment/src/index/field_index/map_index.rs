@@ -6,7 +6,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use rocksdb::{IteratorMode, DB};
 use serde_json::Value;
 
 use crate::common::rocksdb_operations::{Database, DatabaseColumnWrapper};
@@ -338,7 +337,6 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
-    use crate::common::rocksdb_operations::open_db_with_existing_cf;
 
     const FIELD_NAME: &str = "test";
 
