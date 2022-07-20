@@ -258,35 +258,43 @@ impl Collection {
         todo!("Handle for sender and receiver")
     }
 
+    /// Initiate temporary shard
+    ///
+    /// Drops existing temporary shards for `shard_id`.
     pub async fn initiate_temporary_shard(&self, shard_id: ShardId) -> CollectionResult<()> {
-        let shard_holder_read = self.shards_holder.read().await;
-        // validate that the shard is known as a remote shard
-        if let Some(Shard::Remote(_)) = shard_holder_read.get_shard(&shard_id) {
-            // do not lock shards while creating temporary shard
-            drop(shard_holder_read);
-            let shard_path = Self::create_temporary_shard_dir(&self.path, shard_id).await?;
-            let temporary_shard =
-                LocalShard::build(shard_id, self.id.clone(), &shard_path, self.config.clone())
-                    .await?;
-            // short write lock to insert the temporary shard
-            let mut shards_holder_write = self.shards_holder.write().await;
-            shards_holder_write.add_temporary_shard(shard_id, temporary_shard);
-            Ok(())
-        } else {
-            Err(CollectionError::BadRequest {
-                description: "A shard transfer must target an existing remote shard".to_string(),
-            })
-        }
-    }
+        let mut shard_holder_write = self.shards_holder.write().await;
+        let temporary_shard_path = self.path.join(format!("{shard_id}-temp"));
 
-    /// Create directory to hold the temporary data for shard with `shard_id`
-    pub async fn create_temporary_shard_dir(
-        collection_path: &Path,
-        shard_id: ShardId,
-    ) -> CollectionResult<PathBuf> {
-        let shard_path = collection_path.join(format!("{shard_id}-temp"));
-        tokio::fs::create_dir_all(&shard_path).await?;
-        Ok(shard_path)
+        if let Some(mut existing_temporary_shard) =
+            shard_holder_write.remove_temporary_shard(shard_id)
+        {
+            log::info!(
+                "A temporary shard is already present for {}:{} - its content will be deleted",
+                self.id,
+                shard_id
+            );
+            // Finish update tasks
+            existing_temporary_shard.before_drop().await;
+            // Delete existing folder
+            tokio::fs::remove_dir_all(&temporary_shard_path).await?;
+        }
+        // do not lock shards while creating temporary shard  disk
+        drop(shard_holder_write);
+
+        // create directory to hold the temporary data for shard with `shard_id`
+        tokio::fs::create_dir_all(&temporary_shard_path).await?;
+        let temporary_shard = LocalShard::build(
+            shard_id,
+            self.id.clone(),
+            &temporary_shard_path,
+            self.config.clone(),
+        )
+        .await?;
+
+        // register temporary shard
+        let mut shards_holder_write = self.shards_holder.write().await;
+        shards_holder_write.add_temporary_shard(shard_id, temporary_shard);
+        Ok(())
     }
 
     /// Handle collection updates from peers.

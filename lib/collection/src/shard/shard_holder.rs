@@ -78,13 +78,13 @@ impl ShardHolder {
 
     /// Add temporary shard
     pub fn add_temporary_shard(&mut self, shard_id: ShardId, temporary_shard: LocalShard) {
-        if self
-            .temporary_shards
-            .insert(shard_id, Local(temporary_shard))
-            .is_some()
-        {
-            log::info!("A temporary shard was already present for {}", shard_id);
-        }
+        self.temporary_shards
+            .insert(shard_id, Local(temporary_shard));
+    }
+
+    /// Remove temporary shard
+    pub fn remove_temporary_shard(&mut self, shard_id: ShardId) -> Option<Shard> {
+        self.temporary_shards.remove(&shard_id)
     }
 
     pub fn start_shard_transfer(
