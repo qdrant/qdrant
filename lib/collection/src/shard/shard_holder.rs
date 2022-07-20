@@ -149,6 +149,7 @@ impl ShardHolder {
         let futures: FuturesUnordered<_> = self
             .shards
             .iter_mut()
+            .chain(self.temporary_shards.iter_mut())
             .map(|(_, shard)| shard.before_drop())
             .collect();
         futures.collect::<Vec<()>>().await;
