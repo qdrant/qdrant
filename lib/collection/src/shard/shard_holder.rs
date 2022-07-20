@@ -56,6 +56,10 @@ impl ShardHolder {
         self.shards.values()
     }
 
+    pub fn get_temporary_shard(&self, shard_id: &ShardId) -> Option<&Shard> {
+        self.temporary_shards.get(shard_id)
+    }
+
     pub async fn split_by_shard<O: SplitByShard + Clone>(&self, operation: O) -> Vec<(&Shard, O)> {
         let operation_to_shard = operation.split_by_shard(&self.ring);
         let shard_ops: Vec<_> = match operation_to_shard {
@@ -201,17 +205,9 @@ impl LockedShardHolder {
         Self(RwLock::new(shard_holder))
     }
 
-    pub async fn get_shard(&self, shard_id: ShardId) -> Option<RwLockReadGuard<'_, Shard>> {
+    async fn get_shard(&self, shard_id: ShardId) -> Option<RwLockReadGuard<'_, Shard>> {
         let holder = self.0.read().await;
         RwLockReadGuard::try_map(holder, |h| h.shards.get(&shard_id)).ok()
-    }
-
-    pub async fn get_temporary_shard(
-        &self,
-        shard_id: ShardId,
-    ) -> Option<RwLockReadGuard<'_, Shard>> {
-        let holder = self.0.read().await;
-        RwLockReadGuard::try_map(holder, |h| h.temporary_shards.get(&shard_id)).ok()
     }
 
     /// Fails if the shard is not found or not local.

@@ -274,7 +274,8 @@ impl Collection {
         shard_selection: ShardId,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        let shard_opt = self.shards_holder.get_shard(shard_selection).await;
+        let shard_holder_guard = self.shards_holder.read().await;
+        let shard_opt = shard_holder_guard.get_shard(&shard_selection);
 
         let target_shard = match shard_opt {
             None => {
@@ -288,10 +289,8 @@ impl Collection {
                 Shard::Proxy(_) => shard,
                 Shard::Remote(_) => {
                     // check temporary shards if the target is a remote shard
-                    let temporary_shard_opt = self
-                        .shards_holder
-                        .get_temporary_shard(shard_selection)
-                        .await;
+                    let temporary_shard_opt =
+                        shard_holder_guard.get_temporary_shard(&shard_selection);
                     match temporary_shard_opt {
                         None => shard, // forward to the remote shard
                         Some(temp) => temp,
