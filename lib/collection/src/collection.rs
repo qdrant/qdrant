@@ -303,10 +303,17 @@ impl Collection {
 
         let target_shard = match shard_opt {
             None => {
-                return Err(CollectionError::bad_shard_selection(format!(
-                    "Shard {} does not exist",
-                    shard_selection
-                )))
+                // check if a temporary shard exist for the shard_selection
+                let temporary_shard_opt = shard_holder_guard.get_temporary_shard(&shard_selection);
+                match temporary_shard_opt {
+                    Some(temp) => temp,
+                    None => {
+                        return Err(CollectionError::bad_shard_selection(format!(
+                            "Shard {} does not exist",
+                            shard_selection
+                        )))
+                    }
+                }
             }
             Some(shard) => match *shard {
                 Shard::Local(_) => shard,
