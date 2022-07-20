@@ -715,7 +715,10 @@ impl Collection {
         }
         {
             let shard_holder = self.shards_holder.read().await;
-            for shard in shard_holder.all_shards() {
+            for shard in shard_holder
+                .all_shards()
+                .chain(shard_holder.all_temporary_shards())
+            {
                 match shard {
                     Shard::Local(shard) => shard.on_optimizer_config_update().await?,
                     Shard::Proxy(shard) => shard.on_optimizer_config_update().await?,
@@ -741,7 +744,10 @@ impl Collection {
         }
         {
             let shard_holder = self.shards_holder.read().await;
-            for shard in shard_holder.all_shards() {
+            for shard in shard_holder
+                .all_shards()
+                .chain(shard_holder.all_temporary_shards())
+            {
                 match shard {
                     Shard::Local(shard) => shard.on_optimizer_config_update().await?,
                     Shard::Remote(_) => {} // Do nothing for remote shards

@@ -57,6 +57,10 @@ impl ShardHolder {
         self.temporary_shards.get(shard_id)
     }
 
+    pub fn all_temporary_shards(&self) -> impl Iterator<Item = &Shard> {
+        self.temporary_shards.values()
+    }
+
     pub async fn split_by_shard<O: SplitByShard + Clone>(&self, operation: O) -> Vec<(&Shard, O)> {
         let operation_to_shard = operation.split_by_shard(&self.ring);
         let shard_ops: Vec<_> = match operation_to_shard {
