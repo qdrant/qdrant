@@ -265,9 +265,12 @@ impl Collection {
         let mut shard_holder_write = self.shards_holder.write().await;
         let temporary_shard_path = self.path.join(format!("{shard_id}-temp"));
 
-        if let Some(mut existing_temporary_shard) =
-            shard_holder_write.remove_temporary_shard(shard_id)
-        {
+        let existing_shard = shard_holder_write.remove_temporary_shard(shard_id);
+
+        // do not lock shards while creating temporary shard  disk
+        drop(shard_holder_write);
+
+        if let Some(mut existing_temporary_shard) = existing_shard {
             log::info!(
                 "A temporary shard is already present for {}:{} - its content will be deleted",
                 self.id,
@@ -278,8 +281,6 @@ impl Collection {
             // Delete existing folder
             tokio::fs::remove_dir_all(&temporary_shard_path).await?;
         }
-        // do not lock shards while creating temporary shard  disk
-        drop(shard_holder_write);
 
         // create directory to hold the temporary data for shard with `shard_id`
         tokio::fs::create_dir_all(&temporary_shard_path).await?;
