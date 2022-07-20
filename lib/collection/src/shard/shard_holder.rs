@@ -100,14 +100,8 @@ impl ShardHolder {
         shared_config: Arc<RwLock<CollectionConfig>>,
         shard_id: ShardId,
     ) -> CollectionResult<()> {
-        // check if a temporary shard is already present
         if self.temporary_shards.contains_key(&shard_id) {
-            return Err(CollectionError::BadRequest {
-                description: format!(
-                    "A shard transfer is already in-progress for shard {}",
-                    shard_id
-                ),
-            });
+            log::info!("A temporary shard is already present for {}", shard_id);
         }
         // validate that the shard is known as a remote shard
         if let Some(Shard::Remote(_)) = self.shards.get(&shard_id) {
