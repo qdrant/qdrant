@@ -7,11 +7,14 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use crate::hash_ring::HashRing;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::{OperationToShard, SplitByShard};
+use crate::shard::local_shard::LocalShard;
+use crate::shard::Shard::Local;
 use crate::shard::{PeerId, Shard, ShardId, ShardTransfer};
 
 pub struct ShardHolder {
     shards: HashMap<ShardId, Shard>,
     shard_transfers: HashMap<ShardId, ShardTransfer>,
+    temporary_shards: HashMap<ShardId, Shard>,
     ring: HashRing<ShardId>,
 }
 
@@ -22,6 +25,7 @@ impl ShardHolder {
         Self {
             shards: HashMap::new(),
             shard_transfers: HashMap::new(),
+            temporary_shards: HashMap::new(),
             ring: hashring,
         }
     }
@@ -49,6 +53,14 @@ impl ShardHolder {
         self.shards.values()
     }
 
+    pub fn get_temporary_shard(&self, shard_id: &ShardId) -> Option<&Shard> {
+        self.temporary_shards.get(shard_id)
+    }
+
+    pub fn all_temporary_shards(&self) -> impl Iterator<Item = &Shard> {
+        self.temporary_shards.values()
+    }
+
     pub async fn split_by_shard<O: SplitByShard + Clone>(&self, operation: O) -> Vec<(&Shard, O)> {
         let operation_to_shard = operation.split_by_shard(&self.ring);
         let shard_ops: Vec<_> = match operation_to_shard {
@@ -62,6 +74,17 @@ impl ShardHolder {
                 .collect(),
         };
         shard_ops
+    }
+
+    /// Add temporary shard
+    pub fn add_temporary_shard(&mut self, shard_id: ShardId, temporary_shard: LocalShard) {
+        self.temporary_shards
+            .insert(shard_id, Local(temporary_shard));
+    }
+
+    /// Remove temporary shard
+    pub fn remove_temporary_shard(&mut self, shard_id: ShardId) -> Option<Shard> {
+        self.temporary_shards.remove(&shard_id)
     }
 
     pub fn start_shard_transfer(
@@ -126,6 +149,7 @@ impl ShardHolder {
         let futures: FuturesUnordered<_> = self
             .shards
             .iter_mut()
+            .chain(self.temporary_shards.iter_mut())
             .map(|(_, shard)| shard.before_drop())
             .collect();
         futures.collect::<Vec<()>>().await;
@@ -150,6 +174,7 @@ impl LockedShardHolder {
         RwLockReadGuard::try_map(holder, |h| h.shards.get(&shard_id)).ok()
     }
 
+    /// Fails if the shard is not found or not local.
     pub async fn local_shard_by_id(
         &self,
         id: ShardId,

@@ -437,6 +437,28 @@ impl TableOfContent {
         }))
     }
 
+    /// Initiate temporary shard.
+    ///
+    /// Fails if the collection does not exist
+    pub async fn initiate_temporary_shard(
+        &self,
+        collection_name: String,
+        shard_id: ShardId,
+    ) -> Result<(), StorageError> {
+        log::info!(
+            "Initiating temporary shard {}:{}",
+            collection_name,
+            shard_id
+        );
+        let real_collection_name = self.resolve_name(&collection_name).await?;
+        let read_collections = self.collections.read().await;
+
+        // safe 'unwrap' because the collection's existence is checked in `resolve_name`
+        let collection = read_collections.get(&real_collection_name).unwrap();
+        collection.initiate_temporary_shard(shard_id).await?;
+        Ok(())
+    }
+
     /// Recommend points using positive and negative example from the request
     ///
     /// # Arguments

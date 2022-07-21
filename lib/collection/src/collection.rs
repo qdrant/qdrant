@@ -258,17 +258,88 @@ impl Collection {
         todo!("Handle for sender and receiver")
     }
 
+    /// Initiate temporary shard
+    ///
+    /// Drops existing temporary shards for `shard_id`.
+    pub async fn initiate_temporary_shard(&self, shard_id: ShardId) -> CollectionResult<()> {
+        let mut shard_holder_write = self.shards_holder.write().await;
+        let temporary_shard_path = self.path.join(format!("{shard_id}-temp"));
+
+        let existing_shard = shard_holder_write.remove_temporary_shard(shard_id);
+
+        // do not lock shards while creating temporary shard  disk
+        drop(shard_holder_write);
+
+        if let Some(mut existing_temporary_shard) = existing_shard {
+            log::info!(
+                "A temporary shard is already present for {}:{} - its content will be deleted",
+                self.id,
+                shard_id
+            );
+            // Finish update tasks
+            existing_temporary_shard.before_drop().await;
+            // Delete existing folder
+            tokio::fs::remove_dir_all(&temporary_shard_path).await?;
+        }
+
+        // create directory to hold the temporary data for shard with `shard_id`
+        tokio::fs::create_dir_all(&temporary_shard_path).await?;
+        let temporary_shard = LocalShard::build(
+            shard_id,
+            self.id.clone(),
+            &temporary_shard_path,
+            self.config.clone(),
+        )
+        .await?;
+
+        // register temporary shard
+        let mut shards_holder_write = self.shards_holder.write().await;
+        shards_holder_write.add_temporary_shard(shard_id, temporary_shard);
+        Ok(())
+    }
+
+    /// Handle collection updates from peers.
+    ///
+    /// Shard transfer aware.
     pub async fn update_from_peer(
         &self,
         operation: CollectionUpdateOperations,
         shard_selection: ShardId,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        let local_shard = self
-            .shards_holder
-            .local_shard_by_id(shard_selection)
-            .await?;
-        local_shard.get().update(operation.clone(), wait).await
+        let shard_holder_guard = self.shards_holder.read().await;
+        let shard_opt = shard_holder_guard.get_shard(&shard_selection);
+
+        let target_shard = match shard_opt {
+            None => {
+                // check if a temporary shard exist for the shard_selection
+                let temporary_shard_opt = shard_holder_guard.get_temporary_shard(&shard_selection);
+                match temporary_shard_opt {
+                    Some(temp) => temp,
+                    None => {
+                        return Err(CollectionError::bad_shard_selection(format!(
+                            "Shard {} does not exist",
+                            shard_selection
+                        )))
+                    }
+                }
+            }
+            Some(shard) => match *shard {
+                Shard::Local(_) => shard,
+                Shard::Proxy(_) => shard,
+                Shard::Remote(_) => {
+                    // check temporary shards if the target is a remote shard
+                    let temporary_shard_opt =
+                        shard_holder_guard.get_temporary_shard(&shard_selection);
+                    match temporary_shard_opt {
+                        None => shard, // forward to the remote shard
+                        Some(temp) => temp,
+                    }
+                }
+            },
+        };
+
+        target_shard.get().update(operation.clone(), wait).await
     }
 
     pub async fn update_from_client(
@@ -653,7 +724,10 @@ impl Collection {
         }
         {
             let shard_holder = self.shards_holder.read().await;
-            for shard in shard_holder.all_shards() {
+            for shard in shard_holder
+                .all_shards()
+                .chain(shard_holder.all_temporary_shards())
+            {
                 match shard {
                     Shard::Local(shard) => shard.on_optimizer_config_update().await?,
                     Shard::Proxy(shard) => shard.on_optimizer_config_update().await?,
@@ -679,7 +753,10 @@ impl Collection {
         }
         {
             let shard_holder = self.shards_holder.read().await;
-            for shard in shard_holder.all_shards() {
+            for shard in shard_holder
+                .all_shards()
+                .chain(shard_holder.all_temporary_shards())
+            {
                 match shard {
                     Shard::Local(shard) => shard.on_optimizer_config_update().await?,
                     Shard::Remote(_) => {} // Do nothing for remote shards
