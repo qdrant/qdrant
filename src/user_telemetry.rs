@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use collection::telemetry::CollectionTelemetry;
 use serde::Serialize;
-use storage::Dispatcher;
+use storage::dispatcher::Dispatcher;
 use uuid::Uuid;
 
 use crate::settings::Settings;

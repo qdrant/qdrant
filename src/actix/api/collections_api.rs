@@ -9,7 +9,7 @@ use storage::content_manager::collection_meta_ops::{
     DeleteCollectionOperation, UpdateCollection, UpdateCollectionOperation,
 };
 use storage::content_manager::toc::TableOfContent;
-use storage::Dispatcher;
+use storage::dispatcher::Dispatcher;
 
 use crate::actix::helpers::process_response;
 use crate::common::collections::*;

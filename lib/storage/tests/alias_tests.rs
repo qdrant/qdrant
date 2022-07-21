@@ -9,8 +9,8 @@ mod tests {
         CreateCollectionOperation, DeleteAlias, RenameAlias,
     };
     use storage::content_manager::toc::TableOfContent;
+    use storage::dispatcher::Dispatcher;
     use storage::types::{PerformanceConfig, StorageConfig};
-    use storage::Dispatcher;
     use tempdir::TempDir;
     use tokio::runtime::Runtime;
 

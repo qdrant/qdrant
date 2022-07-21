@@ -21,9 +21,10 @@ use collection::shard::ChannelService;
 use consensus::Consensus;
 use log::LevelFilter;
 use slog::Drain;
-use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef, Persistent};
+use storage::content_manager::consensus::persistent::Persistent;
+use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef};
 use storage::content_manager::toc::TableOfContent;
-use storage::Dispatcher;
+use storage::dispatcher::Dispatcher;
 
 use crate::common::helpers::create_search_runtime;
 use crate::greeting::welcome;

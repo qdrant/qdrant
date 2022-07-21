@@ -5,6 +5,7 @@ use self::errors::StorageError;
 pub mod alias_mapping;
 pub mod collection_meta_ops;
 mod collections_ops;
+pub mod consensus;
 pub mod consensus_state;
 pub mod conversions;
 pub mod errors;

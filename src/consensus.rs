@@ -532,11 +532,10 @@ mod tests {
     use storage::content_manager::collection_meta_ops::{
         CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
     };
-    use storage::content_manager::consensus_state::{
-        ConsensusState, ConsensusStateRef, Persistent,
-    };
+    use storage::content_manager::consensus::persistent::Persistent;
+    use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef};
     use storage::content_manager::toc::TableOfContent;
-    use storage::Dispatcher;
+    use storage::dispatcher::Dispatcher;
     use tempdir::TempDir;
 
     use super::Consensus;
