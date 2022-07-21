@@ -248,7 +248,7 @@ impl Collection {
     pub async fn finish_shard_transfer(&self, shard_id: ShardId) -> CollectionResult<()> {
         let mut shards_holder = self.shards_holder.write().await;
         shards_holder
-            .finish_transfer(&self.path, self.id.clone(), shard_id)
+            .finish_transfer(&self.path, self.id.clone(), shard_id, self.config.clone())
             .await
     }
 
