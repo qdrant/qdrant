@@ -1,34 +1,27 @@
-use std::cmp;
 use std::collections::HashMap;
-use std::fs::{create_dir_all, File};
-use std::io::BufWriter;
 use std::ops::Deref;
-use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::Duration;
 
-use atomicwrites::AtomicFile;
-use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use collection::collection_state;
 use collection::shard::{CollectionId, PeerId};
-use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
-use raft::eraftpb::{ConfChangeV2, ConfState, Entry as RaftEntry, HardState, SnapshotMetadata};
-use raft::util::limit_size;
+use raft::eraftpb::{ConfChangeV2, Entry as RaftEntry};
 use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tonic::transport::Uri;
-use wal::Wal;
 
 use super::alias_mapping::AliasMapping;
 use super::consensus_ops::ConsensusOperations;
 use super::errors::StorageError;
 use super::CollectionContainer;
+use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
+use crate::content_manager::consensus::entry_queue::EntryId;
+use crate::content_manager::consensus::persistent::Persistent;
 use crate::types::{ClusterInfo, ClusterStatus, PeerAddressById, PeerInfo, RaftInfo};
 
-const COLLECTIONS_META_WAL_DIR: &str = "collections_meta_wal";
 pub const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 
 pub mod prelude {
@@ -55,76 +48,6 @@ impl TryFrom<&[u8]> for SnapshotData {
 
     fn try_from(bytes: &[u8]) -> Result<SnapshotData, Self::Error> {
         serde_cbor::from_slice(bytes)
-    }
-}
-
-struct ConsensusOpWal(Wal);
-
-impl ConsensusOpWal {
-    pub fn new(storage_path: &str) -> Self {
-        let collections_meta_wal_path = Path::new(storage_path).join(&COLLECTIONS_META_WAL_DIR);
-        create_dir_all(&collections_meta_wal_path)
-            .expect("Can't create Collections meta Wal directory");
-        ConsensusOpWal(Wal::open(collections_meta_wal_path).unwrap())
-    }
-
-    fn entry(&self, id: u64) -> raft::Result<RaftEntry> {
-        // Raft entries are expected to have index starting from 1
-        if id < 1 {
-            return Err(raft::Error::Store(raft::StorageError::Unavailable));
-        }
-        let first_entry = self
-            .first_entry()
-            .map_err(raft_error_other)?
-            .ok_or(raft::Error::Store(raft::StorageError::Unavailable))?;
-        if id < first_entry.index {
-            return Err(raft::Error::Store(raft::StorageError::Compacted));
-        }
-        // Due to snapshots there might be different offsets between wal index and raft entry index
-        let offset = first_entry.index - self.0.first_index();
-        <RaftEntry as prost::Message>::decode(
-            self.0
-                .entry(id - offset)
-                .ok_or(raft::Error::Store(raft::StorageError::Unavailable))?
-                .as_ref(),
-        )
-        .map_err(raft_error_other)
-    }
-
-    fn entries(&self, low: u64, high: u64, max_size: Option<u64>) -> raft::Result<Vec<RaftEntry>> {
-        let mut entries = (low..high).map(|id| self.entry(id)).try_collect()?;
-        limit_size(&mut entries, max_size);
-        Ok(entries)
-    }
-
-    pub fn first_entry(&self) -> Result<Option<RaftEntry>, StorageError> {
-        let first_index = self.0.first_index();
-        let entry = self
-            .0
-            .entry(first_index)
-            .map(|entry| <RaftEntry as prost::Message>::decode(entry.as_ref()));
-        Ok(entry.transpose()?)
-    }
-
-    pub fn last_entry(&self) -> Result<Option<RaftEntry>, StorageError> {
-        let last_index = self.0.last_index();
-        let entry = self
-            .0
-            .entry(last_index)
-            .map(|entry| <RaftEntry as prost::Message>::decode(entry.as_ref()));
-        Ok(entry.transpose()?)
-    }
-
-    pub fn append_entries(&mut self, entries: Vec<RaftEntry>) -> Result<(), StorageError> {
-        use prost::Message;
-
-        for entry in entries {
-            log::debug!("Appending entry: {entry:?}");
-            let mut buf = vec![];
-            entry.encode(&mut buf)?;
-            self.0.append(&buf)?;
-        }
-        Ok(())
     }
 }
 
@@ -226,8 +149,8 @@ impl<C: CollectionContainer> ConsensusState<C> {
 
     pub fn set_unapplied_entries(
         &self,
-        first_index: u64,
-        last_index: u64,
+        first_index: EntryId,
+        last_index: EntryId,
     ) -> Result<(), raft::Error> {
         self.persistent
             .write()
@@ -510,318 +433,17 @@ impl Storage for ConsensusStateRef {
         self.0.term(idx)
     }
 
-    fn first_index(&self) -> raft::Result<u64> {
+    fn first_index(&self) -> raft::Result<EntryId> {
         self.0.first_index()
     }
 
-    fn last_index(&self) -> raft::Result<u64> {
+    fn last_index(&self) -> raft::Result<EntryId> {
         self.0.last_index()
     }
 
     fn snapshot(&self, request_index: u64, to: u64) -> raft::Result<raft::eraftpb::Snapshot> {
         self.0.snapshot(request_index, to)
     }
-}
-
-const STATE_FILE_NAME: &str = "raft_state";
-
-type Current = u64;
-type Last = u64;
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
-struct EntryApplyProgressQueue(Option<(Current, Last)>);
-
-impl EntryApplyProgressQueue {
-    /// Return oldest un-applied entry id if any
-    fn current(&self) -> Option<u64> {
-        match self.0 {
-            Some((current_index, last_index)) => {
-                if current_index > last_index {
-                    None
-                } else {
-                    Some(current_index)
-                }
-            }
-            None => None,
-        }
-    }
-
-    fn applied(&mut self) {
-        match &mut self.0 {
-            Some((current_index, _)) => {
-                *current_index += 1;
-            }
-            None => (),
-        }
-    }
-
-    fn get_last_applied(&self) -> Option<u64> {
-        match &self.0 {
-            Some((0, _)) => None,
-            Some((current, _)) => Some(current - 1),
-            None => None,
-        }
-    }
-
-    fn set_from_snapshot(&mut self, snapshot_at_commit: u64) {
-        self.0 = Some((snapshot_at_commit + 1, snapshot_at_commit))
-    }
-
-    pub fn len(&self) -> usize {
-        match self.0 {
-            None => 0,
-            Some((current, last)) => (last as isize - current as isize + 1) as usize,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct Persistent {
-    #[serde(with = "RaftStateDef")]
-    state: RaftState,
-    #[serde(default)] // TODO quick fix to avoid breaking the compat. with 0.8.1
-    latest_snapshot_meta: SnapshotMetadataSer,
-    #[serde(default)]
-    apply_progress_queue: EntryApplyProgressQueue,
-    #[serde(with = "serialize_peer_addresses")]
-    pub peer_address_by_id: Arc<RwLock<PeerAddressById>>,
-    this_peer_id: u64,
-    #[serde(skip)]
-    path: PathBuf,
-}
-
-impl Persistent {
-    pub fn state(&self) -> &RaftState {
-        &self.state
-    }
-
-    pub fn latest_snapshot_meta(&self) -> &SnapshotMetadataSer {
-        &self.latest_snapshot_meta
-    }
-
-    pub fn update_from_snapshot(
-        &mut self,
-        meta: &SnapshotMetadata,
-        address_by_id: PeerAddressById,
-    ) -> Result<(), StorageError> {
-        *self.peer_address_by_id.write() = address_by_id;
-        self.state.conf_state = meta.get_conf_state().clone();
-        self.state.hard_state.term = cmp::max(self.state.hard_state.term, meta.term);
-        self.state.hard_state.commit = meta.index;
-        self.apply_progress_queue.set_from_snapshot(meta.index);
-        self.latest_snapshot_meta = meta.into();
-        self.save()
-    }
-
-    /// Returns state and if it was initialized for the first time
-    pub fn load_or_init(
-        storage_path: impl AsRef<Path>,
-        first_peer: bool,
-    ) -> Result<(Self, bool), StorageError> {
-        create_dir_all(storage_path.as_ref())?;
-        let path = storage_path.as_ref().join(STATE_FILE_NAME);
-        let (state, just_initialized) = if path.exists() {
-            log::info!("Loading raft state from {}", path.display());
-            (Self::load(path)?, false)
-        } else {
-            log::info!("Initializing new raft state at {}", path.display());
-            (Self::init(path, first_peer)?, true)
-        };
-        log::debug!(
-            "State: {:?}. Is just initialized: {just_initialized}",
-            state
-        );
-        Ok((state, just_initialized))
-    }
-
-    pub fn unapplied_entities_count(&self) -> usize {
-        self.apply_progress_queue.len()
-    }
-
-    pub fn apply_state_update(
-        &mut self,
-        update: impl FnOnce(&mut RaftState),
-    ) -> Result<(), StorageError> {
-        let mut state = self.state.clone();
-        update(&mut state);
-        self.state = state;
-        self.save()
-    }
-
-    pub fn current_unapplied_entry(&self) -> Option<u64> {
-        self.apply_progress_queue.current()
-    }
-
-    pub fn entry_applied(&mut self) -> Result<(), StorageError> {
-        self.apply_progress_queue.applied();
-        self.save()
-    }
-
-    pub fn set_unapplied_entries(
-        &mut self,
-        first_index: u64,
-        last_index: u64,
-    ) -> Result<(), StorageError> {
-        self.apply_progress_queue = EntryApplyProgressQueue(Some((first_index, last_index)));
-        self.save()
-    }
-
-    pub fn set_peer_address_by_id(
-        &mut self,
-        peer_address_by_id: PeerAddressById,
-    ) -> Result<(), StorageError> {
-        *self.peer_address_by_id.write() = peer_address_by_id;
-        self.save()
-    }
-
-    pub fn insert_peer(&mut self, peer_id: PeerId, address: Uri) -> Result<(), StorageError> {
-        if let Some(prev_peer_address) = self
-            .peer_address_by_id
-            .write()
-            .insert(peer_id, address.clone())
-        {
-            log::warn!("Replaced address of peer {peer_id} from {prev_peer_address} to {address}");
-        } else {
-            log::debug!("Added peer with id {peer_id} and address {address}")
-        }
-        self.save()
-    }
-
-    pub fn last_applied_entry(&self) -> Option<u64> {
-        self.apply_progress_queue.get_last_applied()
-    }
-
-    pub fn peer_address_by_id(&self) -> PeerAddressById {
-        self.peer_address_by_id.read().clone()
-    }
-
-    pub fn this_peer_id(&self) -> u64 {
-        self.this_peer_id
-    }
-
-    /// ## Arguments
-    /// `path` - full name of the file where state will be saved
-    ///
-    /// `first_peer` - if this is a first peer in a new deployment (e.g. it does not bootstrap from anyone)
-    /// It is `None` if distributed deployment is disabled
-    fn init(path: PathBuf, first_peer: bool) -> Result<Self, StorageError> {
-        let this_peer_id = rand::random();
-        let voters = if first_peer {
-            vec![this_peer_id]
-        } else {
-            // `Some(false)` - Leave empty the network topology for the peer, if it is not starting a network itself.
-            // This way it will not be able to become a leader and commit data
-            // until it joins an existing network.
-            vec![]
-        };
-        let state = Self {
-            state: RaftState {
-                hard_state: HardState::default(),
-                // For network with 1 node, set it as voter.
-                // First vec is voters, second is learners.
-                conf_state: ConfState::from((voters, vec![])),
-            },
-            apply_progress_queue: Default::default(),
-            peer_address_by_id: Default::default(),
-            this_peer_id,
-            path,
-            latest_snapshot_meta: Default::default(),
-        };
-        state.save()?;
-        Ok(state)
-    }
-
-    fn load(path: PathBuf) -> Result<Self, StorageError> {
-        let file = File::open(&path)?;
-        let mut state: Self = serde_cbor::from_reader(&file)?;
-        state.path = path;
-        Ok(state)
-    }
-
-    fn save(&self) -> Result<(), StorageError> {
-        Ok(AtomicFile::new(&self.path, AllowOverwrite).write(|file| {
-            let writer = BufWriter::new(file);
-            serde_cbor::to_writer(writer, self)
-        })?)
-    }
-}
-
-mod serialize_peer_addresses {
-    use std::collections::HashMap;
-    use std::sync::Arc;
-
-    use http::Uri;
-    use parking_lot::RwLock;
-    use serde::{self, Deserializer, Serializer};
-
-    use crate::serialize_peer_addresses;
-    use crate::types::PeerAddressById;
-
-    pub fn serialize<S>(
-        addresses: &Arc<RwLock<PeerAddressById>>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serialize_peer_addresses::serialize(&*addresses.read(), serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Arc<RwLock<PeerAddressById>>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let addresses: HashMap<u64, Uri> = serialize_peer_addresses::deserialize(deserializer)?;
-        Ok(Arc::new(RwLock::new(addresses)))
-    }
-}
-
-#[derive(Serialize, Deserialize, Default, Debug)]
-pub struct SnapshotMetadataSer {
-    term: u64,
-    index: u64,
-}
-
-impl From<&SnapshotMetadata> for SnapshotMetadataSer {
-    fn from(meta: &SnapshotMetadata) -> Self {
-        Self {
-            term: meta.term,
-            index: meta.index,
-        }
-    }
-}
-
-/// Definition of struct to help with serde serialization.
-/// Should be used only in `[serde(with=...)]`
-#[derive(Serialize, Deserialize)]
-#[serde(remote = "RaftState")]
-struct RaftStateDef {
-    #[serde(with = "HardStateDef")]
-    hard_state: HardState,
-    #[serde(with = "ConfStateDef")]
-    conf_state: ConfState,
-}
-
-/// Definition of struct to help with serde serialization.
-/// Should be used only in `[serde(with=...)]`
-#[derive(Serialize, Deserialize)]
-#[serde(remote = "HardState")]
-struct HardStateDef {
-    term: u64,
-    vote: u64,
-    commit: u64,
-}
-
-/// Definition of struct to help with serde serialization.
-/// Should be used only in `[serde(with=...)]`
-#[derive(Serialize, Deserialize)]
-#[serde(remote = "ConfState")]
-struct ConfStateDef {
-    voters: Vec<u64>,
-    learners: Vec<u64>,
-    voters_outgoing: Vec<u64>,
-    learners_next: Vec<u64>,
-    auto_leave: bool,
 }
 
 pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
@@ -840,7 +462,10 @@ mod tests {
     use raft::eraftpb::Entry;
     use raft::storage::{MemStorage, Storage};
 
-    use super::{ConsensusOpWal, ConsensusState, EntryApplyProgressQueue, Persistent};
+    use super::ConsensusState;
+    use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
+    use crate::content_manager::consensus::entry_queue::EntryApplyProgressQueue;
+    use crate::content_manager::consensus::persistent::Persistent;
     use crate::content_manager::CollectionContainer;
 
     #[test]
@@ -882,7 +507,7 @@ mod tests {
 
     #[test]
     fn unapplied_entries() {
-        let mut entries = EntryApplyProgressQueue(Some((0, 2)));
+        let mut entries = EntryApplyProgressQueue::new(0, 2);
         assert_eq!(entries.current(), Some(0));
         assert_eq!(entries.len(), 3);
         entries.applied();
