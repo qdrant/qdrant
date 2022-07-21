@@ -11,8 +11,8 @@ use content_manager::toc::TableOfContent;
 use types::ClusterStatus;
 
 pub mod content_manager;
-pub mod types;
 pub mod dispatcher;
+pub mod types;
 
 pub mod serialize_peer_addresses {
     use std::collections::HashMap;

@@ -1,7 +1,11 @@
+use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
-use std::ops::Deref;
-use crate::{ClusterStatus, CollectionMetaOperations, ConsensusOperations, ConsensusStateRef, StorageError, TableOfContent};
+
+use crate::{
+    ClusterStatus, CollectionMetaOperations, ConsensusOperations, ConsensusStateRef, StorageError,
+    TableOfContent,
+};
 
 pub struct Dispatcher {
     toc: Arc<TableOfContent>,
