@@ -75,9 +75,7 @@ impl State {
                             shard_path,
                             channel_service.clone(),
                         )?;
-                        shards_holder
-                            .add_shard(shard_id, Shard::Remote(shard))
-                            .await;
+                        shards_holder.add_shard(shard_id, Shard::Remote(shard));
                     }
                 }
             }

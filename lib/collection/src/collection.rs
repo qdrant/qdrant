@@ -100,7 +100,7 @@ impl Collection {
                     return Err(err);
                 }
             };
-            shard_holder.add_shard(shard_id, Shard::Local(shard)).await;
+            shard_holder.add_shard(shard_id, Shard::Local(shard));
         }
 
         for (shard_id, peer_id) in shard_distribution.remote {
@@ -122,7 +122,7 @@ impl Collection {
                     return Err(err);
                 }
             };
-            shard_holder.add_shard(shard_id, Shard::Remote(shard)).await;
+            shard_holder.add_shard(shard_id, Shard::Remote(shard));
         }
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
@@ -200,20 +200,18 @@ impl Collection {
         let shared_config = Arc::new(RwLock::new(config.clone()));
         for shard_id in shard_distribution.local {
             let shard_path = shard_path(path, shard_id);
-            shard_holder
-                .add_shard(
-                    shard_id,
-                    Shard::Local(
-                        LocalShard::load(shard_id, id.clone(), &shard_path, shared_config.clone())
-                            .await,
-                    ),
-                )
-                .await;
+            shard_holder.add_shard(
+                shard_id,
+                Shard::Local(
+                    LocalShard::load(shard_id, id.clone(), &shard_path, shared_config.clone())
+                        .await,
+                ),
+            );
         }
 
         for (shard_id, peer_id) in shard_distribution.remote {
             let shard = RemoteShard::new(shard_id, id.clone(), peer_id, channel_service.clone());
-            shard_holder.add_shard(shard_id, Shard::Remote(shard)).await;
+            shard_holder.add_shard(shard_id, Shard::Remote(shard));
         }
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
@@ -249,7 +247,9 @@ impl Collection {
 
     pub async fn finish_shard_transfer(&self, shard_id: ShardId) -> CollectionResult<()> {
         let mut shards_holder = self.shards_holder.write().await;
-        shards_holder.finish_transfer(shard_id)
+        shards_holder
+            .finish_transfer(&self.path, self.id.clone(), shard_id)
+            .await
     }
 
     pub async fn abort_shard_transfer(&mut self, _shard_id: ShardId) -> CollectionResult<()> {
@@ -351,7 +351,7 @@ impl Collection {
 
         let mut results = {
             let shards_holder = self.shards_holder.read().await;
-            let shard_to_op = shards_holder.split_by_shard(operation).await;
+            let shard_to_op = shards_holder.split_by_shard(operation);
 
             let shard_requests = shard_to_op
                 .into_iter()

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
@@ -9,7 +10,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::{OperationToShard, SplitByShard};
 use crate::shard::local_shard::LocalShard;
 use crate::shard::Shard::Local;
-use crate::shard::{PeerId, Shard, ShardId, ShardTransfer};
+use crate::shard::{CollectionId, PeerId, Shard, ShardId, ShardTransfer};
 
 pub struct ShardHolder {
     shards: HashMap<ShardId, Shard>,
@@ -30,12 +31,12 @@ impl ShardHolder {
         }
     }
 
-    pub async fn add_shard(&mut self, shard_id: ShardId, shard: Shard) {
+    pub fn add_shard(&mut self, shard_id: ShardId, shard: Shard) {
         self.shards.insert(shard_id, shard);
         self.ring.add(shard_id);
     }
 
-    pub async fn remove_shard(&mut self, shard_id: ShardId) -> Option<Shard> {
+    pub fn remove_shard(&mut self, shard_id: ShardId) -> Option<Shard> {
         let shard = self.shards.remove(&shard_id);
         self.ring.remove(&shard_id);
         shard
@@ -61,7 +62,7 @@ impl ShardHolder {
         self.temporary_shards.values()
     }
 
-    pub async fn split_by_shard<O: SplitByShard + Clone>(&self, operation: O) -> Vec<(&Shard, O)> {
+    pub fn split_by_shard<O: SplitByShard + Clone>(&self, operation: O) -> Vec<(&Shard, O)> {
         let operation_to_shard = operation.split_by_shard(&self.ring);
         let shard_ops: Vec<_> = match operation_to_shard {
             OperationToShard::ByShard(by_shard) => by_shard
@@ -106,17 +107,74 @@ impl ShardHolder {
         Ok(shard_transfer)
     }
 
-    pub fn finish_transfer(&mut self, shard_id: ShardId) -> CollectionResult<()> {
+    pub async fn finish_transfer(
+        &mut self,
+        collection_path: &Path,
+        collection_id: CollectionId,
+        shard_id: ShardId,
+    ) -> CollectionResult<()> {
+        // remove on-going transfer for `shard_id`
         let transfer = self.shard_transfers.remove(&shard_id).ok_or_else(|| {
             CollectionError::service_error(format!(
-                "Shard transfer data for {shard_id} is absent at the end of the transfer."
+                "Shard transfer data for {collection_id}:{shard_id} is absent at the end of the transfer."
             ))
         })?;
+
+        // promote pending temporary shard for `shard_id`
+        if self.temporary_shards.contains_key(&shard_id) {
+            self.promote_temporary_shard(collection_path, collection_id, shard_id)
+                .await?
+        }
+
+        // update peer's id if `shard_id` is a remote shard
         if let Shard::Remote(shard) = self.shards.get_mut(&shard_id).ok_or_else(|| {
-            CollectionError::service_error("Shard {shard_id} is absent".to_owned())
+            CollectionError::service_error("Shard {collection_id}:{shard_id} is absent".to_owned())
         })? {
             shard.peer_id = transfer.to;
         };
+        Ok(())
+    }
+
+    /// Promote temporary shard
+    async fn promote_temporary_shard(
+        &mut self,
+        collection_path: &Path,
+        collection_id: CollectionId,
+        shard_id: ShardId,
+    ) -> CollectionResult<()> {
+        if !self.shards.contains_key(&shard_id) {
+            return Err(
+                CollectionError::service_error(format!(
+                    "Temporary shard for {collection_id}:{shard_id} is absent at the end of the transfer."
+                ))
+            );
+        }
+
+        match self.remove_temporary_shard(shard_id) {
+            None => {
+                return Err(CollectionError::BadRequest {
+                    description: format!(
+                        "Cannot promote temporary shard {}:{} because it does not exist",
+                        collection_id, shard_id
+                    ),
+                })
+            }
+            Some(temporary_shard) => {
+                // safe `unwrap` because the existence was checked as precondition and we have exclusive access
+                let mut old_shard = self.shards.remove(&shard_id).unwrap();
+
+                // finish update tasks
+                old_shard.before_drop().await;
+                // Delete old shard's data folder
+                let old_shard_path = collection_path.join(format!("{shard_id}"));
+                tokio::fs::remove_dir_all(&old_shard_path).await?;
+
+                // promote temporary shard
+                let temporary_shard_path = collection_path.join(format!("{shard_id}-temp"));
+                tokio::fs::rename(temporary_shard_path, old_shard_path).await?;
+                self.shards.insert(shard_id, temporary_shard);
+            }
+        }
         Ok(())
     }
 
@@ -227,7 +285,7 @@ mod tests {
         .unwrap();
 
         let mut shard_holder = ShardHolder::new(HashRing::fair(100));
-        shard_holder.add_shard(2, Shard::Remote(shard)).await;
+        shard_holder.add_shard(2, Shard::Remote(shard));
         let locked_shard_holder = LockedShardHolder::new(shard_holder);
 
         let retrieved_shard = locked_shard_holder.get_shard(2).await;
