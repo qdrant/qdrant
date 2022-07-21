@@ -158,8 +158,13 @@ impl<C: CollectionContainer> ConsensusState<C> {
             .map_err(raft_error_other)
     }
 
-    pub fn apply_entries<T: Storage>(&self, raw_node: &mut RawNode<T>) -> Result<(), raft::Error> {
+    pub fn apply_entries<T: Storage>(&self, raw_node: &mut RawNode<T>) {
         use raft::eraftpb::EntryType;
+
+        if let Err(err) = self.persistent.write().save_if_dirty() {
+            log::error!("Failed to save new state of applied entries queue: {err}");
+            return;
+        }
 
         loop {
             let unapplied_index = self.persistent.read().current_unapplied_entry();
@@ -168,46 +173,72 @@ impl<C: CollectionContainer> ConsensusState<C> {
                 None => break,
             };
             log::debug!("Applying committed entry with index {entry_index}");
-            let entry = self.wal.lock().entry(entry_index)?;
-            if entry.data.is_empty() {
+            let entry = match self.wal.lock().entry(entry_index) {
+                Ok(entry) => entry,
+                Err(err) => {
+                    log::error!("Failed to get entry at index {entry_index}: {err}");
+                    return;
+                }
+            };
+            let do_increase_applied_index: bool = if entry.data.is_empty() {
                 // Empty entry, when the peer becomes Leader it will send an empty entry.
+                true
             } else {
                 match entry.get_entry_type() {
                     EntryType::EntryNormal => {
                         let operation_result = self.apply_normal_entry(&entry);
                         match operation_result {
-                            Ok(result) => log::debug!(
-                                "Successfully applied consensus operation entry. Index: {}. Result: {result}",
-                                entry.index
-                            ),
-                            Err(err) => {
-                                log::error!("Failed to apply collection meta operation entry with error: {err}")
+                            Ok(result) => {
+                                log::debug!(
+                                    "Successfully applied consensus operation entry. Index: {}. Result: {result}",
+                                    entry.index);
+                                true
                             }
-                         }
-                    }
-                    EntryType::EntryConfChangeV2 => {
-                        match self.apply_conf_change_entry(&entry, raw_node) {
-                            Ok(()) => log::debug!(
-                                "Successfully applied configuration change entry. Index: {}.",
-                                entry.index
-                            ),
+                            Err(err @ StorageError::ServiceError { .. }) => {
+                                log::error!("Failed to apply collection meta operation entry with service error: {err}");
+                                // This is a service error, so we can try to reapply it later.
+                                false
+                            }
                             Err(err) => {
-                                log::error!(
-                                    "Failed to apply configuration change entry with error: {err}"
-                                )
+                                log::warn!("Failed to apply collection meta operation entry with user error: {err}");
+                                // This is a user error so we can safely consider it applied but with error as it was incorrect.
+                                true
                             }
                         }
                     }
-                    ty => log::error!("Failed to apply entry: unsupported entry type {ty:?}"),
+                    EntryType::EntryConfChangeV2 => {
+                        match self.apply_conf_change_entry(&entry, raw_node) {
+                            Ok(()) => {
+                                log::debug!(
+                                    "Successfully applied configuration change entry. Index: {}.",
+                                    entry.index
+                                );
+                                true
+                            }
+                            Err(err) => {
+                                log::error!(
+                                    "Failed to apply configuration change entry with error: {err}"
+                                );
+                                false
+                            }
+                        }
+                    }
+                    ty => {
+                        log::error!("Failed to apply entry: unsupported entry type {ty:?}");
+                        false
+                    }
                 }
-            }
+            };
 
-            self.persistent
-                .write()
-                .entry_applied()
-                .map_err(raft_error_other)?;
+            if do_increase_applied_index {
+                if let Err(err) = self.persistent.write().entry_applied() {
+                    log::error!("Failed to save new state of applied entries queue: {err}");
+                    return;
+                }
+            } else {
+                return;
+            }
         }
-        Ok(())
     }
 
     pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
