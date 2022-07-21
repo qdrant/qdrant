@@ -64,6 +64,7 @@ pub struct Collection {
     path: PathBuf,
     snapshots_path: PathBuf,
     telemetry: CollectionTelemetry,
+    channel_service: ChannelService,
 }
 
 impl Collection {
@@ -139,6 +140,7 @@ impl Collection {
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
             telemetry: CollectionTelemetry::new(id, config.clone(), start_time.elapsed()),
+            channel_service,
         })
     }
 
@@ -219,6 +221,7 @@ impl Collection {
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
             telemetry: CollectionTelemetry::new(collection_id, config, start_time.elapsed()),
+            channel_service,
         }
     }
 
@@ -232,8 +235,11 @@ impl Collection {
         to_peer: PeerId,
         this_peer: PeerId,
     ) -> CollectionResult<()> {
-        let mut shards_holder = self.shards_holder.write().await;
-        let transfer = shards_holder.start_shard_transfer(shard_id, to_peer, this_peer)?;
+        let transfer = {
+            let mut shards_holder = self.shards_holder.write().await;
+            shards_holder.start_shard_transfer(shard_id, to_peer, this_peer)?
+        };
+
         if transfer.from == this_peer {
             self.send_shard(shard_id);
         }
@@ -251,7 +257,7 @@ impl Collection {
         self.promote_temporary_shard(shard_id).await
     }
 
-    pub async fn abort_shard_transfer(&mut self, _shard_id: ShardId) -> CollectionResult<()> {
+    pub async fn abort_shard_transfer(&self, _shard_id: ShardId) -> CollectionResult<()> {
         let mut _shards_holder = self.shards_holder.write().await;
         // self.shard_transfers.remove(&shard_id);
         todo!("Handle for sender and receiver")

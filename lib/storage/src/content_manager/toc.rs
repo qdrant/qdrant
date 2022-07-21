@@ -404,8 +404,8 @@ impl TableOfContent {
         shard: ShardId,
         transfer: ShardTransferOperations,
     ) -> Result<(), StorageError> {
-        let mut collections = self.collections.write().await;
-        let collection = collections.get_mut(&collection).ok_or_else(|| {
+        let collections = self.collections.read().await;
+        let collection = collections.get(&collection).ok_or_else(|| {
             StorageError::service_error(&format!(
                 "Collection {collection} should be present at the time of shard transfer."
             ))
