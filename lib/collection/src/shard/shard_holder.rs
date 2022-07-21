@@ -1,12 +1,9 @@
 use std::collections::HashMap;
-use std::path::Path;
-use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::{OperationToShard, SplitByShard};
@@ -42,6 +39,22 @@ impl ShardHolder {
         let shard = self.shards.remove(&shard_id);
         self.ring.remove(&shard_id);
         shard
+    }
+
+    /// Take shard
+    ///
+    /// remove shard and return ownership
+    pub fn take_shard(&mut self, shard_id: ShardId) -> Option<Shard> {
+        self.shards.remove(&shard_id)
+    }
+
+    /// Replace shard
+    ///
+    /// return old shard
+    pub fn replace_shard(&mut self, shard_id: ShardId, shard: Shard) -> Option<Shard> {
+        let old_shard = self.shards.remove(&shard_id);
+        self.shards.insert(shard_id, shard);
+        old_shard
     }
 
     pub fn get_shard(&self, shard_id: &ShardId) -> Option<&Shard> {
@@ -111,10 +124,8 @@ impl ShardHolder {
 
     pub async fn finish_transfer(
         &mut self,
-        collection_path: &Path,
-        collection_id: CollectionId,
+        collection_id: &CollectionId,
         shard_id: ShardId,
-        shared_config: Arc<RwLock<CollectionConfig>>,
     ) -> CollectionResult<()> {
         // remove on-going transfer for `shard_id`
         let transfer = self.shard_transfers.remove(&shard_id).ok_or_else(|| {
@@ -123,68 +134,12 @@ impl ShardHolder {
             ))
         })?;
 
-        // promote pending temporary shard for `shard_id`
-        if self.temporary_shards.contains_key(&shard_id) {
-            self.promote_temporary_shard(collection_path, collection_id, shard_id, shared_config)
-                .await?
-        }
-
         // update peer's id if `shard_id` is a remote shard
         if let Shard::Remote(shard) = self.shards.get_mut(&shard_id).ok_or_else(|| {
             CollectionError::service_error("Shard {collection_id}:{shard_id} is absent".to_owned())
         })? {
             shard.peer_id = transfer.to;
         };
-        Ok(())
-    }
-
-    /// Promote temporary shard
-    async fn promote_temporary_shard(
-        &mut self,
-        collection_path: &Path,
-        collection_id: CollectionId,
-        shard_id: ShardId,
-        shared_config: Arc<RwLock<CollectionConfig>>,
-    ) -> CollectionResult<()> {
-        if !self.shards.contains_key(&shard_id) {
-            return Err(
-                CollectionError::service_error(format!(
-                    "Temporary shard for {collection_id}:{shard_id} is absent at the end of the transfer."
-                ))
-            );
-        }
-
-        match self.remove_temporary_shard(shard_id) {
-            None => {
-                return Err(CollectionError::BadRequest {
-                    description: format!(
-                        "Cannot promote temporary shard {}:{} because it does not exist",
-                        collection_id, shard_id
-                    ),
-                })
-            }
-            Some(mut temporary_shard) => {
-                // safe `unwrap` because the existence was checked as precondition and we have exclusive access
-                let mut old_shard = self.shards.remove(&shard_id).unwrap();
-
-                // finish update tasks
-                old_shard.before_drop().await;
-                // Delete old shard's data folder
-                let old_shard_path = collection_path.join(format!("{shard_id}"));
-                tokio::fs::remove_dir_all(&old_shard_path).await?;
-
-                // stop temporary shard
-                temporary_shard.before_drop().await;
-                let temporary_shard_path = collection_path.join(format!("{shard_id}-temp"));
-                tokio::fs::rename(&temporary_shard_path, &old_shard_path).await?;
-
-                // reload temporary shard at the new location
-                let reloaded_temporary_shard =
-                    LocalShard::load(shard_id, collection_id, &old_shard_path, shared_config).await;
-                self.shards
-                    .insert(shard_id, Local(reloaded_temporary_shard));
-            }
-        }
         Ok(())
     }
 

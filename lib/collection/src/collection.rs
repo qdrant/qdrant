@@ -36,6 +36,7 @@ use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::shard_holder::{LockedShardHolder, ShardHolder};
+use crate::shard::Shard::Local;
 use crate::shard::{
     create_shard_dir, shard_path, ChannelService, CollectionId, PeerId, Shard, ShardId,
     ShardOperation, HASH_RING_SHARD_SCALE,
@@ -246,16 +247,84 @@ impl Collection {
     }
 
     pub async fn finish_shard_transfer(&self, shard_id: ShardId) -> CollectionResult<()> {
-        let mut shards_holder = self.shards_holder.write().await;
-        shards_holder
-            .finish_transfer(&self.path, self.id.clone(), shard_id, self.config.clone())
-            .await
+        let mut shards_holder_write = self.shards_holder.write().await;
+        shards_holder_write
+            .finish_transfer(&self.id, shard_id)
+            .await?;
+        drop(shards_holder_write);
+
+        // promote pending temporary shard for `shard_id`
+        self.promote_temporary_shard(shard_id).await
     }
 
     pub async fn abort_shard_transfer(&mut self, _shard_id: ShardId) -> CollectionResult<()> {
         let mut _shards_holder = self.shards_holder.write().await;
         // self.shard_transfers.remove(&shard_id);
         todo!("Handle for sender and receiver")
+    }
+
+    /// Promote temporary shard
+    ///
+    /// The temporary shard `shard_id` will replace the current local shard `shard_id`.
+    pub async fn promote_temporary_shard(&self, shard_id: ShardId) -> CollectionResult<()> {
+        let mut shard_holder_write = self.shards_holder.write().await;
+
+        match shard_holder_write.remove_temporary_shard(shard_id) {
+            None => Ok(()), // no temporary shard to remove
+            Some(temporary_shard) => {
+                let collection_id = self.id.clone();
+                log::info!("Promoting temporary shard {}:{}", collection_id, shard_id);
+
+                // switch shards in place
+                let old_shard_opt = shard_holder_write.replace_shard(shard_id, temporary_shard);
+
+                // release write lock to start serving data from temporary shard while cleaning up old shard
+                drop(shard_holder_write);
+
+                let collection_path = &self.path;
+                let proper_shard_path = collection_path.join(format!("{shard_id}"));
+
+                // cleanup old shard
+                if let Some(mut old_shard) = old_shard_opt {
+                    // finish update tasks
+                    old_shard.before_drop().await;
+                    // delete old shard's data folder
+                    tokio::fs::remove_dir_all(&proper_shard_path).await?;
+                    // force drop to release file system resources
+                    drop(old_shard);
+                }
+
+                // gain exclusive write access on shards
+                let mut shard_holder_write = self.shards_holder.write().await;
+
+                // stop promoted temporary shard
+                if let Some(mut promoted_temporary_shard) = shard_holder_write.take_shard(shard_id)
+                {
+                    promoted_temporary_shard.before_drop().await;
+                    // force drop to release file system resources
+                    drop(promoted_temporary_shard);
+                }
+
+                // rename temporary's work data directory
+                let temporary_shard_path = collection_path.join(format!("{shard_id}-temp"));
+                tokio::fs::rename(&temporary_shard_path, &proper_shard_path).await?;
+
+                // reload temporary shard at the proper shard location
+                let reloaded_temporary_shard = LocalShard::load(
+                    shard_id,
+                    collection_id,
+                    &proper_shard_path,
+                    self.config.clone(),
+                )
+                .await;
+
+                // replace original temporary shard with the version pointing to the right directory
+                shard_holder_write.replace_shard(shard_id, Local(reloaded_temporary_shard));
+                drop(shard_holder_write);
+
+                Ok(())
+            }
+        }
     }
 
     /// Initiate temporary shard
