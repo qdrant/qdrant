@@ -8,7 +8,7 @@ use api::grpc::qdrant::{
 use itertools::Itertools;
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Message as RaftMessage};
 use storage::content_manager::consensus_ops::ConsensusOperations;
-use storage::Dispatcher;
+use storage::dispatcher::Dispatcher;
 use tonic::transport::Uri;
 use tonic::{async_trait, Request, Response, Status};
 

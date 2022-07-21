@@ -12,7 +12,7 @@ use ::api::grpc::qdrant::points_server::PointsServer;
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
 use ::api::grpc::qdrant::{HealthCheckReply, HealthCheckRequest};
-use storage::Dispatcher;
+use storage::dispatcher::Dispatcher;
 use tokio::{runtime, signal};
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};

@@ -9,7 +9,7 @@ use actix_cors::Cors;
 use actix_web::middleware::{Condition, Logger};
 use actix_web::web::Data;
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
-use storage::Dispatcher;
+use storage::dispatcher::Dispatcher;
 
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;

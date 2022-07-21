@@ -10,7 +10,7 @@ mod tests {
     };
     use storage::content_manager::toc::TableOfContent;
     use storage::types::{PerformanceConfig, StorageConfig};
-    use storage::Dispatcher;
+    use storage::dispatcher::Dispatcher;
     use tempdir::TempDir;
     use tokio::runtime::Runtime;
 

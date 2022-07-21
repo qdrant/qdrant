@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use actix_web::rt::time::Instant;
 use actix_web::{get, web, Responder};
-use storage::Dispatcher;
+use storage::dispatcher::Dispatcher;
 
 use crate::actix::helpers::process_response;
 
