@@ -19,7 +19,6 @@ use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::collection_state::State;
-use crate::common::stoppable_task_async::StoppableAsyncTaskHandle;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
@@ -41,13 +40,13 @@ use crate::shard::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shard::shard_versioning::{
     shards_versions, suggest_next_version_path, versioned_shard_path,
 };
+use crate::shard::transfer::shard_transfer::spawn_transfer_task;
+use crate::shard::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
 use crate::shard::Shard::Local;
 use crate::shard::{
     create_shard_dir, ChannelService, CollectionId, PeerId, Shard, ShardId, ShardOperation,
-    HASH_RING_SHARD_SCALE
+    ShardTransfer, HASH_RING_SHARD_SCALE,
 };
-use crate::shard::shard_transfer::spawn_transfer_task;
-use crate::shard::ShardTransfer;
 use crate::telemetry::CollectionTelemetry;
 
 struct CollectionVersion;
@@ -69,7 +68,7 @@ pub struct Collection {
     snapshots_path: PathBuf,
     telemetry: CollectionTelemetry,
     channel_service: ChannelService,
-    transfer_tasks: Mutex<HashMap<ShardTransfer, StoppableAsyncTaskHandle<bool>>>,
+    transfer_tasks: Mutex<TransferTasksPool>,
 }
 
 impl Collection {
@@ -146,7 +145,7 @@ impl Collection {
             snapshots_path: snapshots_path.to_owned(),
             telemetry: CollectionTelemetry::new(id, config.clone(), start_time.elapsed()),
             channel_service,
-            transfer_tasks: Mutex::new(HashMap::new()),
+            transfer_tasks: Mutex::new(TransferTasksPool::new()),
         })
     }
 
@@ -228,7 +227,7 @@ impl Collection {
             snapshots_path: snapshots_path.to_owned(),
             telemetry: CollectionTelemetry::new(collection_id, config, start_time.elapsed()),
             channel_service,
-            transfer_tasks: Mutex::new(HashMap::new()),
+            transfer_tasks: Mutex::new(TransferTasksPool::new()),
         }
     }
 
@@ -243,21 +242,9 @@ impl Collection {
         F: Future<Output = ()> + Send + 'static,
     {
         let mut active_transfer_tasks = self.transfer_tasks.lock().await;
-        if let Some(transfer_task) = active_transfer_tasks.remove(&transfer) {
-            log::warn!(
-                "Transfer shard {} -> {} is already in progress, restarting it",
-                transfer.shard_id,
-                transfer.to
-            );
-            let joined_task = transfer_task.stop().await;
-            if let Err(err) = joined_task {
-                log::warn!(
-                    "Previous transfer of shard {} failed: {}",
-                    transfer.shard_id,
-                    err
-                );
-            }
-        }
+        let task_result = active_transfer_tasks.stop_if_exists(&transfer).await;
+
+        debug_assert_eq!(task_result, TaskResult::NotFound);
 
         let shard_holder = self.shards_holder.clone();
         let collection_id = self.id.clone();
@@ -272,7 +259,7 @@ impl Collection {
             on_error,
         );
 
-        active_transfer_tasks.insert(transfer, transfer_task);
+        active_transfer_tasks.add_task(&transfer, transfer_task);
 
         Ok(())
     }
@@ -341,30 +328,17 @@ impl Collection {
     ) -> CollectionResult<()> {
         let transfer = ShardTransfer { shard_id, to };
         let was_stopped = self.shards_holder.write().await.finish_transfer(&transfer);
-        let transfer_finished =
-            if let Some(task) = self.transfer_tasks.lock().await.remove(&transfer) {
-                match task.stop().await {
-                    Ok(res) => {
-                        if res {
-                            log::info!("Transfer of shard {} -> {} finished", shard_id, to);
-                        } else {
-                            log::info!("Transfer of shard {} -> {} stopped", shard_id, to);
-                        }
-                        res
-                    }
-                    Err(err) => {
-                        log::warn!(
-                            "Transfer task for shard {} -> {} failed: {}",
-                            shard_id,
-                            to,
-                            err
-                        );
-                        false
-                    }
-                }
-            } else {
-                false // This node didn't start the transfer
-            };
+        let transfer_finished = self
+            .transfer_tasks
+            .lock()
+            .await
+            .stop_if_exists(&transfer)
+            .await
+            .is_finished();
+
+        if !was_stopped {
+            debug_assert!(!transfer_finished)
+        }
 
         if transfer_finished {
             todo!("Convert proxy shard to remote shard");
