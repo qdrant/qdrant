@@ -74,7 +74,7 @@ where
             let mut telemetry_collector = telemetry_collector.lock().await;
             Ok(ActixTelemetryService {
                 service,
-                telemetry_data: telemetry_collector.create_web_worker_telemetry()
+                telemetry_data: telemetry_collector.create_web_worker_telemetry(),
             })
         })
     }
