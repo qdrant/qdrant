@@ -1,6 +1,6 @@
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
-use std::collections::{HashMap, HashSet};
 
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
