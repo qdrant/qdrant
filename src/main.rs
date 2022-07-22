@@ -25,7 +25,7 @@ use storage::content_manager::toc::TableOfContent;
 use storage::Dispatcher;
 
 use crate::common::helpers::create_search_runtime;
-use crate::common::user_telemetry::UserTelemetryCollector;
+use crate::common::telemetry::TelemetryCollector;
 use crate::greeting::welcome;
 use crate::settings::Settings;
 use crate::snapshots::recover_snapshots;
@@ -146,7 +146,7 @@ fn main() -> anyhow::Result<()> {
     }
     let dispatcher_arc = Arc::new(dispatcher);
 
-    let telemetry_collector = Arc::new(parking_lot::Mutex::new(UserTelemetryCollector::new(
+    let telemetry_collector = Arc::new(parking_lot::Mutex::new(TelemetryCollector::new(
         settings.clone(),
         dispatcher_arc.clone(),
     )));

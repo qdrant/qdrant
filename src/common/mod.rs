@@ -5,4 +5,4 @@ pub mod helpers;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod points;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
-pub mod user_telemetry;
+pub mod telemetry;

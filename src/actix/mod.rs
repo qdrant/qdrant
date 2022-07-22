@@ -20,7 +20,7 @@ use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::search_points;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
-use crate::common::user_telemetry::UserTelemetryCollector;
+use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
 
 fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error::Error {
@@ -50,7 +50,7 @@ pub async fn index() -> impl Responder {
 #[allow(dead_code)]
 pub fn init(
     dispatcher: Arc<Dispatcher>,
-    telemetry_collector: Arc<parking_lot::Mutex<UserTelemetryCollector>>,
+    telemetry_collector: Arc<parking_lot::Mutex<TelemetryCollector>>,
     settings: Settings,
 ) -> std::io::Result<()> {
     actix_web::rt::System::new().block_on(async {

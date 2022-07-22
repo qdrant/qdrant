@@ -13,15 +13,26 @@ use crate::settings::Settings;
 
 pub type HttpStatusCode = u16;
 
-pub struct UserTelemetryCollector {
+pub struct TelemetryCollector {
     process_id: Uuid,
     settings: Settings,
     dispatcher: Arc<Dispatcher>,
-    web_workers_telemetry: Vec<Arc<Mutex<UserTelemetryWebData>>>,
+    web_workers_telemetry: Vec<Arc<Mutex<WebApiTelemetry>>>,
+}
+
+// Whole telemtry data
+#[derive(Serialize, Clone)]
+pub struct TelemetryData {
+    id: String,
+    app: AppBuildTelemetry,
+    system: RunningEnvironmentTelemetry,
+    configs: ConfigsTelemetry,
+    collections: Vec<CollectionTelemetry>,
+    web: WebApiTelemetry,
 }
 
 #[derive(Serialize, Clone)]
-pub struct UserTelemetryApp {
+pub struct AppBuildTelemetry {
     version: String,
     debug: bool,
     web_feature: bool,
@@ -29,7 +40,7 @@ pub struct UserTelemetryApp {
 }
 
 #[derive(Serialize, Clone)]
-pub struct UserTelemetrySystem {
+pub struct RunningEnvironmentTelemetry {
     distribution: Option<String>,
     distribution_version: Option<String>,
     is_docker: bool,
@@ -45,7 +56,7 @@ pub struct UserTelemetrySystem {
 }
 
 #[derive(Serialize, Clone)]
-pub struct UserTelemetryServiceConfig {
+pub struct ServiceConfigTelemetry {
     grpc_enable: bool,
     max_request_size_mb: usize,
     max_workers: Option<usize>,
@@ -53,49 +64,39 @@ pub struct UserTelemetryServiceConfig {
 }
 
 #[derive(Serialize, Clone)]
-pub struct UserTelemetryP2pConfig {
+pub struct P2pConfigTelemetry {
     connection_pool_size: usize,
 }
 
 #[derive(Serialize, Clone)]
-pub struct UserTelemetryConsensusConfig {
+pub struct ConsensusConfigTelemetry {
     max_message_queue_size: usize,
     tick_period_ms: u64,
     bootstrap_timeout_sec: u64,
 }
 
 #[derive(Serialize, Clone)]
-pub struct UserTelemetryClusterConfig {
+pub struct ClusterConfigTelemetry {
     enabled: bool,
     grpc_timeout_ms: u64,
-    p2p: UserTelemetryP2pConfig,
-    consensus: UserTelemetryConsensusConfig,
+    p2p: P2pConfigTelemetry,
+    consensus: ConsensusConfigTelemetry,
 }
 
 #[derive(Serialize, Clone)]
-pub struct UserTelemetryConfigs {
-    service_config: UserTelemetryServiceConfig,
-    cluster_config: UserTelemetryClusterConfig,
+pub struct ConfigsTelemetry {
+    service_config: ServiceConfigTelemetry,
+    cluster_config: ClusterConfigTelemetry,
 }
 
 #[derive(Serialize, Clone, Default)]
-pub struct UserTelemetryWebData {
+pub struct WebApiTelemetry {
     responses: HashMap<HttpStatusCode, usize>,
 }
 
-#[derive(Serialize, Clone)]
-pub struct UserTelemetryData {
-    id: String,
-    app: UserTelemetryApp,
-    system: UserTelemetrySystem,
-    configs: UserTelemetryConfigs,
-    collections: Vec<CollectionTelemetry>,
-    web: UserTelemetryWebData,
-}
-
-impl Anonymize for UserTelemetryData {
+impl Anonymize for TelemetryData {
     fn anonymize(&self) -> Self {
-        UserTelemetryData {
+        TelemetryData {
             id: self.id.clone(),
             app: self.app.anonymize(),
             system: self.system.anonymize(),
@@ -110,9 +111,9 @@ impl Anonymize for UserTelemetryData {
     }
 }
 
-impl Anonymize for UserTelemetryApp {
+impl Anonymize for AppBuildTelemetry {
     fn anonymize(&self) -> Self {
-        UserTelemetryApp {
+        AppBuildTelemetry {
             version: self.version.clone(),
             debug: self.debug,
             web_feature: self.web_feature,
@@ -121,9 +122,9 @@ impl Anonymize for UserTelemetryApp {
     }
 }
 
-impl Anonymize for UserTelemetrySystem {
+impl Anonymize for RunningEnvironmentTelemetry {
     fn anonymize(&self) -> Self {
-        UserTelemetrySystem {
+        RunningEnvironmentTelemetry {
             distribution: self.distribution.clone(),
             distribution_version: self.distribution_version.clone(),
             is_docker: self.is_docker,
@@ -135,18 +136,18 @@ impl Anonymize for UserTelemetrySystem {
     }
 }
 
-impl Anonymize for UserTelemetryConfigs {
+impl Anonymize for ConfigsTelemetry {
     fn anonymize(&self) -> Self {
-        UserTelemetryConfigs {
+        ConfigsTelemetry {
             service_config: self.service_config.anonymize(),
             cluster_config: self.cluster_config.anonymize(),
         }
     }
 }
 
-impl Anonymize for UserTelemetryServiceConfig {
+impl Anonymize for ServiceConfigTelemetry {
     fn anonymize(&self) -> Self {
-        UserTelemetryServiceConfig {
+        ServiceConfigTelemetry {
             grpc_enable: self.grpc_enable,
             max_request_size_mb: self.max_request_size_mb,
             max_workers: self.max_workers,
@@ -155,9 +156,9 @@ impl Anonymize for UserTelemetryServiceConfig {
     }
 }
 
-impl Anonymize for UserTelemetryClusterConfig {
+impl Anonymize for ClusterConfigTelemetry {
     fn anonymize(&self) -> Self {
-        UserTelemetryClusterConfig {
+        ClusterConfigTelemetry {
             enabled: self.enabled,
             grpc_timeout_ms: self.grpc_timeout_ms,
             p2p: self.p2p.anonymize(),
@@ -166,17 +167,17 @@ impl Anonymize for UserTelemetryClusterConfig {
     }
 }
 
-impl Anonymize for UserTelemetryP2pConfig {
+impl Anonymize for P2pConfigTelemetry {
     fn anonymize(&self) -> Self {
-        UserTelemetryP2pConfig {
+        P2pConfigTelemetry {
             connection_pool_size: self.connection_pool_size,
         }
     }
 }
 
-impl Anonymize for UserTelemetryConsensusConfig {
+impl Anonymize for ConsensusConfigTelemetry {
     fn anonymize(&self) -> Self {
-        UserTelemetryConsensusConfig {
+        ConsensusConfigTelemetry {
             max_message_queue_size: self.max_message_queue_size,
             tick_period_ms: self.tick_period_ms,
             bootstrap_timeout_sec: self.bootstrap_timeout_sec,
@@ -184,27 +185,27 @@ impl Anonymize for UserTelemetryConsensusConfig {
     }
 }
 
-impl Anonymize for UserTelemetryWebData {
+impl Anonymize for WebApiTelemetry {
     fn anonymize(&self) -> Self {
-        UserTelemetryWebData {
+        WebApiTelemetry {
             responses: self.responses.clone(),
         }
     }
 }
 
-impl UserTelemetryWebData {
+impl WebApiTelemetry {
     pub fn add_response(&mut self, status_code: HttpStatusCode) {
         *self.responses.entry(status_code).or_insert(0) += 1;
     }
 
-    pub fn merge(&mut self, other: &UserTelemetryWebData) {
+    pub fn merge(&mut self, other: &WebApiTelemetry) {
         for (status_code, count) in &other.responses {
             *self.responses.entry(*status_code).or_insert(0) += *count;
         }
     }
 }
 
-impl UserTelemetryCollector {
+impl TelemetryCollector {
     pub fn new(settings: Settings, dispatcher: Arc<Dispatcher>) -> Self {
         Self {
             process_id: Uuid::new_v4(),
@@ -214,17 +215,16 @@ impl UserTelemetryCollector {
         }
     }
 
-    pub fn create_web_worker_telemetry(&mut self) -> Arc<Mutex<UserTelemetryWebData>> {
-        let web_worker_telemetry = Arc::new(Mutex::new(UserTelemetryWebData::default()));
+    pub fn create_web_worker_telemetry(&mut self) -> Arc<Mutex<WebApiTelemetry>> {
+        let web_worker_telemetry = Arc::new(Mutex::new(WebApiTelemetry::default()));
         self.web_workers_telemetry
             .push(web_worker_telemetry.clone());
         web_worker_telemetry
     }
 
-    #[allow(dead_code)]
-    pub async fn prepare_data(&self) -> UserTelemetryData {
+    pub async fn prepare_data(&self) -> TelemetryData {
         let collections = self.dispatcher.get_telemetry_data().await;
-        UserTelemetryData {
+        TelemetryData {
             id: self.process_id.to_string(),
             app: self.get_app_data(),
             system: self.get_system_data(),
@@ -234,8 +234,8 @@ impl UserTelemetryCollector {
         }
     }
 
-    fn get_app_data(&self) -> UserTelemetryApp {
-        UserTelemetryApp {
+    fn get_app_data(&self) -> AppBuildTelemetry {
+        AppBuildTelemetry {
             version: env!("CARGO_PKG_VERSION").to_string(),
             debug: cfg!(debug_assertions),
             web_feature: cfg!(feature = "web"),
@@ -243,7 +243,7 @@ impl UserTelemetryCollector {
         }
     }
 
-    fn get_system_data(&self) -> UserTelemetrySystem {
+    fn get_system_data(&self) -> RunningEnvironmentTelemetry {
         let distribution = if let Ok(release) = sys_info::linux_os_release() {
             release.id
         } else {
@@ -279,7 +279,7 @@ impl UserTelemetryCollector {
                 cpu_flags += "neon,";
             }
         }
-        UserTelemetrySystem {
+        RunningEnvironmentTelemetry {
             distribution,
             distribution_version,
             is_docker: cfg!(unix) && Path::new("/.dockerenv").exists(),
@@ -290,22 +290,22 @@ impl UserTelemetryCollector {
         }
     }
 
-    fn get_configs_data(&self) -> UserTelemetryConfigs {
+    fn get_configs_data(&self) -> ConfigsTelemetry {
         let settings = self.settings.clone();
-        UserTelemetryConfigs {
-            service_config: UserTelemetryServiceConfig {
+        ConfigsTelemetry {
+            service_config: ServiceConfigTelemetry {
                 grpc_enable: settings.service.grpc_port.is_some(),
                 max_request_size_mb: settings.service.max_request_size_mb,
                 max_workers: settings.service.max_workers,
                 enable_cors: settings.service.enable_cors,
             },
-            cluster_config: UserTelemetryClusterConfig {
+            cluster_config: ClusterConfigTelemetry {
                 enabled: settings.cluster.enabled,
                 grpc_timeout_ms: settings.cluster.grpc_timeout_ms,
-                p2p: UserTelemetryP2pConfig {
+                p2p: P2pConfigTelemetry {
                     connection_pool_size: settings.cluster.p2p.connection_pool_size,
                 },
-                consensus: UserTelemetryConsensusConfig {
+                consensus: ConsensusConfigTelemetry {
                     max_message_queue_size: settings.cluster.consensus.max_message_queue_size,
                     tick_period_ms: settings.cluster.consensus.tick_period_ms,
                     bootstrap_timeout_sec: settings.cluster.consensus.bootstrap_timeout_sec,
@@ -314,8 +314,8 @@ impl UserTelemetryCollector {
         }
     }
 
-    async fn get_web_data(&self) -> UserTelemetryWebData {
-        let mut result = UserTelemetryWebData::default();
+    async fn get_web_data(&self) -> WebApiTelemetry {
+        let mut result = WebApiTelemetry::default();
         for web_data in &self.web_workers_telemetry {
             let lock = web_data.lock().await;
             result.merge(&lock);
