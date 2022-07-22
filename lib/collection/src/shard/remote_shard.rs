@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use api::grpc::qdrant::collections_internal_client::CollectionsInternalClient;
 use api::grpc::qdrant::points_internal_client::PointsInternalClient;
@@ -9,6 +9,7 @@ use api::grpc::qdrant::{
     SearchPointsInternal,
 };
 use async_trait::async_trait;
+use parking_lot::Mutex;
 use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
 use tokio::runtime::Handle;
@@ -125,16 +126,8 @@ impl RemoteShard {
     pub fn get_telemetry_data(&self) -> ShardTelemetry {
         ShardTelemetry::Remote {
             shard_id: self.id,
-            searches: if let Ok(searches) = self.searches_telemetry.lock() {
-                searches.get_statistics()
-            } else {
-                Default::default()
-            },
-            updates: if let Ok(searches) = self.updates_telemetry.lock() {
-                searches.get_statistics()
-            } else {
-                Default::default()
-            },
+            searches: self.searches_telemetry.lock().get_statistics(),
+            updates: self.updates_telemetry.lock().get_statistics(),
         }
     }
 }

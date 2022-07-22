@@ -2,10 +2,11 @@ use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use log::debug;
+use parking_lot::Mutex;
 use rand::thread_rng;
 use rayon::prelude::*;
 use rayon::ThreadPool;
@@ -21,8 +22,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::visited_pool::VisitedList;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::{
-    TelemetryOperationAggregator, TelemetryOperationStatistics, TelemetryOperationTimer,
-    VectorIndexTelemetry,
+    TelemetryOperationAggregator, TelemetryOperationTimer, VectorIndexTelemetry,
 };
 use crate::types::Condition::Field;
 use crate::types::{
@@ -356,34 +356,22 @@ impl VectorIndex for HNSWIndex {
 
     fn get_telemetry_data(&self) -> VectorIndexTelemetry {
         VectorIndexTelemetry {
-            small_cardinality_searches: if let Ok(aggregator) =
-                self.small_cardinality_search_telemetry.lock()
-            {
-                aggregator.get_statistics()
-            } else {
-                TelemetryOperationStatistics::default()
-            },
-            large_cardinality_searches: if let Ok(aggregator) =
-                self.large_cardinality_search_telemetry.lock()
-            {
-                aggregator.get_statistics()
-            } else {
-                TelemetryOperationStatistics::default()
-            },
-            positive_check_cardinality_searches: if let Ok(aggregator) =
-                self.positive_check_cardinality_search_telemetry.lock()
-            {
-                aggregator.get_statistics()
-            } else {
-                TelemetryOperationStatistics::default()
-            },
-            negative_check_cardinality_searches: if let Ok(aggregator) =
-                self.negative_check_cardinality_search_telemetry.lock()
-            {
-                aggregator.get_statistics()
-            } else {
-                TelemetryOperationStatistics::default()
-            },
+            small_cardinality_searches: self
+                .small_cardinality_search_telemetry
+                .lock()
+                .get_statistics(),
+            large_cardinality_searches: self
+                .large_cardinality_search_telemetry
+                .lock()
+                .get_statistics(),
+            positive_check_cardinality_searches: self
+                .positive_check_cardinality_search_telemetry
+                .lock()
+                .get_statistics(),
+            negative_check_cardinality_searches: self
+                .negative_check_cardinality_search_telemetry
+                .lock()
+                .get_statistics(),
         }
     }
 }
