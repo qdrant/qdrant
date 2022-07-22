@@ -6,7 +6,7 @@ use serde::Serialize;
 use crate::config::CollectionConfig;
 use crate::shard::ShardId;
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub enum ShardTelemetry {
     Remote {
         shard_id: ShardId,
@@ -19,7 +19,7 @@ pub enum ShardTelemetry {
     Proxy {},
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct CollectionTelemetry {
     pub id: String,
     pub config: CollectionConfig,
