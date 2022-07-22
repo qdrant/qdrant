@@ -153,27 +153,39 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn local_shard_by_id(&self, id: ShardId) -> CollectionResult<&Shard> {
-        match self.shards.get(&id) {
-            None => Err(CollectionError::bad_shard_selection(format!(
-                "Shard {} does not exist",
-                id
-            ))),
-            Some(Shard::Remote(_)) => Err(CollectionError::bad_shard_selection(format!(
-                "Shard {} is not local on peer",
-                id
-            ))),
-            Some(shard @ Shard::Local(_)) => Ok(shard),
-            Some(shard @ Shard::Proxy(_)) => Ok(shard),
-        }
-    }
-
     pub fn target_shards(&self, shard_selection: Option<ShardId>) -> CollectionResult<Vec<&Shard>> {
         match shard_selection {
             None => Ok(self.all_shards().collect()),
             Some(shard_selection) => {
-                let local_shard = self.local_shard_by_id(shard_selection)?;
-                Ok(vec![local_shard])
+                let shard_opt = self.get_shard(&shard_selection);
+                let target_shard = match shard_opt {
+                    None => {
+                        // check if a temporary shard exist for the shard_selection
+                        let temporary_shard_opt = self.get_temporary_shard(&shard_selection);
+                        match temporary_shard_opt {
+                            Some(temp) => temp,
+                            None => {
+                                return Err(CollectionError::bad_shard_selection(format!(
+                                    "Shard {} does not exist",
+                                    shard_selection
+                                )))
+                            }
+                        }
+                    }
+                    Some(shard) => match *shard {
+                        Shard::Local(_) => shard,
+                        Shard::Proxy(_) => shard,
+                        Shard::Remote(_) => {
+                            // check temporary shards if the target is a remote shard
+                            let temporary_shard_opt = self.get_temporary_shard(&shard_selection);
+                            match temporary_shard_opt {
+                                None => shard, // forward to the remote shard
+                                Some(temp) => temp,
+                            }
+                        }
+                    },
+                };
+                Ok(vec![target_shard])
             }
         }
     }

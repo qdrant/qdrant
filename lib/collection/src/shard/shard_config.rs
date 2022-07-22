@@ -35,6 +35,11 @@ impl ShardConfig {
         Self { r#type }
     }
 
+    pub fn new_temp() -> Self {
+        let r#type = ShardType::Temporary;
+        Self { r#type }
+    }
+
     pub fn load(shard_path: &Path) -> CollectionResult<Self> {
         let config_path = Self::get_config_path(shard_path);
         // shard config was introduced in 0.8.0

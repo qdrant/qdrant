@@ -481,7 +481,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
 #[tokio::test]
 async fn test_promote_temporary_shards() {
     let collection_dir = TempDir::new("collection").unwrap();
-    let mut collection = simple_collection_fixture(collection_dir.path(), 2).await;
+    let mut collection = simple_collection_fixture(collection_dir.path(), 1).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         Batch {
@@ -526,14 +526,14 @@ async fn test_promote_temporary_shards() {
     assert_eq!(result.points.len(), 2);
 
     // initiate temporary shard for shard_id 1
-    collection.initiate_temporary_shard(1).await.unwrap();
+    collection.initiate_temporary_shard(0).await.unwrap();
 
     // promote temporary shard for shard_id 1
-    collection.promote_temporary_shard(1).await.unwrap();
+    collection.promote_temporary_shard(0).await.unwrap();
 
-    // validate collection still non empty
+    // validate collection is empty now
     let result = collection.scroll_by(scroll_request, None).await.unwrap();
-    assert_eq!(result.points.len(), 2);
+    assert_eq!(result.points.len(), 0);
 
     collection.before_drop().await;
 }
