@@ -2705,6 +2705,7 @@ dependencies = [
  "config",
  "env_logger",
  "futures",
+ "futures-util",
  "itertools",
  "log 0.4.17",
  "num-traits",

@@ -1,19 +1,31 @@
-use serde::Serialize;
+use schemars::JsonSchema;
+use segment::telemetry::{
+    telemetry_hash, Anonymize, SegmentTelemetry, TelemetryOperationStatistics,
+};
+use serde::{Deserialize, Serialize};
 
 use crate::config::CollectionConfig;
-use crate::operations::types::{CollectionStatus, OptimizersStatus};
+use crate::shard::ShardId;
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+pub enum ShardTelemetry {
+    Remote {
+        shard_id: ShardId,
+        searches: TelemetryOperationStatistics,
+        updates: TelemetryOperationStatistics,
+    },
+    Local {
+        segments: Vec<SegmentTelemetry>,
+    },
+    Proxy {},
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct CollectionTelemetry {
     pub id: String,
     pub config: CollectionConfig,
     pub init_time: std::time::Duration,
-    pub status: CollectionStatus,
-    pub optimizer_status: OptimizersStatus,
-    pub vectors_count: usize,
-    pub segments_count: usize,
-    pub disk_data_size: usize,
-    pub ram_data_size: usize,
+    pub shards: Vec<ShardTelemetry>,
 }
 
 impl CollectionTelemetry {
@@ -22,12 +34,49 @@ impl CollectionTelemetry {
             id,
             config,
             init_time,
-            status: CollectionStatus::Green,
-            optimizer_status: OptimizersStatus::Ok,
-            vectors_count: 0,
-            segments_count: 0,
-            disk_data_size: 0,
-            ram_data_size: 0,
+            shards: Vec::new(),
+        }
+    }
+}
+
+impl Anonymize for CollectionTelemetry {
+    fn anonymize(&self) -> Self {
+        Self {
+            id: telemetry_hash(&self.id),
+            config: self.config.anonymize(),
+            init_time: self.init_time,
+            shards: self.shards.iter().map(|shard| shard.anonymize()).collect(),
+        }
+    }
+}
+
+impl Anonymize for ShardTelemetry {
+    fn anonymize(&self) -> Self {
+        match self {
+            ShardTelemetry::Local { segments } => ShardTelemetry::Local {
+                segments: segments.iter().map(|segment| segment.anonymize()).collect(),
+            },
+            ShardTelemetry::Remote {
+                searches,
+                updates,
+                shard_id,
+            } => ShardTelemetry::Remote {
+                shard_id: *shard_id,
+                searches: searches.anonymize(),
+                updates: updates.anonymize(),
+            },
+            ShardTelemetry::Proxy {} => ShardTelemetry::Proxy {},
+        }
+    }
+}
+
+impl Anonymize for CollectionConfig {
+    fn anonymize(&self) -> Self {
+        CollectionConfig {
+            params: self.params.clone(),
+            hnsw_config: self.hnsw_config,
+            optimizer_config: self.optimizer_config.clone(),
+            wal_config: self.wal_config.clone(),
         }
     }
 }

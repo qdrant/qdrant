@@ -5,6 +5,7 @@ use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::map_index::MapIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType,
 };
@@ -198,6 +199,16 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => index.remove_point(point_id),
             FieldIndex::FloatIndex(index) => index.remove_point(point_id),
             FieldIndex::GeoIndex(index) => index.remove_point(point_id),
+        }
+    }
+
+    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        match self {
+            FieldIndex::IntIndex(index) => index.get_telemetry_data(),
+            FieldIndex::IntMapIndex(index) => index.get_telemetry_data(),
+            FieldIndex::KeywordIndex(index) => index.get_telemetry_data(),
+            FieldIndex::FloatIndex(index) => index.get_telemetry_data(),
+            FieldIndex::GeoIndex(index) => index.get_telemetry_data(),
         }
     }
 }

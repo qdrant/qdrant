@@ -19,6 +19,7 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndexSS};
+use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
     PointIdType, PointOffsetType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
@@ -774,6 +775,15 @@ impl SegmentEntry for Segment {
         copy_with_progress(&self.current_path, target_dir_path, &options, handle)?;
 
         Ok(target_dir_path.join(segment_id))
+    }
+
+    fn get_telemetry_data(&self) -> SegmentTelemetry {
+        SegmentTelemetry {
+            info: self.info(),
+            config: self.config(),
+            vector_index: self.vector_index.borrow().get_telemetry_data(),
+            payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
+        }
     }
 }
 

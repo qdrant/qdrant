@@ -7,6 +7,7 @@ pub mod payload_storage;
 pub mod segment;
 pub mod segment_constructor;
 pub mod spaces;
+pub mod telemetry;
 
 #[allow(deprecated)]
 pub mod types;

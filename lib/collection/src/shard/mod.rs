@@ -25,6 +25,7 @@ use crate::operations::CollectionUpdateOperations;
 use crate::shard::local_shard::LocalShard;
 use crate::shard::proxy_shard::ProxyShard;
 use crate::shard::remote_shard::RemoteShard;
+use crate::telemetry::ShardTelemetry;
 
 pub type ShardId = u32;
 
@@ -61,6 +62,14 @@ impl Shard {
             Shard::Local(_) => this_peer_id,
             Shard::Remote(remote) => remote.peer_id,
             Shard::Proxy(_) => this_peer_id,
+        }
+    }
+
+    pub fn get_telemetry_data(&self) -> ShardTelemetry {
+        match self {
+            Shard::Local(local_shard) => local_shard.get_telemetry_data(),
+            Shard::Remote(remote_shard) => remote_shard.get_telemetry_data(),
+            Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(),
         }
     }
 }

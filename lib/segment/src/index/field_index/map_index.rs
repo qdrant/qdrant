@@ -14,6 +14,7 @@ use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
+use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, IntPayloadType, Match, MatchValue, PayloadKeyType, PointOffsetType,
     ValueVariants,
@@ -100,6 +101,10 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<N>> {
         self.point_to_values.get(idx as usize)
+    }
+
+    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {}
     }
 
     fn add_many_to_map(&mut self, idx: PointOffsetType, values: Vec<N>) -> OperationResult<()> {

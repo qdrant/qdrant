@@ -26,6 +26,7 @@ use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{FilterContext, PayloadStorage};
+use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     infer_value_type, Condition, FieldCondition, Filter, IsEmptyCondition, Payload, PayloadKeyType,
     PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
@@ -266,6 +267,18 @@ impl StructPayloadIndex {
                 .estimate_field_condition(field_condition)
                 .unwrap_or_else(|| CardinalityEstimation::unknown(self.total_points())),
         }
+    }
+
+    pub fn get_telemetry_data(&self) -> Vec<PayloadIndexTelemetry> {
+        self.field_indexes
+            .iter()
+            .flat_map(|(_, field)| -> Vec<PayloadIndexTelemetry> {
+                field
+                    .iter()
+                    .map(|field| field.get_telemetry_data())
+                    .collect()
+            })
+            .collect()
     }
 }
 

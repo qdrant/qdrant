@@ -18,6 +18,7 @@ use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardin
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
+use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, GeoBoundingBox, GeoPoint, GeoRadius, PayloadKeyType, PointOffsetType,
 };
@@ -216,6 +217,10 @@ impl GeoMapIndex {
             exp: min(estimation_max, max(estimation_min, estimation_exp)),
             max: estimation_max,
         }
+    }
+
+    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {}
     }
 
     fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {

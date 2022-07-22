@@ -6,6 +6,7 @@ use serde_json::Value;
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::payload_storage::FilterContext;
+use crate::telemetry::VectorIndexTelemetry;
 use crate::types::{
     Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointOffsetType,
     SearchParams, VectorElementType,
@@ -25,6 +26,8 @@ pub trait VectorIndex {
 
     /// Force internal index rebuild.
     fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()>;
+
+    fn get_telemetry_data(&self) -> VectorIndexTelemetry;
 }
 
 pub trait PayloadIndex {
