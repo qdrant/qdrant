@@ -265,9 +265,9 @@ impl Collection {
             let shard_holder = self.shards_holder.read().await;
             let temp_shard_opt = shard_holder.get_temporary_shard(&shard_id);
             let temp_shard = match temp_shard_opt {
-                 Some(shard) => shard,
-                 None => return Ok(()),
-            }
+                Some(shard) => shard,
+                None => return Ok(()),
+            };
             match temp_shard {
                 Local(local_temp_shard) => {
                     let shard_path = local_temp_shard.shard_path();
