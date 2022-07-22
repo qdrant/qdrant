@@ -1,5 +1,6 @@
 use std::cmp::max;
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -15,9 +16,10 @@ use semver::{Version, VersionReq};
 use tar::Builder as TarBuilder;
 use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file, rename};
 use tokio::runtime::Handle;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::collection_state::State;
+use crate::common::stoppable_task_async::StoppableAsyncTaskHandle;
 use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
@@ -42,8 +44,10 @@ use crate::shard::shard_versioning::{
 use crate::shard::Shard::Local;
 use crate::shard::{
     create_shard_dir, ChannelService, CollectionId, PeerId, Shard, ShardId, ShardOperation,
-    HASH_RING_SHARD_SCALE,
+    HASH_RING_SHARD_SCALE
 };
+use crate::shard::shard_transfer::spawn_transfer_task;
+use crate::shard::ShardTransfer;
 use crate::telemetry::CollectionTelemetry;
 
 struct CollectionVersion;
@@ -65,6 +69,7 @@ pub struct Collection {
     snapshots_path: PathBuf,
     telemetry: CollectionTelemetry,
     channel_service: ChannelService,
+    transfer_tasks: Mutex<HashMap<ShardTransfer, StoppableAsyncTaskHandle<bool>>>,
 }
 
 impl Collection {
@@ -141,6 +146,7 @@ impl Collection {
             snapshots_path: snapshots_path.to_owned(),
             telemetry: CollectionTelemetry::new(id, config.clone(), start_time.elapsed()),
             channel_service,
+            transfer_tasks: Mutex::new(HashMap::new()),
         })
     }
 
@@ -222,42 +228,158 @@ impl Collection {
             snapshots_path: snapshots_path.to_owned(),
             telemetry: CollectionTelemetry::new(collection_id, config, start_time.elapsed()),
             channel_service,
+            transfer_tasks: Mutex::new(HashMap::new()),
         }
     }
 
-    fn send_shard(&self, _shard_id: ShardId) {
-        todo!()
+    async fn send_shard<T, F>(
+        &self,
+        transfer: ShardTransfer,
+        on_finish: T,
+        on_error: F,
+    ) -> CollectionResult<()>
+    where
+        T: Future<Output = ()> + Send + 'static,
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let mut active_transfer_tasks = self.transfer_tasks.lock().await;
+        if let Some(transfer_task) = active_transfer_tasks.remove(&transfer) {
+            log::warn!(
+                "Transfer shard {} -> {} is already in progress, restarting it",
+                transfer.shard_id,
+                transfer.to
+            );
+            let joined_task = transfer_task.stop().await;
+            if let Err(err) = joined_task {
+                log::warn!(
+                    "Previous transfer of shard {} failed: {}",
+                    transfer.shard_id,
+                    err
+                );
+            }
+        }
+
+        let shard_holder = self.shards_holder.clone();
+        let collection_id = self.id.clone();
+        let channel_service = self.channel_service.clone();
+
+        let transfer_task = spawn_transfer_task(
+            shard_holder,
+            transfer.clone(),
+            collection_id,
+            channel_service,
+            on_finish,
+            on_error,
+        );
+
+        active_transfer_tasks.insert(transfer, transfer_task);
+
+        Ok(())
     }
 
-    pub async fn start_shard_transfer(
+    pub async fn start_shard_transfer<T, F>(
         &self,
         shard_id: ShardId,
         to_peer: PeerId,
-        this_peer: PeerId,
-    ) -> CollectionResult<()> {
-        let transfer = {
-            let mut shards_holder = self.shards_holder.write().await;
-            shards_holder.start_shard_transfer(shard_id, to_peer, this_peer)?
+        on_finish: T,
+        on_error: F,
+    ) -> CollectionResult<()>
+    where
+        T: Future<Output = ()> + Send + 'static,
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let shard_transfer = ShardTransfer {
+            shard_id,
+            to: to_peer,
         };
 
-        if transfer.from == this_peer {
-            self.send_shard(shard_id);
+        let do_transfer = {
+            let mut shards_holder = self.shards_holder.write().await;
+            let was_not_transferred = shards_holder.start_shard_transfer(shard_transfer.clone());
+            let shard = shards_holder.get_shard(&shard_id);
+            // Check if current node owns the shard which should be transferred
+            match shard {
+                None => {
+                    return Err(CollectionError::service_error(format!(
+                        "Shard {shard_id} doesn't exist"
+                    )))
+                }
+                Some(shard) => match shard {
+                    Shard::Local(_) => {
+                        debug_assert!(was_not_transferred);
+                        true
+                    }
+                    Shard::Remote(_) => false, // Shard is on some other peer
+                    Shard::Proxy(_) => {
+                        debug_assert!(!was_not_transferred);
+                        false // Shard if already in transferring state
+                    }
+                    Shard::ForwardProxy(_) => {
+                        debug_assert!(!was_not_transferred);
+                        false // Shard if already in transferring state
+                    }
+                },
+            }
+        };
+        if do_transfer {
+            self.send_shard(shard_transfer, on_finish, on_error).await?;
         }
         Ok(())
     }
 
-    pub async fn finish_shard_transfer(&self, shard_id: ShardId) -> CollectionResult<()> {
-        let mut shards_holder_write = self.shards_holder.write().await;
-        shards_holder_write
-            .finish_transfer(&self.id, shard_id)
-            .await?;
-        drop(shards_holder_write);
+    /// Handles finishing of the shard transfer.
+    ///
+    /// 1. Removes transfer state from list of active transfers.
+    /// 2. Awaits for related transfer task to finish.
+    /// 3. Converts proxy shard -> remote shard
+    /// 4. Promotes temporary shard to local shard.
+    /// 5. Point remote shard to new location
+    pub async fn finish_shard_transfer(
+        &self,
+        shard_id: ShardId,
+        to: PeerId,
+    ) -> CollectionResult<()> {
+        let transfer = ShardTransfer { shard_id, to };
+        let was_stopped = self.shards_holder.write().await.finish_transfer(&transfer);
+        let transfer_finished =
+            if let Some(task) = self.transfer_tasks.lock().await.remove(&transfer) {
+                match task.stop().await {
+                    Ok(res) => {
+                        if res {
+                            log::info!("Transfer of shard {} -> {} finished", shard_id, to);
+                        } else {
+                            log::info!("Transfer of shard {} -> {} stopped", shard_id, to);
+                        }
+                        res
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "Transfer task for shard {} -> {} failed: {}",
+                            shard_id,
+                            to,
+                            err
+                        );
+                        false
+                    }
+                }
+            } else {
+                false // This node didn't start the transfer
+            };
 
-        // promote pending temporary shard for `shard_id`
-        self.promote_temporary_shard(shard_id).await
+        if transfer_finished {
+            todo!("Convert proxy shard to remote shard");
+        }
+
+        todo!("Promote temporary shard to local shard if any");
+        todo!("Point remote shard to new location");
+        Ok(())
     }
 
-    pub async fn abort_shard_transfer(&self, _shard_id: ShardId) -> CollectionResult<()> {
+    pub async fn abort_shard_transfer(
+        &self,
+        shard_id: ShardId,
+        to: PeerId,
+    ) -> CollectionResult<()> {
         let mut _shards_holder = self.shards_holder.write().await;
         // self.shard_transfers.remove(&shard_id);
         todo!("Handle for sender and receiver")

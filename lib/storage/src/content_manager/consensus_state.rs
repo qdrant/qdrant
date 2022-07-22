@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::ops::Deref;
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,6 +18,7 @@ use super::errors::StorageError;
 use super::CollectionContainer;
 use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
 use crate::content_manager::consensus::entry_queue::EntryId;
+use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus::persistent::Persistent;
 use crate::types::{ClusterInfo, ClusterStatus, PeerAddressById, PeerInfo, RaftInfo};
 
@@ -58,7 +58,7 @@ pub struct ConsensusState<C: CollectionContainer> {
     toc: Arc<C>,
     on_consensus_op_apply:
         Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
-    propose_sender: Mutex<Sender<Vec<u8>>>,
+    propose_sender: OperationSender,
     first_voter: RwLock<Option<PeerId>>,
 }
 
@@ -66,7 +66,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
     pub fn new(
         persistent_state: Persistent,
         toc: Arc<C>,
-        propose_sender: Sender<Vec<u8>>,
+        propose_sender: OperationSender,
         storage_path: &str,
     ) -> Self {
         Self {
@@ -75,7 +75,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
             soft_state: RwLock::new(None),
             toc,
             on_consensus_op_apply: Default::default(),
-            propose_sender: Mutex::new(propose_sender),
+            propose_sender,
             first_voter: Default::default(),
         }
     }
@@ -316,10 +316,12 @@ impl<C: CollectionContainer> ConsensusState<C> {
         operation: ConsensusOperations,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
-        let serialized = serde_cbor::to_vec(&operation)?;
         let (sender, receiver) = oneshot::channel();
-        self.on_consensus_op_apply.lock().insert(operation, sender);
-        self.propose_sender.lock().send(serialized)?;
+        {
+            let mut on_apply_lock = self.on_consensus_op_apply.lock();
+            self.propose_sender.send(&operation)?;
+            on_apply_lock.insert(operation, sender);
+        }
         let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
         tokio::time::timeout(wait_timeout, receiver)
             .await
@@ -496,6 +498,7 @@ mod tests {
     use super::ConsensusState;
     use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
     use crate::content_manager::consensus::entry_queue::EntryApplyProgressQueue;
+    use crate::content_manager::consensus::operation_sender::OperationSender;
     use crate::content_manager::consensus::persistent::Persistent;
     use crate::content_manager::CollectionContainer;
 
@@ -624,7 +627,7 @@ mod tests {
         let consensus_state = ConsensusState::new(
             persistent,
             Arc::new(NoCollections),
-            sender,
+            OperationSender::new(sender),
             path.to_str().unwrap(),
         );
         let mem_storage = MemStorage::new();

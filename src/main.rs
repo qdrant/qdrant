@@ -20,6 +20,7 @@ use collection::shard::ChannelService;
 use consensus::Consensus;
 use log::LevelFilter;
 use slog::Drain;
+use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::consensus::persistent::Persistent;
 use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef};
 use storage::content_manager::toc::TableOfContent;
@@ -119,6 +120,7 @@ fn main() -> anyhow::Result<()> {
     let runtime_handle = runtime.handle().clone();
 
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
+    let propose_operation_sender = OperationSender::new(propose_sender);
 
     let (persistent_consensus_state, p_state_just_initialized) =
         Persistent::load_or_init(&settings.storage.storage_path, args.bootstrap.is_none())?;
@@ -138,6 +140,7 @@ fn main() -> anyhow::Result<()> {
         runtime,
         channel_service.clone(),
         persistent_consensus_state.this_peer_id(),
+        propose_operation_sender.clone(),
     );
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {
@@ -152,7 +155,7 @@ fn main() -> anyhow::Result<()> {
     let consensus_state: ConsensusStateRef = ConsensusState::new(
         persistent_consensus_state,
         toc_arc.clone(),
-        propose_sender,
+        propose_operation_sender,
         storage_path,
     )
     .into();

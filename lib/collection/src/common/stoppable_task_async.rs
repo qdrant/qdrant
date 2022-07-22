@@ -1,15 +1,16 @@
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
 use tokio::task::JoinHandle;
 
-pub struct StoppableTaskHandle<T> {
+pub struct StoppableAsyncTaskHandle<T> {
     pub join_handle: JoinHandle<T>,
     finished: Arc<AtomicBool>,
     stopped: Weak<AtomicBool>,
 }
 
-impl<T> StoppableTaskHandle<T> {
+impl<T> StoppableAsyncTaskHandle<T> {
     pub fn is_finished(&self) -> bool {
         self.finished.load(Ordering::Relaxed)
     }
@@ -34,11 +35,12 @@ impl<T> StoppableTaskHandle<T> {
     }
 }
 
-pub fn spawn_stoppable<F, T>(f: F) -> StoppableTaskHandle<T>
+pub fn spawn_async_stoppable<F, T>(f: F) -> StoppableAsyncTaskHandle<T::Output>
 where
-    F: FnOnce(&AtomicBool) -> T,
+    F: FnOnce(Arc<AtomicBool>) -> T,
     F: Send + 'static,
-    T: Send + 'static,
+    T: Future + Send + 'static,
+    T::Output: Send + 'static,
 {
     let finished = Arc::new(AtomicBool::new(false));
     let finished_c = finished.clone();
@@ -48,9 +50,9 @@ where
     // Weak reference is sufficient
     let stopped_w = Arc::downgrade(&stopped);
 
-    StoppableTaskHandle {
-        join_handle: tokio::task::spawn_blocking(move || {
-            let res = f(&*stopped);
+    StoppableAsyncTaskHandle {
+        join_handle: tokio::task::spawn(async move {
+            let res = f(stopped).await;
             // We use `Release` ordering to ensure that `f` won't be moved after the `store`
             // by the compiler
             finished.store(true, Ordering::Release);
@@ -66,30 +68,34 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
+    use tokio::time::sleep;
+
     use super::*;
 
     const STEP_MILLIS: u64 = 5;
 
-    fn long_task(stop: &AtomicBool) -> i32 {
-        let mut n = 0;
-        for i in 0..10 {
-            n = i;
-            if stop.load(Ordering::Relaxed) {
-                break;
+    fn long_task(stop: Arc<AtomicBool>) -> impl Future<Output = i32> {
+        async move {
+            let mut n = 0;
+            for i in 0..10 {
+                n = i;
+                if stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                sleep(Duration::from_millis(STEP_MILLIS)).await;
             }
-            thread::sleep(Duration::from_millis(STEP_MILLIS));
+            n
         }
-        n
     }
 
     #[tokio::test]
     async fn test_task_stop() {
-        let handle = spawn_stoppable(long_task);
+        let handle = spawn_async_stoppable(long_task);
 
-        thread::sleep(Duration::from_millis(STEP_MILLIS * 5));
+        sleep(Duration::from_millis(STEP_MILLIS * 5)).await;
         handle.ask_to_stop();
         assert!(!handle.is_finished());
-        thread::sleep(Duration::from_millis(STEP_MILLIS));
+        sleep(Duration::from_millis(STEP_MILLIS * 2)).await;
         assert!(handle.is_finished());
 
         let res = handle.stop().await.unwrap();

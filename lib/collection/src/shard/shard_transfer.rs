@@ -1,13 +1,20 @@
+use std::future::Future;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::time::Duration;
 
+use tokio::time::sleep;
+
+use crate::common::stoppable_task_async::{spawn_async_stoppable, StoppableAsyncTaskHandle};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shard::forward_proxy_shard::ForwardProxyShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_holder::LockedShardHolder;
-use crate::shard::{ChannelService, CollectionId, PeerId, Shard, ShardId};
+use crate::shard::{ChannelService, CollectionId, PeerId, Shard, ShardId, ShardTransfer};
 
 const TRANSFER_BATCH_SIZE: usize = 100;
+const RETRY_TIMEOUT: Duration = Duration::from_secs(1);
+const MAX_RETRY_COUNT: usize = 3;
 
 async fn transfer_batches(
     shard_holder: Arc<LockedShardHolder>,
@@ -52,7 +59,7 @@ pub async fn transfer_shard(
     peer_id: PeerId,
     channel_service: ChannelService,
     stopped: Arc<AtomicBool>,
-) -> CollectionResult<bool> {
+) -> CollectionResult<()> {
     // Initiate shard on a remote peer
     let remote_shard = RemoteShard::new(shard_id, collection_id, peer_id, channel_service);
 
@@ -98,5 +105,64 @@ pub async fn transfer_shard(
         }
     }
 
-    Ok(true)
+    Ok(())
+}
+
+pub fn spawn_transfer_task<T, F>(
+    shard_holder: Arc<LockedShardHolder>,
+    transfer: ShardTransfer,
+    collection_id: CollectionId,
+    channel_service: ChannelService,
+    on_finish: T,
+    on_error: F,
+) -> StoppableAsyncTaskHandle<bool>
+where
+    T: Future<Output = ()> + Send + 'static,
+    F: Future<Output = ()> + Send + 'static,
+{
+    spawn_async_stoppable(move |stopped| async move {
+        let mut tries = MAX_RETRY_COUNT;
+        let mut finished = false;
+        while !finished && tries > 0 {
+            let transfer_result = transfer_shard(
+                shard_holder.clone(),
+                transfer.shard_id,
+                collection_id.clone(),
+                transfer.to,
+                channel_service.clone(),
+                stopped.clone(),
+            )
+            .await;
+            finished = match transfer_result {
+                Ok(()) => true,
+                Err(error) => {
+                    log::error!(
+                        "Failed to transfer shard {} -> {}: {}",
+                        transfer.shard_id,
+                        transfer.to,
+                        error
+                    );
+                    false
+                }
+            };
+            if !finished {
+                tries -= 1;
+                log::warn!(
+                    "Retrying transfer shard {} -> {} (retry {})",
+                    transfer.shard_id,
+                    transfer.to,
+                    MAX_RETRY_COUNT - tries
+                );
+                let exp_timeout = RETRY_TIMEOUT * (MAX_RETRY_COUNT - tries) as u32;
+                sleep(exp_timeout).await;
+            }
+        }
+
+        if finished {
+            on_finish.await;
+        } else {
+            on_error.await;
+        }
+        finished
+    })
 }

@@ -30,6 +30,7 @@ use crate::content_manager::collection_meta_ops::{
     RenameAliasOperation, UpdateCollection,
 };
 use crate::content_manager::collections_ops::{Checker, Collections};
+use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::types::{PeerAddressById, StorageConfig};
@@ -50,6 +51,8 @@ pub struct TableOfContent {
     alias_persistence: RwLock<AliasPersistence>,
     pub this_peer_id: PeerId,
     channel_service: ChannelService,
+    /// Backlink to the consensus
+    consensus_proposal_sender: OperationSender,
 }
 
 impl TableOfContent {
@@ -59,6 +62,7 @@ impl TableOfContent {
         search_runtime: Runtime,
         channel_service: ChannelService,
         this_peer_id: PeerId,
+        consensus_proposal_sender: OperationSender,
     ) -> Self {
         let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
         create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
@@ -107,6 +111,7 @@ impl TableOfContent {
             collection_management_runtime,
             this_peer_id,
             channel_service,
+            consensus_proposal_sender,
         }
     }
 
@@ -401,7 +406,7 @@ impl TableOfContent {
     pub async fn handle_transfer(
         &self,
         collection: CollectionId,
-        shard: ShardId,
+        shard_id: ShardId,
         transfer: ShardTransferOperations,
     ) -> Result<(), StorageError> {
         let collections = self.collections.read().await;
@@ -413,13 +418,15 @@ impl TableOfContent {
         match transfer {
             ShardTransferOperations::Start { to } => {
                 collection
-                    .start_shard_transfer(shard, to, self.this_peer_id)
+                    .start_shard_transfer(shard_id, to, async {}, async {})
                     .await
             }
-            ShardTransferOperations::Finish => collection.finish_shard_transfer(shard).await,
-            ShardTransferOperations::Abort { reason } => {
+            ShardTransferOperations::Finish { to } => {
+                collection.finish_shard_transfer(shard_id, to).await
+            }
+            ShardTransferOperations::Abort { to, reason } => {
                 log::warn!("Aborting shard transfer: {reason}");
-                collection.abort_shard_transfer(shard).await
+                collection.abort_shard_transfer(shard_id, to).await
             }
         }?;
         Ok(())

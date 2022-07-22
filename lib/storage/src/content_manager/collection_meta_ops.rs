@@ -157,8 +157,8 @@ pub struct DeleteCollectionOperation(pub String);
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 pub enum ShardTransferOperations {
     Start { to: PeerId },
-    Finish,
-    Abort { reason: String },
+    Finish { to: PeerId },
+    Abort { to: PeerId, reason: String },
 }
 
 /// Enumeration of all possible collection update operations

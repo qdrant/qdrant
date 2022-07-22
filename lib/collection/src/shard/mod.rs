@@ -155,9 +155,9 @@ impl Default for ChannelService {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ShardTransfer {
-    pub from: PeerId,
+    pub shard_id: ShardId,
     pub to: PeerId,
 }
 
