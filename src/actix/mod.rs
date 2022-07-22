@@ -19,6 +19,7 @@ use crate::actix::api::recommend_api::recommend_points;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::search_points;
 use crate::actix::api::snapshot_api::config_snapshots_api;
+use crate::actix::api::telemetry_api::config_telemetry_api;
 use crate::actix::api::update_api::config_update_api;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
@@ -56,6 +57,7 @@ pub fn init(
     actix_web::rt::System::new().block_on(async {
         let toc_data = web::Data::new(dispatcher.toc().clone());
         let dispatcher_data = web::Data::new(dispatcher);
+        let telemetry_data = web::Data::new(telemetry_collector.clone());
         HttpServer::new(move || {
             let cors = Cors::default()
                 .allow_any_origin()
@@ -70,6 +72,7 @@ pub fn init(
                 .wrap(Logger::default())
                 .app_data(dispatcher_data.clone())
                 .app_data(toc_data.clone())
+                .app_data(telemetry_data.clone())
                 .app_data(Data::new(
                     web::JsonConfig::default()
                         .limit(32 * 1024 * 1024)
@@ -80,6 +83,7 @@ pub fn init(
                 .configure(config_snapshots_api)
                 .configure(config_update_api)
                 .configure(config_cluster_api)
+                .configure(config_telemetry_api)
                 .service(get_point)
                 .service(get_points)
                 .service(scroll_points)

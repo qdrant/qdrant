@@ -15,6 +15,7 @@ use storage::content_manager::collection_meta_ops::{
 use storage::types::ClusterStatus;
 
 use crate::common::points::CreateFieldIndex;
+use crate::common::telemetry::TelemetryData;
 
 mod actix;
 mod common;
@@ -47,6 +48,7 @@ struct AllDefinitions {
     an: CountRequest,
     ao: CountResult,
     ap: CollectionClusterInfo,
+    aq: TelemetryData,
 }
 
 fn save_schema<T: JsonSchema>() {
