@@ -36,9 +36,13 @@ use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::shard_holder::{LockedShardHolder, ShardHolder};
+use crate::shard::shard_versioning::{
+    shards_versions, suggest_next_version_path, versioned_shard_path,
+};
+use crate::shard::Shard::Local;
 use crate::shard::{
-    create_shard_dir, shard_path, ChannelService, CollectionId, PeerId, Shard, ShardId,
-    ShardOperation, HASH_RING_SHARD_SCALE,
+    create_shard_dir, ChannelService, CollectionId, PeerId, Shard, ShardId, ShardOperation,
+    HASH_RING_SHARD_SCALE,
 };
 use crate::telemetry::CollectionTelemetry;
 
@@ -100,7 +104,7 @@ impl Collection {
                     return Err(err);
                 }
             };
-            shard_holder.add_shard(shard_id, Shard::Local(shard)).await;
+            shard_holder.add_shard(shard_id, Shard::Local(shard));
         }
 
         for (shard_id, peer_id) in shard_distribution.remote {
@@ -122,7 +126,7 @@ impl Collection {
                     return Err(err);
                 }
             };
-            shard_holder.add_shard(shard_id, Shard::Remote(shard)).await;
+            shard_holder.add_shard(shard_id, Shard::Remote(shard));
         }
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
@@ -152,7 +156,7 @@ impl Collection {
     }
 
     pub async fn load(
-        id: CollectionId,
+        collection_id: CollectionId,
         path: &Path,
         snapshots_path: &Path,
         channel_service: ChannelService,
@@ -194,38 +198,27 @@ impl Collection {
         };
         let mut shard_holder = ShardHolder::new(ring);
 
-        let shard_distribution = CollectionShardDistribution::from_local_state(path)
-            .expect("Can't infer shard distribution from local shard configurations");
-
         let shared_config = Arc::new(RwLock::new(config.clone()));
-        for shard_id in shard_distribution.local {
-            let shard_path = shard_path(path, shard_id);
-            shard_holder
-                .add_shard(
-                    shard_id,
-                    Shard::Local(
-                        LocalShard::load(shard_id, id.clone(), &shard_path, shared_config.clone())
-                            .await,
-                    ),
-                )
-                .await;
-        }
 
-        for (shard_id, peer_id) in shard_distribution.remote {
-            let shard = RemoteShard::new(shard_id, id.clone(), peer_id, channel_service.clone());
-            shard_holder.add_shard(shard_id, Shard::Remote(shard)).await;
-        }
+        shard_holder
+            .load_shards(
+                path,
+                &collection_id,
+                shared_config.clone(),
+                channel_service.clone(),
+            )
+            .await;
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
 
         Self {
-            id: id.clone(),
+            id: collection_id.clone(),
             shards_holder: locked_shard_holder,
             config: shared_config,
             before_drop_called: false,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
-            telemetry: CollectionTelemetry::new(id, config, start_time.elapsed()),
+            telemetry: CollectionTelemetry::new(collection_id, config, start_time.elapsed()),
         }
     }
 
@@ -248,8 +241,14 @@ impl Collection {
     }
 
     pub async fn finish_shard_transfer(&self, shard_id: ShardId) -> CollectionResult<()> {
-        let mut shards_holder = self.shards_holder.write().await;
-        shards_holder.finish_transfer(shard_id)
+        let mut shards_holder_write = self.shards_holder.write().await;
+        shards_holder_write
+            .finish_transfer(&self.id, shard_id)
+            .await?;
+        drop(shards_holder_write);
+
+        // promote pending temporary shard for `shard_id`
+        self.promote_temporary_shard(shard_id).await
     }
 
     pub async fn abort_shard_transfer(&mut self, _shard_id: ShardId) -> CollectionResult<()> {
@@ -258,17 +257,78 @@ impl Collection {
         todo!("Handle for sender and receiver")
     }
 
+    /// Promote temporary shard
+    ///
+    /// The temporary shard `shard_id` will replace the current local shard `shard_id`.
+    pub async fn promote_temporary_shard(&self, shard_id: ShardId) -> CollectionResult<()> {
+        {
+            let shard_holder = self.shards_holder.read().await;
+            let temp_shard_opt = shard_holder.get_temporary_shard(&shard_id);
+            let temp_shard = match temp_shard_opt {
+                Some(shard) => shard,
+                None => return Ok(()),
+            };
+            match temp_shard {
+                Local(local_temp_shard) => {
+                    let shard_path = local_temp_shard.shard_path();
+                    ShardConfig::new_local().save(&shard_path)?
+                }
+                Shard::Remote(_) => return Ok(()),
+                Shard::Proxy(_) => return Ok(()),
+            }
+        }
+
+        // After ths point, if anything crushes - it will load temp shard as new local shard
+
+        let mut shard_holder_write = self.shards_holder.write().await;
+
+        match shard_holder_write.remove_temporary_shard(shard_id) {
+            None => Ok(()), // no temporary shard to remove
+            Some(temporary_shard) => {
+                let collection_id = self.id.clone();
+                log::info!("Promoting temporary shard {}:{}", collection_id, shard_id);
+
+                // switch shards in place
+                let old_shard_opt = shard_holder_write.replace_shard(shard_id, temporary_shard);
+
+                // release write lock to start serving data from temporary shard while cleaning up old shard
+                drop(shard_holder_write);
+                // After this point, we can receive all requests into already promoted shard
+                // All what is left is to recycle old shard
+
+                // cleanup old shard
+                if let Some(mut old_shard) = old_shard_opt {
+                    // finish update tasks
+                    old_shard.before_drop().await;
+
+                    // force drop to release file system resources
+                    drop(old_shard);
+                }
+
+                // Delete all shard versions except for the last one
+                for (_version, old_path) in shards_versions(&self.path, shard_id)
+                    .await?
+                    .into_iter()
+                    .skip(1)
+                {
+                    // delete old shard's data folder
+                    tokio::fs::remove_dir_all(&old_path).await?;
+                }
+                Ok(())
+            }
+        }
+    }
+
     /// Initiate temporary shard
     ///
     /// Drops existing temporary shards for `shard_id`.
     pub async fn initiate_temporary_shard(&self, shard_id: ShardId) -> CollectionResult<()> {
         let mut shard_holder_write = self.shards_holder.write().await;
-        let temporary_shard_path = self.path.join(format!("{shard_id}-temp"));
-
         let existing_shard = shard_holder_write.remove_temporary_shard(shard_id);
-
         // do not lock shards while creating temporary shard  disk
         drop(shard_holder_write);
+
+        let temporary_shard_path = suggest_next_version_path(&self.path, shard_id).await?;
 
         if let Some(mut existing_temporary_shard) = existing_shard {
             log::info!(
@@ -278,13 +338,27 @@ impl Collection {
             );
             // Finish update tasks
             existing_temporary_shard.before_drop().await;
-            // Delete existing folder
-            tokio::fs::remove_dir_all(&temporary_shard_path).await?;
+
+            match existing_temporary_shard {
+                Local(local_shard) => {
+                    let old_shard_path = local_shard.shard_path();
+                    // Delete existing folder
+                    drop(local_shard);
+                    log::debug!("Deleting old shard {}", old_shard_path.display());
+                    tokio::fs::remove_dir_all(&old_shard_path).await?;
+                }
+                Shard::Remote(_) => {
+                    debug_assert!(false, "Remote shard should not be temporary");
+                }
+                Shard::Proxy(_) => {
+                    debug_assert!(false, "Proxy shard should not be temporary");
+                }
+            }
         }
 
         // create directory to hold the temporary data for shard with `shard_id`
         tokio::fs::create_dir_all(&temporary_shard_path).await?;
-        let temporary_shard = LocalShard::build(
+        let temporary_shard = LocalShard::build_temp(
             shard_id,
             self.id.clone(),
             &temporary_shard_path,
@@ -308,38 +382,20 @@ impl Collection {
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
         let shard_holder_guard = self.shards_holder.read().await;
-        let shard_opt = shard_holder_guard.get_shard(&shard_selection);
 
-        let target_shard = match shard_opt {
-            None => {
-                // check if a temporary shard exist for the shard_selection
-                let temporary_shard_opt = shard_holder_guard.get_temporary_shard(&shard_selection);
-                match temporary_shard_opt {
-                    Some(temp) => temp,
-                    None => {
-                        return Err(CollectionError::bad_shard_selection(format!(
-                            "Shard {} does not exist",
-                            shard_selection
-                        )))
-                    }
-                }
-            }
-            Some(shard) => match *shard {
-                Shard::Local(_) => shard,
-                Shard::Proxy(_) => shard,
-                Shard::Remote(_) => {
-                    // check temporary shards if the target is a remote shard
-                    let temporary_shard_opt =
-                        shard_holder_guard.get_temporary_shard(&shard_selection);
-                    match temporary_shard_opt {
-                        None => shard, // forward to the remote shard
-                        Some(temp) => temp,
-                    }
-                }
-            },
-        };
-
-        target_shard.get().update(operation.clone(), wait).await
+        let target_shards = shard_holder_guard.target_shards(Some(shard_selection))?;
+        let mut res = None;
+        for target_shard in target_shards {
+            res = Some(target_shard.get().update(operation.clone(), wait).await?);
+        }
+        if let Some(res) = res {
+            Ok(res)
+        } else {
+            Err(CollectionError::service_error(format!(
+                "No target shard {} found for update",
+                shard_selection
+            )))
+        }
     }
 
     pub async fn update_from_client(
@@ -351,7 +407,7 @@ impl Collection {
 
         let mut results = {
             let shards_holder = self.shards_holder.read().await;
-            let shard_to_op = shards_holder.split_by_shard(operation).await;
+            let shard_to_op = shards_holder.split_by_shard(operation);
 
             let shard_requests = shard_to_op
                 .into_iter()
@@ -928,7 +984,7 @@ impl Collection {
             // Create snapshot of each shard
             for (shard_id, shard) in shards_holder.get_shards() {
                 let shard_snapshot_path =
-                    snapshot_path_with_tmp_extension.join(format!("{}", shard_id));
+                    versioned_shard_path(&snapshot_path_with_tmp_extension, *shard_id, 0);
                 create_dir_all(&shard_snapshot_path).await?;
                 match shard {
                     Shard::Local(local_shard) => {
@@ -987,11 +1043,12 @@ impl Collection {
         let configured_shards = config.params.shard_number.get();
 
         for shard_id in 0..configured_shards {
-            let shard_path = shard_path(target_dir, shard_id);
+            let shard_path = versioned_shard_path(target_dir, shard_id, 0);
             let shard_config = ShardConfig::load(&shard_path)?;
             match shard_config.r#type {
                 ShardType::Local => LocalShard::restore_snapshot(&shard_path)?,
                 ShardType::Remote { .. } => RemoteShard::restore_snapshot(&shard_path),
+                ShardType::Temporary => {}
             }
         }
 

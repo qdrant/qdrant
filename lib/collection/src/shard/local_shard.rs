@@ -191,6 +191,10 @@ impl LocalShard {
         collection
     }
 
+    pub fn shard_path(&self) -> PathBuf {
+        self.path.clone()
+    }
+
     pub fn wal_path(shard_path: &Path) -> PathBuf {
         shard_path.join("wal")
     }
@@ -199,7 +203,24 @@ impl LocalShard {
         shard_path.join("segments")
     }
 
-    /// Creates new empty shard with given configuration, initializing all storages, optimizers and directories.
+    pub async fn build_temp(
+        id: ShardId,
+        collection_id: CollectionId,
+        shard_path: &Path,
+        shared_config: Arc<TokioRwLock<CollectionConfig>>,
+    ) -> CollectionResult<LocalShard> {
+        // initialize temporary shard config file
+        let temp_shard_config = ShardConfig::new_temp();
+        Self::_build(
+            id,
+            collection_id,
+            shard_path,
+            shared_config,
+            temp_shard_config,
+        )
+        .await
+    }
+
     pub async fn build(
         id: ShardId,
         collection_id: CollectionId,
@@ -208,7 +229,25 @@ impl LocalShard {
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         let local_shard_config = ShardConfig::new_local();
-        local_shard_config.save(shard_path)?;
+        Self::_build(
+            id,
+            collection_id,
+            shard_path,
+            shared_config,
+            local_shard_config,
+        )
+        .await
+    }
+
+    /// Creates new empty shard with given configuration, initializing all storages, optimizers and directories.
+    async fn _build(
+        id: ShardId,
+        collection_id: CollectionId,
+        shard_path: &Path,
+        shared_config: Arc<TokioRwLock<CollectionConfig>>,
+        config: ShardConfig,
+    ) -> CollectionResult<LocalShard> {
+        config.save(shard_path)?;
 
         let config = shared_config.read().await;
 

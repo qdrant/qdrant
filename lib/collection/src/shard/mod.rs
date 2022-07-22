@@ -6,6 +6,7 @@ pub mod proxy_shard;
 pub mod remote_shard;
 pub mod shard_config;
 pub mod shard_holder;
+pub mod shard_versioning;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -25,6 +26,7 @@ use crate::operations::CollectionUpdateOperations;
 use crate::shard::local_shard::LocalShard;
 use crate::shard::proxy_shard::ProxyShard;
 use crate::shard::remote_shard::RemoteShard;
+use crate::shard::shard_versioning::suggest_next_version_path;
 use crate::telemetry::ShardTelemetry;
 
 pub type ShardId = u32;
@@ -114,6 +116,8 @@ pub const HASH_RING_SHARD_SCALE: u32 = 100;
 
 pub type CollectionId = String;
 
+pub type ShardVersion = usize;
+
 pub type PeerId = u64;
 
 #[derive(Clone)]
@@ -149,19 +153,22 @@ pub struct ShardTransfer {
     pub to: PeerId,
 }
 
-pub fn shard_path(collection_path: &Path, shard_id: ShardId) -> PathBuf {
-    collection_path.join(format!("{shard_id}"))
-}
-
 pub async fn create_shard_dir(
     collection_path: &Path,
     shard_id: ShardId,
 ) -> CollectionResult<PathBuf> {
-    let shard_path = shard_path(collection_path, shard_id);
-    tokio::fs::create_dir_all(&shard_path)
-        .await
-        .map_err(|err| CollectionError::ServiceError {
-            error: format!("Can't create shard {shard_id} directory. Error: {}", err),
-        })?;
-    Ok(shard_path)
+    loop {
+        let shard_path = suggest_next_version_path(collection_path, shard_id).await?;
+
+        match tokio::fs::create_dir(&shard_path).await {
+            Ok(_) => return Ok(shard_path),
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    continue;
+                } else {
+                    return Err(CollectionError::from(e));
+                }
+            }
+        }
+    }
 }

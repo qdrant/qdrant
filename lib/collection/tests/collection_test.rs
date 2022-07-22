@@ -477,3 +477,63 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     assert_eq!(result.points.get(2).unwrap().id, 4.into());
     collection.before_drop().await;
 }
+
+#[tokio::test]
+async fn test_promote_temporary_shards() {
+    let collection_dir = TempDir::new("collection").unwrap();
+    let mut collection = simple_collection_fixture(collection_dir.path(), 1).await;
+
+    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        Batch {
+            ids: vec![0, 1, 2, 3, 4, 5, 6, 7, 8]
+                .into_iter()
+                .map(|x| x.into())
+                .collect_vec(),
+            vectors: vec![
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 0.0, 1.0],
+                vec![0.0, 0.0, 0.0, 1.0],
+            ],
+            payloads: None,
+        }
+        .into(),
+    ));
+
+    collection
+        .update_from_client(insert_points, true)
+        .await
+        .unwrap();
+
+    let scroll_request = ScrollRequest {
+        offset: None,
+        limit: Some(2),
+        filter: None,
+        with_payload: Some(WithPayloadInterface::Bool(true)),
+        with_vector: false,
+    };
+
+    // validate collection non empty
+    let result = collection
+        .scroll_by(scroll_request.clone(), None)
+        .await
+        .unwrap();
+    assert_eq!(result.points.len(), 2);
+
+    // initiate temporary shard for shard_id 1
+    collection.initiate_temporary_shard(0).await.unwrap();
+
+    // promote temporary shard for shard_id 1
+    collection.promote_temporary_shard(0).await.unwrap();
+
+    // validate collection is empty now
+    let result = collection.scroll_by(scroll_request, None).await.unwrap();
+    assert_eq!(result.points.len(), 0);
+
+    collection.before_drop().await;
+}

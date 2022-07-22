@@ -1,15 +1,21 @@
 use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::{OperationToShard, SplitByShard};
 use crate::shard::local_shard::LocalShard;
+use crate::shard::remote_shard::RemoteShard;
+use crate::shard::shard_config::ShardType;
+use crate::shard::shard_versioning::latest_shard_paths;
 use crate::shard::Shard::Local;
-use crate::shard::{PeerId, Shard, ShardId, ShardTransfer};
+use crate::shard::{ChannelService, CollectionId, PeerId, Shard, ShardId, ShardTransfer};
 
 pub struct ShardHolder {
     shards: HashMap<ShardId, Shard>,
@@ -30,15 +36,31 @@ impl ShardHolder {
         }
     }
 
-    pub async fn add_shard(&mut self, shard_id: ShardId, shard: Shard) {
+    pub fn add_shard(&mut self, shard_id: ShardId, shard: Shard) {
         self.shards.insert(shard_id, shard);
         self.ring.add(shard_id);
     }
 
-    pub async fn remove_shard(&mut self, shard_id: ShardId) -> Option<Shard> {
+    pub fn remove_shard(&mut self, shard_id: ShardId) -> Option<Shard> {
         let shard = self.shards.remove(&shard_id);
         self.ring.remove(&shard_id);
         shard
+    }
+
+    /// Take shard
+    ///
+    /// remove shard and return ownership
+    pub fn take_shard(&mut self, shard_id: ShardId) -> Option<Shard> {
+        self.shards.remove(&shard_id)
+    }
+
+    /// Replace shard
+    ///
+    /// return old shard
+    pub fn replace_shard(&mut self, shard_id: ShardId, shard: Shard) -> Option<Shard> {
+        let old_shard = self.shards.remove(&shard_id);
+        self.shards.insert(shard_id, shard);
+        old_shard
     }
 
     pub fn get_shard(&self, shard_id: &ShardId) -> Option<&Shard> {
@@ -61,7 +83,7 @@ impl ShardHolder {
         self.temporary_shards.values()
     }
 
-    pub async fn split_by_shard<O: SplitByShard + Clone>(&self, operation: O) -> Vec<(&Shard, O)> {
+    pub fn split_by_shard<O: SplitByShard + Clone>(&self, operation: O) -> Vec<(&Shard, O)> {
         let operation_to_shard = operation.split_by_shard(&self.ring);
         let shard_ops: Vec<_> = match operation_to_shard {
             OperationToShard::ByShard(by_shard) => by_shard
@@ -77,9 +99,13 @@ impl ShardHolder {
     }
 
     /// Add temporary shard
-    pub fn add_temporary_shard(&mut self, shard_id: ShardId, temporary_shard: LocalShard) {
+    pub fn add_temporary_shard(
+        &mut self,
+        shard_id: ShardId,
+        temporary_shard: LocalShard,
+    ) -> Option<Shard> {
         self.temporary_shards
-            .insert(shard_id, Local(temporary_shard));
+            .insert(shard_id, Local(temporary_shard))
     }
 
     /// Remove temporary shard
@@ -106,41 +132,60 @@ impl ShardHolder {
         Ok(shard_transfer)
     }
 
-    pub fn finish_transfer(&mut self, shard_id: ShardId) -> CollectionResult<()> {
+    pub async fn finish_transfer(
+        &mut self,
+        collection_id: &CollectionId,
+        shard_id: ShardId,
+    ) -> CollectionResult<()> {
+        // remove on-going transfer for `shard_id`
         let transfer = self.shard_transfers.remove(&shard_id).ok_or_else(|| {
             CollectionError::service_error(format!(
-                "Shard transfer data for {shard_id} is absent at the end of the transfer."
+                "Shard transfer data for {collection_id}:{shard_id} is absent at the end of the transfer."
             ))
         })?;
+
+        // update peer's id if `shard_id` is a remote shard
         if let Shard::Remote(shard) = self.shards.get_mut(&shard_id).ok_or_else(|| {
-            CollectionError::service_error("Shard {shard_id} is absent".to_owned())
+            CollectionError::service_error("Shard {collection_id}:{shard_id} is absent".to_owned())
         })? {
             shard.peer_id = transfer.to;
         };
         Ok(())
     }
 
-    pub fn local_shard_by_id(&self, id: ShardId) -> CollectionResult<&Shard> {
-        match self.shards.get(&id) {
-            None => Err(CollectionError::bad_shard_selection(format!(
-                "Shard {} does not exist",
-                id
-            ))),
-            Some(Shard::Remote(_)) => Err(CollectionError::bad_shard_selection(format!(
-                "Shard {} is not local on peer",
-                id
-            ))),
-            Some(shard @ Shard::Local(_)) => Ok(shard),
-            Some(shard @ Shard::Proxy(_)) => Ok(shard),
-        }
-    }
-
     pub fn target_shards(&self, shard_selection: Option<ShardId>) -> CollectionResult<Vec<&Shard>> {
         match shard_selection {
             None => Ok(self.all_shards().collect()),
             Some(shard_selection) => {
-                let local_shard = self.local_shard_by_id(shard_selection)?;
-                Ok(vec![local_shard])
+                let shard_opt = self.get_shard(&shard_selection);
+                let target_shard = match shard_opt {
+                    None => {
+                        // check if a temporary shard exist for the shard_selection
+                        let temporary_shard_opt = self.get_temporary_shard(&shard_selection);
+                        match temporary_shard_opt {
+                            Some(temp) => temp,
+                            None => {
+                                return Err(CollectionError::bad_shard_selection(format!(
+                                    "Shard {} does not exist",
+                                    shard_selection
+                                )))
+                            }
+                        }
+                    }
+                    Some(shard) => match *shard {
+                        Shard::Local(_) => shard,
+                        Shard::Proxy(_) => shard,
+                        Shard::Remote(_) => {
+                            // check temporary shards if the target is a remote shard
+                            let temporary_shard_opt = self.get_temporary_shard(&shard_selection);
+                            match temporary_shard_opt {
+                                None => shard, // forward to the remote shard
+                                Some(temp) => temp,
+                            }
+                        }
+                    },
+                };
+                Ok(vec![target_shard])
             }
         }
     }
@@ -161,6 +206,66 @@ impl ShardHolder {
 
     pub fn is_empty(&self) -> bool {
         self.shards.is_empty()
+    }
+
+    pub async fn load_shards(
+        &mut self,
+        collection_path: &Path,
+        collection_id: &CollectionId,
+        shared_collection_config: Arc<RwLock<CollectionConfig>>,
+        channel_service: ChannelService,
+    ) {
+        let shard_number = shared_collection_config
+            .read()
+            .await
+            .params
+            .shard_number
+            .get();
+
+        for shard_id in 0..shard_number {
+            for (path, _shard_version, shard_type) in
+                latest_shard_paths(collection_path, shard_id).await.unwrap()
+            {
+                match shard_type {
+                    ShardType::Local => {
+                        self.add_shard(
+                            shard_id,
+                            Shard::Local(
+                                LocalShard::load(
+                                    shard_id,
+                                    collection_id.clone(),
+                                    &path,
+                                    shared_collection_config.clone(),
+                                )
+                                .await,
+                            ),
+                        );
+                    }
+                    ShardType::Remote { peer_id } => {
+                        let shard = RemoteShard::new(
+                            shard_id,
+                            collection_id.clone(),
+                            peer_id,
+                            channel_service.clone(),
+                        );
+                        self.add_shard(shard_id, Shard::Remote(shard));
+                    }
+                    ShardType::Temporary => {
+                        let replaces_shard = self.add_temporary_shard(
+                            shard_id,
+                            LocalShard::load(
+                                shard_id,
+                                collection_id.clone(),
+                                &path,
+                                shared_collection_config.clone(),
+                            )
+                            .await,
+                        );
+                        debug_assert!(replaces_shard.is_none())
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -227,7 +332,7 @@ mod tests {
         .unwrap();
 
         let mut shard_holder = ShardHolder::new(HashRing::fair(100));
-        shard_holder.add_shard(2, Shard::Remote(shard)).await;
+        shard_holder.add_shard(2, Shard::Remote(shard));
         let locked_shard_holder = LockedShardHolder::new(shard_holder);
 
         let retrieved_shard = locked_shard_holder.get_shard(2).await;
