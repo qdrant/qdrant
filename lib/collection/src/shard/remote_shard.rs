@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -28,7 +29,6 @@ use crate::shard::conversions::{
 };
 use crate::shard::shard_config::ShardConfig;
 use crate::shard::{ChannelService, CollectionId, PeerId, ShardId, ShardOperation};
-use std::future::Future;
 
 /// RemoteShard
 ///

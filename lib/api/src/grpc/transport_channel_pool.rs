@@ -1,8 +1,8 @@
+use std::collections::HashMap;
 use std::future::Future;
 use std::num::NonZeroUsize;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::vec::Vec;
-use std::{collections::HashMap, time::Instant};
 
 use rand::seq::SliceRandom;
 use tonic::transport::{Channel, Error as TonicError, Uri};
