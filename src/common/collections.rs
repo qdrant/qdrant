@@ -1,6 +1,6 @@
 use api::grpc::models::{CollectionDescription, CollectionsResponse};
 use collection::operations::snapshot_ops::SnapshotDescription;
-use collection::operations::types::CollectionInfo;
+use collection::operations::types::{CollectionClusterInfo, CollectionInfo};
 use collection::shard::ShardId;
 use itertools::Itertools;
 use storage::content_manager::errors::StorageError;
@@ -42,4 +42,12 @@ pub async fn do_create_snapshot(
     collection_name: &str,
 ) -> Result<SnapshotDescription, StorageError> {
     toc.create_snapshot(collection_name).await
+}
+
+pub async fn do_get_collection_cluster(
+    toc: &TableOfContent,
+    name: &str,
+) -> Result<CollectionClusterInfo, StorageError> {
+    let collection = toc.get_collection(name).await?;
+    Ok(collection.cluster_info(toc.this_peer_id).await?)
 }

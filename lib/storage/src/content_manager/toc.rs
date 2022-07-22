@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
@@ -34,8 +34,10 @@ use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::types::{PeerAddressById, StorageConfig};
 
+pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const SNAPSHOTS_TMP_DIR: &str = "snapshots_tmp";
+pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
 
 /// The main object of the service. It holds all objects, required for proper functioning.
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
@@ -46,7 +48,7 @@ pub struct TableOfContent {
     search_runtime: Runtime,
     collection_management_runtime: Runtime,
     alias_persistence: RwLock<AliasPersistence>,
-    this_peer_id: PeerId,
+    pub this_peer_id: PeerId,
     channel_service: ChannelService,
 }
 
@@ -94,7 +96,7 @@ impl TableOfContent {
 
             collections.insert(collection_name, collection);
         }
-        let alias_path = Path::new(&storage_config.storage_path).join("aliases");
+        let alias_path = Path::new(&storage_config.storage_path).join(ALIASES_PATH);
         let alias_persistence =
             AliasPersistence::open(alias_path).expect("Can't open database by the provided config");
         TableOfContent {
@@ -116,6 +118,10 @@ impl TableOfContent {
 
     pub fn storage_path(&self) -> &str {
         &self.storage_config.storage_path
+    }
+
+    pub fn snapshots_path(&self) -> &str {
+        &self.storage_config.snapshots_path
     }
 
     fn collection_snapshots_path(snapshots_path: &Path, collection_name: &str) -> PathBuf {
@@ -406,12 +412,14 @@ impl TableOfContent {
         })?;
         match transfer {
             ShardTransferOperations::Start { to } => {
-                collection.start_shard_transfer(shard, to, self.this_peer_id)
+                collection
+                    .start_shard_transfer(shard, to, self.this_peer_id)
+                    .await
             }
-            ShardTransferOperations::Finish => collection.finish_shard_transfer(shard),
+            ShardTransferOperations::Finish => collection.finish_shard_transfer(shard).await,
             ShardTransferOperations::Abort { reason } => {
                 log::warn!("Aborting shard transfer: {reason}");
-                collection.abort_shard_transfer(shard)
+                collection.abort_shard_transfer(shard).await
             }
         }?;
         Ok(())
@@ -427,6 +435,28 @@ impl TableOfContent {
         Ok(RwLockReadGuard::map(read_collection, |collection| {
             collection.get(&real_collection_name).unwrap()
         }))
+    }
+
+    /// Initiate temporary shard.
+    ///
+    /// Fails if the collection does not exist
+    pub async fn initiate_temporary_shard(
+        &self,
+        collection_name: String,
+        shard_id: ShardId,
+    ) -> Result<(), StorageError> {
+        log::info!(
+            "Initiating temporary shard {}:{}",
+            collection_name,
+            shard_id
+        );
+        let real_collection_name = self.resolve_name(&collection_name).await?;
+        let read_collections = self.collections.read().await;
+
+        // safe 'unwrap' because the collection's existence is checked in `resolve_name`
+        let collection = read_collections.get(&real_collection_name).unwrap();
+        collection.initiate_temporary_shard(shard_id).await?;
+        Ok(())
     }
 
     /// Recommend points using positive and negative example from the request
@@ -626,7 +656,7 @@ impl TableOfContent {
         self.collection_management_runtime.block_on(async {
             let mut collections = self.collections.write().await;
             for (id, state) in &data.collections {
-                let collection = collections.get_mut(id);
+                let collection = collections.get(id);
                 match collection {
                     // Update state if collection present locally
                     Some(collection) => {
@@ -705,24 +735,18 @@ impl TableOfContent {
             .create_collection
             .shard_number
             .unwrap_or(suggested_shard_number);
-        let known_peers: Vec<_> = self
+        let mut known_peers_set: HashSet<_> = self
             .channel_service
             .id_to_address
             .read()
             .keys()
             .copied()
             .collect();
-        let known_collections = self.collections.read().await;
-        let known_shards: Vec<_> = known_collections
-            .iter()
-            .flat_map(|(_, col)| col.all_shards())
-            .collect();
-        let shard_distribution = ShardDistributionProposal::new(
-            shard_number,
-            self.this_peer_id(),
-            &known_peers,
-            known_shards,
-        );
+        known_peers_set.insert(self.this_peer_id());
+        let known_peers: Vec<_> = known_peers_set.into_iter().collect();
+
+        let shard_distribution = ShardDistributionProposal::new(shard_number, &known_peers, vec![]);
+
         log::debug!(
             "Suggesting distribution for {} shards for collection '{}' among {} peers {:?}",
             shard_number,

@@ -3,7 +3,9 @@ use std::path::Path;
 
 use collection::collection::Collection;
 use log::info;
-use storage::content_manager::toc::COLLECTIONS_DIR;
+use storage::content_manager::alias_mapping::AliasPersistence;
+use storage::content_manager::snapshots::SnapshotConfig;
+use storage::content_manager::toc::{ALIASES_PATH, COLLECTIONS_DIR};
 
 /// Recover snapshots from the given arguments
 ///
@@ -12,8 +14,8 @@ use storage::content_manager::toc::COLLECTIONS_DIR;
 /// * `mapping` - [ "<path>:<collection_name>" ]
 /// * `force` - if true, allow to overwrite collections from snapshots
 ///
-pub fn recover_snapshots(mapping: &[String], force: bool, collections_dir: &str) {
-    let collection_dir_path = Path::new(collections_dir).join(COLLECTIONS_DIR);
+pub fn recover_snapshots(mapping: &[String], force: bool, storage_dir: &str) {
+    let collection_dir_path = Path::new(storage_dir).join(COLLECTIONS_DIR);
     for snapshot_params in mapping {
         let mut split = snapshot_params.split(':');
         let path = split
@@ -56,4 +58,51 @@ pub fn recover_snapshots(mapping: &[String], force: bool, collections_dir: &str)
         }
         rename(&collection_temp_path, &collection_path).unwrap();
     }
+}
+
+pub fn recover_full_snapshot(snapshot_path: &str, storage_dir: &str, force: bool) {
+    let temporary_dir = Path::new(storage_dir).join("snapshots_recovery_tmp");
+    std::fs::create_dir_all(&temporary_dir).unwrap();
+
+    // Un-tar snapshot into temporary directory
+    let archive_file = std::fs::File::open(snapshot_path).unwrap();
+    let mut ar = tar::Archive::new(archive_file);
+    ar.unpack(&temporary_dir).unwrap();
+
+    // Read configuration file with snapshot-to-collection mapping
+    let config_path = temporary_dir.join("config.json");
+    let config_file = std::fs::File::open(&config_path).unwrap();
+    let config_json: SnapshotConfig = serde_json::from_reader(config_file).unwrap();
+
+    // Create mapping from the configuration file
+    let mapping: Vec<String> = config_json
+        .collections_mapping
+        .iter()
+        .map(|(collection_name, snapshot_file)| {
+            format!(
+                "{}:{}",
+                temporary_dir.join(snapshot_file).to_str().unwrap(),
+                collection_name,
+            )
+        })
+        .collect();
+
+    // Launch regular recovery of snapshots
+    recover_snapshots(&mapping, force, storage_dir);
+
+    let alias_path = Path::new(storage_dir).join(ALIASES_PATH);
+    let mut alias_persistence =
+        AliasPersistence::open(alias_path).expect("Can't open database by the provided config");
+    for (alias, collection_name) in config_json.collections_aliases {
+        if alias_persistence.get(&alias).is_some() && !force {
+            panic!(
+                "Alias {} already exists. Use --force-snapshot to overwrite it.",
+                alias
+            );
+        }
+        alias_persistence.insert(alias, collection_name).unwrap();
+    }
+
+    // Remove temporary directory
+    remove_dir_all(&temporary_dir).unwrap();
 }

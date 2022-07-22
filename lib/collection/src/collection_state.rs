@@ -19,7 +19,7 @@ impl State {
     pub async fn apply(
         self,
         this_peer_id: PeerId,
-        collection: &mut Collection,
+        collection: &Collection,
         collection_path: &Path,
         channel_service: ChannelService,
     ) -> CollectionResult<()> {
@@ -36,7 +36,7 @@ impl State {
 
     async fn apply_config(
         config: CollectionConfig,
-        collection: &mut Collection,
+        collection: &Collection,
     ) -> CollectionResult<()> {
         log::warn!("Applying only optimizers config snapshot. Other config updates are not yet implemented.");
         collection
@@ -47,12 +47,13 @@ impl State {
     async fn apply_shard_to_peer(
         shard_to_peer: HashMap<ShardId, PeerId>,
         this_peer_id: PeerId,
-        collection: &mut Collection,
+        collection: &Collection,
         collection_path: &Path,
         channel_service: ChannelService,
     ) -> CollectionResult<()> {
         for (shard_id, peer_id) in shard_to_peer {
-            match collection.shards.get(&shard_id) {
+            let mut shards_holder = collection.shards_holder.write().await;
+            match shards_holder.get_shard(&shard_id) {
                 Some(shard) => {
                     if shard.peer_id(this_peer_id) != peer_id {
                         // shard registered on a different peer
@@ -74,8 +75,9 @@ impl State {
                             shard_path,
                             channel_service.clone(),
                         )?;
-                        collection.shards.insert(shard_id, Shard::Remote(shard));
-                        collection.ring.add(shard_id);
+                        shards_holder
+                            .add_shard(shard_id, Shard::Remote(shard))
+                            .await;
                     }
                 }
             }

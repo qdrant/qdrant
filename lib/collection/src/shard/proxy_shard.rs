@@ -115,7 +115,7 @@ impl ProxyShard {
 }
 
 #[async_trait]
-impl ShardOperation for &ProxyShard {
+impl ShardOperation for ProxyShard {
     /// Update `wrapped_shard` while keeping track of the changed points
     async fn update(
         &self,

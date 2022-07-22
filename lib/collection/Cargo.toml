@@ -48,3 +48,6 @@ tar = "0.4.38"
 fs_extra = "1.2.0"
 semver = "1.0.12"
 
+[[bench]]
+name = "hash_ring_bench"
+harness = false

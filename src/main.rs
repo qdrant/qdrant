@@ -20,15 +20,17 @@ use collection::shard::ChannelService;
 use consensus::Consensus;
 use log::LevelFilter;
 use slog::Drain;
-use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef, Persistent};
+use storage::content_manager::consensus::persistent::Persistent;
+use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef};
 use storage::content_manager::toc::TableOfContent;
-use storage::Dispatcher;
+use storage::dispatcher::Dispatcher;
 
 use crate::common::helpers::create_search_runtime;
 use crate::common::telemetry::TelemetryCollector;
 use crate::greeting::welcome;
 use crate::settings::Settings;
-use crate::snapshots::recover_snapshots;
+use crate::snapshots::{recover_full_snapshot, recover_snapshots};
+use crate::user_telemetry::UserTelemetryCollector;
 
 /// Qdrant (read: quadrant ) is a vector similarity search engine.
 /// It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.
@@ -59,8 +61,13 @@ struct Args {
 
     /// List of paths to snapshot files.
     /// Format: <snapshot_file_path>:<target_collection_name>
-    #[clap(long, value_name = "PATH:NAME")]
+    #[clap(long, value_name = "PATH:NAME", alias = "collection-snapshot")]
     snapshot: Option<Vec<String>>,
+
+    /// Path to snapshot of multiple collections.
+    /// Format: <snapshot_file_path>
+    #[clap(long, value_name = "PATH")]
+    storage_snapshot: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -88,7 +95,13 @@ fn main() -> anyhow::Result<()> {
     log_builder.init();
     let args = Args::parse();
 
-    if let Some(snapshots) = args.snapshot {
+    if let Some(full_snapshot) = args.storage_snapshot {
+        recover_full_snapshot(
+            &full_snapshot,
+            &settings.storage.storage_path,
+            args.force_snapshot,
+        );
+    } else if let Some(snapshots) = args.snapshot {
         // recover from snapshots
         recover_snapshots(
             &snapshots,
