@@ -1,22 +1,63 @@
-use std::collections::HashMap;
+use std::future::Future;
+use std::num::NonZeroUsize;
 use std::time::Duration;
 use std::vec::Vec;
+use std::{collections::HashMap, time::Instant};
 
 use rand::seq::SliceRandom;
-use tonic::transport::{Channel, Error, Uri};
+use tonic::transport::{Channel, Error as TonicError, Uri};
+
+const CHANNEL_TTL: Duration = Duration::from_secs(5);
+
+struct ChannelsToUri {
+    channels: Vec<Channel>,
+    init_at: Instant,
+}
+
+impl ChannelsToUri {
+    async fn init(
+        uri: Uri,
+        pool_size: NonZeroUsize,
+        grpc_timeout: Duration,
+    ) -> Result<Self, TonicError> {
+        let mut channels = Vec::with_capacity(pool_size.into());
+        for _ in 0..pool_size.into() {
+            let channel = TransportChannelPool::make_channel(grpc_timeout, uri.clone()).await?;
+            channels.push(channel);
+        }
+        Ok(Self {
+            channels,
+            init_at: Instant::now(),
+        })
+    }
+
+    fn choose(&self) -> Channel {
+        self.channels
+            .choose(&mut rand::thread_rng())
+            .expect("Pool size can not be zero")
+            .clone()
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error<E: std::error::Error> {
+    #[error("Error in closure supplied to transport channel pool: {0}")]
+    FromClosure(E),
+    #[error("Tonic error: {0}")]
+    Tonic(#[from] TonicError),
+}
 
 /// Holds a pool of channels established for a set of URIs.
 /// Channel are shared by cloning them.
 /// Make the `pool_size` larger to increase throughput.
-#[derive(Default)]
 pub struct TransportChannelPool {
-    uri_to_pool: tokio::sync::RwLock<HashMap<Uri, Vec<Channel>>>,
-    pool_size: usize,
+    uri_to_pool: tokio::sync::RwLock<HashMap<Uri, ChannelsToUri>>,
+    pool_size: NonZeroUsize,
     grpc_timeout: Duration,
 }
 
 impl TransportChannelPool {
-    pub fn new(p2p_grpc_timeout: Duration, pool_size: usize) -> Self {
+    pub fn new(p2p_grpc_timeout: Duration, pool_size: NonZeroUsize) -> Self {
         Self {
             uri_to_pool: Default::default(),
             grpc_timeout: p2p_grpc_timeout,
@@ -24,7 +65,7 @@ impl TransportChannelPool {
         }
     }
 
-    pub async fn make_channel(grpc_timeout: Duration, uri: Uri) -> Result<Channel, Error> {
+    pub async fn make_channel(grpc_timeout: Duration, uri: Uri) -> Result<Channel, TonicError> {
         let endpoint = Channel::builder(uri)
             .timeout(grpc_timeout)
             .connect_timeout(grpc_timeout)
@@ -33,37 +74,31 @@ impl TransportChannelPool {
         endpoint.connect().await
     }
 
-    /// Initialize a pool for the URI and return a clone of the first channel.
-    /// Does not fail if the pool already exist.
-    async fn init_pool_for_uri(&self, uri: Uri) -> Result<Channel, Error> {
+    // Allows to use channel to `uri`. If there is no channels to specified uri - they will be created.
+    pub async fn with_channel<E: std::error::Error, O: Future<Output = Result<(), E>>>(
+        &self,
+        uri: &Uri,
+        f: impl FnOnce(Channel) -> O,
+    ) -> Result<(), Error<E>> {
+        use std::collections::hash_map::Entry;
         let mut guard = self.uri_to_pool.write().await;
-        match guard.get(&uri) {
-            None => {
-                let mut channels = Vec::with_capacity(self.pool_size);
-                for _ in 0..self.pool_size {
-                    let channel = Self::make_channel(self.grpc_timeout, uri.clone()).await?;
-                    channels.push(channel);
-                }
-                let result = channels[0].clone();
-                guard.insert(uri.clone(), channels);
-                Ok(result)
+        match guard.entry(uri.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(
+                    ChannelsToUri::init(uri.clone(), self.pool_size, self.grpc_timeout).await?,
+                );
             }
-            Some(channels) => Ok(channels[0].clone()),
+            Entry::Occupied(_) => (),
+        };
+        let channels = guard.get(uri).expect("Unreachable");
+        let result = f(channels.choose()).await;
+        // Reconnect on failure to handle the case with domain name change.
+        if result.is_err() && Instant::now().duration_since(channels.init_at) > CHANNEL_TTL {
+            guard.insert(
+                uri.clone(),
+                ChannelsToUri::init(uri.clone(), self.pool_size, self.grpc_timeout).await?,
+            );
         }
-    }
-
-    pub async fn get_pooled_channel(&self, uri: &Uri) -> Option<Channel> {
-        let guard = self.uri_to_pool.read().await;
-        guard
-            .get(uri)
-            .and_then(|channels| channels.choose(&mut rand::thread_rng()))
-            .cloned()
-    }
-
-    pub async fn get_or_create_pooled_channel(&self, uri: &Uri) -> Result<Channel, Error> {
-        match self.get_pooled_channel(uri).await {
-            None => self.init_pool_for_uri(uri.clone()).await,
-            Some(channel) => Ok(channel),
-        }
+        result.map_err(Error::FromClosure)
     }
 }
