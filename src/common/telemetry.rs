@@ -3,8 +3,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use collection::telemetry::CollectionTelemetry;
+use schemars::JsonSchema;
 use segment::telemetry::Anonymize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use storage::dispatcher::Dispatcher;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -21,7 +22,7 @@ pub struct TelemetryCollector {
 }
 
 // Whole telemtry data
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct TelemetryData {
     id: String,
     app: AppBuildTelemetry,
@@ -31,7 +32,7 @@ pub struct TelemetryData {
     web: WebApiTelemetry,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct AppBuildTelemetry {
     version: String,
     debug: bool,
@@ -39,7 +40,7 @@ pub struct AppBuildTelemetry {
     service_debug_feature: bool,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct RunningEnvironmentTelemetry {
     distribution: Option<String>,
     distribution_version: Option<String>,
@@ -55,7 +56,7 @@ pub struct RunningEnvironmentTelemetry {
     // region: Option<String>,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct ServiceConfigTelemetry {
     grpc_enable: bool,
     max_request_size_mb: usize,
@@ -63,19 +64,19 @@ pub struct ServiceConfigTelemetry {
     enable_cors: bool,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct P2pConfigTelemetry {
     connection_pool_size: usize,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct ConsensusConfigTelemetry {
     max_message_queue_size: usize,
     tick_period_ms: u64,
     bootstrap_timeout_sec: u64,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct ClusterConfigTelemetry {
     enabled: bool,
     grpc_timeout_ms: u64,
@@ -83,13 +84,13 @@ pub struct ClusterConfigTelemetry {
     consensus: ConsensusConfigTelemetry,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct ConfigsTelemetry {
     service_config: ServiceConfigTelemetry,
     cluster_config: ClusterConfigTelemetry,
 }
 
-#[derive(Serialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     responses: HashMap<HttpStatusCode, usize>,
 }

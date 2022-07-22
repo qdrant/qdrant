@@ -1,5 +1,74 @@
 {
   "paths": {
+    "/telemetry": {
+      "get": {
+        "summary": "Collect telemetry data",
+        "description": "Collect telemetry data including app info, system info, collections info, cluster info, configs and statistics",
+        "operationId": "telemetry",
+        "parameters": [
+          {
+            "name": "anonymize",
+            "in": "query",
+            "description": "If true, anonymize result",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TelemetryData"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cluster": {
       "get": {
         "tags": [
@@ -4012,6 +4081,618 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
+          }
+        }
+      },
+      "TelemetryData": {
+        "type": "object",
+        "required": [
+          "app",
+          "collections",
+          "configs",
+          "id",
+          "system",
+          "web"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "app": {
+            "$ref": "#/components/schemas/AppBuildTelemetry"
+          },
+          "system": {
+            "$ref": "#/components/schemas/RunningEnvironmentTelemetry"
+          },
+          "configs": {
+            "$ref": "#/components/schemas/ConfigsTelemetry"
+          },
+          "collections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CollectionTelemetry"
+            }
+          },
+          "web": {
+            "$ref": "#/components/schemas/WebApiTelemetry"
+          }
+        }
+      },
+      "AppBuildTelemetry": {
+        "type": "object",
+        "required": [
+          "debug",
+          "service_debug_feature",
+          "version",
+          "web_feature"
+        ],
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "debug": {
+            "type": "boolean"
+          },
+          "web_feature": {
+            "type": "boolean"
+          },
+          "service_debug_feature": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RunningEnvironmentTelemetry": {
+        "type": "object",
+        "required": [
+          "cpu_flags",
+          "is_docker"
+        ],
+        "properties": {
+          "distribution": {
+            "type": "string",
+            "nullable": true
+          },
+          "distribution_version": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_docker": {
+            "type": "boolean"
+          },
+          "cores": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "ram_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "disk_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "cpu_flags": {
+            "type": "string"
+          }
+        }
+      },
+      "ConfigsTelemetry": {
+        "type": "object",
+        "required": [
+          "cluster_config",
+          "service_config"
+        ],
+        "properties": {
+          "service_config": {
+            "$ref": "#/components/schemas/ServiceConfigTelemetry"
+          },
+          "cluster_config": {
+            "$ref": "#/components/schemas/ClusterConfigTelemetry"
+          }
+        }
+      },
+      "ServiceConfigTelemetry": {
+        "type": "object",
+        "required": [
+          "enable_cors",
+          "grpc_enable",
+          "max_request_size_mb"
+        ],
+        "properties": {
+          "grpc_enable": {
+            "type": "boolean"
+          },
+          "max_request_size_mb": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "max_workers": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "enable_cors": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ClusterConfigTelemetry": {
+        "type": "object",
+        "required": [
+          "consensus",
+          "enabled",
+          "grpc_timeout_ms",
+          "p2p"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "grpc_timeout_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "p2p": {
+            "$ref": "#/components/schemas/P2pConfigTelemetry"
+          },
+          "consensus": {
+            "$ref": "#/components/schemas/ConsensusConfigTelemetry"
+          }
+        }
+      },
+      "P2pConfigTelemetry": {
+        "type": "object",
+        "required": [
+          "connection_pool_size"
+        ],
+        "properties": {
+          "connection_pool_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
+      },
+      "ConsensusConfigTelemetry": {
+        "type": "object",
+        "required": [
+          "bootstrap_timeout_sec",
+          "max_message_queue_size",
+          "tick_period_ms"
+        ],
+        "properties": {
+          "max_message_queue_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "tick_period_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "bootstrap_timeout_sec": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        }
+      },
+      "CollectionTelemetry": {
+        "type": "object",
+        "required": [
+          "config",
+          "id",
+          "init_time",
+          "shards"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "config": {
+            "$ref": "#/components/schemas/CollectionConfig"
+          },
+          "init_time": {
+            "$ref": "#/components/schemas/Duration"
+          },
+          "shards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShardTelemetry"
+            }
+          }
+        }
+      },
+      "Duration": {
+        "type": "object",
+        "required": [
+          "nanos",
+          "secs"
+        ],
+        "properties": {
+          "secs": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "nanos": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        }
+      },
+      "ShardTelemetry": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "Remote"
+            ],
+            "properties": {
+              "Remote": {
+                "type": "object",
+                "required": [
+                  "searches",
+                  "shard_id",
+                  "updates"
+                ],
+                "properties": {
+                  "shard_id": {
+                    "type": "integer",
+                    "format": "uint32",
+                    "minimum": 0
+                  },
+                  "searches": {
+                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
+                  },
+                  "updates": {
+                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "Local"
+            ],
+            "properties": {
+              "Local": {
+                "type": "object",
+                "required": [
+                  "segments"
+                ],
+                "properties": {
+                  "segments": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/SegmentTelemetry"
+                    }
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "Proxy"
+            ],
+            "properties": {
+              "Proxy": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "TelemetryOperationStatistics": {
+        "type": "object",
+        "required": [
+          "fail_count",
+          "ok_avg_time",
+          "ok_count"
+        ],
+        "properties": {
+          "ok_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "fail_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "ok_avg_time": {
+            "$ref": "#/components/schemas/Duration"
+          }
+        }
+      },
+      "SegmentTelemetry": {
+        "type": "object",
+        "required": [
+          "config",
+          "info",
+          "payload_field_indices",
+          "vector_index"
+        ],
+        "properties": {
+          "info": {
+            "$ref": "#/components/schemas/SegmentInfo"
+          },
+          "config": {
+            "$ref": "#/components/schemas/SegmentConfig"
+          },
+          "vector_index": {
+            "$ref": "#/components/schemas/VectorIndexTelemetry"
+          },
+          "payload_field_indices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PayloadIndexTelemetry"
+            }
+          }
+        }
+      },
+      "SegmentInfo": {
+        "description": "Aggregated information about segment",
+        "type": "object",
+        "required": [
+          "disk_usage_bytes",
+          "index_schema",
+          "is_appendable",
+          "num_deleted_vectors",
+          "num_points",
+          "num_vectors",
+          "ram_usage_bytes",
+          "segment_type"
+        ],
+        "properties": {
+          "segment_type": {
+            "$ref": "#/components/schemas/SegmentType"
+          },
+          "num_vectors": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "num_points": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "num_deleted_vectors": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "ram_usage_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "disk_usage_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "is_appendable": {
+            "type": "boolean"
+          },
+          "index_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PayloadIndexInfo"
+            }
+          }
+        }
+      },
+      "SegmentType": {
+        "description": "Type of segment",
+        "type": "string",
+        "enum": [
+          "plain",
+          "indexed",
+          "special"
+        ]
+      },
+      "SegmentConfig": {
+        "type": "object",
+        "required": [
+          "distance",
+          "index",
+          "storage_type",
+          "vector_size"
+        ],
+        "properties": {
+          "vector_size": {
+            "description": "Size of a vectors used",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "distance": {
+            "$ref": "#/components/schemas/Distance"
+          },
+          "index": {
+            "$ref": "#/components/schemas/Indexes"
+          },
+          "storage_type": {
+            "$ref": "#/components/schemas/StorageType"
+          },
+          "payload_storage_type": {
+            "$ref": "#/components/schemas/PayloadStorageType"
+          }
+        }
+      },
+      "Indexes": {
+        "description": "Vector index configuration of the segment",
+        "oneOf": [
+          {
+            "description": "Do not use any index, scan whole vector collection during search. Guarantee 100% precision, but may be time consuming on large collections.",
+            "type": "object",
+            "required": [
+              "options",
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "plain"
+                ]
+              },
+              "options": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "description": "Use filterable HNSW index for approximate search. Is very fast even on a very huge collections, but require additional space to store index and additional time to build it.",
+            "type": "object",
+            "required": [
+              "options",
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "hnsw"
+                ]
+              },
+              "options": {
+                "$ref": "#/components/schemas/HnswConfig"
+              }
+            }
+          }
+        ]
+      },
+      "StorageType": {
+        "description": "Type of vector storage",
+        "oneOf": [
+          {
+            "description": "Store vectors in memory and use persistence storage only if vectors are changed",
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "in_memory"
+                ]
+              }
+            }
+          },
+          {
+            "description": "Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM",
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "mmap"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "PayloadStorageType": {
+        "description": "Type of payload storage",
+        "oneOf": [
+          {
+            "description": "Store payload in memory and use persistence storage only if vectors are changed",
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "in_memory"
+                ]
+              }
+            }
+          },
+          {
+            "description": "Store payload on disk only, read each time it is requested",
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "on_disk"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "VectorIndexTelemetry": {
+        "type": "object",
+        "required": [
+          "large_cardinality_searches",
+          "negative_check_cardinality_searches",
+          "positive_check_cardinality_searches",
+          "small_cardinality_searches"
+        ],
+        "properties": {
+          "small_cardinality_searches": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          },
+          "large_cardinality_searches": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          },
+          "positive_check_cardinality_searches": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          },
+          "negative_check_cardinality_searches": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          }
+        }
+      },
+      "PayloadIndexTelemetry": {
+        "type": "object"
+      },
+      "WebApiTelemetry": {
+        "type": "object",
+        "required": [
+          "responses"
+        ],
+        "properties": {
+          "responses": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            }
           }
         }
       }

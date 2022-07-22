@@ -3,7 +3,8 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 use crate::types::{SegmentConfig, SegmentInfo};
 
@@ -14,7 +15,7 @@ pub trait Anonymize {
     fn anonymize(&self) -> Self;
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct SegmentTelemetry {
     pub info: SegmentInfo,
     pub config: SegmentConfig,
@@ -22,10 +23,10 @@ pub struct SegmentTelemetry {
     pub payload_field_indices: Vec<PayloadIndexTelemetry>,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct PayloadIndexTelemetry {}
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct VectorIndexTelemetry {
     pub small_cardinality_searches: TelemetryOperationStatistics,
     pub large_cardinality_searches: TelemetryOperationStatistics,
@@ -33,7 +34,7 @@ pub struct VectorIndexTelemetry {
     pub negative_check_cardinality_searches: TelemetryOperationStatistics,
 }
 
-#[derive(Serialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
 pub struct TelemetryOperationStatistics {
     pub ok_count: usize,
     pub fail_count: usize,
