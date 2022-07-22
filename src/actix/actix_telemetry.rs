@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use actix_utils::future::{ready, Ready};
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::Error;
 use futures_util::future::LocalBoxFuture;
@@ -59,7 +58,7 @@ impl ActixTelemetryTransform {
 /// https://actix.rs/docs/middleware/
 impl<S, B> Transform<S, ServiceRequest> for ActixTelemetryTransform
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
     B: 'static,
 {
@@ -67,15 +66,16 @@ where
     type Error = Error;
     type InitError = ();
     type Transform = ActixTelemetryService<S>;
-    type Future = Ready<Result<Self::Transform, Self::InitError>>;
+    type Future = LocalBoxFuture<'static, Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ready(Ok(ActixTelemetryService {
-            service,
-            telemetry_data: self
-                .telemetry_collector
-                .blocking_lock()
-                .create_web_worker_telemetry(),
-        }))
+        let telemetry_collector = self.telemetry_collector.clone();
+        Box::pin(async move {
+            let mut telemetry_collector = telemetry_collector.lock().await;
+            Ok(ActixTelemetryService {
+                service,
+                telemetry_data: telemetry_collector.create_web_worker_telemetry()
+            })
+        })
     }
 }

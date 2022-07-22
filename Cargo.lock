@@ -2694,7 +2694,6 @@ version = "0.8.4"
 dependencies = [
  "actix-cors",
  "actix-files",
- "actix-utils",
  "actix-web",
  "anyhow",
  "api",
