@@ -26,8 +26,8 @@ use crate::operations::CollectionUpdateOperations;
 use crate::shard::local_shard::LocalShard;
 use crate::shard::proxy_shard::ProxyShard;
 use crate::shard::remote_shard::RemoteShard;
-use crate::telemetry::ShardTelemetry;
 use crate::shard::shard_versioning::suggest_next_version_path;
+use crate::telemetry::ShardTelemetry;
 
 pub type ShardId = u32;
 

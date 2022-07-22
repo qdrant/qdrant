@@ -384,13 +384,18 @@ impl Collection {
         let shard_holder_guard = self.shards_holder.read().await;
 
         let target_shards = shard_holder_guard.target_shards(Some(shard_selection))?;
+        let mut res = None;
         for target_shard in target_shards {
-            return target_shard.get().update(operation.clone(), wait).await;
+            res = Some(target_shard.get().update(operation.clone(), wait).await?);
         }
-        return Err(CollectionError::service_error(format!(
-            "No target shard {} found for update",
-            shard_selection
-        )));
+        if let Some(res) = res {
+            Ok(res)
+        } else {
+            Err(CollectionError::service_error(format!(
+                "No target shard {} found for update",
+                shard_selection
+            )))
+        }
     }
 
     pub async fn update_from_client(
@@ -1038,7 +1043,7 @@ impl Collection {
         let configured_shards = config.params.shard_number.get();
 
         for shard_id in 0..configured_shards {
-            let shard_path = versioned_shard_path(&target_dir, shard_id, 0);
+            let shard_path = versioned_shard_path(target_dir, shard_id, 0);
             let shard_config = ShardConfig::load(&shard_path)?;
             match shard_config.r#type {
                 ShardType::Local => LocalShard::restore_snapshot(&shard_path)?,
