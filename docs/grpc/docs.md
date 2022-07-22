@@ -103,8 +103,10 @@
     - [Qdrant](#qdrant-Qdrant)
   
 - [snapshots_service.proto](#snapshots_service-proto)
+    - [CreateFullSnapshotRequest](#qdrant-CreateFullSnapshotRequest)
     - [CreateSnapshotRequest](#qdrant-CreateSnapshotRequest)
     - [CreateSnapshotResponse](#qdrant-CreateSnapshotResponse)
+    - [ListFullSnapshotsRequest](#qdrant-ListFullSnapshotsRequest)
     - [ListSnapshotsRequest](#qdrant-ListSnapshotsRequest)
     - [ListSnapshotsResponse](#qdrant-ListSnapshotsResponse)
     - [SnapshotDescription](#qdrant-SnapshotDescription)
@@ -1611,6 +1613,16 @@ The JSON representation for `Value` is JSON value.
 
 
 
+<a name="qdrant-CreateFullSnapshotRequest"></a>
+
+### CreateFullSnapshotRequest
+
+
+
+
+
+
+
 <a name="qdrant-CreateSnapshotRequest"></a>
 
 ### CreateSnapshotRequest
@@ -1636,6 +1648,16 @@ The JSON representation for `Value` is JSON value.
 | ----- | ---- | ----- | ----------- |
 | snapshot_description | [SnapshotDescription](#qdrant-SnapshotDescription) |  |  |
 | time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
+<a name="qdrant-ListFullSnapshotsRequest"></a>
+
+### ListFullSnapshotsRequest
+
 
 
 
@@ -1703,8 +1725,10 @@ The JSON representation for `Value` is JSON value.
 
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
-| Create | [CreateSnapshotRequest](#qdrant-CreateSnapshotRequest) | [CreateSnapshotResponse](#qdrant-CreateSnapshotResponse) | Create snapshot |
-| List | [ListSnapshotsRequest](#qdrant-ListSnapshotsRequest) | [ListSnapshotsResponse](#qdrant-ListSnapshotsResponse) | List snapshots |
+| Create | [CreateSnapshotRequest](#qdrant-CreateSnapshotRequest) | [CreateSnapshotResponse](#qdrant-CreateSnapshotResponse) | Create collection snapshot |
+| List | [ListSnapshotsRequest](#qdrant-ListSnapshotsRequest) | [ListSnapshotsResponse](#qdrant-ListSnapshotsResponse) | List collection snapshots |
+| CreateFull | [CreateFullSnapshotRequest](#qdrant-CreateFullSnapshotRequest) | [CreateSnapshotResponse](#qdrant-CreateSnapshotResponse) | Create full storage snapshot |
+| ListFull | [ListFullSnapshotsRequest](#qdrant-ListFullSnapshotsRequest) | [ListSnapshotsResponse](#qdrant-ListSnapshotsResponse) | List full storage snapshots |
 
  
 
