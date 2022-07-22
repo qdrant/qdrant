@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+
 use crate::common::stoppable_task_async::StoppableAsyncTaskHandle;
 use crate::shard::ShardTransfer;
 
@@ -11,14 +12,14 @@ pub enum TaskResult {
     Finished,
     NotFound,
     Stopped,
-    Failed
+    Failed,
 }
 
 impl TaskResult {
     pub fn is_finished(&self) -> bool {
         match self {
             TaskResult::Finished => true,
-            _ => false
+            _ => false,
         }
     }
 }
@@ -37,20 +38,28 @@ impl TransferTasksPool {
             match task.stop().await {
                 Ok(res) => {
                     if res {
-                        log::info!("Transfer of shard {} -> {} finished", transfer.shard_id, transfer.to);
+                        log::info!(
+                            "Transfer of shard {} -> {} finished",
+                            transfer.shard_id,
+                            transfer.to
+                        );
                         TaskResult::Finished
                     } else {
-                        log::info!("Transfer of shard {} -> {} stopped", transfer.shard_id, transfer.to);
+                        log::info!(
+                            "Transfer of shard {} -> {} stopped",
+                            transfer.shard_id,
+                            transfer.to
+                        );
                         TaskResult::Stopped
                     }
                 }
                 Err(err) => {
                     log::warn!(
-                            "Transfer task for shard {} -> {} failed: {}",
-                            transfer.shard_id,
-                            transfer.to,
-                            err
-                        );
+                        "Transfer task for shard {} -> {} failed: {}",
+                        transfer.shard_id,
+                        transfer.to,
+                        err
+                    );
                     TaskResult::Failed
                 }
             }
@@ -59,7 +68,11 @@ impl TransferTasksPool {
         }
     }
 
-    pub fn add_task(&mut self, shard_transfer: &ShardTransfer, task: StoppableAsyncTaskHandle<bool>) {
+    pub fn add_task(
+        &mut self,
+        shard_transfer: &ShardTransfer,
+        task: StoppableAsyncTaskHandle<bool>,
+    ) {
         self.tasks.insert(shard_transfer.clone(), task);
     }
 }
