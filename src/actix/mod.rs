@@ -1,3 +1,4 @@
+#[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod actix_telemetry;
 pub mod api;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
@@ -67,9 +68,6 @@ pub fn init(
 
             App::new()
                 .wrap(Condition::new(settings.service.enable_cors, cors))
-                .wrap(actix_telemetry::ActixTelemetryTransform::new(
-                    telemetry_collector.clone(),
-                ))
                 .wrap(Logger::default())
                 .app_data(dispatcher_data.clone())
                 .app_data(toc_data.clone())
