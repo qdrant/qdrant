@@ -14,7 +14,7 @@ pub struct ActixTelemetryService<S> {
 }
 
 pub struct ActixTelemetryTransform {
-    telemetry_collector: Arc<parking_lot::Mutex<TelemetryCollector>>,
+    telemetry_collector: Arc<Mutex<TelemetryCollector>>,
 }
 
 /// Actix telemetry service. It hooks every request and looks into response status code.
@@ -46,7 +46,7 @@ where
 }
 
 impl ActixTelemetryTransform {
-    pub fn new(telemetry_collector: Arc<parking_lot::Mutex<TelemetryCollector>>) -> Self {
+    pub fn new(telemetry_collector: Arc<Mutex<TelemetryCollector>>) -> Self {
         Self {
             telemetry_collector,
         }
@@ -74,7 +74,7 @@ where
             service,
             telemetry_data: self
                 .telemetry_collector
-                .lock()
+                .blocking_lock()
                 .create_web_worker_telemetry(),
         }))
     }

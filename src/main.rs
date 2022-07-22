@@ -24,6 +24,7 @@ use storage::content_manager::consensus::persistent::Persistent;
 use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef};
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use tokio::sync::Mutex;
 
 use crate::common::helpers::create_search_runtime;
 use crate::common::telemetry::TelemetryCollector;
@@ -158,7 +159,7 @@ fn main() -> anyhow::Result<()> {
     }
     let dispatcher_arc = Arc::new(dispatcher);
 
-    let telemetry_collector = Arc::new(parking_lot::Mutex::new(TelemetryCollector::new(
+    let telemetry_collector = Arc::new(Mutex::new(TelemetryCollector::new(
         settings.clone(),
         dispatcher_arc.clone(),
     )));
