@@ -1,12 +1,13 @@
+use schemars::JsonSchema;
 use segment::telemetry::{
     telemetry_hash, Anonymize, SegmentTelemetry, TelemetryOperationStatistics,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config::CollectionConfig;
 use crate::shard::ShardId;
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub enum ShardTelemetry {
     Remote {
         shard_id: ShardId,
@@ -19,7 +20,7 @@ pub enum ShardTelemetry {
     Proxy {},
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct CollectionTelemetry {
     pub id: String,
     pub config: CollectionConfig,
