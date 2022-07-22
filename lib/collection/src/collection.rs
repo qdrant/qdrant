@@ -36,10 +36,11 @@ use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::shard_holder::{LockedShardHolder, ShardHolder};
+use crate::shard::shard_versioning::versioned_shard_path;
 use crate::shard::Shard::Local;
 use crate::shard::{
-    create_shard_dir, shard_path, ChannelService, CollectionId, PeerId, Shard, ShardId,
-    ShardOperation, HASH_RING_SHARD_SCALE,
+    create_shard_dir, ChannelService, CollectionId, PeerId, Shard, ShardId, ShardOperation,
+    HASH_RING_SHARD_SCALE,
 };
 use crate::telemetry::CollectionTelemetry;
 
@@ -153,7 +154,7 @@ impl Collection {
     }
 
     pub async fn load(
-        id: CollectionId,
+        collection_id: CollectionId,
         path: &Path,
         snapshots_path: &Path,
         channel_service: ChannelService,
@@ -195,36 +196,27 @@ impl Collection {
         };
         let mut shard_holder = ShardHolder::new(ring);
 
-        let shard_distribution = CollectionShardDistribution::from_local_state(path)
-            .expect("Can't infer shard distribution from local shard configurations");
-
         let shared_config = Arc::new(RwLock::new(config.clone()));
-        for shard_id in shard_distribution.local {
-            let shard_path = shard_path(path, shard_id);
-            shard_holder.add_shard(
-                shard_id,
-                Shard::Local(
-                    LocalShard::load(shard_id, id.clone(), &shard_path, shared_config.clone())
-                        .await,
-                ),
-            );
-        }
 
-        for (shard_id, peer_id) in shard_distribution.remote {
-            let shard = RemoteShard::new(shard_id, id.clone(), peer_id, channel_service.clone());
-            shard_holder.add_shard(shard_id, Shard::Remote(shard));
-        }
+        shard_holder
+            .load_shards(
+                path,
+                &collection_id,
+                shared_config.clone(),
+                channel_service.clone(),
+            )
+            .await;
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
 
         Self {
-            id: id.clone(),
+            id: collection_id.clone(),
             shards_holder: locked_shard_holder,
             config: shared_config,
             before_drop_called: false,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
-            telemetry: CollectionTelemetry::new(id, config, start_time.elapsed()),
+            telemetry: CollectionTelemetry::new(collection_id, config, start_time.elapsed()),
         }
     }
 
@@ -997,7 +989,7 @@ impl Collection {
             // Create snapshot of each shard
             for (shard_id, shard) in shards_holder.get_shards() {
                 let shard_snapshot_path =
-                    snapshot_path_with_tmp_extension.join(format!("{}", shard_id));
+                    versioned_shard_path(&snapshot_path_with_tmp_extension, *shard_id, 0);
                 create_dir_all(&shard_snapshot_path).await?;
                 match shard {
                     Shard::Local(local_shard) => {
@@ -1056,11 +1048,12 @@ impl Collection {
         let configured_shards = config.params.shard_number.get();
 
         for shard_id in 0..configured_shards {
-            let shard_path = shard_path(target_dir, shard_id);
+            let shard_path = versioned_shard_path(&target_dir, shard_id, 0);
             let shard_config = ShardConfig::load(&shard_path)?;
             match shard_config.r#type {
                 ShardType::Local => LocalShard::restore_snapshot(&shard_path)?,
                 ShardType::Remote { .. } => RemoteShard::restore_snapshot(&shard_path),
+                ShardType::Temporary => {}
             }
         }
 
