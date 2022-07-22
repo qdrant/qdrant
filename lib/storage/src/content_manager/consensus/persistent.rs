@@ -31,6 +31,9 @@ pub struct Persistent {
     pub this_peer_id: u64,
     #[serde(skip)]
     pub path: PathBuf,
+    // Tracks if there are some unsaved changes due to the failure on save
+    #[serde(skip)]
+    pub dirty: bool,
 }
 
 impl Persistent {
@@ -157,7 +160,7 @@ impl Persistent {
             // until it joins an existing network.
             vec![]
         };
-        let state = Self {
+        let mut state = Self {
             state: RaftState {
                 hard_state: HardState::default(),
                 // For network with 1 node, set it as voter.
@@ -169,6 +172,7 @@ impl Persistent {
             this_peer_id,
             path,
             latest_snapshot_meta: Default::default(),
+            dirty: false,
         };
         state.save()?;
         Ok(state)
@@ -181,11 +185,24 @@ impl Persistent {
         Ok(state)
     }
 
-    fn save(&self) -> Result<(), StorageError> {
-        Ok(AtomicFile::new(&self.path, AllowOverwrite).write(|file| {
+    fn save(&mut self) -> Result<(), StorageError> {
+        let result = AtomicFile::new(&self.path, AllowOverwrite).write(|file| {
             let writer = BufWriter::new(file);
             serde_cbor::to_writer(writer, self)
-        })?)
+        });
+        if result.is_err() {
+            self.dirty = true;
+        } else {
+            self.dirty = false;
+        }
+        Ok(result?)
+    }
+
+    pub fn save_if_dirty(&mut self) -> Result<(), StorageError> {
+        if self.dirty {
+            self.save()?;
+        }
+        Ok(())
     }
 }
 

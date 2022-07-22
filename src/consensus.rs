@@ -106,7 +106,7 @@ impl Consensus {
         let mut node = Node::new(&raft_config, state_ref.clone(), logger)?;
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
-        state_ref.apply_entries(&mut node)?;
+        state_ref.apply_entries(&mut node);
         Ok((
             Self {
                 node,
@@ -236,6 +236,9 @@ impl Consensus {
                 timeout = Duration::from_millis(self.config.tick_period_ms);
                 // We drive Raft every `tick_period_ms`.
                 self.node.tick();
+                // Try to reapply entries if some were not applied due to errors.
+                let store = self.node.store().clone();
+                store.apply_entries(&mut self.node);
             } else {
                 timeout -= d;
             }
@@ -471,7 +474,7 @@ fn handle_committed_entries(
 ) -> raft::Result<()> {
     if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
         state.set_unapplied_entries(first.index, last.index)?;
-        state.apply_entries(raw_node)?;
+        state.apply_entries(raw_node);
     }
     Ok(())
 }
