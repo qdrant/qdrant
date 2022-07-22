@@ -1,8 +1,9 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -96,9 +97,9 @@ impl TelemetryOperationTimer {
 
 impl Drop for TelemetryOperationTimer {
     fn drop(&mut self) {
-        if let Ok(mut aggregator) = self.aggregator.lock() {
-            aggregator.add_operation_result(self.success, self.instant.elapsed());
-        }
+        self.aggregator
+            .lock()
+            .add_operation_result(self.success, self.instant.elapsed());
     }
 }
 
