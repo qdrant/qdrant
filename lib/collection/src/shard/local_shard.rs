@@ -211,7 +211,14 @@ impl LocalShard {
     ) -> CollectionResult<LocalShard> {
         // initialize temporary shard config file
         let temp_shard_config = ShardConfig::new_temp();
-        Self::_build(id, collection_id, shard_path, shared_config, temp_shard_config).await
+        Self::_build(
+            id,
+            collection_id,
+            shard_path,
+            shared_config,
+            temp_shard_config,
+        )
+        .await
     }
 
     pub async fn build(
@@ -222,7 +229,14 @@ impl LocalShard {
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         let local_shard_config = ShardConfig::new_local();
-        Self::_build(id, collection_id, shard_path, shared_config, local_shard_config).await
+        Self::_build(
+            id,
+            collection_id,
+            shard_path,
+            shared_config,
+            local_shard_config,
+        )
+        .await
     }
 
     /// Creates new empty shard with given configuration, initializing all storages, optimizers and directories.
