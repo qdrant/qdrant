@@ -30,7 +30,6 @@ use crate::common::telemetry::TelemetryCollector;
 use crate::greeting::welcome;
 use crate::settings::Settings;
 use crate::snapshots::{recover_full_snapshot, recover_snapshots};
-use crate::user_telemetry::UserTelemetryCollector;
 
 /// Qdrant (read: quadrant ) is a vector similarity search engine.
 /// It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.

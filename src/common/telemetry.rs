@@ -5,7 +5,7 @@ use std::sync::Arc;
 use collection::telemetry::CollectionTelemetry;
 use segment::telemetry::Anonymize;
 use serde::Serialize;
-use storage::Dispatcher;
+use storage::dispatcher::Dispatcher;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
