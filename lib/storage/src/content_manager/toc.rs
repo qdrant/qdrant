@@ -34,6 +34,7 @@ use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::types::{PeerAddressById, StorageConfig};
+use crate::ConsensusOperations;
 
 pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
@@ -405,20 +406,54 @@ impl TableOfContent {
 
     pub async fn handle_transfer(
         &self,
-        collection: CollectionId,
+        collection_id: CollectionId,
         shard_id: ShardId,
         transfer: ShardTransferOperations,
     ) -> Result<(), StorageError> {
         let collections = self.collections.read().await;
-        let collection = collections.get(&collection).ok_or_else(|| {
+        let collection = collections.get(&collection_id).ok_or_else(|| {
             StorageError::service_error(&format!(
-                "Collection {collection} should be present at the time of shard transfer."
+                "Collection {collection_id} should be present at the time of shard transfer."
             ))
         })?;
         match transfer {
             ShardTransferOperations::Start { to } => {
+                let proposal_sender = self.consensus_proposal_sender.clone();
+                let collection_id_clone = collection_id.clone();
+                let on_finish = async move {
+                    let operation = ConsensusOperations::CollectionMeta(Box::new(
+                        CollectionMetaOperations::TransferShard(
+                            collection_id_clone,
+                            shard_id,
+                            ShardTransferOperations::Finish { to },
+                        ),
+                    ));
+                    if let Err(error) = proposal_sender.send(&operation) {
+                        log::error!("Can't report transfer progress to consensus: {}", error)
+                    };
+                };
+
+                let proposal_sender = self.consensus_proposal_sender.clone();
+                let collection_id_clone = collection_id.clone();
+
+                let on_failure = async move {
+                    let operation = ConsensusOperations::CollectionMeta(Box::new(
+                        CollectionMetaOperations::TransferShard(
+                            collection_id_clone,
+                            shard_id,
+                            ShardTransferOperations::Abort {
+                                to,
+                                reason: "transmission failed".to_string(),
+                            },
+                        ),
+                    ));
+                    if let Err(error) = proposal_sender.send(&operation) {
+                        log::error!("Can't report transfer progress to consensus: {}", error)
+                    };
+                };
+
                 collection
-                    .start_shard_transfer(shard_id, to, async {}, async {})
+                    .start_shard_transfer(shard_id, to, on_finish, on_failure)
                     .await
             }
             ShardTransferOperations::Finish { to } => {

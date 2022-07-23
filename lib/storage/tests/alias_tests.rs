@@ -48,7 +48,7 @@ mod tests {
         let runtime = Runtime::new().unwrap();
         let handle = runtime.handle().clone();
 
-        let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
+        let (propose_sender, _propose_receiver) = std::sync::mpsc::channel();
         let propose_operation_sender = OperationSender::new(propose_sender);
 
         let toc = Arc::new(TableOfContent::new(

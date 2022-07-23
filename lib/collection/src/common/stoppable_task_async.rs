@@ -25,14 +25,6 @@ impl<T> StoppableAsyncTaskHandle<T> {
         self.ask_to_stop();
         self.join_handle
     }
-
-    pub fn was_stopped(&self) -> bool {
-        if let Some(v) = self.stopped.upgrade() {
-            v.load(Ordering::Relaxed)
-        } else {
-            true
-        }
-    }
 }
 
 pub fn spawn_async_stoppable<F, T>(f: F) -> StoppableAsyncTaskHandle<T::Output>
@@ -65,7 +57,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::thread;
     use std::time::Duration;
 
     use tokio::time::sleep;
@@ -74,18 +65,16 @@ mod tests {
 
     const STEP_MILLIS: u64 = 5;
 
-    fn long_task(stop: Arc<AtomicBool>) -> impl Future<Output = i32> {
-        async move {
-            let mut n = 0;
-            for i in 0..10 {
-                n = i;
-                if stop.load(Ordering::Relaxed) {
-                    break;
-                }
-                sleep(Duration::from_millis(STEP_MILLIS)).await;
+    async fn long_task(stop: Arc<AtomicBool>) -> i32 {
+        let mut n = 0;
+        for i in 0..10 {
+            n = i;
+            if stop.load(Ordering::Relaxed) {
+                break;
             }
-            n
+            sleep(Duration::from_millis(STEP_MILLIS)).await;
         }
+        n
     }
 
     #[tokio::test]

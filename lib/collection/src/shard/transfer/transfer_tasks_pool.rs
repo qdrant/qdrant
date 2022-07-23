@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::common::stoppable_task_async::StoppableAsyncTaskHandle;
 use crate::shard::ShardTransfer;
 
+#[derive(Default)]
 pub struct TransferTasksPool {
     tasks: HashMap<ShardTransfer, StoppableAsyncTaskHandle<bool>>,
 }
@@ -17,24 +18,15 @@ pub enum TaskResult {
 
 impl TaskResult {
     pub fn is_finished(&self) -> bool {
-        match self {
-            TaskResult::Finished => true,
-            _ => false,
-        }
+        matches!(self, TaskResult::Finished)
     }
 }
 
 impl TransferTasksPool {
-    pub fn new() -> Self {
-        Self {
-            tasks: HashMap::new(),
-        }
-    }
-
     /// Returns true if the task was actually stopped
     /// Returns false if the task was not found
     pub async fn stop_if_exists(&mut self, transfer: &ShardTransfer) -> TaskResult {
-        if let Some(task) = self.tasks.remove(&transfer) {
+        if let Some(task) = self.tasks.remove(transfer) {
             match task.stop().await {
                 Ok(res) => {
                     if res {

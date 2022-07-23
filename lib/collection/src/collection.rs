@@ -37,10 +37,11 @@ use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::shard_holder::{LockedShardHolder, ShardHolder};
-use crate::shard::shard_versioning::{
-    shards_versions, suggest_next_version_path, versioned_shard_path,
+use crate::shard::shard_versioning::versioned_shard_path;
+use crate::shard::transfer::shard_transfer::{
+    change_remote_shard_route, drop_temporary_shard, promote_proxy_to_remote_shard,
+    promote_temporary_shard_to_local, revert_proxy_shard_to_local, spawn_transfer_task,
 };
-use crate::shard::transfer::shard_transfer::spawn_transfer_task;
 use crate::shard::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
 use crate::shard::Shard::Local;
 use crate::shard::{
@@ -145,7 +146,7 @@ impl Collection {
             snapshots_path: snapshots_path.to_owned(),
             telemetry: CollectionTelemetry::new(id, config.clone(), start_time.elapsed()),
             channel_service,
-            transfer_tasks: Mutex::new(TransferTasksPool::new()),
+            transfer_tasks: Mutex::new(TransferTasksPool::default()),
         })
     }
 
@@ -227,7 +228,7 @@ impl Collection {
             snapshots_path: snapshots_path.to_owned(),
             telemetry: CollectionTelemetry::new(collection_id, config, start_time.elapsed()),
             channel_service,
-            transfer_tasks: Mutex::new(TransferTasksPool::new()),
+            transfer_tasks: Mutex::new(TransferTasksPool::default()),
         }
     }
 
@@ -270,7 +271,7 @@ impl Collection {
         to_peer: PeerId,
         on_finish: T,
         on_error: F,
-    ) -> CollectionResult<()>
+    ) -> CollectionResult<bool>
     where
         T: Future<Output = ()> + Send + 'static,
         F: Future<Output = ()> + Send + 'static,
@@ -282,8 +283,10 @@ impl Collection {
 
         let do_transfer = {
             let mut shards_holder = self.shards_holder.write().await;
-            let was_not_transferred = shards_holder.start_shard_transfer(shard_transfer.clone());
+            let was_not_transferred =
+                shards_holder.register_start_shard_transfer(shard_transfer.clone());
             let shard = shards_holder.get_shard(&shard_id);
+
             // Check if current node owns the shard which should be transferred
             match shard {
                 None => {
@@ -311,7 +314,7 @@ impl Collection {
         if do_transfer {
             self.send_shard(shard_transfer, on_finish, on_error).await?;
         }
-        Ok(())
+        Ok(do_transfer)
     }
 
     /// Handles finishing of the shard transfer.
@@ -325,9 +328,13 @@ impl Collection {
         &self,
         shard_id: ShardId,
         to: PeerId,
-    ) -> CollectionResult<()> {
+    ) -> CollectionResult<bool> {
         let transfer = ShardTransfer { shard_id, to };
-        let was_stopped = self.shards_holder.write().await.finish_transfer(&transfer);
+        let finish_was_registered = self
+            .shards_holder
+            .write()
+            .await
+            .register_finish_transfer(&transfer);
         let transfer_finished = self
             .transfer_tasks
             .lock()
@@ -336,90 +343,70 @@ impl Collection {
             .await
             .is_finished();
 
-        if !was_stopped {
-            debug_assert!(!transfer_finished)
-        }
+        // Should happen on transfer side
+        let proxy_promoted =
+            promote_proxy_to_remote_shard(&self.path, self.shards_holder.clone(), shard_id, to)
+                .await?;
+        // Should happen on receiving side
+        let shard_promoted = promote_temporary_shard_to_local(
+            self.id.clone(),
+            &self.path,
+            self.shards_holder.clone(),
+            shard_id,
+        )
+        .await?;
+        // Should happen on a third-party side
+        let remote_shard_rerouted =
+            change_remote_shard_route(&self.path, self.shards_holder.clone(), shard_id, to).await?;
 
-        if transfer_finished {
-            todo!("Convert proxy shard to remote shard");
-        }
+        // Transfer task and proxy should exist on the same node
+        debug_assert_eq!(transfer_finished, proxy_promoted);
+        log::debug!("finish_was_registered: {}", finish_was_registered);
+        log::debug!("transfer_finished: {}", transfer_finished);
+        log::debug!("proxy_promoted: {}", proxy_promoted);
+        log::debug!("shard_promoted: {}", shard_promoted);
+        log::debug!("remote_shard_rerouted: {}", remote_shard_rerouted);
 
-        todo!("Promote temporary shard to local shard if any");
-        todo!("Point remote shard to new location");
-        Ok(())
+        let something_changed =
+            finish_was_registered && (proxy_promoted || shard_promoted || remote_shard_rerouted);
+
+        Ok(something_changed)
     }
 
+    /// Handles abort of the transfer
+    ///
+    /// 1. Unregister the transfer
+    /// 2. Stop transfer task
+    /// 3. Unwrap the proxy
+    /// 4. Remove temp shard
     pub async fn abort_shard_transfer(
         &self,
         shard_id: ShardId,
         to: PeerId,
-    ) -> CollectionResult<()> {
-        let mut _shards_holder = self.shards_holder.write().await;
-        // self.shard_transfers.remove(&shard_id);
-        todo!("Handle for sender and receiver")
-    }
+    ) -> CollectionResult<bool> {
+        let transfer = ShardTransfer { shard_id, to };
+        let finish_was_registered = self
+            .shards_holder
+            .write()
+            .await
+            .register_finish_transfer(&transfer);
+        let transfer_finished = self
+            .transfer_tasks
+            .lock()
+            .await
+            .stop_if_exists(&transfer)
+            .await
+            .is_finished();
 
-    /// Promote temporary shard
-    ///
-    /// The temporary shard `shard_id` will replace the current local shard `shard_id`.
-    pub async fn promote_temporary_shard(&self, shard_id: ShardId) -> CollectionResult<()> {
-        {
-            let shard_holder = self.shards_holder.read().await;
-            let temp_shard_opt = shard_holder.get_temporary_shard(&shard_id);
-            let temp_shard = match temp_shard_opt {
-                Some(shard) => shard,
-                None => return Ok(()),
-            };
-            match temp_shard {
-                Local(local_temp_shard) => {
-                    let shard_path = local_temp_shard.shard_path();
-                    ShardConfig::new_local().save(&shard_path)?
-                }
-                Shard::Remote(_) => return Ok(()),
-                Shard::Proxy(_) => return Ok(()),
-                Shard::ForwardProxy(_) => return Ok(()),
-            }
-        }
+        let proxy_unwrapped =
+            revert_proxy_shard_to_local(self.shards_holder.clone(), shard_id).await?;
 
-        // After ths point, if anything crushes - it will load temp shard as new local shard
+        let temp_shard_removed = drop_temporary_shard(self.shards_holder.clone(), shard_id).await?;
 
-        let mut shard_holder_write = self.shards_holder.write().await;
+        let changed_something =
+            finish_was_registered && (transfer_finished || proxy_unwrapped || temp_shard_removed);
 
-        match shard_holder_write.remove_temporary_shard(shard_id) {
-            None => Ok(()), // no temporary shard to remove
-            Some(temporary_shard) => {
-                let collection_id = self.id.clone();
-                log::info!("Promoting temporary shard {}:{}", collection_id, shard_id);
-
-                // switch shards in place
-                let old_shard_opt = shard_holder_write.replace_shard(shard_id, temporary_shard);
-
-                // release write lock to start serving data from temporary shard while cleaning up old shard
-                drop(shard_holder_write);
-                // After this point, we can receive all requests into already promoted shard
-                // All what is left is to recycle old shard
-
-                // cleanup old shard
-                if let Some(mut old_shard) = old_shard_opt {
-                    // finish update tasks
-                    old_shard.before_drop().await;
-
-                    // force drop to release file system resources
-                    drop(old_shard);
-                }
-
-                // Delete all shard versions except for the last one
-                for (_version, old_path) in shards_versions(&self.path, shard_id)
-                    .await?
-                    .into_iter()
-                    .skip(1)
-                {
-                    // delete old shard's data folder
-                    tokio::fs::remove_dir_all(&old_path).await?;
-                }
-                Ok(())
-            }
-        }
+        Ok(changed_something)
     }
 
     /// Initiate temporary shard
@@ -430,8 +417,6 @@ impl Collection {
         let existing_shard = shard_holder_write.remove_temporary_shard(shard_id);
         // do not lock shards while creating temporary shard  disk
         drop(shard_holder_write);
-
-        let temporary_shard_path = suggest_next_version_path(&self.path, shard_id).await?;
 
         if let Some(mut existing_temporary_shard) = existing_shard {
             log::info!(
@@ -461,6 +446,8 @@ impl Collection {
                 }
             }
         }
+
+        let temporary_shard_path = create_shard_dir(&self.path, shard_id).await?;
 
         // create directory to hold the temporary data for shard with `shard_id`
         tokio::fs::create_dir_all(&temporary_shard_path).await?;
@@ -1152,22 +1139,23 @@ impl Collection {
         let mut ar = tar::Archive::new(archive_file);
         ar.unpack(target_dir)?;
 
-        let config = CollectionConfig::load(target_dir).unwrap_or_else(|err| {
-            panic!(
-                "Can't read collection config due to {}\nat {}",
-                err,
-                target_dir.to_str().unwrap()
-            )
-        });
+        let config = CollectionConfig::load(target_dir)?;
         let configured_shards = config.params.shard_number.get();
 
         for shard_id in 0..configured_shards {
             let shard_path = versioned_shard_path(target_dir, shard_id, 0);
-            let shard_config = ShardConfig::load(&shard_path)?;
-            match shard_config.r#type {
-                ShardType::Local => LocalShard::restore_snapshot(&shard_path)?,
-                ShardType::Remote { .. } => RemoteShard::restore_snapshot(&shard_path),
-                ShardType::Temporary => {}
+            let shard_config_opt = ShardConfig::load(&shard_path)?;
+            if let Some(shard_config) = shard_config_opt {
+                match shard_config.r#type {
+                    ShardType::Local => LocalShard::restore_snapshot(&shard_path)?,
+                    ShardType::Remote { .. } => RemoteShard::restore_snapshot(&shard_path),
+                    ShardType::Temporary => {}
+                }
+            } else {
+                return Err(CollectionError::service_error(format!(
+                    "Can't read shard config at {}",
+                    shard_path.display()
+                )));
             }
         }
 

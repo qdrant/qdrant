@@ -4,7 +4,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shard::shard_config::{ShardConfig, ShardType};
 use crate::shard::{ShardId, ShardVersion};
 
-pub async fn shards_versions(
+async fn shards_versions(
     collection_path: &Path,
     shard_id: ShardId,
 ) -> CollectionResult<Vec<(ShardVersion, PathBuf)>> {
@@ -41,6 +41,18 @@ pub async fn shards_versions(
     all_versions.sort_by_key(|(version, _)| *version);
     all_versions = all_versions.into_iter().rev().collect();
     Ok(all_versions)
+}
+
+pub async fn drop_old_shards(collection_path: &Path, shard_id: ShardId) -> CollectionResult<()> {
+    for (_version, old_path) in shards_versions(collection_path, shard_id)
+        .await?
+        .into_iter()
+        .skip(1)
+    {
+        // delete old shard's data folder
+        tokio::fs::remove_dir_all(&old_path).await?;
+    }
+    Ok(())
 }
 
 pub fn versioned_shard_path(
@@ -81,24 +93,28 @@ pub async fn latest_shard_paths(
     let mut seen_temp_shard = false;
     let all_versions = shards_versions(collection_path, shard_id).await?;
     for (version, path) in all_versions {
-        let shard_config = ShardConfig::load(&path)?;
+        let shard_config_opt = ShardConfig::load(&path)?;
 
-        match shard_config.r#type {
-            ShardType::Local => {
-                res.push((path, version, shard_config.r#type));
-                break; // We don't need older local shards.
-            }
-            ShardType::Remote { .. } => {
-                res.push((path, version, shard_config.r#type));
-                break; // We don't need older remote shards.
-            }
-            ShardType::Temporary => {
-                if !seen_temp_shard {
+        if let Some(shard_config) = shard_config_opt {
+            match shard_config.r#type {
+                ShardType::Local => {
                     res.push((path, version, shard_config.r#type));
-                    seen_temp_shard = true;
+                    break; // We don't need older local shards.
+                }
+                ShardType::Remote { .. } => {
+                    res.push((path, version, shard_config.r#type));
+                    break; // We don't need older remote shards.
+                }
+                ShardType::Temporary => {
+                    if !seen_temp_shard {
+                        res.push((path, version, shard_config.r#type));
+                        seen_temp_shard = true;
+                    }
                 }
             }
-        };
+        } else {
+            log::warn!("Shard config not found for {}, skipping", path.display());
+        }
     }
     if (seen_temp_shard && res.len() < 2) || res.is_empty() {
         return Err(CollectionError::service_error(format!(

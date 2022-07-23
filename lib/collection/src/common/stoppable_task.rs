@@ -24,14 +24,6 @@ impl<T> StoppableTaskHandle<T> {
         self.ask_to_stop();
         self.join_handle
     }
-
-    pub fn was_stopped(&self) -> bool {
-        if let Some(v) = self.stopped.upgrade() {
-            v.load(Ordering::Relaxed)
-        } else {
-            true
-        }
-    }
 }
 
 pub fn spawn_stoppable<F, T>(f: F) -> StoppableTaskHandle<T>

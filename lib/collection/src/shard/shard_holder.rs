@@ -58,13 +58,15 @@ impl ShardHolder {
     ///
     /// return old shard
     pub fn replace_shard(&mut self, shard_id: ShardId, shard: Shard) -> Option<Shard> {
-        let old_shard = self.shards.remove(&shard_id);
-        self.shards.insert(shard_id, shard);
-        old_shard
+        self.shards.insert(shard_id, shard)
     }
 
     pub fn get_shard(&self, shard_id: &ShardId) -> Option<&Shard> {
         self.shards.get(shard_id)
+    }
+
+    pub fn get_mut_shard(&mut self, shard_id: &ShardId) -> Option<&mut Shard> {
+        self.shards.get_mut(shard_id)
     }
 
     pub fn get_shards(&self) -> impl Iterator<Item = (&ShardId, &Shard)> {
@@ -77,6 +79,10 @@ impl ShardHolder {
 
     pub fn get_temporary_shard(&self, shard_id: &ShardId) -> Option<&Shard> {
         self.temporary_shards.get(shard_id)
+    }
+
+    pub fn take_temporary_shard(&mut self, shard_id: &ShardId) -> Option<Shard> {
+        self.temporary_shards.remove(shard_id)
     }
 
     pub fn all_temporary_shards(&self) -> impl Iterator<Item = &Shard> {
@@ -113,11 +119,11 @@ impl ShardHolder {
         self.temporary_shards.remove(&shard_id)
     }
 
-    pub fn start_shard_transfer(&mut self, transfer: ShardTransfer) -> bool {
+    pub fn register_start_shard_transfer(&mut self, transfer: ShardTransfer) -> bool {
         self.shard_transfers.insert(transfer)
     }
 
-    pub fn finish_transfer(&mut self, transfer: &ShardTransfer) -> bool {
+    pub fn register_finish_transfer(&mut self, transfer: &ShardTransfer) -> bool {
         self.shard_transfers.remove(transfer)
     }
 
