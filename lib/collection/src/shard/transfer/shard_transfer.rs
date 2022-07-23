@@ -262,7 +262,7 @@ pub async fn transfer_shard(
             Some(Shard::Local(local_shard)) => {
                 let proxy_shard = ForwardProxyShard::new(local_shard, remote_shard);
                 shard_holder_guard.add_shard(shard_id, Shard::ForwardProxy(proxy_shard));
-            },
+            }
             Some(shard) => {
                 // return shard back
                 shard_holder_guard.add_shard(shard_id, shard);
@@ -270,7 +270,7 @@ pub async fn transfer_shard(
                     "Shard {} does is not local",
                     shard_id
                 )));
-            },
+            }
             None => {
                 return Err(CollectionError::service_error(format!(
                     "Local Shard {} does not exist",

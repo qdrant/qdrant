@@ -44,7 +44,7 @@ impl ShardConfig {
         let config_path = Self::get_config_path(shard_path);
         if !config_path.exists() {
             log::info!("Detected missing shard config file in {:?}", shard_path);
-            return Ok(None)
+            return Ok(None);
         }
         Ok(Some(read_json(&config_path)?))
     }

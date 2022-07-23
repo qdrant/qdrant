@@ -12,6 +12,7 @@ use segment::types::{
 };
 use tempdir::TempDir;
 use tokio::runtime::Handle;
+
 use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
 
 mod common;
