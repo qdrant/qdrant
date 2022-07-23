@@ -133,92 +133,88 @@ impl ShardOperation for RemoteShard {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        let response = self
-            .with_points_client(|mut client| async {
-                match operation {
-                    CollectionUpdateOperations::PointOperation(point_ops) => match point_ops {
-                        PointOperations::UpsertPoints(point_insert_operations) => {
-                            let request = tonic::Request::new(internal_upsert_points(
-                                point_insert_operations,
-                                self,
-                                wait,
-                            )?);
-                            client.upsert(request).await
-                        }
-                        PointOperations::DeletePoints { ids } => {
-                            let request =
-                                tonic::Request::new(internal_delete_points(ids, self, wait));
-                            client.delete(request).await
-                        }
-                        PointOperations::DeletePointsByFilter(filter) => {
-                            let request = tonic::Request::new(internal_delete_points_by_filter(
-                                filter, self, wait,
-                            ));
-                            client.delete(request).await
-                        }
-                    },
-                    CollectionUpdateOperations::PayloadOperation(payload_ops) => {
-                        match payload_ops {
-                            PayloadOps::SetPayload(set_payload) => {
-                                let request = tonic::Request::new(internal_set_payload(
-                                    set_payload,
-                                    self,
-                                    wait,
-                                ));
-                                client.set_payload(request).await
-                            }
-                            PayloadOps::DeletePayload(delete_payload) => {
-                                let request = tonic::Request::new(internal_delete_payload(
-                                    delete_payload,
-                                    self,
-                                    wait,
-                                ));
-                                client.delete_payload(request).await
-                            }
-                            PayloadOps::ClearPayload { points } => {
-                                let request =
-                                    tonic::Request::new(internal_clear_payload(points, self, wait));
-                                client.clear_payload(request).await
-                            }
-                            PayloadOps::ClearPayloadByFilter(filter) => {
-                                let request = tonic::Request::new(
-                                    internal_clear_payload_by_filter(filter, self, wait),
-                                );
-                                client.clear_payload(request).await
-                            }
-                        }
+
+        let response = match operation {
+            CollectionUpdateOperations::PointOperation(point_ops) => match point_ops {
+                PointOperations::UpsertPoints(point_insert_operations) => {
+                    let request = tonic::Request::new(internal_upsert_points(
+                        point_insert_operations,
+                        self,
+                        wait,
+                    )?);
+                    self.with_points_client(|mut client| client.upsert(request)).await?
+                }
+                PointOperations::DeletePoints { ids } => {
+                    let request =
+                        tonic::Request::new(internal_delete_points(ids, self, wait));
+                    self.with_points_client(|mut client| client.delete(request)).await?
+                }
+                PointOperations::DeletePointsByFilter(filter) => {
+                    let request = tonic::Request::new(internal_delete_points_by_filter(
+                        filter, self, wait,
+                    ));
+                    self.with_points_client(|mut client| client.delete(request)).await?
+                }
+            },
+            CollectionUpdateOperations::PayloadOperation(payload_ops) => {
+                match payload_ops {
+                    PayloadOps::SetPayload(set_payload) => {
+                        let request = tonic::Request::new(internal_set_payload(
+                            set_payload,
+                            self,
+                            wait,
+                        ));
+                        self.with_points_client(|mut client| client.set_payload(request)).await?
                     }
-                    CollectionUpdateOperations::FieldIndexOperation(field_index_op) => {
-                        match field_index_op {
-                            FieldIndexOperations::CreateIndex(create_index) => {
-                                let request = tonic::Request::new(internal_create_index(
-                                    create_index,
-                                    self,
-                                    wait,
-                                ));
-                                client.create_field_index(request).await
-                            }
-                            FieldIndexOperations::DeleteIndex(delete_index) => {
-                                let request = tonic::Request::new(internal_delete_index(
-                                    delete_index,
-                                    self,
-                                    wait,
-                                ));
-                                client.delete_field_index(request).await
-                            }
-                        }
+                    PayloadOps::DeletePayload(delete_payload) => {
+                        let request = tonic::Request::new(internal_delete_payload(
+                            delete_payload,
+                            self,
+                            wait,
+                        ));
+                        self.with_points_client(|mut client| client.delete_payload(request)).await?
+                    }
+                    PayloadOps::ClearPayload { points } => {
+                        let request =
+                            tonic::Request::new(internal_clear_payload(points, self, wait));
+                        self.with_points_client(|mut client| client.clear_payload(request)).await?
+                    }
+                    PayloadOps::ClearPayloadByFilter(filter) => {
+                        let request = tonic::Request::new(
+                            internal_clear_payload_by_filter(filter, self, wait),
+                        );
+                        self.with_points_client(|mut client| client.clear_payload(request)).await?
                     }
                 }
-
-            })
-            .await?;
+            }
+            CollectionUpdateOperations::FieldIndexOperation(field_index_op) => {
+                match field_index_op {
+                    FieldIndexOperations::CreateIndex(create_index) => {
+                        let request = tonic::Request::new(internal_create_index(
+                            create_index,
+                            self,
+                            wait,
+                        ));
+                        self.with_points_client(|mut client| client.create_field_index(request)).await?
+                    }
+                    FieldIndexOperations::DeleteIndex(delete_index) => {
+                        let request = tonic::Request::new(internal_delete_index(
+                            delete_index,
+                            self,
+                            wait,
+                        ));
+                        self.with_points_client(|mut client| client.delete_field_index(request)).await?
+                    }
+                }
+            }
+        }
 
         let point_operation_response = response.into_inner();
         match point_operation_response.result {
             None => Err(CollectionError::service_error(
                 "Malformed UpdateResult type".to_string(),
             )),
-            Some(update_result) => update_result.try_into().map_err(|e| e.into()),
+            Some(update_result) => update_result.try_into().map_err(|e: Status| e.into()),
         }
     }
 
