@@ -18,6 +18,7 @@ use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
 use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
+use api::grpc::transport_channel_pool::RequestError;
 
 use crate::config::CollectionConfig;
 use crate::shard::{PeerId, ShardId};
@@ -452,6 +453,15 @@ impl From<FileStorageError> for CollectionError {
             FileStorageError::GenericError { description } => {
                 CollectionError::service_error(description)
             }
+        }
+    }
+}
+
+impl From<RequestError<tonic::Status>> for CollectionError {
+    fn from(err: RequestError<tonic::Status>) -> Self {
+        match err {
+            RequestError::FromClosure(status) => status.into(),
+            RequestError::Tonic(err) => CollectionError::service_error(format!("{}", err)),
         }
     }
 }
