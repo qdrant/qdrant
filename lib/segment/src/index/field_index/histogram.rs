@@ -50,6 +50,7 @@ impl Histogram {
         }
     }
 
+    #[allow(dead_code)]
     fn validate(&self) -> Result<(), String> {
         // Iterate over chunks of borders
         for (left, right) in self.borders.values().tuple_windows() {
@@ -410,6 +411,7 @@ impl Histogram {
         }
     }
 
+    /// Warn: `val` should be unique
     pub fn insert<F, G>(&mut self, val: Point, left_neighbour: F, right_neighbour: G)
     where
         F: Fn(&Point) -> Option<Point>,
@@ -657,61 +659,6 @@ mod tests {
             .iter()
             .filter(|x| a <= x.val && x.val <= b)
             .count()
-    }
-
-    #[test]
-    fn test_add_same_values() {
-        let points = vec![
-            Point { idx: 0, val: 0.0 },
-            Point { idx: 1, val: 0.0 },
-            Point { idx: 2, val: 0.0 },
-            Point { idx: 3, val: 0.0 },
-            Point { idx: 4, val: 0.0 },
-            Point { idx: 5, val: 0.0 },
-            Point { idx: 5, val: 0.0 },
-            Point { idx: 5, val: 0.0 },
-            Point { idx: 5, val: 0.0 },
-            Point { idx: 6, val: 0.0 },
-            Point { idx: 6, val: 0.0 },
-            Point { idx: 6, val: 0.0 },
-            Point { idx: 6, val: 0.0 },
-        ];
-
-        let mut points_index: BTreeSet<Point> = Default::default();
-
-        let mut histogram = Histogram::new(3, 0.01);
-
-        for point in &points {
-            points_index.insert(point.clone());
-            // print_results(&points_index, &histogram, Some(point.clone()));
-            histogram.insert(
-                point.clone(),
-                |x| {
-                    points_index
-                        .range((Unbounded, Excluded(x)))
-                        .next_back()
-                        .cloned()
-                },
-                |x| points_index.range((Excluded(x), Unbounded)).next().cloned(),
-            );
-            histogram.validate().unwrap();
-        }
-
-        for point in &points {
-            print_results(&points_index, &histogram, Some(point.clone()));
-            points_index.remove(point);
-            histogram.remove(
-                point,
-                |x| {
-                    points_index
-                        .range((Unbounded, Excluded(x)))
-                        .next_back()
-                        .cloned()
-                },
-                |x| points_index.range((Excluded(x), Unbounded)).next().cloned(),
-            );
-            histogram.validate().unwrap();
-        }
     }
 
     #[test]
