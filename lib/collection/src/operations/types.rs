@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::result;
 use std::time::SystemTimeError;
 
+use api::grpc::transport_channel_pool::RequestError;
 use futures::io;
 use schemars::JsonSchema;
 use segment::common::file_operations::FileStorageError;
@@ -452,6 +453,15 @@ impl From<FileStorageError> for CollectionError {
             FileStorageError::GenericError { description } => {
                 CollectionError::service_error(description)
             }
+        }
+    }
+}
+
+impl From<RequestError<tonic::Status>> for CollectionError {
+    fn from(err: RequestError<tonic::Status>) -> Self {
+        match err {
+            RequestError::FromClosure(status) => status.into(),
+            RequestError::Tonic(err) => CollectionError::service_error(format!("{}", err)),
         }
     }
 }
