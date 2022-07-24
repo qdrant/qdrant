@@ -14,6 +14,7 @@ use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayl
 use tokio::runtime::Handle;
 use tonic::transport::{Channel, Uri};
 use tonic::Status;
+
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::PointOperations;
 use crate::operations::types::{
@@ -98,7 +99,7 @@ impl RemoteShard {
 
     async fn with_points_client<T, O: Future<Output = Result<T, Status>>>(
         &self,
-        f: impl FnOnce(PointsInternalClient<Channel>) -> O,
+        f: impl Fn(PointsInternalClient<Channel>) -> O,
     ) -> CollectionResult<T> {
         let current_address = self.current_address()?;
         self.channel_service
@@ -112,7 +113,7 @@ impl RemoteShard {
 
     async fn with_collections_client<T, O: Future<Output = Result<T, Status>>>(
         &self,
-        f: impl FnOnce(CollectionsInternalClient<Channel>) -> O,
+        f: impl Fn(CollectionsInternalClient<Channel>) -> O,
     ) -> CollectionResult<T> {
         let current_address = self.current_address()?;
         self.channel_service
@@ -133,83 +134,100 @@ impl ShardOperation for RemoteShard {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-
-        let response = match operation {
+        let point_operation_response = match operation {
             CollectionUpdateOperations::PointOperation(point_ops) => match point_ops {
                 PointOperations::UpsertPoints(point_insert_operations) => {
-                    let request = tonic::Request::new(internal_upsert_points(
-                        point_insert_operations,
-                        self,
-                        wait,
-                    )?);
-                    self.with_points_client(|mut client| client.upsert(request)).await?
+                    let request = &internal_upsert_points(point_insert_operations, self, wait)?;
+                    self.with_points_client(|mut client| async move {
+                        client.upsert(tonic::Request::new(request.clone())).await
+                    })
+                    .await?
+                    .into_inner()
                 }
                 PointOperations::DeletePoints { ids } => {
-                    let request =
-                        tonic::Request::new(internal_delete_points(ids, self, wait));
-                    self.with_points_client(|mut client| client.delete(request)).await?
+                    let request = &internal_delete_points(ids, self, wait);
+                    self.with_points_client(|mut client| async move {
+                        client.delete(tonic::Request::new(request.clone())).await
+                    })
+                    .await?
+                    .into_inner()
                 }
                 PointOperations::DeletePointsByFilter(filter) => {
-                    let request = tonic::Request::new(internal_delete_points_by_filter(
-                        filter, self, wait,
-                    ));
-                    self.with_points_client(|mut client| client.delete(request)).await?
+                    let request = &internal_delete_points_by_filter(filter, self, wait);
+                    self.with_points_client(|mut client| async move {
+                        client.delete(tonic::Request::new(request.clone())).await
+                    })
+                    .await?
+                    .into_inner()
                 }
             },
-            CollectionUpdateOperations::PayloadOperation(payload_ops) => {
-                match payload_ops {
-                    PayloadOps::SetPayload(set_payload) => {
-                        let request = tonic::Request::new(internal_set_payload(
-                            set_payload,
-                            self,
-                            wait,
-                        ));
-                        self.with_points_client(|mut client| client.set_payload(request)).await?
-                    }
-                    PayloadOps::DeletePayload(delete_payload) => {
-                        let request = tonic::Request::new(internal_delete_payload(
-                            delete_payload,
-                            self,
-                            wait,
-                        ));
-                        self.with_points_client(|mut client| client.delete_payload(request)).await?
-                    }
-                    PayloadOps::ClearPayload { points } => {
-                        let request =
-                            tonic::Request::new(internal_clear_payload(points, self, wait));
-                        self.with_points_client(|mut client| client.clear_payload(request)).await?
-                    }
-                    PayloadOps::ClearPayloadByFilter(filter) => {
-                        let request = tonic::Request::new(
-                            internal_clear_payload_by_filter(filter, self, wait),
-                        );
-                        self.with_points_client(|mut client| client.clear_payload(request)).await?
-                    }
+            CollectionUpdateOperations::PayloadOperation(payload_ops) => match payload_ops {
+                PayloadOps::SetPayload(set_payload) => {
+                    let request = &internal_set_payload(set_payload, self, wait);
+                    self.with_points_client(|mut client| async move {
+                        client
+                            .set_payload(tonic::Request::new(request.clone()))
+                            .await
+                    })
+                    .await?
+                    .into_inner()
                 }
-            }
-            CollectionUpdateOperations::FieldIndexOperation(field_index_op) => {
-                match field_index_op {
-                    FieldIndexOperations::CreateIndex(create_index) => {
-                        let request = tonic::Request::new(internal_create_index(
-                            create_index,
-                            self,
-                            wait,
-                        ));
-                        self.with_points_client(|mut client| client.create_field_index(request)).await?
-                    }
-                    FieldIndexOperations::DeleteIndex(delete_index) => {
-                        let request = tonic::Request::new(internal_delete_index(
-                            delete_index,
-                            self,
-                            wait,
-                        ));
-                        self.with_points_client(|mut client| client.delete_field_index(request)).await?
-                    }
+                PayloadOps::DeletePayload(delete_payload) => {
+                    let request = &internal_delete_payload(delete_payload, self, wait);
+                    self.with_points_client(|mut client| async move {
+                        client
+                            .delete_payload(tonic::Request::new(request.clone()))
+                            .await
+                    })
+                    .await?
+                    .into_inner()
                 }
-            }
-        }
+                PayloadOps::ClearPayload { points } => {
+                    let request = &internal_clear_payload(points, self, wait);
+                    self.with_points_client(|mut client| async move {
+                        client
+                            .clear_payload(tonic::Request::new(request.clone()))
+                            .await
+                    })
+                    .await?
+                    .into_inner()
+                }
+                PayloadOps::ClearPayloadByFilter(filter) => {
+                    let request = &internal_clear_payload_by_filter(filter, self, wait);
+                    self.with_points_client(|mut client| async move {
+                        client
+                            .clear_payload(tonic::Request::new(request.clone()))
+                            .await
+                    })
+                    .await?
+                    .into_inner()
+                }
+            },
+            CollectionUpdateOperations::FieldIndexOperation(field_index_op) => match field_index_op
+            {
+                FieldIndexOperations::CreateIndex(create_index) => {
+                    let request = &internal_create_index(create_index, self, wait);
+                    self.with_points_client(|mut client| async move {
+                        client
+                            .create_field_index(tonic::Request::new(request.clone()))
+                            .await
+                    })
+                    .await?
+                    .into_inner()
+                }
+                FieldIndexOperations::DeleteIndex(delete_index) => {
+                    let request = &internal_delete_index(delete_index, self, wait);
+                    self.with_points_client(|mut client| async move {
+                        client
+                            .delete_field_index(tonic::Request::new(request.clone()))
+                            .await
+                    })
+                    .await?
+                    .into_inner()
+                }
+            },
+        };
 
-        let point_operation_response = response.into_inner();
         match point_operation_response.result {
             None => Err(CollectionError::service_error(
                 "Malformed UpdateResult type".to_string(),
@@ -226,7 +244,6 @@ impl ShardOperation for RemoteShard {
         with_vector: bool,
         filter: Option<&Filter>,
     ) -> CollectionResult<Vec<Record>> {
-
         let scroll_points = ScrollPoints {
             collection_name: self.collection_id.clone(),
             filter: filter.map(|f| f.clone().into()),
@@ -235,14 +252,18 @@ impl ShardOperation for RemoteShard {
             with_vector: Some(with_vector),
             with_payload: Some(with_payload_interface.clone().into()),
         };
-        let request = tonic::Request::new(ScrollPointsInternal {
+        let request = &ScrollPointsInternal {
             scroll_points: Some(scroll_points),
             shard_id: self.id,
-        });
+        };
 
-        let response = self.with_points_client(|mut client| client.scroll(request)).await?;
+        let scroll_response = self
+            .with_points_client(|mut client| async move {
+                client.scroll(tonic::Request::new(request.clone())).await
+            })
+            .await?
+            .into_inner();
 
-        let scroll_response = response.into_inner();
         let result: Result<Vec<Record>, Status> = scroll_response
             .result
             .into_iter()
@@ -252,19 +273,20 @@ impl ShardOperation for RemoteShard {
     }
 
     async fn info(&self) -> CollectionResult<CollectionInfo> {
-
         let get_collection_info_request = GetCollectionInfoRequest {
             collection_name: self.collection_id.clone(),
         };
-        let request = tonic::Request::new(GetCollectionInfoRequestInternal {
+        let request = &GetCollectionInfoRequestInternal {
             get_collection_info_request: Some(get_collection_info_request),
             shard_id: self.id,
-        });
-        let response = self
-            .with_collections_client(|mut client| client.get(request))
-            .await?;
+        };
+        let get_collection_response = self
+            .with_collections_client(|mut client| async move {
+                client.get(tonic::Request::new(request.clone())).await
+            })
+            .await?
+            .into_inner();
 
-        let get_collection_response = response.into_inner();
         let result: Result<CollectionInfo, Status> = get_collection_response.try_into();
         result.map_err(|e| e.into())
     }
@@ -274,7 +296,6 @@ impl ShardOperation for RemoteShard {
         request: Arc<SearchRequest>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-
         let search_points = SearchPoints {
             collection_name: self.collection_id.clone(),
             vector: request.vector.clone(),
@@ -286,13 +307,17 @@ impl ShardOperation for RemoteShard {
             score_threshold: request.score_threshold,
             offset: Some(request.offset as u64),
         };
-        let request = tonic::Request::new(SearchPointsInternal {
+        let request = &SearchPointsInternal {
             search_points: Some(search_points),
             shard_id: self.id,
-        });
-        let response = self.with_points_client(|mut client| client.search(request)).await?;
+        };
+        let search_response = self
+            .with_points_client(|mut client| async move {
+                client.search(tonic::Request::new(request.clone())).await
+            })
+            .await?
+            .into_inner();
 
-        let search_response = response.into_inner();
         let result: Result<Vec<ScoredPoint>, Status> = search_response
             .result
             .into_iter()
@@ -302,19 +327,22 @@ impl ShardOperation for RemoteShard {
     }
 
     async fn count(&self, request: Arc<CountRequest>) -> CollectionResult<CountResult> {
-
         let count_points = CountPoints {
             collection_name: self.collection_id.clone(),
             filter: request.filter.clone().map(|f| f.into()),
             exact: Some(request.exact),
         };
 
-        let request = tonic::Request::new(CountPointsInternal {
+        let request = &CountPointsInternal {
             count_points: Some(count_points),
             shard_id: self.id,
-        });
-        let response = self.with_points_client(|mut client| client.count(request)).await?;
-        let count_response = response.into_inner();
+        };
+        let count_response = self
+            .with_points_client(|mut client| async move {
+                client.count(tonic::Request::new(request.clone())).await
+            })
+            .await?
+            .into_inner();
         count_response.result.map_or_else(
             || {
                 Err(CollectionError::service_error(
@@ -331,20 +359,24 @@ impl ShardOperation for RemoteShard {
         with_payload: &WithPayload,
         with_vector: bool,
     ) -> CollectionResult<Vec<Record>> {
-
         let get_points = GetPoints {
             collection_name: self.collection_id.clone(),
             ids: request.ids.iter().copied().map(|v| v.into()).collect(),
             with_vector: Some(request.with_vector),
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
         };
-        let request = tonic::Request::new(GetPointsInternal {
+        let request = &GetPointsInternal {
             get_points: Some(get_points),
             shard_id: self.id,
-        });
-        let response = self.with_points_client(|mut client| client.get(request)).await?;
+        };
 
-        let get_response = response.into_inner();
+        let get_response = self
+            .with_points_client(|mut client| async move {
+                client.get(tonic::Request::new(request.clone())).await
+            })
+            .await?
+            .into_inner();
+
         let result: Result<Vec<Record>, Status> = get_response
             .result
             .into_iter()

@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 use std::vec::Vec;
 
 use rand::seq::SliceRandom;
-use tonic::Status;
 use tonic::transport::{Channel, Error as TonicError, Uri};
+use tonic::{Code, Status};
 
 const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_POOL_SIZE: usize = 1;
@@ -93,7 +93,8 @@ impl TransportChannelPool {
         let mut guard = self.uri_to_pool.write().await;
         match guard.get(&uri) {
             None => {
-                let channels = ChannelsToUri::init(uri.clone(), self.pool_size, self.grpc_timeout).await?;
+                let channels =
+                    ChannelsToUri::init(uri.clone(), self.pool_size, self.grpc_timeout).await?;
                 let channel = channels.choose();
                 guard.insert(uri, channels);
                 Ok(channel)
@@ -109,9 +110,7 @@ impl TransportChannelPool {
 
     async fn get_pooled_channel(&self, uri: &Uri) -> Option<Channel> {
         let guard = self.uri_to_pool.read().await;
-        guard
-            .get(uri)
-            .map(|channels| channels.choose())
+        guard.get(uri).map(|channels| channels.choose())
     }
 
     async fn get_or_create_pooled_channel(&self, uri: &Uri) -> Result<Channel, TonicError> {
@@ -127,7 +126,7 @@ impl TransportChannelPool {
     }
 
     // Allows to use channel to `uri`. If there is no channels to specified uri - they will be created.
-    pub async fn with_channel<T, E: std::error::Error, O: Future<Output = Result<T, Status>>>(
+    pub async fn with_channel<T, O: Future<Output = Result<T, Status>>>(
         &self,
         uri: &Uri,
         f: impl Fn(Channel) -> O,
@@ -139,17 +138,23 @@ impl TransportChannelPool {
         // Reconnect on failure to handle the case with domain name change.
         match result {
             Ok(res) => Ok(res),
-            Err(err) => {
-                // ToDo: check for specific status to retry
-                let channel_uptime = Instant::now().duration_since(self.get_last_created(uri).await.unwrap_or(Instant::now()));
-                if channel_uptime > CHANNEL_TTL {
-                    self.drop_pool(uri).await;
-                    let channel = self.get_or_create_pooled_channel(uri).await?;
-                    f(channel).await.map_err(RequestError::FromClosure)
-                } else {
-                    Err(err).map_err(RequestError::FromClosure)
+            Err(err) => match err.code() {
+                Code::Internal | Code::Unavailable => {
+                    let channel_uptime = Instant::now().duration_since(
+                        self.get_last_created(uri)
+                            .await
+                            .unwrap_or_else(Instant::now),
+                    );
+                    if channel_uptime > CHANNEL_TTL {
+                        self.drop_pool(uri).await;
+                        let channel = self.get_or_create_pooled_channel(uri).await?;
+                        f(channel).await.map_err(RequestError::FromClosure)
+                    } else {
+                        Err(err).map_err(RequestError::FromClosure)
+                    }
                 }
-            }
+                _ => Err(RequestError::FromClosure(err)),
+            },
         }
     }
 }

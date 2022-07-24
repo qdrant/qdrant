@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::result;
 use std::time::SystemTimeError;
 
+use api::grpc::transport_channel_pool::RequestError;
 use futures::io;
 use schemars::JsonSchema;
 use segment::common::file_operations::FileStorageError;
@@ -18,7 +19,6 @@ use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
 use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
-use api::grpc::transport_channel_pool::RequestError;
 
 use crate::config::CollectionConfig;
 use crate::shard::{PeerId, ShardId};

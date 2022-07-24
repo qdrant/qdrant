@@ -506,19 +506,19 @@ async fn send_message(
     message: RaftMessage,
     transport_channel_pool: Arc<TransportChannelPool>,
 ) -> anyhow::Result<()> {
-    let channel = transport_channel_pool
-        .get_or_create_pooled_channel(&address)
-        .await
-        .context("Failed to create timeout channel")?;
-    let mut client = RaftClient::new(channel);
     let mut bytes = Vec::new();
     <RaftMessage as prost::Message>::encode(&message, &mut bytes)
         .context("Failed to serialize Raft message")?;
-    let message = GrpcRaftMessage { message: bytes };
-    client
-        .send(tonic::Request::new(message))
+    let message = &GrpcRaftMessage { message: bytes };
+
+    let _response = transport_channel_pool
+        .with_channel(&address, |channel| async move {
+            let mut client = RaftClient::new(channel);
+            client.send(tonic::Request::new(message.clone())).await
+        })
         .await
-        .context("gRPC call failed")?;
+        .context("Failed to send message")?;
+
     Ok(())
 }
 
