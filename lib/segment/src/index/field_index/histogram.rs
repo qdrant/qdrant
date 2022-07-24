@@ -50,6 +50,14 @@ impl Histogram {
         }
     }
 
+    fn validate(&self) -> Result<(), String> {
+        // Iterate over chunks of borders
+        for (left, right) in self.borders.values().tuple_windows() {
+            assert_eq!(left.right, right.left);
+        }
+        Ok(())
+    }
+
     fn current_bucket_size(&self) -> usize {
         let bucket_size = (self.total_count as f64 * self.precision) as usize;
         min(max(MIN_BUCKET_SIZE, bucket_size), self.max_bucket_size)
@@ -652,17 +660,72 @@ mod tests {
     }
 
     #[test]
+    fn test_add_same_values() {
+        let points = vec![
+            Point { idx: 0, val: 0.0 },
+            Point { idx: 1, val: 0.0 },
+            Point { idx: 2, val: 0.0 },
+            Point { idx: 3, val: 0.0 },
+            Point { idx: 4, val: 0.0 },
+            Point { idx: 5, val: 0.0 },
+            Point { idx: 5, val: 0.0 },
+            Point { idx: 5, val: 0.0 },
+            Point { idx: 5, val: 0.0 },
+            Point { idx: 6, val: 0.0 },
+            Point { idx: 6, val: 0.0 },
+            Point { idx: 6, val: 0.0 },
+            Point { idx: 6, val: 0.0 },
+        ];
+
+        let mut points_index: BTreeSet<Point> = Default::default();
+
+        let mut histogram = Histogram::new(3, 0.01);
+
+        for point in &points {
+            points_index.insert(point.clone());
+            // print_results(&points_index, &histogram, Some(point.clone()));
+            histogram.insert(
+                point.clone(),
+                |x| {
+                    points_index
+                        .range((Unbounded, Excluded(x)))
+                        .next_back()
+                        .cloned()
+                },
+                |x| points_index.range((Excluded(x), Unbounded)).next().cloned(),
+            );
+            histogram.validate().unwrap();
+        }
+
+        for point in &points {
+            print_results(&points_index, &histogram, Some(point.clone()));
+            points_index.remove(point);
+            histogram.remove(
+                point,
+                |x| {
+                    points_index
+                        .range((Unbounded, Excluded(x)))
+                        .next_back()
+                        .cloned()
+                },
+                |x| points_index.range((Excluded(x), Unbounded)).next().cloned(),
+            );
+            histogram.validate().unwrap();
+        }
+    }
+
+    #[test]
     fn test_build_histogram_small() {
-        let max_bucket_size = 5;
+        let max_bucket_size = 10;
         let precision = 0.01;
-        let num_samples = 60;
+        let num_samples = 1000;
         let mut rnd = StdRng::seed_from_u64(42);
 
         // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
         let points = (0..num_samples)
             .map(|i| Point {
                 val: f64::round(rnd.sample::<f64, _>(StandardNormal) * 10.0),
-                idx: i,
+                idx: i % num_samples / 2,
             })
             .collect_vec();
 
