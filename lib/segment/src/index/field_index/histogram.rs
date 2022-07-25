@@ -50,6 +50,15 @@ impl Histogram {
         }
     }
 
+    #[allow(dead_code)]
+    fn validate(&self) -> Result<(), String> {
+        // Iterate over chunks of borders
+        for (left, right) in self.borders.values().tuple_windows() {
+            assert_eq!(left.right, right.left);
+        }
+        Ok(())
+    }
+
     fn current_bucket_size(&self) -> usize {
         let bucket_size = (self.total_count as f64 * self.precision) as usize;
         min(max(MIN_BUCKET_SIZE, bucket_size), self.max_bucket_size)
@@ -402,6 +411,7 @@ impl Histogram {
         }
     }
 
+    /// Warn: `val` should be unique
     pub fn insert<F, G>(&mut self, val: Point, left_neighbour: F, right_neighbour: G)
     where
         F: Fn(&Point) -> Option<Point>,
@@ -653,16 +663,16 @@ mod tests {
 
     #[test]
     fn test_build_histogram_small() {
-        let max_bucket_size = 5;
+        let max_bucket_size = 10;
         let precision = 0.01;
-        let num_samples = 60;
+        let num_samples = 1000;
         let mut rnd = StdRng::seed_from_u64(42);
 
         // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
         let points = (0..num_samples)
             .map(|i| Point {
                 val: f64::round(rnd.sample::<f64, _>(StandardNormal) * 10.0),
-                idx: i,
+                idx: i % num_samples / 2,
             })
             .collect_vec();
 
