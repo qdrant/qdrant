@@ -12,12 +12,12 @@ const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_POOL_SIZE: usize = 1;
 const CHANNEL_TTL: Duration = Duration::from_secs(5);
 
-struct ChannelsToUri {
+struct ChannelPool {
     channels: Vec<Channel>,
     init_at: Instant,
 }
 
-impl ChannelsToUri {
+impl ChannelPool {
     async fn init(
         uri: Uri,
         pool_size: NonZeroUsize,
@@ -54,7 +54,7 @@ pub enum RequestError<E: std::error::Error> {
 /// Channel are shared by cloning them.
 /// Make the `pool_size` larger to increase throughput.
 pub struct TransportChannelPool {
-    uri_to_pool: tokio::sync::RwLock<HashMap<Uri, ChannelsToUri>>,
+    uri_to_pool: tokio::sync::RwLock<HashMap<Uri, ChannelPool>>,
     pool_size: NonZeroUsize,
     grpc_timeout: Duration,
 }
@@ -94,7 +94,7 @@ impl TransportChannelPool {
         match guard.get(&uri) {
             None => {
                 let channels =
-                    ChannelsToUri::init(uri.clone(), self.pool_size, self.grpc_timeout).await?;
+                    ChannelPool::init(uri.clone(), self.pool_size, self.grpc_timeout).await?;
                 let channel = channels.choose();
                 guard.insert(uri, channels);
                 Ok(channel)
