@@ -120,7 +120,7 @@ impl TransportChannelPool {
         }
     }
 
-    async fn get_last_created(&self, uri: &Uri) -> Option<Instant> {
+    async fn get_created_at(&self, uri: &Uri) -> Option<Instant> {
         let guard = self.uri_to_pool.read().await;
         guard.get(uri).map(|channels| channels.init_at)
     }
@@ -141,7 +141,7 @@ impl TransportChannelPool {
             Err(err) => match err.code() {
                 Code::Internal | Code::Unavailable => {
                     let channel_uptime = Instant::now().duration_since(
-                        self.get_last_created(uri)
+                        self.get_created_at(uri)
                             .await
                             .unwrap_or_else(Instant::now),
                     );
