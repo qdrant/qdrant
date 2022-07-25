@@ -20,6 +20,8 @@ pub struct ClusterConfig {
     pub enabled: bool, // disabled by default
     #[serde(default = "default_timeout_ms")]
     pub grpc_timeout_ms: u64,
+    #[serde(default = "default_connection_timeout_ms")]
+    pub connection_timeout_ms: u64,
     #[serde(default)]
     pub p2p: P2pConfig,
     #[serde(default)]
@@ -89,6 +91,10 @@ fn default_log_level() -> String {
 
 fn default_timeout_ms() -> u64 {
     1000 * 60
+}
+
+fn default_connection_timeout_ms() -> u64 {
+    2000
 }
 
 fn default_tick_period_ms() -> u64 {
