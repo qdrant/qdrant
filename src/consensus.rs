@@ -178,6 +178,7 @@ impl Consensus {
         // Use dedicated transport channel for bootstrapping because of specific timeout
         let channel = TransportChannelPool::make_channel(
             Duration::from_secs(config.bootstrap_timeout_sec),
+            Duration::from_secs(config.bootstrap_timeout_sec),
             bootstrap_peer,
         )
         .await
@@ -489,9 +490,10 @@ async fn who_is(
         bootstrap_uri.ok_or_else(|| anyhow::anyhow!("No bootstrap uri supplied"))?;
     let bootstrap_timeout = Duration::from_secs(config.bootstrap_timeout_sec);
     // Use dedicated transport channel for who_is because of specific timeout
-    let channel = TransportChannelPool::make_channel(bootstrap_timeout, bootstrap_uri)
-        .await
-        .context("Failed to create timeout channel")?;
+    let channel =
+        TransportChannelPool::make_channel(bootstrap_timeout, bootstrap_timeout, bootstrap_uri)
+            .await
+            .context("Failed to create timeout channel")?;
     let mut client = RaftClient::new(channel);
     Ok(client
         .who_is(tonic::Request::new(PeerId { id: peer_id }))

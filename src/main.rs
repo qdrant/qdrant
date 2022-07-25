@@ -125,8 +125,10 @@ fn main() -> anyhow::Result<()> {
     let mut channel_service = ChannelService::default();
     if settings.cluster.enabled {
         let p2p_grpc_timeout = Duration::from_millis(settings.cluster.grpc_timeout_ms);
+        let connection_timeout = Duration::from_millis(settings.cluster.connection_timeout_ms);
         channel_service.channel_pool = Arc::new(TransportChannelPool::new(
             p2p_grpc_timeout,
+            connection_timeout,
             settings.cluster.p2p.connection_pool_size,
         ));
         channel_service.id_to_address = persistent_consensus_state.peer_address_by_id.clone();
