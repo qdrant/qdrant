@@ -745,7 +745,15 @@ impl TableOfContent {
         known_peers_set.insert(self.this_peer_id());
         let known_peers: Vec<_> = known_peers_set.into_iter().collect();
 
-        let shard_distribution = ShardDistributionProposal::new(shard_number, &known_peers, vec![]);
+        let mut current_distribution = Vec::new();
+        let known_collections = self.collections.read().await;
+        for (_, col) in known_collections.iter() {
+            let collection_distribution = col.shard_distribution(self.this_peer_id).await;
+            current_distribution.extend(collection_distribution);
+        }
+
+        let shard_distribution =
+            ShardDistributionProposal::new(shard_number, &known_peers, current_distribution);
 
         log::debug!(
             "Suggesting distribution for {} shards for collection '{}' among {} peers {:?}",

@@ -75,6 +75,17 @@ impl ShardHolder {
         self.shards.values()
     }
 
+    pub fn shard_distribution(&self, this_peer_id: PeerId) -> Vec<(ShardId, PeerId)> {
+        self.shards
+            .iter()
+            .map(|(shard_id, shard)| match shard {
+                Shard::Local(_) => (*shard_id, this_peer_id),
+                Shard::Proxy(_) => (*shard_id, this_peer_id),
+                Shard::Remote(r) => (*shard_id, r.peer_id),
+            })
+            .collect()
+    }
+
     pub fn get_temporary_shard(&self, shard_id: &ShardId) -> Option<&Shard> {
         self.temporary_shards.get(shard_id)
     }

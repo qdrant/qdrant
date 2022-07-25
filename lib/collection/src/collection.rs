@@ -222,6 +222,11 @@ impl Collection {
         }
     }
 
+    pub async fn shard_distribution(&self, this_peer_id: PeerId) -> Vec<(ShardId, PeerId)> {
+        let shard_holder_read = self.shards_holder.read().await;
+        shard_holder_read.shard_distribution(this_peer_id)
+    }
+
     fn send_shard(&self, _shard_id: ShardId) {
         todo!()
     }

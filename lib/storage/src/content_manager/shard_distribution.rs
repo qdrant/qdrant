@@ -35,7 +35,7 @@ impl ShardDistributionProposal {
     pub fn new(
         config_shard_number: u32,
         known_peers: &[PeerId],
-        known_shards: Vec<(ShardId, PeerId)>,
+        current_distribution: Vec<(ShardId, PeerId)>,
     ) -> Self {
         // min number of shard_count on top to make this a min-heap
         let mut min_heap: BinaryHeap<Reverse<PeerShardCount>> =
@@ -43,7 +43,7 @@ impl ShardDistributionProposal {
 
         // count number of existing shards per peers
         for &peer in known_peers {
-            let shard_count_on_peer = known_shards
+            let shard_count_on_peer = current_distribution
                 .iter()
                 .filter(|(_shard_id, peer_id)| *peer_id == peer)
                 .count();
@@ -93,12 +93,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_distribution() {
+    fn test_distribution_without_known_shards() {
         let known_peers = vec![1, 2, 3, 4];
         let distribution = ShardDistributionProposal::new(6, &known_peers, vec![]);
 
         // Check it distribution is as even as possible
-        let mut shard_counts: Vec<usize> = vec![0; known_peers.len()];
+        let mut new_shard_counts: Vec<usize> = vec![0; known_peers.len()];
         for (_shard_id, peer_id) in &distribution.distribution {
             let peer_offset = known_peers
                 .iter()
@@ -106,11 +106,49 @@ mod tests {
                 .find(|(_, x)| *x == peer_id)
                 .unwrap()
                 .0;
-            shard_counts[peer_offset] += 1;
+            new_shard_counts[peer_offset] += 1;
         }
 
-        assert_eq!(shard_counts.iter().sum::<usize>(), 6);
-        assert_eq!(shard_counts.iter().min(), Some(&1));
-        assert_eq!(shard_counts.iter().max(), Some(&2));
+        assert_eq!(new_shard_counts.iter().sum::<usize>(), 6);
+        assert_eq!(new_shard_counts.iter().min(), Some(&1));
+        assert_eq!(new_shard_counts.iter().max(), Some(&2));
+
+        // Check it distribution is as even as possible
+        assert_eq!(new_shard_counts[0], 2);
+        assert_eq!(new_shard_counts[1], 2);
+        assert_eq!(new_shard_counts[2], 1);
+        assert_eq!(new_shard_counts[3], 1);
+    }
+
+    #[test]
+    fn test_distribution_with_known_shards() {
+        let known_peers = vec![1, 2, 3, 4];
+
+        // list of pairs (ShardId, peerId)
+        // the first peer has already 2 shards
+        let known_shards = vec![(1, 1), (2, 1)];
+
+        let distribution = ShardDistributionProposal::new(6, &known_peers, known_shards);
+
+        let mut new_shard_counts: Vec<usize> = vec![0; known_peers.len()];
+        for (_shard_id, peer_id) in &distribution.distribution {
+            let peer_offset = known_peers
+                .iter()
+                .enumerate()
+                .find(|(_, x)| *x == peer_id)
+                .unwrap()
+                .0;
+            new_shard_counts[peer_offset] += 1;
+        }
+
+        assert_eq!(new_shard_counts.iter().sum::<usize>(), 6);
+        assert_eq!(new_shard_counts.iter().min(), Some(&0));
+        assert_eq!(new_shard_counts.iter().max(), Some(&2));
+
+        // Check it distribution is as even as possible
+        assert_eq!(new_shard_counts[0], 0); // first peer does not get any new shards allocated
+        assert_eq!(new_shard_counts[1], 2);
+        assert_eq!(new_shard_counts[2], 2);
+        assert_eq!(new_shard_counts[3], 2);
     }
 }
