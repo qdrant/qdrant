@@ -8,8 +8,9 @@ use rand::seq::SliceRandom;
 use tokio::select;
 use tonic::transport::{Channel, Error as TonicError, Uri};
 use tonic::{Code, Status};
-use crate::grpc::qdrant::HealthCheckRequest;
+
 use crate::grpc::qdrant::qdrant_client::QdrantClient;
+use crate::grpc::qdrant::HealthCheckRequest;
 
 const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
@@ -40,7 +41,8 @@ impl ChannelPool {
             channels.push(channel);
         }
         let fast_channel =
-            TransportChannelPool::make_channel(SMART_CONNECT_TIMEOUT, connection_timeout, uri).await?;
+            TransportChannelPool::make_channel(SMART_CONNECT_TIMEOUT, connection_timeout, uri)
+                .await?;
 
         Ok(Self {
             channels,
@@ -168,7 +170,7 @@ impl TransportChannelPool {
             tokio::time::sleep(SMART_CONNECT_TIMEOUT).await;
             let channel = self.get_fast_pooled_channel(uri).await;
             match channel {
-                None => return Status::unavailable(format!("Channel dropped")),
+                None => return Status::unavailable("Channel dropped"),
                 Some(channel) => {
                     let mut client = QdrantClient::new(channel);
                     let resp = client.health_check(HealthCheckRequest {}).await;
@@ -176,7 +178,7 @@ impl TransportChannelPool {
                         Ok(_) => {
                             // continue watching
                         }
-                        Err(status) => return status
+                        Err(status) => return status,
                     }
                 }
             }
