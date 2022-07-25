@@ -141,9 +141,7 @@ impl TransportChannelPool {
             Err(err) => match err.code() {
                 Code::Internal | Code::Unavailable => {
                     let channel_uptime = Instant::now().duration_since(
-                        self.get_created_at(uri)
-                            .await
-                            .unwrap_or_else(Instant::now),
+                        self.get_created_at(uri).await.unwrap_or_else(Instant::now),
                     );
                     if channel_uptime > CHANNEL_TTL {
                         self.drop_pool(uri).await;
