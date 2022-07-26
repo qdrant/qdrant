@@ -1,6 +1,6 @@
 [package]
 name = "api"
-version = "0.8.5"
+version = "0.8.6"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
