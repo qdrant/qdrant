@@ -24,12 +24,17 @@ pub struct PointStruct {
 }
 
 /// Warn: panics if the vector is empty
-impl From<Record> for PointStruct {
-    fn from(record: Record) -> Self {
-        PointStruct {
-            id: record.id,
-            vector: record.vector.unwrap(),
-            payload: record.payload,
+impl TryFrom<Record> for PointStruct {
+    type Error = String;
+
+    fn try_from(record: Record) -> Result<Self, Self::Error> {
+        match record.vector {
+            Some(vector) => Ok(Self {
+                id: record.id,
+                vector,
+                payload: record.payload,
+            }),
+            None => Err("Vector is empty".to_string()),
         }
     }
 }

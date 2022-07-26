@@ -256,8 +256,6 @@ impl Collection {
         );
 
         active_transfer_tasks.add_task(&transfer, transfer_task);
-
-        Ok(())
     }
 
     pub async fn start_shard_transfer<T, F>(
@@ -307,7 +305,7 @@ impl Collection {
             }
         };
         if do_transfer {
-            self.send_shard(shard_transfer, on_finish, on_error).await?;
+            self.send_shard(shard_transfer, on_finish, on_error).await;
         }
         Ok(do_transfer)
     }

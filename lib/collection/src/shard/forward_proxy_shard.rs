@@ -8,7 +8,7 @@ use segment::types::{
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
-use crate::operations::point_ops::{PointInsertOperations, PointOperations};
+use crate::operations::point_ops::{PointInsertOperations, PointOperations, PointStruct};
 use crate::operations::types::{
     CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
     SearchRequest, UpdateResult,
@@ -68,10 +68,11 @@ impl ForwardProxyShard {
             return Ok(next_page_offset);
         }
 
+        let points: Result<Vec<PointStruct>, String> =
+            batch.into_iter().map(|point| point.try_into()).collect();
+
         let insert_points_operation = CollectionUpdateOperations::PointOperation(
-            PointOperations::UpsertPoints(PointInsertOperations::PointsList(
-                batch.into_iter().map(|point| point.into()).collect(),
-            )),
+            PointOperations::UpsertPoints(PointInsertOperations::PointsList(points?)),
         );
 
         // We only need to wait for the last batch.
