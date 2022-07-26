@@ -4088,6 +4088,7 @@
         "type": "object",
         "required": [
           "app",
+          "cluster_status",
           "collections",
           "configs",
           "id",
@@ -4115,6 +4116,9 @@
           },
           "web": {
             "$ref": "#/components/schemas/WebApiTelemetry"
+          },
+          "cluster_status": {
+            "$ref": "#/components/schemas/ClusterStatus"
           }
         }
       },

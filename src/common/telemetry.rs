@@ -7,6 +7,7 @@ use schemars::JsonSchema;
 use segment::telemetry::Anonymize;
 use serde::{Deserialize, Serialize};
 use storage::dispatcher::Dispatcher;
+use storage::types::ClusterStatus;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -30,6 +31,7 @@ pub struct TelemetryData {
     configs: ConfigsTelemetry,
     collections: Vec<CollectionTelemetry>,
     web: WebApiTelemetry,
+    cluster_status: ClusterStatus,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -108,6 +110,7 @@ impl Anonymize for TelemetryData {
                 .map(|collection| collection.anonymize())
                 .collect(),
             web: self.web.anonymize(),
+            cluster_status: self.cluster_status.anonymize(),
         }
     }
 }
@@ -225,6 +228,7 @@ impl TelemetryCollector {
 
     pub async fn prepare_data(&self) -> TelemetryData {
         let collections = self.dispatcher.get_telemetry_data().await;
+        let cluster_status = self.dispatcher.cluster_status();
         TelemetryData {
             id: self.process_id.to_string(),
             app: self.get_app_data(),
@@ -232,6 +236,7 @@ impl TelemetryCollector {
             configs: self.get_configs_data(),
             collections,
             web: self.get_web_data().await,
+            cluster_status,
         }
     }
 
