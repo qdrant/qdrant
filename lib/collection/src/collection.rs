@@ -237,7 +237,7 @@ impl Collection {
         transfer: ShardTransfer,
         on_finish: OF,
         on_error: OE,
-    ) -> CollectionResult<()>
+    )
     where
         OF: Future<Output = ()> + Send + 'static,
         OE: Future<Output = ()> + Send + 'static,
@@ -324,6 +324,8 @@ impl Collection {
     /// 3. Converts proxy shard -> remote shard
     /// 4. Promotes temporary shard to local shard.
     /// 5. Point remote shard to new location
+    ///
+    /// Returns true if state was changed, false otherwise.
     pub async fn finish_shard_transfer(
         &self,
         shard_id: ShardId,
