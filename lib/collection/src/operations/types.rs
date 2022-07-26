@@ -21,6 +21,7 @@ use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
 
 use crate::config::CollectionConfig;
+use crate::save_on_disk;
 use crate::shard::{PeerId, ShardId};
 use crate::wal::WalError;
 
@@ -468,6 +469,14 @@ impl From<RequestError<tonic::Status>> for CollectionError {
         match err {
             RequestError::FromClosure(status) => status.into(),
             RequestError::Tonic(err) => CollectionError::service_error(format!("{}", err)),
+        }
+    }
+}
+
+impl From<save_on_disk::Error> for CollectionError {
+    fn from(err: save_on_disk::Error) -> Self {
+        CollectionError::ServiceError {
+            error: err.to_string(),
         }
     }
 }

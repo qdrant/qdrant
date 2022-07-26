@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::BufWriter;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::path::PathBuf;
 
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
@@ -25,6 +25,8 @@ pub enum Error {
     IoError(#[from] std::io::Error),
     #[error("Failed to (de)serialize from/to json: {0}")]
     JsonError(#[from] serde_json::Error),
+    #[error("Error in write closure: {0}")]
+    FromClosure(Box<dyn std::error::Error>),
 }
 
 impl<T: Serialize + Default + for<'de> Deserialize<'de>> SaveOnDisk<T> {
@@ -39,8 +41,27 @@ impl<T: Serialize + Default + for<'de> Deserialize<'de>> SaveOnDisk<T> {
         Ok(Self { data, path })
     }
 
-    pub fn write(&mut self) -> WriteGuard<T> {
-        WriteGuard(self)
+    pub fn write_with_res<O, E: std::error::Error + 'static>(
+        &mut self,
+        f: impl FnOnce(&mut T) -> Result<O, E>,
+    ) -> Result<O, Error> {
+        let output = f(&mut self.data).map_err(|err| Error::FromClosure(Box::new(err)))?;
+        self.save()?;
+        Ok(output)
+    }
+
+    pub fn write<O>(&mut self, f: impl FnOnce(&mut T) -> O) -> Result<O, Error> {
+        let output = f(&mut self.data);
+        self.save()?;
+        Ok(output)
+    }
+
+    fn save(&self) -> Result<(), Error> {
+        AtomicFile::new(&self.path, AllowOverwrite).write(|file| {
+            let writer = BufWriter::new(file);
+            serde_json::to_writer(writer, &self.data)
+        })?;
+        Ok(())
     }
 }
 
@@ -49,41 +70,6 @@ impl<T> Deref for SaveOnDisk<T> {
 
     fn deref(&self) -> &Self::Target {
         &self.data
-    }
-}
-
-impl<'a, T: Serialize> WriteGuard<'a, T> {
-    pub fn save(&self) -> Result<(), Error> {
-        AtomicFile::new(&self.0.path, AllowOverwrite).write(|file| {
-            let writer = BufWriter::new(file);
-            serde_json::to_writer(writer, &self.0.data)
-        })?;
-        Ok(())
-    }
-}
-
-impl<'a, T: Serialize> Deref for WriteGuard<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.0
-    }
-}
-
-impl<'a, T: Serialize> DerefMut for WriteGuard<'a, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0.data
-    }
-}
-
-impl<'a, T: Serialize> Drop for WriteGuard<'a, T> {
-    fn drop(&mut self) {
-        if let Err(err) = self.save() {
-            log::error!(
-                "Failed to save structure on disk at {} with error: {err}",
-                self.0.path.display()
-            )
-        }
     }
 }
 
@@ -98,19 +84,13 @@ mod tests {
         let dir = tempdir::TempDir::new("test").unwrap();
         let counter_file = dir.path().join("counter");
         let mut counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
-        {
-            let mut counter_guard1 = counter.write();
-            *counter_guard1 += 1;
-        }
+        counter.write(|counter| *counter += 1);
         assert_eq!(*counter, 1);
         assert_eq!(
             counter.to_string(),
             fs::read_to_string(&counter_file).unwrap()
         );
-        {
-            let mut counter_guard2 = counter.write();
-            *counter_guard2 += 1;
-        }
+        counter.write(|counter| *counter += 1);
         assert_eq!(*counter, 2);
         assert_eq!(
             counter.to_string(),
@@ -122,11 +102,8 @@ mod tests {
     fn loads_data() {
         let dir = tempdir::TempDir::new("test").unwrap();
         let counter_file = dir.path().join("counter");
-        {
-            let mut counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
-            let mut counter_guard = counter.write();
-            *counter_guard += 1;
-        }
+        let mut counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
+        counter.write(|counter| *counter += 1);
         let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
         assert_eq!(*counter, 1)
     }
