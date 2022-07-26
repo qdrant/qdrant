@@ -146,7 +146,7 @@ impl Collection {
             snapshots_path: snapshots_path.to_owned(),
             telemetry: CollectionTelemetry::new(id, config.clone(), start_time.elapsed()),
             channel_service,
-            transfer_tasks: Mutex::new(TransferTasksPool::default()),
+            transfer_tasks: Default::default(),
         })
     }
 
