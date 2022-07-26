@@ -232,12 +232,7 @@ impl Collection {
         }
     }
 
-    async fn send_shard<OF, OE>(
-        &self,
-        transfer: ShardTransfer,
-        on_finish: OF,
-        on_error: OE,
-    )
+    async fn send_shard<OF, OE>(&self, transfer: ShardTransfer, on_finish: OF, on_error: OE)
     where
         OF: Future<Output = ()> + Send + 'static,
         OE: Future<Output = ()> + Send + 'static,
