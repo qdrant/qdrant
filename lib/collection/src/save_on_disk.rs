@@ -84,13 +84,13 @@ mod tests {
         let dir = tempdir::TempDir::new("test").unwrap();
         let counter_file = dir.path().join("counter");
         let mut counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
-        counter.write(|counter| *counter += 1);
+        counter.write(|counter| *counter += 1).unwrap();
         assert_eq!(*counter, 1);
         assert_eq!(
             counter.to_string(),
             fs::read_to_string(&counter_file).unwrap()
         );
-        counter.write(|counter| *counter += 1);
+        counter.write(|counter| *counter += 1).unwrap();
         assert_eq!(*counter, 2);
         assert_eq!(
             counter.to_string(),
@@ -103,7 +103,7 @@ mod tests {
         let dir = tempdir::TempDir::new("test").unwrap();
         let counter_file = dir.path().join("counter");
         let mut counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
-        counter.write(|counter| *counter += 1);
+        counter.write(|counter| *counter += 1).unwrap();
         let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
         assert_eq!(*counter, 1)
     }
