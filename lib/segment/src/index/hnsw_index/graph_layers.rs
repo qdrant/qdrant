@@ -21,19 +21,17 @@ pub type LayersContainer = Vec<LinkContainer>;
 
 pub const HNSW_GRAPH_FILE: &str = "graph.bin";
 
-
 #[derive(Deserialize, Serialize, Debug)]
 pub struct GraphLayersBackwardCompatibility {
     pub(super) max_level: usize,
     pub(super) m: usize,
     pub(super) m0: usize,
     pub(super) ef_construct: usize,
-    pub(super) level_factor: f64, // Deprecated
+    pub(super) level_factor: f64,   // Deprecated
     pub(super) use_heuristic: bool, // Deprecated
     pub(super) links_layers: Vec<LayersContainer>,
     pub(super) entry_points: EntryPoints,
 }
-
 
 impl From<GraphLayersBackwardCompatibility> for GraphLayers {
     fn from(gl: GraphLayersBackwardCompatibility) -> Self {
