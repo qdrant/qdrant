@@ -22,6 +22,32 @@ pub type LayersContainer = Vec<LinkContainer>;
 pub const HNSW_GRAPH_FILE: &str = "graph.bin";
 
 #[derive(Deserialize, Serialize, Debug)]
+pub struct GraphLayersBackwardCompatibility {
+    pub(super) max_level: usize,
+    pub(super) m: usize,
+    pub(super) m0: usize,
+    pub(super) ef_construct: usize,
+    pub(super) level_factor: f64,   // Deprecated
+    pub(super) use_heuristic: bool, // Deprecated
+    pub(super) links_layers: Vec<LayersContainer>,
+    pub(super) entry_points: EntryPoints,
+}
+
+impl From<GraphLayersBackwardCompatibility> for GraphLayers {
+    fn from(gl: GraphLayersBackwardCompatibility) -> Self {
+        GraphLayers {
+            max_level: gl.max_level,
+            m: gl.m,
+            m0: gl.m0,
+            ef_construct: gl.ef_construct,
+            links_layers: gl.links_layers,
+            entry_points: gl.entry_points,
+            visited_pool: VisitedPool::new(),
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug)]
 pub struct GraphLayers {
     pub(super) max_level: usize,
     pub(super) m: usize,
@@ -283,7 +309,22 @@ impl GraphLayers {
     }
 
     pub fn load(path: &Path) -> OperationResult<Self> {
-        Ok(read_bin(path)?)
+        let try_self: Result<Self, _> = read_bin(path);
+
+        match try_self {
+            Ok(slf) => Ok(slf),
+            Err(err) => {
+                let try_legacy: Result<GraphLayersBackwardCompatibility, _> = read_bin(path);
+                if let Ok(legacy) = try_legacy {
+                    let slf: Self = legacy.into();
+                    log::debug!("Converting legacy graph to new format");
+                    slf.save(path)?;
+                    Ok(slf)
+                } else {
+                    Err(err)?
+                }
+            }
+        }
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {
