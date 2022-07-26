@@ -232,15 +232,15 @@ impl Collection {
         }
     }
 
-    async fn send_shard<T, F>(
+    async fn send_shard<OF, OE>(
         &self,
         transfer: ShardTransfer,
-        on_finish: T,
-        on_error: F,
+        on_finish: OF,
+        on_error: OE,
     ) -> CollectionResult<()>
     where
-        T: Future<Output = ()> + Send + 'static,
-        F: Future<Output = ()> + Send + 'static,
+        OF: Future<Output = ()> + Send + 'static,
+        OE: Future<Output = ()> + Send + 'static,
     {
         let mut active_transfer_tasks = self.transfer_tasks.lock().await;
         let task_result = active_transfer_tasks.stop_if_exists(&transfer).await;
