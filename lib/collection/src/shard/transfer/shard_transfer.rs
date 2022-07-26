@@ -253,8 +253,11 @@ pub async fn transfer_shard(
     let remote_shard = RemoteShard::new(shard_id, collection_id, peer_id, channel_service);
 
     // ToDo: Initial fast file-based transfer (optional)
+    // * Create shard snapshot - save the latest version of point updates in the snapshot
+    // * Initiate shard, use snapshot link for initialization
+    // * Transfer difference between snapshot and current shard state
 
-    // todo!("Initialize temporary shard on a remove machine");
+    remote_shard.initiate_transfer().await?;
     {
         let mut shard_holder_guard = shard_holder.write().await;
         let transferring_shard = shard_holder_guard.remove_shard(shard_id);

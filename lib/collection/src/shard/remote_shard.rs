@@ -5,9 +5,9 @@ use std::sync::Arc;
 use api::grpc::qdrant::collections_internal_client::CollectionsInternalClient;
 use api::grpc::qdrant::points_internal_client::PointsInternalClient;
 use api::grpc::qdrant::{
-    CountPoints, CountPointsInternal, GetCollectionInfoRequest, GetCollectionInfoRequestInternal,
-    GetPoints, GetPointsInternal, ScrollPoints, ScrollPointsInternal, SearchPoints,
-    SearchPointsInternal,
+    CollectionOperationResponse, CountPoints, CountPointsInternal, GetCollectionInfoRequest,
+    GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal, InitiateShardTransferRequest,
+    ScrollPoints, ScrollPointsInternal, SearchPoints, SearchPointsInternal,
 };
 use async_trait::async_trait;
 use parking_lot::Mutex;
@@ -138,6 +138,21 @@ impl RemoteShard {
             searches: self.searches_telemetry.lock().get_statistics(),
             updates: self.updates_telemetry.lock().get_statistics(),
         }
+    }
+
+    pub async fn initiate_transfer(&self) -> CollectionResult<CollectionOperationResponse> {
+        let res = self
+            .with_collections_client(|mut client| async move {
+                client
+                    .initiate(InitiateShardTransferRequest {
+                        collection_name: self.collection_id.clone(),
+                        shard_id: self.id,
+                    })
+                    .await
+            })
+            .await?
+            .into_inner();
+        Ok(res)
     }
 }
 
