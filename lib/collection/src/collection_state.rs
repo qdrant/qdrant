@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -7,12 +7,14 @@ use crate::collection::Collection;
 use crate::config::CollectionConfig;
 use crate::operations::types::CollectionResult;
 use crate::shard::remote_shard::RemoteShard;
-use crate::shard::{create_shard_dir, ChannelService, PeerId, Shard, ShardId};
+use crate::shard::{create_shard_dir, ChannelService, PeerId, Shard, ShardId, ShardTransfer};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct State {
     pub config: CollectionConfig,
     pub shard_to_peer: HashMap<ShardId, PeerId>,
+    #[serde(default)]
+    pub transfers: HashSet<ShardTransfer>,
 }
 
 impl State {
@@ -31,7 +33,14 @@ impl State {
             collection_path,
             channel_service,
         )
-        .await
+        .await?;
+        collection
+            .shards_holder
+            .write()
+            .await
+            .shard_transfers
+            .write(|transfers| *transfers = self.transfers)?;
+        Ok(())
     }
 
     async fn apply_config(

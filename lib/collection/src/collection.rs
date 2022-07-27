@@ -1014,15 +1014,14 @@ impl Collection {
     }
 
     pub async fn state(&self, this_peer_id: PeerId) -> State {
+        let shards_holder = self.shards_holder.read().await;
         State {
             config: self.config.read().await.clone(),
-            shard_to_peer: self
-                .shards_holder
-                .read()
-                .await
+            shard_to_peer: shards_holder
                 .get_shards()
                 .map(|(shard_id, shard)| (*shard_id, shard.peer_id(this_peer_id)))
                 .collect(),
+            transfers: (*shards_holder.shard_transfers).clone(),
         }
     }
 
