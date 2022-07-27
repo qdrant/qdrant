@@ -22,7 +22,7 @@ const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 
 pub struct ShardHolder {
     shards: HashMap<ShardId, Shard>,
-    shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
+    pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     temporary_shards: HashMap<ShardId, Shard>,
     ring: HashRing<ShardId>,
 }
