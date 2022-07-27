@@ -6,6 +6,7 @@ pub mod config;
 pub mod hash_ring;
 pub mod operations;
 pub mod optimizers_builder;
+pub mod save_on_disk;
 pub mod shard;
 pub mod telemetry;
 mod update_handler;

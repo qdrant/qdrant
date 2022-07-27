@@ -90,7 +90,7 @@ impl Collection {
         CollectionVersion::save(path)?;
         config.save(path)?;
 
-        let mut shard_holder = ShardHolder::new(HashRing::fair(HASH_RING_SHARD_SCALE));
+        let mut shard_holder = ShardHolder::new(path, HashRing::fair(HASH_RING_SHARD_SCALE))?;
 
         let shared_config = Arc::new(RwLock::new(config.clone()));
         for shard_id in shard_distribution.local {
@@ -204,7 +204,7 @@ impl Collection {
             log::debug!("Using raw hash ring");
             HashRing::raw()
         };
-        let mut shard_holder = ShardHolder::new(ring);
+        let mut shard_holder = ShardHolder::new(path, ring).expect("Can not create shard holder");
 
         let shared_config = Arc::new(RwLock::new(config.clone()));
 
@@ -277,7 +277,7 @@ impl Collection {
         let do_transfer = {
             let mut shards_holder = self.shards_holder.write().await;
             let was_not_transferred =
-                shards_holder.register_start_shard_transfer(shard_transfer.clone());
+                shards_holder.register_start_shard_transfer(shard_transfer.clone())?;
             let shard = shards_holder.get_shard(&shard_id);
 
             // Check if current node owns the shard which should be transferred
@@ -329,7 +329,7 @@ impl Collection {
             .shards_holder
             .write()
             .await
-            .register_finish_transfer(&transfer);
+            .register_finish_transfer(&transfer)?;
         let transfer_finished = self
             .transfer_tasks
             .lock()
@@ -384,7 +384,7 @@ impl Collection {
             .shards_holder
             .write()
             .await
-            .register_finish_transfer(&transfer);
+            .register_finish_transfer(&transfer)?;
         let transfer_finished = self
             .transfer_tasks
             .lock()

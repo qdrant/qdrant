@@ -17,6 +17,7 @@ use std::sync::Arc;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use async_trait::async_trait;
 use segment::types::{ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface};
+use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tonic::transport::Uri;
 
@@ -155,7 +156,7 @@ impl Default for ChannelService {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShardTransfer {
     pub shard_id: ShardId,
     pub to: PeerId,

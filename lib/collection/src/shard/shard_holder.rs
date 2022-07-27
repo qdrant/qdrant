@@ -10,6 +10,7 @@ use crate::config::CollectionConfig;
 use crate::hash_ring::HashRing;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::{OperationToShard, SplitByShard};
+use crate::save_on_disk::SaveOnDisk;
 use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::ShardType;
@@ -17,9 +18,11 @@ use crate::shard::shard_versioning::latest_shard_paths;
 use crate::shard::Shard::Local;
 use crate::shard::{ChannelService, CollectionId, Shard, ShardId, ShardTransfer};
 
+const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
+
 pub struct ShardHolder {
     shards: HashMap<ShardId, Shard>,
-    shard_transfers: HashSet<ShardTransfer>,
+    shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     temporary_shards: HashMap<ShardId, Shard>,
     ring: HashRing<ShardId>,
 }
@@ -27,13 +30,14 @@ pub struct ShardHolder {
 pub struct LockedShardHolder(pub RwLock<ShardHolder>);
 
 impl ShardHolder {
-    pub fn new(hashring: HashRing<ShardId>) -> Self {
-        Self {
+    pub fn new(collection_path: &Path, hashring: HashRing<ShardId>) -> CollectionResult<Self> {
+        let shard_transfers = SaveOnDisk::load_or_init(collection_path.join(SHARD_TRANSFERS_FILE))?;
+        Ok(Self {
             shards: HashMap::new(),
-            shard_transfers: HashSet::new(),
+            shard_transfers,
             temporary_shards: HashMap::new(),
             ring: hashring,
-        }
+        })
     }
 
     pub fn add_shard(&mut self, shard_id: ShardId, shard: Shard) {
@@ -119,12 +123,19 @@ impl ShardHolder {
         self.temporary_shards.remove(&shard_id)
     }
 
-    pub fn register_start_shard_transfer(&mut self, transfer: ShardTransfer) -> bool {
-        self.shard_transfers.insert(transfer)
+    pub fn register_start_shard_transfer(
+        &mut self,
+        transfer: ShardTransfer,
+    ) -> CollectionResult<bool> {
+        Ok(self
+            .shard_transfers
+            .write(|transfers| transfers.insert(transfer))?)
     }
 
-    pub fn register_finish_transfer(&mut self, transfer: &ShardTransfer) -> bool {
-        self.shard_transfers.remove(transfer)
+    pub fn register_finish_transfer(&mut self, transfer: &ShardTransfer) -> CollectionResult<bool> {
+        Ok(self
+            .shard_transfers
+            .write(|transfers| transfers.remove(transfer))?)
     }
 
     pub fn target_shards(&self, shard_selection: Option<ShardId>) -> CollectionResult<Vec<&Shard>> {
@@ -297,6 +308,7 @@ mod tests {
     #[tokio::test]
     async fn test_shard_holder() {
         let shard_dir = TempDir::new("shard").unwrap();
+        let collection_dir = TempDir::new("collection").unwrap();
 
         let shard = RemoteShard::init(
             2,
@@ -307,7 +319,8 @@ mod tests {
         )
         .unwrap();
 
-        let mut shard_holder = ShardHolder::new(HashRing::fair(100));
+        let mut shard_holder =
+            ShardHolder::new(collection_dir.path(), HashRing::fair(100)).unwrap();
         shard_holder.add_shard(2, Shard::Remote(shard));
         let locked_shard_holder = LockedShardHolder::new(shard_holder);
 
