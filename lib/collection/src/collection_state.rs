@@ -13,6 +13,7 @@ use crate::shard::{create_shard_dir, ChannelService, PeerId, Shard, ShardId, Sha
 pub struct State {
     pub config: CollectionConfig,
     pub shard_to_peer: HashMap<ShardId, PeerId>,
+    #[serde(default)]
     pub transfers: HashSet<ShardTransfer>,
 }
 
