@@ -537,6 +537,7 @@ mod tests {
     use storage::content_manager::collection_meta_ops::{
         CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
     };
+    use storage::content_manager::consensus::operation_sender::OperationSender;
     use storage::content_manager::consensus::persistent::Persistent;
     use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef};
     use storage::content_manager::toc::TableOfContent;
@@ -559,18 +560,20 @@ mod tests {
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
         let (persistent_state, state_just_initialized) =
             Persistent::load_or_init(&settings.storage.storage_path, true).unwrap();
+        let operation_sender = OperationSender::new(propose_sender);
         let toc = TableOfContent::new(
             &settings.storage,
             runtime,
             ChannelService::default(),
             persistent_state.this_peer_id(),
+            operation_sender.clone(),
         );
         let toc_arc = Arc::new(toc);
         let storage_path = toc_arc.storage_path();
         let consensus_state: ConsensusStateRef = ConsensusState::new(
             persistent_state,
             toc_arc.clone(),
-            propose_sender,
+            operation_sender,
             storage_path,
         )
         .into();

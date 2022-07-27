@@ -8,6 +8,7 @@ mod tests {
         ChangeAliasesOperation, CollectionMetaOperations, CreateAlias, CreateCollection,
         CreateCollectionOperation, DeleteAlias, RenameAlias,
     };
+    use storage::content_manager::consensus::operation_sender::OperationSender;
     use storage::content_manager::toc::TableOfContent;
     use storage::dispatcher::Dispatcher;
     use storage::types::{PerformanceConfig, StorageConfig};
@@ -47,7 +48,16 @@ mod tests {
         let runtime = Runtime::new().unwrap();
         let handle = runtime.handle().clone();
 
-        let toc = Arc::new(TableOfContent::new(&config, runtime, Default::default(), 0));
+        let (propose_sender, _propose_receiver) = std::sync::mpsc::channel();
+        let propose_operation_sender = OperationSender::new(propose_sender);
+
+        let toc = Arc::new(TableOfContent::new(
+            &config,
+            runtime,
+            Default::default(),
+            0,
+            propose_operation_sender,
+        ));
         let dispatcher = Dispatcher::new(toc);
 
         handle

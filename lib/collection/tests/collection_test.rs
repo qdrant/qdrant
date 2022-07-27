@@ -528,8 +528,14 @@ async fn test_promote_temporary_shards() {
     // initiate temporary shard for shard_id 1
     collection.initiate_temporary_shard(0).await.unwrap();
 
-    // promote temporary shard for shard_id 1
-    collection.promote_temporary_shard(0).await.unwrap();
+    // validate collection non empty
+    let result = collection
+        .scroll_by(scroll_request.clone(), None)
+        .await
+        .unwrap();
+    assert_eq!(result.points.len(), 2);
+
+    collection.finish_shard_transfer(0, 100).await.unwrap();
 
     // validate collection is empty now
     let result = collection.scroll_by(scroll_request, None).await.unwrap();

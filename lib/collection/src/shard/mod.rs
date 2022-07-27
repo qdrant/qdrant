@@ -1,5 +1,6 @@
 pub mod collection_shard_distribution;
 mod conversions;
+pub mod forward_proxy_shard;
 pub mod local_shard;
 pub mod local_shard_operations;
 pub mod proxy_shard;
@@ -7,6 +8,7 @@ pub mod remote_shard;
 pub mod shard_config;
 pub mod shard_holder;
 pub mod shard_versioning;
+pub mod transfer;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -23,6 +25,7 @@ use crate::operations::types::{
     Record, SearchRequest, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
+use crate::shard::forward_proxy_shard::ForwardProxyShard;
 use crate::shard::local_shard::LocalShard;
 use crate::shard::proxy_shard::ProxyShard;
 use crate::shard::remote_shard::RemoteShard;
@@ -40,6 +43,7 @@ pub enum Shard {
     Local(LocalShard),
     Remote(RemoteShard),
     Proxy(ProxyShard),
+    ForwardProxy(ForwardProxyShard),
 }
 
 impl Shard {
@@ -48,6 +52,7 @@ impl Shard {
             Shard::Local(local_shard) => local_shard,
             Shard::Remote(remote_shard) => remote_shard,
             Shard::Proxy(proxy_shard) => proxy_shard,
+            Shard::ForwardProxy(proxy_shard) => proxy_shard,
         }
     }
 
@@ -56,6 +61,7 @@ impl Shard {
             Shard::Local(local_shard) => local_shard.before_drop().await,
             Shard::Remote(_) => (),
             Shard::Proxy(proxy_shard) => proxy_shard.before_drop().await,
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.before_drop().await,
         }
     }
 
@@ -64,6 +70,7 @@ impl Shard {
             Shard::Local(_) => this_peer_id,
             Shard::Remote(remote) => remote.peer_id,
             Shard::Proxy(_) => this_peer_id,
+            Shard::ForwardProxy(_) => this_peer_id,
         }
     }
 
@@ -72,6 +79,7 @@ impl Shard {
             Shard::Local(local_shard) => local_shard.get_telemetry_data(),
             Shard::Remote(remote_shard) => remote_shard.get_telemetry_data(),
             Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(),
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_telemetry_data(),
         }
     }
 }
@@ -147,9 +155,9 @@ impl Default for ChannelService {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ShardTransfer {
-    pub from: PeerId,
+    pub shard_id: ShardId,
     pub to: PeerId,
 }
 

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -15,11 +15,11 @@ use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::ShardType;
 use crate::shard::shard_versioning::latest_shard_paths;
 use crate::shard::Shard::Local;
-use crate::shard::{ChannelService, CollectionId, PeerId, Shard, ShardId, ShardTransfer};
+use crate::shard::{ChannelService, CollectionId, Shard, ShardId, ShardTransfer};
 
 pub struct ShardHolder {
     shards: HashMap<ShardId, Shard>,
-    shard_transfers: HashMap<ShardId, ShardTransfer>,
+    shard_transfers: HashSet<ShardTransfer>,
     temporary_shards: HashMap<ShardId, Shard>,
     ring: HashRing<ShardId>,
 }
@@ -30,7 +30,7 @@ impl ShardHolder {
     pub fn new(hashring: HashRing<ShardId>) -> Self {
         Self {
             shards: HashMap::new(),
-            shard_transfers: HashMap::new(),
+            shard_transfers: HashSet::new(),
             temporary_shards: HashMap::new(),
             ring: hashring,
         }
@@ -58,13 +58,15 @@ impl ShardHolder {
     ///
     /// return old shard
     pub fn replace_shard(&mut self, shard_id: ShardId, shard: Shard) -> Option<Shard> {
-        let old_shard = self.shards.remove(&shard_id);
-        self.shards.insert(shard_id, shard);
-        old_shard
+        self.shards.insert(shard_id, shard)
     }
 
     pub fn get_shard(&self, shard_id: &ShardId) -> Option<&Shard> {
         self.shards.get(shard_id)
+    }
+
+    pub fn get_mut_shard(&mut self, shard_id: &ShardId) -> Option<&mut Shard> {
+        self.shards.get_mut(shard_id)
     }
 
     pub fn get_shards(&self) -> impl Iterator<Item = (&ShardId, &Shard)> {
@@ -77,6 +79,10 @@ impl ShardHolder {
 
     pub fn get_temporary_shard(&self, shard_id: &ShardId) -> Option<&Shard> {
         self.temporary_shards.get(shard_id)
+    }
+
+    pub fn take_temporary_shard(&mut self, shard_id: &ShardId) -> Option<Shard> {
+        self.temporary_shards.remove(shard_id)
     }
 
     pub fn all_temporary_shards(&self) -> impl Iterator<Item = &Shard> {
@@ -113,44 +119,12 @@ impl ShardHolder {
         self.temporary_shards.remove(&shard_id)
     }
 
-    pub fn start_shard_transfer(
-        &mut self,
-        shard_id: ShardId,
-        to_peer: PeerId,
-        this_peer: PeerId,
-    ) -> CollectionResult<ShardTransfer> {
-        let shard = self.shards.get(&shard_id).ok_or_else(|| {
-            CollectionError::service_error("Shard {shard_id} is absent".to_owned())
-        })?;
-        let from_peer = shard.peer_id(this_peer);
-        let shard_transfer = ShardTransfer {
-            from: from_peer,
-            to: to_peer,
-        };
-        self.shard_transfers
-            .insert(shard_id, shard_transfer.clone());
-        Ok(shard_transfer)
+    pub fn register_start_shard_transfer(&mut self, transfer: ShardTransfer) -> bool {
+        self.shard_transfers.insert(transfer)
     }
 
-    pub async fn finish_transfer(
-        &mut self,
-        collection_id: &CollectionId,
-        shard_id: ShardId,
-    ) -> CollectionResult<()> {
-        // remove on-going transfer for `shard_id`
-        let transfer = self.shard_transfers.remove(&shard_id).ok_or_else(|| {
-            CollectionError::service_error(format!(
-                "Shard transfer data for {collection_id}:{shard_id} is absent at the end of the transfer."
-            ))
-        })?;
-
-        // update peer's id if `shard_id` is a remote shard
-        if let Shard::Remote(shard) = self.shards.get_mut(&shard_id).ok_or_else(|| {
-            CollectionError::service_error("Shard {collection_id}:{shard_id} is absent".to_owned())
-        })? {
-            shard.peer_id = transfer.to;
-        };
-        Ok(())
+    pub fn register_finish_transfer(&mut self, transfer: &ShardTransfer) -> bool {
+        self.shard_transfers.remove(transfer)
     }
 
     pub fn target_shards(&self, shard_selection: Option<ShardId>) -> CollectionResult<Vec<&Shard>> {
@@ -175,6 +149,7 @@ impl ShardHolder {
                     Some(shard) => match *shard {
                         Shard::Local(_) => shard,
                         Shard::Proxy(_) => shard,
+                        Shard::ForwardProxy(_) => shard,
                         Shard::Remote(_) => {
                             // check temporary shards if the target is a remote shard
                             let temporary_shard_opt = self.get_temporary_shard(&shard_selection);
@@ -293,6 +268,7 @@ impl LockedShardHolder {
             Some(shard) => match &*shard {
                 Shard::Local(_) => Ok(shard),
                 Shard::Proxy(_) => Ok(shard),
+                Shard::ForwardProxy(_) => Ok(shard),
                 Shard::Remote(_) => Err(CollectionError::bad_shard_selection(format!(
                     "Shard {} is not local on peer",
                     id

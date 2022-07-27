@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use super::types::{CollectionError, CollectionResult};
 use super::{point_to_shard, split_iter_by_shard, OperationToShard, SplitByShard, Validate};
 use crate::hash_ring::HashRing;
-use crate::operations::types::VectorType;
+use crate::operations::types::{Record, VectorType};
 use crate::shard::ShardId;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -21,6 +21,22 @@ pub struct PointStruct {
     pub vector: VectorType,
     /// Payload values (optional)
     pub payload: Option<Payload>,
+}
+
+/// Warn: panics if the vector is empty
+impl TryFrom<Record> for PointStruct {
+    type Error = String;
+
+    fn try_from(record: Record) -> Result<Self, Self::Error> {
+        match record.vector {
+            Some(vector) => Ok(Self {
+                id: record.id,
+                vector,
+                payload: record.payload,
+            }),
+            None => Err("Vector is empty".to_string()),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone)]
