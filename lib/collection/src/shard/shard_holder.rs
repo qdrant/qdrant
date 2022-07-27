@@ -65,6 +65,10 @@ impl ShardHolder {
         self.shards.insert(shard_id, shard)
     }
 
+    pub fn contains_shard(&self, shard_id: &ShardId) -> bool {
+        self.shards.contains_key(shard_id)
+    }
+
     pub fn get_shard(&self, shard_id: &ShardId) -> Option<&Shard> {
         self.shards.get(shard_id)
     }

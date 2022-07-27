@@ -232,6 +232,11 @@ impl Collection {
         }
     }
 
+    pub async fn contains_shard(&self, shard_id: &ShardId) -> bool {
+        let shard_holder_read = self.shards_holder.read().await;
+        shard_holder_read.contains_shard(shard_id)
+    }
+
     async fn send_shard<OF, OE>(&self, transfer: ShardTransfer, on_finish: OF, on_error: OE)
     where
         OF: Future<Output = ()> + Send + 'static,

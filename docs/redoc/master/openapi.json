@@ -819,6 +819,82 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "collections",
+          "cluster"
+        ],
+        "summary": "Update collection cluster setup",
+        "operationId": "update_collection_cluster",
+        "requestBody": {
+          "description": "Collection cluster update operations",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClusterOperations"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/collections/{collection_name}/snapshots": {
@@ -4402,6 +4478,18 @@
               }
             },
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "ForwardProxy"
+            ],
+            "properties": {
+              "ForwardProxy": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
           }
         ]
       },
@@ -4697,6 +4785,42 @@
               "format": "uint",
               "minimum": 0
             }
+          }
+        }
+      },
+      "ClusterOperations": {
+        "oneOf": [
+          {
+            "description": "Move shard to a different peer",
+            "type": "object",
+            "required": [
+              "move_shard"
+            ],
+            "properties": {
+              "move_shard": {
+                "$ref": "#/components/schemas/MoveShard"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "MoveShard": {
+        "type": "object",
+        "required": [
+          "peer_id",
+          "shard_id"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
           }
         }
       }
