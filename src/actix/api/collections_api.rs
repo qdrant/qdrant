@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use actix_web::rt::time::Instant;
@@ -26,26 +25,23 @@ impl WaitTimeout {
 }
 
 #[get("/collections")]
-async fn get_collections(toc: web::Data<Arc<TableOfContent>>) -> impl Responder {
+async fn get_collections(toc: web::Data<TableOfContent>) -> impl Responder {
     let timing = Instant::now();
-    let response = Ok(do_list_collections(&toc.into_inner()).await);
+    let response = Ok(do_list_collections(toc.get_ref()).await);
     process_response(response, timing)
 }
 
 #[get("/collections/{name}")]
-async fn get_collection(
-    toc: web::Data<Arc<TableOfContent>>,
-    path: web::Path<String>,
-) -> impl Responder {
+async fn get_collection(toc: web::Data<TableOfContent>, path: web::Path<String>) -> impl Responder {
     let name = path.into_inner();
     let timing = Instant::now();
-    let response = do_get_collection(&toc.into_inner(), &name, None).await;
+    let response = do_get_collection(toc.get_ref(), &name, None).await;
     process_response(response, timing)
 }
 
 #[put("/collections/{name}")]
 async fn create_collection(
-    dispatcher: web::Data<Arc<Dispatcher>>,
+    dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
     operation: web::Json<CreateCollection>,
     web::Query(query): web::Query<WaitTimeout>,
@@ -66,7 +62,7 @@ async fn create_collection(
 
 #[patch("/collections/{name}")]
 async fn update_collection(
-    dispatcher: web::Data<Arc<Dispatcher>>,
+    dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
     operation: web::Json<UpdateCollection>,
     web::Query(query): web::Query<WaitTimeout>,
@@ -87,7 +83,7 @@ async fn update_collection(
 
 #[delete("/collections/{name}")]
 async fn delete_collection(
-    dispatcher: web::Data<Arc<Dispatcher>>,
+    dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
     web::Query(query): web::Query<WaitTimeout>,
 ) -> impl Responder {
@@ -104,7 +100,7 @@ async fn delete_collection(
 
 #[post("/collections/aliases")]
 async fn update_aliases(
-    dispatcher: web::Data<Arc<Dispatcher>>,
+    dispatcher: web::Data<Dispatcher>,
     operation: web::Json<ChangeAliasesOperation>,
     web::Query(query): web::Query<WaitTimeout>,
 ) -> impl Responder {
@@ -120,12 +116,12 @@ async fn update_aliases(
 
 #[get("/collections/{name}/cluster")]
 async fn get_cluster_info(
-    toc: web::Data<Arc<TableOfContent>>,
+    toc: web::Data<TableOfContent>,
     path: web::Path<String>,
 ) -> impl Responder {
     let name = path.into_inner();
     let timing = Instant::now();
-    let response = do_get_collection_cluster(&toc.into_inner(), &name).await;
+    let response = do_get_collection_cluster(toc.get_ref(), &name).await;
     process_response(response, timing)
 }
 

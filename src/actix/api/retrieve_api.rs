@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use actix_web::rt::time::Instant;
 use actix_web::{get, post, web, Responder};
 use collection::operations::types::{PointRequest, Record, ScrollRequest, ScrollResult};
@@ -35,7 +33,7 @@ async fn scroll_get_points(
 
 #[get("/collections/{name}/points/{id}")]
 pub async fn get_point(
-    toc: web::Data<Arc<TableOfContent>>,
+    toc: web::Data<TableOfContent>,
     path: web::Path<(String, String)>,
 ) -> impl Responder {
     let timing = Instant::now();
@@ -54,7 +52,7 @@ pub async fn get_point(
         }
     };
 
-    let response = do_get_point(&toc.into_inner(), &collection_name, point_id).await;
+    let response = do_get_point(toc.get_ref(), &collection_name, point_id).await;
 
     let response = match response {
         Ok(record) => match record {
@@ -70,33 +68,26 @@ pub async fn get_point(
 
 #[post("/collections/{name}/points")]
 pub async fn get_points(
-    toc: web::Data<Arc<TableOfContent>>,
+    toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     request: web::Json<PointRequest>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
     let timing = Instant::now();
 
-    let response = do_get_points(
-        &toc.into_inner(),
-        &collection_name,
-        request.into_inner(),
-        None,
-    )
-    .await;
+    let response = do_get_points(toc.get_ref(), &collection_name, request.into_inner(), None).await;
     process_response(response, timing)
 }
 
 #[post("/collections/{name}/points/scroll")]
 pub async fn scroll_points(
-    toc: web::Data<Arc<TableOfContent>>,
+    toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     request: web::Json<ScrollRequest>,
 ) -> impl Responder {
     let collection_name = path.into_inner();
     let timing = Instant::now();
 
-    let response =
-        scroll_get_points(&toc.into_inner(), &collection_name, request.into_inner()).await;
+    let response = scroll_get_points(toc.get_ref(), &collection_name, request.into_inner()).await;
     process_response(response, timing)
 }

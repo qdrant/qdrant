@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{get, web, Responder};
@@ -18,7 +16,7 @@ pub struct TelemetryParam {
 
 #[get("/telemetry")]
 async fn telemetry(
-    telemetry_collector: web::Data<Arc<Mutex<TelemetryCollector>>>,
+    telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
     params: Query<TelemetryParam>,
 ) -> impl Responder {
     let timing = Instant::now();
