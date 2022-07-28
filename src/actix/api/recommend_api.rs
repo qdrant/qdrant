@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use collection::operations::types::RecommendRequest;
@@ -19,14 +17,14 @@ async fn do_recommend_points(
 
 #[post("/collections/{name}/points/recommend")]
 pub async fn recommend_points(
-    toc: web::Data<Arc<TableOfContent>>,
+    toc: web::Data<TableOfContent>,
     path: web::Path<String>,
     request: web::Json<RecommendRequest>,
 ) -> impl Responder {
     let name = path.into_inner();
     let timing = Instant::now();
 
-    let response = do_recommend_points(&toc.into_inner(), &name, request.into_inner()).await;
+    let response = do_recommend_points(toc.get_ref(), &name, request.into_inner()).await;
 
     process_response(response, timing)
 }
