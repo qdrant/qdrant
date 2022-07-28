@@ -4096,7 +4096,8 @@
           "local_shards",
           "peer_id",
           "remote_shards",
-          "shard_count"
+          "shard_count",
+          "shard_transfers"
         ],
         "properties": {
           "peer_id": {
@@ -4123,6 +4124,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/RemoteShardInfo"
+            }
+          },
+          "shard_transfers": {
+            "description": "Shard transfers",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShardTransferInfo"
             }
           }
         }
@@ -4163,6 +4171,25 @@
           },
           "peer_id": {
             "description": "Remote peer id",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        }
+      },
+      "ShardTransferInfo": {
+        "type": "object",
+        "required": [
+          "shard_id",
+          "to"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "to": {
             "type": "integer",
             "format": "uint64",
             "minimum": 0
