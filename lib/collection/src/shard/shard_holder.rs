@@ -65,6 +65,10 @@ impl ShardHolder {
         self.shards.insert(shard_id, shard)
     }
 
+    pub fn contains_shard(&self, shard_id: &ShardId) -> bool {
+        self.shards.contains_key(shard_id)
+    }
+
     pub fn get_shard(&self, shard_id: &ShardId) -> Option<&Shard> {
         self.shards.get(shard_id)
     }
@@ -91,6 +95,10 @@ impl ShardHolder {
 
     pub fn all_temporary_shards(&self) -> impl Iterator<Item = &Shard> {
         self.temporary_shards.values()
+    }
+
+    pub fn get_shard_transfers(&self) -> impl Iterator<Item = &ShardTransfer> {
+        self.shard_transfers.iter()
     }
 
     pub fn split_by_shard<O: SplitByShard + Clone>(&self, operation: O) -> Vec<(&Shard, O)> {

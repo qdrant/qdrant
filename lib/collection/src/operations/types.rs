@@ -99,6 +99,14 @@ pub struct CollectionClusterInfo {
     pub local_shards: Vec<LocalShardInfo>,
     /// Remote shards
     pub remote_shards: Vec<RemoteShardInfo>,
+    /// Shard transfers
+    pub shard_transfers: Vec<ShardTransferInfo>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ShardTransferInfo {
+    pub shard_id: ShardId,
+    pub to: PeerId,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

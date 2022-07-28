@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use actix_web::rt::time::Instant;
 use actix_web::{delete, get, patch, post, put, web, Responder};
+use collection::operations::cluster_ops::ClusterOperations;
 use serde::Deserialize;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
@@ -125,6 +126,28 @@ async fn get_cluster_info(
     process_response(response, timing)
 }
 
+#[post("/collections/{name}/cluster")]
+async fn update_collection_cluster(
+    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<String>,
+    operation: web::Json<ClusterOperations>,
+    web::Query(query): web::Query<WaitTimeout>,
+) -> impl Responder {
+    let timing = Instant::now();
+    let name = path.into_inner();
+    let wait_timeout = query.timeout();
+    let response = do_update_collection_cluster(
+        toc.get_ref(),
+        name,
+        operation.0,
+        &dispatcher.into_inner(),
+        wait_timeout,
+    )
+    .await;
+    process_response(response, timing)
+}
+
 // Configure services
 pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
     cfg.service(get_collections)
@@ -133,7 +156,8 @@ pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
         .service(update_collection)
         .service(delete_collection)
         .service(update_aliases)
-        .service(get_cluster_info);
+        .service(get_cluster_info)
+        .service(update_collection_cluster);
 }
 
 #[cfg(test)]

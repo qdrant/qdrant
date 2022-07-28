@@ -28,7 +28,7 @@ use crate::operations::snapshot_ops::{
 use crate::operations::types::{
     CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
     CountResult, LocalShardInfo, PointRequest, RecommendRequest, Record, RemoteShardInfo,
-    ScrollRequest, ScrollResult, SearchRequest, UpdateResult,
+    ScrollRequest, ScrollResult, SearchRequest, ShardTransferInfo, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;
@@ -43,7 +43,6 @@ use crate::shard::transfer::shard_transfer::{
     promote_temporary_shard_to_local, revert_proxy_shard_to_local, spawn_transfer_task,
 };
 use crate::shard::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
-use crate::shard::Shard::Local;
 use crate::shard::{
     create_shard_dir, ChannelService, CollectionId, PeerId, Shard, ShardId, ShardOperation,
     ShardTransfer, HASH_RING_SHARD_SCALE,
@@ -230,6 +229,11 @@ impl Collection {
             channel_service,
             transfer_tasks: Mutex::new(TransferTasksPool::default()),
         }
+    }
+
+    pub async fn contains_shard(&self, shard_id: &ShardId) -> bool {
+        let shard_holder_read = self.shards_holder.read().await;
+        shard_holder_read.contains_shard(shard_id)
     }
 
     async fn send_shard<OF, OE>(&self, transfer: ShardTransfer, on_finish: OF, on_error: OE)
@@ -423,7 +427,7 @@ impl Collection {
             existing_temporary_shard.before_drop().await;
 
             match existing_temporary_shard {
-                Local(local_shard) => {
+                Shard::Local(local_shard) => {
                     let old_shard_path = local_shard.shard_path();
                     // Delete existing folder
                     drop(local_shard);
@@ -954,15 +958,17 @@ impl Collection {
     }
 
     pub async fn cluster_info(&self, peer_id: PeerId) -> CollectionResult<CollectionClusterInfo> {
-        let shards = self.shards_holder.read().await;
-        let shard_count = shards.len();
+        let shards_holder = self.shards_holder.read().await;
+        let shard_count = shards_holder.len();
         let mut local_shards = Vec::new();
         let mut remote_shards = Vec::new();
+        let mut shard_transfers = Vec::new();
         let count_request = Arc::new(CountRequest {
             filter: None,
             exact: true,
         });
-        for (shard_id, shard) in shards.get_shards() {
+        // extract shards info
+        for (shard_id, shard) in shards_holder.get_shards() {
             let shard_id = *shard_id;
             match shard {
                 Shard::Local(ls) => {
@@ -995,15 +1001,24 @@ impl Collection {
                 }
             }
         }
+        // extract shard transfers info
+        for shard_transfer in shards_holder.get_shard_transfers() {
+            let shard_id = shard_transfer.shard_id;
+            let to = shard_transfer.to;
+            shard_transfers.push(ShardTransferInfo { shard_id, to })
+        }
+
         // sort by shard_id
         local_shards.sort_by_key(|k| k.shard_id);
         remote_shards.sort_by_key(|k| k.shard_id);
+        shard_transfers.sort_by_key(|k| k.shard_id);
 
         let info = CollectionClusterInfo {
             peer_id,
             shard_count,
             local_shards,
             remote_shards,
+            shard_transfers,
         };
         Ok(info)
     }
