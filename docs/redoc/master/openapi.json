@@ -4091,6 +4091,7 @@
           "cluster_status",
           "collections",
           "configs",
+          "grpc_calls_statsistics",
           "id",
           "system",
           "web"
@@ -4116,6 +4117,9 @@
           },
           "web": {
             "$ref": "#/components/schemas/WebApiTelemetry"
+          },
+          "grpc_calls_statsistics": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
           },
           "cluster_status": {
             "$ref": "#/components/schemas/ClusterStatus"
@@ -4398,6 +4402,18 @@
             ],
             "properties": {
               "Proxy": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "ForwardProxy"
+            ],
+            "properties": {
+              "ForwardProxy": {
                 "type": "object"
               }
             },
