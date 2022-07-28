@@ -19,8 +19,36 @@ pub struct TelemetryCollector {
     process_id: Uuid,
     settings: Settings,
     dispatcher: Arc<Dispatcher>,
+    pub actix_telemetry_collector: Arc<parking_lot::Mutex<ActixTelemetryCollector>>,
+    pub tonic_telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
+}
+
+pub struct ActixTelemetryCollector {
     web_workers_telemetry: Vec<Arc<Mutex<WebApiTelemetry>>>,
+}
+
+pub struct TonicTelemetryCollector {
     grpc_calls_aggregators: Vec<Arc<parking_lot::Mutex<TelemetryOperationAggregator>>>,
+}
+
+impl ActixTelemetryCollector {
+    pub fn create_web_worker_telemetry(&mut self) -> Arc<Mutex<WebApiTelemetry>> {
+        let web_worker_telemetry = Arc::new(Mutex::new(WebApiTelemetry::default()));
+        self.web_workers_telemetry
+            .push(web_worker_telemetry.clone());
+        web_worker_telemetry
+    }
+}
+
+impl TonicTelemetryCollector {
+    pub fn create_grpc_telemetry_collector(
+        &mut self,
+    ) -> Arc<parking_lot::Mutex<TelemetryOperationAggregator>> {
+        let grpc_calls_aggregator = TelemetryOperationAggregator::new();
+        self.grpc_calls_aggregators
+            .push(grpc_calls_aggregator.clone());
+        grpc_calls_aggregator
+    }
 }
 
 // Whole telemtry data
@@ -218,25 +246,13 @@ impl TelemetryCollector {
             process_id: Uuid::new_v4(),
             settings,
             dispatcher,
-            web_workers_telemetry: Vec::new(),
-            grpc_calls_aggregators: Vec::new(),
+            actix_telemetry_collector: Arc::new(parking_lot::Mutex::new(ActixTelemetryCollector {
+                web_workers_telemetry: Vec::new(),
+            })),
+            tonic_telemetry_collector: Arc::new(parking_lot::Mutex::new(TonicTelemetryCollector {
+                grpc_calls_aggregators: Vec::new(),
+            })),
         }
-    }
-
-    pub fn create_web_worker_telemetry(&mut self) -> Arc<Mutex<WebApiTelemetry>> {
-        let web_worker_telemetry = Arc::new(Mutex::new(WebApiTelemetry::default()));
-        self.web_workers_telemetry
-            .push(web_worker_telemetry.clone());
-        web_worker_telemetry
-    }
-
-    pub fn create_grpc_telemetry_collector(
-        &mut self,
-    ) -> Arc<parking_lot::Mutex<TelemetryOperationAggregator>> {
-        let grpc_calls_aggregator = TelemetryOperationAggregator::new();
-        self.grpc_calls_aggregators
-            .push(grpc_calls_aggregator.clone());
-        grpc_calls_aggregator
     }
 
     pub async fn prepare_data(&self) -> TelemetryData {
@@ -336,8 +352,9 @@ impl TelemetryCollector {
     }
 
     async fn get_web_data(&self) -> WebApiTelemetry {
+        let actix_telemetry_collector = self.actix_telemetry_collector.lock();
         let mut result = WebApiTelemetry::default();
-        for web_data in &self.web_workers_telemetry {
+        for web_data in &actix_telemetry_collector.web_workers_telemetry {
             let lock = web_data.lock().await;
             result.merge(&lock);
         }
@@ -345,15 +362,16 @@ impl TelemetryCollector {
     }
 
     fn grpc_calls_statsistics(&self) -> TelemetryOperationStatistics {
+        let tonic_telemetry_collector = self.tonic_telemetry_collector.lock();
         let mut result = TelemetryOperationStatistics::default();
-        for grps_calls in &self.grpc_calls_aggregators {
+        for grps_calls in &tonic_telemetry_collector.grpc_calls_aggregators {
             let stats = grps_calls.lock().get_statistics();
             result.ok_count += stats.ok_count;
             result.fail_count += stats.fail_count;
             result.ok_avg_time += stats.ok_avg_time;
         }
-        if !self.grpc_calls_aggregators.is_empty() {
-            result.ok_avg_time /= self.grpc_calls_aggregators.len() as u32;
+        if !tonic_telemetry_collector.grpc_calls_aggregators.is_empty() {
+            result.ok_avg_time /= tonic_telemetry_collector.grpc_calls_aggregators.len() as u32;
         }
         result
     }

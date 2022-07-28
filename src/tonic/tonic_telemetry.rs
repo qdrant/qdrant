@@ -6,7 +6,7 @@ use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
 use tower::Service;
 use tower_layer::Layer;
 
-use crate::common::telemetry::TelemetryCollector;
+use crate::common::telemetry::TonicTelemetryCollector;
 
 #[derive(Clone)]
 pub struct TonicTelemetryService<T> {
@@ -16,7 +16,7 @@ pub struct TonicTelemetryService<T> {
 
 #[derive(Clone)]
 pub struct TonicTelemetryLayer {
-    telemetry_collector: Arc<parking_lot::Mutex<TelemetryCollector>>,
+    telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
 }
 
 impl<S, Request> Service<Request> for TonicTelemetryService<S>
@@ -45,7 +45,7 @@ where
 
 impl TonicTelemetryLayer {
     pub fn new(
-        telemetry_collector: Arc<parking_lot::Mutex<TelemetryCollector>>,
+        telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     ) -> TonicTelemetryLayer {
         Self {
             telemetry_collector,

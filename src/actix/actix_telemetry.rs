@@ -6,7 +6,7 @@ use actix_web::Error;
 use futures_util::future::LocalBoxFuture;
 use tokio::sync::Mutex;
 
-use crate::common::telemetry::{TelemetryCollector, WebApiTelemetry};
+use crate::common::telemetry::{ActixTelemetryCollector, WebApiTelemetry};
 
 pub struct ActixTelemetryService<S> {
     service: S,
@@ -14,7 +14,7 @@ pub struct ActixTelemetryService<S> {
 }
 
 pub struct ActixTelemetryTransform {
-    telemetry_collector: Arc<parking_lot::Mutex<TelemetryCollector>>,
+    telemetry_collector: Arc<parking_lot::Mutex<ActixTelemetryCollector>>,
 }
 
 /// Actix telemetry service. It hooks every request and looks into response status code.
@@ -46,7 +46,7 @@ where
 }
 
 impl ActixTelemetryTransform {
-    pub fn new(telemetry_collector: Arc<parking_lot::Mutex<TelemetryCollector>>) -> Self {
+    pub fn new(telemetry_collector: Arc<parking_lot::Mutex<ActixTelemetryCollector>>) -> Self {
         Self {
             telemetry_collector,
         }

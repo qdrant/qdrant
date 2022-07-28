@@ -18,7 +18,7 @@ use tokio::{runtime, signal};
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-use crate::common::telemetry::TelemetryCollector;
+use crate::common::telemetry::TonicTelemetryCollector;
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::collections_internal_api::CollectionsInternalService;
 use crate::tonic::api::points_api::PointsService;
@@ -40,7 +40,7 @@ impl Qdrant for QdrantService {
 
 pub fn init(
     dispatcher: Arc<Dispatcher>,
-    telemetry_collector: Arc<parking_lot::Mutex<TelemetryCollector>>,
+    telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     host: String,
     grpc_port: u16,
 ) -> std::io::Result<()> {
@@ -84,7 +84,7 @@ pub fn init(
 
 pub fn init_internal(
     dispatcher: Arc<Dispatcher>,
-    telemetry_collector: Arc<parking_lot::Mutex<TelemetryCollector>>,
+    telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     host: String,
     internal_grpc_port: u16,
     to_consensus: std::sync::mpsc::SyncSender<crate::consensus::Message>,

@@ -52,13 +52,18 @@ pub async fn index() -> impl Responder {
 #[allow(dead_code)]
 pub fn init(
     dispatcher: Arc<Dispatcher>,
-    telemetry_collector: Arc<parking_lot::Mutex<TelemetryCollector>>,
+    telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
     settings: Settings,
 ) -> std::io::Result<()> {
     actix_web::rt::System::new().block_on(async {
         let toc_data = web::Data::new(dispatcher.toc().clone());
         let dispatcher_data = web::Data::new(dispatcher);
-        let telemetry_data = web::Data::new(telemetry_collector.clone());
+        let telemetry_collector_data = web::Data::new(telemetry_collector.clone());
+        let actix_telemetry_collector = telemetry_collector
+            .lock()
+            .await
+            .actix_telemetry_collector
+            .clone();
         HttpServer::new(move || {
             let cors = Cors::default()
                 .allow_any_origin()
@@ -69,11 +74,11 @@ pub fn init(
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(Logger::default())
                 .wrap(actix_telemetry::ActixTelemetryTransform::new(
-                    telemetry_collector.clone(),
+                    actix_telemetry_collector.clone(),
                 ))
                 .app_data(dispatcher_data.clone())
                 .app_data(toc_data.clone())
-                .app_data(telemetry_data.clone())
+                .app_data(telemetry_collector_data.clone())
                 .app_data(Data::new(
                     web::JsonConfig::default()
                         .limit(32 * 1024 * 1024)
