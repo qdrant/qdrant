@@ -197,10 +197,16 @@ def collection_exists_on_all_peers(collection_name: str, peer_api_uris: [str]) -
     return True
 
 
-def check_collection_local_shard(collection_name: str, peer_api_uri: str, expected_local_shard_count: int) -> bool:
+def check_collection_local_shards_count(peer_api_uri: str, collection_name: str, expected_local_shard_count: int) -> bool:
     collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
     local_shard_count = len(collection_cluster_info["local_shards"])
     return local_shard_count == expected_local_shard_count
+
+
+def check_collection_shard_transfers_count(peer_api_uri: str, collection_name: str, expected_shard_transfers_count: int) -> bool:
+    collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
+    local_shard_count = len(collection_cluster_info["shard_transfers"])
+    return local_shard_count == expected_shard_transfers_count
 
 
 WAIT_TIME_SEC = 60
@@ -228,9 +234,17 @@ def wait_for_uniform_collection_existence(collection_name: str, peer_api_uris: [
         raise e
 
 
-def wait_for_collection_local_shard_count(peer_api_uri: str, collection_name: str, expected_local_shard_count: int):
+def wait_for_collection_shard_transfers_count(peer_api_uri: str, collection_name: str, expected_shard_transfer_count: int):
     try:
-        wait_for(check_collection_local_shard, collection_name, peer_api_uri, expected_local_shard_count)
+        wait_for(check_collection_shard_transfers_count, peer_api_uri, collection_name, expected_shard_transfer_count)
+    except Exception as e:
+        print_collection_cluster_info(peer_api_uri, collection_name)
+        raise e
+
+
+def wait_for_collection_local_shards_count(peer_api_uri: str, collection_name: str, expected_local_shard_count: int):
+    try:
+        wait_for(check_collection_local_shards_count, peer_api_uri, collection_name, expected_local_shard_count)
     except Exception as e:
         print_collection_cluster_info(peer_api_uri, collection_name)
         raise e

@@ -99,7 +99,7 @@ def test_collection_shard_transfer(tmp_path: pathlib.Path):
     before_local_shard_count = len(collection_cluster_info["local_shards"])
     shard_id = collection_cluster_info["local_shards"][0]["shard_id"]
 
-    # Move shard
+    # Move shard `shard_id` to peer `target_peer_id`
     r = requests.post(
         f"{peer_api_uris[0]}/collections/test_collection/cluster", json={
             "move_shard": {
@@ -109,8 +109,14 @@ def test_collection_shard_transfer(tmp_path: pathlib.Path):
         })
     assert_http_ok(r)
 
-    # Wait until the number of local shard goes does by 1
-    wait_for_collection_local_shard_count(peer_api_uris[0], "test_collection", before_local_shard_count - 1)
+    # Wait until the number of shard transfers is equal to 1
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], "test_collection", 1)
+
+    # Wait for end of shard transfer
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], "test_collection", 0)
+
+    # Check the number of local shard goes does by 1
+    assert check_collection_local_shards_count(peer_api_uris[0], "test_collection", before_local_shard_count - 1)
 
     # Check that 'search' returns the same results on all peers
     for uri in peer_api_uris:
