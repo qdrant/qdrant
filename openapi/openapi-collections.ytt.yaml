@@ -201,3 +201,31 @@ paths:
           schema:
             type: string
       responses: #@ response(reference("CollectionClusterInfo"))
+
+    post:
+      tags:
+        - collections
+        - cluster
+      summary: Update collection cluster setup
+      operationId: update_collection_cluster
+      requestBody:
+        description: Collection cluster update operations
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClusterOperations"
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection on which to to apply the cluster update operation
+          required: true
+          schema:
+            type: string
+        - name: timeout
+          in: query
+          description: |
+            Wait for operation commit timeout in seconds. 
+            If timeout is reached - request will return with service error.
+          schema:
+            type: integer
+      responses: #@ response(type("boolean"))

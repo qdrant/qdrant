@@ -1,3 +1,4 @@
+pub mod cluster_ops;
 pub mod config_diff;
 mod conversions;
 pub mod operation_effect;

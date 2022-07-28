@@ -47,8 +47,11 @@ def get_uri(port: int) -> str:
 
 def assert_http_ok(response: requests.Response):
     if response.status_code != 200:
-        raise Exception(
-            f"Http request failed with status {response.status_code} and contents: {response.json()}")
+        if not response.content:
+            raise Exception(f"Http request failed with status {response.status_code} and no content")
+        else:
+            raise Exception(
+                f"Http request failed with status {response.status_code} and contents:\n{response.json()}")
 
 
 def assert_project_root():
@@ -186,11 +189,24 @@ def collection_exists_on_all_peers(collection_name: str, peer_api_uris: [str]) -
         collections = r.json()["result"]["collections"]
         filtered_collections = [c for c in collections if c['name'] == collection_name]
         if len(filtered_collections) == 0:
-            print(f"Collection '{collection_name}' does not exist on peer {uri} found {json.dumps(collections, indent=4)}")
+            print(
+                f"Collection '{collection_name}' does not exist on peer {uri} found {json.dumps(collections, indent=4)}")
             return False
         else:
             continue
     return True
+
+
+def check_collection_local_shards_count(peer_api_uri: str, collection_name: str, expected_local_shard_count: int) -> bool:
+    collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
+    local_shard_count = len(collection_cluster_info["local_shards"])
+    return local_shard_count == expected_local_shard_count
+
+
+def check_collection_shard_transfers_count(peer_api_uri: str, collection_name: str, expected_shard_transfers_count: int) -> bool:
+    collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
+    local_shard_count = len(collection_cluster_info["shard_transfers"])
+    return local_shard_count == expected_shard_transfers_count
 
 
 WAIT_TIME_SEC = 60
@@ -215,6 +231,22 @@ def wait_for_uniform_collection_existence(collection_name: str, peer_api_uris: [
         wait_for(collection_exists_on_all_peers, collection_name, peer_api_uris)
     except Exception as e:
         print_clusters_info(peer_api_uris)
+        raise e
+
+
+def wait_for_collection_shard_transfers_count(peer_api_uri: str, collection_name: str, expected_shard_transfer_count: int):
+    try:
+        wait_for(check_collection_shard_transfers_count, peer_api_uri, collection_name, expected_shard_transfer_count)
+    except Exception as e:
+        print_collection_cluster_info(peer_api_uri, collection_name)
+        raise e
+
+
+def wait_for_collection_local_shards_count(peer_api_uri: str, collection_name: str, expected_local_shard_count: int):
+    try:
+        wait_for(check_collection_local_shards_count, peer_api_uri, collection_name, expected_local_shard_count)
+    except Exception as e:
+        print_collection_cluster_info(peer_api_uri, collection_name)
         raise e
 
 

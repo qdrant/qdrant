@@ -56,8 +56,8 @@ pub fn init(
     settings: Settings,
 ) -> std::io::Result<()> {
     actix_web::rt::System::new().block_on(async {
-        let toc_data = web::Data::new(dispatcher.toc().clone());
-        let dispatcher_data = web::Data::new(dispatcher);
+        let toc_data = web::Data::from(dispatcher.toc().clone());
+        let dispatcher_data = web::Data::from(dispatcher);
         let telemetry_collector_data = web::Data::new(telemetry_collector.clone());
         let actix_telemetry_collector = telemetry_collector
             .lock()

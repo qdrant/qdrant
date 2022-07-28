@@ -1,4 +1,5 @@
 use api::grpc::models::CollectionsResponse;
+use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -49,6 +50,7 @@ struct AllDefinitions {
     ao: CountResult,
     ap: CollectionClusterInfo,
     aq: TelemetryData,
+    ar: ClusterOperations,
 }
 
 fn save_schema<T: JsonSchema>() {
