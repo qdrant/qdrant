@@ -151,7 +151,7 @@ impl TelemetryOperationAggregator {
             let from = if i < SLIDING_WINDOW_LEN {
                 0
             } else {
-                SLIDING_WINDOW_LEN - i
+                i - SLIDING_WINDOW_LEN
             };
             sliding_window_avg[i] = Self::simple_moving_average(&data[from..i + 1]);
         }
