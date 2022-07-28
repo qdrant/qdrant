@@ -3,12 +3,12 @@ use std::path::Path;
 use std::sync::Arc;
 
 use collection::telemetry::CollectionTelemetry;
+use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::telemetry::{Anonymize, TelemetryOperationAggregator, TelemetryOperationStatistics};
 use serde::{Deserialize, Serialize};
 use storage::dispatcher::Dispatcher;
 use storage::types::ClusterStatus;
-use parking_lot::Mutex;
 use uuid::Uuid;
 
 use crate::settings::Settings;
@@ -41,9 +41,7 @@ impl ActixTelemetryCollector {
 }
 
 impl TonicTelemetryCollector {
-    pub fn create_grpc_telemetry_collector(
-        &mut self,
-    ) -> Arc<Mutex<TelemetryOperationAggregator>> {
+    pub fn create_grpc_telemetry_collector(&mut self) -> Arc<Mutex<TelemetryOperationAggregator>> {
         let grpc_calls_aggregator = TelemetryOperationAggregator::new();
         self.grpc_calls_aggregators
             .push(grpc_calls_aggregator.clone());
