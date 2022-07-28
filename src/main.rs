@@ -175,7 +175,7 @@ fn main() -> anyhow::Result<()> {
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
         let (mut consensus, message_sender) = Consensus::new(
             &slog_logger,
-            consensus_state,
+            consensus_state.clone(),
             args.bootstrap,
             args.uri.map(|uri| uri.to_string()),
             settings.cluster.p2p.port.map(|port| port as u32),
@@ -188,7 +188,8 @@ fn main() -> anyhow::Result<()> {
             .name("consensus".to_string())
             .spawn(move || {
                 if let Err(err) = consensus.start() {
-                    log::error!("Consensus stopped with error: {err}")
+                    log::error!("Consensus stopped with error: {err}");
+                    consensus_state.on_consensus_thread_err(err);
                 }
             })?;
 

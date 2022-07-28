@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,7 +21,9 @@ use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
 use crate::content_manager::consensus::entry_queue::EntryId;
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus::persistent::Persistent;
-use crate::types::{ClusterInfo, ClusterStatus, PeerAddressById, PeerInfo, RaftInfo};
+use crate::types::{
+    ClusterInfo, ClusterStatus, ConsensusThreadStatus, PeerAddressById, PeerInfo, RaftInfo,
+};
 
 pub const DEFAULT_META_OP_WAIT: Duration = Duration::from_secs(10);
 
@@ -60,6 +63,7 @@ pub struct ConsensusState<C: CollectionContainer> {
         Mutex<HashMap<ConsensusOperations, oneshot::Sender<Result<bool, StorageError>>>>,
     propose_sender: OperationSender,
     first_voter: RwLock<Option<PeerId>>,
+    consensus_thread_status: RwLock<ConsensusThreadStatus>,
 }
 
 impl<C: CollectionContainer> ConsensusState<C> {
@@ -77,6 +81,13 @@ impl<C: CollectionContainer> ConsensusState<C> {
             on_consensus_op_apply: Default::default(),
             propose_sender,
             first_voter: Default::default(),
+            consensus_thread_status: RwLock::new(ConsensusThreadStatus::Working),
+        }
+    }
+
+    pub fn on_consensus_thread_err<E: Display>(&self, err: E) {
+        *self.consensus_thread_status.write() = ConsensusThreadStatus::StoppedWithErr {
+            err: err.to_string(),
         }
     }
 
@@ -131,6 +142,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
                 role,
                 is_voter,
             },
+            consensus_thread_status: self.consensus_thread_status.read().clone(),
         })
     }
 

@@ -98,6 +98,8 @@ pub struct ClusterInfo {
     pub peers: HashMap<PeerId, PeerInfo>,
     /// Status of the Raft consensus
     pub raft_info: RaftInfo,
+    /// Status of the thread that executes raft consensus
+    pub consensus_thread_status: ConsensusThreadStatus,
 }
 
 /// Information about current cluster status and structure
@@ -107,6 +109,15 @@ pub struct ClusterInfo {
 pub enum ClusterStatus {
     Disabled,
     Enabled(ClusterInfo),
+}
+
+/// Information about current consensus thread status
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(tag = "consensus_thread_status")]
+#[serde(rename_all = "snake_case")]
+pub enum ConsensusThreadStatus {
+    Working,
+    StoppedWithErr { err: String },
 }
 
 impl Anonymize for PeerInfo {
@@ -140,6 +151,7 @@ impl Anonymize for ClusterInfo {
                 .map(|(key, value)| (*key, value.anonymize()))
                 .collect(),
             raft_info: self.raft_info.anonymize(),
+            consensus_thread_status: self.consensus_thread_status.clone(),
         }
     }
 }
