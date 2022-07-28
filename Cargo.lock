@@ -2730,6 +2730,8 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
+ "tower",
+ "tower-layer",
  "uuid",
 ]
 

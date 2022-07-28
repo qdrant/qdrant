@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use collection::telemetry::CollectionTelemetry;
 use schemars::JsonSchema;
-use segment::telemetry::Anonymize;
+use segment::telemetry::{Anonymize, TelemetryOperationAggregator, TelemetryOperationStatistics};
 use serde::{Deserialize, Serialize};
 use storage::dispatcher::Dispatcher;
 use storage::types::ClusterStatus;
@@ -20,6 +20,7 @@ pub struct TelemetryCollector {
     settings: Settings,
     dispatcher: Arc<Dispatcher>,
     web_workers_telemetry: Vec<Arc<Mutex<WebApiTelemetry>>>,
+    grpc_calls_aggregators: Vec<Arc<parking_lot::Mutex<TelemetryOperationAggregator>>>,
 }
 
 // Whole telemtry data
@@ -31,6 +32,7 @@ pub struct TelemetryData {
     configs: ConfigsTelemetry,
     collections: Vec<CollectionTelemetry>,
     web: WebApiTelemetry,
+    grpc_calls_statsistics: TelemetryOperationStatistics,
     cluster_status: ClusterStatus,
 }
 
@@ -110,6 +112,7 @@ impl Anonymize for TelemetryData {
                 .map(|collection| collection.anonymize())
                 .collect(),
             web: self.web.anonymize(),
+            grpc_calls_statsistics: self.grpc_calls_statsistics.anonymize(),
             cluster_status: self.cluster_status.anonymize(),
         }
     }
@@ -216,6 +219,7 @@ impl TelemetryCollector {
             settings,
             dispatcher,
             web_workers_telemetry: Vec::new(),
+            grpc_calls_aggregators: Vec::new(),
         }
     }
 
@@ -226,9 +230,19 @@ impl TelemetryCollector {
         web_worker_telemetry
     }
 
+    pub fn create_grpc_telemetry_collector(
+        &mut self,
+    ) -> Arc<parking_lot::Mutex<TelemetryOperationAggregator>> {
+        let grpc_calls_aggregator = TelemetryOperationAggregator::new();
+        self.grpc_calls_aggregators
+            .push(grpc_calls_aggregator.clone());
+        grpc_calls_aggregator
+    }
+
     pub async fn prepare_data(&self) -> TelemetryData {
         let collections = self.dispatcher.get_telemetry_data().await;
         let cluster_status = self.dispatcher.cluster_status();
+        let grpc_calls_statsistics = self.grpc_calls_statsistics();
         TelemetryData {
             id: self.process_id.to_string(),
             app: self.get_app_data(),
@@ -236,6 +250,7 @@ impl TelemetryCollector {
             configs: self.get_configs_data(),
             collections,
             web: self.get_web_data().await,
+            grpc_calls_statsistics,
             cluster_status,
         }
     }
@@ -325,6 +340,20 @@ impl TelemetryCollector {
         for web_data in &self.web_workers_telemetry {
             let lock = web_data.lock().await;
             result.merge(&lock);
+        }
+        result
+    }
+
+    fn grpc_calls_statsistics(&self) -> TelemetryOperationStatistics {
+        let mut result = TelemetryOperationStatistics::default();
+        for grps_calls in &self.grpc_calls_aggregators {
+            let stats = grps_calls.lock().get_statistics();
+            result.ok_count += stats.ok_count;
+            result.fail_count += stats.fail_count;
+            result.ok_avg_time += stats.ok_avg_time;
+        }
+        if !self.grpc_calls_aggregators.is_empty() {
+            result.ok_avg_time /= self.grpc_calls_aggregators.len() as u32;
         }
         result
     }
