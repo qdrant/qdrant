@@ -4,7 +4,7 @@ use std::sync::Arc;
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::Error;
 use futures_util::future::LocalBoxFuture;
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 use crate::common::telemetry::{ActixTelemetryCollector, WebApiTelemetry};
 
@@ -14,7 +14,7 @@ pub struct ActixTelemetryService<S> {
 }
 
 pub struct ActixTelemetryTransform {
-    telemetry_collector: Arc<parking_lot::Mutex<ActixTelemetryCollector>>,
+    telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>,
 }
 
 /// Actix telemetry service. It hooks every request and looks into response status code.
@@ -39,14 +39,14 @@ where
         Box::pin(async move {
             let response = future.await?;
             let status = response.response().status().as_u16();
-            telemetry_data.lock().await.add_response(status);
+            telemetry_data.lock().add_response(status);
             Ok(response)
         })
     }
 }
 
 impl ActixTelemetryTransform {
-    pub fn new(telemetry_collector: Arc<parking_lot::Mutex<ActixTelemetryCollector>>) -> Self {
+    pub fn new(telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>) -> Self {
         Self {
             telemetry_collector,
         }
