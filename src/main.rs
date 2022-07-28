@@ -163,10 +163,8 @@ fn main() -> anyhow::Result<()> {
     }
     let dispatcher_arc = Arc::new(dispatcher);
 
-    let telemetry_collector = Arc::new(parking_lot::Mutex::new(TelemetryCollector::new(
-        settings.clone(),
-        dispatcher_arc.clone(),
-    )));
+    let telemetry_collector = TelemetryCollector::new(settings.clone(), dispatcher_arc.clone());
+    let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
 
     if settings.cluster.enabled {
         // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
@@ -209,13 +207,13 @@ fn main() -> anyhow::Result<()> {
         if let Some(internal_grpc_port) = settings.cluster.p2p.port {
             let settings = settings.clone();
             let dispatcher_arc = dispatcher_arc.clone();
-            let telemetry_collector = telemetry_collector.clone();
+            let tonic_telemetry_collector = tonic_telemetry_collector.clone();
             let handle = thread::Builder::new()
                 .name("grpc_internal".to_string())
                 .spawn(move || {
                     tonic::init_internal(
                         dispatcher_arc.clone(),
-                        telemetry_collector.clone(),
+                        tonic_telemetry_collector.clone(),
                         settings.service.host,
                         internal_grpc_port,
                         message_sender,
@@ -233,7 +231,7 @@ fn main() -> anyhow::Result<()> {
     #[cfg(feature = "web")]
     {
         let dispatcher_arc = dispatcher_arc.clone();
-        let telemetry_collector = telemetry_collector.clone();
+        let telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry_collector));
         let settings = settings.clone();
         let handle = thread::Builder::new()
             .name("web".to_string())
@@ -249,7 +247,7 @@ fn main() -> anyhow::Result<()> {
             .spawn(move || {
                 tonic::init(
                     dispatcher_arc,
-                    telemetry_collector,
+                    tonic_telemetry_collector,
                     settings.service.host,
                     grpc_port,
                 )
