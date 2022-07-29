@@ -206,7 +206,7 @@ impl SegmentOptimizer for IndexingOptimizer {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
+    use std::num::{NonZeroU32, NonZeroU64};
     use std::ops::Deref;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
@@ -270,7 +270,7 @@ mod tests {
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
             CollectionParams {
-                vector_size: segment_config.vector_size,
+                vector_size: NonZeroU64::new(segment_config.vector_size as u64).unwrap(),
                 distance: segment_config.distance,
                 shard_number: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,

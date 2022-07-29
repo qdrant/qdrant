@@ -270,7 +270,7 @@ impl LocalShard {
         let mut segment_holder = SegmentHolder::default();
         let mut build_handlers = vec![];
 
-        let vector_size = config.params.vector_size;
+        let vector_size = config.params.vector_size.get() as usize;
         let distance = config.params.distance;
         let segment_number = config.optimizer_config.get_number_segments();
 

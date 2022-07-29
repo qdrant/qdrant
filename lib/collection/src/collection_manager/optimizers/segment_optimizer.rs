@@ -65,7 +65,7 @@ pub trait SegmentOptimizer {
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {
         let collection_params = self.collection_params();
         let config = SegmentConfig {
-            vector_size: collection_params.vector_size,
+            vector_size: collection_params.vector_size.get() as usize,
             distance: collection_params.distance,
             index: Indexes::Plain {},
             storage_type: StorageType::InMemory,
@@ -102,7 +102,7 @@ pub trait SegmentOptimizer {
         let is_on_disk = total_vectors_size >= thresholds.memmap_threshold * BYTES_IN_KB;
 
         let optimized_config = SegmentConfig {
-            vector_size: collection_params.vector_size,
+            vector_size: collection_params.vector_size.get() as usize,
             distance: collection_params.distance,
             index: if is_indexed {
                 Indexes::Hnsw(self.hnsw_config())

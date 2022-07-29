@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -225,7 +225,9 @@ impl TableOfContent {
             )
         }
         let collection_params = CollectionParams {
-            vector_size,
+            vector_size: NonZeroU64::new(vector_size as u64).ok_or(StorageError::BadInput {
+                description: "`vector_size` cannot be 0".to_string(),
+            })?,
             distance,
             shard_number: NonZeroU32::new(collection_shard_distribution.shard_count() as u32)
                 .ok_or(StorageError::BadInput {

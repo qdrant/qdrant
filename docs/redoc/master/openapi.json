@@ -2437,8 +2437,8 @@
           "vector_size": {
             "description": "Size of a vectors used",
             "type": "integer",
-            "format": "uint",
-            "minimum": 0
+            "format": "uint64",
+            "minimum": 1
           },
           "distance": {
             "$ref": "#/components/schemas/Distance"
