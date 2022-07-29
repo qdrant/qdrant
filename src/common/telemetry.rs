@@ -58,7 +58,7 @@ pub struct TelemetryData {
     configs: ConfigsTelemetry,
     collections: Vec<CollectionTelemetry>,
     web: WebApiTelemetry,
-    grpc_calls_statsistics: TelemetryOperationStatistics,
+    grpc_calls_statistics: TelemetryOperationStatistics,
     cluster_status: ClusterStatus,
 }
 
@@ -138,7 +138,7 @@ impl Anonymize for TelemetryData {
                 .map(|collection| collection.anonymize())
                 .collect(),
             web: self.web.anonymize(),
-            grpc_calls_statsistics: self.grpc_calls_statsistics.anonymize(),
+            grpc_calls_statistics: self.grpc_calls_statistics.anonymize(),
             cluster_status: self.cluster_status.anonymize(),
         }
     }
@@ -256,7 +256,7 @@ impl TelemetryCollector {
     pub async fn prepare_data(&self) -> TelemetryData {
         let collections = self.dispatcher.get_telemetry_data().await;
         let cluster_status = self.dispatcher.cluster_status();
-        let grpc_calls_statsistics = self.grpc_calls_statsistics();
+        let grpc_calls_statistics = self.grpc_calls_statistics();
         TelemetryData {
             id: self.process_id.to_string(),
             app: self.get_app_data(),
@@ -264,7 +264,7 @@ impl TelemetryCollector {
             configs: self.get_configs_data(),
             collections,
             web: self.get_web_data(),
-            grpc_calls_statsistics,
+            grpc_calls_statistics,
             cluster_status,
         }
     }
@@ -359,7 +359,7 @@ impl TelemetryCollector {
         result
     }
 
-    fn grpc_calls_statsistics(&self) -> TelemetryOperationStatistics {
+    fn grpc_calls_statistics(&self) -> TelemetryOperationStatistics {
         let tonic_telemetry_collector = self.tonic_telemetry_collector.lock();
         let mut result = TelemetryOperationStatistics::default();
         for grps_calls in &tonic_telemetry_collector.grpc_calls_aggregators {
