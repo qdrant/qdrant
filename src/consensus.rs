@@ -243,7 +243,7 @@ impl Consensus {
             } else {
                 timeout -= d;
             }
-            self.on_ready();
+            self.on_ready()?;
         }
     }
 
@@ -330,45 +330,50 @@ impl Consensus {
             .map(|(id, _)| *id)
     }
 
-    fn on_ready(&mut self) {
+    fn on_ready(&mut self) -> anyhow::Result<()> {
         if !self.node.has_ready() {
-            return;
+            return Ok(());
         }
-
-        let store = self.node.store().clone();
         // Get the `Ready` with `RawNode::ready` interface.
-        let mut ready = self.node.ready();
+        let ready = self.node.ready();
+        let light_rd = self.process_ready(ready)?;
+        self.process_light_ready(light_rd)?;
+        Ok(())
+    }
+
+    /// Tries to process raft's ready state.
+    ///
+    /// Returns with err on failure to apply the state.
+    fn process_ready(&mut self, mut ready: raft::Ready) -> anyhow::Result<raft::LightReady> {
+        let store = self.store();
         if !ready.messages().is_empty() {
             log::trace!("Handling {} messages", ready.messages().len());
-            if let Err(err) = self.handle_messages(ready.take_messages(), &store) {
+            if let Err(err) = self.send_messages(ready.take_messages(), &store) {
                 log::error!("Failed to send messages: {err}")
             }
         }
         if !ready.snapshot().is_empty() {
             // This is a snapshot, we need to apply the snapshot at first.
             log::debug!("Applying snapshot");
-            if let Err(err) = store.apply_snapshot(&ready.snapshot().clone()) {
-                log::error!("Failed to apply snapshot: {err}")
-            }
+            store
+                .apply_snapshot(&ready.snapshot().clone())
+                .context("Failed to apply snapshot")?
         }
-        if let Err(err) =
-            handle_committed_entries(ready.take_committed_entries(), &store, &mut self.node)
-        {
-            log::error!("Failed to apply committed entries: {err}")
-        }
+        handle_committed_entries(ready.take_committed_entries(), &store, &mut self.node)
+            .context("Failed to apply committed entries")?;
         if !ready.entries().is_empty() {
             // Append entries to the Raft log.
             log::debug!("Appending {} entries to raft log", ready.entries().len());
-            if let Err(err) = store.append_entries(ready.take_entries()) {
-                log::error!("Failed to append entries: {err}")
-            }
+            store
+                .append_entries(ready.take_entries())
+                .context("Failed to append entries")?;
         }
         if let Some(hs) = ready.hs() {
             // Raft HardState changed, and we need to persist it.
             log::debug!("Changing hard state. New hard state: {hs:?}");
-            if let Err(err) = store.set_hard_state(hs.clone()) {
-                log::error!("Failed to set hard state: {err}")
-            }
+            store
+                .set_hard_state(hs.clone())
+                .context("Failed to set hard state")?;
         }
         if let Some(ss) = ready.ss() {
             log::debug!("Changing soft state. New soft state: {ss:?}");
@@ -379,31 +384,41 @@ impl Consensus {
                 "Handling {} persisted messages",
                 ready.persisted_messages().len()
             );
-            if let Err(err) = self.handle_messages(ready.take_persisted_messages(), &store) {
+            if let Err(err) = self.send_messages(ready.take_persisted_messages(), &store) {
                 log::error!("Failed to send persisted messages: {err}")
             }
         }
 
         // Advance the Raft.
-        let mut light_rd = self.node.advance(ready);
+        let light_rd = self.node.advance(ready);
+        Ok(light_rd)
+    }
+
+    /// Tries to process raft's light ready state.
+    ///
+    /// Returns with err on failure to apply the state.
+    fn process_light_ready(&mut self, mut light_rd: raft::LightReady) -> anyhow::Result<()> {
+        let store = self.store();
         // Update commit index.
         if let Some(commit) = light_rd.commit_index() {
             log::debug!("Updating commit index to {commit}");
-            if let Err(err) = store.set_commit_index(commit) {
-                log::error!("Failed to set commit index: {err}")
-            }
+            store
+                .set_commit_index(commit)
+                .context("Failed to set commit index")?;
         }
-        if let Err(err) = self.handle_messages(light_rd.take_messages(), &store) {
+        if let Err(err) = self.send_messages(light_rd.take_messages(), &store) {
             log::error!("Failed to send messages: {err}")
         }
         // Apply all committed entries.
-        if let Err(err) =
-            handle_committed_entries(light_rd.take_committed_entries(), &store, &mut self.node)
-        {
-            log::error!("Failed to apply committed entries: {err}")
-        }
+        handle_committed_entries(light_rd.take_committed_entries(), &store, &mut self.node)
+            .context("Failed to apply committed entries")?;
         // Advance the apply index.
         self.node.advance_apply();
+        Ok(())
+    }
+
+    fn store(&self) -> ConsensusStateRef {
+        self.node.store().clone()
     }
 
     fn handle_soft_state(&self, state: &SoftState) {
@@ -415,7 +430,7 @@ impl Consensus {
         }
     }
 
-    fn handle_messages(
+    fn send_messages(
         &self,
         messages: Vec<RaftMessage>,
         state: &ConsensusStateRef,

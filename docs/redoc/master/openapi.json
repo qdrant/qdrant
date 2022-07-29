@@ -3926,6 +3926,7 @@
             "description": "Description of enabled cluster",
             "type": "object",
             "required": [
+              "consensus_thread_status",
               "peer_id",
               "peers",
               "raft_info",
@@ -3953,6 +3954,9 @@
               },
               "raft_info": {
                 "$ref": "#/components/schemas/RaftInfo"
+              },
+              "consensus_thread_status": {
+                "$ref": "#/components/schemas/ConsensusThreadStatus"
               }
             }
           }
@@ -4029,6 +4033,43 @@
           "Candidate",
           "Leader",
           "PreCandidate"
+        ]
+      },
+      "ConsensusThreadStatus": {
+        "description": "Information about current consensus thread status",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "consensus_thread_status"
+            ],
+            "properties": {
+              "consensus_thread_status": {
+                "type": "string",
+                "enum": [
+                  "working"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "consensus_thread_status",
+              "err"
+            ],
+            "properties": {
+              "consensus_thread_status": {
+                "type": "string",
+                "enum": [
+                  "stopped_with_err"
+                ]
+              },
+              "err": {
+                "type": "string"
+              }
+            }
+          }
         ]
       },
       "SnapshotDescription": {
