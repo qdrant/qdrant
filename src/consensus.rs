@@ -342,9 +342,8 @@ impl Consensus {
     }
 
     /// Tries to process raft's ready state.
-    /// For most errors returns an `UnprocessedState` that needs to be retried later.
     ///
-    /// It is ok to not retry sending messages as Raft will handle this case by itself.
+    /// Returns with err on failure to apply the state.
     fn process_ready(&mut self, mut ready: raft::Ready) -> anyhow::Result<raft::LightReady> {
         let store = self.store();
         if !ready.messages().is_empty() {
@@ -396,9 +395,8 @@ impl Consensus {
     }
 
     /// Tries to process raft's light ready state.
-    /// For most errors returns an `UnprocessedState` that needs to be retried later.
     ///
-    /// It is ok to not retry sending messages as Raft will handle this case by itself.
+    /// Returns with err on failure to apply the state.
     fn process_light_ready(&mut self, mut light_rd: raft::LightReady) -> anyhow::Result<()> {
         let store = self.store();
         // Update commit index.
