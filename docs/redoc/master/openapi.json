@@ -4244,6 +4244,7 @@
           "cluster_status",
           "collections",
           "configs",
+          "grpc_calls_statistics",
           "id",
           "system",
           "web"
@@ -4269,6 +4270,9 @@
           },
           "web": {
             "$ref": "#/components/schemas/WebApiTelemetry"
+          },
+          "grpc_calls_statistics": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
           },
           "cluster_status": {
             "$ref": "#/components/schemas/ClusterStatus"

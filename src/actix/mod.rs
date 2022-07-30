@@ -12,7 +12,6 @@ use actix_web::middleware::{Condition, Logger};
 use actix_web::web::Data;
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use storage::dispatcher::Dispatcher;
-use tokio::sync::Mutex;
 
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
@@ -53,13 +52,18 @@ pub async fn index() -> impl Responder {
 #[allow(dead_code)]
 pub fn init(
     dispatcher: Arc<Dispatcher>,
-    telemetry_collector: Arc<Mutex<TelemetryCollector>>,
+    telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
     settings: Settings,
 ) -> std::io::Result<()> {
     actix_web::rt::System::new().block_on(async {
         let toc_data = web::Data::from(dispatcher.toc().clone());
         let dispatcher_data = web::Data::from(dispatcher);
-        let telemetry_data = web::Data::from(telemetry_collector.clone());
+        let telemetry_collector_data = web::Data::new(telemetry_collector.clone());
+        let actix_telemetry_collector = telemetry_collector
+            .lock()
+            .await
+            .actix_telemetry_collector
+            .clone();
         HttpServer::new(move || {
             let cors = Cors::default()
                 .allow_any_origin()
@@ -70,11 +74,11 @@ pub fn init(
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(Logger::default())
                 .wrap(actix_telemetry::ActixTelemetryTransform::new(
-                    telemetry_collector.clone(),
+                    actix_telemetry_collector.clone(),
                 ))
                 .app_data(dispatcher_data.clone())
                 .app_data(toc_data.clone())
-                .app_data(telemetry_data.clone())
+                .app_data(telemetry_collector_data.clone())
                 .app_data(Data::new(
                     web::JsonConfig::default()
                         .limit(32 * 1024 * 1024)

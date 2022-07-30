@@ -25,7 +25,6 @@ use storage::content_manager::consensus::persistent::Persistent;
 use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef};
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use tokio::sync::Mutex;
 
 use crate::common::helpers::create_search_runtime;
 use crate::common::telemetry::TelemetryCollector;
@@ -164,10 +163,8 @@ fn main() -> anyhow::Result<()> {
     }
     let dispatcher_arc = Arc::new(dispatcher);
 
-    let telemetry_collector = Arc::new(Mutex::new(TelemetryCollector::new(
-        settings.clone(),
-        dispatcher_arc.clone(),
-    )));
+    let telemetry_collector = TelemetryCollector::new(settings.clone(), dispatcher_arc.clone());
+    let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
 
     if settings.cluster.enabled {
         // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
@@ -211,11 +208,13 @@ fn main() -> anyhow::Result<()> {
         if let Some(internal_grpc_port) = settings.cluster.p2p.port {
             let settings = settings.clone();
             let dispatcher_arc = dispatcher_arc.clone();
+            let tonic_telemetry_collector = tonic_telemetry_collector.clone();
             let handle = thread::Builder::new()
                 .name("grpc_internal".to_string())
                 .spawn(move || {
                     tonic::init_internal(
                         dispatcher_arc.clone(),
+                        tonic_telemetry_collector.clone(),
                         settings.service.host,
                         internal_grpc_port,
                         message_sender,
@@ -233,6 +232,7 @@ fn main() -> anyhow::Result<()> {
     #[cfg(feature = "web")]
     {
         let dispatcher_arc = dispatcher_arc.clone();
+        let telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry_collector));
         let settings = settings.clone();
         let handle = thread::Builder::new()
             .name("web".to_string())
@@ -245,7 +245,14 @@ fn main() -> anyhow::Result<()> {
         let settings = settings.clone();
         let handle = thread::Builder::new()
             .name("grpc".to_string())
-            .spawn(move || tonic::init(dispatcher_arc, settings.service.host, grpc_port))
+            .spawn(move || {
+                tonic::init(
+                    dispatcher_arc,
+                    tonic_telemetry_collector,
+                    settings.service.host,
+                    grpc_port,
+                )
+            })
             .unwrap();
         handles.push(handle);
     } else {

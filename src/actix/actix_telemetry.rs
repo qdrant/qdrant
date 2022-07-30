@@ -1,11 +1,12 @@
+use std::future::{ready, Ready};
 use std::sync::Arc;
 
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::Error;
 use futures_util::future::LocalBoxFuture;
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
-use crate::common::telemetry::{TelemetryCollector, WebApiTelemetry};
+use crate::common::telemetry::{ActixTelemetryCollector, WebApiTelemetry};
 
 pub struct ActixTelemetryService<S> {
     service: S,
@@ -13,7 +14,7 @@ pub struct ActixTelemetryService<S> {
 }
 
 pub struct ActixTelemetryTransform {
-    telemetry_collector: Arc<Mutex<TelemetryCollector>>,
+    telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>,
 }
 
 /// Actix telemetry service. It hooks every request and looks into response status code.
@@ -38,14 +39,14 @@ where
         Box::pin(async move {
             let response = future.await?;
             let status = response.response().status().as_u16();
-            telemetry_data.lock().await.add_response(status);
+            telemetry_data.lock().add_response(status);
             Ok(response)
         })
     }
 }
 
 impl ActixTelemetryTransform {
-    pub fn new(telemetry_collector: Arc<Mutex<TelemetryCollector>>) -> Self {
+    pub fn new(telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>) -> Self {
         Self {
             telemetry_collector,
         }
@@ -66,16 +67,15 @@ where
     type Error = Error;
     type InitError = ();
     type Transform = ActixTelemetryService<S>;
-    type Future = LocalBoxFuture<'static, Result<Self::Transform, Self::InitError>>;
+    type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        let telemetry_collector = self.telemetry_collector.clone();
-        Box::pin(async move {
-            let mut telemetry_collector = telemetry_collector.lock().await;
-            Ok(ActixTelemetryService {
-                service,
-                telemetry_data: telemetry_collector.create_web_worker_telemetry(),
-            })
-        })
+        ready(Ok(ActixTelemetryService {
+            service,
+            telemetry_data: self
+                .telemetry_collector
+                .lock()
+                .create_web_worker_telemetry(),
+        }))
     }
 }

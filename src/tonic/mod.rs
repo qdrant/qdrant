@@ -1,4 +1,5 @@
 mod api;
+mod tonic_telemetry;
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -17,6 +18,7 @@ use tokio::{runtime, signal};
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
+use crate::common::telemetry::TonicTelemetryCollector;
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::collections_internal_api::CollectionsInternalService;
 use crate::tonic::api::points_api::PointsService;
@@ -36,7 +38,12 @@ impl Qdrant for QdrantService {
     }
 }
 
-pub fn init(dispatcher: Arc<Dispatcher>, host: String, grpc_port: u16) -> std::io::Result<()> {
+pub fn init(
+    dispatcher: Arc<Dispatcher>,
+    telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
+    host: String,
+    grpc_port: u16,
+) -> std::io::Result<()> {
     let tonic_runtime = runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
@@ -58,6 +65,9 @@ pub fn init(dispatcher: Arc<Dispatcher>, host: String, grpc_port: u16) -> std::i
             log::info!("Qdrant gRPC listening on {}", grpc_port);
 
             Server::builder()
+                .layer(tonic_telemetry::TonicTelemetryLayer::new(
+                    telemetry_collector,
+                ))
                 .add_service(QdrantServer::new(service))
                 .add_service(CollectionsServer::new(collections_service))
                 .add_service(PointsServer::new(points_service))
@@ -74,6 +84,7 @@ pub fn init(dispatcher: Arc<Dispatcher>, host: String, grpc_port: u16) -> std::i
 
 pub fn init_internal(
     dispatcher: Arc<Dispatcher>,
+    telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     host: String,
     internal_grpc_port: u16,
     to_consensus: std::sync::mpsc::SyncSender<crate::consensus::Message>,
@@ -104,6 +115,9 @@ pub fn init_internal(
             log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
             Server::builder()
+                .layer(tonic_telemetry::TonicTelemetryLayer::new(
+                    telemetry_collector,
+                ))
                 .add_service(QdrantServer::new(service))
                 .add_service(CollectionsInternalServer::new(collections_internal_service))
                 .add_service(PointsInternalServer::new(points_internal_service))
