@@ -2511,7 +2511,6 @@
           "indexing_threshold",
           "max_optimization_threads",
           "max_segment_size",
-          "memmap_threshold",
           "vacuum_min_vector_number"
         ],
         "properties": {
@@ -2540,9 +2539,11 @@
           },
           "memmap_threshold": {
             "description": "Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256",
+            "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "indexing_threshold": {
             "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md Note: 1Kb = 1 vector of size 256",

@@ -42,7 +42,8 @@ pub struct OptimizersConfig {
     /// To enable memmap storage, lower the threshold
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "memmap_threshold_kb")]
-    pub memmap_threshold: usize,
+    #[serde(default)]
+    pub memmap_threshold: Option<usize>,
     /// Maximum size (in KiloBytes) of vectors allowed for plain index.
     /// Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
     /// Note: 1Kb = 1 vector of size 256
@@ -77,7 +78,7 @@ pub fn build_optimizers(
     let temp_segments_path = shard_path.join("temp_segments");
 
     let threshold_config = OptimizerThresholds {
-        memmap_threshold: optimizers_config.memmap_threshold,
+        memmap_threshold: optimizers_config.memmap_threshold.unwrap_or(usize::MAX),
         indexing_threshold: optimizers_config.indexing_threshold,
         max_segment_size: optimizers_config.max_segment_size,
     };
