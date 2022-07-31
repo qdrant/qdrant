@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::path::Path;
 
 use collection::collection::Collection;
@@ -34,7 +34,7 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
     };
 
     let collection_params = CollectionParams {
-        vector_size: 4,
+        vector_size: NonZeroU64::new(4).unwrap(),
         distance: Distance::Dot,
         shard_number: NonZeroU32::new(shard_number).expect("Shard number can not be zero"),
         on_disk_payload: false,

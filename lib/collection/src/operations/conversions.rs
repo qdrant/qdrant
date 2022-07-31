@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 
 use api::grpc::conversions::{payload_to_proto, proto_to_payloads};
 use itertools::Itertools;
@@ -88,7 +88,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             ram_data_size: ram_data_size as u64,
             config: Some(api::grpc::qdrant::CollectionConfig {
                 params: Some(api::grpc::qdrant::CollectionParams {
-                    vector_size: config.params.vector_size as u64,
+                    vector_size: config.params.vector_size.get(),
                     distance: match config.params.distance {
                         segment::types::Distance::Cosine => api::grpc::qdrant::Distance::Cosine,
                         segment::types::Distance::Euclid => api::grpc::qdrant::Distance::Euclid,
@@ -205,7 +205,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
             params: match config.params {
                 None => return Err(Status::invalid_argument("Malformed CollectionParams type")),
                 Some(params) => CollectionParams {
-                    vector_size: params.vector_size as usize,
+                    vector_size: NonZeroU64::new(params.vector_size).unwrap(),
                     distance: match segment::types::Distance::from_index(params.distance) {
                         None => {
                             return Err(Status::invalid_argument(

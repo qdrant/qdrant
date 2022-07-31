@@ -115,7 +115,7 @@ impl SegmentOptimizer for VacuumOptimizer {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
+    use std::num::{NonZeroU32, NonZeroU64};
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
@@ -200,7 +200,7 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             CollectionParams {
-                vector_size: 4,
+                vector_size: NonZeroU64::new(4).unwrap(),
                 distance: Distance::Dot,
                 shard_number: NonZeroU32::new(1).unwrap(),
                 on_disk_payload: false,

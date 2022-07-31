@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::path::Path;
 
 use parking_lot::RwLock;
@@ -118,7 +118,7 @@ pub(crate) fn get_merge_optimizer(
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         CollectionParams {
-            vector_size: dim,
+            vector_size: NonZeroU64::new(dim as u64).unwrap(),
             distance: Distance::Dot,
             shard_number: NonZeroU32::new(1).unwrap(),
             on_disk_payload: false,
@@ -141,7 +141,7 @@ pub(crate) fn get_indexing_optimizer(
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         CollectionParams {
-            vector_size: dim,
+            vector_size: NonZeroU64::new(dim as u64).unwrap(),
             distance: Distance::Dot,
             shard_number: NonZeroU32::new(1).unwrap(),
             on_disk_payload: false,

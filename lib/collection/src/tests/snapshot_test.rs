@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 
 use segment::types::Distance;
 
@@ -27,7 +27,7 @@ async fn test_snapshot_collection() {
     };
 
     let collection_params = CollectionParams {
-        vector_size: 4,
+        vector_size: NonZeroU64::new(4).unwrap(),
         distance: Distance::Dot,
         shard_number: NonZeroU32::new(3).expect("Shard number can not be zero"),
         on_disk_payload: false,
