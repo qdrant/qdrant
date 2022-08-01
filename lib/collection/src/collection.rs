@@ -236,11 +236,12 @@ impl Collection {
         shard_holder_read.contains_shard(shard_id)
     }
 
-
     /// Returns true if shard it explicitly local, false otherwise.
     pub async fn is_shard_local(&self, shard_id: &ShardId) -> Option<bool> {
         let shard_holder_read = self.shards_holder.read().await;
-        shard_holder_read.get_shard(shard_id).map(|shard| matches!(shard, Shard::Local(_)))
+        shard_holder_read
+            .get_shard(shard_id)
+            .map(|shard| matches!(shard, Shard::Local(_)))
     }
 
     async fn send_shard<OF, OE>(&self, transfer: ShardTransfer, on_finish: OF, on_error: OE)

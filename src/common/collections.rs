@@ -117,13 +117,11 @@ pub async fn do_update_collection_cluster(
                 .submit_collection_meta_op(
                     CollectionMetaOperations::TransferShard(
                         collection_name,
-                        Start (
-                            ShardTransfer {
-                                shard_id: move_shard.shard_id,
-                                to: move_shard.to_peer_id,
-                                from: move_shard.from_peer_id,
-                            }
-                        ),
+                        Start(ShardTransfer {
+                            shard_id: move_shard.shard_id,
+                            to: move_shard.to_peer_id,
+                            from: move_shard.from_peer_id,
+                        }),
                     ),
                     wait_timeout,
                 )
