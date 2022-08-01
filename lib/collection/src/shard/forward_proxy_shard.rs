@@ -51,7 +51,7 @@ impl ForwardProxyShard {
                     CollectionUpdateOperations::FieldIndexOperation(
                         FieldIndexOperations::CreateIndex(CreateIndex {
                             field_name: index_key.clone(),
-                            field_type: Some(index_type.data_type.clone()),
+                            field_type: Some(index_type.data_type),
                         }),
                     ),
                     false,
