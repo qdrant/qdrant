@@ -40,6 +40,55 @@ pub struct Consensus {
 }
 
 impl Consensus {
+    /// Create and run consensus node
+    #[allow(clippy::too_many_arguments)]
+    pub fn run(
+        logger: &slog::Logger,
+        state_ref: ConsensusStateRef,
+        bootstrap_peer: Option<Uri>,
+        uri: Option<String>,
+        p2p_port: Option<u32>,
+        config: ConsensusConfig,
+        transport_channel_pool: Arc<TransportChannelPool>,
+        propose_receiver: mpsc::Receiver<Vec<u8>>,
+    ) -> anyhow::Result<SyncSender<Message>> {
+        let (mut consensus, message_sender) = Self::new(
+            logger,
+            state_ref.clone(),
+            bootstrap_peer,
+            uri,
+            p2p_port,
+            config,
+            transport_channel_pool,
+        )?;
+
+        thread::Builder::new()
+            .name("consensus".to_string())
+            .spawn(move || {
+                if let Err(err) = consensus.start() {
+                    log::error!("Consensus stopped with error: {err}");
+                    state_ref.on_consensus_thread_err(err);
+                }
+            })?;
+
+        let message_sender_moved = message_sender.clone();
+        thread::Builder::new()
+            .name("forward-proposals".to_string())
+            .spawn(move || {
+                while let Ok(entry) = propose_receiver.recv() {
+                    if message_sender_moved
+                        .send(Message::FromClient(entry))
+                        .is_err()
+                    {
+                        log::error!("Can not forward new entry to consensus as it was stopped.");
+                        break;
+                    }
+                }
+            })?;
+
+        Ok(message_sender)
+    }
+
     /// If `bootstrap_peer` peer is supplied, then either `uri` or `p2p_port` should be also supplied
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -50,7 +99,6 @@ impl Consensus {
         p2p_port: Option<u32>,
         config: ConsensusConfig,
         transport_channel_pool: Arc<TransportChannelPool>,
-        state_just_initialized: bool,
     ) -> anyhow::Result<(Self, SyncSender<Message>)> {
         // raft will not return entries to the application smaller or equal to `applied`
         let last_applied = state_ref.last_applied_entry().unwrap_or_default();
@@ -81,7 +129,7 @@ impl Consensus {
         let is_leader_established = Arc::new(IsReady::default());
         let (sender, receiver) = mpsc::sync_channel(config.max_message_queue_size);
         // State might be initialized but the node might be shutdown without actually syncing or committing anything.
-        let is_new_deployment = state_just_initialized || state_ref.hard_state().term == 0;
+        let is_new_deployment = state_ref.hard_state().term == 0;
         if is_new_deployment {
             let leader_established_in_ms =
                 config.tick_period_ms * raft_config.max_election_tick() as u64;
@@ -107,18 +155,18 @@ impl Consensus {
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
         state_ref.apply_entries(&mut node);
-        Ok((
-            Self {
-                node,
-                receiver,
-                runtime,
-                bootstrap_uri: bootstrap_peer,
-                config,
-                is_leader_established,
-                transport_channel_pool,
-            },
-            sender,
-        ))
+
+        let consensus = Self {
+            node,
+            receiver,
+            runtime,
+            bootstrap_uri: bootstrap_peer,
+            config,
+            is_leader_established,
+            transport_channel_pool,
+        };
+
+        Ok((consensus, sender))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -573,7 +621,7 @@ mod tests {
         let runtime = crate::create_search_runtime(settings.storage.performance.max_search_threads)
             .expect("Can't create runtime.");
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
-        let (persistent_state, state_just_initialized) =
+        let persistent_state =
             Persistent::load_or_init(&settings.storage.storage_path, true).unwrap();
         let operation_sender = OperationSender::new(propose_sender);
         let toc = TableOfContent::new(
@@ -602,9 +650,9 @@ mod tests {
             None,
             ConsensusConfig::default(),
             Arc::new(TransportChannelPool::default()),
-            state_just_initialized,
         )
         .unwrap();
+
         let is_leader_established = consensus.is_leader_established.clone();
         thread::spawn(move || consensus.start().unwrap());
         thread::spawn(move || {

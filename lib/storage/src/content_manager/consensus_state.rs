@@ -517,7 +517,7 @@ mod tests {
     #[test]
     fn update_is_applied() {
         let dir = tempdir::TempDir::new("raft_state_test").unwrap();
-        let (mut state, _) = Persistent::load_or_init(dir.path(), false).unwrap();
+        let mut state = Persistent::load_or_init(dir.path(), false).unwrap();
         assert_eq!(state.state().hard_state.commit, 0);
         state
             .apply_state_update(|state| state.hard_state.commit = 1)
@@ -539,15 +539,13 @@ mod tests {
     #[test]
     fn state_is_loaded() {
         let dir = tempdir::TempDir::new("raft_state_test").unwrap();
-        let (mut state, just_initialized) = Persistent::load_or_init(dir.path(), false).unwrap();
-        assert!(just_initialized);
+        let mut state = Persistent::load_or_init(dir.path(), false).unwrap();
         state
             .apply_state_update(|state| state.hard_state.commit = 1)
             .unwrap();
         assert_eq!(state.state().hard_state.commit, 1);
 
-        let (state_loaded, initialized) = Persistent::load_or_init(dir.path(), false).unwrap();
-        assert!(!initialized);
+        let state_loaded = Persistent::load_or_init(dir.path(), false).unwrap();
         assert_eq!(state_loaded.state().hard_state.commit, 1);
     }
 
