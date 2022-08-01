@@ -158,7 +158,7 @@ mod tests {
             deleted_threshold: 0.9,
             vacuum_min_vector_number: 1000,
             default_segment_number: 10,
-            max_segment_size: 100_000,
+            max_segment_size: None,
             memmap_threshold: None,
             indexing_threshold: 50_000,
             flush_interval_sec: 30,

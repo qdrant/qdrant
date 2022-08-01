@@ -32,7 +32,7 @@ mod tests {
                 deleted_threshold: 0.5,
                 vacuum_min_vector_number: 100,
                 default_segment_number: 2,
-                max_segment_size: 100_000,
+                max_segment_size: None,
                 memmap_threshold: Some(100),
                 indexing_threshold: 100,
                 flush_interval_sec: 2,

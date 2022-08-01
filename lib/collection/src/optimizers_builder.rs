@@ -13,6 +13,8 @@ use crate::collection_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
 use crate::config::CollectionParams;
 use crate::update_handler::Optimizer;
 
+const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 200_000;
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 pub struct OptimizersConfig {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
@@ -35,12 +37,15 @@ pub struct OptimizersConfig {
     /// If indexation speed have more priority for your - make this parameter lower.
     /// If search speed is more important - make this parameter higher.
     /// Note: 1Kb = 1 vector of size 256
+    /// If not set, will be automatically selected considering the number of available CPUs.
     #[serde(alias = "max_segment_size_kb")]
-    pub max_segment_size: usize,
+    #[serde(default)]
+    pub max_segment_size: Option<usize>,
     /// Maximum size (in KiloBytes) of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmaped file.
     /// To enable memmap storage, lower the threshold
     /// Note: 1Kb = 1 vector of size 256
+    /// If not set, mmap will not be used.
     #[serde(alias = "memmap_threshold_kb")]
     #[serde(default)]
     pub memmap_threshold: Option<usize>,
@@ -66,6 +71,15 @@ impl OptimizersConfig {
             self.default_segment_number
         }
     }
+
+    pub fn get_max_segment_size(&self) -> usize {
+        if let Some(max_segment_size) = self.max_segment_size {
+            max_segment_size
+        } else {
+            let num_cpus = num_cpus::get();
+            num_cpus.saturating_mul(DEFAULT_MAX_SEGMENT_PER_CPU_KB)
+        }
+    }
 }
 
 pub fn build_optimizers(
@@ -80,7 +94,7 @@ pub fn build_optimizers(
     let threshold_config = OptimizerThresholds {
         memmap_threshold: optimizers_config.memmap_threshold.unwrap_or(usize::MAX),
         indexing_threshold: optimizers_config.indexing_threshold,
-        max_segment_size: optimizers_config.max_segment_size,
+        max_segment_size: optimizers_config.get_max_segment_size(),
     };
 
     Arc::new(vec![
