@@ -67,7 +67,7 @@ storage:
     # Max number of threads, which can be used for optimization. If 0 - auto selection.
     max_optimization_threads: 1
 
-  # Default parameters of HNSW Index. Could be override for each collection individually
+  # Default parameters of HNSW Index. Could be overridden for each collection individually
   hnsw_index:
     # Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
     m: 16
