@@ -122,10 +122,16 @@ impl IndexingOptimizer {
                     StorageType::Mmap => true,
                 };
 
-                let big_for_mmap =
-                    vector_size >= self.thresholds_config.memmap_threshold * BYTES_IN_KB;
-                let big_for_index =
-                    vector_size >= self.thresholds_config.indexing_threshold * BYTES_IN_KB;
+                let big_for_mmap = vector_size
+                    >= self
+                        .thresholds_config
+                        .memmap_threshold
+                        .saturating_mul(BYTES_IN_KB);
+                let big_for_index = vector_size
+                    >= self
+                        .thresholds_config
+                        .indexing_threshold
+                        .saturating_mul(BYTES_IN_KB);
 
                 let require_indexing =
                     (big_for_mmap && !is_memmaped) || (big_for_index && !is_vector_indexed);
@@ -153,7 +159,10 @@ impl IndexingOptimizer {
         if let Some((idx, size)) = smallest_unindexed {
             if *idx != selected_segment_id
                 && selected_segment_size + size
-                    < self.thresholds_config.max_segment_size * BYTES_IN_KB
+                    < self
+                        .thresholds_config
+                        .max_segment_size
+                        .saturating_mul(BYTES_IN_KB)
             {
                 return vec![selected_segment_id, *idx];
             }
@@ -164,7 +173,10 @@ impl IndexingOptimizer {
         if let Some((idx, size)) = smallest_indexed {
             if idx != selected_segment_id
                 && selected_segment_size + size
-                    < self.thresholds_config.max_segment_size * BYTES_IN_KB
+                    < self
+                        .thresholds_config
+                        .max_segment_size
+                        .saturating_mul(BYTES_IN_KB)
             {
                 return vec![selected_segment_id, idx];
             }
