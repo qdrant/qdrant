@@ -268,6 +268,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
                     })?,
                 )
                 .map(|()| true),
+            ConsensusOperations::RemovePeer(peer_id) => self.remove_peer(peer_id).map(|()| true),
         };
         if let Some(on_apply) = on_apply {
             if on_apply.send(result.clone()).is_err() {
@@ -321,6 +322,15 @@ impl<C: CollectionContainer> ConsensusState<C> {
 
     pub fn add_peer(&self, peer_id: PeerId, uri: Uri) -> Result<(), StorageError> {
         self.persistent.write().insert_peer(peer_id, uri)
+    }
+
+    pub fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
+        if self.toc.peer_has_shards(peer_id) {
+            return Err(StorageError::BadRequest {
+                description: format!("Cannot remove peer {peer_id} as there are shards on it"),
+            });
+        }
+        self.persistent.write().remove_peer(peer_id)
     }
 
     pub async fn propose_consensus_op(
@@ -627,6 +637,10 @@ mod tests {
             _data: super::CollectionsSnapshot,
         ) -> Result<(), crate::content_manager::errors::StorageError> {
             Ok(())
+        }
+
+        fn peer_has_shards(&self, _: u64) -> bool {
+            false
         }
     }
 

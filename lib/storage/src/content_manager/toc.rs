@@ -828,6 +828,22 @@ impl TableOfContent {
         }
         result
     }
+
+    async fn peer_has_shards(&self, peer_id: PeerId) -> bool {
+        for collection in self.collections.read().await.values() {
+            let state = collection.state(self.this_peer_id()).await;
+            let peers_with_shards: HashSet<_> = state.shard_to_peer.values().collect();
+            if peers_with_shards.contains(&peer_id) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn peer_has_shards_sync(&self, peer_id: PeerId) -> bool {
+        self.collection_management_runtime
+            .block_on(self.peer_has_shards(peer_id))
+    }
 }
 
 impl CollectionContainer for TableOfContent {
@@ -847,6 +863,10 @@ impl CollectionContainer for TableOfContent {
         data: consensus_state::CollectionsSnapshot,
     ) -> Result<(), StorageError> {
         self.apply_collections_snapshot(data)
+    }
+
+    fn peer_has_shards(&self, peer_id: PeerId) -> bool {
+        self.peer_has_shards_sync(peer_id)
     }
 }
 
