@@ -4,7 +4,7 @@ use api::grpc::models::{CollectionDescription, CollectionsResponse};
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{CollectionClusterInfo, CollectionInfo};
-use collection::shard::ShardId;
+use collection::shard::{ShardId, ShardTransfer};
 use itertools::Itertools;
 use storage::content_manager::collection_meta_ops::CollectionMetaOperations;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::Start;
@@ -76,26 +76,39 @@ pub async fn do_update_collection_cluster(
     match operation {
         ClusterOperations::MoveShard(move_shard) => {
             // validate shard to move
-            let shard_exists_locally = collection.contains_shard(&move_shard.shard_id).await;
-            if !shard_exists_locally {
+            let shard_exists = collection.contains_shard(&move_shard.shard_id).await;
+            if !shard_exists {
                 return Err(StorageError::BadRequest {
                     description: format!(
                         "Shard {} for collection {} does not exist",
-                        move_shard.peer_id, collection_name
+                        move_shard.to_peer_id, collection_name
                     ),
                 });
             }
 
-            // validate target peer
+            // validate target peer exists
             let target_peer_exist = consensus_state
                 .persistent
                 .read()
                 .peer_address_by_id
                 .read()
-                .contains_key(&move_shard.peer_id);
+                .contains_key(&move_shard.to_peer_id);
             if !target_peer_exist {
                 return Err(StorageError::BadRequest {
-                    description: format!("Target peer {} does not exist", move_shard.peer_id),
+                    description: format!("Target peer {} does not exist", move_shard.to_peer_id),
+                });
+            }
+
+            // validate source peer exists
+            let target_peer_exist = consensus_state
+                .persistent
+                .read()
+                .peer_address_by_id
+                .read()
+                .contains_key(&move_shard.from_peer_id);
+            if !target_peer_exist {
+                return Err(StorageError::BadRequest {
+                    description: format!("Source peer {} does not exist", move_shard.from_peer_id),
                 });
             }
 
@@ -104,10 +117,11 @@ pub async fn do_update_collection_cluster(
                 .submit_collection_meta_op(
                     CollectionMetaOperations::TransferShard(
                         collection_name,
-                        move_shard.shard_id,
-                        Start {
-                            to: move_shard.peer_id,
-                        },
+                        Start(ShardTransfer {
+                            shard_id: move_shard.shard_id,
+                            to: move_shard.to_peer_id,
+                            from: move_shard.from_peer_id,
+                        }),
                     ),
                     wait_timeout,
                 )

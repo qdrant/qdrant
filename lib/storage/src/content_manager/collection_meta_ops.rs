@@ -1,5 +1,5 @@
 use collection::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff, WalConfigDiff};
-use collection::shard::{CollectionId, PeerId, ShardId};
+use collection::shard::{CollectionId, ShardTransfer};
 use schemars::JsonSchema;
 use segment::types::Distance;
 use serde::{Deserialize, Serialize};
@@ -156,9 +156,12 @@ pub struct DeleteCollectionOperation(pub String);
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 pub enum ShardTransferOperations {
-    Start { to: PeerId },
-    Finish { to: PeerId },
-    Abort { to: PeerId, reason: String },
+    Start(ShardTransfer),
+    Finish(ShardTransfer),
+    Abort {
+        transfer: ShardTransfer,
+        reason: String,
+    },
 }
 
 /// Enumeration of all possible collection update operations
@@ -170,5 +173,5 @@ pub enum CollectionMetaOperations {
     UpdateCollection(UpdateCollectionOperation),
     DeleteCollection(DeleteCollectionOperation),
     ChangeAliases(ChangeAliasesOperation),
-    TransferShard(CollectionId, ShardId, ShardTransferOperations),
+    TransferShard(CollectionId, ShardTransferOperations),
 }

@@ -236,6 +236,14 @@ impl Collection {
         shard_holder_read.contains_shard(shard_id)
     }
 
+    /// Returns true if shard it explicitly local, false otherwise.
+    pub async fn is_shard_local(&self, shard_id: &ShardId) -> Option<bool> {
+        let shard_holder_read = self.shards_holder.read().await;
+        shard_holder_read
+            .get_shard(shard_id)
+            .map(|shard| matches!(shard, Shard::Local(_)))
+    }
+
     async fn send_shard<OF, OE>(&self, transfer: ShardTransfer, on_finish: OF, on_error: OE)
     where
         OF: Future<Output = ()> + Send + 'static,
@@ -264,8 +272,7 @@ impl Collection {
 
     pub async fn start_shard_transfer<T, F>(
         &self,
-        shard_id: ShardId,
-        to_peer: PeerId,
+        shard_transfer: ShardTransfer,
         on_finish: T,
         on_error: F,
     ) -> CollectionResult<bool>
@@ -273,11 +280,7 @@ impl Collection {
         T: Future<Output = ()> + Send + 'static,
         F: Future<Output = ()> + Send + 'static,
     {
-        let shard_transfer = ShardTransfer {
-            shard_id,
-            to: to_peer,
-        };
-
+        let shard_id = shard_transfer.shard_id;
         let do_transfer = {
             let mut shards_holder = self.shards_holder.write().await;
             let was_not_transferred =
@@ -323,12 +326,7 @@ impl Collection {
     /// 5. Point remote shard to new location
     ///
     /// Returns true if state was changed, false otherwise.
-    pub async fn finish_shard_transfer(
-        &self,
-        shard_id: ShardId,
-        to: PeerId,
-    ) -> CollectionResult<bool> {
-        let transfer = ShardTransfer { shard_id, to };
+    pub async fn finish_shard_transfer(&self, transfer: ShardTransfer) -> CollectionResult<bool> {
         let finish_was_registered = self
             .shards_holder
             .write()
@@ -343,20 +341,29 @@ impl Collection {
             .is_finished();
 
         // Should happen on transfer side
-        let proxy_promoted =
-            promote_proxy_to_remote_shard(&self.path, self.shards_holder.clone(), shard_id, to)
-                .await?;
+        let proxy_promoted = promote_proxy_to_remote_shard(
+            &self.path,
+            self.shards_holder.clone(),
+            transfer.shard_id,
+            transfer.to,
+        )
+        .await?;
         // Should happen on receiving side
         let shard_promoted = promote_temporary_shard_to_local(
             self.id.clone(),
             &self.path,
             self.shards_holder.clone(),
-            shard_id,
+            transfer.shard_id,
         )
         .await?;
         // Should happen on a third-party side
-        let remote_shard_rerouted =
-            change_remote_shard_route(&self.path, self.shards_holder.clone(), shard_id, to).await?;
+        let remote_shard_rerouted = change_remote_shard_route(
+            &self.path,
+            self.shards_holder.clone(),
+            transfer.shard_id,
+            transfer.to,
+        )
+        .await?;
 
         // Transfer task and proxy should exist on the same node
         debug_assert_eq!(transfer_finished, proxy_promoted);
@@ -378,12 +385,7 @@ impl Collection {
     /// 2. Stop transfer task
     /// 3. Unwrap the proxy
     /// 4. Remove temp shard
-    pub async fn abort_shard_transfer(
-        &self,
-        shard_id: ShardId,
-        to: PeerId,
-    ) -> CollectionResult<bool> {
-        let transfer = ShardTransfer { shard_id, to };
+    pub async fn abort_shard_transfer(&self, transfer: ShardTransfer) -> CollectionResult<bool> {
         let finish_was_registered = self
             .shards_holder
             .write()
@@ -398,9 +400,10 @@ impl Collection {
             .is_finished();
 
         let proxy_unwrapped =
-            revert_proxy_shard_to_local(self.shards_holder.clone(), shard_id).await?;
+            revert_proxy_shard_to_local(self.shards_holder.clone(), transfer.shard_id).await?;
 
-        let temp_shard_removed = drop_temporary_shard(self.shards_holder.clone(), shard_id).await?;
+        let temp_shard_removed =
+            drop_temporary_shard(self.shards_holder.clone(), transfer.shard_id).await?;
 
         let changed_something =
             finish_was_registered && (transfer_finished || proxy_unwrapped || temp_shard_removed);
@@ -1005,7 +1008,8 @@ impl Collection {
         for shard_transfer in shards_holder.get_shard_transfers() {
             let shard_id = shard_transfer.shard_id;
             let to = shard_transfer.to;
-            shard_transfers.push(ShardTransferInfo { shard_id, to })
+            let from = shard_transfer.from;
+            shard_transfers.push(ShardTransferInfo { shard_id, from, to })
         }
 
         // sort by shard_id

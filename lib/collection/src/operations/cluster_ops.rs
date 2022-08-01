@@ -15,5 +15,6 @@ pub enum ClusterOperations {
 #[serde(rename_all = "snake_case")]
 pub struct MoveShard {
     pub shard_id: ShardId,
-    pub peer_id: PeerId,
+    pub to_peer_id: PeerId,
+    pub from_peer_id: PeerId,
 }

@@ -6,6 +6,7 @@ use collection::operations::types::{
     CountRequest, PointRequest, RecommendRequest, ScrollRequest, SearchRequest, UpdateStatus,
 };
 use collection::operations::CollectionUpdateOperations;
+use collection::shard::ShardTransfer;
 use itertools::Itertools;
 use segment::types::{
     Condition, FieldCondition, Filter, HasIdCondition, Payload, PointIdType, WithPayloadInterface,
@@ -535,7 +536,14 @@ async fn test_promote_temporary_shards() {
         .unwrap();
     assert_eq!(result.points.len(), 2);
 
-    collection.finish_shard_transfer(0, 100).await.unwrap();
+    collection
+        .finish_shard_transfer(ShardTransfer {
+            shard_id: 0,
+            from: 0,
+            to: 100,
+        })
+        .await
+        .unwrap();
 
     // validate collection is empty now
     let result = collection.scroll_by(scroll_request, None).await.unwrap();
