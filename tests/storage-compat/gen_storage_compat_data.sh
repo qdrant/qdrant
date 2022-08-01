@@ -10,7 +10,7 @@ curl -X DELETE "http://$QDRANT_HOST/collections/test_collection" \
   -H 'Content-Type: application/json' \
   --fail -s | jq
 
-# create collection
+# create collection with a lower `indexing_threshold_kb` to generate the HNSW index
 curl -X PUT "http://$QDRANT_HOST/collections/test_collection" \
   -H 'Content-Type: application/json' \
   --fail -s \
@@ -18,7 +18,8 @@ curl -X PUT "http://$QDRANT_HOST/collections/test_collection" \
       "vector_size": 50,
       "distance": "Dot",
       "optimizers_config": {
-        "default_segment_number": 2
+        "default_segment_number": 2,
+        "indexing_threshold_kb": 10
       }
     }' | jq
 
