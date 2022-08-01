@@ -177,7 +177,7 @@ fn main() -> anyhow::Result<()> {
         // Create a pipe `message_sender` to communicate with the consensus
         let message_sender = Consensus::run(
             &slog_logger,
-            consensus_state.clone(),
+            consensus_state,
             args.bootstrap,
             args.uri.map(|uri| uri.to_string()),
             settings.cluster.p2p.port.map(|port| port as u32),

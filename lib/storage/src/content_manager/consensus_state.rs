@@ -632,7 +632,7 @@ mod tests {
         entries: Vec<Entry>,
         path: &std::path::Path,
     ) -> (ConsensusState<NoCollections>, MemStorage) {
-        let (persistent, _) = Persistent::load_or_init(path, true).unwrap();
+        let persistent = Persistent::load_or_init(path, true).unwrap();
         let (sender, _) = mpsc::channel();
         let consensus_state = ConsensusState::new(
             persistent,
