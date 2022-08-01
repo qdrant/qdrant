@@ -4223,6 +4223,7 @@
       "ShardTransferInfo": {
         "type": "object",
         "required": [
+          "from",
           "shard_id",
           "to"
         ],
@@ -4230,6 +4231,11 @@
           "shard_id": {
             "type": "integer",
             "format": "uint32",
+            "minimum": 0
+          },
+          "from": {
+            "type": "integer",
+            "format": "uint64",
             "minimum": 0
           },
           "to": {
@@ -4891,8 +4897,9 @@
       "MoveShard": {
         "type": "object",
         "required": [
-          "peer_id",
-          "shard_id"
+          "from_peer_id",
+          "shard_id",
+          "to_peer_id"
         ],
         "properties": {
           "shard_id": {
@@ -4900,7 +4907,12 @@
             "format": "uint32",
             "minimum": 0
           },
-          "peer_id": {
+          "to_peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "from_peer_id": {
             "type": "integer",
             "format": "uint64",
             "minimum": 0

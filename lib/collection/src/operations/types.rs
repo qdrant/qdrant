@@ -106,6 +106,7 @@ pub struct CollectionClusterInfo {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct ShardTransferInfo {
     pub shard_id: ShardId,
+    pub from: PeerId,
     pub to: PeerId,
 }
 
