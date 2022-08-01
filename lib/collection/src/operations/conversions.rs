@@ -269,7 +269,9 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                     }
                 },
                 vectors_count: collection_info_response.vectors_count as usize,
-                indexed_vectors_count: collection_info_response.indexed_vectors_count.unwrap_or_default() as usize,
+                indexed_vectors_count: collection_info_response
+                    .indexed_vectors_count
+                    .unwrap_or_default() as usize,
                 points_count: collection_info_response.points_count as usize,
                 segments_count: collection_info_response.segments_count as usize,
                 disk_data_size: collection_info_response.disk_data_size as usize,
