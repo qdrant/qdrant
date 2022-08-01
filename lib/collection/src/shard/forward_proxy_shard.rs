@@ -13,7 +13,7 @@ use crate::operations::types::{
     CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest, Record,
     SearchRequest, UpdateResult,
 };
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::shard::local_shard::LocalShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::ShardOperation;
@@ -40,6 +40,25 @@ impl ForwardProxyShard {
             remote_shard,
             update_lock: Mutex::new(()),
         }
+    }
+
+    /// Create payload indexes in the remote shard same as in the wrapped shard.
+    pub async fn transfer_indexes(&self) -> CollectionResult<()> {
+        let _update_lock = self.update_lock.lock().await;
+        for (index_key, index_type) in self.wrapped_shard.info().await?.payload_schema.iter() {
+            self.remote_shard
+                .update(
+                    CollectionUpdateOperations::FieldIndexOperation(
+                        FieldIndexOperations::CreateIndex(CreateIndex {
+                            field_name: index_key.clone(),
+                            field_type: Some(index_type.data_type),
+                        }),
+                    ),
+                    false,
+                )
+                .await?;
+        }
+        Ok(())
     }
 
     /// Move batch of points to the remote shard.
