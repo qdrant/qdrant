@@ -98,13 +98,15 @@ def test_collection_shard_transfer(tmp_path: pathlib.Path):
     target_peer_id = collection_cluster_info["remote_shards"][0]["peer_id"]
     before_local_shard_count = len(collection_cluster_info["local_shards"])
     shard_id = collection_cluster_info["local_shards"][0]["shard_id"]
+    source_peer_id = collection_cluster_info["peer_id"]
 
     # Move shard `shard_id` to peer `target_peer_id`
     r = requests.post(
         f"{peer_api_uris[0]}/collections/test_collection/cluster", json={
             "move_shard": {
                 "shard_id": shard_id,
-                "peer_id": target_peer_id
+                "from_peer_id": source_peer_id,
+                "to_peer_id": target_peer_id
             }
         })
     assert_http_ok(r)
