@@ -26,6 +26,22 @@ async fn transfer_batches(
     shard_id: ShardId,
     stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
+    // Create payload indexes on the remote shard.
+    {
+        let shard_holder_guard = shard_holder.read().await;
+        let transferring_shard_opt = shard_holder_guard.get_shard(&shard_id);
+        if let Some(Shard::ForwardProxy(transferring_shard)) = transferring_shard_opt {
+            transferring_shard.transfer_indexes().await?;
+        } else {
+            // Forward proxy gone?!
+            // That would be a programming error.
+            return Err(CollectionError::service_error(format!(
+                "Shard {} is not a forward proxy shard",
+                shard_id
+            )));
+        }
+    }
+
     // Transfer contents batch by batch
     let initial_offset = None;
     let mut offset = initial_offset;
