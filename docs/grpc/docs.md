@@ -206,7 +206,8 @@
 | ram_data_size | [uint64](#uint64) |  | Used RAM (not implemented) |
 | config | [CollectionConfig](#qdrant-CollectionConfig) |  | Configuration |
 | payload_schema | [CollectionInfo.PayloadSchemaEntry](#qdrant-CollectionInfo-PayloadSchemaEntry) | repeated | Collection data types |
-| points_count | [uint64](#uint64) |  | number of vectors in the collection |
+| points_count | [uint64](#uint64) |  | number of points in the collection |
+| indexed_vectors_count | [uint64](#uint64) | optional | number of indexed vectors in the collection. |
 
 
 

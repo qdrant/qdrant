@@ -231,9 +231,11 @@ pub struct CollectionInfo {
     #[prost(uint64, tag="4")]
     pub segments_count: u64,
     /// Used disk space
+    #[deprecated]
     #[prost(uint64, tag="5")]
     pub disk_data_size: u64,
     /// Used RAM (not implemented)
+    #[deprecated]
     #[prost(uint64, tag="6")]
     pub ram_data_size: u64,
     /// Configuration
@@ -242,9 +244,12 @@ pub struct CollectionInfo {
     /// Collection data types
     #[prost(map="string, message", tag="8")]
     pub payload_schema: ::std::collections::HashMap<::prost::alloc::string::String, PayloadSchemaInfo>,
-    /// number of vectors in the collection
+    /// number of points in the collection
     #[prost(uint64, tag="9")]
     pub points_count: u64,
+    /// number of indexed vectors in the collection.
+    #[prost(uint64, optional, tag="10")]
+    pub indexed_vectors_count: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ChangeAliases {
