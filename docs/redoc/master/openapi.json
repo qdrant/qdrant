@@ -4542,6 +4542,7 @@
               "Local": {
                 "type": "object",
                 "required": [
+                  "optimizers",
                   "segments"
                 ],
                 "properties": {
@@ -4549,6 +4550,12 @@
                     "type": "array",
                     "items": {
                       "$ref": "#/components/schemas/SegmentTelemetry"
+                    }
+                  },
+                  "optimizers": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/OptimizerTelemetry"
                     }
                   }
                 }
@@ -4859,7 +4866,93 @@
         }
       },
       "PayloadIndexTelemetry": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "points_count",
+          "points_values_count"
+        ],
+        "properties": {
+          "points_values_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "points_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "histogram_bucket_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "OptimizerTelemetry": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "Indexing"
+            ],
+            "properties": {
+              "Indexing": {
+                "type": "object",
+                "required": [
+                  "optimizations"
+                ],
+                "properties": {
+                  "optimizations": {
+                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "Merge"
+            ],
+            "properties": {
+              "Merge": {
+                "type": "object",
+                "required": [
+                  "optimizations"
+                ],
+                "properties": {
+                  "optimizations": {
+                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "Vacuum"
+            ],
+            "properties": {
+              "Vacuum": {
+                "type": "object",
+                "required": [
+                  "optimizations"
+                ],
+                "properties": {
+                  "optimizations": {
+                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       },
       "WebApiTelemetry": {
         "type": "object",
