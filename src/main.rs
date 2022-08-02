@@ -5,6 +5,7 @@ mod consensus;
 mod greeting;
 mod settings;
 mod snapshots;
+mod startup;
 mod tonic;
 
 use std::io::Error;
@@ -18,7 +19,6 @@ use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
 use collection::shard::ChannelService;
 use consensus::Consensus;
-use log::LevelFilter;
 use slog::Drain;
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::consensus::persistent::Persistent;
@@ -31,6 +31,7 @@ use crate::common::telemetry::TelemetryCollector;
 use crate::greeting::welcome;
 use crate::settings::Settings;
 use crate::snapshots::{recover_full_snapshot, recover_snapshots};
+use crate::startup::setup_logger;
 
 /// Qdrant (read: quadrant ) is a vector similarity search engine.
 /// It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.
@@ -72,27 +73,8 @@ struct Args {
 
 fn main() -> anyhow::Result<()> {
     let settings = Settings::new().expect("Can't read config.");
-    let is_info = settings.log_level.to_ascii_uppercase() == "INFO";
-    let mut log_builder = env_logger::Builder::new();
 
-    log_builder
-        // Timestamp in millis
-        .format_timestamp_millis()
-        // Parse user defined log level configuration
-        .parse_filters(&settings.log_level)
-        // h2 is very verbose and we have many network operations,
-        // so it is limited to only errors
-        .filter_module("h2", LevelFilter::Error)
-        .filter_module("tower", LevelFilter::Warn);
-
-    if is_info {
-        // Additionally filter verbose modules if no extended logging configuration is provided
-        log_builder
-            .filter_module("wal", LevelFilter::Warn)
-            .filter_module("raft::raft", LevelFilter::Warn);
-    };
-
-    log_builder.init();
+    setup_logger(&settings.log_level);
     let args = Args::parse();
 
     if let Some(full_snapshot) = args.storage_snapshot {
@@ -118,13 +100,23 @@ fn main() -> anyhow::Result<()> {
         .expect("Can't create runtime.");
     let runtime_handle = runtime.handle().clone();
 
+    // Create a signal sender and receiver. It is used to communicate with the consensus thread.
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
+
+    // High-level channel which could be used to send User-space consensus operations
     let propose_operation_sender = OperationSender::new(propose_sender);
 
-    let (persistent_consensus_state, p_state_just_initialized) =
+    // Saved state of the consensus.
+    let persistent_consensus_state =
         Persistent::load_or_init(&settings.storage.storage_path, args.bootstrap.is_none())?;
+
+    // Channel service is used to manage connections between peers.
+    // It allocates required number of channels and manages proper reconnection handling
     let mut channel_service = ChannelService::default();
+
     if settings.cluster.enabled {
+        // We only need channel_service in case if cluster is enabled.
+        // So we initialize it with real values here
         let p2p_grpc_timeout = Duration::from_millis(settings.cluster.grpc_timeout_ms);
         let connection_timeout = Duration::from_millis(settings.cluster.connection_timeout_ms);
         channel_service.channel_pool = Arc::new(TransportChannelPool::new(
@@ -134,6 +126,9 @@ fn main() -> anyhow::Result<()> {
         ));
         channel_service.id_to_address = persistent_consensus_state.peer_address_by_id.clone();
     }
+
+    // Table of content manages the list of collections.
+    // It is a main entry point for the storage.
     let toc = TableOfContent::new(
         &settings.storage,
         runtime,
@@ -141,6 +136,8 @@ fn main() -> anyhow::Result<()> {
         persistent_consensus_state.this_peer_id(),
         propose_operation_sender.clone(),
     );
+
+    // Here we load all stored collections.
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {
             log::debug!("Loaded collection: {}", collection);
@@ -149,7 +146,12 @@ fn main() -> anyhow::Result<()> {
 
     let toc_arc = Arc::new(toc);
     let storage_path = toc_arc.storage_path();
+
+    // Holder for all actively running threads of the service: web, gPRC, consensus, etc.
     let mut handles: Vec<JoinHandle<Result<(), Error>>> = vec![];
+
+    // Router for external queries.
+    // It decides if query should go directly to the ToC or through the consensus.
     let mut dispatcher = Dispatcher::new(toc_arc.clone());
     let consensus_state: ConsensusStateRef = ConsensusState::new(
         persistent_consensus_state,
@@ -158,11 +160,13 @@ fn main() -> anyhow::Result<()> {
         storage_path,
     )
     .into();
+
     if settings.cluster.enabled {
         dispatcher = dispatcher.with_consensus(consensus_state.clone());
     }
     let dispatcher_arc = Arc::new(dispatcher);
 
+    // Monitoring and telemetry.
     let telemetry_collector = TelemetryCollector::new(settings.clone(), dispatcher_arc.clone());
     let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
 
@@ -170,61 +174,27 @@ fn main() -> anyhow::Result<()> {
         // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
         // logs from it to `log` crate
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
-        let (mut consensus, message_sender) = Consensus::new(
+
+        // Runs raft consensus in a separate thread.
+        // Create a pipe `message_sender` to communicate with the consensus
+        let p2p_port = settings.cluster.p2p.port.expect("P2P port is not set");
+
+        let handle = Consensus::run(
             &slog_logger,
-            consensus_state.clone(),
+            consensus_state,
             args.bootstrap,
             args.uri.map(|uri| uri.to_string()),
-            settings.cluster.p2p.port.map(|port| port as u32),
+            settings.service.host.clone(),
+            p2p_port,
             settings.cluster.consensus.clone(),
-            channel_service.channel_pool,
-            p_state_just_initialized,
+            channel_service,
+            propose_receiver,
+            tonic_telemetry_collector.clone(),
+            toc_arc.clone(),
         )
         .expect("Can't initialize consensus");
-        thread::Builder::new()
-            .name("consensus".to_string())
-            .spawn(move || {
-                if let Err(err) = consensus.start() {
-                    log::error!("Consensus stopped with error: {err}");
-                    consensus_state.on_consensus_thread_err(err);
-                }
-            })?;
 
-        let message_sender_moved = message_sender.clone();
-        thread::Builder::new()
-            .name("forward-proposals".to_string())
-            .spawn(move || {
-                while let Ok(entry) = propose_receiver.recv() {
-                    if message_sender_moved
-                        .send(consensus::Message::FromClient(entry))
-                        .is_err()
-                    {
-                        log::error!("Can not forward new entry to consensus as it was stopped.");
-                        break;
-                    }
-                }
-            })?;
-
-        if let Some(internal_grpc_port) = settings.cluster.p2p.port {
-            let settings = settings.clone();
-            let dispatcher_arc = dispatcher_arc.clone();
-            let tonic_telemetry_collector = tonic_telemetry_collector.clone();
-            let handle = thread::Builder::new()
-                .name("grpc_internal".to_string())
-                .spawn(move || {
-                    tonic::init_internal(
-                        dispatcher_arc.clone(),
-                        tonic_telemetry_collector.clone(),
-                        settings.service.host,
-                        internal_grpc_port,
-                        message_sender,
-                    )
-                })
-                .unwrap();
-            handles.push(handle);
-        } else {
-            log::info!("gRPC internal endpoint disabled");
-        }
+        handles.push(handle);
     } else {
         log::info!("Distributed mode disabled");
     }

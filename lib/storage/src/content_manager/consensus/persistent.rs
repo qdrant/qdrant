@@ -63,21 +63,18 @@ impl Persistent {
     pub fn load_or_init(
         storage_path: impl AsRef<Path>,
         first_peer: bool,
-    ) -> Result<(Self, bool), StorageError> {
+    ) -> Result<Self, StorageError> {
         create_dir_all(storage_path.as_ref())?;
         let path = storage_path.as_ref().join(STATE_FILE_NAME);
-        let (state, just_initialized) = if path.exists() {
+        let state = if path.exists() {
             log::info!("Loading raft state from {}", path.display());
-            (Self::load(path)?, false)
+            Self::load(path)?
         } else {
             log::info!("Initializing new raft state at {}", path.display());
-            (Self::init(path, first_peer)?, true)
+            Self::init(path, first_peer)?
         };
-        log::debug!(
-            "State: {:?}. Is just initialized: {just_initialized}",
-            state
-        );
-        Ok((state, just_initialized))
+        log::debug!("State: {:?}", state);
+        Ok(state)
     }
 
     pub fn unapplied_entities_count(&self) -> usize {

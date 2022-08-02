@@ -13,6 +13,8 @@ use ::api::grpc::qdrant::points_server::PointsServer;
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
 use ::api::grpc::qdrant::{HealthCheckReply, HealthCheckRequest};
+use storage::content_manager::consensus_state::ConsensusStateRef;
+use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use tokio::{runtime, signal};
 use tonic::transport::Server;
@@ -83,7 +85,8 @@ pub fn init(
 }
 
 pub fn init_internal(
-    dispatcher: Arc<Dispatcher>,
+    toc: Arc<TableOfContent>,
+    consensus_state: ConsensusStateRef,
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     host: String,
     internal_grpc_port: u16,
@@ -93,7 +96,6 @@ pub fn init_internal(
 
     use crate::tonic::api::raft_api::RaftService;
 
-    let toc = dispatcher.toc().clone();
     let tonic_runtime = runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
@@ -110,7 +112,7 @@ pub fn init_internal(
             let service = QdrantService::default();
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let points_internal_service = PointsInternalService::new(toc.clone());
-            let raft_service = RaftService::new(to_consensus, dispatcher.clone());
+            let raft_service = RaftService::new(to_consensus, consensus_state);
 
             log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
