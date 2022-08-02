@@ -10,12 +10,12 @@ args = parser.parse_args()
 
 # Create collection
 r = requests.put(
-    f"http://127.0.0.1:{args.ports[0]}/collections/{args.collection_name}", json={
+    f"http://127.0.0.1:{args.ports[0]}/collections/{args.collection_name}?timeout=60", json={
         "vector_size": 4,
         "distance": "Dot",
         "shard_number": 6
     })
-assert r.status_code == 200
+assert r.status_code == 200, r.text
 
 # Wait
 time.sleep(5)

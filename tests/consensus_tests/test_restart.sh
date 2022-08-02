@@ -34,8 +34,6 @@ while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost:6433)" != "200" ]
   sleep 1;
 done
 
-# After restart peers reellect the leader and it takes some time
-sleep 5;
 # Able to create collection after restart
 python3 create_collection_and_check.py test_collection_1 6433 6333
 # Points from the 1st collection can be retrieved
