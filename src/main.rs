@@ -102,6 +102,8 @@ fn main() -> anyhow::Result<()> {
 
     // Create a signal sender and receiver. It is used to communicate with the consensus thread.
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
+
+    // High-level channel which could be used to send User-space consensus operations
     let propose_operation_sender = OperationSender::new(propose_sender);
 
     // Saved state of the consensus.
@@ -175,38 +177,24 @@ fn main() -> anyhow::Result<()> {
 
         // Runs raft consensus in a separate thread.
         // Create a pipe `message_sender` to communicate with the consensus
-        let message_sender = Consensus::run(
+        let p2p_port = settings.cluster.p2p.port.expect("P2P port is not set");
+
+        let handle = Consensus::run(
             &slog_logger,
             consensus_state,
             args.bootstrap,
             args.uri.map(|uri| uri.to_string()),
-            settings.cluster.p2p.port.map(|port| port as u32),
+            settings.service.host.clone(),
+            p2p_port,
             settings.cluster.consensus.clone(),
-            channel_service.channel_pool,
+            channel_service,
             propose_receiver,
+            tonic_telemetry_collector.clone(),
+            toc_arc.clone(),
         )
         .expect("Can't initialize consensus");
 
-        if let Some(internal_grpc_port) = settings.cluster.p2p.port {
-            let settings = settings.clone();
-            let dispatcher_arc = dispatcher_arc.clone();
-            let tonic_telemetry_collector = tonic_telemetry_collector.clone();
-            let handle = thread::Builder::new()
-                .name("grpc_internal".to_string())
-                .spawn(move || {
-                    tonic::init_internal(
-                        dispatcher_arc.clone(),
-                        tonic_telemetry_collector.clone(),
-                        settings.service.host,
-                        internal_grpc_port,
-                        message_sender,
-                    )
-                })
-                .unwrap();
-            handles.push(handle);
-        } else {
-            log::info!("gRPC internal endpoint disabled");
-        }
+        handles.push(handle);
     } else {
         log::info!("Distributed mode disabled");
     }

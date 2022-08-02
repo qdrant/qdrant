@@ -3,23 +3,28 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{mpsc, Arc};
 use std::thread;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use api::grpc::qdrant::raft_client::RaftClient;
 use api::grpc::qdrant::{PeerId, RaftMessage as GrpcRaftMessage};
 use api::grpc::transport_channel_pool::TransportChannelPool;
+use collection::shard::ChannelService;
 use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{SoftState, StateRole};
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::consensus_state::ConsensusStateRef;
 use storage::content_manager::errors::StorageError;
+use storage::content_manager::toc::TableOfContent;
 use tokio::runtime::Runtime;
 use tonic::transport::Uri;
 
 use crate::common::helpers::IsReady;
+use crate::common::telemetry::TonicTelemetryCollector;
 use crate::settings::ConsensusConfig;
+use crate::tonic::init_internal;
 
 type Node = RawNode<ConsensusStateRef>;
 
@@ -36,7 +41,7 @@ pub struct Consensus {
     bootstrap_uri: Option<Uri>,
     config: ConsensusConfig,
     pub is_leader_established: Arc<IsReady>,
-    transport_channel_pool: Arc<TransportChannelPool>,
+    channel_service: ChannelService,
 }
 
 impl Consensus {
@@ -47,11 +52,14 @@ impl Consensus {
         state_ref: ConsensusStateRef,
         bootstrap_peer: Option<Uri>,
         uri: Option<String>,
-        p2p_port: Option<u32>,
+        p2p_host: String,
+        p2p_port: u16,
         config: ConsensusConfig,
-        transport_channel_pool: Arc<TransportChannelPool>,
+        channel_service: ChannelService,
         propose_receiver: mpsc::Receiver<Vec<u8>>,
-    ) -> anyhow::Result<SyncSender<Message>> {
+        telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
+        toc: Arc<TableOfContent>,
+    ) -> anyhow::Result<JoinHandle<std::io::Result<()>>> {
         let (mut consensus, message_sender) = Self::new(
             logger,
             state_ref.clone(),
@@ -59,15 +67,16 @@ impl Consensus {
             uri,
             p2p_port,
             config,
-            transport_channel_pool,
+            channel_service.clone(),
         )?;
 
+        let state_ref_clone = state_ref.clone();
         thread::Builder::new()
             .name("consensus".to_string())
             .spawn(move || {
                 if let Err(err) = consensus.start() {
                     log::error!("Consensus stopped with error: {err}");
-                    state_ref.on_consensus_thread_err(err);
+                    state_ref_clone.on_consensus_thread_err(err);
                 }
             })?;
 
@@ -86,7 +95,22 @@ impl Consensus {
                 }
             })?;
 
-        Ok(message_sender)
+        let handle = thread::Builder::new()
+            .name("grpc_internal".to_string())
+            .spawn(move || {
+                init_internal(
+                    toc,
+                    channel_service,
+                    state_ref,
+                    telemetry_collector,
+                    p2p_host,
+                    p2p_port,
+                    message_sender,
+                )
+            })
+            .unwrap();
+
+        Ok(handle)
     }
 
     /// If `bootstrap_peer` peer is supplied, then either `uri` or `p2p_port` should be also supplied
@@ -96,9 +120,9 @@ impl Consensus {
         state_ref: ConsensusStateRef,
         bootstrap_peer: Option<Uri>,
         uri: Option<String>,
-        p2p_port: Option<u32>,
+        p2p_port: u16,
         config: ConsensusConfig,
-        transport_channel_pool: Arc<TransportChannelPool>,
+        channel_service: ChannelService,
     ) -> anyhow::Result<(Self, SyncSender<Message>)> {
         // raft will not return entries to the application smaller or equal to `applied`
         let last_applied = state_ref.last_applied_entry().unwrap_or_default();
@@ -163,7 +187,7 @@ impl Consensus {
             bootstrap_uri: bootstrap_peer,
             config,
             is_leader_established,
-            transport_channel_pool,
+            channel_service,
         };
 
         Ok((consensus, sender))
@@ -174,7 +198,7 @@ impl Consensus {
         state_ref: &ConsensusStateRef,
         bootstrap_peer: Option<Uri>,
         uri: Option<String>,
-        p2p_port: Option<u32>,
+        p2p_port: u16,
         config: &ConsensusConfig,
         runtime: &Runtime,
         sender: SyncSender<Message>,
@@ -183,9 +207,6 @@ impl Consensus {
     ) -> anyhow::Result<()> {
         if let Some(bootstrap_peer) = bootstrap_peer {
             log::debug!("Bootstrapping from peer with address: {bootstrap_peer}");
-            if uri.is_none() && p2p_port.is_none() {
-                return Err(anyhow::anyhow!("Failed to bootstrap peer as neither `internal rpc port` was configured nor `this peer uri` was supplied"));
-            }
             runtime.block_on(Self::bootstrap(
                 state_ref,
                 bootstrap_peer,
@@ -220,7 +241,7 @@ impl Consensus {
         state_ref: &ConsensusStateRef,
         bootstrap_peer: Uri,
         uri: Option<String>,
-        p2p_port: Option<u32>,
+        p2p_port: u16,
         config: &ConsensusConfig,
     ) -> anyhow::Result<()> {
         // Use dedicated transport channel for bootstrapping because of specific timeout
@@ -237,7 +258,7 @@ impl Consensus {
             .add_peer_to_known(tonic::Request::new(
                 api::grpc::qdrant::AddPeerToKnownMessage {
                     uri,
-                    port: p2p_port,
+                    port: Some(p2p_port as u32),
                     id,
                 },
             ))
@@ -493,7 +514,7 @@ impl Consensus {
             .collect();
         let bootstrap_uri = self.bootstrap_uri.clone();
         let consensus_config_arc = Arc::new(self.config.clone());
-        let pool = self.transport_channel_pool.clone();
+        let pool = self.channel_service.channel_pool.clone();
         let future = async move {
             let mut send_futures = Vec::new();
             for (message, address) in messages_with_address {
@@ -593,7 +614,6 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    use api::grpc::transport_channel_pool::TransportChannelPool;
     use collection::shard::ChannelService;
     use segment::types::Distance;
     use slog::Drain;
@@ -647,9 +667,9 @@ mod tests {
             consensus_state.clone(),
             None,
             Some("http://127.0.0.1:6335".parse().unwrap()),
-            None,
+            6335,
             ConsensusConfig::default(),
-            Arc::new(TransportChannelPool::default()),
+            ChannelService::default(),
         )
         .unwrap();
 
