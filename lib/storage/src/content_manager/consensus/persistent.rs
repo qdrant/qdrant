@@ -133,6 +133,16 @@ impl Persistent {
         self.save()
     }
 
+    pub fn remove_peer(&mut self, peer_id: PeerId) -> Result<(), StorageError> {
+        self.peer_address_by_id
+            .write()
+            .remove(&peer_id)
+            .ok_or_else(|| StorageError::NotFound {
+                description: format!("Peer with id {peer_id} not found"),
+            })?;
+        self.save()
+    }
+
     pub fn last_applied_entry(&self) -> Option<u64> {
         self.apply_progress_queue.get_last_applied()
     }
