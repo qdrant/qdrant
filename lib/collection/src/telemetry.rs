@@ -16,6 +16,7 @@ pub enum ShardTelemetry {
     },
     Local {
         segments: Vec<SegmentTelemetry>,
+        optimizers: Vec<OptimizerTelemetry>,
     },
     Proxy {},
     ForwardProxy {},
@@ -27,6 +28,19 @@ pub struct CollectionTelemetry {
     pub config: CollectionConfig,
     pub init_time: std::time::Duration,
     pub shards: Vec<ShardTelemetry>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+pub enum OptimizerTelemetry {
+    Indexing {
+        optimizations: TelemetryOperationStatistics,
+    },
+    Merge {
+        optimizations: TelemetryOperationStatistics,
+    },
+    Vacuum {
+        optimizations: TelemetryOperationStatistics,
+    },
 }
 
 impl CollectionTelemetry {
@@ -51,11 +65,34 @@ impl Anonymize for CollectionTelemetry {
     }
 }
 
+impl Anonymize for OptimizerTelemetry {
+    fn anonymize(&self) -> Self {
+        match self {
+            OptimizerTelemetry::Indexing { optimizations } => OptimizerTelemetry::Indexing {
+                optimizations: optimizations.anonymize(),
+            },
+            OptimizerTelemetry::Merge { optimizations } => OptimizerTelemetry::Merge {
+                optimizations: optimizations.anonymize(),
+            },
+            OptimizerTelemetry::Vacuum { optimizations } => OptimizerTelemetry::Vacuum {
+                optimizations: optimizations.anonymize(),
+            },
+        }
+    }
+}
+
 impl Anonymize for ShardTelemetry {
     fn anonymize(&self) -> Self {
         match self {
-            ShardTelemetry::Local { segments } => ShardTelemetry::Local {
+            ShardTelemetry::Local {
+                segments,
+                optimizers,
+            } => ShardTelemetry::Local {
                 segments: segments.iter().map(|segment| segment.anonymize()).collect(),
+                optimizers: optimizers
+                    .iter()
+                    .map(|optimizer| optimizer.anonymize())
+                    .collect(),
             },
             ShardTelemetry::Remote {
                 searches,

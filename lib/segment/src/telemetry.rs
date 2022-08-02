@@ -25,7 +25,11 @@ pub struct SegmentTelemetry {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
-pub struct PayloadIndexTelemetry {}
+pub struct PayloadIndexTelemetry {
+    pub points_values_count: usize,
+    pub points_count: usize,
+    pub histogram_bucket_size: Option<usize>,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct VectorIndexTelemetry {
@@ -225,6 +229,10 @@ impl Anonymize for VectorIndexTelemetry {
 
 impl Anonymize for PayloadIndexTelemetry {
     fn anonymize(&self) -> Self {
-        PayloadIndexTelemetry {}
+        PayloadIndexTelemetry {
+            points_count: telemetry_round(self.points_count),
+            points_values_count: telemetry_round(self.points_values_count),
+            histogram_bucket_size: self.histogram_bucket_size,
+        }
     }
 }

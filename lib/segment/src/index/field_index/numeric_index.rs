@@ -363,7 +363,11 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        PayloadIndexTelemetry {}
+        PayloadIndexTelemetry {
+            points_count: self.points_count,
+            points_values_count: self.histogram.get_total_count(),
+            histogram_bucket_size: Some(self.histogram.current_bucket_size()),
+        }
     }
 }
 

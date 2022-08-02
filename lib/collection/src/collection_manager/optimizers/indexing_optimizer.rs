@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use parking_lot::Mutex;
+use segment::telemetry::TelemetryOperationAggregator;
 use segment::types::{HnswConfig, Indexes, SegmentType, StorageType, VECTOR_ELEMENT_SIZE};
 
 use crate::collection_manager::holders::segment_holder::{
@@ -10,6 +13,7 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
+use crate::telemetry::OptimizerTelemetry;
 
 const BYTES_IN_KB: usize = 1024;
 
@@ -23,6 +27,7 @@ pub struct IndexingOptimizer {
     collection_temp_dir: PathBuf,
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
+    optimizations_telemetry_counter: Arc<Mutex<TelemetryOperationAggregator>>,
 }
 
 impl IndexingOptimizer {
@@ -39,6 +44,7 @@ impl IndexingOptimizer {
             collection_temp_dir,
             collection_params,
             hnsw_config,
+            optimizations_telemetry_counter: TelemetryOperationAggregator::new(),
         }
     }
 
@@ -213,6 +219,16 @@ impl SegmentOptimizer for IndexingOptimizer {
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId> {
         self.worst_segment(segments, excluded_ids)
+    }
+
+    fn get_telemetry_data(&self) -> OptimizerTelemetry {
+        OptimizerTelemetry::Indexing {
+            optimizations: self.get_telemetry_counter().lock().get_statistics(),
+        }
+    }
+
+    fn get_telemetry_counter(&self) -> Arc<Mutex<TelemetryOperationAggregator>> {
+        self.optimizations_telemetry_counter.clone()
     }
 }
 

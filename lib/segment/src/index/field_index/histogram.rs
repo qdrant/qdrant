@@ -59,9 +59,13 @@ impl Histogram {
         Ok(())
     }
 
-    fn current_bucket_size(&self) -> usize {
+    pub fn current_bucket_size(&self) -> usize {
         let bucket_size = (self.total_count as f64 * self.precision) as usize;
         min(max(MIN_BUCKET_SIZE, bucket_size), self.max_bucket_size)
+    }
+
+    pub fn get_total_count(&self) -> usize {
+        self.total_count
     }
 
     /// Infers boundaries for bucket of given size and staring point.

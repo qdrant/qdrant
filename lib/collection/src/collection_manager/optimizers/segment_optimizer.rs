@@ -4,11 +4,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use itertools::Itertools;
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
+use segment::telemetry::{TelemetryOperationAggregator, TelemetryOperationTimer};
 use segment::types::{
     HnswConfig, Indexes, PayloadKeyType, PayloadSchemaType, PayloadStorageType, PointIdType,
     SegmentConfig, StorageType, VECTOR_ELEMENT_SIZE,
@@ -20,6 +21,7 @@ use crate::collection_manager::holders::segment_holder::{
 };
 use crate::config::CollectionParams;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::telemetry::OptimizerTelemetry;
 
 const BYTES_IN_KB: usize = 1024;
 
@@ -60,6 +62,10 @@ pub trait SegmentOptimizer {
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId>;
+
+    fn get_telemetry_data(&self) -> OptimizerTelemetry;
+
+    fn get_telemetry_counter(&self) -> Arc<Mutex<TelemetryOperationAggregator>>;
 
     /// Build temp segment
     fn temp_segment(&self) -> CollectionResult<LockedSegment> {
@@ -307,6 +313,9 @@ pub trait SegmentOptimizer {
         ids: Vec<SegmentId>,
         stopped: &AtomicBool,
     ) -> CollectionResult<bool> {
+        let mut timer = TelemetryOperationTimer::new(&self.get_telemetry_counter());
+        timer.set_success(false);
+
         // On the one hand - we want to check consistently if all provided segments are
         // available for optimization (not already under one) and we want to do it before creating a temp segment
         // which is an expensive operation. So we can't not unlock `segments` after the check and before the insert.
@@ -449,6 +458,7 @@ pub trait SegmentOptimizer {
                 tmp_segment.drop_data()?;
             }
         }
+        timer.set_success(true);
         Ok(true)
     }
 }
