@@ -36,6 +36,7 @@ use crate::telemetry::ShardTelemetry;
 /// RemoteShard
 ///
 /// Remote Shard is a representation of a shard that is located on a remote peer.
+#[derive(Clone)]
 pub struct RemoteShard {
     pub(crate) id: ShardId,
     pub(crate) collection_id: CollectionId,

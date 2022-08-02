@@ -7,14 +7,15 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use crate::common::stoppable_task_async::{spawn_async_stoppable, StoppableAsyncTaskHandle};
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, OptimizersStatus};
 use crate::shard::forward_proxy_shard::ForwardProxyShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::ShardConfig;
 use crate::shard::shard_holder::LockedShardHolder;
 use crate::shard::shard_versioning::drop_old_shards;
 use crate::shard::{
-    create_shard_dir, ChannelService, CollectionId, PeerId, Shard, ShardId, ShardTransfer,
+    create_shard_dir, ChannelService, CollectionId, PeerId, Shard, ShardId, ShardOperation,
+    ShardTransfer,
 };
 
 const TRANSFER_BATCH_SIZE: usize = 100;
@@ -266,7 +267,7 @@ pub async fn transfer_shard(
     stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
     // Initiate shard on a remote peer
-    let remote_shard = RemoteShard::new(shard_id, collection_id, peer_id, channel_service);
+    let remote_shard = RemoteShard::new(shard_id, collection_id.clone(), peer_id, channel_service);
 
     // ToDo: Initial fast file-based transfer (optional)
     // * Create shard snapshot - save the latest version of point updates in the snapshot
@@ -274,13 +275,15 @@ pub async fn transfer_shard(
     // * Transfer difference between snapshot and current shard state
 
     remote_shard.initiate_transfer().await?;
-    {
+    let vector_count_at_transfer_start = {
         let mut shard_holder_guard = shard_holder.write().await;
         let transferring_shard = shard_holder_guard.remove_shard(shard_id);
         match transferring_shard {
             Some(Shard::Local(local_shard)) => {
-                let proxy_shard = ForwardProxyShard::new(local_shard, remote_shard);
+                let vector_count = local_shard.info().await?.vectors_count;
+                let proxy_shard = ForwardProxyShard::new(local_shard, remote_shard.clone());
                 shard_holder_guard.add_shard(shard_id, Shard::ForwardProxy(proxy_shard));
+                vector_count
             }
             Some(shard) => {
                 // return shard back
@@ -297,9 +300,56 @@ pub async fn transfer_shard(
                 )));
             }
         }
-    }
+    };
     // Transfer contents batch by batch
-    transfer_batches(shard_holder, shard_id, stopped).await
+    transfer_batches(shard_holder, shard_id, stopped.clone()).await?;
+
+    // Validate that the new shard reached a certain level of indexing before promoting it to not slowdown the search requests
+    validate_indexing_progress(
+        shard_id,
+        collection_id,
+        peer_id,
+        vector_count_at_transfer_start,
+        &remote_shard,
+        stopped,
+    )
+    .await
+}
+
+pub async fn validate_indexing_progress(
+    shard_id: ShardId,
+    collection_id: CollectionId,
+    peer_id: PeerId,
+    vector_count_at_transfer_start: usize,
+    remote_shard: &RemoteShard,
+    stopped: Arc<AtomicBool>,
+) -> CollectionResult<()> {
+    // threshold currently at 90% of the initial vector count
+    let indexing_threshold = (vector_count_at_transfer_start as f64 * 0.9) as usize;
+    let mut attempt: i64 = 0;
+    loop {
+        if stopped.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(CollectionError::Cancelled {
+                description: "Transfer cancelled".to_string(),
+            });
+        }
+
+        let shard_info = remote_shard.info().await?;
+        let vector_count = shard_info.vectors_count;
+        let indexed_vector_count = shard_info.indexed_vectors_count;
+        if shard_info.optimizer_status == OptimizersStatus::Ok
+            || indexed_vector_count >= indexing_threshold
+        {
+            break;
+        }
+        sleep(Duration::from_secs(30)).await;
+        attempt += 1;
+        // Report progress every 20 attempts (around 10 minutes)
+        if attempt.rem_euclid(20) == 0 {
+            log::info!("Waiting for optimizer on {}:{} on peer {} to finish transfer. (indexing progress {}/{})", collection_id, shard_id, peer_id, indexed_vector_count, vector_count);
+        }
+    }
+    Ok(())
 }
 
 pub fn spawn_transfer_task<T, F>(
