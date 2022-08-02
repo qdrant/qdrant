@@ -67,7 +67,7 @@ impl Consensus {
             uri,
             p2p_port,
             config,
-            channel_service.clone(),
+            channel_service,
         )?;
 
         let state_ref_clone = state_ref.clone();
@@ -100,7 +100,6 @@ impl Consensus {
             .spawn(move || {
                 init_internal(
                     toc,
-                    channel_service,
                     state_ref,
                     telemetry_collector,
                     p2p_host,

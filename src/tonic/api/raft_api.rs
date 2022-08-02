@@ -5,7 +5,6 @@ use api::grpc::qdrant::raft_server::Raft;
 use api::grpc::qdrant::{
     AddPeerToKnownMessage, AllPeers, Peer, PeerId, RaftMessage as RaftMessageBytes, Uri as UriStr,
 };
-use collection::shard::ChannelService;
 use itertools::Itertools;
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Message as RaftMessage};
 use storage::content_manager::consensus_ops::ConsensusOperations;
@@ -17,19 +16,13 @@ use crate::consensus;
 
 pub struct RaftService {
     message_sender: Mutex<SyncSender<consensus::Message>>,
-    channel_service: ChannelService,
     consensus_state: ConsensusStateRef,
 }
 
 impl RaftService {
-    pub fn new(
-        sender: SyncSender<consensus::Message>,
-        channel_service: ChannelService,
-        consensus_state: ConsensusStateRef,
-    ) -> Self {
+    pub fn new(sender: SyncSender<consensus::Message>, consensus_state: ConsensusStateRef) -> Self {
         Self {
             message_sender: Mutex::new(sender),
-            channel_service,
             consensus_state,
         }
     }
@@ -54,7 +47,7 @@ impl Raft for RaftService {
         &self,
         request: tonic::Request<PeerId>,
     ) -> Result<tonic::Response<UriStr>, tonic::Status> {
-        let addresses = self.channel_service.id_to_address.read().clone();
+        let addresses = self.consensus_state.peer_address_by_id();
         let uri = addresses
             .get(&request.get_ref().id)
             .ok_or_else(|| Status::internal("Peer not found"))?;
@@ -92,7 +85,7 @@ impl Raft for RaftService {
             .propose_consensus_op(ConsensusOperations::AddPeer(peer.id, uri.to_string()), None)
             .await
             .map_err(|err| Status::internal(format!("Failed to add peer: {err}")))?;
-        let addresses = self.channel_service.id_to_address.read().clone();
+        let addresses = self.consensus_state.peer_address_by_id();
         // Make sure that the new peer is now present in the known addresses
         if !addresses.values().contains(&uri) {
             return Err(Status::internal(format!(

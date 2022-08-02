@@ -13,7 +13,6 @@ use ::api::grpc::qdrant::points_server::PointsServer;
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
 use ::api::grpc::qdrant::{HealthCheckReply, HealthCheckRequest};
-use collection::shard::ChannelService;
 use storage::content_manager::consensus_state::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -87,7 +86,6 @@ pub fn init(
 
 pub fn init_internal(
     toc: Arc<TableOfContent>,
-    channel_service: ChannelService,
     consensus_state: ConsensusStateRef,
     telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     host: String,
@@ -114,7 +112,7 @@ pub fn init_internal(
             let service = QdrantService::default();
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let points_internal_service = PointsInternalService::new(toc.clone());
-            let raft_service = RaftService::new(to_consensus, channel_service, consensus_state);
+            let raft_service = RaftService::new(to_consensus, consensus_state);
 
             log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
