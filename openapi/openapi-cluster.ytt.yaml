@@ -1,7 +1,7 @@
 #@ load("openapi.lib.yml", "response", "reference", "type", "array")
 
 paths:
-  /cluster/status:
+  /cluster:
     get:
       tags:
         - cluster

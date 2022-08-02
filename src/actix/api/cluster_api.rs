@@ -6,7 +6,7 @@ use storage::dispatcher::Dispatcher;
 
 use crate::actix::helpers::process_response;
 
-#[get("/cluster/status")]
+#[get("/cluster")]
 async fn cluster_status(dispatcher: web::Data<Dispatcher>) -> impl Responder {
     let timing = Instant::now();
     let response = dispatcher.cluster_status();
