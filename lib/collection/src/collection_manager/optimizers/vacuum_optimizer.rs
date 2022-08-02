@@ -1,7 +1,10 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use ordered_float::OrderedFloat;
+use parking_lot::Mutex;
+use segment::telemetry::TelemetryOperationAggregator;
 use segment::types::{HnswConfig, SegmentType};
 
 use crate::collection_manager::holders::segment_holder::{
@@ -11,6 +14,7 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
+use crate::telemetry::OptimizerTelemetry;
 
 /// Optimizer which looks for segments with hig amount of soft-deleted points.
 /// Used to free up space.
@@ -22,6 +26,7 @@ pub struct VacuumOptimizer {
     collection_temp_dir: PathBuf,
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
+    optimizations_telemetry_counter: Arc<Mutex<TelemetryOperationAggregator>>,
 }
 
 impl VacuumOptimizer {
@@ -43,6 +48,7 @@ impl VacuumOptimizer {
             collection_temp_dir,
             collection_params,
             hnsw_config,
+            optimizations_telemetry_counter: TelemetryOperationAggregator::new(),
         }
     }
 
@@ -110,6 +116,16 @@ impl SegmentOptimizer for VacuumOptimizer {
             None => vec![],
             Some((segment_id, _segment)) => vec![segment_id],
         }
+    }
+
+    fn get_telemetry_data(&self) -> OptimizerTelemetry {
+        OptimizerTelemetry::Vacuum {
+            optimizations: self.get_telemetry_counter().lock().get_statistics(),
+        }
+    }
+
+    fn get_telemetry_counter(&self) -> Arc<Mutex<TelemetryOperationAggregator>> {
+        self.optimizations_telemetry_counter.clone()
     }
 }
 

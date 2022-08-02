@@ -26,6 +26,7 @@ pub struct MapIndex<N: Hash + Eq + Clone + Display> {
     point_to_values: Vec<Vec<N>>,
     /// Amount of point which have at least one indexed payload value
     indexed_points: usize,
+    values_count: usize,
     store_cf_name: String,
     db: Arc<AtomicRefCell<DB>>,
 }
@@ -36,6 +37,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
             map: Default::default(),
             point_to_values: Vec::new(),
             indexed_points: 0,
+            values_count: 0,
             store_cf_name: Self::storage_cf_name(field_name),
             db,
         }
@@ -68,6 +70,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
             if self.point_to_values[idx as usize].is_empty() {
                 self.indexed_points += 1;
             }
+            self.values_count += 1;
             self.point_to_values[idx as usize].push(value.clone());
             self.map.entry(value).or_default().insert(idx);
         }
@@ -104,7 +107,11 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        PayloadIndexTelemetry {}
+        PayloadIndexTelemetry {
+            points_count: self.indexed_points,
+            points_values_count: self.values_count,
+            histogram_bucket_size: None,
+        }
     }
 
     fn add_many_to_map(&mut self, idx: PointOffsetType, values: Vec<N>) -> OperationResult<()> {
@@ -126,6 +133,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
             ))
         })?;
 
+        self.values_count += values.len();
         if self.point_to_values.len() <= idx as usize {
             self.point_to_values.resize(idx as usize + 1, Vec::new())
         }
@@ -192,6 +200,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         if !removed_values.is_empty() {
             self.indexed_points -= 1;
         }
+        self.values_count -= removed_values.len();
 
         for value in &removed_values {
             if let Some(vals) = self.map.get_mut(value) {

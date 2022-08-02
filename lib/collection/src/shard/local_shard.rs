@@ -46,6 +46,7 @@ pub struct LocalShard {
     pub(super) update_sender: ArcSwap<UnboundedSender<UpdateSignal>>,
     pub(super) path: PathBuf,
     pub(super) before_drop_called: bool,
+    pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
 }
 
 /// Shard holds information about segments and WAL.
@@ -82,7 +83,7 @@ impl LocalShard {
         let locked_wal = Arc::new(Mutex::new(wal));
 
         let mut update_handler = UpdateHandler::new(
-            optimizers,
+            optimizers.clone(),
             optimize_runtime.handle().clone(),
             segment_holder.clone(),
             locked_wal.clone(),
@@ -104,6 +105,7 @@ impl LocalShard {
             update_sender: ArcSwap::from_pointee(update_sender),
             path: collection_path.to_owned(),
             before_drop_called: false,
+            optimizers,
         }
     }
 
@@ -528,7 +530,15 @@ impl LocalShard {
             .iter()
             .map(|(_id, segment)| segment.get().read().get_telemetry_data())
             .collect();
-        ShardTelemetry::Local { segments }
+        let optimizers = self
+            .optimizers
+            .iter()
+            .map(|optimizer| optimizer.get_telemetry_data())
+            .collect();
+        ShardTelemetry::Local {
+            segments,
+            optimizers,
+        }
     }
 }
 
