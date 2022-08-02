@@ -1,6 +1,6 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetCollectionInfoRequest {
-    /// Name of the collection
+    ///  Name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
 }
@@ -9,7 +9,7 @@ pub struct ListCollectionsRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionDescription {
-    /// Name of the collection
+    ///  Name of the collection
     #[prost(string, tag="1")]
     pub name: ::prost::alloc::string::String,
 }
@@ -17,7 +17,7 @@ pub struct CollectionDescription {
 pub struct GetCollectionInfoResponse {
     #[prost(message, optional, tag="1")]
     pub result: ::core::option::Option<CollectionInfo>,
-    /// Time spent to process
+    ///  Time spent to process
     #[prost(double, tag="2")]
     pub time: f64,
 }
@@ -25,7 +25,7 @@ pub struct GetCollectionInfoResponse {
 pub struct ListCollectionsResponse {
     #[prost(message, repeated, tag="1")]
     pub collections: ::prost::alloc::vec::Vec<CollectionDescription>,
-    /// Time spent to process
+    ///  Time spent to process
     #[prost(double, tag="2")]
     pub time: f64,
 }
@@ -39,219 +39,219 @@ pub struct OptimizerStatus {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HnswConfigDiff {
     ///
-    ///Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+    /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
     #[prost(uint64, optional, tag="1")]
     pub m: ::core::option::Option<u64>,
     ///
-    ///Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
+    /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
     #[prost(uint64, optional, tag="2")]
     pub ef_construct: ::core::option::Option<u64>,
     ///
-    ///Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
-    ///If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
-    ///in this case full-scan search should be preferred by query planner and additional indexing is not required.
-    ///Note: 1Kb = 1 vector of size 256
+    /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
+    /// If payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
+    /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
+    /// Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag="3")]
     pub full_scan_threshold: ::core::option::Option<u64>,
     ///
-    ///Number of parallel threads used for background index building. If 0 - auto selection.
+    /// Number of parallel threads used for background index building. If 0 - auto selection.
     #[prost(uint64, optional, tag="4")]
     pub max_indexing_threads: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WalConfigDiff {
-    /// Size of a single WAL block file
+    ///  Size of a single WAL block file
     #[prost(uint64, optional, tag="1")]
     pub wal_capacity_mb: ::core::option::Option<u64>,
-    /// Number of segments to create in advance
+    ///  Number of segments to create in advance
     #[prost(uint64, optional, tag="2")]
     pub wal_segments_ahead: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OptimizersConfigDiff {
     ///
-    ///The minimal fraction of deleted vectors in a segment, required to perform segment optimization
+    /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     #[prost(double, optional, tag="1")]
     pub deleted_threshold: ::core::option::Option<f64>,
     ///
-    ///The minimal number of vectors in a segment, required to perform segment optimization
+    /// The minimal number of vectors in a segment, required to perform segment optimization
     #[prost(uint64, optional, tag="2")]
     pub vacuum_min_vector_number: ::core::option::Option<u64>,
     ///
-    ///Target amount of segments optimizer will try to keep.
-    ///Real amount of segments may vary depending on multiple parameters:
+    /// Target amount of segments optimizer will try to keep.
+    /// Real amount of segments may vary depending on multiple parameters:
     ///
-    ///- Amount of stored points.
-    ///- Current write RPS.
+    /// - Amount of stored points.
+    /// - Current write RPS.
     ///
-    ///It is recommended to select default number of segments as a factor of the number of search threads,
-    ///so that each segment would be handled evenly by one of the threads.
+    /// It is recommended to select default number of segments as a factor of the number of search threads,
+    /// so that each segment would be handled evenly by one of the threads.
     #[prost(uint64, optional, tag="3")]
     pub default_segment_number: ::core::option::Option<u64>,
     ///
-    ///Do not create segments larger this size (in KiloBytes).
-    ///Large segments might require disproportionately long indexation times,
-    ///therefore it makes sense to limit the size of segments.
+    /// Do not create segments larger this size (in KiloBytes).
+    /// Large segments might require disproportionately long indexation times,
+    /// therefore it makes sense to limit the size of segments.
     ///
-    ///If indexation speed have more priority for your - make this parameter lower.
-    ///If search speed is more important - make this parameter higher.
-    ///Note: 1Kb = 1 vector of size 256
+    /// If indexation speed have more priority for your - make this parameter lower.
+    /// If search speed is more important - make this parameter higher.
+    /// Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag="4")]
     pub max_segment_size: ::core::option::Option<u64>,
     ///
-    ///Maximum size (in KiloBytes) of vectors to store in-memory per segment.
-    ///Segments larger than this threshold will be stored as read-only memmaped file.
-    ///To enable memmap storage, lower the threshold
-    ///Note: 1Kb = 1 vector of size 256
+    /// Maximum size (in KiloBytes) of vectors to store in-memory per segment.
+    /// Segments larger than this threshold will be stored as read-only memmaped file.
+    /// To enable memmap storage, lower the threshold
+    /// Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag="5")]
     pub memmap_threshold: ::core::option::Option<u64>,
     ///
-    ///Maximum size (in KiloBytes) of vectors allowed for plain index.
-    ///Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
-    ///Note: 1Kb = 1 vector of size 256
+    /// Maximum size (in KiloBytes) of vectors allowed for plain index.
+    /// Default value based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>
+    /// Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag="6")]
     pub indexing_threshold: ::core::option::Option<u64>,
     ///
-    ///Interval between forced flushes.
+    /// Interval between forced flushes.
     #[prost(uint64, optional, tag="7")]
     pub flush_interval_sec: ::core::option::Option<u64>,
     ///
-    ///Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used
+    /// Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used
     #[prost(uint64, optional, tag="8")]
     pub max_optimization_threads: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateCollection {
-    /// Name of the collection
+    ///  Name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Size of the vectors
+    ///  Size of the vectors
     #[prost(uint64, tag="2")]
     pub vector_size: u64,
-    /// Distance function used for comparing vectors
+    ///  Distance function used for comparing vectors
     #[prost(enumeration="Distance", tag="3")]
     pub distance: i32,
-    /// Configuration of vector index
+    ///  Configuration of vector index
     #[prost(message, optional, tag="4")]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
-    /// Configuration of the Write-Ahead-Log
+    ///  Configuration of the Write-Ahead-Log
     #[prost(message, optional, tag="5")]
     pub wal_config: ::core::option::Option<WalConfigDiff>,
-    /// Configuration of the optimizers
+    ///  Configuration of the optimizers
     #[prost(message, optional, tag="6")]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
-    /// Number of shards in the collection, default = 1
+    ///  Number of shards in the collection, default = 1
     #[prost(uint32, optional, tag="7")]
     pub shard_number: ::core::option::Option<u32>,
-    /// If true - point's payload will not be stored in memory
+    ///  If true - point's payload will not be stored in memory
     #[prost(bool, optional, tag="8")]
     pub on_disk_payload: ::core::option::Option<bool>,
-    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    ///  Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag="9")]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateCollection {
-    /// Name of the collection
+    ///  Name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// New configuration parameters for the collection
+    ///  New configuration parameters for the collection
     #[prost(message, optional, tag="2")]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
-    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    ///  Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag="3")]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteCollection {
-    /// Name of the collection
+    ///  Name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    ///  Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag="2")]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionOperationResponse {
-    /// if operation made changes
+    ///  if operation made changes
     #[prost(bool, tag="1")]
     pub result: bool,
-    /// Time spent to process
+    ///  Time spent to process
     #[prost(double, tag="2")]
     pub time: f64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionParams {
-    /// Size of the vectors
+    ///  Size of the vectors
     #[prost(uint64, tag="1")]
     pub vector_size: u64,
-    /// Distance function used for comparing vectors
+    ///  Distance function used for comparing vectors
     #[prost(enumeration="Distance", tag="2")]
     pub distance: i32,
-    /// Number of shards in collection
+    ///  Number of shards in collection
     #[prost(uint32, tag="3")]
     pub shard_number: u32,
-    /// If true - point's payload will not be stored in memory
+    ///  If true - point's payload will not be stored in memory
     #[prost(bool, tag="4")]
     pub on_disk_payload: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionConfig {
-    /// Collection parameters
+    ///  Collection parameters
     #[prost(message, optional, tag="1")]
     pub params: ::core::option::Option<CollectionParams>,
-    /// Configuration of vector index
+    ///  Configuration of vector index
     #[prost(message, optional, tag="2")]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
-    /// Configuration of the optimizers
+    ///  Configuration of the optimizers
     #[prost(message, optional, tag="3")]
     pub optimizer_config: ::core::option::Option<OptimizersConfigDiff>,
-    /// Configuration of the Write-Ahead-Log
+    ///  Configuration of the Write-Ahead-Log
     #[prost(message, optional, tag="4")]
     pub wal_config: ::core::option::Option<WalConfigDiff>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadSchemaInfo {
-    /// Field data type
+    ///  Field data type
     #[prost(enumeration="PayloadSchemaType", tag="1")]
     pub data_type: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionInfo {
-    /// operating condition of the collection
+    ///  operating condition of the collection
     #[prost(enumeration="CollectionStatus", tag="1")]
     pub status: i32,
-    /// status of collection optimizers
+    ///  status of collection optimizers
     #[prost(message, optional, tag="2")]
     pub optimizer_status: ::core::option::Option<OptimizerStatus>,
-    /// number of vectors in the collection
+    ///  number of vectors in the collection
     #[prost(uint64, tag="3")]
     pub vectors_count: u64,
-    /// Number of independent segments
+    ///  Number of independent segments
     #[prost(uint64, tag="4")]
     pub segments_count: u64,
-    /// Used disk space
+    ///  Used disk space
     #[prost(uint64, tag="5")]
     pub disk_data_size: u64,
-    /// Used RAM (not implemented)
+    ///  Used RAM (not implemented)
     #[prost(uint64, tag="6")]
     pub ram_data_size: u64,
-    /// Configuration
+    ///  Configuration
     #[prost(message, optional, tag="7")]
     pub config: ::core::option::Option<CollectionConfig>,
-    /// Collection data types
+    ///  Collection data types
     #[prost(map="string, message", tag="8")]
     pub payload_schema: ::std::collections::HashMap<::prost::alloc::string::String, PayloadSchemaInfo>,
-    /// number of vectors in the collection
+    ///  number of vectors in the collection
     #[prost(uint64, tag="9")]
     pub points_count: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ChangeAliases {
-    /// List of actions
+    ///  List of actions
     #[prost(message, repeated, tag="1")]
     pub actions: ::prost::alloc::vec::Vec<AliasOperations>,
-    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    ///  Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag="2")]
     pub timeout: ::core::option::Option<u64>,
 }
@@ -274,25 +274,25 @@ pub mod alias_operations {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateAlias {
-    /// Name of the collection
+    ///  Name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// New name of the alias
+    ///  New name of the alias
     #[prost(string, tag="2")]
     pub alias_name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RenameAlias {
-    /// Name of the alias to rename
+    ///  Name of the alias to rename
     #[prost(string, tag="1")]
     pub old_alias_name: ::prost::alloc::string::String,
-    /// Name of the alias
+    ///  Name of the alias
     #[prost(string, tag="2")]
     pub new_alias_name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteAlias {
-    /// Name of the alias
+    ///  Name of the alias
     #[prost(string, tag="1")]
     pub alias_name: ::prost::alloc::string::String,
 }
@@ -304,16 +304,44 @@ pub enum Distance {
     Euclid = 2,
     Dot = 3,
 }
+impl Distance {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Distance::UnknownDistance => "UnknownDistance",
+            Distance::Cosine => "Cosine",
+            Distance::Euclid => "Euclid",
+            Distance::Dot => "Dot",
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum CollectionStatus {
     UnknownCollectionStatus = 0,
-    /// All segments are ready
+    ///  All segments are ready
     Green = 1,
-    /// Optimization in process
+    ///  Optimization in process
     Yellow = 2,
-    /// Something went wrong
+    ///  Something went wrong
     Red = 3,
+}
+impl CollectionStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            CollectionStatus::UnknownCollectionStatus => "UnknownCollectionStatus",
+            CollectionStatus::Green => "Green",
+            CollectionStatus::Yellow => "Yellow",
+            CollectionStatus::Red => "Red",
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -324,10 +352,26 @@ pub enum PayloadSchemaType {
     Float = 3,
     Geo = 4,
 }
+impl PayloadSchemaType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            PayloadSchemaType::UnknownType => "UnknownType",
+            PayloadSchemaType::Keyword => "Keyword",
+            PayloadSchemaType::Integer => "Integer",
+            PayloadSchemaType::Float => "Float",
+            PayloadSchemaType::Geo => "Geo",
+        }
+    }
+}
 /// Generated client implementations.
 pub mod collections_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct CollectionsClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -354,6 +398,10 @@ pub mod collections_client {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
@@ -373,19 +421,19 @@ pub mod collections_client {
         {
             CollectionsClient::new(InterceptedService::new(inner, interceptor))
         }
-        /// Compress requests with `gzip`.
+        /// Compress requests with the given encoding.
         ///
         /// This requires the server to support it otherwise it might respond with an
         /// error.
         #[must_use]
-        pub fn send_gzip(mut self) -> Self {
-            self.inner = self.inner.send_gzip();
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
             self
         }
-        /// Enable decompressing responses with `gzip`.
+        /// Enable decompressing responses.
         #[must_use]
-        pub fn accept_gzip(mut self) -> Self {
-            self.inner = self.inner.accept_gzip();
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
             self
         }
         ///
@@ -559,8 +607,8 @@ pub mod collections_server {
     #[derive(Debug)]
     pub struct CollectionsServer<T: Collections> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: Collections> CollectionsServer<T> {
@@ -583,6 +631,18 @@ pub mod collections_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for CollectionsServer<T>
@@ -868,7 +928,7 @@ pub mod collections_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: Collections> tonic::transport::NamedService for CollectionsServer<T> {
+    impl<T: Collections> tonic::server::NamedService for CollectionsServer<T> {
         const NAME: &'static str = "qdrant.Collections";
     }
 }
@@ -881,10 +941,10 @@ pub struct GetCollectionInfoRequestInternal {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InitiateShardTransferRequest {
-    /// Name of the collection
+    ///  Name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Id of the temporary shard
+    ///  Id of the temporary shard
     #[prost(uint32, tag="2")]
     pub shard_id: u32,
 }
@@ -892,6 +952,7 @@ pub struct InitiateShardTransferRequest {
 pub mod collections_internal_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct CollectionsInternalClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -918,6 +979,10 @@ pub mod collections_internal_client {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
@@ -937,19 +1002,19 @@ pub mod collections_internal_client {
         {
             CollectionsInternalClient::new(InterceptedService::new(inner, interceptor))
         }
-        /// Compress requests with `gzip`.
+        /// Compress requests with the given encoding.
         ///
         /// This requires the server to support it otherwise it might respond with an
         /// error.
         #[must_use]
-        pub fn send_gzip(mut self) -> Self {
-            self.inner = self.inner.send_gzip();
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
             self
         }
-        /// Enable decompressing responses with `gzip`.
+        /// Enable decompressing responses.
         #[must_use]
-        pub fn accept_gzip(mut self) -> Self {
-            self.inner = self.inner.accept_gzip();
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
             self
         }
         ///
@@ -1019,8 +1084,8 @@ pub mod collections_internal_server {
     #[derive(Debug)]
     pub struct CollectionsInternalServer<T: CollectionsInternal> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: CollectionsInternal> CollectionsInternalServer<T> {
@@ -1043,6 +1108,18 @@ pub mod collections_internal_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for CollectionsInternalServer<T>
@@ -1177,87 +1254,98 @@ pub mod collections_internal_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: CollectionsInternal> tonic::transport::NamedService
+    impl<T: CollectionsInternal> tonic::server::NamedService
     for CollectionsInternalServer<T> {
         const NAME: &'static str = "qdrant.CollectionsInternal";
     }
 }
-/// `Struct` represents a structured data value, consisting of fields
-/// which map to dynamically typed values. In some languages, `Struct`
-/// might be supported by a native representation. For example, in
-/// scripting languages like JS a struct is represented as an
-/// object. The details of that representation are described together
-/// with the proto support for the language.
+///  `Struct` represents a structured data value, consisting of fields
+///  which map to dynamically typed values. In some languages, `Struct`
+///  might be supported by a native representation. For example, in
+///  scripting languages like JS a struct is represented as an
+///  object. The details of that representation are described together
+///  with the proto support for the language.
 ///
-/// The JSON representation for `Struct` is JSON object.
+///  The JSON representation for `Struct` is JSON object.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Struct {
-    /// Unordered map of dynamically typed values.
+    ///  Unordered map of dynamically typed values.
     #[prost(map="string, message", tag="1")]
     pub fields: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
 }
-/// `Value` represents a dynamically typed value which can be either
-/// null, a number, a string, a boolean, a recursive struct value, or a
-/// list of values. A producer of value is expected to set one of that
-/// variants, absence of any variant indicates an error.
+///  `Value` represents a dynamically typed value which can be either
+///  null, a number, a string, a boolean, a recursive struct value, or a
+///  list of values. A producer of value is expected to set one of that
+///  variants, absence of any variant indicates an error.
 ///
-/// The JSON representation for `Value` is JSON value.
+///  The JSON representation for `Value` is JSON value.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Value {
-    /// The kind of value.
+    ///  The kind of value.
     #[prost(oneof="value::Kind", tags="1, 2, 3, 4, 5, 6, 7")]
     pub kind: ::core::option::Option<value::Kind>,
 }
 /// Nested message and enum types in `Value`.
 pub mod value {
-    /// The kind of value.
+    ///  The kind of value.
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Kind {
-        /// Represents a null value.
+        ///  Represents a null value.
         #[prost(enumeration="super::NullValue", tag="1")]
         NullValue(i32),
-        /// Represents a double value.
+        ///  Represents a double value.
         #[prost(double, tag="2")]
         DoubleValue(f64),
-        /// Represents an integer value
+        ///  Represents an integer value
         #[prost(int64, tag="3")]
         IntegerValue(i64),
-        /// Represents a string value.
+        ///  Represents a string value.
         #[prost(string, tag="4")]
         StringValue(::prost::alloc::string::String),
-        /// Represents a boolean value.
+        ///  Represents a boolean value.
         #[prost(bool, tag="5")]
         BoolValue(bool),
-        /// Represents a structured value.
+        ///  Represents a structured value.
         #[prost(message, tag="6")]
         StructValue(super::Struct),
-        /// Represents a repeated `Value`.
+        ///  Represents a repeated `Value`.
         #[prost(message, tag="7")]
         ListValue(super::ListValue),
     }
 }
-/// `ListValue` is a wrapper around a repeated field of values.
+///  `ListValue` is a wrapper around a repeated field of values.
 ///
-/// The JSON representation for `ListValue` is JSON array.
+///  The JSON representation for `ListValue` is JSON array.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListValue {
-    /// Repeated field of dynamically typed values.
+    ///  Repeated field of dynamically typed values.
     #[prost(message, repeated, tag="1")]
     pub values: ::prost::alloc::vec::Vec<Value>,
 }
-/// `NullValue` is a singleton enumeration to represent the null value for the
-/// `Value` type union.
+///  `NullValue` is a singleton enumeration to represent the null value for the
+///  `Value` type union.
 ///
-///  The JSON representation for `NullValue` is JSON `null`.
+///   The JSON representation for `NullValue` is JSON `null`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum NullValue {
-    /// Null value.
+    ///  Null value.
     NullValue = 0,
 }
-// ---------------------------------------------
-// ------------- Point Id Requests -------------
-// ---------------------------------------------
+impl NullValue {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            NullValue::NullValue => "NULL_VALUE",
+        }
+    }
+}
+//  ---------------------------------------------
+//  ------------- Point Id Requests -------------
+//  ---------------------------------------------
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointId {
@@ -1268,24 +1356,24 @@ pub struct PointId {
 pub mod point_id {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum PointIdOptions {
-        /// Numerical ID of the point
+        ///  Numerical ID of the point
         #[prost(uint64, tag="1")]
         Num(u64),
-        /// UUID
+        ///  UUID
         #[prost(string, tag="2")]
         Uuid(::prost::alloc::string::String),
     }
 }
-// ---------------------------------------------
-// ---------------- RPC Requests ---------------
-// ---------------------------------------------
+//  ---------------------------------------------
+//  ---------------- RPC Requests ---------------
+//  ---------------------------------------------
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpsertPoints {
-    /// name of the collection
+    ///  name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Wait until the changes have been applied?
+    ///  Wait until the changes have been applied?
     #[prost(bool, optional, tag="2")]
     pub wait: ::core::option::Option<bool>,
     #[prost(message, repeated, tag="3")]
@@ -1293,109 +1381,109 @@ pub struct UpsertPoints {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePoints {
-    /// name of the collection
+    ///  name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Wait until the changes have been applied?
+    ///  Wait until the changes have been applied?
     #[prost(bool, optional, tag="2")]
     pub wait: ::core::option::Option<bool>,
-    /// Affected points
+    ///  Affected points
     #[prost(message, optional, tag="3")]
     pub points: ::core::option::Option<PointsSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPoints {
-    /// name of the collection
+    ///  name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// List of points to retrieve
+    ///  List of points to retrieve
     #[prost(message, repeated, tag="2")]
     pub ids: ::prost::alloc::vec::Vec<PointId>,
-    /// Return point vector with the result.
+    ///  Return point vector with the result.
     #[prost(bool, optional, tag="3")]
     pub with_vector: ::core::option::Option<bool>,
-    /// Options for specifying which payload to include or not
+    ///  Options for specifying which payload to include or not
     #[prost(message, optional, tag="4")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SetPayloadPoints {
-    /// name of the collection
+    ///  name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Wait until the changes have been applied?
+    ///  Wait until the changes have been applied?
     #[prost(bool, optional, tag="2")]
     pub wait: ::core::option::Option<bool>,
-    /// New payload values
+    ///  New payload values
     #[prost(map="string, message", tag="3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
-    /// List of point to modify
+    ///  List of point to modify
     #[prost(message, repeated, tag="4")]
     pub points: ::prost::alloc::vec::Vec<PointId>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePayloadPoints {
-    /// name of the collection
+    ///  name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Wait until the changes have been applied?
+    ///  Wait until the changes have been applied?
     #[prost(bool, optional, tag="2")]
     pub wait: ::core::option::Option<bool>,
-    /// List of keys to delete
+    ///  List of keys to delete
     #[prost(string, repeated, tag="3")]
     pub keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// Affected points
+    ///  Affected points
     #[prost(message, repeated, tag="4")]
     pub points: ::prost::alloc::vec::Vec<PointId>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClearPayloadPoints {
-    /// name of the collection
+    ///  name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Wait until the changes have been applied?
+    ///  Wait until the changes have been applied?
     #[prost(bool, optional, tag="2")]
     pub wait: ::core::option::Option<bool>,
-    /// Affected points
+    ///  Affected points
     #[prost(message, optional, tag="3")]
     pub points: ::core::option::Option<PointsSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateFieldIndexCollection {
-    /// name of the collection
+    ///  name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Wait until the changes have been applied?
+    ///  Wait until the changes have been applied?
     #[prost(bool, optional, tag="2")]
     pub wait: ::core::option::Option<bool>,
-    /// Field name to index
+    ///  Field name to index
     #[prost(string, tag="3")]
     pub field_name: ::prost::alloc::string::String,
-    /// Field type.
+    ///  Field type.
     #[prost(enumeration="FieldType", optional, tag="4")]
     pub field_type: ::core::option::Option<i32>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteFieldIndexCollection {
-    /// name of the collection
+    ///  name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Wait until the changes have been applied?
+    ///  Wait until the changes have been applied?
     #[prost(bool, optional, tag="2")]
     pub wait: ::core::option::Option<bool>,
-    /// Field name to delete
+    ///  Field name to delete
     #[prost(string, tag="3")]
     pub field_name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadIncludeSelector {
-    /// List of payload keys to include into result
+    ///  List of payload keys to include into result
     #[prost(string, repeated, tag="1")]
     pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadExcludeSelector {
-    /// List of payload keys to exclude from the result
+    ///  List of payload keys to exclude from the result
     #[prost(string, repeated, tag="1")]
     pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
@@ -1408,7 +1496,7 @@ pub struct WithPayloadSelector {
 pub mod with_payload_selector {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum SelectorOptions {
-        /// If `true` - return all payload, if `false` - none
+        ///  If `true` - return all payload, if `false` - none
         #[prost(bool, tag="1")]
         Enable(bool),
         #[prost(message, tag="2")]
@@ -1420,38 +1508,38 @@ pub mod with_payload_selector {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchParams {
     ///
-    ///Params relevant to HNSW index. Size of the beam in a beam-search.
-    ///Larger the value - more accurate the result, more time required for search.
+    /// Params relevant to HNSW index. Size of the beam in a beam-search.
+    /// Larger the value - more accurate the result, more time required for search.
     #[prost(uint64, optional, tag="1")]
     pub hnsw_ef: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchPoints {
-    /// name of the collection
+    ///  name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// vector
+    ///  vector
     #[prost(float, repeated, tag="2")]
     pub vector: ::prost::alloc::vec::Vec<f32>,
-    /// Filter conditions - return only those points that satisfy the specified conditions
+    ///  Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag="3")]
     pub filter: ::core::option::Option<Filter>,
-    /// Max number of result
+    ///  Max number of result
     #[prost(uint64, tag="4")]
     pub limit: u64,
-    /// Return point vector with the result.
+    ///  Return point vector with the result.
     #[prost(bool, optional, tag="5")]
     pub with_vector: ::core::option::Option<bool>,
-    /// Options for specifying which payload to include or not
+    ///  Options for specifying which payload to include or not
     #[prost(message, optional, tag="6")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
-    /// Search config
+    ///  Search config
     #[prost(message, optional, tag="7")]
     pub params: ::core::option::Option<SearchParams>,
-    /// If provided - cut off results with worse scores
+    ///  If provided - cut off results with worse scores
     #[prost(float, optional, tag="8")]
     pub score_threshold: ::core::option::Option<f32>,
-    /// Offset of the result
+    ///  Offset of the result
     #[prost(uint64, optional, tag="9")]
     pub offset: ::core::option::Option<u64>,
 }
@@ -1459,103 +1547,103 @@ pub struct SearchPoints {
 pub struct ScrollPoints {
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Filter conditions - return only those points that satisfy the specified conditions
+    ///  Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag="2")]
     pub filter: ::core::option::Option<Filter>,
-    /// Start with this ID
+    ///  Start with this ID
     #[prost(message, optional, tag="3")]
     pub offset: ::core::option::Option<PointId>,
-    /// Max number of result
+    ///  Max number of result
     #[prost(uint32, optional, tag="4")]
     pub limit: ::core::option::Option<u32>,
-    /// Return point vector with the result.
+    ///  Return point vector with the result.
     #[prost(bool, optional, tag="5")]
     pub with_vector: ::core::option::Option<bool>,
-    /// Options for specifying which payload to include or not
+    ///  Options for specifying which payload to include or not
     #[prost(message, optional, tag="6")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendPoints {
-    /// name of the collection
+    ///  name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Look for vectors closest to those
+    ///  Look for vectors closest to those
     #[prost(message, repeated, tag="2")]
     pub positive: ::prost::alloc::vec::Vec<PointId>,
-    /// Try to avoid vectors like this
+    ///  Try to avoid vectors like this
     #[prost(message, repeated, tag="3")]
     pub negative: ::prost::alloc::vec::Vec<PointId>,
-    /// Filter conditions - return only those points that satisfy the specified conditions
+    ///  Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag="4")]
     pub filter: ::core::option::Option<Filter>,
-    /// Max number of result
+    ///  Max number of result
     #[prost(uint64, tag="5")]
     pub limit: u64,
-    /// Return point vector with the result.
+    ///  Return point vector with the result.
     #[prost(bool, optional, tag="6")]
     pub with_vector: ::core::option::Option<bool>,
-    /// Options for specifying which payload to include or not
+    ///  Options for specifying which payload to include or not
     #[prost(message, optional, tag="7")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
-    /// Search config
+    ///  Search config
     #[prost(message, optional, tag="8")]
     pub params: ::core::option::Option<SearchParams>,
-    /// If provided - cut off results with worse scores
+    ///  If provided - cut off results with worse scores
     #[prost(float, optional, tag="9")]
     pub score_threshold: ::core::option::Option<f32>,
-    /// Offset of the result
+    ///  Offset of the result
     #[prost(uint64, optional, tag="10")]
     pub offset: ::core::option::Option<u64>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CountPoints {
-    /// name of the collection
+    ///  name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Filter conditions - return only those points that satisfy the specified conditions
+    ///  Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag="2")]
     pub filter: ::core::option::Option<Filter>,
-    /// If `true` - return exact count, if `false` - return approximate count
+    ///  If `true` - return exact count, if `false` - return approximate count
     #[prost(bool, optional, tag="3")]
     pub exact: ::core::option::Option<bool>,
 }
-// ---------------------------------------------
-// ---------------- RPC Response ---------------
-// ---------------------------------------------
+//  ---------------------------------------------
+//  ---------------- RPC Response ---------------
+//  ---------------------------------------------
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsOperationResponse {
     #[prost(message, optional, tag="1")]
     pub result: ::core::option::Option<UpdateResult>,
-    /// Time spent to process
+    ///  Time spent to process
     #[prost(double, tag="2")]
     pub time: f64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateResult {
-    /// Number of operation
+    ///  Number of operation
     #[prost(uint64, tag="1")]
     pub operation_id: u64,
-    /// Operation status
+    ///  Operation status
     #[prost(enumeration="UpdateStatus", tag="2")]
     pub status: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScoredPoint {
-    /// Point id
+    ///  Point id
     #[prost(message, optional, tag="1")]
     pub id: ::core::option::Option<PointId>,
-    /// Payload
+    ///  Payload
     #[prost(map="string, message", tag="2")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
-    /// Similarity score
+    ///  Similarity score
     #[prost(float, tag="3")]
     pub score: f32,
-    /// Vector
+    ///  Vector
     #[prost(float, repeated, tag="4")]
     pub vector: ::prost::alloc::vec::Vec<f32>,
-    /// Last update operation applied to this point
+    ///  Last update operation applied to this point
     #[prost(uint64, tag="5")]
     pub version: u64,
 }
@@ -1563,7 +1651,7 @@ pub struct ScoredPoint {
 pub struct SearchResponse {
     #[prost(message, repeated, tag="1")]
     pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
-    /// Time spent to process
+    ///  Time spent to process
     #[prost(double, tag="2")]
     pub time: f64,
 }
@@ -1571,18 +1659,18 @@ pub struct SearchResponse {
 pub struct CountResponse {
     #[prost(message, optional, tag="1")]
     pub result: ::core::option::Option<CountResult>,
-    /// Time spent to process
+    ///  Time spent to process
     #[prost(double, tag="2")]
     pub time: f64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollResponse {
-    /// Use this offset for the next query
+    ///  Use this offset for the next query
     #[prost(message, optional, tag="1")]
     pub next_page_offset: ::core::option::Option<PointId>,
     #[prost(message, repeated, tag="2")]
     pub result: ::prost::alloc::vec::Vec<RetrievedPoint>,
-    /// Time spent to process
+    ///  Time spent to process
     #[prost(double, tag="3")]
     pub time: f64,
 }
@@ -1604,7 +1692,7 @@ pub struct RetrievedPoint {
 pub struct GetResponse {
     #[prost(message, repeated, tag="1")]
     pub result: ::prost::alloc::vec::Vec<RetrievedPoint>,
-    /// Time spent to process
+    ///  Time spent to process
     #[prost(double, tag="2")]
     pub time: f64,
 }
@@ -1612,23 +1700,23 @@ pub struct GetResponse {
 pub struct RecommendResponse {
     #[prost(message, repeated, tag="1")]
     pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
-    /// Time spent to process
+    ///  Time spent to process
     #[prost(double, tag="2")]
     pub time: f64,
 }
-// ---------------------------------------------
-// ------------- Filter Conditions -------------
-// ---------------------------------------------
+//  ---------------------------------------------
+//  ------------- Filter Conditions -------------
+//  ---------------------------------------------
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Filter {
-    /// At least one of those conditions should match
+    ///  At least one of those conditions should match
     #[prost(message, repeated, tag="1")]
     pub should: ::prost::alloc::vec::Vec<Condition>,
-    /// All conditions must match
+    ///  All conditions must match
     #[prost(message, repeated, tag="2")]
     pub must: ::prost::alloc::vec::Vec<Condition>,
-    /// All conditions must NOT match
+    ///  All conditions must NOT match
     #[prost(message, repeated, tag="3")]
     pub must_not: ::prost::alloc::vec::Vec<Condition>,
 }
@@ -1665,19 +1753,19 @@ pub struct HasIdCondition {
 pub struct FieldCondition {
     #[prost(string, tag="1")]
     pub key: ::prost::alloc::string::String,
-    /// Check if point has field with a given value
+    ///  Check if point has field with a given value
     #[prost(message, optional, tag="2")]
     pub r#match: ::core::option::Option<Match>,
-    /// Check if points value lies in a given range
+    ///  Check if points value lies in a given range
     #[prost(message, optional, tag="3")]
     pub range: ::core::option::Option<Range>,
-    /// Check if points geo location lies in a given area
+    ///  Check if points geo location lies in a given area
     #[prost(message, optional, tag="4")]
     pub geo_bounding_box: ::core::option::Option<GeoBoundingBox>,
-    /// Check if geo point is within a given radius
+    ///  Check if geo point is within a given radius
     #[prost(message, optional, tag="5")]
     pub geo_radius: ::core::option::Option<GeoRadius>,
-    /// Check number of values for a specific field
+    ///  Check number of values for a specific field
     #[prost(message, optional, tag="6")]
     pub values_count: ::core::option::Option<ValuesCount>,
 }
@@ -1690,13 +1778,13 @@ pub struct Match {
 pub mod r#match {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum MatchValue {
-        /// Match string keyword
+        ///  Match string keyword
         #[prost(string, tag="1")]
         Keyword(::prost::alloc::string::String),
-        /// Match integer
+        ///  Match integer
         #[prost(int64, tag="2")]
         Integer(i64),
-        /// Match boolean
+        ///  Match boolean
         #[prost(bool, tag="3")]
         Boolean(bool),
     }
@@ -1714,19 +1802,19 @@ pub struct Range {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoBoundingBox {
-    /// north-west corner
+    ///  north-west corner
     #[prost(message, optional, tag="1")]
     pub top_left: ::core::option::Option<GeoPoint>,
-    /// south-east corner
+    ///  south-east corner
     #[prost(message, optional, tag="2")]
     pub bottom_right: ::core::option::Option<GeoPoint>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoRadius {
-    /// Center of the circle
+    ///  Center of the circle
     #[prost(message, optional, tag="1")]
     pub center: ::core::option::Option<GeoPoint>,
-    /// In meters
+    ///  In meters
     #[prost(float, tag="2")]
     pub radius: f32,
 }
@@ -1741,9 +1829,9 @@ pub struct ValuesCount {
     #[prost(uint64, optional, tag="4")]
     pub lte: ::core::option::Option<u64>,
 }
-// ---------------------------------------------
-// -------------- Points Selector --------------
-// ---------------------------------------------
+//  ---------------------------------------------
+//  -------------- Points Selector --------------
+//  ---------------------------------------------
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsSelector {
@@ -1765,9 +1853,9 @@ pub struct PointsIdsList {
     #[prost(message, repeated, tag="1")]
     pub ids: ::prost::alloc::vec::Vec<PointId>,
 }
-// ---------------------------------------------
-// ------------------- Point -------------------
-// ---------------------------------------------
+//  ---------------------------------------------
+//  ------------------- Point -------------------
+//  ---------------------------------------------
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointStruct {
@@ -1793,19 +1881,47 @@ pub enum FieldType {
     Float = 2,
     Geo = 3,
 }
+impl FieldType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            FieldType::Keyword => "FieldTypeKeyword",
+            FieldType::Integer => "FieldTypeInteger",
+            FieldType::Float => "FieldTypeFloat",
+            FieldType::Geo => "FieldTypeGeo",
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum UpdateStatus {
     UnknownUpdateStatus = 0,
-    /// Update is received, but not processed yet
+    ///  Update is received, but not processed yet
     Acknowledged = 1,
-    /// Update is applied and ready for search
+    ///  Update is applied and ready for search
     Completed = 2,
+}
+impl UpdateStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            UpdateStatus::UnknownUpdateStatus => "UnknownUpdateStatus",
+            UpdateStatus::Acknowledged => "Acknowledged",
+            UpdateStatus::Completed => "Completed",
+        }
+    }
 }
 /// Generated client implementations.
 pub mod points_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct PointsClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -1832,6 +1948,10 @@ pub mod points_client {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
@@ -1851,19 +1971,19 @@ pub mod points_client {
         {
             PointsClient::new(InterceptedService::new(inner, interceptor))
         }
-        /// Compress requests with `gzip`.
+        /// Compress requests with the given encoding.
         ///
         /// This requires the server to support it otherwise it might respond with an
         /// error.
         #[must_use]
-        pub fn send_gzip(mut self) -> Self {
-            self.inner = self.inner.send_gzip();
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
             self
         }
-        /// Enable decompressing responses with `gzip`.
+        /// Enable decompressing responses.
         #[must_use]
-        pub fn accept_gzip(mut self) -> Self {
-            self.inner = self.inner.accept_gzip();
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
             self
         }
         ///
@@ -2187,8 +2307,8 @@ pub mod points_server {
     #[derive(Debug)]
     pub struct PointsServer<T: Points> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: Points> PointsServer<T> {
@@ -2211,6 +2331,18 @@ pub mod points_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for PointsServer<T>
@@ -2714,7 +2846,7 @@ pub mod points_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: Points> tonic::transport::NamedService for PointsServer<T> {
+    impl<T: Points> tonic::server::NamedService for PointsServer<T> {
         const NAME: &'static str = "qdrant.Points";
     }
 }
@@ -2806,6 +2938,7 @@ pub struct CountPointsInternal {
 pub mod points_internal_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct PointsInternalClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -2832,6 +2965,10 @@ pub mod points_internal_client {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
@@ -2851,19 +2988,19 @@ pub mod points_internal_client {
         {
             PointsInternalClient::new(InterceptedService::new(inner, interceptor))
         }
-        /// Compress requests with `gzip`.
+        /// Compress requests with the given encoding.
         ///
         /// This requires the server to support it otherwise it might respond with an
         /// error.
         #[must_use]
-        pub fn send_gzip(mut self) -> Self {
-            self.inner = self.inner.send_gzip();
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
             self
         }
-        /// Enable decompressing responses with `gzip`.
+        /// Enable decompressing responses.
         #[must_use]
-        pub fn accept_gzip(mut self) -> Self {
-            self.inner = self.inner.accept_gzip();
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
             self
         }
         pub async fn upsert(
@@ -3155,8 +3292,8 @@ pub mod points_internal_server {
     #[derive(Debug)]
     pub struct PointsInternalServer<T: PointsInternal> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: PointsInternal> PointsInternalServer<T> {
@@ -3179,6 +3316,18 @@ pub mod points_internal_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for PointsInternalServer<T>
@@ -3704,7 +3853,7 @@ pub mod points_internal_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: PointsInternal> tonic::transport::NamedService for PointsInternalServer<T> {
+    impl<T: PointsInternal> tonic::server::NamedService for PointsInternalServer<T> {
         const NAME: &'static str = "qdrant.PointsInternal";
     }
 }
@@ -3750,6 +3899,7 @@ pub struct Uri {
 pub mod raft_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct RaftClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -3776,6 +3926,10 @@ pub mod raft_client {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
@@ -3795,19 +3949,19 @@ pub mod raft_client {
         {
             RaftClient::new(InterceptedService::new(inner, interceptor))
         }
-        /// Compress requests with `gzip`.
+        /// Compress requests with the given encoding.
         ///
         /// This requires the server to support it otherwise it might respond with an
         /// error.
         #[must_use]
-        pub fn send_gzip(mut self) -> Self {
-            self.inner = self.inner.send_gzip();
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
             self
         }
-        /// Enable decompressing responses with `gzip`.
+        /// Enable decompressing responses.
         #[must_use]
-        pub fn accept_gzip(mut self) -> Self {
-            self.inner = self.inner.accept_gzip();
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
             self
         }
         /// Send Raft message to another peer
@@ -3927,8 +4081,8 @@ pub mod raft_server {
     #[derive(Debug)]
     pub struct RaftServer<T: Raft> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: Raft> RaftServer<T> {
@@ -3951,6 +4105,18 @@ pub mod raft_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for RaftServer<T>
@@ -4156,7 +4322,7 @@ pub mod raft_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: Raft> tonic::transport::NamedService for RaftServer<T> {
+    impl<T: Raft> tonic::server::NamedService for RaftServer<T> {
         const NAME: &'static str = "qdrant.Raft";
     }
 }
@@ -4168,25 +4334,25 @@ pub struct ListFullSnapshotsRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateSnapshotRequest {
-    /// Name of the collection
+    ///  Name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSnapshotsRequest {
-    /// Name of the collection
+    ///  Name of the collection
     #[prost(string, tag="1")]
     pub collection_name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SnapshotDescription {
-    /// Name of the snapshot
+    ///  Name of the snapshot
     #[prost(string, tag="1")]
     pub name: ::prost::alloc::string::String,
-    /// Creation time of the snapshot
+    ///  Creation time of the snapshot
     #[prost(message, optional, tag="2")]
     pub creation_time: ::core::option::Option<::prost_types::Timestamp>,
-    /// Size of the snapshot in bytes
+    ///  Size of the snapshot in bytes
     #[prost(int64, tag="3")]
     pub size: i64,
 }
@@ -4194,7 +4360,7 @@ pub struct SnapshotDescription {
 pub struct CreateSnapshotResponse {
     #[prost(message, optional, tag="1")]
     pub snapshot_description: ::core::option::Option<SnapshotDescription>,
-    /// Time spent to process
+    ///  Time spent to process
     #[prost(double, tag="2")]
     pub time: f64,
 }
@@ -4202,7 +4368,7 @@ pub struct CreateSnapshotResponse {
 pub struct ListSnapshotsResponse {
     #[prost(message, repeated, tag="1")]
     pub snapshot_descriptions: ::prost::alloc::vec::Vec<SnapshotDescription>,
-    /// Time spent to process
+    ///  Time spent to process
     #[prost(double, tag="2")]
     pub time: f64,
 }
@@ -4210,6 +4376,7 @@ pub struct ListSnapshotsResponse {
 pub mod snapshots_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct SnapshotsClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -4236,6 +4403,10 @@ pub mod snapshots_client {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
@@ -4255,19 +4426,19 @@ pub mod snapshots_client {
         {
             SnapshotsClient::new(InterceptedService::new(inner, interceptor))
         }
-        /// Compress requests with `gzip`.
+        /// Compress requests with the given encoding.
         ///
         /// This requires the server to support it otherwise it might respond with an
         /// error.
         #[must_use]
-        pub fn send_gzip(mut self) -> Self {
-            self.inner = self.inner.send_gzip();
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
             self
         }
-        /// Enable decompressing responses with `gzip`.
+        /// Enable decompressing responses.
         #[must_use]
-        pub fn accept_gzip(mut self) -> Self {
-            self.inner = self.inner.accept_gzip();
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
             self
         }
         ///
@@ -4387,8 +4558,8 @@ pub mod snapshots_server {
     #[derive(Debug)]
     pub struct SnapshotsServer<T: Snapshots> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: Snapshots> SnapshotsServer<T> {
@@ -4411,6 +4582,18 @@ pub mod snapshots_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for SnapshotsServer<T>
@@ -4618,7 +4801,7 @@ pub mod snapshots_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: Snapshots> tonic::transport::NamedService for SnapshotsServer<T> {
+    impl<T: Snapshots> tonic::server::NamedService for SnapshotsServer<T> {
         const NAME: &'static str = "qdrant.Snapshots";
     }
 }
@@ -4636,6 +4819,7 @@ pub struct HealthCheckReply {
 pub mod qdrant_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct QdrantClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -4662,6 +4846,10 @@ pub mod qdrant_client {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
@@ -4681,19 +4869,19 @@ pub mod qdrant_client {
         {
             QdrantClient::new(InterceptedService::new(inner, interceptor))
         }
-        /// Compress requests with `gzip`.
+        /// Compress requests with the given encoding.
         ///
         /// This requires the server to support it otherwise it might respond with an
         /// error.
         #[must_use]
-        pub fn send_gzip(mut self) -> Self {
-            self.inner = self.inner.send_gzip();
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
             self
         }
-        /// Enable decompressing responses with `gzip`.
+        /// Enable decompressing responses.
         #[must_use]
-        pub fn accept_gzip(mut self) -> Self {
-            self.inner = self.inner.accept_gzip();
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
             self
         }
         pub async fn health_check(
@@ -4732,8 +4920,8 @@ pub mod qdrant_server {
     #[derive(Debug)]
     pub struct QdrantServer<T: Qdrant> {
         inner: _Inner<T>,
-        accept_compression_encodings: (),
-        send_compression_encodings: (),
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
     }
     struct _Inner<T>(Arc<T>);
     impl<T: Qdrant> QdrantServer<T> {
@@ -4756,6 +4944,18 @@ pub mod qdrant_server {
             F: tonic::service::Interceptor,
         {
             InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
         }
     }
     impl<T, B> tonic::codegen::Service<http::Request<B>> for QdrantServer<T>
@@ -4851,7 +5051,7 @@ pub mod qdrant_server {
             write!(f, "{:?}", self.0)
         }
     }
-    impl<T: Qdrant> tonic::transport::NamedService for QdrantServer<T> {
+    impl<T: Qdrant> tonic::server::NamedService for QdrantServer<T> {
         const NAME: &'static str = "qdrant.Qdrant";
     }
 }
