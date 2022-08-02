@@ -143,11 +143,27 @@ impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
     type Error = Status;
 
     fn try_from(schema: PayloadSchemaInfo) -> Result<Self, Self::Error> {
-        match segment::types::PayloadSchemaType::from_index(schema.data_type) {
-            None => Err(Status::invalid_argument("No PayloadSelector".to_string())),
-            Some(payload_schema_type) => Ok(segment::types::PayloadIndexInfo {
-                data_type: payload_schema_type,
-            }),
+        match PayloadSchemaType::from_i32(schema.data_type) {
+            None => Err(Status::invalid_argument(
+                "Malformed payload schema".to_string(),
+            )),
+            Some(data_type) => match data_type {
+                PayloadSchemaType::Keyword => Ok(segment::types::PayloadIndexInfo {
+                    data_type: segment::types::PayloadSchemaType::Keyword,
+                }),
+                PayloadSchemaType::Integer => Ok(segment::types::PayloadIndexInfo {
+                    data_type: segment::types::PayloadSchemaType::Integer,
+                }),
+                PayloadSchemaType::Float => Ok(segment::types::PayloadIndexInfo {
+                    data_type: segment::types::PayloadSchemaType::Float,
+                }),
+                PayloadSchemaType::Geo => Ok(segment::types::PayloadIndexInfo {
+                    data_type: segment::types::PayloadSchemaType::Geo,
+                }),
+                PayloadSchemaType::UnknownType => Err(Status::invalid_argument(
+                    "Malformed payload schema".to_string(),
+                )),
+            },
         }
     }
 }
