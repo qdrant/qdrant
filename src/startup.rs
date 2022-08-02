@@ -1,6 +1,6 @@
-use log::LevelFilter;
+//! Contains a collection of functions that are called at the start of the program.
 
-/// Contains a collection of functions that are called at the start of the program.
+use log::LevelFilter;
 
 pub fn setup_logger(log_level: &str) {
     let is_info = log_level.to_ascii_uppercase() == "INFO";
