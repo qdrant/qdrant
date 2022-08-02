@@ -342,12 +342,12 @@ pub async fn validate_indexing_progress(
         {
             break;
         }
-        sleep(Duration::from_secs(30)).await;
-        attempt += 1;
         // Report progress every 20 attempts (around 10 minutes)
         if attempt.rem_euclid(20) == 0 {
             log::info!("Waiting for optimizer on {}:{} on peer {} to finish transfer. (indexing progress {}/{})", collection_id, shard_id, peer_id, indexed_vector_count, vector_count);
         }
+        attempt += 1;
+        sleep(Duration::from_secs(30)).await;
     }
     Ok(())
 }
