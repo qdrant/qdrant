@@ -449,7 +449,7 @@ impl TableOfContent {
                         transfer,
                         "Bad source peer",
                     )?;
-                    return err
+                    return err;
                 }
 
                 let proposal_sender = self.consensus_proposal_sender.clone();
