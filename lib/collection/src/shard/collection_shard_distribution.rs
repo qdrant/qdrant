@@ -1,10 +1,6 @@
 use std::collections::HashMap;
-use std::path::Path;
 
-use crate::config::CollectionConfig;
-use crate::operations::types::CollectionResult;
-use crate::shard::shard_config::{ShardConfig, ShardType};
-use crate::shard::{shard_path, PeerId, ShardId};
+use crate::shard::{PeerId, ShardId};
 
 #[derive(Debug)]
 pub struct CollectionShardDistribution {
@@ -51,31 +47,6 @@ impl CollectionShardDistribution {
             .collect();
 
         Self { local, remote }
-    }
-
-    /// Read remote & local shard info from file system
-    pub fn from_local_state(collection_path: &Path) -> CollectionResult<Self> {
-        let config = CollectionConfig::load(collection_path).unwrap_or_else(|err| {
-            panic!(
-                "Can't read collection config due to {}\nat {}",
-                err,
-                collection_path.to_str().unwrap()
-            )
-        });
-        let shard_number = config.params.shard_number.get();
-        let mut local_shards = Vec::new();
-        let mut remote_shards = Vec::new();
-
-        for shard_id in 0..shard_number {
-            let shard_path = shard_path(collection_path, shard_id);
-            let shard_config = ShardConfig::load(&shard_path)?;
-            match shard_config.r#type {
-                ShardType::Local => local_shards.push(shard_id),
-                ShardType::Remote { peer_id } => remote_shards.push((shard_id, peer_id)),
-            }
-        }
-
-        Ok(Self::new(local_shards, remote_shards))
     }
 
     pub fn shard_count(&self) -> usize {

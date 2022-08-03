@@ -4,6 +4,7 @@ use collection::config::WalConfig;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shard::PeerId;
 use schemars::JsonSchema;
+use segment::telemetry::{telemetry_hash, Anonymize};
 use segment::types::HnswConfig;
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
@@ -97,6 +98,8 @@ pub struct ClusterInfo {
     pub peers: HashMap<PeerId, PeerInfo>,
     /// Status of the Raft consensus
     pub raft_info: RaftInfo,
+    /// Status of the thread that executes raft consensus
+    pub consensus_thread_status: ConsensusThreadStatus,
 }
 
 /// Information about current cluster status and structure
@@ -106,4 +109,60 @@ pub struct ClusterInfo {
 pub enum ClusterStatus {
     Disabled,
     Enabled(ClusterInfo),
+}
+
+/// Information about current consensus thread status
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(tag = "consensus_thread_status")]
+#[serde(rename_all = "snake_case")]
+pub enum ConsensusThreadStatus {
+    Working,
+    StoppedWithErr { err: String },
+}
+
+impl Anonymize for PeerInfo {
+    fn anonymize(&self) -> Self {
+        PeerInfo {
+            uri: telemetry_hash(&self.uri),
+        }
+    }
+}
+
+impl Anonymize for RaftInfo {
+    fn anonymize(&self) -> Self {
+        RaftInfo {
+            term: self.term,
+            commit: self.commit,
+            pending_operations: self.pending_operations,
+            leader: self.leader,
+            role: self.role,
+            is_voter: self.is_voter,
+        }
+    }
+}
+
+impl Anonymize for ClusterInfo {
+    fn anonymize(&self) -> Self {
+        ClusterInfo {
+            peer_id: self.peer_id,
+            peers: self
+                .peers
+                .iter()
+                .map(|(key, value)| (*key, value.anonymize()))
+                .collect(),
+            raft_info: self.raft_info.anonymize(),
+            consensus_thread_status: self.consensus_thread_status.clone(),
+        }
+    }
+}
+
+impl Anonymize for ClusterStatus {
+    fn anonymize(&self) -> Self {
+        match self {
+            ClusterStatus::Disabled => ClusterStatus::Disabled,
+            ClusterStatus::Enabled(cluster_info) => {
+                ClusterStatus::Enabled(cluster_info.anonymize())
+            }
+        }
+    }
 }

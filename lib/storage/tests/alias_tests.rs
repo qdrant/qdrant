@@ -8,9 +8,10 @@ mod tests {
         ChangeAliasesOperation, CollectionMetaOperations, CreateAlias, CreateCollection,
         CreateCollectionOperation, DeleteAlias, RenameAlias,
     };
+    use storage::content_manager::consensus::operation_sender::OperationSender;
     use storage::content_manager::toc::TableOfContent;
+    use storage::dispatcher::Dispatcher;
     use storage::types::{PerformanceConfig, StorageConfig};
-    use storage::Dispatcher;
     use tempdir::TempDir;
     use tokio::runtime::Runtime;
 
@@ -31,8 +32,8 @@ mod tests {
                 deleted_threshold: 0.5,
                 vacuum_min_vector_number: 100,
                 default_segment_number: 2,
-                max_segment_size: 100_000,
-                memmap_threshold: 100,
+                max_segment_size: None,
+                memmap_threshold: Some(100),
                 indexing_threshold: 100,
                 flush_interval_sec: 2,
                 max_optimization_threads: 2,
@@ -47,7 +48,16 @@ mod tests {
         let runtime = Runtime::new().unwrap();
         let handle = runtime.handle().clone();
 
-        let toc = Arc::new(TableOfContent::new(&config, runtime, Default::default(), 0));
+        let (propose_sender, _propose_receiver) = std::sync::mpsc::channel();
+        let propose_operation_sender = OperationSender::new(propose_sender);
+
+        let toc = Arc::new(TableOfContent::new(
+            &config,
+            runtime,
+            Default::default(),
+            0,
+            propose_operation_sender,
+        ));
         let dispatcher = Dispatcher::new(toc);
 
         handle

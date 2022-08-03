@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::{Read, Write};
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::path::Path;
 
 use atomicwrites::AtomicFile;
@@ -45,7 +45,7 @@ impl Default for WalConfig {
 #[serde(rename_all = "snake_case")]
 pub struct CollectionParams {
     /// Size of a vectors used
-    pub vector_size: usize,
+    pub vector_size: NonZeroU64,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
     /// Number of shards the collection has

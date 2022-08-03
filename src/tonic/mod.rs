@@ -1,4 +1,5 @@
 mod api;
+mod tonic_telemetry;
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -12,11 +13,14 @@ use ::api::grpc::qdrant::points_server::PointsServer;
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
 use ::api::grpc::qdrant::{HealthCheckReply, HealthCheckRequest};
-use storage::Dispatcher;
+use storage::content_manager::consensus_state::ConsensusStateRef;
+use storage::content_manager::toc::TableOfContent;
+use storage::dispatcher::Dispatcher;
 use tokio::{runtime, signal};
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
+use crate::common::telemetry::TonicTelemetryCollector;
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::collections_internal_api::CollectionsInternalService;
 use crate::tonic::api::points_api::PointsService;
@@ -36,7 +40,12 @@ impl Qdrant for QdrantService {
     }
 }
 
-pub fn init(dispatcher: Arc<Dispatcher>, host: String, grpc_port: u16) -> std::io::Result<()> {
+pub fn init(
+    dispatcher: Arc<Dispatcher>,
+    telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
+    host: String,
+    grpc_port: u16,
+) -> std::io::Result<()> {
     let tonic_runtime = runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
@@ -58,6 +67,9 @@ pub fn init(dispatcher: Arc<Dispatcher>, host: String, grpc_port: u16) -> std::i
             log::info!("Qdrant gRPC listening on {}", grpc_port);
 
             Server::builder()
+                .layer(tonic_telemetry::TonicTelemetryLayer::new(
+                    telemetry_collector,
+                ))
                 .add_service(QdrantServer::new(service))
                 .add_service(CollectionsServer::new(collections_service))
                 .add_service(PointsServer::new(points_service))
@@ -73,7 +85,9 @@ pub fn init(dispatcher: Arc<Dispatcher>, host: String, grpc_port: u16) -> std::i
 }
 
 pub fn init_internal(
-    dispatcher: Arc<Dispatcher>,
+    toc: Arc<TableOfContent>,
+    consensus_state: ConsensusStateRef,
+    telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     host: String,
     internal_grpc_port: u16,
     to_consensus: std::sync::mpsc::SyncSender<crate::consensus::Message>,
@@ -82,7 +96,6 @@ pub fn init_internal(
 
     use crate::tonic::api::raft_api::RaftService;
 
-    let toc = dispatcher.toc().clone();
     let tonic_runtime = runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
@@ -99,11 +112,14 @@ pub fn init_internal(
             let service = QdrantService::default();
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let points_internal_service = PointsInternalService::new(toc.clone());
-            let raft_service = RaftService::new(to_consensus, dispatcher.clone());
+            let raft_service = RaftService::new(to_consensus, consensus_state);
 
             log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
             Server::builder()
+                .layer(tonic_telemetry::TonicTelemetryLayer::new(
+                    telemetry_collector,
+                ))
                 .add_service(QdrantServer::new(service))
                 .add_service(CollectionsInternalServer::new(collections_internal_service))
                 .add_service(PointsInternalServer::new(points_internal_service))

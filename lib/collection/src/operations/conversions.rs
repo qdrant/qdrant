@@ -1,8 +1,9 @@
 use std::collections::HashMap;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 
 use api::grpc::conversions::{payload_to_proto, proto_to_payloads};
 use itertools::Itertools;
+use segment::types::Distance;
 use tonic::Status;
 
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
@@ -88,7 +89,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             ram_data_size: ram_data_size as u64,
             config: Some(api::grpc::qdrant::CollectionConfig {
                 params: Some(api::grpc::qdrant::CollectionParams {
-                    vector_size: config.params.vector_size as u64,
+                    vector_size: config.params.vector_size.get(),
                     distance: match config.params.distance {
                         segment::types::Distance::Cosine => api::grpc::qdrant::Distance::Cosine,
                         segment::types::Distance::Euclid => api::grpc::qdrant::Distance::Euclid,
@@ -112,8 +113,8 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     default_segment_number: Some(
                         config.optimizer_config.default_segment_number as u64,
                     ),
-                    max_segment_size: Some(config.optimizer_config.max_segment_size as u64),
-                    memmap_threshold: Some(config.optimizer_config.memmap_threshold as u64),
+                    max_segment_size: config.optimizer_config.max_segment_size.map(|x| x as u64),
+                    memmap_threshold: config.optimizer_config.memmap_threshold.map(|x| x as u64),
                     indexing_threshold: Some(config.optimizer_config.indexing_threshold as u64),
                     flush_interval_sec: Some(config.optimizer_config.flush_interval_sec as u64),
                     max_optimization_threads: Some(
@@ -177,8 +178,8 @@ impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
                 .unwrap_or_default() as usize,
             default_segment_number: optimizer_config.default_segment_number.unwrap_or_default()
                 as usize,
-            max_segment_size: optimizer_config.max_segment_size.unwrap_or_default() as usize,
-            memmap_threshold: optimizer_config.memmap_threshold.unwrap_or_default() as usize,
+            max_segment_size: optimizer_config.max_segment_size.map(|x| x as usize),
+            memmap_threshold: optimizer_config.memmap_threshold.map(|x| x as usize),
             indexing_threshold: optimizer_config.indexing_threshold.unwrap_or_default() as usize,
             flush_interval_sec: optimizer_config.flush_interval_sec.unwrap_or_default(),
             max_optimization_threads: optimizer_config
@@ -205,14 +206,23 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
             params: match config.params {
                 None => return Err(Status::invalid_argument("Malformed CollectionParams type")),
                 Some(params) => CollectionParams {
-                    vector_size: params.vector_size as usize,
-                    distance: match segment::types::Distance::from_index(params.distance) {
+                    vector_size: NonZeroU64::new(params.vector_size).unwrap(),
+                    distance: match api::grpc::qdrant::Distance::from_i32(params.distance) {
                         None => {
                             return Err(Status::invalid_argument(
                                 "Malformed CollectionParams distance",
                             ))
                         }
-                        Some(distance) => distance,
+                        Some(distance) => match distance {
+                            api::grpc::qdrant::Distance::UnknownDistance => {
+                                return Err(Status::invalid_argument(
+                                    "Malformed CollectionParams distance",
+                                ))
+                            }
+                            api::grpc::qdrant::Distance::Cosine => Distance::Cosine,
+                            api::grpc::qdrant::Distance::Euclid => Distance::Euclid,
+                            api::grpc::qdrant::Distance::Dot => Distance::Dot,
+                        },
                     },
                     shard_number: NonZeroU32::new(params.shard_number).unwrap(),
                     on_disk_payload: params.on_disk_payload,

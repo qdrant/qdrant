@@ -48,13 +48,15 @@ storage:
     # If indexation speed have more priority for your - make this parameter lower.
     # If search speed is more important - make this parameter higher.
     # Note: 1Kb = 1 vector of size 256
-    max_segment_size_kb: 200000
+    # If not set, will be automatically selected considering the number of available CPUs.
+    max_segment_size_kb: null
 
     # Maximum size (in KiloBytes) of vectors to store in-memory per segment.
     # Segments larger than this threshold will be stored as read-only memmaped file.
     # To enable memmap storage, lower the threshold
     # Note: 1Kb = 1 vector of size 256
-    memmap_threshold_kb: 200000
+    # If not set, mmap will not be used.
+    memmap_threshold_kb: null
 
     # Maximum size (in KiloBytes) of vectors allowed for plain index.
     # Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md
@@ -64,10 +66,10 @@ storage:
     # Interval between forced flushes.
     flush_interval_sec: 10
     
-    # Max number of threads, which can be used for optimization. If 0 - auto selection.
+    # Max number of threads, which can be used for optimization.
     max_optimization_threads: 1
 
-  # Default parameters of HNSW Index. Could be override for each collection individually
+  # Default parameters of HNSW Index. Could be overridden for each collection individually
   hnsw_index:
     # Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
     m: 16

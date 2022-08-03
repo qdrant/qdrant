@@ -8,7 +8,7 @@ use api::grpc::qdrant::{
     ListCollectionsResponse, UpdateCollection,
 };
 use storage::content_manager::conversions::error_to_status;
-use storage::Dispatcher;
+use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
 use crate::common::collections::*;

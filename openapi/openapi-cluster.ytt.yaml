@@ -9,3 +9,19 @@ paths:
       description: Get information about the current state and composition of the cluster
       operationId: cluster_status
       responses: #@ response(reference("ClusterStatus"))
+
+  /cluster/peer/{peer_id}:
+    delete:
+      tags:
+        - cluster
+      summary: Remove peer from the cluster
+      description: Tries to remove peer from the cluster. Will return an error if peer has shards on it.
+      operationId: remove_peer
+      parameters:
+        - name: peer_id
+          in: path
+          description: Id of the peer
+          required: true
+          schema:
+            type: integer
+      responses: #@ response(type("boolean"))

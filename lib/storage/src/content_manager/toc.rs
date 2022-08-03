@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir, remove_dir_all};
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -30,9 +30,11 @@ use crate::content_manager::collection_meta_ops::{
     RenameAliasOperation, UpdateCollection,
 };
 use crate::content_manager::collections_ops::{Checker, Collections};
+use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::types::{PeerAddressById, StorageConfig};
+use crate::ConsensusOperations;
 
 pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
@@ -50,6 +52,8 @@ pub struct TableOfContent {
     alias_persistence: RwLock<AliasPersistence>,
     pub this_peer_id: PeerId,
     channel_service: ChannelService,
+    /// Backlink to the consensus
+    consensus_proposal_sender: OperationSender,
 }
 
 impl TableOfContent {
@@ -59,6 +63,7 @@ impl TableOfContent {
         search_runtime: Runtime,
         channel_service: ChannelService,
         this_peer_id: PeerId,
+        consensus_proposal_sender: OperationSender,
     ) -> Self {
         let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
         create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
@@ -107,6 +112,7 @@ impl TableOfContent {
             collection_management_runtime,
             this_peer_id,
             channel_service,
+            consensus_proposal_sender,
         }
     }
 
@@ -219,7 +225,9 @@ impl TableOfContent {
             )
         }
         let collection_params = CollectionParams {
-            vector_size,
+            vector_size: NonZeroU64::new(vector_size as u64).ok_or(StorageError::BadInput {
+                description: "`vector_size` cannot be 0".to_string(),
+            })?,
             distance,
             shard_number: NonZeroU32::new(collection_shard_distribution.shard_count() as u32)
                 .ok_or(StorageError::BadInput {
@@ -391,8 +399,8 @@ impl TableOfContent {
             CollectionMetaOperations::ChangeAliases(operation) => {
                 self.update_aliases(operation).await
             }
-            CollectionMetaOperations::TransferShard(collection, shard, operation) => self
-                .handle_transfer(collection, shard, operation)
+            CollectionMetaOperations::TransferShard(collection, operation) => self
+                .handle_transfer(collection, operation)
                 .await
                 .map(|()| true),
         }
@@ -400,26 +408,77 @@ impl TableOfContent {
 
     pub async fn handle_transfer(
         &self,
-        collection: CollectionId,
-        shard: ShardId,
-        transfer: ShardTransferOperations,
+        collection_id: CollectionId,
+        transfer_operation: ShardTransferOperations,
     ) -> Result<(), StorageError> {
-        let mut collections = self.collections.write().await;
-        let collection = collections.get_mut(&collection).ok_or_else(|| {
+        let collections = self.collections.read().await;
+        let collection = collections.get(&collection_id).ok_or_else(|| {
             StorageError::service_error(&format!(
-                "Collection {collection} should be present at the time of shard transfer."
+                "Collection {collection_id} should be present at the time of shard transfer."
             ))
         })?;
-        match transfer {
-            ShardTransferOperations::Start { to } => {
+        match transfer_operation {
+            ShardTransferOperations::Start(transfer) => {
+                // check that transfer can be performed
+                if self.this_peer_id == transfer.from
+                    && !collection
+                        .is_shard_local(&transfer.shard_id)
+                        .await
+                        .unwrap_or(false)
+                {
+                    return Err(StorageError::BadRequest {
+                        description: format!(
+                            "Shard {} not local on {} peer",
+                            transfer.shard_id, self.this_peer_id
+                        ),
+                    });
+                }
+
+                let proposal_sender = self.consensus_proposal_sender.clone();
+                let collection_id_clone = collection_id.clone();
+                let transfer_clone = transfer.clone();
+
+                let on_finish = async move {
+                    let operation = ConsensusOperations::CollectionMeta(Box::new(
+                        CollectionMetaOperations::TransferShard(
+                            collection_id_clone,
+                            ShardTransferOperations::Finish(transfer_clone),
+                        ),
+                    ));
+                    if let Err(error) = proposal_sender.send(&operation) {
+                        log::error!("Can't report transfer progress to consensus: {}", error)
+                    };
+                };
+
+                let proposal_sender = self.consensus_proposal_sender.clone();
+                let collection_id_clone = collection_id.clone();
+                let transfer_clone = transfer.clone();
+
+                let on_failure = async move {
+                    let operation = ConsensusOperations::CollectionMeta(Box::new(
+                        CollectionMetaOperations::TransferShard(
+                            collection_id_clone,
+                            ShardTransferOperations::Abort {
+                                transfer: transfer_clone,
+                                reason: "transmission failed".to_string(),
+                            },
+                        ),
+                    ));
+                    if let Err(error) = proposal_sender.send(&operation) {
+                        log::error!("Can't report transfer progress to consensus: {}", error)
+                    };
+                };
+
                 collection
-                    .start_shard_transfer(shard, to, self.this_peer_id)
+                    .start_shard_transfer(transfer, on_finish, on_failure)
                     .await
             }
-            ShardTransferOperations::Finish => collection.finish_shard_transfer(shard).await,
-            ShardTransferOperations::Abort { reason } => {
+            ShardTransferOperations::Finish(transfer) => {
+                collection.finish_shard_transfer(transfer).await
+            }
+            ShardTransferOperations::Abort { transfer, reason } => {
                 log::warn!("Aborting shard transfer: {reason}");
-                collection.abort_shard_transfer(shard).await
+                collection.abort_shard_transfer(transfer).await
             }
         }?;
         Ok(())
@@ -435,6 +494,28 @@ impl TableOfContent {
         Ok(RwLockReadGuard::map(read_collection, |collection| {
             collection.get(&real_collection_name).unwrap()
         }))
+    }
+
+    /// Initiate temporary shard.
+    ///
+    /// Fails if the collection does not exist
+    pub async fn initiate_temporary_shard(
+        &self,
+        collection_name: String,
+        shard_id: ShardId,
+    ) -> Result<(), StorageError> {
+        log::info!(
+            "Initiating temporary shard {}:{}",
+            collection_name,
+            shard_id
+        );
+        let real_collection_name = self.resolve_name(&collection_name).await?;
+        let read_collections = self.collections.read().await;
+
+        // safe 'unwrap' because the collection's existence is checked in `resolve_name`
+        let collection = read_collections.get(&real_collection_name).unwrap();
+        collection.initiate_temporary_shard(shard_id).await?;
+        Ok(())
     }
 
     /// Recommend points using positive and negative example from the request
@@ -747,6 +828,22 @@ impl TableOfContent {
         }
         result
     }
+
+    async fn peer_has_shards(&self, peer_id: PeerId) -> bool {
+        for collection in self.collections.read().await.values() {
+            let state = collection.state(self.this_peer_id()).await;
+            let peers_with_shards: HashSet<_> = state.shard_to_peer.values().collect();
+            if peers_with_shards.contains(&peer_id) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn peer_has_shards_sync(&self, peer_id: PeerId) -> bool {
+        self.collection_management_runtime
+            .block_on(self.peer_has_shards(peer_id))
+    }
 }
 
 impl CollectionContainer for TableOfContent {
@@ -766,6 +863,10 @@ impl CollectionContainer for TableOfContent {
         data: consensus_state::CollectionsSnapshot,
     ) -> Result<(), StorageError> {
         self.apply_collections_snapshot(data)
+    }
+
+    fn peer_has_shards(&self, peer_id: PeerId) -> bool {
+        self.peer_has_shards_sync(peer_id)
     }
 }
 

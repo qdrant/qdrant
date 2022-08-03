@@ -17,6 +17,7 @@ use crate::index::key_encoding::{
     decode_f64_key_ascending, decode_i64_key_ascending, encode_f64_key_ascending,
     encode_i64_key_ascending,
 };
+use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, PointOffsetType, Range,
 };
@@ -129,6 +130,12 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         idx: PointOffsetType,
         values: impl IntoIterator<Item = T>,
     ) -> OperationResult<()> {
+        if let Some(existing_vals) = self.get_values(idx) {
+            if !existing_vals.is_empty() {
+                self.remove_point(idx)?;
+            }
+        }
+
         if self.point_to_values.len() <= idx as usize {
             self.point_to_values.resize(idx as usize + 1, Vec::new())
         }
@@ -192,12 +199,6 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
 
         if !removed_values.is_empty() {
             self.points_count -= 1;
-        }
-        if removed_values.len() == self.max_values_per_point {
-            self.max_values_per_point = 1;
-            for values in &self.point_to_values {
-                self.max_values_per_point = self.max_values_per_point.max(values.len());
-            }
         }
 
         Ok(())
@@ -268,12 +269,17 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         key: Vec<u8>,
         id: PointOffsetType,
     ) {
-        map.insert(key.clone(), id);
-        histogram.insert(
-            Self::key_to_histogram_point(&key),
-            |x| Self::get_histogram_left_neighbor(map, x),
-            |x| Self::get_histogram_right_neighbor(map, x),
-        );
+        let existed_value = map.insert(key.clone(), id);
+        // Histogram works with unique values (idx + value) only, so we need to
+        // make sure that we don't add the same value twice.
+        // key is a combination of value + idx, so we can use it to ensure than the pair is unique
+        if existed_value.is_none() {
+            histogram.insert(
+                Self::key_to_histogram_point(&key),
+                |x| Self::get_histogram_left_neighbor(map, x),
+                |x| Self::get_histogram_right_neighbor(map, x),
+            );
+        }
     }
 
     pub fn remove_from_map(
@@ -281,12 +287,14 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         histogram: &mut Histogram,
         key: Vec<u8>,
     ) {
-        map.remove(&key);
-        histogram.remove(
-            &Self::key_to_histogram_point(&key),
-            |x| Self::get_histogram_left_neighbor(map, x),
-            |x| Self::get_histogram_right_neighbor(map, x),
-        );
+        let existed_val = map.remove(&key);
+        if existed_val.is_some() {
+            histogram.remove(
+                &Self::key_to_histogram_point(&key),
+                |x| Self::get_histogram_left_neighbor(map, x),
+                |x| Self::get_histogram_right_neighbor(map, x),
+            );
+        }
     }
 
     fn key_to_histogram_point(key: &[u8]) -> Point {
@@ -315,6 +323,14 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         map.range((Excluded(key), Unbounded))
             .next()
             .map(|(key, _)| Self::key_to_histogram_point(key))
+    }
+
+    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {
+            points_count: self.points_count,
+            points_values_count: self.histogram.get_total_count(),
+            histogram_bucket_size: Some(self.histogram.current_bucket_size()),
+        }
     }
 }
 

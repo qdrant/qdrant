@@ -8,10 +8,11 @@ use crate::shard::PeerId;
 
 pub const SHARD_CONFIG_FILE: &str = "shard_config.json";
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq)]
 pub enum ShardType {
     Local,
     Remote { peer_id: PeerId },
+    Temporary, // same as local, but not ready yet
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
@@ -34,16 +35,18 @@ impl ShardConfig {
         Self { r#type }
     }
 
-    pub fn load(shard_path: &Path) -> CollectionResult<Self> {
+    pub fn new_temp() -> Self {
+        let r#type = ShardType::Temporary;
+        Self { r#type }
+    }
+
+    pub fn load(shard_path: &Path) -> CollectionResult<Option<Self>> {
         let config_path = Self::get_config_path(shard_path);
-        // shard config was introduced in 0.8.0
-        // therefore we need to generate a shard config for existing local shards
         if !config_path.exists() {
             log::info!("Detected missing shard config file in {:?}", shard_path);
-            let shard_config = Self::new_local();
-            shard_config.save(shard_path)?;
+            return Ok(None);
         }
-        Ok(read_json(&config_path)?)
+        Ok(Some(read_json(&config_path)?))
     }
 
     pub fn save(&self, shard_path: &Path) -> CollectionResult<()> {

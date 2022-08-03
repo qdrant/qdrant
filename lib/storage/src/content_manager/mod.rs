@@ -1,3 +1,5 @@
+use collection::shard::PeerId;
+
 use self::collection_meta_ops::CollectionMetaOperations;
 use self::consensus_state::CollectionsSnapshot;
 use self::errors::StorageError;
@@ -5,6 +7,7 @@ use self::errors::StorageError;
 pub mod alias_mapping;
 pub mod collection_meta_ops;
 mod collections_ops;
+pub mod consensus;
 pub mod consensus_state;
 pub mod conversions;
 pub mod errors;
@@ -24,6 +27,7 @@ pub mod consensus_ops {
     pub enum ConsensusOperations {
         CollectionMeta(Box<CollectionMetaOperations>),
         AddPeer(PeerId, String),
+        RemovePeer(PeerId),
     }
 
     impl TryFrom<&RaftEntry> for ConsensusOperations {
@@ -46,4 +50,6 @@ pub trait CollectionContainer {
     fn collections_snapshot(&self) -> CollectionsSnapshot;
 
     fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError>;
+
+    fn peer_has_shards(&self, peer_id: PeerId) -> bool;
 }

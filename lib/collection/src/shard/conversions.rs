@@ -156,7 +156,18 @@ pub fn internal_create_index(
             collection_name: shard.collection_id.clone(),
             wait: Some(wait),
             field_name: create_index.field_name,
-            field_type: create_index.field_type.map(|ft| ft.index()),
+            field_type: create_index.field_type.map(|field_type| match field_type {
+                segment::types::PayloadSchemaType::Keyword => {
+                    api::grpc::qdrant::FieldType::Keyword as i32
+                }
+                segment::types::PayloadSchemaType::Integer => {
+                    api::grpc::qdrant::FieldType::Integer as i32
+                }
+                segment::types::PayloadSchemaType::Float => {
+                    api::grpc::qdrant::FieldType::Float as i32
+                }
+                segment::types::PayloadSchemaType::Geo => api::grpc::qdrant::FieldType::Geo as i32,
+            }),
         }),
     }
 }

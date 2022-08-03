@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 
 use segment::types::Distance;
 
@@ -12,8 +12,8 @@ const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     deleted_threshold: 0.9,
     vacuum_min_vector_number: 1000,
     default_segment_number: 2,
-    max_segment_size: 100_000,
-    memmap_threshold: 100_000,
+    max_segment_size: None,
+    memmap_threshold: None,
     indexing_threshold: 50_000,
     flush_interval_sec: 30,
     max_optimization_threads: 2,
@@ -27,7 +27,7 @@ async fn test_snapshot_collection() {
     };
 
     let collection_params = CollectionParams {
-        vector_size: 4,
+        vector_size: NonZeroU64::new(4).unwrap(),
         distance: Distance::Dot,
         shard_number: NonZeroU32::new(3).expect("Shard number can not be zero"),
         on_disk_payload: false,

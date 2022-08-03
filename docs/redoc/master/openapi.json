@@ -1,5 +1,74 @@
 {
   "paths": {
+    "/telemetry": {
+      "get": {
+        "summary": "Collect telemetry data",
+        "description": "Collect telemetry data including app info, system info, collections info, cluster info, configs and statistics",
+        "operationId": "telemetry",
+        "parameters": [
+          {
+            "name": "anonymize",
+            "in": "query",
+            "description": "If true, anonymize result",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TelemetryData"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cluster": {
       "get": {
         "tags": [
@@ -49,6 +118,75 @@
                     },
                     "result": {
                       "$ref": "#/components/schemas/ClusterStatus"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cluster/peer/{peer_id}": {
+      "delete": {
+        "tags": [
+          "cluster"
+        ],
+        "summary": "Remove peer from the cluster",
+        "description": "Tries to remove peer from the cluster. Will return an error if peer has shards on it.",
+        "operationId": "remove_peer",
+        "parameters": [
+          {
+            "name": "peer_id",
+            "in": "path",
+            "description": "Id of the peer",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "boolean"
                     }
                   }
                 }
@@ -743,6 +881,91 @@
                     },
                     "result": {
                       "$ref": "#/components/schemas/CollectionClusterInfo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "collections",
+          "cluster"
+        ],
+        "summary": "Update collection cluster setup",
+        "operationId": "update_collection_cluster",
+        "requestBody": {
+          "description": "Collection cluster update operations",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClusterOperations"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection on which to to apply the cluster update operation",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Wait for operation commit timeout in seconds. \nIf timeout is reached - request will return with service error.\n",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "result": {
+                      "type": "boolean"
                     }
                   }
                 }
@@ -2283,8 +2506,8 @@
           "vector_size": {
             "description": "Size of a vectors used",
             "type": "integer",
-            "format": "uint",
-            "minimum": 0
+            "format": "uint64",
+            "minimum": 1
           },
           "distance": {
             "$ref": "#/components/schemas/Distance"
@@ -2356,8 +2579,6 @@
           "flush_interval_sec",
           "indexing_threshold",
           "max_optimization_threads",
-          "max_segment_size",
-          "memmap_threshold",
           "vacuum_min_vector_number"
         ],
         "properties": {
@@ -2379,16 +2600,20 @@
             "minimum": 0
           },
           "max_segment_size": {
-            "description": "Do not create segments larger this size (in KiloBytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256",
+            "description": "Do not create segments larger this size (in KiloBytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 If not set, will be automatically selected considering the number of available CPUs.",
+            "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "memmap_threshold": {
-            "description": "Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256",
+            "description": "Maximum size (in KiloBytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file. To enable memmap storage, lower the threshold Note: 1Kb = 1 vector of size 256 If not set, mmap will not be used.",
+            "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "indexing_threshold": {
             "description": "Maximum size (in KiloBytes) of vectors allowed for plain index. Default value based on https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md Note: 1Kb = 1 vector of size 256",
@@ -3772,6 +3997,7 @@
             "description": "Description of enabled cluster",
             "type": "object",
             "required": [
+              "consensus_thread_status",
               "peer_id",
               "peers",
               "raft_info",
@@ -3799,6 +4025,9 @@
               },
               "raft_info": {
                 "$ref": "#/components/schemas/RaftInfo"
+              },
+              "consensus_thread_status": {
+                "$ref": "#/components/schemas/ConsensusThreadStatus"
               }
             }
           }
@@ -3877,6 +4106,43 @@
           "PreCandidate"
         ]
       },
+      "ConsensusThreadStatus": {
+        "description": "Information about current consensus thread status",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "consensus_thread_status"
+            ],
+            "properties": {
+              "consensus_thread_status": {
+                "type": "string",
+                "enum": [
+                  "working"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "consensus_thread_status",
+              "err"
+            ],
+            "properties": {
+              "consensus_thread_status": {
+                "type": "string",
+                "enum": [
+                  "stopped_with_err"
+                ]
+              },
+              "err": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
       "SnapshotDescription": {
         "type": "object",
         "required": [
@@ -3942,7 +4208,8 @@
           "local_shards",
           "peer_id",
           "remote_shards",
-          "shard_count"
+          "shard_count",
+          "shard_transfers"
         ],
         "properties": {
           "peer_id": {
@@ -3969,6 +4236,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/RemoteShardInfo"
+            }
+          },
+          "shard_transfers": {
+            "description": "Shard transfers",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShardTransferInfo"
             }
           }
         }
@@ -4009,6 +4283,798 @@
           },
           "peer_id": {
             "description": "Remote peer id",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        }
+      },
+      "ShardTransferInfo": {
+        "type": "object",
+        "required": [
+          "from",
+          "shard_id",
+          "to"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "from": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "to": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        }
+      },
+      "TelemetryData": {
+        "type": "object",
+        "required": [
+          "app",
+          "cluster_status",
+          "collections",
+          "configs",
+          "grpc_calls_statistics",
+          "id",
+          "system",
+          "web"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "app": {
+            "$ref": "#/components/schemas/AppBuildTelemetry"
+          },
+          "system": {
+            "$ref": "#/components/schemas/RunningEnvironmentTelemetry"
+          },
+          "configs": {
+            "$ref": "#/components/schemas/ConfigsTelemetry"
+          },
+          "collections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CollectionTelemetry"
+            }
+          },
+          "web": {
+            "$ref": "#/components/schemas/WebApiTelemetry"
+          },
+          "grpc_calls_statistics": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          },
+          "cluster_status": {
+            "$ref": "#/components/schemas/ClusterStatus"
+          }
+        }
+      },
+      "AppBuildTelemetry": {
+        "type": "object",
+        "required": [
+          "debug",
+          "service_debug_feature",
+          "version",
+          "web_feature"
+        ],
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "debug": {
+            "type": "boolean"
+          },
+          "web_feature": {
+            "type": "boolean"
+          },
+          "service_debug_feature": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RunningEnvironmentTelemetry": {
+        "type": "object",
+        "required": [
+          "cpu_flags",
+          "is_docker"
+        ],
+        "properties": {
+          "distribution": {
+            "type": "string",
+            "nullable": true
+          },
+          "distribution_version": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_docker": {
+            "type": "boolean"
+          },
+          "cores": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "ram_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "disk_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "cpu_flags": {
+            "type": "string"
+          }
+        }
+      },
+      "ConfigsTelemetry": {
+        "type": "object",
+        "required": [
+          "cluster_config",
+          "service_config"
+        ],
+        "properties": {
+          "service_config": {
+            "$ref": "#/components/schemas/ServiceConfigTelemetry"
+          },
+          "cluster_config": {
+            "$ref": "#/components/schemas/ClusterConfigTelemetry"
+          }
+        }
+      },
+      "ServiceConfigTelemetry": {
+        "type": "object",
+        "required": [
+          "enable_cors",
+          "grpc_enable",
+          "max_request_size_mb"
+        ],
+        "properties": {
+          "grpc_enable": {
+            "type": "boolean"
+          },
+          "max_request_size_mb": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "max_workers": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "enable_cors": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ClusterConfigTelemetry": {
+        "type": "object",
+        "required": [
+          "consensus",
+          "enabled",
+          "grpc_timeout_ms",
+          "p2p"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "grpc_timeout_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "p2p": {
+            "$ref": "#/components/schemas/P2pConfigTelemetry"
+          },
+          "consensus": {
+            "$ref": "#/components/schemas/ConsensusConfigTelemetry"
+          }
+        }
+      },
+      "P2pConfigTelemetry": {
+        "type": "object",
+        "required": [
+          "connection_pool_size"
+        ],
+        "properties": {
+          "connection_pool_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
+      },
+      "ConsensusConfigTelemetry": {
+        "type": "object",
+        "required": [
+          "bootstrap_timeout_sec",
+          "max_message_queue_size",
+          "tick_period_ms"
+        ],
+        "properties": {
+          "max_message_queue_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "tick_period_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "bootstrap_timeout_sec": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        }
+      },
+      "CollectionTelemetry": {
+        "type": "object",
+        "required": [
+          "config",
+          "id",
+          "init_time",
+          "shards"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "config": {
+            "$ref": "#/components/schemas/CollectionConfig"
+          },
+          "init_time": {
+            "$ref": "#/components/schemas/Duration"
+          },
+          "shards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShardTelemetry"
+            }
+          }
+        }
+      },
+      "Duration": {
+        "type": "object",
+        "required": [
+          "nanos",
+          "secs"
+        ],
+        "properties": {
+          "secs": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "nanos": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        }
+      },
+      "ShardTelemetry": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "Remote"
+            ],
+            "properties": {
+              "Remote": {
+                "type": "object",
+                "required": [
+                  "searches",
+                  "shard_id",
+                  "updates"
+                ],
+                "properties": {
+                  "shard_id": {
+                    "type": "integer",
+                    "format": "uint32",
+                    "minimum": 0
+                  },
+                  "searches": {
+                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
+                  },
+                  "updates": {
+                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "Local"
+            ],
+            "properties": {
+              "Local": {
+                "type": "object",
+                "required": [
+                  "optimizers",
+                  "segments"
+                ],
+                "properties": {
+                  "segments": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/SegmentTelemetry"
+                    }
+                  },
+                  "optimizers": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/OptimizerTelemetry"
+                    }
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "Proxy"
+            ],
+            "properties": {
+              "Proxy": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "ForwardProxy"
+            ],
+            "properties": {
+              "ForwardProxy": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "TelemetryOperationStatistics": {
+        "type": "object",
+        "required": [
+          "fail_count",
+          "ok_avg_time",
+          "ok_count"
+        ],
+        "properties": {
+          "ok_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "fail_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "ok_avg_time": {
+            "$ref": "#/components/schemas/Duration"
+          }
+        }
+      },
+      "SegmentTelemetry": {
+        "type": "object",
+        "required": [
+          "config",
+          "info",
+          "payload_field_indices",
+          "vector_index"
+        ],
+        "properties": {
+          "info": {
+            "$ref": "#/components/schemas/SegmentInfo"
+          },
+          "config": {
+            "$ref": "#/components/schemas/SegmentConfig"
+          },
+          "vector_index": {
+            "$ref": "#/components/schemas/VectorIndexTelemetry"
+          },
+          "payload_field_indices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PayloadIndexTelemetry"
+            }
+          }
+        }
+      },
+      "SegmentInfo": {
+        "description": "Aggregated information about segment",
+        "type": "object",
+        "required": [
+          "disk_usage_bytes",
+          "index_schema",
+          "is_appendable",
+          "num_deleted_vectors",
+          "num_points",
+          "num_vectors",
+          "ram_usage_bytes",
+          "segment_type"
+        ],
+        "properties": {
+          "segment_type": {
+            "$ref": "#/components/schemas/SegmentType"
+          },
+          "num_vectors": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "num_points": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "num_deleted_vectors": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "ram_usage_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "disk_usage_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "is_appendable": {
+            "type": "boolean"
+          },
+          "index_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PayloadIndexInfo"
+            }
+          }
+        }
+      },
+      "SegmentType": {
+        "description": "Type of segment",
+        "type": "string",
+        "enum": [
+          "plain",
+          "indexed",
+          "special"
+        ]
+      },
+      "SegmentConfig": {
+        "type": "object",
+        "required": [
+          "distance",
+          "index",
+          "storage_type",
+          "vector_size"
+        ],
+        "properties": {
+          "vector_size": {
+            "description": "Size of a vectors used",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "distance": {
+            "$ref": "#/components/schemas/Distance"
+          },
+          "index": {
+            "$ref": "#/components/schemas/Indexes"
+          },
+          "storage_type": {
+            "$ref": "#/components/schemas/StorageType"
+          },
+          "payload_storage_type": {
+            "$ref": "#/components/schemas/PayloadStorageType"
+          }
+        }
+      },
+      "Indexes": {
+        "description": "Vector index configuration of the segment",
+        "oneOf": [
+          {
+            "description": "Do not use any index, scan whole vector collection during search. Guarantee 100% precision, but may be time consuming on large collections.",
+            "type": "object",
+            "required": [
+              "options",
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "plain"
+                ]
+              },
+              "options": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "description": "Use filterable HNSW index for approximate search. Is very fast even on a very huge collections, but require additional space to store index and additional time to build it.",
+            "type": "object",
+            "required": [
+              "options",
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "hnsw"
+                ]
+              },
+              "options": {
+                "$ref": "#/components/schemas/HnswConfig"
+              }
+            }
+          }
+        ]
+      },
+      "StorageType": {
+        "description": "Type of vector storage",
+        "oneOf": [
+          {
+            "description": "Store vectors in memory and use persistence storage only if vectors are changed",
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "in_memory"
+                ]
+              }
+            }
+          },
+          {
+            "description": "Use memmap to store vectors, a little slower than `InMemory`, but requires little RAM",
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "mmap"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "PayloadStorageType": {
+        "description": "Type of payload storage",
+        "oneOf": [
+          {
+            "description": "Store payload in memory and use persistence storage only if vectors are changed",
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "in_memory"
+                ]
+              }
+            }
+          },
+          {
+            "description": "Store payload on disk only, read each time it is requested",
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "on_disk"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "VectorIndexTelemetry": {
+        "type": "object",
+        "required": [
+          "large_cardinality_searches",
+          "negative_check_cardinality_searches",
+          "positive_check_cardinality_searches",
+          "small_cardinality_searches"
+        ],
+        "properties": {
+          "small_cardinality_searches": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          },
+          "large_cardinality_searches": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          },
+          "positive_check_cardinality_searches": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          },
+          "negative_check_cardinality_searches": {
+            "$ref": "#/components/schemas/TelemetryOperationStatistics"
+          }
+        }
+      },
+      "PayloadIndexTelemetry": {
+        "type": "object",
+        "required": [
+          "points_count",
+          "points_values_count"
+        ],
+        "properties": {
+          "points_values_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "points_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "histogram_bucket_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "OptimizerTelemetry": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "Indexing"
+            ],
+            "properties": {
+              "Indexing": {
+                "type": "object",
+                "required": [
+                  "optimizations"
+                ],
+                "properties": {
+                  "optimizations": {
+                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "Merge"
+            ],
+            "properties": {
+              "Merge": {
+                "type": "object",
+                "required": [
+                  "optimizations"
+                ],
+                "properties": {
+                  "optimizations": {
+                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "Vacuum"
+            ],
+            "properties": {
+              "Vacuum": {
+                "type": "object",
+                "required": [
+                  "optimizations"
+                ],
+                "properties": {
+                  "optimizations": {
+                    "$ref": "#/components/schemas/TelemetryOperationStatistics"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "WebApiTelemetry": {
+        "type": "object",
+        "required": [
+          "responses"
+        ],
+        "properties": {
+          "responses": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "ClusterOperations": {
+        "oneOf": [
+          {
+            "description": "Move shard to a different peer",
+            "type": "object",
+            "required": [
+              "move_shard"
+            ],
+            "properties": {
+              "move_shard": {
+                "$ref": "#/components/schemas/MoveShard"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "MoveShard": {
+        "type": "object",
+        "required": [
+          "from_peer_id",
+          "shard_id",
+          "to_peer_id"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "to_peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "from_peer_id": {
             "type": "integer",
             "format": "uint64",
             "minimum": 0

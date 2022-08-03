@@ -20,6 +20,7 @@ pub struct ChunkedVectors {
 
 impl ChunkedVectors {
     pub fn new(dim: usize) -> ChunkedVectors {
+        assert_ne!(dim, 0, "The vector's dimension cannot be 0");
         let vector_size = dim * mem::size_of::<VectorElementType>();
         let chunk_capacity = max(MIN_CHUNK_CAPACITY, CHUNK_SIZE / vector_size);
         ChunkedVectors {

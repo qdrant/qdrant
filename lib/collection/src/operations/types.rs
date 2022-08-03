@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::result;
 use std::time::SystemTimeError;
 
+use api::grpc::transport_channel_pool::RequestError;
 use futures::io;
 use schemars::JsonSchema;
 use segment::common::file_operations::FileStorageError;
@@ -20,6 +21,7 @@ use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
 
 use crate::config::CollectionConfig;
+use crate::save_on_disk;
 use crate::shard::{PeerId, ShardId};
 use crate::wal::WalError;
 
@@ -97,6 +99,15 @@ pub struct CollectionClusterInfo {
     pub local_shards: Vec<LocalShardInfo>,
     /// Remote shards
     pub remote_shards: Vec<RemoteShardInfo>,
+    /// Shard transfers
+    pub shard_transfers: Vec<ShardTransferInfo>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ShardTransferInfo {
+    pub shard_id: ShardId,
+    pub from: PeerId,
+    pub to: PeerId,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -326,6 +337,12 @@ impl From<SystemTimeError> for CollectionError {
     }
 }
 
+impl From<String> for CollectionError {
+    fn from(error: String) -> CollectionError {
+        CollectionError::ServiceError { error }
+    }
+}
+
 impl From<OperationError> for CollectionError {
     fn from(err: OperationError) -> Self {
         match err {
@@ -452,6 +469,23 @@ impl From<FileStorageError> for CollectionError {
             FileStorageError::GenericError { description } => {
                 CollectionError::service_error(description)
             }
+        }
+    }
+}
+
+impl From<RequestError<tonic::Status>> for CollectionError {
+    fn from(err: RequestError<tonic::Status>) -> Self {
+        match err {
+            RequestError::FromClosure(status) => status.into(),
+            RequestError::Tonic(err) => CollectionError::service_error(format!("{}", err)),
+        }
+    }
+}
+
+impl From<save_on_disk::Error> for CollectionError {
+    fn from(err: save_on_disk::Error) -> Self {
+        CollectionError::ServiceError {
+            error: err.to_string(),
         }
     }
 }

@@ -1,7 +1,10 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use itertools::Itertools;
+use parking_lot::Mutex;
+use segment::telemetry::TelemetryOperationAggregator;
 use segment::types::{HnswConfig, SegmentType, VECTOR_ELEMENT_SIZE};
 
 use crate::collection_manager::holders::segment_holder::{
@@ -11,6 +14,7 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
+use crate::telemetry::OptimizerTelemetry;
 
 const BYTES_IN_KB: usize = 1024;
 
@@ -25,6 +29,7 @@ pub struct MergeOptimizer {
     collection_temp_dir: PathBuf,
     collection_params: CollectionParams,
     hnsw_config: HnswConfig,
+    optimizations_telemetry_counter: Arc<Mutex<TelemetryOperationAggregator>>,
 }
 
 impl MergeOptimizer {
@@ -44,6 +49,7 @@ impl MergeOptimizer {
             collection_temp_dir,
             collection_params,
             hnsw_config,
+            optimizations_telemetry_counter: TelemetryOperationAggregator::new(),
         }
     }
 }
@@ -122,6 +128,16 @@ impl SegmentOptimizer for MergeOptimizer {
         }
         log::debug!("Merge candidates: {:?}", candidates);
         candidates
+    }
+
+    fn get_telemetry_data(&self) -> OptimizerTelemetry {
+        OptimizerTelemetry::Merge {
+            optimizations: self.get_telemetry_counter().lock().get_statistics(),
+        }
+    }
+
+    fn get_telemetry_counter(&self) -> Arc<Mutex<TelemetryOperationAggregator>> {
+        self.optimizations_telemetry_counter.clone()
     }
 }
 

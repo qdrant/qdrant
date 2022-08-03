@@ -9,6 +9,7 @@ use thiserror::Error;
 
 use crate::common::file_operations::FileStorageError;
 use crate::index::field_index::CardinalityEstimation;
+use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
@@ -274,4 +275,7 @@ pub trait SegmentEntry {
     ///
     /// Return the `Path` of the copy
     fn copy_segment_directory(&self, target_dir_path: &Path) -> OperationResult<PathBuf>;
+
+    // Get collected telemetry data of segment
+    fn get_telemetry_data(&self) -> SegmentTelemetry;
 }

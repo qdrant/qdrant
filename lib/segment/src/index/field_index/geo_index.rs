@@ -17,6 +17,7 @@ use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardin
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
+use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     FieldCondition, GeoBoundingBox, GeoPoint, GeoRadius, PayloadKeyType, PointOffsetType,
 };
@@ -205,6 +206,14 @@ impl GeoMapIndex {
         }
     }
 
+    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {
+            points_count: self.points_count,
+            points_values_count: self.values_count,
+            histogram_bucket_size: None,
+        }
+    }
+
     fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         if self.point_to_values.len() <= idx as usize {
             return Ok(()); // Already removed or never actually existed
@@ -271,6 +280,12 @@ impl GeoMapIndex {
         idx: PointOffsetType,
         values: &[GeoPoint],
     ) -> OperationResult<()> {
+        if let Some(existing_vals) = self.get_values(idx) {
+            if !existing_vals.is_empty() {
+                self.remove_point(idx)?;
+            }
+        }
+
         if values.is_empty() {
             return Ok(());
         }

@@ -1,4 +1,5 @@
 use api::grpc::models::CollectionsResponse;
+use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector};
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -15,6 +16,7 @@ use storage::content_manager::collection_meta_ops::{
 use storage::types::ClusterStatus;
 
 use crate::common::points::CreateFieldIndex;
+use crate::common::telemetry::TelemetryData;
 
 mod actix;
 mod common;
@@ -47,6 +49,8 @@ struct AllDefinitions {
     an: CountRequest,
     ao: CountResult,
     ap: CollectionClusterInfo,
+    aq: TelemetryData,
+    ar: ClusterOperations,
 }
 
 fn save_schema<T: JsonSchema>() {
