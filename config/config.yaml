@@ -66,7 +66,7 @@ storage:
     # Interval between forced flushes.
     flush_interval_sec: 1
     
-    # Max number of threads, which can be used for optimization. If 0 - auto selection.
+    # Max number of threads, which can be used for optimization.
     max_optimization_threads: 1
 
   # Default parameters of HNSW Index. Could be overridden for each collection individually
