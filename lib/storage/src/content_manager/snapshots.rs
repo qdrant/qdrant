@@ -95,6 +95,7 @@ pub async fn do_create_full_snapshot(
             .join(collection_name)
             .join(&snapshot_details.name);
         builder.append_path_with_name(&snapshot_path, &snapshot_details.name)?;
+        tokio::fs::remove_file(snapshot_path).await?;
     }
     builder.append_path_with_name(&config_path, "config.json")?;
 
