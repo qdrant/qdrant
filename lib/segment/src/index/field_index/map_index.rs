@@ -26,7 +26,6 @@ pub struct MapIndex<N: Hash + Eq + Clone + Display> {
     /// Amount of point which have at least one indexed payload value
     indexed_points: usize,
     values_count: usize,
-    store_cf_name: String,
     db_wrapper: DatabaseColumnWrapper,
 }
 
@@ -37,7 +36,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
             point_to_values: Vec::new(),
             indexed_points: 0,
             values_count: 0,
-            store_cf_name: Self::storage_cf_name(field_name),
             db_wrapper: DatabaseColumnWrapper::new(database, &Self::storage_cf_name(field_name)),
         }
     }
