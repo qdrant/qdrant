@@ -96,23 +96,6 @@ pub enum Distance {
 }
 
 impl Distance {
-    pub fn from_index(index: i32) -> Option<Self> {
-        match index {
-            1 => Some(Distance::Cosine),
-            2 => Some(Distance::Euclid),
-            3 => Some(Distance::Dot),
-            _ => None,
-        }
-    }
-
-    pub fn index(&self) -> i32 {
-        match self {
-            Distance::Cosine => 1,
-            Distance::Euclid => 2,
-            Distance::Dot => 3,
-        }
-    }
-
     pub fn preprocess_vector(
         &self,
         vector: &[VectorElementType],
@@ -562,27 +545,6 @@ pub enum PayloadSchemaType {
     Integer,
     Float,
     Geo,
-}
-
-impl PayloadSchemaType {
-    pub fn from_index(index: i32) -> Option<Self> {
-        match index {
-            1 => Some(PayloadSchemaType::Keyword),
-            2 => Some(PayloadSchemaType::Integer),
-            3 => Some(PayloadSchemaType::Float),
-            4 => Some(PayloadSchemaType::Geo),
-            _ => None,
-        }
-    }
-
-    pub fn index(&self) -> i32 {
-        match self {
-            PayloadSchemaType::Keyword => 1,
-            PayloadSchemaType::Integer => 2,
-            PayloadSchemaType::Float => 3,
-            PayloadSchemaType::Geo => 4,
-        }
-    }
 }
 
 pub fn value_type(value: &Value) -> Option<PayloadSchemaType> {

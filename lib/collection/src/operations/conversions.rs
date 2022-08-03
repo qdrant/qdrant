@@ -3,6 +3,7 @@ use std::num::{NonZeroU32, NonZeroU64};
 
 use api::grpc::conversions::{payload_to_proto, proto_to_payloads};
 use itertools::Itertools;
+use segment::types::Distance;
 use tonic::Status;
 
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
@@ -206,13 +207,22 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                 None => return Err(Status::invalid_argument("Malformed CollectionParams type")),
                 Some(params) => CollectionParams {
                     vector_size: NonZeroU64::new(params.vector_size).unwrap(),
-                    distance: match segment::types::Distance::from_index(params.distance) {
+                    distance: match api::grpc::qdrant::Distance::from_i32(params.distance) {
                         None => {
                             return Err(Status::invalid_argument(
                                 "Malformed CollectionParams distance",
                             ))
                         }
-                        Some(distance) => distance,
+                        Some(distance) => match distance {
+                            api::grpc::qdrant::Distance::UnknownDistance => {
+                                return Err(Status::invalid_argument(
+                                    "Malformed CollectionParams distance",
+                                ))
+                            }
+                            api::grpc::qdrant::Distance::Cosine => Distance::Cosine,
+                            api::grpc::qdrant::Distance::Euclid => Distance::Euclid,
+                            api::grpc::qdrant::Distance::Dot => Distance::Dot,
+                        },
                     },
                     shard_number: NonZeroU32::new(params.shard_number).unwrap(),
                     on_disk_payload: params.on_disk_payload,
