@@ -7,19 +7,25 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use crate::common::stoppable_task_async::{spawn_async_stoppable, StoppableAsyncTaskHandle};
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{
+    CollectionError, CollectionResult, CollectionStatus, OptimizersStatus,
+};
 use crate::shard::forward_proxy_shard::ForwardProxyShard;
 use crate::shard::remote_shard::RemoteShard;
 use crate::shard::shard_config::ShardConfig;
 use crate::shard::shard_holder::LockedShardHolder;
 use crate::shard::shard_versioning::drop_old_shards;
 use crate::shard::{
-    create_shard_dir, ChannelService, CollectionId, PeerId, Shard, ShardId, ShardTransfer,
+    create_shard_dir, ChannelService, CollectionId, PeerId, Shard, ShardId, ShardOperation,
+    ShardTransfer,
 };
 
 const TRANSFER_BATCH_SIZE: usize = 100;
 const RETRY_TIMEOUT: Duration = Duration::from_secs(1);
 const MAX_RETRY_COUNT: usize = 3;
+const INDEXED_THRESHOLD: f64 = 0.85;
+const OPTIMIZATION_CHECK_INTERVALS: Duration = Duration::from_secs(10);
+const MAX_OPTIMIZATION_TIME: Duration = Duration::from_secs(60 * 30); // 30 minutes
 
 async fn transfer_batches(
     shard_holder: Arc<LockedShardHolder>,
@@ -266,7 +272,7 @@ pub async fn transfer_shard(
     stopped: Arc<AtomicBool>,
 ) -> CollectionResult<()> {
     // Initiate shard on a remote peer
-    let remote_shard = RemoteShard::new(shard_id, collection_id, peer_id, channel_service);
+    let remote_shard = RemoteShard::new(shard_id, collection_id.clone(), peer_id, channel_service);
 
     // ToDo: Initial fast file-based transfer (optional)
     // * Create shard snapshot - save the latest version of point updates in the snapshot
@@ -297,9 +303,95 @@ pub async fn transfer_shard(
                 )));
             }
         }
-    }
+    };
     // Transfer contents batch by batch
-    transfer_batches(shard_holder, shard_id, stopped).await
+    transfer_batches(shard_holder.clone(), shard_id, stopped.clone()).await?;
+
+    // Validate that the new shard reached a certain level of indexing before promoting it to not slowdown the search requests
+    validate_indexing_progress(shard_holder, shard_id, collection_id, peer_id, stopped).await
+}
+
+pub async fn validate_indexing_progress(
+    shard_holder: Arc<LockedShardHolder>,
+    shard_id: ShardId,
+    collection_id: CollectionId,
+    peer_id: PeerId,
+    stopped: Arc<AtomicBool>,
+) -> CollectionResult<()> {
+    let mut attempt: u64 = 0;
+    let max_attempts = MAX_OPTIMIZATION_TIME.as_secs() / OPTIMIZATION_CHECK_INTERVALS.as_secs();
+
+    loop {
+        if stopped.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(CollectionError::Cancelled {
+                description: "Transfer cancelled".to_string(),
+            });
+        }
+
+        let (local_info, remote_info) = {
+            let shard_holder_guard = shard_holder.read().await;
+
+            let proxy_shard = match shard_holder_guard.get_shard(&shard_id) {
+                Some(Shard::ForwardProxy(forward_proxy)) => forward_proxy,
+                _ => {
+                    return Err(CollectionError::service_error(format!(
+                        "Proxy shard is gone: {}, {}",
+                        shard_id, collection_id
+                    )))
+                }
+            };
+
+            let local_info = proxy_shard.wrapped_shard.info().await?;
+            let remote_info = proxy_shard.remote_shard.info().await?;
+            (local_info, remote_info)
+        };
+
+        match remote_info.status {
+            CollectionStatus::Green => break, // all good
+            CollectionStatus::Yellow => {}    // ???, need to dig deeper
+            CollectionStatus::Red => {
+                // that's a trap!
+                return Err(CollectionError::service_error(format!(
+                    "Remote shard is red: {}, {}",
+                    shard_id, collection_id
+                )));
+            }
+        }
+
+        match remote_info.optimizer_status {
+            OptimizersStatus::Ok => {}
+            OptimizersStatus::Error(optimizer_error) => {
+                return Err(CollectionError::service_error(format!(
+                    "Remote shard optimizer error: {} shard_id: {}, collection: {}",
+                    optimizer_error, shard_id, collection_id
+                )))
+            }
+        }
+
+        // Now we try heuristics to prevent infinite awaiting of the remote shard to be green
+
+        let expected_indexing_progress =
+            (local_info.indexed_vectors_count as f64 * INDEXED_THRESHOLD) as usize;
+        if remote_info.indexed_vectors_count >= expected_indexing_progress {
+            break;
+        }
+
+        let indexed_vector_count = remote_info.indexed_vectors_count;
+
+        // Report progress every 20 attempts (around 10 minutes)
+        if attempt.rem_euclid(20) == 0 {
+            log::info!("Waiting for optimizer on {}:{} on peer {} to finish transfer. (indexing progress {}/{})", collection_id, shard_id, peer_id, indexed_vector_count, expected_indexing_progress);
+        }
+        attempt += 1;
+
+        if attempt > max_attempts {
+            log::info!("Max waiting for indexing reached on {}:{} on peer {}. (indexing progress {}/{}). Finalizing transfer anyway", collection_id, shard_id, peer_id, indexed_vector_count, expected_indexing_progress);
+            break;
+        }
+
+        sleep(OPTIMIZATION_CHECK_INTERVALS).await;
+    }
+    Ok(())
 }
 
 pub fn spawn_transfer_task<T, F>(

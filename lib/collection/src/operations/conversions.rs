@@ -53,11 +53,13 @@ impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfigDiff {
 }
 
 impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
+    #[allow(deprecated)]
     fn from(value: CollectionInfo) -> Self {
         let CollectionInfo {
             status,
             optimizer_status,
             vectors_count,
+            indexed_vectors_count,
             points_count,
             segments_count,
             disk_data_size,
@@ -83,6 +85,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 }
             }),
             vectors_count: vectors_count as u64,
+            indexed_vectors_count: Some(indexed_vectors_count as u64),
             points_count: points_count as u64,
             segments_count: segments_count as u64,
             disk_data_size: disk_data_size as u64,
@@ -247,6 +250,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
 impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
     type Error = Status;
 
+    #[allow(deprecated)]
     fn try_from(
         collection_info_response: api::grpc::qdrant::GetCollectionInfoResponse,
     ) -> Result<Self, Self::Error> {
@@ -265,6 +269,9 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                     }
                 },
                 vectors_count: collection_info_response.vectors_count as usize,
+                indexed_vectors_count: collection_info_response
+                    .indexed_vectors_count
+                    .unwrap_or_default() as usize,
                 points_count: collection_info_response.points_count as usize,
                 segments_count: collection_info_response.segments_count as usize,
                 disk_data_size: collection_info_response.disk_data_size as usize,

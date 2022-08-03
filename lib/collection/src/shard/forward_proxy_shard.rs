@@ -26,8 +26,8 @@ use crate::telemetry::ShardTelemetry;
 /// It can be used to provide all read and write operations while the wrapped shard is being transferred to another node.
 /// Proxy forwards all operations to remote shards.
 pub struct ForwardProxyShard {
-    wrapped_shard: LocalShard,
-    remote_shard: RemoteShard,
+    pub(crate) wrapped_shard: LocalShard,
+    pub(crate) remote_shard: RemoteShard,
     /// Lock required to protect transfer-in-progress updates.
     /// It should block data updating operations while the batch it being transferred.
     update_lock: Mutex<()>,
