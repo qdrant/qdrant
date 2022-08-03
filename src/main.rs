@@ -198,7 +198,8 @@ fn main() -> anyhow::Result<()> {
 
         runtime_handle
             .block_on(async {
-                toc_arc.cancel_outgoing_all_transfers("Source peer restarted")
+                toc_arc
+                    .cancel_outgoing_all_transfers("Source peer restarted")
                     .await
             })
             .unwrap();
