@@ -31,5 +31,5 @@ async fn remove_peer(dispatcher: web::Data<Dispatcher>, peer_id: web::Path<u64>)
 
 // Configure services
 pub fn config_cluster_api(cfg: &mut web::ServiceConfig) {
-    cfg.service(cluster_status);
+    cfg.service(cluster_status).service(remove_peer);
 }
