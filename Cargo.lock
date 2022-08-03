@@ -281,7 +281,7 @@ version = "0.8.6"
 dependencies = [
  "chrono",
  "prost 0.10.4",
- "prost-types 0.10.1",
+ "prost-types 0.11.1",
  "rand 0.8.5",
  "schemars",
  "segment",
@@ -2542,6 +2542,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "399c3c31cdec40583bb68f0b18403400d01ec4289c383aa047560439952c4dd7"
+dependencies = [
+ "bytes",
+ "prost-derive 0.11.0",
+]
+
+[[package]]
 name = "prost-build"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2610,6 +2620,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7345d5f0e08c0536d7ac7229952590239e77abf0a0100a1b1d890add6ea96364"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2627,6 +2650,16 @@ checksum = "2d0a014229361011dc8e69c8a1ec6c2e8d0f2af7c91e3ea3f5b2170298461e68"
 dependencies = [
  "bytes",
  "prost 0.10.4",
+]
+
+[[package]]
+name = "prost-types"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4dfaa718ad76a44b3415e6c4d53b17c8f99160dcb3a99b10470fce8ad43f6e3e"
+dependencies = [
+ "bytes",
+ "prost 0.11.0",
 ]
 
 [[package]]
