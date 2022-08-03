@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::collections::BTreeSet;
 use std::fs::remove_file;
 use std::ops::Deref;
@@ -63,11 +62,6 @@ impl LocalShard {
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
         let config = shared_config.read().await;
-        let blocking_threads = if config.optimizer_config.max_optimization_threads == 0 {
-            max(num_cpus::get() - 1, 1)
-        } else {
-            config.optimizer_config.max_optimization_threads
-        };
         let optimize_runtime = runtime::Builder::new_multi_thread()
             .worker_threads(3)
             .enable_time()
@@ -76,7 +70,7 @@ impl LocalShard {
                 let optimizer_id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
                 format!("collection-{collection_id}-shard-{id}-optimizer-{optimizer_id}")
             })
-            .max_blocking_threads(blocking_threads)
+            .max_blocking_threads(config.optimizer_config.max_optimization_threads)
             .build()
             .unwrap();
 
