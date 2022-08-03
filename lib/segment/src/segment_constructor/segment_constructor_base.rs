@@ -100,7 +100,17 @@ fn create_segment(
     })
 }
 
-pub fn load_segment(path: &Path) -> OperationResult<Segment> {
+pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
+    if !SegmentVersion::check_exists(path) {
+        // Assume segment was not properly saved.
+        // Server might have crashed before saving the segment fully.
+        log::warn!(
+            "Segment version file not found, skipping: {}",
+            path.display()
+        );
+        return Ok(None);
+    }
+
     let stored_version = SegmentVersion::load(path)?;
     if stored_version != SegmentVersion::current() {
         info!(
@@ -125,7 +135,11 @@ pub fn load_segment(path: &Path) -> OperationResult<Segment> {
         ))
     })?;
 
-    create_segment(segment_state.version, path, &segment_state.config)
+    Ok(Some(create_segment(
+        segment_state.version,
+        path,
+        &segment_state.config,
+    )?))
 }
 
 /// Build segment instance using given configuration.
@@ -145,6 +159,8 @@ pub fn build_segment(path: &Path, config: &SegmentConfig) -> OperationResult<Seg
     let segment = create_segment(0, &segment_path, config)?;
     segment.save_current_state()?;
 
+    // Version is the last file to save, as it will be used to check if segment was built correctly.
+    // If it is not saved, segment will be skipped.
     SegmentVersion::save(&segment_path)?;
 
     Ok(segment)
