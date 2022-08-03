@@ -195,6 +195,14 @@ fn main() -> anyhow::Result<()> {
         .expect("Can't initialize consensus");
 
         handles.push(handle);
+
+        runtime_handle
+            .block_on(async {
+                toc_arc
+                    .cancel_outgoing_all_transfers("Source peer restarted")
+                    .await
+            })
+            .unwrap();
     } else {
         log::info!("Distributed mode disabled");
     }

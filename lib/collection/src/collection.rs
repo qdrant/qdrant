@@ -244,6 +244,16 @@ impl Collection {
             .map(|shard| matches!(shard, Shard::Local(_)))
     }
 
+    pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
+        let shard_holder = self.shards_holder.read().await;
+        shard_holder
+            .shard_transfers
+            .iter()
+            .filter(|transfer| transfer.from == *current_peer_id)
+            .cloned()
+            .collect()
+    }
+
     async fn send_shard<OF, OE>(&self, transfer: ShardTransfer, on_finish: OF, on_error: OE)
     where
         OF: Future<Output = ()> + Send + 'static,

@@ -406,6 +406,27 @@ impl TableOfContent {
         }
     }
 
+    /// Cancels all transfers where the source peer is the current peer.
+    pub async fn cancel_outgoing_all_transfers(&self, reason: &str) -> Result<(), StorageError> {
+        let collections = self.collections.read().await;
+        let proposal_sender = self.consensus_proposal_sender.clone();
+        for collection in collections.values() {
+            for transfer in collection.get_outgoing_transfers(&self.this_peer_id).await {
+                let operation = ConsensusOperations::CollectionMeta(Box::new(
+                    CollectionMetaOperations::TransferShard(
+                        collection.name(),
+                        ShardTransferOperations::Abort {
+                            transfer,
+                            reason: reason.to_string(),
+                        },
+                    ),
+                ));
+                proposal_sender.send(&operation)?;
+            }
+        }
+        Ok(())
+    }
+
     pub async fn handle_transfer(
         &self,
         collection_id: CollectionId,
