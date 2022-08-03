@@ -412,16 +412,7 @@ impl TableOfContent {
         let proposal_sender = self.consensus_proposal_sender.clone();
         for collection in collections.values() {
             for transfer in collection.get_outgoing_transfers(&self.this_peer_id).await {
-                let operation = ConsensusOperations::CollectionMeta(Box::new(
-                    CollectionMetaOperations::TransferShard(
-                        collection.name(),
-                        ShardTransferOperations::Abort {
-                            transfer,
-                            reason: reason.to_string(),
-                        },
-                    ),
-                ));
-                proposal_sender.send(&operation)?;
+                proposal_sender.cancel_transfer(collection.name(), transfer, reason)?;
             }
         }
         Ok(())
@@ -447,12 +438,18 @@ impl TableOfContent {
                         .await
                         .unwrap_or(false)
                 {
-                    return Err(StorageError::BadRequest {
+                    let err = Err(StorageError::BadRequest {
                         description: format!(
                             "Shard {} not local on {} peer",
                             transfer.shard_id, self.this_peer_id
                         ),
                     });
+                    self.consensus_proposal_sender.cancel_transfer(
+                        collection_id,
+                        transfer,
+                        "Bad source peer",
+                    )?;
+                    return err;
                 }
 
                 let proposal_sender = self.consensus_proposal_sender.clone();
@@ -476,16 +473,11 @@ impl TableOfContent {
                 let transfer_clone = transfer.clone();
 
                 let on_failure = async move {
-                    let operation = ConsensusOperations::CollectionMeta(Box::new(
-                        CollectionMetaOperations::TransferShard(
-                            collection_id_clone,
-                            ShardTransferOperations::Abort {
-                                transfer: transfer_clone,
-                                reason: "transmission failed".to_string(),
-                            },
-                        ),
-                    ));
-                    if let Err(error) = proposal_sender.send(&operation) {
+                    if let Err(error) = proposal_sender.cancel_transfer(
+                        collection_id_clone,
+                        transfer_clone,
+                        "transmission failed",
+                    ) {
                         log::error!("Can't report transfer progress to consensus: {}", error)
                     };
                 };
