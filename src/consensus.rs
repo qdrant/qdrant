@@ -21,7 +21,6 @@ use storage::content_manager::toc::TableOfContent;
 use tokio::runtime::Runtime;
 use tonic::transport::Uri;
 
-use crate::common::helpers::IsReady;
 use crate::common::telemetry::TonicTelemetryCollector;
 use crate::settings::ConsensusConfig;
 use crate::tonic::init_internal;
@@ -40,7 +39,6 @@ pub struct Consensus {
     runtime: Runtime,
     bootstrap_uri: Option<Uri>,
     config: ConsensusConfig,
-    pub is_leader_established: Arc<IsReady>,
     channel_service: ChannelService,
 }
 
@@ -149,7 +147,6 @@ impl Consensus {
             })
             .enable_all()
             .build()?;
-        let is_leader_established = Arc::new(IsReady::default());
         let (sender, receiver) = mpsc::sync_channel(config.max_message_queue_size);
         // State might be initialized but the node might be shutdown without actually syncing or committing anything.
         let is_new_deployment = state_ref.hard_state().term == 0;
@@ -164,7 +161,6 @@ impl Consensus {
                 &config,
                 &runtime,
                 sender.clone(),
-                is_leader_established.clone(),
                 leader_established_in_ms,
             )
             .context("Failed to initialize Consensus for new Raft state")?;
@@ -185,7 +181,6 @@ impl Consensus {
             runtime,
             bootstrap_uri: bootstrap_peer,
             config,
-            is_leader_established,
             channel_service,
         };
 
@@ -201,7 +196,6 @@ impl Consensus {
         config: &ConsensusConfig,
         runtime: &Runtime,
         sender: SyncSender<Message>,
-        is_leader_established: Arc<IsReady>,
         leader_established_in_ms: u64,
     ) -> anyhow::Result<()> {
         if let Some(bootstrap_peer) = bootstrap_peer {
@@ -225,6 +219,7 @@ impl Consensus {
                 state_ref.this_peer_id(),
                 uri.ok_or_else(|| anyhow::anyhow!("First peer should specify its uri."))?,
             ))?);
+            let is_leader_established = state_ref.is_leader_established.clone();
             thread::spawn(move || {
                 // Wait for the leader to be established
                 is_leader_established.await_ready();
@@ -337,7 +332,13 @@ impl Consensus {
             }
             Ok(Message::FromClient(message)) => {
                 log::debug!("Proposing entry from client with length: {}", message.len());
-                self.node.propose(vec![], message)?
+                match self.node.propose(vec![], message) {
+                    Ok(_) => {}
+                    Err(consensus_err) => {
+                        // Do not stop consensus if client proposal failed.
+                        log::error!("Failed to propose entry: {:?}", consensus_err);
+                    }
+                }
             }
             Ok(Message::ConfChange(change)) => {
                 log::debug!("Proposing network configuration change: {:?}", change);
@@ -490,12 +491,8 @@ impl Consensus {
     }
 
     fn handle_soft_state(&self, state: &SoftState) {
-        self.node.store().set_raft_soft_state(state);
-        if state.raft_state == StateRole::Leader || state.raft_state == StateRole::Follower {
-            self.is_leader_established.make_ready()
-        } else {
-            self.is_leader_established.make_not_ready()
-        }
+        let store = self.node.store();
+        store.set_raft_soft_state(state);
     }
 
     fn send_messages(
@@ -672,7 +669,7 @@ mod tests {
         )
         .unwrap();
 
-        let is_leader_established = consensus.is_leader_established.clone();
+        let is_leader_established = consensus_state.is_leader_established.clone();
         thread::spawn(move || consensus.start().unwrap());
         thread::spawn(move || {
             while let Ok(entry) = propose_receiver.recv() {

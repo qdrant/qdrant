@@ -8,7 +8,7 @@ use collection::collection_state;
 use collection::shard::{CollectionId, PeerId};
 use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::{ConfChangeV2, Entry as RaftEntry};
-use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
+use raft::{GetEntriesContext, RaftState, RawNode, SoftState, StateRole, Storage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tonic::transport::Uri;
@@ -19,6 +19,7 @@ use super::errors::StorageError;
 use super::CollectionContainer;
 use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
 use crate::content_manager::consensus::entry_queue::EntryId;
+use crate::content_manager::consensus::is_ready::IsReady;
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus::persistent::Persistent;
 use crate::types::{
@@ -56,6 +57,7 @@ impl TryFrom<&[u8]> for SnapshotData {
 
 pub struct ConsensusState<C: CollectionContainer> {
     pub persistent: RwLock<Persistent>,
+    pub is_leader_established: Arc<IsReady>,
     wal: Mutex<ConsensusOpWal>,
     soft_state: RwLock<Option<SoftState>>,
     toc: Arc<C>,
@@ -75,6 +77,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
     ) -> Self {
         Self {
             persistent: RwLock::new(persistent_state),
+            is_leader_established: Arc::new(IsReady::default()),
             wal: Mutex::new(ConsensusOpWal::new(storage_path)),
             soft_state: RwLock::new(None),
             toc,
@@ -93,6 +96,11 @@ impl<C: CollectionContainer> ConsensusState<C> {
 
     pub fn set_raft_soft_state(&self, state: &SoftState) {
         *self.soft_state.write() = Some(SoftState { ..*state });
+        if state.raft_state == StateRole::Leader || state.raft_state == StateRole::Follower {
+            self.is_leader_established.make_ready()
+        } else {
+            self.is_leader_established.make_not_ready()
+        }
     }
 
     pub fn this_peer_id(&self) -> PeerId {
@@ -338,13 +346,24 @@ impl<C: CollectionContainer> ConsensusState<C> {
         operation: ConsensusOperations,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
+        let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
+
+        if !self
+            .is_leader_established
+            .await_ready_for_timeout(wait_timeout)
+        {
+            return Err(StorageError::service_error(&format!(
+                "Failed to propose operation: leader is not established within {} secs",
+                wait_timeout.as_secs()
+            )));
+        }
+
         let (sender, receiver) = oneshot::channel();
         {
             let mut on_apply_lock = self.on_consensus_op_apply.lock();
             self.propose_sender.send(&operation)?;
             on_apply_lock.insert(operation, sender);
         }
-        let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
         tokio::time::timeout(wait_timeout, receiver)
             .await
             .map_err(
