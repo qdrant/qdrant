@@ -158,8 +158,10 @@ impl LocalShard {
             if let Err(res) = res {
                 panic!("Can't load segment {:?}", res);
             }
-            let segment = res.unwrap();
-            segment_holder.add(segment);
+            let segment_opt = res.unwrap();
+            if let Some(segment) = segment_opt {
+                segment_holder.add(segment);
+            }
         }
 
         let optimizers = build_optimizers(

@@ -6,7 +6,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
-use segment::entry::entry_point::{OperationResult, SegmentEntry, SegmentFailedState};
+use segment::entry::entry_point::{
+    OperationError, OperationResult, SegmentEntry, SegmentFailedState,
+};
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment_constructor::load_segment;
 use segment::telemetry::SegmentTelemetry;
@@ -561,7 +563,12 @@ impl SegmentEntry for ProxySegment {
         drop(deleted_points_guard);
 
         // load copy of wrapped segment in memory
-        let mut in_memory_wrapped_segment = load_segment(&full_copy_path)?;
+        let mut in_memory_wrapped_segment = load_segment(&full_copy_path)?.ok_or_else(|| {
+            OperationError::service_error(&format!(
+                "Failed to load segment from {:?}",
+                full_copy_path
+            ))
+        })?;
 
         // remove potentially deleted points from wrapped_segment
         for deleted_point in deleted_points_copy {

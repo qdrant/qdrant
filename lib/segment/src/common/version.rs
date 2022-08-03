@@ -14,6 +14,11 @@ pub trait StorageVersion {
     // since the package version is provided at compile time
     fn current() -> String;
 
+    fn check_exists(path: &Path) -> bool {
+        let version_file = path.join(VERSION_FILE);
+        version_file.exists()
+    }
+
     fn load(path: &Path) -> FileOperationResult<String> {
         let version_file = path.join(VERSION_FILE);
         let mut contents = String::new();
