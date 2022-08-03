@@ -103,9 +103,11 @@ pub trait SegmentOptimizer {
         let thresholds = self.threshold_config();
         let collection_params = self.collection_params();
 
-        let is_indexed = total_vectors_size >= thresholds.indexing_threshold * BYTES_IN_KB;
+        let is_indexed =
+            total_vectors_size >= thresholds.indexing_threshold.saturating_mul(BYTES_IN_KB);
 
-        let is_on_disk = total_vectors_size >= thresholds.memmap_threshold * BYTES_IN_KB;
+        let is_on_disk =
+            total_vectors_size >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
 
         let optimized_config = SegmentConfig {
             vector_size: collection_params.vector_size.get() as usize,

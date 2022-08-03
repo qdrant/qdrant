@@ -58,7 +58,7 @@ impl HNSWIndex {
         let config = if config_path.exists() {
             HnswGraphConfig::load(&config_path)?
         } else {
-            let indexing_threshold = hnsw_config.full_scan_threshold * BYTES_IN_KB
+            let indexing_threshold = hnsw_config.full_scan_threshold.saturating_mul(BYTES_IN_KB)
                 / (vector_storage.borrow().vector_dim() * VECTOR_ELEMENT_SIZE);
 
             HnswGraphConfig::new(
@@ -75,7 +75,7 @@ impl HNSWIndex {
         } else {
             let borrowed_vector_storage = vector_storage.borrow();
             let total_points = borrowed_vector_storage.total_vector_count();
-            let vector_per_threshold = hnsw_config.full_scan_threshold * BYTES_IN_KB
+            let vector_per_threshold = hnsw_config.full_scan_threshold.saturating_mul(BYTES_IN_KB)
                 / (borrowed_vector_storage.vector_dim() * VECTOR_ELEMENT_SIZE);
             GraphLayers::new(
                 borrowed_vector_storage.total_vector_count(),

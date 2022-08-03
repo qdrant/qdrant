@@ -118,7 +118,13 @@ impl SegmentOptimizer for MergeOptimizer {
                 *size_sum += size; // produce a cumulative sum of segment sizes starting from smallest
                 Some((sid, *size_sum))
             })
-            .take_while(|(_, size)| *size < self.thresholds_config.max_segment_size * BYTES_IN_KB)
+            .take_while(|(_, size)| {
+                *size
+                    < self
+                        .thresholds_config
+                        .max_segment_size
+                        .saturating_mul(BYTES_IN_KB)
+            })
             .take(max_candidates)
             .map(|x| x.0)
             .collect();
