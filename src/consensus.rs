@@ -15,12 +15,12 @@ use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{SoftState, StateRole};
 use storage::content_manager::consensus_ops::ConsensusOperations;
+use storage::content_manager::consensus_ops::ConsensusOperations::RemovePeer;
 use storage::content_manager::consensus_state::ConsensusStateRef;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use tokio::runtime::Runtime;
 use tonic::transport::Uri;
-use storage::content_manager::consensus_ops::ConsensusOperations::RemovePeer;
 
 use crate::common::telemetry::TonicTelemetryCollector;
 use crate::settings::ConsensusConfig;
@@ -357,7 +357,6 @@ impl Consensus {
                     )]);
                     self.node.propose_conf_change(vec![], change)?;
                 }
-
             }
             Ok(Message::ConfChange(change)) => {
                 log::debug!("Proposing network configuration change: {:?}", change);

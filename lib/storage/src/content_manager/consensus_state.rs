@@ -340,7 +340,6 @@ impl<C: CollectionContainer> ConsensusState<C> {
         }
         self.toc.remove_peer(peer_id);
         self.persistent.read().save()
-
     }
 
     pub async fn propose_consensus_op(
@@ -534,10 +533,10 @@ pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
 mod tests {
     use std::sync::{mpsc, Arc};
 
+    use collection::shard::PeerId;
     use proptest::prelude::*;
     use raft::eraftpb::Entry;
     use raft::storage::{MemStorage, Storage};
-    use collection::shard::PeerId;
 
     use super::ConsensusState;
     use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;

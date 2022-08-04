@@ -883,7 +883,8 @@ impl CollectionContainer for TableOfContent {
     }
 
     fn remove_peer(&self, peer_id: PeerId) {
-        self.collection_management_runtime.block_on(self.channel_service.remove_peer(peer_id));
+        self.collection_management_runtime
+            .block_on(self.channel_service.remove_peer(peer_id));
     }
 }
 

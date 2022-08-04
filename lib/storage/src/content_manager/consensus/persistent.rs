@@ -2,8 +2,8 @@ use std::cmp;
 use std::fs::{create_dir_all, File};
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use collection::shard::PeerId;
