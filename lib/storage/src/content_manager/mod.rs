@@ -23,7 +23,7 @@ pub mod consensus_ops {
     use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
 
     /// Operation that should pass consensus
-    #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
+    #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
     pub enum ConsensusOperations {
         CollectionMeta(Box<CollectionMetaOperations>),
         AddPeer(PeerId, String),
@@ -52,4 +52,6 @@ pub trait CollectionContainer {
     fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError>;
 
     fn peer_has_shards(&self, peer_id: PeerId) -> bool;
+
+    fn remove_peer(&self, peer_id: PeerId);
 }

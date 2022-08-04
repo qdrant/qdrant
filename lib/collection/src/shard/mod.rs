@@ -146,6 +146,13 @@ impl ChannelService {
             channel_pool,
         }
     }
+
+    pub async fn remove_peer(&self, peer_id: PeerId) {
+        let removed = self.id_to_address.write().remove(&peer_id);
+        if let Some(uri) = removed {
+            self.channel_pool.drop_pool(&uri).await;
+        }
+    }
 }
 
 impl Default for ChannelService {

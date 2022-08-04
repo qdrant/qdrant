@@ -338,7 +338,9 @@ impl<C: CollectionContainer> ConsensusState<C> {
                 description: format!("Cannot remove peer {peer_id} as there are shards on it"),
             });
         }
-        self.persistent.write().remove_peer(peer_id)
+        self.toc.remove_peer(peer_id);
+        self.persistent.read().save()
+
     }
 
     pub async fn propose_consensus_op(
@@ -361,7 +363,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
         let (sender, receiver) = oneshot::channel();
         {
             let mut on_apply_lock = self.on_consensus_op_apply.lock();
-            self.propose_sender.send(&operation)?;
+            self.propose_sender.send(operation.clone())?;
             on_apply_lock.insert(operation, sender);
         }
         tokio::time::timeout(wait_timeout, receiver)
@@ -535,6 +537,7 @@ mod tests {
     use proptest::prelude::*;
     use raft::eraftpb::Entry;
     use raft::storage::{MemStorage, Storage};
+    use collection::shard::PeerId;
 
     use super::ConsensusState;
     use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
@@ -659,6 +662,8 @@ mod tests {
         fn peer_has_shards(&self, _: u64) -> bool {
             false
         }
+
+        fn remove_peer(&self, _peer_id: PeerId) {}
     }
 
     fn setup_storages(

@@ -20,6 +20,7 @@ use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use tokio::runtime::Runtime;
 use tonic::transport::Uri;
+use storage::content_manager::consensus_ops::ConsensusOperations::RemovePeer;
 
 use crate::common::telemetry::TonicTelemetryCollector;
 use crate::settings::ConsensusConfig;
@@ -28,7 +29,7 @@ use crate::tonic::init_internal;
 type Node = RawNode<ConsensusStateRef>;
 
 pub enum Message {
-    FromClient(Vec<u8>),
+    FromClient(ConsensusOperations),
     FromPeer(Box<RaftMessage>),
     ConfChange(ConfChangeV2),
 }
@@ -54,7 +55,7 @@ impl Consensus {
         p2p_port: u16,
         config: ConsensusConfig,
         channel_service: ChannelService,
-        propose_receiver: mpsc::Receiver<Vec<u8>>,
+        propose_receiver: mpsc::Receiver<ConsensusOperations>,
         telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
         toc: Arc<TableOfContent>,
     ) -> anyhow::Result<JoinHandle<std::io::Result<()>>> {
@@ -215,10 +216,10 @@ impl Consensus {
             let tick_period = config.tick_period_ms;
             log::info!("With current tick period of {tick_period}ms, leader will be established in approximately {leader_established_in_ms}ms. To avoid rejected operations - add peers and submit operations only after this period.");
             // First peer needs to add its own address
-            let message = Message::FromClient(serde_cbor::to_vec(&ConsensusOperations::AddPeer(
+            let message = Message::FromClient(ConsensusOperations::AddPeer(
                 state_ref.this_peer_id(),
                 uri.ok_or_else(|| anyhow::anyhow!("First peer should specify its uri."))?,
-            ))?);
+            ));
             let is_leader_established = state_ref.is_leader_established.clone();
             thread::spawn(move || {
                 // Wait for the leader to be established
@@ -330,15 +331,33 @@ impl Consensus {
                 }
                 self.node.step(*message)?
             }
-            Ok(Message::FromClient(message)) => {
+            Ok(Message::FromClient(operation)) => {
+                let message = match serde_cbor::to_vec(&operation) {
+                    Ok(message) => message,
+                    Err(err) => {
+                        log::error!("Failed to serialize operation: {}", err);
+                        return Ok(());
+                    }
+                };
+
                 log::debug!("Proposing entry from client with length: {}", message.len());
                 match self.node.propose(vec![], message) {
                     Ok(_) => {}
                     Err(consensus_err) => {
                         // Do not stop consensus if client proposal failed.
                         log::error!("Failed to propose entry: {:?}", consensus_err);
+                        return Ok(());
                     }
                 }
+                if let RemovePeer(peer_id) = operation {
+                    let mut change = ConfChangeV2::default();
+                    change.set_changes(vec![raft_proto::new_conf_change_single(
+                        peer_id,
+                        ConfChangeType::RemoveNode,
+                    )]);
+                    self.node.propose_conf_change(vec![], change)?;
+                }
+
             }
             Ok(Message::ConfChange(change)) => {
                 log::debug!("Proposing network configuration change: {:?}", change);
