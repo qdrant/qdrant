@@ -733,12 +733,27 @@ impl TableOfContent {
                     // Update state if collection present locally
                     Some(collection) => {
                         if &collection.state(self.this_peer_id()).await != state {
+                            let proposal_sender = self.consensus_proposal_sender.clone();
+                            // In some cases on state application it might be needed to abort the transfer
+                            let abort_transfer = |transfer| {
+                                if let Err(error) = proposal_sender.cancel_transfer(
+                                    id.clone(),
+                                    transfer,
+                                    "sender was not up to date",
+                                ) {
+                                    log::error!(
+                                        "Can't report transfer progress to consensus: {}",
+                                        error
+                                    )
+                                };
+                            };
                             collection
                                 .apply_state(
                                     state.clone(),
                                     self.this_peer_id(),
                                     &self.get_collection_path(&collection.name()),
                                     self.channel_service.clone(),
+                                    abort_transfer,
                                 )
                                 .await?;
                         }
