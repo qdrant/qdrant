@@ -463,7 +463,7 @@ impl TableOfContent {
                             ShardTransferOperations::Finish(transfer_clone),
                         ),
                     ));
-                    if let Err(error) = proposal_sender.send(&operation) {
+                    if let Err(error) = proposal_sender.send(operation) {
                         log::error!("Can't report transfer progress to consensus: {}", error)
                     };
                 };
@@ -880,6 +880,11 @@ impl CollectionContainer for TableOfContent {
 
     fn peer_has_shards(&self, peer_id: PeerId) -> bool {
         self.peer_has_shards_sync(peer_id)
+    }
+
+    fn remove_peer(&self, peer_id: PeerId) {
+        self.collection_management_runtime
+            .block_on(self.channel_service.remove_peer(peer_id));
     }
 }
 

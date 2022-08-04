@@ -7,16 +7,15 @@ use crate::content_manager::collection_meta_ops::ShardTransferOperations;
 use crate::{CollectionMetaOperations, ConsensusOperations, StorageError};
 
 /// Structure used to notify consensus about operation
-pub struct OperationSender(Mutex<Sender<Vec<u8>>>);
+pub struct OperationSender(Mutex<Sender<ConsensusOperations>>);
 
 impl OperationSender {
-    pub fn new(sender: Sender<Vec<u8>>) -> Self {
+    pub fn new(sender: Sender<ConsensusOperations>) -> Self {
         OperationSender(Mutex::new(sender))
     }
 
-    pub fn send(&self, operation: &ConsensusOperations) -> Result<(), StorageError> {
-        let data = serde_cbor::to_vec(&operation)?;
-        self.0.lock().send(data)?;
+    pub fn send(&self, operation: ConsensusOperations) -> Result<(), StorageError> {
+        self.0.lock().send(operation)?;
         Ok(())
     }
 
@@ -35,7 +34,7 @@ impl OperationSender {
                 },
             )));
 
-        self.send(&operation)
+        self.send(operation)
     }
 }
 

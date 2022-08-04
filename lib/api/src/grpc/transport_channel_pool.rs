@@ -132,7 +132,7 @@ impl TransportChannelPool {
         }
     }
 
-    async fn drop_pool(&self, uri: &Uri) {
+    pub async fn drop_pool(&self, uri: &Uri) {
         let mut guard = self.uri_to_pool.write().await;
         guard.remove(uri);
     }

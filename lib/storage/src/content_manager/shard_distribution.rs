@@ -24,7 +24,7 @@ impl PeerShardCount {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone)]
 pub struct ShardDistributionProposal {
     pub distribution: Vec<(ShardId, PeerId)>,
 }

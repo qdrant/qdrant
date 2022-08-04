@@ -21,6 +21,7 @@ async fn remove_peer(dispatcher: web::Data<Dispatcher>, peer_id: web::Path<u64>)
             consensus_state
                 .propose_consensus_op(ConsensusOperations::RemovePeer(*peer_id), None)
                 .await
+            // Config change after peer removal is approved
         }
         None => Err(StorageError::BadRequest {
             description: "Distributed deployment is disabled.".to_string(),

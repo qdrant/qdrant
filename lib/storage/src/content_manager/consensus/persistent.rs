@@ -2,6 +2,7 @@ use std::cmp;
 use std::fs::{create_dir_all, File};
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use atomicwrites::{AllowOverwrite, AtomicFile};
@@ -31,9 +32,9 @@ pub struct Persistent {
     pub this_peer_id: u64,
     #[serde(skip)]
     pub path: PathBuf,
-    // Tracks if there are some unsaved changes due to the failure on save
+    /// Tracks if there are some unsaved changes due to the failure on save
     #[serde(skip)]
-    pub dirty: bool,
+    pub dirty: AtomicBool,
 }
 
 impl Persistent {
@@ -130,16 +131,6 @@ impl Persistent {
         self.save()
     }
 
-    pub fn remove_peer(&mut self, peer_id: PeerId) -> Result<(), StorageError> {
-        self.peer_address_by_id
-            .write()
-            .remove(&peer_id)
-            .ok_or_else(|| StorageError::NotFound {
-                description: format!("Peer with id {peer_id} not found"),
-            })?;
-        self.save()
-    }
-
     pub fn last_applied_entry(&self) -> Option<u64> {
         self.apply_progress_queue.get_last_applied()
     }
@@ -167,7 +158,7 @@ impl Persistent {
             // until it joins an existing network.
             vec![]
         };
-        let mut state = Self {
+        let state = Self {
             state: RaftState {
                 hard_state: HardState::default(),
                 // For network with 1 node, set it as voter.
@@ -179,7 +170,7 @@ impl Persistent {
             this_peer_id,
             path,
             latest_snapshot_meta: Default::default(),
-            dirty: false,
+            dirty: AtomicBool::new(false),
         };
         state.save()?;
         Ok(state)
@@ -192,21 +183,17 @@ impl Persistent {
         Ok(state)
     }
 
-    fn save(&mut self) -> Result<(), StorageError> {
+    pub fn save(&self) -> Result<(), StorageError> {
         let result = AtomicFile::new(&self.path, AllowOverwrite).write(|file| {
             let writer = BufWriter::new(file);
             serde_cbor::to_writer(writer, self)
         });
-        if result.is_err() {
-            self.dirty = true;
-        } else {
-            self.dirty = false;
-        }
+        self.dirty.store(result.is_err(), Ordering::Relaxed);
         Ok(result?)
     }
 
     pub fn save_if_dirty(&mut self) -> Result<(), StorageError> {
-        if self.dirty {
+        if self.dirty.load(Ordering::Relaxed) {
             self.save()?;
         }
         Ok(())
