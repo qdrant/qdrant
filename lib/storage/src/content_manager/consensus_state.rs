@@ -7,7 +7,7 @@ use std::time::Duration;
 use collection::collection_state;
 use collection::shard::{CollectionId, PeerId};
 use parking_lot::{Mutex, RwLock};
-use raft::eraftpb::{ConfChangeV2, Entry as RaftEntry};
+use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
 use raft::{GetEntriesContext, RaftState, RawNode, SoftState, StateRole, Storage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
@@ -88,6 +88,10 @@ impl<C: CollectionContainer> ConsensusState<C> {
         }
     }
 
+    pub fn on_consensus_stopped(&self) {
+        *self.consensus_thread_status.write() = ConsensusThreadStatus::Stopped
+    }
+
     pub fn on_consensus_thread_err<E: Display>(&self, err: E) {
         *self.consensus_thread_status.write() = ConsensusThreadStatus::StoppedWithErr {
             err: err.to_string(),
@@ -158,13 +162,33 @@ impl<C: CollectionContainer> ConsensusState<C> {
         &self,
         entry: &RaftEntry,
         raw_node: &mut RawNode<T>,
-    ) -> Result<(), StorageError> {
+    ) -> Result<bool, StorageError> {
         let change: ConfChangeV2 = prost::Message::decode(entry.get_data())?;
+
         let conf_state = raw_node.apply_conf_change(&change)?;
+        log::debug!("Applied conf state {:?}", conf_state);
         self.persistent
             .write()
             .apply_state_update(|state| state.conf_state = conf_state)?;
-        Ok(())
+
+        let mut stop_consensus: bool = false;
+        for single_change in &change.changes {
+            if single_change.change_type == ConfChangeType::RemoveNode as i32 {
+                log::debug!("Remove node {}", single_change.node_id);
+                if self.this_peer_id() == single_change.node_id {
+                    stop_consensus = true;
+                }
+                self.remove_peer(single_change.node_id)?;
+                let operation = ConsensusOperations::RemovePeer(single_change.node_id);
+                let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
+                if let Some(on_apply) = on_apply {
+                    if on_apply.send(Ok(true)).is_err() {
+                        log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
+                    }
+                }
+            }
+        }
+        Ok(stop_consensus)
     }
 
     pub fn set_unapplied_entries(
@@ -178,12 +202,13 @@ impl<C: CollectionContainer> ConsensusState<C> {
             .map_err(raft_error_other)
     }
 
-    pub fn apply_entries<T: Storage>(&self, raw_node: &mut RawNode<T>) {
+    /// Return `true` if consensus should be stopped.
+    pub fn apply_entries<T: Storage>(&self, raw_node: &mut RawNode<T>) -> bool {
         use raft::eraftpb::EntryType;
 
         if let Err(err) = self.persistent.write().save_if_dirty() {
             log::error!("Failed to save new state of applied entries queue: {err}");
-            return;
+            return false;
         }
 
         loop {
@@ -197,7 +222,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
                 Ok(entry) => entry,
                 Err(err) => {
                     log::error!("Failed to get entry at index {entry_index}: {err}");
-                    return;
+                    break;
                 }
             };
             let do_increase_applied_index: bool = if entry.data.is_empty() {
@@ -228,11 +253,14 @@ impl<C: CollectionContainer> ConsensusState<C> {
                     }
                     EntryType::EntryConfChangeV2 => {
                         match self.apply_conf_change_entry(&entry, raw_node) {
-                            Ok(()) => {
+                            Ok(stop_consensus) => {
                                 log::debug!(
                                     "Successfully applied configuration change entry. Index: {}.",
                                     entry.index
                                 );
+                                if stop_consensus {
+                                    return true;
+                                }
                                 true
                             }
                             Err(err) => {
@@ -253,12 +281,13 @@ impl<C: CollectionContainer> ConsensusState<C> {
             if do_increase_applied_index {
                 if let Err(err) = self.persistent.write().entry_applied() {
                     log::error!("Failed to save new state of applied entries queue: {err}");
-                    return;
+                    break;
                 }
             } else {
-                return;
+                break;
             }
         }
+        false // do not stop consensus
     }
 
     pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
@@ -276,7 +305,12 @@ impl<C: CollectionContainer> ConsensusState<C> {
                     })?,
                 )
                 .map(|()| true),
-            ConsensusOperations::RemovePeer(peer_id) => self.remove_peer(peer_id).map(|()| true),
+            ConsensusOperations::RemovePeer(_peer_id) => {
+                // RemovePeer should be converted into native ConfChangeV2 message before sending to the Raft.
+                // So we do not expect to receive RemovePeer operation as a normal entry.
+                debug_assert!(false, "Do not expect RemovePeer to be directly proposed");
+                Ok(false)
+            }
         };
         if let Some(on_apply) = on_apply {
             if on_apply.send(result.clone()).is_err() {
@@ -333,11 +367,6 @@ impl<C: CollectionContainer> ConsensusState<C> {
     }
 
     pub fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
-        if self.toc.peer_has_shards(peer_id) {
-            return Err(StorageError::BadRequest {
-                description: format!("Cannot remove peer {peer_id} as there are shards on it"),
-            });
-        }
         self.toc.remove_peer(peer_id);
         self.persistent.read().save()
     }

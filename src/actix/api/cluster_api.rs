@@ -16,12 +16,23 @@ async fn cluster_status(dispatcher: web::Data<Dispatcher>) -> impl Responder {
 #[delete("/cluster/peer/{peer_id}")]
 async fn remove_peer(dispatcher: web::Data<Dispatcher>, peer_id: web::Path<u64>) -> impl Responder {
     let timing = Instant::now();
+    let dispatcher = dispatcher.into_inner();
+    let peer_id = peer_id.into_inner();
+
+    if dispatcher.peer_has_shards(peer_id).await {
+        return process_response(
+            Err(StorageError::BadRequest {
+                description: format!("Cannot remove peer {peer_id} as there are shards on it"),
+            }),
+            timing,
+        );
+    }
+
     let response = match dispatcher.consensus_state() {
         Some(consensus_state) => {
             consensus_state
-                .propose_consensus_op(ConsensusOperations::RemovePeer(*peer_id), None)
+                .propose_consensus_op(ConsensusOperations::RemovePeer(peer_id), None)
                 .await
-            // Config change after peer removal is approved
         }
         None => Err(StorageError::BadRequest {
             description: "Distributed deployment is disabled.".to_string(),

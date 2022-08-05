@@ -842,7 +842,7 @@ impl TableOfContent {
         result
     }
 
-    async fn peer_has_shards(&self, peer_id: PeerId) -> bool {
+    pub async fn peer_has_shards(&self, peer_id: PeerId) -> bool {
         for collection in self.collections.read().await.values() {
             let state = collection.state(self.this_peer_id()).await;
             let peers_with_shards: HashSet<_> = state.shard_to_peer.values().collect();
@@ -883,8 +883,27 @@ impl CollectionContainer for TableOfContent {
     }
 
     fn remove_peer(&self, peer_id: PeerId) {
-        self.collection_management_runtime
-            .block_on(self.channel_service.remove_peer(peer_id));
+        if self.this_peer_id == peer_id {
+            // We are detaching the current peer, so we need to remove all connections
+            // Remove all peers from the channel service
+            self.collection_management_runtime.block_on(async {
+                let ids_to_drop: Vec<_> = self
+                    .channel_service
+                    .id_to_address
+                    .read()
+                    .keys()
+                    .filter(|id| **id != self.this_peer_id)
+                    .copied()
+                    .collect();
+                for id in ids_to_drop {
+                    self.channel_service.remove_peer(id).await;
+                }
+            });
+        } else {
+            // Remove link to some other peer
+            self.collection_management_runtime
+                .block_on(self.channel_service.remove_peer(peer_id));
+        }
     }
 }
 
