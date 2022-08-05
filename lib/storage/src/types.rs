@@ -117,6 +117,7 @@ pub enum ClusterStatus {
 #[serde(rename_all = "snake_case")]
 pub enum ConsensusThreadStatus {
     Working,
+    Stopped,
     StoppedWithErr { err: String },
 }
 

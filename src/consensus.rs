@@ -19,6 +19,7 @@ use storage::content_manager::consensus_ops::ConsensusOperations::RemovePeer;
 use storage::content_manager::consensus_state::ConsensusStateRef;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
+use storage::types::PeerAddressById;
 use tokio::runtime::Runtime;
 use tonic::transport::Uri;
 
@@ -76,6 +77,9 @@ impl Consensus {
                 if let Err(err) = consensus.start() {
                     log::error!("Consensus stopped with error: {err}");
                     state_ref_clone.on_consensus_thread_err(err);
+                } else {
+                    log::info!("Consensus stopped");
+                    state_ref_clone.on_consensus_stopped();
                 }
             })?;
 
@@ -174,7 +178,7 @@ impl Consensus {
         let mut node = Node::new(&raft_config, state_ref.clone(), logger)?;
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
-        state_ref.apply_entries(&mut node);
+        let _stop_consensus = state_ref.apply_entries(&mut node);
 
         let consensus = Self {
             node,
@@ -303,11 +307,17 @@ impl Consensus {
                 self.node.tick();
                 // Try to reapply entries if some were not applied due to errors.
                 let store = self.node.store().clone();
-                store.apply_entries(&mut self.node);
+                let stop_consensus = store.apply_entries(&mut self.node);
+                if stop_consensus {
+                    return Ok(());
+                }
             } else {
                 timeout -= d;
             }
-            self.on_ready()?;
+            let stop_consensus = self.on_ready()?;
+            if stop_consensus {
+                return Ok(());
+            }
         }
     }
 
@@ -329,33 +339,41 @@ impl Consensus {
                         message
                     );
                 }
-                self.node.step(*message)?
+                if let Err(error) = self.node.step(*message) {
+                    log::warn!("Failed to step message: {:?}", error);
+                }
             }
             Ok(Message::FromClient(operation)) => {
-                let message = match serde_cbor::to_vec(&operation) {
-                    Ok(message) => message,
-                    Err(err) => {
-                        log::error!("Failed to serialize operation: {}", err);
-                        return Ok(());
+                let result = match operation {
+                    RemovePeer(peer_id) => {
+                        let mut change = ConfChangeV2::default();
+                        change.set_changes(vec![raft_proto::new_conf_change_single(
+                            peer_id,
+                            ConfChangeType::RemoveNode,
+                        )]);
+                        log::debug!("Proposing network configuration change: {:?}", change);
+                        self.node.propose_conf_change(vec![], change)
+                    }
+                    _ => {
+                        let message = match serde_cbor::to_vec(&operation) {
+                            Ok(message) => message,
+                            Err(err) => {
+                                log::error!("Failed to serialize operation: {}", err);
+                                return Ok(());
+                            }
+                        };
+                        log::debug!("Proposing entry from client with length: {}", message.len());
+                        self.node.propose(vec![], message)
                     }
                 };
 
-                log::debug!("Proposing entry from client with length: {}", message.len());
-                match self.node.propose(vec![], message) {
+                match result {
                     Ok(_) => {}
                     Err(consensus_err) => {
                         // Do not stop consensus if client proposal failed.
                         log::error!("Failed to propose entry: {:?}", consensus_err);
                         return Ok(());
                     }
-                }
-                if let RemovePeer(peer_id) = operation {
-                    let mut change = ConfChangeV2::default();
-                    change.set_changes(vec![raft_proto::new_conf_change_single(
-                        peer_id,
-                        ConfChangeType::RemoveNode,
-                    )]);
-                    self.node.propose_conf_change(vec![], change)?;
                 }
             }
             Ok(Message::ConfChange(change)) => {
@@ -417,25 +435,37 @@ impl Consensus {
             .map(|(id, _)| *id)
     }
 
-    fn on_ready(&mut self) -> anyhow::Result<()> {
+    /// Returns `true` if consensus should be stopped, `false` otherwise.
+    fn on_ready(&mut self) -> anyhow::Result<bool> {
         if !self.node.has_ready() {
-            return Ok(());
+            return Ok(false);
         }
         // Get the `Ready` with `RawNode::ready` interface.
         let ready = self.node.ready();
         let light_rd = self.process_ready(ready)?;
-        self.process_light_ready(light_rd)?;
-        Ok(())
+        if let Some(light_ready) = light_rd {
+            Ok(self.process_light_ready(light_ready)?)
+        } else {
+            // No light ready, so we need to stop consensus.
+            Ok(true)
+        }
     }
 
     /// Tries to process raft's ready state.
     ///
     /// Returns with err on failure to apply the state.
-    fn process_ready(&mut self, mut ready: raft::Ready) -> anyhow::Result<raft::LightReady> {
+    /// If it receives message to stop the consensus - returns None instead of LightReady.
+    fn process_ready(
+        &mut self,
+        mut ready: raft::Ready,
+    ) -> anyhow::Result<Option<raft::LightReady>> {
         let store = self.store();
+        let peer_address_by_id = store.peer_address_by_id();
+
         if !ready.messages().is_empty() {
             log::trace!("Handling {} messages", ready.messages().len());
-            if let Err(err) = self.send_messages(ready.take_messages(), &store) {
+            if let Err(err) = self.send_messages(ready.take_messages(), peer_address_by_id.clone())
+            {
                 log::error!("Failed to send messages: {err}")
             }
         }
@@ -446,8 +476,14 @@ impl Consensus {
                 .apply_snapshot(&ready.snapshot().clone())
                 .context("Failed to apply snapshot")?
         }
-        handle_committed_entries(ready.take_committed_entries(), &store, &mut self.node)
-            .context("Failed to apply committed entries")?;
+        let stop_consensus =
+            handle_committed_entries(ready.take_committed_entries(), &store, &mut self.node)
+                .context("Failed to apply committed entries")?;
+
+        if stop_consensus {
+            return Ok(None);
+        }
+
         if !ready.entries().is_empty() {
             // Append entries to the Raft log.
             log::debug!("Appending {} entries to raft log", ready.entries().len());
@@ -471,21 +507,25 @@ impl Consensus {
                 "Handling {} persisted messages",
                 ready.persisted_messages().len()
             );
-            if let Err(err) = self.send_messages(ready.take_persisted_messages(), &store) {
+            if let Err(err) =
+                self.send_messages(ready.take_persisted_messages(), peer_address_by_id)
+            {
                 log::error!("Failed to send persisted messages: {err}")
             }
         }
 
         // Advance the Raft.
         let light_rd = self.node.advance(ready);
-        Ok(light_rd)
+        Ok(Some(light_rd))
     }
 
     /// Tries to process raft's light ready state.
     ///
     /// Returns with err on failure to apply the state.
-    fn process_light_ready(&mut self, mut light_rd: raft::LightReady) -> anyhow::Result<()> {
+    /// If it receives message to stop the consensus - returns `true`, otherwise `false`.
+    fn process_light_ready(&mut self, mut light_rd: raft::LightReady) -> anyhow::Result<bool> {
         let store = self.store();
+        let peer_address_by_id = store.peer_address_by_id();
         // Update commit index.
         if let Some(commit) = light_rd.commit_index() {
             log::debug!("Updating commit index to {commit}");
@@ -493,15 +533,16 @@ impl Consensus {
                 .set_commit_index(commit)
                 .context("Failed to set commit index")?;
         }
-        if let Err(err) = self.send_messages(light_rd.take_messages(), &store) {
+        if let Err(err) = self.send_messages(light_rd.take_messages(), peer_address_by_id) {
             log::error!("Failed to send messages: {err}")
         }
         // Apply all committed entries.
-        handle_committed_entries(light_rd.take_committed_entries(), &store, &mut self.node)
-            .context("Failed to apply committed entries")?;
+        let stop_consensus =
+            handle_committed_entries(light_rd.take_committed_entries(), &store, &mut self.node)
+                .context("Failed to apply committed entries")?;
         // Advance the apply index.
         self.node.advance_apply();
-        Ok(())
+        Ok(stop_consensus)
     }
 
     fn store(&self) -> ConsensusStateRef {
@@ -516,9 +557,9 @@ impl Consensus {
     fn send_messages(
         &self,
         messages: Vec<RaftMessage>,
-        state: &ConsensusStateRef,
+        peer_address_by_id: PeerAddressById,
     ) -> Result<(), StorageError> {
-        let peer_address_by_id = state.peer_address_by_id();
+        // let peer_address_by_id = state.peer_address_by_id();
         let messages_with_address: Vec<_> = messages
             .into_iter()
             .map(|message| {
@@ -544,8 +585,8 @@ impl Consensus {
                         Ok(address) => address,
                         Err(_) => {
                             log::warn!(
-                                "Address of peer with ID {} not found. Message was not sent to it.",
-                                message.to
+                                "Address of peer with ID {} not found. Message {:?} was not sent to it.",
+                                message.to, message
                             );
                             continue;
                         }
@@ -566,16 +607,20 @@ impl Consensus {
     }
 }
 
+/// This function actually applies the committed entries to the state machine.
+/// Return `true` if consensus should be stopped.
+/// `false` otherwise.
 fn handle_committed_entries(
     entries: Vec<Entry>,
     state: &ConsensusStateRef,
     raw_node: &mut RawNode<ConsensusStateRef>,
-) -> raft::Result<()> {
+) -> raft::Result<bool> {
+    let mut stop_consensus = false;
     if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
         state.set_unapplied_entries(first.index, last.index)?;
-        state.apply_entries(raw_node);
+        stop_consensus = state.apply_entries(raw_node);
     }
-    Ok(())
+    Ok(stop_consensus)
 }
 
 async fn who_is(
