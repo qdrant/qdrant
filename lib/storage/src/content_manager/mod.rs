@@ -16,11 +16,13 @@ pub mod snapshots;
 pub mod toc;
 
 pub mod consensus_ops {
-    use collection::shard::PeerId;
+    use collection::shard::{CollectionId, PeerId, ShardTransfer};
     use raft::eraftpb::Entry as RaftEntry;
     use serde::{Deserialize, Serialize};
 
-    use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
+    use crate::content_manager::collection_meta_ops::{
+        CollectionMetaOperations, ShardTransferOperations,
+    };
 
     /// Operation that should pass consensus
     #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
@@ -35,6 +37,29 @@ pub mod consensus_ops {
 
         fn try_from(entry: &RaftEntry) -> Result<Self, Self::Error> {
             serde_cbor::from_slice(entry.get_data())
+        }
+    }
+
+    impl ConsensusOperations {
+        pub fn abort_transfer(
+            collection_id: CollectionId,
+            transfer: ShardTransfer,
+            reason: &str,
+        ) -> Self {
+            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
+                collection_id,
+                ShardTransferOperations::Abort {
+                    transfer,
+                    reason: reason.to_string(),
+                },
+            )))
+        }
+
+        pub fn finish_transfer(collection_id: CollectionId, transfer: ShardTransfer) -> Self {
+            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
+                collection_id,
+                ShardTransferOperations::Finish(transfer),
+            )))
         }
     }
 }

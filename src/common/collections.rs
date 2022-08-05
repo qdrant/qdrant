@@ -1,13 +1,15 @@
 use std::time::Duration;
 
 use api::grpc::models::{CollectionDescription, CollectionsResponse};
-use collection::operations::cluster_ops::ClusterOperations;
+use collection::operations::cluster_ops::{
+    AbortTransferOperation, ClusterOperations, MoveShardOperation,
+};
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{CollectionClusterInfo, CollectionInfo};
 use collection::shard::{ShardId, ShardTransfer};
 use itertools::Itertools;
 use storage::content_manager::collection_meta_ops::CollectionMetaOperations;
-use storage::content_manager::collection_meta_ops::ShardTransferOperations::Start;
+use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -74,7 +76,7 @@ pub async fn do_update_collection_cluster(
 
     let collection = toc.get_collection(&collection_name).await?;
     match operation {
-        ClusterOperations::MoveShard(move_shard) => {
+        ClusterOperations::MoveShard(MoveShardOperation { move_shard }) => {
             // validate shard to move
             let shard_exists = collection.contains_shard(&move_shard.shard_id).await;
             if !shard_exists {
@@ -122,6 +124,35 @@ pub async fn do_update_collection_cluster(
                             to: move_shard.to_peer_id,
                             from: move_shard.from_peer_id,
                         }),
+                    ),
+                    wait_timeout,
+                )
+                .await
+        }
+        ClusterOperations::AbortTransfer(AbortTransferOperation { abort_transfer }) => {
+            let transfer = ShardTransfer {
+                shard_id: abort_transfer.shard_id,
+                to: abort_transfer.to_peer_id,
+                from: abort_transfer.from_peer_id,
+            };
+
+            if !collection.check_transfer_exists(&transfer).await {
+                return Err(StorageError::NotFound {
+                    description: format!(
+                        "Shard transfer {} -> {} for collection {}:{} does not exist",
+                        transfer.from, transfer.to, collection_name, transfer.shard_id
+                    ),
+                });
+            }
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::TransferShard(
+                        collection_name,
+                        Abort {
+                            transfer,
+                            reason: "user request".to_string(),
+                        },
                     ),
                     wait_timeout,
                 )

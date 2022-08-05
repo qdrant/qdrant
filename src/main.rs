@@ -181,7 +181,7 @@ fn main() -> anyhow::Result<()> {
 
         let handle = Consensus::run(
             &slog_logger,
-            consensus_state,
+            consensus_state.clone(),
             args.bootstrap,
             args.uri.map(|uri| uri.to_string()),
             settings.service.host.clone(),
@@ -198,6 +198,7 @@ fn main() -> anyhow::Result<()> {
 
         runtime_handle
             .block_on(async {
+                consensus_state.is_leader_established.await_ready();
                 toc_arc
                     .cancel_outgoing_all_transfers("Source peer restarted")
                     .await

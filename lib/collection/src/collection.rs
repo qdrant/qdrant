@@ -244,6 +244,11 @@ impl Collection {
             .map(|shard| matches!(shard, Shard::Local(_)))
     }
 
+    pub async fn check_transfer_exists(&self, transfer: &ShardTransfer) -> bool {
+        let shard_holder_read = self.shards_holder.read().await;
+        shard_holder_read.shard_transfers.contains(transfer)
+    }
+
     pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
         let shard_holder = self.shards_holder.read().await;
         shard_holder

@@ -56,7 +56,7 @@ impl Dispatcher {
                 op => op,
             };
             state
-                .propose_consensus_op(
+                .propose_consensus_op_with_await(
                     ConsensusOperations::CollectionMeta(Box::new(op)),
                     wait_timeout,
                 )
