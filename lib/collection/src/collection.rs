@@ -1061,9 +1061,16 @@ impl Collection {
         this_peer_id: PeerId,
         collection_path: &Path,
         channel_service: ChannelService,
+        abort_transfer: impl FnMut(ShardTransfer),
     ) -> CollectionResult<()> {
         state
-            .apply(this_peer_id, self, collection_path, channel_service)
+            .apply(
+                this_peer_id,
+                self,
+                collection_path,
+                channel_service,
+                abort_transfer,
+            )
             .await
     }
 

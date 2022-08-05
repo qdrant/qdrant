@@ -24,8 +24,11 @@ impl State {
         collection: &Collection,
         collection_path: &Path,
         channel_service: ChannelService,
+        abort_transfer: impl FnMut(ShardTransfer),
     ) -> CollectionResult<()> {
         Self::apply_config(self.config, collection).await?;
+        Self::apply_shard_transfers(self.transfers, collection, this_peer_id, abort_transfer)
+            .await?;
         Self::apply_shard_to_peer(
             self.shard_to_peer,
             this_peer_id,
@@ -34,12 +37,34 @@ impl State {
             channel_service,
         )
         .await?;
+        Ok(())
+    }
+
+    async fn apply_shard_transfers(
+        shard_transfers: HashSet<ShardTransfer>,
+        collection: &Collection,
+        this_peer_id: PeerId,
+        mut abort_transfer: impl FnMut(ShardTransfer),
+    ) -> CollectionResult<()> {
+        let old_transfers = collection
+            .shards_holder
+            .read()
+            .await
+            .shard_transfers
+            .clone();
+        for transfer in shard_transfers.difference(&old_transfers) {
+            if transfer.from == this_peer_id {
+                // Abort transfer as sender should not learn about the transfer from snapshot
+                // If this happens it mean the sender is probably outdated and it is safer to abort
+                abort_transfer(transfer.clone())
+            }
+        }
         collection
             .shards_holder
             .write()
             .await
             .shard_transfers
-            .write(|transfers| *transfers = self.transfers)?;
+            .write(|transfers| *transfers = shard_transfers)?;
         Ok(())
     }
 
@@ -64,9 +89,16 @@ impl State {
             let mut shards_holder = collection.shards_holder.write().await;
             match shards_holder.get_shard(&shard_id) {
                 Some(shard) => {
-                    if shard.peer_id(this_peer_id) != peer_id {
-                        // shard registered on a different peer
-                        log::warn!("Shard movement between peers is not yet implemented. Failed to move shard {shard_id} to peer {peer_id}")
+                    let old_peer_id = shard.peer_id(this_peer_id);
+                    // shard was moved to a different peer
+                    if old_peer_id != peer_id {
+                        collection
+                            .finish_shard_transfer(ShardTransfer {
+                                shard_id,
+                                from: old_peer_id,
+                                to: peer_id,
+                            })
+                            .await?;
                     }
                 }
                 None => {
