@@ -559,7 +559,6 @@ impl Consensus {
         messages: Vec<RaftMessage>,
         peer_address_by_id: PeerAddressById,
     ) -> Result<(), StorageError> {
-        // let peer_address_by_id = state.peer_address_by_id();
         let messages_with_address: Vec<_> = messages
             .into_iter()
             .map(|message| {

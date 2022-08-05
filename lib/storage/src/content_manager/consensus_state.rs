@@ -306,6 +306,8 @@ impl<C: CollectionContainer> ConsensusState<C> {
                 )
                 .map(|()| true),
             ConsensusOperations::RemovePeer(_peer_id) => {
+                // RemovePeer should be converted into native ConfChangeV2 message before sending to the Raft.
+                // So we do not expect to receive RemovePeer operation as a normal entry.
                 debug_assert!(false, "Do not expect RemovePeer to be directly proposed");
                 Ok(false)
             }
