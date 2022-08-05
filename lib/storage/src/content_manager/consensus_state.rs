@@ -371,7 +371,10 @@ impl<C: CollectionContainer> ConsensusState<C> {
         self.persistent.read().save()
     }
 
-    pub async fn propose_consensus_op(&self, operation: ConsensusOperations) -> Result<(), StorageError> {
+    pub async fn propose_consensus_op(
+        &self,
+        operation: ConsensusOperations,
+    ) -> Result<(), StorageError> {
         self.is_leader_established.await_ready();
         self.propose_sender.send(operation)
     }

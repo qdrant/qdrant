@@ -446,13 +446,12 @@ impl TableOfContent {
                             transfer.shard_id, self.this_peer_id
                         ),
                     });
-                    self.consensus_proposal_sender.send(
-                        ConsensusOperations::abort_transfer(
+                    self.consensus_proposal_sender
+                        .send(ConsensusOperations::abort_transfer(
                             collection_id,
                             transfer,
                             "Bad source peer",
-                        ),
-                    )?;
+                        ))?;
                     return err;
                 }
 
@@ -461,10 +460,8 @@ impl TableOfContent {
                 let transfer_clone = transfer.clone();
 
                 let on_finish = async move {
-                    let operation = ConsensusOperations::finish_transfer(
-                        collection_id_clone,
-                        transfer_clone,
-                    );
+                    let operation =
+                        ConsensusOperations::finish_transfer(collection_id_clone, transfer_clone);
 
                     if let Err(error) = proposal_sender.send(operation) {
                         log::error!("Can't report transfer progress to consensus: {}", error)
@@ -476,13 +473,11 @@ impl TableOfContent {
                 let transfer_clone = transfer.clone();
 
                 let on_failure = async move {
-                    if let Err(error) =
-                        proposal_sender.send(ConsensusOperations::abort_transfer(
-                            collection_id_clone,
-                            transfer_clone,
-                            "transmission failed",
-                        ))
-                    {
+                    if let Err(error) = proposal_sender.send(ConsensusOperations::abort_transfer(
+                        collection_id_clone,
+                        transfer_clone,
+                        "transmission failed",
+                    )) {
                         log::error!("Can't report transfer progress to consensus: {}", error)
                     };
                 };
