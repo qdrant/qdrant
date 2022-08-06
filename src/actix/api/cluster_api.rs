@@ -31,7 +31,7 @@ async fn remove_peer(dispatcher: web::Data<Dispatcher>, peer_id: web::Path<u64>)
     let response = match dispatcher.consensus_state() {
         Some(consensus_state) => {
             consensus_state
-                .propose_consensus_op(ConsensusOperations::RemovePeer(peer_id), None)
+                .propose_consensus_op_with_await(ConsensusOperations::RemovePeer(peer_id), None)
                 .await
         }
         None => Err(StorageError::BadRequest {

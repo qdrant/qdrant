@@ -412,7 +412,9 @@ impl TableOfContent {
         let proposal_sender = self.consensus_proposal_sender.clone();
         for collection in collections.values() {
             for transfer in collection.get_outgoing_transfers(&self.this_peer_id).await {
-                proposal_sender.cancel_transfer(collection.name(), transfer, reason)?;
+                let cancel_transfer =
+                    ConsensusOperations::abort_transfer(collection.name(), transfer, reason);
+                proposal_sender.send(cancel_transfer)?;
             }
         }
         Ok(())
@@ -444,11 +446,12 @@ impl TableOfContent {
                             transfer.shard_id, self.this_peer_id
                         ),
                     });
-                    self.consensus_proposal_sender.cancel_transfer(
-                        collection_id,
-                        transfer,
-                        "Bad source peer",
-                    )?;
+                    self.consensus_proposal_sender
+                        .send(ConsensusOperations::abort_transfer(
+                            collection_id,
+                            transfer,
+                            "Bad source peer",
+                        ))?;
                     return err;
                 }
 
@@ -457,12 +460,9 @@ impl TableOfContent {
                 let transfer_clone = transfer.clone();
 
                 let on_finish = async move {
-                    let operation = ConsensusOperations::CollectionMeta(Box::new(
-                        CollectionMetaOperations::TransferShard(
-                            collection_id_clone,
-                            ShardTransferOperations::Finish(transfer_clone),
-                        ),
-                    ));
+                    let operation =
+                        ConsensusOperations::finish_transfer(collection_id_clone, transfer_clone);
+
                     if let Err(error) = proposal_sender.send(operation) {
                         log::error!("Can't report transfer progress to consensus: {}", error)
                     };
@@ -473,11 +473,11 @@ impl TableOfContent {
                 let transfer_clone = transfer.clone();
 
                 let on_failure = async move {
-                    if let Err(error) = proposal_sender.cancel_transfer(
+                    if let Err(error) = proposal_sender.send(ConsensusOperations::abort_transfer(
                         collection_id_clone,
                         transfer_clone,
                         "transmission failed",
-                    ) {
+                    )) {
                         log::error!("Can't report transfer progress to consensus: {}", error)
                     };
                 };
@@ -736,11 +736,13 @@ impl TableOfContent {
                             let proposal_sender = self.consensus_proposal_sender.clone();
                             // In some cases on state application it might be needed to abort the transfer
                             let abort_transfer = |transfer| {
-                                if let Err(error) = proposal_sender.cancel_transfer(
-                                    id.clone(),
-                                    transfer,
-                                    "sender was not up to date",
-                                ) {
+                                if let Err(error) =
+                                    proposal_sender.send(ConsensusOperations::abort_transfer(
+                                        id.clone(),
+                                        transfer,
+                                        "sender was not up to date",
+                                    ))
+                                {
                                     log::error!(
                                         "Can't report transfer progress to consensus: {}",
                                         error

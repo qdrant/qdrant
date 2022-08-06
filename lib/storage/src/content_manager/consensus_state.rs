@@ -374,6 +374,14 @@ impl<C: CollectionContainer> ConsensusState<C> {
     pub async fn propose_consensus_op(
         &self,
         operation: ConsensusOperations,
+    ) -> Result<(), StorageError> {
+        self.is_leader_established.await_ready();
+        self.propose_sender.send(operation)
+    }
+
+    pub async fn propose_consensus_op_with_await(
+        &self,
+        operation: ConsensusOperations,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
         let wait_timeout = wait_timeout.unwrap_or(DEFAULT_META_OP_WAIT);
