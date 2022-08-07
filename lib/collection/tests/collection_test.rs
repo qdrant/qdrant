@@ -11,7 +11,7 @@ use itertools::Itertools;
 use segment::types::{
     Condition, FieldCondition, Filter, HasIdCondition, Payload, PointIdType, WithPayloadInterface,
 };
-use tempdir::TempDir;
+use tempfile::Builder;
 use tokio::runtime::Handle;
 
 use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
@@ -25,7 +25,7 @@ async fn test_collection_updater() {
 }
 
 async fn test_collection_updater_with_shards(shard_number: u32) {
-    let collection_dir = TempDir::new("collection").unwrap();
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
     let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
@@ -89,7 +89,7 @@ async fn test_collection_search_with_payload_and_vector() {
 }
 
 async fn test_collection_search_with_payload_and_vector_with_shards(shard_number: u32) {
-    let collection_dir = TempDir::new("collection").unwrap();
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
     let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
@@ -165,7 +165,7 @@ async fn test_collection_loading() {
 }
 
 async fn test_collection_loading_with_shards(shard_number: u32) {
-    let collection_dir = TempDir::new("collection").unwrap();
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
     {
         let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
@@ -288,7 +288,7 @@ async fn test_recommendation_api() {
 }
 
 async fn test_recommendation_api_with_shards(shard_number: u32) {
-    let collection_dir = TempDir::new("collection").unwrap();
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
     let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(
@@ -349,7 +349,7 @@ async fn test_read_api() {
 }
 
 async fn test_read_api_with_shards(shard_number: u32) {
-    let collection_dir = TempDir::new("collection").unwrap();
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
     let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
@@ -405,7 +405,7 @@ async fn test_collection_delete_points_by_filter() {
 }
 
 async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) {
-    let collection_dir = TempDir::new("collection").unwrap();
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
     let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
@@ -481,7 +481,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
 
 #[tokio::test]
 async fn test_promote_temporary_shards() {
-    let collection_dir = TempDir::new("collection").unwrap();
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
     let mut collection = simple_collection_fixture(collection_dir.path(), 1).await;
 
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(

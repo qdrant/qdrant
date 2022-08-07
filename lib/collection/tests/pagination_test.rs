@@ -2,6 +2,7 @@ use collection::operations::point_ops::{PointInsertOperations, PointOperations, 
 use collection::operations::types::SearchRequest;
 use collection::operations::CollectionUpdateOperations;
 use segment::types::WithPayloadInterface;
+use tempfile::Builder;
 use tokio::runtime::Handle;
 
 use crate::common::{simple_collection_fixture, N_SHARDS};
@@ -15,7 +16,10 @@ async fn test_collection_paginated_search() {
 }
 
 async fn test_collection_paginated_search_with_shards(shard_number: u32) {
-    let collection_dir = tempdir::TempDir::new("test_collection_paginated_search").unwrap();
+    let collection_dir = Builder::new()
+        .prefix("test_collection_paginated_search")
+        .tempdir()
+        .unwrap();
 
     let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 

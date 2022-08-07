@@ -100,7 +100,7 @@ impl PayloadStorage for PayloadStorageEnum {
 
 #[cfg(test)]
 mod tests {
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::common::rocksdb_operations::open_db;
@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn test_storage() {
-        let dir = TempDir::new("storage_dir").unwrap();
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(dir.path()).unwrap();
 
         let mut storage: PayloadStorageEnum = SimplePayloadStorage::open(db).unwrap().into();
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn test_on_disk_storage() {
-        let dir = TempDir::new("storage_dir").unwrap();
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(dir.path()).unwrap();
 
         {

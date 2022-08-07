@@ -311,7 +311,7 @@ where
 mod tests {
     use std::mem::transmute;
 
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::common::rocksdb_operations::open_db;
@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn test_basic_persistence() {
         let dist = Distance::Dot;
-        let dir = TempDir::new("storage_dir").unwrap();
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let storage = open_memmap_vector_storage(dir.path(), 4, dist).unwrap();
         let mut borrowed_storage = storage.borrow_mut();
@@ -332,7 +332,7 @@ mod tests {
         let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
         {
-            let dir2 = TempDir::new("db_dir").unwrap();
+            let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path()).unwrap();
             let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
@@ -355,7 +355,7 @@ mod tests {
         borrowed_storage.delete(2).unwrap();
 
         {
-            let dir2 = TempDir::new("db_dir").unwrap();
+            let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path()).unwrap();
             let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn test_mmap_raw_scorer() {
         let dist = Distance::Dot;
-        let dir = TempDir::new("storage_dir").unwrap();
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let storage = open_memmap_vector_storage(dir.path(), 4, dist).unwrap();
         let mut borrowed_storage = storage.borrow_mut();
 
@@ -398,7 +398,7 @@ mod tests {
         let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
         {
-            let dir2 = TempDir::new("db_dir").unwrap();
+            let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path()).unwrap();
             let storage2 = open_simple_vector_storage(db, 4, dist).unwrap();
             {

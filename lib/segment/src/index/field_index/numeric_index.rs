@@ -571,7 +571,7 @@ mod tests {
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
-    use tempdir::TempDir;
+    use tempfile::{Builder, TempDir};
 
     use super::*;
     use crate::common::rocksdb_operations::open_db_with_existing_cf;
@@ -579,7 +579,10 @@ mod tests {
     const COLUMN_NAME: &str = "test";
 
     fn get_index() -> (TempDir, NumericIndex<f64>) {
-        let tmp_dir = TempDir::new("test_numeric_index").unwrap();
+        let tmp_dir = Builder::new()
+            .prefix("test_numeric_index")
+            .tempdir()
+            .unwrap();
         let db = open_db_with_existing_cf(tmp_dir.path()).unwrap();
         let index: NumericIndex<_> = NumericIndex::new(db, COLUMN_NAME);
         index.recreate().unwrap();

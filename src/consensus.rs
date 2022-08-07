@@ -683,7 +683,7 @@ mod tests {
     use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef};
     use storage::content_manager::toc::TableOfContent;
     use storage::dispatcher::Dispatcher;
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::Consensus;
     use crate::settings::ConsensusConfig;
@@ -691,7 +691,7 @@ mod tests {
     #[test]
     fn collection_creation_passes_consensus() {
         // Given
-        let storage_dir = TempDir::new("storage").unwrap();
+        let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
         let mut settings = crate::Settings::new().expect("Can't read config.");
         settings.storage.storage_path = storage_dir.path().to_str().unwrap().to_string();
         std::env::set_var("RUST_LOG", log::Level::Debug.as_str());

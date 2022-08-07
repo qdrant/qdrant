@@ -245,7 +245,7 @@ mod tests {
     use segment::fixtures::index_fixtures::random_vector;
     use segment::types::{Payload, PayloadSchemaType, StorageType};
     use serde_json::json;
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::collection_manager::fixtures::random_segment;
@@ -272,8 +272,11 @@ mod tests {
         let stopped = AtomicBool::new(false);
         let dim = 256;
 
-        let segments_dir = TempDir::new("segments_dir").unwrap();
-        let segments_temp_dir = TempDir::new("segments_temp_dir").unwrap();
+        let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
+        let segments_temp_dir = Builder::new()
+            .prefix("segments_temp_dir")
+            .tempdir()
+            .unwrap();
         let mut opnum = 101..1000000;
 
         let small_segment = random_segment(segments_dir.path(), opnum.next().unwrap(), 25, dim);

@@ -140,7 +140,7 @@ mod tests {
     use rand::Rng;
     use segment::types::Distance;
     use serde_json::{json, Value};
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::collection_manager::fixtures::random_segment;
@@ -148,8 +148,8 @@ mod tests {
 
     #[test]
     fn test_vacuum_conditions() {
-        let temp_dir = TempDir::new("segment_temp_dir").unwrap();
-        let dir = TempDir::new("segment_dir").unwrap();
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut holder = SegmentHolder::default();
         let segment_id = holder.add(random_segment(dir.path(), 100, 200, 4));
 

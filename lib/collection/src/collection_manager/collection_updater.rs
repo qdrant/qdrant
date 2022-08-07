@@ -71,7 +71,7 @@ impl CollectionUpdater {
 #[cfg(test)]
 mod tests {
     use segment::types::{Payload, WithPayload};
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::collection_manager::fixtures::build_test_holder;
@@ -82,7 +82,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_point_ops() {
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
         let segments = build_test_holder(dir.path());
         let points = vec![1.into(), 500.into()];
@@ -140,7 +140,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_payload_ops() {
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segments = build_test_holder(dir.path());
 
         let payload: Payload = serde_json::from_str(r#"{"color":"red"}"#).unwrap();

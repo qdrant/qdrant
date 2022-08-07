@@ -4,7 +4,7 @@ use collection::operations::CollectionUpdateOperations;
 use itertools::Itertools;
 use segment::types::{PayloadSelectorExclude, WithPayloadInterface};
 use serde_json::Value;
-use tempdir::TempDir;
+use tempfile::Builder;
 
 use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
 
@@ -17,7 +17,7 @@ async fn test_collection_reloading() {
 }
 
 async fn test_collection_reloading_with_shards(shard_number: u32) {
-    let collection_dir = TempDir::new("collection").unwrap();
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
     {
         let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
@@ -63,7 +63,7 @@ async fn test_collection_payload_reloading() {
 }
 
 async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
-    let collection_dir = TempDir::new("collection").unwrap();
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
     {
         let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
@@ -128,7 +128,7 @@ async fn test_collection_payload_custom_payload() {
 }
 
 async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
-    let collection_dir = TempDir::new("collection").unwrap();
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
     {
         let mut collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
         let insert_points = CollectionUpdateOperations::PointOperation(

@@ -389,7 +389,7 @@ mod tests {
     use std::iter::FromIterator;
     use std::path::Path;
 
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::common::rocksdb_operations::open_db_with_existing_cf;
@@ -439,7 +439,7 @@ mod tests {
             vec![25],
         ];
 
-        let tmp_dir = TempDir::new("store_dir").unwrap();
+        let tmp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
         save_map_index(&data, tmp_dir.path());
         load_map_index(&data, tmp_dir.path());
     }
@@ -470,7 +470,7 @@ mod tests {
             vec![String::from("PPGG")],
         ];
 
-        let tmp_dir = TempDir::new("store_dir").unwrap();
+        let tmp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
         save_map_index(&data, tmp_dir.path());
         load_map_index(&data, tmp_dir.path());
     }

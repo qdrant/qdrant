@@ -6,7 +6,7 @@ use std::time::Duration;
 use futures::future::join_all;
 use itertools::Itertools;
 use parking_lot::RwLock;
-use tempdir::TempDir;
+use tempfile::Builder;
 use tokio::time::{sleep, Instant};
 
 use crate::collection::Collection;
@@ -18,8 +18,8 @@ use crate::update_handler::{Optimizer, UpdateHandler};
 
 #[tokio::test]
 async fn test_optimization_process() {
-    let dir = TempDir::new("segment_dir").unwrap();
-    let temp_dir = TempDir::new("segment_temp_dir").unwrap();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
     let dim = 256;
     let mut holder = SegmentHolder::default();
@@ -72,8 +72,8 @@ async fn test_optimization_process() {
 
 #[tokio::test]
 async fn test_cancel_optimization() {
-    let dir = TempDir::new("segment_dir").unwrap();
-    let temp_dir = TempDir::new("segment_temp_dir").unwrap();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
     let mut holder = SegmentHolder::default();
     let dim = 256;
