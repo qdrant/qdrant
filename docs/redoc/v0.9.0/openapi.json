@@ -2283,7 +2283,7 @@
       "name": "Apache 2.0",
       "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "version": "master"
+    "version": "v0.9.0"
   },
   "externalDocs": {
     "description": "Find out more about Qdrant applications and demo",
@@ -4133,6 +4133,20 @@
           {
             "type": "object",
             "required": [
+              "consensus_thread_status"
+            ],
+            "properties": {
+              "consensus_thread_status": {
+                "type": "string",
+                "enum": [
+                  "stopped"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
               "consensus_thread_status",
               "err"
             ],
@@ -5047,21 +5061,25 @@
         }
       },
       "ClusterOperations": {
-        "oneOf": [
+        "anyOf": [
           {
-            "description": "Move shard to a different peer",
-            "type": "object",
-            "required": [
-              "move_shard"
-            ],
-            "properties": {
-              "move_shard": {
-                "$ref": "#/components/schemas/MoveShard"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/MoveShardOperation"
+          },
+          {
+            "$ref": "#/components/schemas/AbortTransferOperation"
           }
         ]
+      },
+      "MoveShardOperation": {
+        "type": "object",
+        "required": [
+          "move_shard"
+        ],
+        "properties": {
+          "move_shard": {
+            "$ref": "#/components/schemas/MoveShard"
+          }
+        }
       },
       "MoveShard": {
         "type": "object",
@@ -5085,6 +5103,17 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
+          }
+        }
+      },
+      "AbortTransferOperation": {
+        "type": "object",
+        "required": [
+          "abort_transfer"
+        ],
+        "properties": {
+          "abort_transfer": {
+            "$ref": "#/components/schemas/MoveShard"
           }
         }
       }
