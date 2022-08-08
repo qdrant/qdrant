@@ -88,7 +88,8 @@ impl GeoMapIndex {
             return Ok(false);
         };
 
-        for (key, value) in store_ref.iterator_cf(cf_handle, IteratorMode::Start) {
+        for item in store_ref.iterator_cf(cf_handle, IteratorMode::Start) {
+            let (key, value) = item?;
             let key_str = std::str::from_utf8(&key).map_err(|_| {
                 OperationError::service_error("Index load error: UTF8 error while DB parsing")
             })?;
