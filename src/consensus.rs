@@ -665,7 +665,6 @@ async fn send_message(
 mod tests {
     use std::sync::Arc;
     use std::thread;
-    
 
     use collection::shard::ChannelService;
     use segment::types::Distance;
