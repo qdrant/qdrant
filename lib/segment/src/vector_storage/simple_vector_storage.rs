@@ -94,7 +94,8 @@ pub fn open_simple_vector_storage(
     {
         let store_ref = store.borrow();
         let cf_handle = store_ref.cf_handle(DB_VECTOR_CF).unwrap();
-        for (key, val) in store_ref.iterator_cf(cf_handle, IteratorMode::Start) {
+        for item in store_ref.iterator_cf(cf_handle, IteratorMode::Start) {
+            let (key, val) = item?;
             let point_id: PointOffsetType = bincode::deserialize(&key).unwrap();
             let stored_record: StoredRecord = bincode::deserialize(&val).unwrap();
             if stored_record.deleted {

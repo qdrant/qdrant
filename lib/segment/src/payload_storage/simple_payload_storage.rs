@@ -22,7 +22,8 @@ impl SimplePayloadStorage {
         {
             let store_ref = store.borrow();
             let cf_handle = store_ref.cf_handle(DB_PAYLOAD_CF).unwrap();
-            for (key, val) in store_ref.iterator_cf(cf_handle, IteratorMode::Start) {
+            for item in store_ref.iterator_cf(cf_handle, IteratorMode::Start) {
+                let (key, val) = item?;
                 let point_id: PointOffsetType = serde_cbor::from_slice(&key).unwrap();
                 let payload: Payload = serde_cbor::from_slice(&val).unwrap();
                 payload_map.insert(point_id, payload);

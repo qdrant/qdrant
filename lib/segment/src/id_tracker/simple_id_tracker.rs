@@ -67,10 +67,11 @@ impl SimpleIdTracker {
 
         {
             let store_ref = store.borrow();
-            for (key, val) in store_ref.iterator_cf(
+            for item in store_ref.iterator_cf(
                 store_ref.cf_handle(DB_MAPPING_CF).unwrap(),
                 IteratorMode::Start,
             ) {
+                let (key, val) = item?;
                 let external_id = Self::restore_key(&key);
                 let internal_id: PointOffsetType = bincode::deserialize(&val).unwrap();
                 let replaced = internal_to_external.insert(internal_id, external_id);
@@ -89,10 +90,11 @@ impl SimpleIdTracker {
                 max_internal_id = max_internal_id.max(internal_id);
             }
 
-            for (key, val) in store_ref.iterator_cf(
+            for item in store_ref.iterator_cf(
                 store_ref.cf_handle(DB_VERSIONS_CF).unwrap(),
                 IteratorMode::Start,
             ) {
+                let (key, val) = item?;
                 let external_id = Self::restore_key(&key);
                 let version: SeqNumberType = bincode::deserialize(&val).unwrap();
                 external_to_version.insert(external_id, version);

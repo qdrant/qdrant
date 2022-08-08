@@ -69,7 +69,8 @@ impl OnDiskPayloadStorage {
             .cf_handle(DB_PAYLOAD_CF)
             .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
         let iterator = store_ref.iterator_cf(cf_handle, IteratorMode::Start);
-        for (key, val) in iterator {
+        for item in iterator {
+            let (key, val) = item?;
             let do_continue = callback(
                 serde_cbor::from_slice(&key)?,
                 &serde_cbor::from_slice(&val)?,
