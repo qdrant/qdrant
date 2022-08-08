@@ -202,8 +202,8 @@
 | optimizer_status | [OptimizerStatus](#qdrant-OptimizerStatus) |  | status of collection optimizers |
 | vectors_count | [uint64](#uint64) |  | number of vectors in the collection |
 | segments_count | [uint64](#uint64) |  | Number of independent segments |
-| disk_data_size | [uint64](#uint64) |  | Used disk space |
-| ram_data_size | [uint64](#uint64) |  | Used RAM (not implemented) |
+| disk_data_size | [uint64](#uint64) |  | **Deprecated.** Used disk space |
+| ram_data_size | [uint64](#uint64) |  | **Deprecated.** Used RAM (not implemented) |
 | config | [CollectionConfig](#qdrant-CollectionConfig) |  | Configuration |
 | payload_schema | [CollectionInfo.PayloadSchemaEntry](#qdrant-CollectionInfo-PayloadSchemaEntry) | repeated | Collection data types |
 | points_count | [uint64](#uint64) |  | number of points in the collection |
