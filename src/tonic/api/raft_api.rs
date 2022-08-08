@@ -6,7 +6,7 @@ use api::grpc::qdrant::{
     AddPeerToKnownMessage, AllPeers, Peer, PeerId, RaftMessage as RaftMessageBytes, Uri as UriStr,
 };
 use itertools::Itertools;
-use raft::eraftpb::{ConfChangeType, ConfChangeV2, Message as RaftMessage};
+use raft::eraftpb::Message as RaftMessage;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::consensus_state::ConsensusStateRef;
 use tonic::transport::Uri;
@@ -108,20 +108,11 @@ impl Raft for RaftService {
         }))
     }
 
+    // Left for compatibility - does nothing
     async fn add_peer_as_participant(
         &self,
-        request: tonic::Request<PeerId>,
+        _request: tonic::Request<PeerId>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
-        let mut change = ConfChangeV2::default();
-        change.set_changes(vec![raft_proto::new_conf_change_single(
-            request.get_ref().id,
-            ConfChangeType::AddLearnerNode,
-        )]);
-        self.message_sender
-            .lock()
-            .map_err(|_| Status::internal("Can't capture the Raft message sender lock"))?
-            .send(consensus::Message::ConfChange(change))
-            .map_err(|_| Status::internal("Can't send Raft message over channel"))?;
         Ok(Response::new(()))
     }
 }
