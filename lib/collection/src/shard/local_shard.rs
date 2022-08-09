@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::thread;
 
 use arc_swap::ArcSwap;
-use indicatif::ProgressBar;
+use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::index::field_index::CardinalityEstimation;
@@ -175,7 +175,7 @@ impl LocalShard {
 
         let collection = LocalShard::new(
             id,
-            collection_id,
+            collection_id.clone(),
             segment_holder,
             shared_config,
             wal,
@@ -184,7 +184,7 @@ impl LocalShard {
         )
         .await;
 
-        collection.load_from_wal().await;
+        collection.load_from_wal(collection_id).await;
 
         collection
     }
@@ -344,10 +344,16 @@ impl LocalShard {
     }
 
     /// Loads latest collection operations from WAL
-    pub async fn load_from_wal(&self) {
+    pub async fn load_from_wal(&self, collection_id: CollectionId) {
         let wal = self.wal.lock().await;
         let bar = ProgressBar::new(wal.len());
-        bar.set_message("Recovering collection");
+
+        let progress_style = ProgressStyle::default_bar()
+            .template("{msg} [{elapsed_precise}] {wide_bar} {pos}/{len} (eta:{eta})")
+            .expect("Failed to create progress style");
+        bar.set_style(progress_style);
+
+        bar.set_message(format!("Recovering collection {}", collection_id));
         let segments = self.segments();
         // ToDo: Start from minimal applied version
         for (op_num, update) in wal.read_all() {
