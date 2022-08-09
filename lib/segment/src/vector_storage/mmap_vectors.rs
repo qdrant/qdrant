@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use memmap::{Mmap, MmapMut, MmapOptions};
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard};
 
 use crate::common::error_logging::LogError;
 use crate::common::Flusher;
@@ -103,11 +103,16 @@ impl MmapVectors {
             .map(|offset| self.raw_vector_offset(offset))
     }
 
+    pub fn check_deleted(mmap: &MmapMut, key: PointOffsetType) -> Option<bool> {
+        mmap.get(HEADER_SIZE + (key as usize)).map(|x| *x > 0)
+    }
+
+    pub fn read_deleted_map(&self) -> RwLockReadGuard<MmapMut> {
+        self.deleted_mmap.read()
+    }
+
     pub fn deleted(&self, key: PointOffsetType) -> Option<bool> {
-        self.deleted_mmap
-            .read()
-            .get(HEADER_SIZE + (key as usize))
-            .map(|x| *x > 0)
+        Self::check_deleted(&self.deleted_mmap.read(), key)
     }
 
     /// Creates returns owned vector (copy of internal vector)
