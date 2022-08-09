@@ -475,7 +475,7 @@ impl PayloadIndex for StructPayloadIndex {
         key: PayloadKeyTypeRef,
     ) -> OperationResult<Option<PayloadSchemaType>> {
         let mut schema = None;
-        self.payload.borrow().iter(|_id, payload| {
+        self.payload.borrow().iter(|_id, payload: &Payload| {
             let field_value = payload.get_value(key);
             schema = field_value.and_then(infer_value_type);
             Ok(false)

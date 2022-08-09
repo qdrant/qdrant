@@ -256,14 +256,18 @@ impl Segment {
     // Returns lock to guarantee that there will no any fush in different thread
     fn lock_flushing(
         &self,
-    ) -> parking_lot::MutexGuard<Option<JoinHandle<OperationResult<SeqNumberType>>>> {
+    ) -> OperationResult<parking_lot::MutexGuard<Option<JoinHandle<OperationResult<SeqNumberType>>>>>
+    {
         let mut lock = self.flush_thread.lock();
         let mut join_handle: Option<JoinHandle<OperationResult<SeqNumberType>>> = None;
         std::mem::swap(&mut join_handle, &mut lock);
         if let Some(join_handle) = join_handle {
-            let _background_flush_result = join_handle.join();
+            // Flush result was reported to segment, so we don't need this value anymore
+            let _background_flush_result = join_handle
+                .join()
+                .map_err(|_err| OperationError::service_error("failed to join flush thread"))??;
         }
-        lock
+        Ok(lock)
     }
 }
 
@@ -592,7 +596,7 @@ impl SegmentEntry for Segment {
     }
 
     fn flush(&self, sync: bool) -> OperationResult<SeqNumberType> {
-        let mut background_flush_lock = self.lock_flushing();
+        let mut background_flush_lock = self.lock_flushing()?;
 
         let current_persisted_version: SeqNumberType = *self.persisted_version.lock();
         if current_persisted_version == self.version() {
@@ -835,7 +839,6 @@ mod tests {
     use walkdir::WalkDir;
 
     use super::*;
-    use crate::entry::entry_point::SegmentEntry;
     use crate::segment_constructor::build_segment;
     use crate::types::{Distance, Indexes, SegmentConfig, StorageType};
 
