@@ -38,7 +38,7 @@ where
         // Use `read_deleted_map` instead of `deleted` to prevent multiple locks
         let deleted_map = self.mmap_store.read_deleted_map();
         for point in points {
-            if MmapVectors::check_deleted(&deleted_map,*point).unwrap_or(true) {
+            if MmapVectors::check_deleted(&deleted_map, *point).unwrap_or(true) {
                 continue;
             }
             let other_vector = self.mmap_store.raw_vector(*point).unwrap();
