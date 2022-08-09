@@ -1,10 +1,11 @@
 use std::fs::{create_dir_all, File};
 use std::io::Read;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use log::info;
+use parking_lot::Mutex;
 use uuid::Uuid;
 
 use crate::common::rocksdb_operations::open_db;
@@ -97,6 +98,7 @@ fn create_segment(
         segment_config: config.clone(),
         error_status: None,
         database,
+        flush_thread: Mutex::new(None),
     })
 }
 

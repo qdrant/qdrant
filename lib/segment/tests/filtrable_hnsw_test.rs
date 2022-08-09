@@ -64,7 +64,7 @@ mod tests {
         }
         // let opnum = num_vectors + 1;
 
-        let payload_index_ptr = segment.payload_index;
+        let payload_index_ptr = segment.payload_index.clone();
 
         let hnsw_config = HnswConfig {
             m,

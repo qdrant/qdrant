@@ -421,7 +421,7 @@ impl SegmentEntry for ProxySegment {
         true
     }
 
-    fn flush(&self) -> OperationResult<SeqNumberType> {
+    fn flush(&self, sync: bool) -> OperationResult<SeqNumberType> {
         let deleted_points_guard = self.deleted_points.read();
         let deleted_indexes_guard = self.deleted_indexes.read();
         let created_indexes_guard = self.created_indexes.read();
@@ -434,8 +434,8 @@ impl SegmentEntry for ProxySegment {
             // This workaround only makes sense in a context of batch update of new points:
             //  - initial upload
             //  - incremental updates
-            let wrapped_version = self.wrapped_segment.get().read().flush()?;
-            let write_segment_version = self.write_segment.get().read().flush()?;
+            let wrapped_version = self.wrapped_segment.get().read().flush(sync)?;
+            let write_segment_version = self.write_segment.get().read().flush(sync)?;
             let flushed_version = max(wrapped_version, write_segment_version);
             *self.last_flushed_version.write() = Some(flushed_version);
             Ok(flushed_version)
