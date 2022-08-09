@@ -5,11 +5,12 @@ use std::iter;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
+use parking_lot::RwLock;
 use rocksdb::{IteratorMode, DB};
 use serde_json::Value;
 
 use crate::common::rocksdb_operations::{db_write_options, recreate_cf};
+use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
@@ -28,11 +29,11 @@ pub struct MapIndex<N: Hash + Eq + Clone + Display> {
     indexed_points: usize,
     values_count: usize,
     store_cf_name: String,
-    db: Arc<AtomicRefCell<DB>>,
+    db: Arc<RwLock<DB>>,
 }
 
 impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
-    pub fn new(db: Arc<AtomicRefCell<DB>>, field_name: &str) -> MapIndex<N> {
+    pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> MapIndex<N> {
         MapIndex {
             map: Default::default(),
             point_to_values: Vec::new(),
@@ -52,7 +53,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        let db_ref = self.db.borrow();
+        let db_ref = self.db.read();
         let cf_handle = if let Some(cf_handle) = db_ref.cf_handle(&self.store_cf_name) {
             cf_handle
         } else {
@@ -78,15 +79,19 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
         Ok(true)
     }
 
-    pub fn flush(&self) -> OperationResult<()> {
-        let store_ref = self.db.borrow();
-        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Index flush error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-        Ok(store_ref.flush_cf(cf_handle)?)
+    pub fn flusher(&self) -> Flusher {
+        let db = self.db.clone();
+        let store_cf_name = self.store_cf_name.clone();
+        Box::new(move || {
+            let store_ref = db.read();
+            let cf_handle = store_ref.cf_handle(&store_cf_name).ok_or_else(|| {
+                OperationError::service_error(&format!(
+                    "Index flush error: column family {} not found",
+                    store_cf_name
+                ))
+            })?;
+            Ok(store_ref.flush_cf(cf_handle)?)
+        })
     }
 
     pub fn match_cardinality(&self, value: &N) -> CardinalityEstimation {
@@ -126,7 +131,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
             return Ok(());
         }
 
-        let store_ref = self.db.borrow();
+        let store_ref = self.db.read();
         let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
             OperationError::service_error(&format!(
                 "Index add error: column family {} not found",
@@ -183,7 +188,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr> MapIndex<N> {
     }
 
     fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        let store_ref = self.db.borrow();
+        let store_ref = self.db.read();
 
         let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
             OperationError::service_error(&format!(
@@ -225,11 +230,11 @@ impl PayloadFieldIndex for MapIndex<String> {
     }
 
     fn clear(self) -> OperationResult<()> {
-        Ok(self.db.borrow_mut().drop_cf(&self.store_cf_name)?)
+        Ok(self.db.write().drop_cf(&self.store_cf_name)?)
     }
 
-    fn flush(&self) -> OperationResult<()> {
-        MapIndex::flush(self)
+    fn flusher(&self) -> Flusher {
+        MapIndex::flusher(self)
     }
 
     fn filter(
@@ -290,11 +295,11 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     }
 
     fn clear(self) -> OperationResult<()> {
-        Ok(self.db.borrow_mut().drop_cf(&self.store_cf_name)?)
+        Ok(self.db.write().drop_cf(&self.store_cf_name)?)
     }
 
-    fn flush(&self) -> OperationResult<()> {
-        MapIndex::flush(self)
+    fn flusher(&self) -> Flusher {
+        MapIndex::flusher(self)
     }
 
     fn filter(
@@ -408,7 +413,7 @@ mod tests {
                 .add_many_to_map(idx as PointOffsetType, values.clone())
                 .unwrap();
         }
-        index.flush().unwrap();
+        index.flusher()().unwrap();
     }
 
     fn load_map_index<N: Hash + Eq + Clone + Display + FromStr + Debug>(

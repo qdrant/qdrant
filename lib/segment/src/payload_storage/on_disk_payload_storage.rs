@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
+use parking_lot::RwLock;
 use rocksdb::{IteratorMode, DB};
 use serde_json::Value;
 
 use crate::common::rocksdb_operations::{db_options, db_write_options, DB_PAYLOAD_CF};
+use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::payload_storage::PayloadStorage;
 use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
@@ -12,16 +13,16 @@ use crate::types::{Payload, PayloadKeyTypeRef, PointOffsetType};
 /// On-disk implementation of `PayloadStorage`.
 /// Persists all changes to disk using `store`, does not keep payload in memory
 pub struct OnDiskPayloadStorage {
-    store: Arc<AtomicRefCell<DB>>,
+    store: Arc<RwLock<DB>>,
 }
 
 impl OnDiskPayloadStorage {
-    pub fn open(store: Arc<AtomicRefCell<DB>>) -> OperationResult<Self> {
+    pub fn open(store: Arc<RwLock<DB>>) -> OperationResult<Self> {
         Ok(OnDiskPayloadStorage { store })
     }
 
     pub fn remove_from_storage(&self, point_id: PointOffsetType) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
+        let store_ref = self.store.read();
         let cf_handle = store_ref
             .cf_handle(DB_PAYLOAD_CF)
             .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
@@ -34,7 +35,7 @@ impl OnDiskPayloadStorage {
         point_id: PointOffsetType,
         payload: &Payload,
     ) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
+        let store_ref = self.store.read();
         let cf_handle = store_ref
             .cf_handle(DB_PAYLOAD_CF)
             .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
@@ -49,7 +50,7 @@ impl OnDiskPayloadStorage {
 
     pub fn read_payload(&self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         let key = serde_cbor::to_vec(&point_id).unwrap();
-        let store_ref = self.store.borrow();
+        let store_ref = self.store.read();
         let cf_handle = store_ref
             .cf_handle(DB_PAYLOAD_CF)
             .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
@@ -64,7 +65,7 @@ impl OnDiskPayloadStorage {
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        let store_ref = self.store.borrow();
+        let store_ref = self.store.read();
         let cf_handle = store_ref
             .cf_handle(DB_PAYLOAD_CF)
             .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
@@ -134,17 +135,20 @@ impl PayloadStorage for OnDiskPayloadStorage {
     }
 
     fn wipe(&mut self) -> OperationResult<()> {
-        let mut store_ref = self.store.borrow_mut();
+        let mut store_ref = self.store.write();
         store_ref.drop_cf(DB_PAYLOAD_CF)?;
         store_ref.create_cf(DB_PAYLOAD_CF, &db_options())?;
         Ok(())
     }
 
-    fn flush(&self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        let cf_handle = store_ref
-            .cf_handle(DB_PAYLOAD_CF)
-            .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
-        Ok(store_ref.flush_cf(cf_handle)?)
+    fn flusher(&self) -> Flusher {
+        let store = self.store.clone();
+        Box::new(move || {
+            let store_ref = store.read();
+            let cf_handle = store_ref
+                .cf_handle(DB_PAYLOAD_CF)
+                .ok_or_else(|| OperationError::service_error("Payload storage column not found"))?;
+            Ok(store_ref.flush_cf(cf_handle)?)
+        })
     }
 }

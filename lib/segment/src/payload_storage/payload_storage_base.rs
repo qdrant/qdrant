@@ -1,5 +1,6 @@
 use serde_json::Value;
 
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{Filter, Payload, PayloadKeyTypeRef, PointOffsetType};
 
@@ -31,8 +32,8 @@ pub trait PayloadStorage {
     /// Completely drop payload. Pufff!
     fn wipe(&mut self) -> OperationResult<()>;
 
-    /// Force persistence of current storage state.
-    fn flush(&self) -> OperationResult<()>;
+    /// Return function that forces persistence of current storage state.
+    fn flusher(&self) -> Flusher;
 }
 
 pub trait ConditionChecker {

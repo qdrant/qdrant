@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
@@ -228,10 +229,10 @@ where
         Box::new(iter)
     }
 
-    fn flush(&self) -> OperationResult<()> {
+    fn flusher(&self) -> Flusher {
         match &self.mmap_store {
-            None => Ok(()),
-            Some(x) => x.flush(),
+            None => Box::new(|| Ok(())),
+            Some(x) => x.flusher(),
         }
     }
 

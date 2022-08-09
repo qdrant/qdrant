@@ -1,13 +1,14 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
 use bincode;
+use parking_lot::RwLock;
 use rocksdb::{IteratorMode, DB};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::common::rocksdb_operations::{db_write_options, DB_MAPPING_CF, DB_VERSIONS_CF};
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTracker;
 use crate::types::{ExtendedPointId, PointIdType, PointOffsetType, SeqNumberType};
@@ -55,18 +56,18 @@ pub struct SimpleIdTracker {
     external_to_internal: BTreeMap<PointIdType, PointOffsetType>,
     external_to_version: HashMap<PointIdType, SeqNumberType>,
     max_internal_id: PointOffsetType,
-    store: Arc<AtomicRefCell<DB>>,
+    store: Arc<RwLock<DB>>,
 }
 
 impl SimpleIdTracker {
-    pub fn open(store: Arc<AtomicRefCell<DB>>) -> OperationResult<Self> {
+    pub fn open(store: Arc<RwLock<DB>>) -> OperationResult<Self> {
         let mut internal_to_external: HashMap<PointOffsetType, PointIdType> = Default::default();
         let mut external_to_internal: BTreeMap<PointIdType, PointOffsetType> = Default::default();
         let mut external_to_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut max_internal_id = 0;
 
         {
-            let store_ref = store.borrow();
+            let store_ref = store.read();
             for item in store_ref.iterator_cf(
                 store_ref.cf_handle(DB_MAPPING_CF).unwrap(),
                 IteratorMode::Start,
@@ -131,7 +132,7 @@ impl IdTracker for SimpleIdTracker {
         version: SeqNumberType,
     ) -> OperationResult<()> {
         self.external_to_version.insert(external_id, version);
-        let store_ref = self.store.borrow();
+        let store_ref = self.store.read();
         store_ref.put_cf_opt(
             store_ref.cf_handle(DB_VERSIONS_CF).unwrap(),
             Self::store_key(&external_id),
@@ -158,7 +159,7 @@ impl IdTracker for SimpleIdTracker {
         self.internal_to_external.insert(internal_id, external_id);
         self.max_internal_id = self.max_internal_id.max(internal_id);
 
-        let store_ref = self.store.borrow();
+        let store_ref = self.store.read();
         store_ref.put_cf_opt(
             store_ref.cf_handle(DB_MAPPING_CF).unwrap(),
             Self::store_key(&external_id),
@@ -176,7 +177,7 @@ impl IdTracker for SimpleIdTracker {
             Some(x) => self.internal_to_external.remove(&x),
             None => None,
         };
-        let store_ref = self.store.borrow_mut();
+        let store_ref = self.store.read();
         store_ref.delete_cf(
             store_ref.cf_handle(DB_MAPPING_CF).unwrap(),
             Self::store_key(&external_id),
@@ -220,14 +221,20 @@ impl IdTracker for SimpleIdTracker {
         self.max_internal_id
     }
 
-    fn flush_mapping(&self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        Ok(store_ref.flush_cf(store_ref.cf_handle(DB_MAPPING_CF).unwrap())?)
+    fn mapping_flusher(&self) -> Flusher {
+        let store = self.store.clone();
+        Box::new(move || {
+            let store_ref = store.read();
+            Ok(store_ref.flush_cf(&store_ref.cf_handle(DB_MAPPING_CF).unwrap())?)
+        })
     }
 
-    fn flush_versions(&self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        Ok(store_ref.flush_cf(store_ref.cf_handle(DB_VERSIONS_CF).unwrap())?)
+    fn versions_flusher(&self) -> Flusher {
+        let store = self.store.clone();
+        Box::new(move || {
+            let store_ref = store.read();
+            Ok(store_ref.flush_cf(&store_ref.cf_handle(DB_VERSIONS_CF).unwrap())?)
+        })
     }
 }
 

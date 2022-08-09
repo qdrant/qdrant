@@ -3,12 +3,13 @@ use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
+use parking_lot::RwLock;
 use rocksdb::{IteratorMode, DB};
 use serde_json::Value;
 
 use crate::common::rocksdb_operations::{db_write_options, recreate_cf};
+use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{
     circle_hashes, common_hash_prefix, encode_max_precision, geo_hash_to_box, rectangle_hashes,
@@ -54,11 +55,11 @@ pub struct GeoMapIndex {
     values_count: usize,
     max_values_per_point: usize,
     store_cf_name: String,
-    db: Arc<AtomicRefCell<DB>>,
+    db: Arc<RwLock<DB>>,
 }
 
 impl GeoMapIndex {
-    pub fn new(db: Arc<AtomicRefCell<DB>>, field: &str) -> Self {
+    pub fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
         GeoMapIndex {
             points_per_hash: Default::default(),
             values_per_hash: Default::default(),
@@ -81,7 +82,7 @@ impl GeoMapIndex {
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        let store_ref = self.db.borrow();
+        let store_ref = self.db.read();
         let cf_handle = if let Some(cf_handle) = store_ref.cf_handle(&self.store_cf_name) {
             cf_handle
         } else {
@@ -152,15 +153,19 @@ impl GeoMapIndex {
         result
     }
 
-    pub fn flush(&self) -> OperationResult<()> {
-        let store_ref = self.db.borrow();
-        let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Index flush error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-        Ok(store_ref.flush_cf(cf_handle)?)
+    pub fn flusher(&self) -> Flusher {
+        let db = self.db.clone();
+        let store_cf_name = self.store_cf_name.clone();
+        Box::new(move || {
+            let store_ref = db.read();
+            let cf_handle = store_ref.cf_handle(&store_cf_name).ok_or_else(|| {
+                OperationError::service_error(&format!(
+                    "Index flush error: column family {} not found",
+                    store_cf_name
+                ))
+            })?;
+            Ok(store_ref.flush_cf(cf_handle)?)
+        })
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&Vec<GeoPoint>> {
@@ -229,7 +234,7 @@ impl GeoMapIndex {
     }
 
     fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        let store_ref = self.db.borrow();
+        let store_ref = self.db.read();
 
         let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
             OperationError::service_error(&format!(
@@ -315,7 +320,7 @@ impl GeoMapIndex {
             return Ok(());
         }
 
-        let store_ref = self.db.borrow();
+        let store_ref = self.db.read();
         let cf_handle = store_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
             OperationError::service_error(&format!(
                 "Index add error: column family {} not found",
@@ -475,11 +480,11 @@ impl PayloadFieldIndex for GeoMapIndex {
     }
 
     fn clear(self) -> OperationResult<()> {
-        Ok(self.db.borrow_mut().drop_cf(&self.store_cf_name)?)
+        Ok(self.db.write().drop_cf(&self.store_cf_name)?)
     }
 
-    fn flush(&self) -> OperationResult<()> {
-        GeoMapIndex::flush(self)
+    fn flusher(&self) -> Flusher {
+        GeoMapIndex::flusher(self)
     }
 
     fn filter(
@@ -823,7 +828,7 @@ mod tests {
                 }
             ]);
             index.add_point(1, &geo_values).unwrap();
-            index.flush().unwrap();
+            index.flusher()().unwrap();
             drop(index);
         }
 

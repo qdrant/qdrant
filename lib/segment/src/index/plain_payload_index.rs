@@ -8,6 +8,7 @@ use atomic_refcell::AtomicRefCell;
 use schemars::_serde_json::Value;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
@@ -163,7 +164,7 @@ impl PayloadIndex for PlainPayloadIndex {
         todo!()
     }
 
-    fn flush(&self) -> OperationResult<()> {
+    fn flusher(&self) -> Flusher {
         todo!()
     }
 
