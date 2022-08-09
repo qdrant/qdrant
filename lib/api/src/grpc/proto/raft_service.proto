@@ -11,9 +11,12 @@ service Raft {
   // Returns uri by id if bootstrap knows this peer
   rpc WhoIs (PeerId) returns (Uri);
   // Send to bootstrap peer
-  // Proposes to add this peer Uri and ID to a map of all peers
+  // Adds peer to the network
   // Returns all peers
   rpc AddPeerToKnown (AddPeerToKnownMessage) returns (AllPeers);
+  // DEPRECATED
+  // Its functionality is now included in `AddPeerToKnown`
+  //
   // Send to bootstrap peer
   // Proposes to add this peer as participant of consensus
   rpc AddPeerAsParticipant (PeerId) returns (google.protobuf.Empty);

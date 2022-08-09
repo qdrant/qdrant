@@ -100,9 +100,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
 
     pub fn set_raft_soft_state(&self, state: &SoftState) {
         *self.soft_state.write() = Some(SoftState { ..*state });
-        if state.raft_state == StateRole::Leader || state.raft_state == StateRole::Follower {
-            self.is_leader_established.make_ready()
-        } else {
+        if state.raft_state == StateRole::Candidate || state.raft_state == StateRole::PreCandidate {
             self.is_leader_established.make_not_ready()
         }
     }
@@ -173,17 +171,55 @@ impl<C: CollectionContainer> ConsensusState<C> {
 
         let mut stop_consensus: bool = false;
         for single_change in &change.changes {
-            if single_change.change_type == ConfChangeType::RemoveNode as i32 {
-                log::debug!("Remove node {}", single_change.node_id);
-                if self.this_peer_id() == single_change.node_id {
-                    stop_consensus = true;
+            match single_change.change_type() {
+                ConfChangeType::AddNode => {
+                    debug_assert!(
+                        self.peer_address_by_id()
+                            .get(&single_change.node_id)
+                            .is_some(),
+                        "Peer should be already known"
+                    )
                 }
-                self.remove_peer(single_change.node_id)?;
-                let operation = ConsensusOperations::RemovePeer(single_change.node_id);
-                let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
-                if let Some(on_apply) = on_apply {
-                    if on_apply.send(Ok(true)).is_err() {
-                        log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
+                ConfChangeType::RemoveNode => {
+                    log::debug!("Removing node {}", single_change.node_id);
+                    if self.this_peer_id() == single_change.node_id {
+                        stop_consensus = true;
+                    }
+                    self.remove_peer(single_change.node_id)?;
+                    let operation = ConsensusOperations::RemovePeer(single_change.node_id);
+                    let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
+                    if let Some(on_apply) = on_apply {
+                        if on_apply.send(Ok(true)).is_err() {
+                            log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
+                        }
+                    }
+                }
+                ConfChangeType::AddLearnerNode => {
+                    log::debug!("Adding learner node {}", single_change.node_id);
+                    if let Ok(peer_uri) = String::from_utf8_lossy(entry.get_context())
+                        .deref()
+                        .try_into()
+                    {
+                        let peer_uri: Uri = peer_uri;
+                        self.add_peer(single_change.node_id, peer_uri.clone())?;
+                        let operation = ConsensusOperations::AddPeer(
+                            single_change.node_id,
+                            peer_uri.to_string(),
+                        );
+                        let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
+                        if let Some(on_apply) = on_apply {
+                            if on_apply.send(Ok(true)).is_err() {
+                                log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
+                            }
+                        }
+                    } else if entry.get_context().is_empty() {
+                        // Allow empty context for compatibility
+                        // TODO: remove in the next version after 0.10
+                    } else {
+                        // Should not be reachable as it is checked in API
+                        return Err(StorageError::ServiceError {
+                            description: "Failed to parse peer uri".to_string(),
+                        });
                     }
                 }
             }
@@ -227,6 +263,7 @@ impl<C: CollectionContainer> ConsensusState<C> {
             };
             let do_increase_applied_index: bool = if entry.data.is_empty() {
                 // Empty entry, when the peer becomes Leader it will send an empty entry.
+                self.is_leader_established.make_ready();
                 true
             } else {
                 match entry.get_entry_type() {
@@ -293,24 +330,18 @@ impl<C: CollectionContainer> ConsensusState<C> {
     pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
         let operation: ConsensusOperations = entry.try_into()?;
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
-        let result = match operation {
-            ConsensusOperations::CollectionMeta(operation) => {
-                self.toc.perform_collection_meta_op(*operation)
-            }
-            ConsensusOperations::AddPeer(peer_id, uri) => self
-                .add_peer(
-                    peer_id,
-                    uri.parse().map_err(|err| StorageError::ServiceError {
-                        description: format!("Failed to parse Uri: {err}"),
-                    })?,
-                )
-                .map(|()| true),
-            ConsensusOperations::RemovePeer(_peer_id) => {
-                // RemovePeer should be converted into native ConfChangeV2 message before sending to the Raft.
-                // So we do not expect to receive RemovePeer operation as a normal entry.
-                debug_assert!(false, "Do not expect RemovePeer to be directly proposed");
-                Ok(false)
-            }
+        let result = if let ConsensusOperations::CollectionMeta(operation) = operation {
+            self.toc.perform_collection_meta_op(*operation)
+        } else {
+            // RemovePeer or AddPeer should be converted into native ConfChangeV2 message before sending to the Raft.
+            // So we do not expect to receive these operations as a normal entry.
+            // This is a debug assert so production migrations should be ok.
+            // TODO: parse into CollectionMetaOperation as we will not handle other cases here, but this removes compatibility with previous entry storage
+            debug_assert!(
+                false,
+                "Do not expect RemovePeer or AddPeer to be directly proposed"
+            );
+            Ok(false)
         };
         if let Some(on_apply) = on_apply {
             if on_apply.send(result.clone()).is_err() {
