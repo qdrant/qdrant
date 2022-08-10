@@ -253,7 +253,7 @@ impl Segment {
     }
 
     // Joins flush thread if exists
-    // Returns lock to guarantee that there will no any fush in different thread
+    // Returns lock to guarantee that there will be no other flush in a different thread
     fn lock_flushing(
         &self,
     ) -> OperationResult<parking_lot::MutexGuard<Option<JoinHandle<OperationResult<SeqNumberType>>>>>
