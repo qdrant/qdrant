@@ -196,14 +196,21 @@ fn main() -> anyhow::Result<()> {
 
         handles.push(handle);
 
-        runtime_handle
-            .block_on(async {
-                consensus_state.is_leader_established.await_ready();
-                toc_arc
-                    .cancel_outgoing_all_transfers("Source peer restarted")
-                    .await
-            })
-            .unwrap();
+        let toc_arc_clone = toc_arc.clone();
+        let _cancel_transfer_handle = runtime_handle.spawn(async move {
+            consensus_state.is_leader_established.await_ready();
+            match toc_arc_clone
+                .cancel_outgoing_all_transfers("Source peer restarted")
+                .await
+            {
+                Ok(_) => {
+                    log::debug!("All transfers if any cancelled");
+                }
+                Err(err) => {
+                    log::error!("Can't cancel outgoing transfers: {}", err);
+                }
+            }
+        });
     } else {
         log::info!("Distributed mode disabled");
     }
