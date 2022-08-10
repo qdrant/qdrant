@@ -215,6 +215,7 @@ RETRY_INTERVAL_SEC = 0.5
 
 def wait_peer_added(peer_api_uri: str, expected_size: int = 1) -> str:
     wait_for(check_cluster_size, peer_api_uri, expected_size)
+    wait_for(leader_is_defined, peer_api_uri)
     return get_leader(peer_api_uri)
 
 
