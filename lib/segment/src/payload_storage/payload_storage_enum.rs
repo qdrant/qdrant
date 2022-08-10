@@ -1,5 +1,6 @@
 use serde_json::Value;
 
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
@@ -89,11 +90,11 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
-    fn flush(&self) -> OperationResult<()> {
+    fn flusher(&self) -> Flusher {
         match self {
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.flush(),
-            PayloadStorageEnum::SimplePayloadStorage(s) => s.flush(),
-            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.flush(),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.flusher(),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.flusher(),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.flusher(),
         }
     }
 }

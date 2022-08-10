@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
+use parking_lot::RwLock;
 use rocksdb::DB;
 
 use crate::index::field_index::geo_index::GeoMapIndex;
@@ -13,7 +13,7 @@ use crate::types::{FloatPayloadType, IntPayloadType, PayloadSchemaType};
 pub fn index_selector(
     field: &str,
     payload_type: &PayloadSchemaType,
-    db: Arc<AtomicRefCell<DB>>,
+    db: Arc<RwLock<DB>>,
 ) -> Vec<FieldIndex> {
     match payload_type {
         PayloadSchemaType::Keyword => {

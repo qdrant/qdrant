@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
+use parking_lot::RwLock;
 use rocksdb::{Error, LogLevel, Options, WriteOptions, DB};
 
 const DB_CACHE_SIZE: usize = 10 * 1024 * 1024; // 10 mb
@@ -29,13 +29,13 @@ pub fn db_options() -> Options {
     options
 }
 
-pub fn open_db(path: &Path) -> Result<Arc<AtomicRefCell<DB>>, Error> {
+pub fn open_db(path: &Path) -> Result<Arc<RwLock<DB>>, Error> {
     let db = DB::open_cf(
         &db_options(),
         path,
         &[DB_VECTOR_CF, DB_PAYLOAD_CF, DB_MAPPING_CF, DB_VERSIONS_CF],
     )?;
-    Ok(Arc::new(AtomicRefCell::new(db)))
+    Ok(Arc::new(RwLock::new(db)))
 }
 
 pub fn check_db_exists(path: &Path) -> bool {
@@ -43,14 +43,14 @@ pub fn check_db_exists(path: &Path) -> bool {
     db_file.exists()
 }
 
-pub fn open_db_with_existing_cf(path: &Path) -> Result<Arc<AtomicRefCell<DB>>, Error> {
+pub fn open_db_with_existing_cf(path: &Path) -> Result<Arc<RwLock<DB>>, Error> {
     let existing_column_families = if check_db_exists(path) {
         DB::list_cf(&db_options(), path)?
     } else {
         vec![]
     };
     let db = DB::open_cf(&db_options(), path, &existing_column_families)?;
-    Ok(Arc::new(AtomicRefCell::new(db)))
+    Ok(Arc::new(RwLock::new(db)))
 }
 
 pub fn db_write_options() -> WriteOptions {
@@ -60,18 +60,16 @@ pub fn db_write_options() -> WriteOptions {
     write_options
 }
 
-pub fn create_db_cf_if_not_exists(
-    db: Arc<AtomicRefCell<DB>>,
-    store_cf_name: &str,
-) -> Result<(), Error> {
-    if db.borrow().cf_handle(store_cf_name).is_none() {
-        db.borrow_mut().create_cf(store_cf_name, &db_options())?;
+pub fn create_db_cf_if_not_exists(db: Arc<RwLock<DB>>, store_cf_name: &str) -> Result<(), Error> {
+    let mut db_mut = db.write();
+    if db_mut.cf_handle(store_cf_name).is_none() {
+        db_mut.create_cf(store_cf_name, &db_options())?;
     }
     Ok(())
 }
 
-pub fn recreate_cf(db: Arc<AtomicRefCell<DB>>, store_cf_name: &str) -> Result<(), Error> {
-    let mut db_mut = db.borrow_mut();
+pub fn recreate_cf(db: Arc<RwLock<DB>>, store_cf_name: &str) -> Result<(), Error> {
+    let mut db_mut = db.write();
 
     if db_mut.cf_handle(store_cf_name).is_some() {
         db_mut.drop_cf(store_cf_name)?;

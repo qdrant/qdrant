@@ -8,7 +8,7 @@ use std::thread::JoinHandle;
 use atomic_refcell::AtomicRefCell;
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use fs_extra::dir::{copy_with_progress, CopyOptions, TransitProcess};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 use tar::Builder;
 
@@ -65,7 +65,7 @@ pub struct Segment {
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
     pub error_status: Option<SegmentFailedState>,
-    pub database: Arc<AtomicRefCell<DB>>,
+    pub database: Arc<RwLock<DB>>,
     pub flush_thread: Mutex<Option<JoinHandle<OperationResult<SeqNumberType>>>>,
 }
 
@@ -256,14 +256,18 @@ impl Segment {
     // Returns lock to guarantee that there will no any fush in different thread
     fn lock_flushing(
         &self,
-    ) -> parking_lot::MutexGuard<Option<JoinHandle<OperationResult<SeqNumberType>>>> {
+    ) -> OperationResult<parking_lot::MutexGuard<Option<JoinHandle<OperationResult<SeqNumberType>>>>>
+    {
         let mut lock = self.flush_thread.lock();
         let mut join_handle: Option<JoinHandle<OperationResult<SeqNumberType>>> = None;
         std::mem::swap(&mut join_handle, &mut lock);
         if let Some(join_handle) = join_handle {
-            join_handle.join().unwrap().unwrap();
+            // Flush result was reported to segment, so we don't need this value anymore
+            let _background_flush_result = join_handle
+                .join()
+                .map_err(|_err| OperationError::service_error("failed to join flush thread"))??;
         }
-        lock
+        Ok(lock)
     }
 }
 
@@ -592,7 +596,7 @@ impl SegmentEntry for Segment {
     }
 
     fn flush(&self, sync: bool) -> OperationResult<SeqNumberType> {
-        let mut background_flush_lock = self.lock_flushing();
+        let mut background_flush_lock = self.lock_flushing()?;
 
         let current_persisted_version: SeqNumberType = *self.persisted_version.lock();
         if current_persisted_version == self.version() {
@@ -601,23 +605,23 @@ impl SegmentEntry for Segment {
 
         let state = self.get_state();
         let current_path = self.current_path.clone();
-        let id_tracker = self.id_tracker.clone();
-        let vector_storage = self.vector_storage.clone();
-        let payload_index = self.payload_index.clone();
+        let id_tracker_mapping_flusher = self.id_tracker.borrow().mapping_flusher();
+        let vector_storage_flusher = self.vector_storage.borrow().flusher();
+        let payload_index_flusher = self.payload_index.borrow().flusher();
+        let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
         let persisted_version = self.persisted_version.clone();
         let flush_op = move || {
             // Flush mapping first to prevent having orphan internal ids.
-            id_tracker.borrow().flush_mapping().map_err(|err| {
+            id_tracker_mapping_flusher().map_err(|err| {
                 OperationError::service_error(&format!(
                     "Failed to flush id_tracker mapping: {}",
                     err
                 ))
             })?;
-            vector_storage.borrow().flush().map_err(|err| {
+            vector_storage_flusher().map_err(|err| {
                 OperationError::service_error(&format!("Failed to flush vector_storage: {}", err))
             })?;
-
-            payload_index.borrow().flush().map_err(|err| {
+            payload_index_flusher().map_err(|err| {
                 OperationError::service_error(&format!("Failed to flush payload_index: {}", err))
             })?;
             // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
@@ -626,7 +630,7 @@ impl SegmentEntry for Segment {
             // If Id Tracker flush fails, we are also able to recover data from WAL
             //  by simply overriding data in vector and payload storages.
             // Once versions are saved - points are considered persisted.
-            id_tracker.borrow().flush_versions().map_err(|err| {
+            id_tracker_versions_flusher().map_err(|err| {
                 OperationError::service_error(&format!(
                     "Failed to flush id_tracker versions: {}",
                     err
@@ -835,7 +839,6 @@ mod tests {
     use walkdir::WalkDir;
 
     use super::*;
-    use crate::entry::entry_point::SegmentEntry;
     use crate::segment_constructor::build_segment;
     use crate::types::{Distance, Indexes, SegmentConfig, StorageType};
 

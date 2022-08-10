@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::PayloadStorage;
@@ -49,8 +50,8 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(())
     }
 
-    fn flush(&self) -> OperationResult<()> {
-        Ok(())
+    fn flusher(&self) -> Flusher {
+        Box::new(|| Ok(()))
     }
 }
 
