@@ -81,9 +81,9 @@ pub fn init(
                 .app_data(telemetry_collector_data.clone())
                 .app_data(Data::new(
                     web::JsonConfig::default()
-                        .limit(32 * 1024 * 1024)
+                        .limit(settings.service.max_request_size_mb * 1024 * 1024)
                         .error_handler(json_error_handler),
-                )) // 32 Mb
+                ))
                 .service(index)
                 .configure(config_collections_api)
                 .configure(config_snapshots_api)
