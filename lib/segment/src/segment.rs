@@ -269,6 +269,15 @@ impl Segment {
         }
         Ok(lock)
     }
+
+    fn is_background_flushing(&self) -> bool {
+        let lock = self.flush_thread.lock();
+        if let Some(join_handle) = lock.as_ref() {
+            !join_handle.is_finished()
+        } else {
+            false
+        }
+    }
 }
 
 /// This is a basic implementation of `SegmentEntry`,
@@ -596,9 +605,12 @@ impl SegmentEntry for Segment {
     }
 
     fn flush(&self, sync: bool) -> OperationResult<SeqNumberType> {
-        let mut background_flush_lock = self.lock_flushing()?;
-
         let current_persisted_version: SeqNumberType = *self.persisted_version.lock();
+        if !sync && self.is_background_flushing() {
+            return Ok(current_persisted_version);
+        }
+
+        let mut background_flush_lock = self.lock_flushing()?;
         if current_persisted_version == self.version() {
             return Ok(current_persisted_version);
         }
