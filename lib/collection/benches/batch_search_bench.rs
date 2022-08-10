@@ -15,7 +15,7 @@ use rand::thread_rng;
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::types::{Condition, Distance, FieldCondition, Filter, Payload, Range};
 use serde_json::Map;
-use tempdir::TempDir;
+use tempfile::Builder;
 use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
 
@@ -41,7 +41,7 @@ fn create_rnd_batch() -> CollectionUpdateOperations {
 }
 
 fn batch_search_bench(c: &mut Criterion) {
-    let storage_dir = TempDir::new("storage").unwrap();
+    let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
 
     let runtime = Runtime::new().unwrap();
     let search_runtime = Runtime::new().unwrap();
