@@ -193,6 +193,15 @@
       "contributions": [
         "bug"
       ]
+    },
+    {
+      "login": "russcam",
+      "name": "Russ Cam",
+      "avatar_url": "https://avatars.githubusercontent.com/u/208231?v=4",
+      "profile": "https://forloop.co.uk/blog",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,
