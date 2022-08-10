@@ -286,7 +286,7 @@ checksum = "c794e162a5eff65c72ef524dfe393eb923c354e350bb78b9c7383df13f3bc142"
 
 [[package]]
 name = "api"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "chrono",
  "prost 0.10.4",
@@ -2684,7 +2684,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "actix-cors",
  "actix-files",
