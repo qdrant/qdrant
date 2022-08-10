@@ -1,6 +1,7 @@
 use std::num::{NonZeroU32, NonZeroU64};
 
 use segment::types::Distance;
+use tempfile::Builder;
 
 use crate::collection::Collection;
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
@@ -40,9 +41,12 @@ async fn test_snapshot_collection() {
         hnsw_config: Default::default(),
     };
 
-    let snapshots_path = tempdir::TempDir::new("test_snapshots").unwrap();
-    let collection_dir = tempdir::TempDir::new("test_collection").unwrap();
-    let recover_dir = tempdir::TempDir::new("test_collection_rec").unwrap();
+    let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();
+    let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+    let recover_dir = Builder::new()
+        .prefix("test_collection_rec")
+        .tempdir()
+        .unwrap();
     let collection_name = "test".to_string();
     let collection_name_rec = "test_rec".to_string();
 

@@ -8,7 +8,7 @@ edition = "2021"
 
 [dev-dependencies]
 pprof = { version = "0.10", features = ["flamegraph", "prost-codec"] }
-tempdir = "0.3.7"
+tempfile = "3.3.0"
 criterion = "0.3"
 rmp-serde = "~1.1"
 rand_distr = "0.4.3"

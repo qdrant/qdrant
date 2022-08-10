@@ -117,16 +117,16 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 mod tests {
     use super::*;
 
-    extern crate tempdir;
+    extern crate tempfile;
 
     use std::fs;
     use std::os::unix::fs::MetadataExt;
 
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     #[test]
     fn test_wal() {
-        let dir = TempDir::new("wal_test").unwrap();
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
         let wal_options = WalOptions {
             segment_capacity: 32 * 1024 * 1024,
             segment_queue_len: 0,

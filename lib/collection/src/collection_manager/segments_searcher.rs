@@ -141,14 +141,14 @@ async fn search_in_segment(
 
 #[cfg(test)]
 mod tests {
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::collection_manager::fixtures::build_test_holder;
 
     #[tokio::test]
     async fn test_segments_search() {
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
         let segment_holder = build_test_holder(dir.path());
 
@@ -179,7 +179,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retrieve() {
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment_holder = build_test_holder(dir.path());
 
         let records = SegmentsSearcher::retrieve(

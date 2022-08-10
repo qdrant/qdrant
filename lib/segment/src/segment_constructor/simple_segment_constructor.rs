@@ -31,21 +31,21 @@ pub fn build_simple_segment(
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::entry::entry_point::{OperationError, SegmentEntry};
 
     #[test]
     fn test_create_simple_segment() {
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment = build_simple_segment(dir.path(), 100, Distance::Dot).unwrap();
         eprintln!(" = {:?}", segment.version());
     }
 
     #[test]
     fn test_add_and_search() {
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
 
         let wrong_vec = vec![1.0, 1.0, 1.0];

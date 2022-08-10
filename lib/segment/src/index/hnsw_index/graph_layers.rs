@@ -340,7 +340,7 @@ mod tests {
     use itertools::Itertools;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::fixtures::index_fixtures::{
@@ -431,7 +431,7 @@ mod tests {
 
         let res1 = search_in_graph(&query, top, &vector_holder, &graph_layers);
 
-        let dir = TempDir::new("graph_dir").unwrap();
+        let dir = Builder::new().prefix("graph_dir").tempdir().unwrap();
 
         let path = GraphLayers::get_path(dir.path());
         graph_layers.save(&path).unwrap();

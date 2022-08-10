@@ -435,14 +435,14 @@ mod tests {
 
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
     use segment::types::Distance;
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::collection_manager::fixtures::{build_segment_1, build_segment_2};
 
     #[test]
     fn test_add_and_swap() {
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment1 = build_segment_1(dir.path());
         let segment2 = build_segment_2(dir.path());
 
@@ -463,7 +463,7 @@ mod tests {
 
     #[test]
     fn test_aloha_locking() {
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
         let segment1 = build_segment_1(dir.path());
         let segment2 = build_segment_2(dir.path());
@@ -498,7 +498,7 @@ mod tests {
 
     #[test]
     fn test_apply_to_appendable() {
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
         let segment1 = build_segment_1(dir.path());
         let mut segment2 = build_segment_2(dir.path());
@@ -538,7 +538,7 @@ mod tests {
 
     #[test]
     fn test_snapshot_all() {
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment1 = build_segment_1(dir.path());
         let segment2 = build_segment_2(dir.path());
 
@@ -548,7 +548,7 @@ mod tests {
         let sid2 = holder.add(segment2);
         assert_ne!(sid1, sid2);
 
-        let snapshot_dir = TempDir::new("snapshot_dir").unwrap();
+        let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
         holder.snapshot_all_segments(snapshot_dir.path()).unwrap();
 
         let archive_count = read_dir(&snapshot_dir).unwrap().into_iter().count();

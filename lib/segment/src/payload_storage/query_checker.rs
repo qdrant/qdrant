@@ -211,7 +211,7 @@ mod tests {
     use std::collections::HashSet;
 
     use serde_json::json;
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::common::rocksdb_operations::open_db;
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn test_condition_checker() {
-        let dir = TempDir::new("db_dir").unwrap();
+        let dir = Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir.path()).unwrap();
 
         let payload: Payload = json!(

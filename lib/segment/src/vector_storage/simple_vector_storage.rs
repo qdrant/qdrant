@@ -332,14 +332,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::common::rocksdb_operations::open_db;
 
     #[test]
     fn test_score_points() {
-        let dir = TempDir::new("storage_dir").unwrap();
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(dir.path()).unwrap();
         let distance = Distance::Dot;
         let dim = 4;

@@ -6,7 +6,7 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::entry::entry_point::SegmentEntry;
 use segment::types::{PayloadKeyType, PayloadSchemaType, PointIdType};
-use tempdir::TempDir;
+use tempfile::Builder;
 
 use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -42,7 +42,7 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
 
 #[test]
 fn test_update_proxy_segments() {
-    let dir = TempDir::new("segment_dir").unwrap();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
     let segment1 = build_segment_1(dir.path());
     let segment2 = build_segment_2(dir.path());
@@ -78,7 +78,7 @@ fn test_update_proxy_segments() {
 
 #[test]
 fn test_move_points_to_copy_on_write() {
-    let dir = TempDir::new("segment_dir").unwrap();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
     let segment1 = build_segment_1(dir.path());
     let segment2 = build_segment_2(dir.path());

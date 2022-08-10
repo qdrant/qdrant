@@ -792,7 +792,7 @@ mod tests {
     use std::fs;
 
     use tar::Archive;
-    use tempdir::TempDir;
+    use tempfile::Builder;
     use walkdir::WalkDir;
 
     use super::*;
@@ -813,7 +813,7 @@ mod tests {
     //         "array": [1, "hello"],
     //     }"#;
     //
-    //     let dir = TempDir::new("payload_dir").unwrap();
+    //     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
     //     let dim = 2;
     //     let config = SegmentConfig {
     //         vector_size: dim,
@@ -846,7 +846,7 @@ mod tests {
             }
         }"#;
 
-        let dir = TempDir::new("payload_dir").unwrap();
+        let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
         let dim = 2;
         let config = SegmentConfig {
             vector_size: dim,
@@ -926,7 +926,7 @@ mod tests {
             }
         }"#;
 
-        let segment_base_dir = TempDir::new("segment_dir").unwrap();
+        let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let config = SegmentConfig {
             vector_size: 2,
             index: Indexes::Plain {},
@@ -948,7 +948,7 @@ mod tests {
             .count();
         assert_eq!(segment_file_count, 20);
 
-        let snapshot_dir = TempDir::new("snapshot_dir").unwrap();
+        let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
 
         // snapshotting!
         segment.take_snapshot(snapshot_dir.path()).unwrap();
@@ -975,7 +975,10 @@ mod tests {
         assert!(archive_name.starts_with(segment_id));
 
         // decompress archive
-        let snapshot_decompress_dir = TempDir::new("snapshot_decompress_dir").unwrap();
+        let snapshot_decompress_dir = Builder::new()
+            .prefix("snapshot_decompress_dir")
+            .tempdir()
+            .unwrap();
         let archive_file = File::open(archive).unwrap();
         let mut ar = Archive::new(archive_file);
         ar.unpack(snapshot_decompress_dir.path()).unwrap();
@@ -999,7 +1002,7 @@ mod tests {
             }
         }"#;
 
-        let segment_base_dir = TempDir::new("segment_dir").unwrap();
+        let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let config = SegmentConfig {
             vector_size: 2,
             index: Indexes::Plain {},
@@ -1021,7 +1024,7 @@ mod tests {
             .count();
         assert_eq!(segment_file_count, 20);
 
-        let segment_copy_dir = TempDir::new("segment_copy_dir").unwrap();
+        let segment_copy_dir = Builder::new().prefix("segment_copy_dir").tempdir().unwrap();
         let full_copy_path = segment
             .copy_segment_directory(segment_copy_dir.path())
             .unwrap();

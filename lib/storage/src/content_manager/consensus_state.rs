@@ -605,6 +605,7 @@ mod tests {
     use proptest::prelude::*;
     use raft::eraftpb::Entry;
     use raft::storage::{MemStorage, Storage};
+    use tempfile::Builder;
 
     use super::ConsensusState;
     use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
@@ -615,7 +616,7 @@ mod tests {
 
     #[test]
     fn update_is_applied() {
-        let dir = tempdir::TempDir::new("raft_state_test").unwrap();
+        let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
         let mut state = Persistent::load_or_init(dir.path(), false).unwrap();
         assert_eq!(state.state().hard_state.commit, 0);
         state
@@ -637,7 +638,7 @@ mod tests {
 
     #[test]
     fn state_is_loaded() {
-        let dir = tempdir::TempDir::new("raft_state_test").unwrap();
+        let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
         let mut state = Persistent::load_or_init(dir.path(), false).unwrap();
         state
             .apply_state_update(|state| state.hard_state.commit = 1)
@@ -666,7 +667,7 @@ mod tests {
 
     #[test]
     fn correct_entry_with_offset() {
-        let dir = tempdir::TempDir::new("raft_state_test").unwrap();
+        let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
         let mut wal = ConsensusOpWal::new(dir.path().to_str().unwrap());
         wal.append_entries(vec![Entry {
             index: 4,
@@ -688,7 +689,7 @@ mod tests {
 
     #[test]
     fn at_least_1_entry() {
-        let dir = tempdir::TempDir::new("raft_state_test").unwrap();
+        let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
         let mut wal = ConsensusOpWal::new(dir.path().to_str().unwrap());
         wal.append_entries(vec![
             Entry {
@@ -760,7 +761,7 @@ mod tests {
     proptest! {
         #[test]
         fn check_first_and_last_indexes(entries in gen_entries(0, 100)) {
-            let dir = tempdir::TempDir::new("raft_state_test").unwrap();
+            let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
             let (consensus_state, mem_storage) = setup_storages(entries, dir.path());
             prop_assert_eq!(mem_storage.last_index(), consensus_state.last_index());
             prop_assert_eq!(mem_storage.first_index(), consensus_state.first_index());
@@ -768,7 +769,7 @@ mod tests {
 
         #[test]
         fn check_term(entries in gen_entries(0, 100), id in 0u64..100) {
-            let dir = tempdir::TempDir::new("raft_state_test").unwrap();
+            let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
             let (consensus_state, mem_storage) = setup_storages(entries, dir.path());
             prop_assert_eq!(mem_storage.term(id), consensus_state.term(id))
         }
@@ -779,7 +780,7 @@ mod tests {
                 len in 1u64..100,
                 max_size in proptest::option::of(proptest::num::u64::ANY)
             ) {
-            let dir = tempdir::TempDir::new("raft_state_test").unwrap();
+            let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
             let (consensus_state, mem_storage) = setup_storages(entries, dir.path());
             let mut high = low + len;
             let last_index = mem_storage.last_index().unwrap();

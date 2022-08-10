@@ -77,11 +77,13 @@ impl<T> Deref for SaveOnDisk<T> {
 mod tests {
     use std::fs;
 
+    use tempfile::Builder;
+
     use super::SaveOnDisk;
 
     #[test]
     fn saves_data() {
-        let dir = tempdir::TempDir::new("test").unwrap();
+        let dir = Builder::new().prefix("test").tempdir().unwrap();
         let counter_file = dir.path().join("counter");
         let mut counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
         counter.write(|counter| *counter += 1).unwrap();
@@ -100,7 +102,7 @@ mod tests {
 
     #[test]
     fn loads_data() {
-        let dir = tempdir::TempDir::new("test").unwrap();
+        let dir = Builder::new().prefix("test").tempdir().unwrap();
         let counter_file = dir.path().join("counter");
         let mut counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
         counter.write(|counter| *counter += 1).unwrap();

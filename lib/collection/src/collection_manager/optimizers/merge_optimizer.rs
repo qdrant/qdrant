@@ -153,7 +153,7 @@ mod tests {
     use std::sync::Arc;
 
     use parking_lot::RwLock;
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::collection_manager::fixtures::{get_merge_optimizer, random_segment};
@@ -161,8 +161,8 @@ mod tests {
 
     #[test]
     fn test_max_merge_size() {
-        let dir = TempDir::new("segment_dir").unwrap();
-        let temp_dir = TempDir::new("segment_temp_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
         let mut holder = SegmentHolder::default();
         let dim = 256;
@@ -195,8 +195,8 @@ mod tests {
 
     #[test]
     fn test_merge_optimizer() {
-        let dir = TempDir::new("segment_dir").unwrap();
-        let temp_dir = TempDir::new("segment_temp_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
         let mut holder = SegmentHolder::default();
         let dim = 256;

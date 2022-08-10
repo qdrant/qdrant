@@ -87,7 +87,7 @@ dependencies = [
  "mime",
  "percent-encoding",
  "pin-project-lite",
- "rand 0.8.5",
+ "rand",
  "sha1",
  "smallvec",
  "tracing",
@@ -291,7 +291,7 @@ dependencies = [
  "chrono",
  "prost 0.10.4",
  "prost-types 0.10.1",
- "rand 0.8.5",
+ "rand",
  "schemars",
  "segment",
  "serde",
@@ -828,7 +828,7 @@ dependencies = [
  "num_cpus",
  "ordered-float",
  "parking_lot",
- "rand 0.8.5",
+ "rand",
  "rmp-serde",
  "schemars",
  "segment",
@@ -837,7 +837,7 @@ dependencies = [
  "serde_cbor",
  "serde_json",
  "tar",
- "tempdir",
+ "tempfile",
  "thiserror",
  "tokio",
  "tonic",
@@ -1340,12 +1340,6 @@ name = "fsio"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1fd087255f739f4f1aeea69f11b72f8080e9c2e7645cd06955dad4a178a49e3"
-
-[[package]]
-name = "fuchsia-cprng"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a06f77d526c1a601b7c4cdd98f54b5eaabffc14d5f2f0296febdc7f357c6d3ba"
 
 [[package]]
 name = "funty"
@@ -2553,7 +2547,7 @@ dependencies = [
  "lazy_static",
  "num-traits",
  "quick-error 2.0.1",
- "rand 0.8.5",
+ "rand",
  "rand_chacha",
  "rand_xorshift",
  "regex-syntax",
@@ -2725,7 +2719,7 @@ dependencies = [
  "storage",
  "sys-info",
  "tar",
- "tempdir",
+ "tempfile",
  "thiserror",
  "tokio",
  "tonic",
@@ -2779,7 +2773,7 @@ dependencies = [
  "getset",
  "protobuf",
  "raft-proto",
- "rand 0.8.5",
+ "rand",
  "slog",
  "thiserror",
 ]
@@ -2797,26 +2791,13 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.4.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "552840b97013b1a26992c11eac34bdd778e464601a4c2054b5f0bff7c6761293"
-dependencies = [
- "fuchsia-cprng",
- "libc",
- "rand_core 0.3.1",
- "rdrand",
- "winapi 0.3.9",
-]
-
-[[package]]
-name = "rand"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
 dependencies = [
  "libc",
  "rand_chacha",
- "rand_core 0.6.3",
+ "rand_core",
 ]
 
 [[package]]
@@ -2826,23 +2807,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
 dependencies = [
  "ppv-lite86",
- "rand_core 0.6.3",
+ "rand_core",
 ]
-
-[[package]]
-name = "rand_core"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a6fdeb83b075e8266dcc8762c22776f6877a63111121f5f8c7411e5be7eed4b"
-dependencies = [
- "rand_core 0.4.2",
-]
-
-[[package]]
-name = "rand_core"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c33a3c44ca05fa6f1807d8e6743f3824e8509beca625669633be0acbdf509dc"
 
 [[package]]
 name = "rand_core"
@@ -2860,7 +2826,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
 dependencies = [
  "num-traits",
- "rand 0.8.5",
+ "rand",
 ]
 
 [[package]]
@@ -2869,7 +2835,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d25bf25ec5ae4a3f1b92f929810509a2f53d7dca2f50b794ff57e3face536c8f"
 dependencies = [
- "rand_core 0.6.3",
+ "rand_core",
 ]
 
 [[package]]
@@ -2894,15 +2860,6 @@ dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
  "num_cpus",
-]
-
-[[package]]
-name = "rdrand"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "678054eb77286b51581ba43620cc911abf02758c91f93f479767aed0f90458b2"
-dependencies = [
- "rand_core 0.3.1",
 ]
 
 [[package]]
@@ -3176,7 +3133,7 @@ dependencies = [
  "ordered-float",
  "parking_lot",
  "pprof",
- "rand 0.8.5",
+ "rand",
  "rand_distr",
  "rayon",
  "rmp-serde",
@@ -3187,7 +3144,7 @@ dependencies = [
  "serde_cbor",
  "serde_json",
  "tar",
- "tempdir",
+ "tempfile",
  "thiserror",
  "uuid",
  "walkdir",
@@ -3404,14 +3361,14 @@ dependencies = [
  "proptest",
  "prost 0.9.0",
  "raft",
- "rand 0.8.5",
+ "rand",
  "schemars",
  "segment",
  "serde",
  "serde_cbor",
  "serde_json",
  "tar",
- "tempdir",
+ "tempfile",
  "thiserror",
  "tokio",
  "tonic",
@@ -3505,16 +3462,6 @@ dependencies = [
  "filetime",
  "libc",
  "xattr",
-]
-
-[[package]]
-name = "tempdir"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15f2b5fb00ccdf689e0149d1b1b3c03fead81c2b37735d812fa8bddbbf41b6d8"
-dependencies = [
- "rand 0.4.6",
- "remove_dir_all",
 ]
 
 [[package]]
@@ -3782,7 +3729,7 @@ dependencies = [
  "indexmap",
  "pin-project",
  "pin-project-lite",
- "rand 0.8.5",
+ "rand",
  "slab",
  "tokio",
  "tokio-util",
@@ -4011,7 +3958,7 @@ dependencies = [
  "fs2",
  "log 0.4.17",
  "memmap 0.5.2",
- "rand 0.8.5",
+ "rand",
  "rand_distr",
  "serde",
 ]
