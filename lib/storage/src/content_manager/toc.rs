@@ -497,10 +497,10 @@ impl TableOfContent {
         Ok(())
     }
 
-    pub async fn get_collection<'a>(
-        &'a self,
+    pub async fn get_collection(
+        &self,
         collection_name: &str,
-    ) -> Result<RwLockReadGuard<'a, Collection>, StorageError> {
+    ) -> Result<RwLockReadGuard<Collection>, StorageError> {
         let read_collection = self.collections.read().await;
         let real_collection_name = self.resolve_name(collection_name).await?;
         // resolve_name already checked collection existence, unwrap is safe here
