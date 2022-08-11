@@ -76,8 +76,7 @@ impl StructPayloadIndex {
                 indexes
                     .iter()
                     .map(|field_index| field_index.filter(field_condition))
-                    .find(|filter_iter| filter_iter.is_some())
-                    .map(|filter_iter| filter_iter.unwrap())
+                    .find_map(|filter_iter| filter_iter)
             });
         indexes
     }
