@@ -472,7 +472,7 @@ impl<'a> Deref for OwnedPayloadRef<'a> {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            OwnedPayloadRef::Ref(reference) => *reference,
+            OwnedPayloadRef::Ref(reference) => reference,
             OwnedPayloadRef::Owned(owned) => owned.deref(),
         }
     }
@@ -481,7 +481,7 @@ impl<'a> Deref for OwnedPayloadRef<'a> {
 impl<'a> AsRef<Payload> for OwnedPayloadRef<'a> {
     fn as_ref(&self) -> &Payload {
         match self {
-            OwnedPayloadRef::Ref(reference) => *reference,
+            OwnedPayloadRef::Ref(reference) => reference,
             OwnedPayloadRef::Owned(owned) => owned.deref(),
         }
     }
