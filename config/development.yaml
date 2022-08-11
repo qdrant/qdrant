@@ -16,4 +16,4 @@ storage:
 
   optimizers:
     # Minimum interval between forced flushes.
-    flush_interval_sec: 1
+    flush_interval_sec: 5
