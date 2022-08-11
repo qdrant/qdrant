@@ -562,13 +562,14 @@ impl LocalShard {
         let distance = self.config.read().await.params.distance;
         let top_results = res
             .into_iter()
-            .map(|vector_res| {
+            .zip(request.searches.iter())
+            .map(|(vector_res, req)| {
                 let processed_res = vector_res.into_iter().map(|mut scored_point| {
                     scored_point.score = distance.postprocess_score(scored_point.score);
                     scored_point
                 });
 
-                if let Some(threshold) = request.score_threshold {
+                if let Some(threshold) = req.score_threshold {
                     processed_res
                         .take_while(|scored_point| {
                             distance.check_threshold(scored_point.score, threshold)

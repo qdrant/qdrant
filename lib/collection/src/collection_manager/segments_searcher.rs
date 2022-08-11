@@ -7,7 +7,8 @@ use parking_lot::RwLock;
 use segment::entry::entry_point::OperationError;
 use segment::spaces::tools::peek_top_largest_scores_iterable;
 use segment::types::{
-    PointIdType, ScoredPoint, SeqNumberType, VectorElementType, WithPayload, WithPayloadInterface,
+    Filter, PointIdType, ScoredPoint, SearchParams, SeqNumberType, VectorElementType, WithPayload,
+    WithPayloadInterface,
 };
 use tokio::runtime::Handle;
 
@@ -113,7 +114,7 @@ impl SegmentsSearcher {
 
         let mut seen_idx: HashSet<PointIdType> = HashSet::new();
 
-        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; request.vectors.len()];
+        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; request.searches.len()];
         for segment_result in all_search_results {
             let segment_result = segment_result.unwrap();
             for (idx, query_res) in segment_result.into_iter().enumerate() {
@@ -123,7 +124,8 @@ impl SegmentsSearcher {
 
         let top_scores = merged_results
             .into_iter()
-            .map(|all_search_results_per_vector| {
+            .zip(request.searches.iter())
+            .map(|(all_search_results_per_vector, req)| {
                 peek_top_largest_scores_iterable(
                     all_search_results_per_vector
                         .into_iter()
@@ -134,7 +136,7 @@ impl SegmentsSearcher {
                             seen_idx.insert(scored.id);
                             !res
                         }),
-                    request.limit + request.offset,
+                    req.limit + req.offset,
                 )
             })
             .collect();
@@ -208,30 +210,70 @@ async fn search_in_segment(
     Ok(res)
 }
 
+#[derive(PartialEq, Default)]
+struct BatchSearchParams<'a> {
+    pub filter: Option<&'a Filter>,
+    pub with_payload: WithPayload,
+    pub with_vector: bool,
+    pub top: usize,
+    pub params: Option<&'a SearchParams>,
+}
+
 async fn search_batch_in_segment(
     segment: LockedSegment,
     request: Arc<SearchRequestBatch>,
 ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-    let with_payload_interface = request
-        .with_payload
-        .as_ref()
-        .unwrap_or(&WithPayloadInterface::Bool(false));
-    let with_payload = WithPayload::from(with_payload_interface);
-    let with_vector = request.with_vector;
+    let mut result: Vec<Vec<ScoredPoint>> = vec![];
+    let mut vectors_batch: Vec<&[VectorElementType]> = vec![];
+    let mut prev_params = BatchSearchParams::default();
 
-    let vectors: Vec<&[VectorElementType]> =
-        request.vectors.iter().map(|x| x.as_ref()).collect_vec();
+    for search_query in &request.searches {
+        let with_payload_interface = search_query
+            .with_payload
+            .as_ref()
+            .unwrap_or(&WithPayloadInterface::Bool(false));
 
-    let res = segment.get().read().search_batch(
-        &vectors,
-        &with_payload,
-        with_vector,
-        request.filter.as_ref(),
-        request.limit + request.offset,
-        request.params.as_ref(),
-    )?;
+        let params = BatchSearchParams {
+            filter: search_query.filter.as_ref(),
+            with_payload: WithPayload::from(with_payload_interface),
+            with_vector: search_query.with_vector,
+            top: search_query.limit + search_query.offset,
+            params: search_query.params.as_ref(),
+        };
 
-    Ok(res)
+        if params == prev_params {
+            vectors_batch.push(search_query.vector.as_ref());
+        } else {
+            if !vectors_batch.is_empty() {
+                let mut res = segment.get().read().search_batch(
+                    &vectors_batch,
+                    &prev_params.with_payload,
+                    prev_params.with_vector,
+                    prev_params.filter,
+                    prev_params.top,
+                    prev_params.params,
+                )?;
+                result.append(&mut res);
+                vectors_batch.clear();
+            }
+            vectors_batch.push(search_query.vector.as_ref());
+            prev_params = params;
+        }
+    }
+
+    if !vectors_batch.is_empty() {
+        let mut res = segment.get().read().search_batch(
+            &vectors_batch,
+            &prev_params.with_payload,
+            prev_params.with_vector,
+            prev_params.filter,
+            prev_params.top,
+            prev_params.params,
+        )?;
+        result.append(&mut res);
+    }
+
+    Ok(result)
 }
 
 #[cfg(test)]

@@ -111,12 +111,14 @@ fn batch_search_bench(c: &mut Criterion) {
         ))),
     ];
 
+    let batch_size = 100;
+
     for (fid, filter) in filters.into_iter().enumerate() {
         group.bench_function(format!("search-{fid}"), |b| {
             b.iter(|| {
                 runtime.block_on(async {
                     let mut rng = thread_rng();
-                    for _i in 0..100 {
+                    for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
                         let search_query = SearchRequest {
                             vector: query,
@@ -142,22 +144,23 @@ fn batch_search_bench(c: &mut Criterion) {
             b.iter(|| {
                 runtime.block_on(async {
                     let mut rng = thread_rng();
-                    let mut vectors = Vec::new();
-                    for _i in 0..100 {
+                    let mut searches = Vec::new();
+                    for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
-                        vectors.push(query);
+                        let search_query = SearchRequest {
+                            vector: query,
+                            filter: filter.clone(),
+                            params: None,
+                            limit: 10,
+                            offset: 0,
+                            with_payload: None,
+                            with_vector: false,
+                            score_threshold: None,
+                        };
+                        searches.push(search_query);
                     }
 
-                    let search_query = SearchRequestBatch {
-                        vectors,
-                        filter: filter.clone(),
-                        params: None,
-                        limit: 10,
-                        offset: 0,
-                        with_payload: None,
-                        with_vector: false,
-                        score_threshold: None,
-                    };
+                    let search_query = SearchRequestBatch { searches };
                     let result = (&shard)
                         .search_batch(Arc::new(search_query), search_runtime_handle)
                         .await
