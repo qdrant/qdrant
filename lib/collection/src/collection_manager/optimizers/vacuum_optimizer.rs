@@ -244,7 +244,7 @@ mod tests {
         // Check only one new segment
         assert_eq!(after_optimization_segments.len(), 1);
 
-        let optimized_segment_id = *after_optimization_segments.get(0).unwrap();
+        let optimized_segment_id = *after_optimization_segments.first().unwrap();
 
         let holder_guard = locked_holder.read();
         let optimized_segment = holder_guard.get(optimized_segment_id).unwrap();
