@@ -659,7 +659,11 @@ impl SegmentEntry for Segment {
         if sync {
             flush_op()
         } else {
-            *background_flush_lock = Some(std::thread::spawn(flush_op));
+            *background_flush_lock = Some(
+              std::thread::Builder::new()
+                .name("background_flush".to_string())
+                .spawn(flush_op)
+                .unwrap());
             Ok(current_persisted_version)
         }
     }
