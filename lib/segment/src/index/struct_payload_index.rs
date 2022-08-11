@@ -404,13 +404,10 @@ impl PayloadIndex for StructPayloadIndex {
 
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         for (field, field_index) in &mut self.field_indexes {
-            match payload.get_value(field) {
-                Some(field_value) => {
-                    for index in field_index {
-                        index.add_point(point_id, field_value)?;
-                    }
+            if let Some(field_value) = payload.get_value(field) {
+                for index in field_index {
+                    index.add_point(point_id, field_value)?;
                 }
-                None => {}
             }
         }
         self.payload.borrow_mut().assign(point_id, payload)
