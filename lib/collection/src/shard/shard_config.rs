@@ -8,14 +8,14 @@ use crate::shard::PeerId;
 
 pub const SHARD_CONFIG_FILE: &str = "shard_config.json";
 
-#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq)]
 pub enum ShardType {
     Local,
     Remote { peer_id: PeerId },
     Temporary, // same as local, but not ready yet
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub struct ShardConfig {
     pub r#type: ShardType,
 }
