@@ -1093,4 +1093,36 @@ mod tests {
 
         assert_eq!(copy_segment_file_count, segment_file_count);
     }
+
+    #[test]
+    fn test_background_flush() {
+        let data = r#"
+        {
+            "name": "John Doe",
+            "age": 43,
+            "metadata": {
+                "height": 50,
+                "width": 60
+            }
+        }"#;
+
+        let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let config = SegmentConfig {
+            vector_size: 2,
+            index: Indexes::Plain {},
+            storage_type: StorageType::InMemory,
+            distance: Distance::Dot,
+            payload_storage_type: Default::default(),
+        };
+
+        let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
+        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
+
+        let payload: Payload = serde_json::from_str(data).unwrap();
+        segment.set_full_payload(0, 0.into(), &payload).unwrap();
+        segment.flush(false).unwrap();
+
+        // call flush second time to check that background flush finished successful
+        segment.flush(true).unwrap();
+    }
 }
