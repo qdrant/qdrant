@@ -13,7 +13,7 @@ pub const ALIAS_MAPPING_CONFIG_FILE: &str = "data.json";
 
 type Alias = String;
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, Default)]
 pub struct AliasMapping(HashMap<Alias, CollectionId>);
 
 impl AliasMapping {
@@ -84,11 +84,9 @@ impl AliasPersistence {
         new_alias_name: String,
     ) -> Result<(), StorageError> {
         match self.get(old_alias_name) {
-            None => {
-                return Err(StorageError::NotFound {
-                    description: format!("Alias {} does not exists!", old_alias_name),
-                })
-            }
+            None => Err(StorageError::NotFound {
+                description: format!("Alias {} does not exists!", old_alias_name),
+            }),
             Some(collection_name) => {
                 self.alias_mapping.0.remove(old_alias_name);
                 self.alias_mapping.0.insert(new_alias_name, collection_name);
