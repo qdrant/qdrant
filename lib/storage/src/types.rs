@@ -66,7 +66,7 @@ pub struct RaftInfo {
     pub is_voter: bool,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, Serialize, JsonSchema, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, JsonSchema, Deserialize)]
 pub enum StateRole {
     /// The node is a follower of the leader.
     Follower,

@@ -15,7 +15,7 @@ pub fn error_to_status(error: StorageError) -> tonic::Status {
         StorageError::ServiceError { .. } => tonic::Code::Internal,
         StorageError::BadRequest { .. } => tonic::Code::InvalidArgument,
     };
-    return tonic::Status::new(error_code, format!("{}", error));
+    tonic::Status::new(error_code, format!("{}", error))
 }
 
 impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
