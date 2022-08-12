@@ -172,7 +172,7 @@ impl PartialEq for ScoredPoint {
 }
 
 /// Type of segment
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SegmentType {
     /// There are no index built for the segment, all operations are available
@@ -184,14 +184,14 @@ pub enum SegmentType {
 }
 
 /// Payload field type & index information
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct PayloadIndexInfo {
     pub data_type: PayloadSchemaType,
 }
 
 /// Aggregated information about segment
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentInfo {
     pub segment_type: SegmentType,
@@ -205,7 +205,7 @@ pub struct SegmentInfo {
 }
 
 /// Additional parameters of the search
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index
@@ -393,7 +393,7 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct Payload(pub Map<String, Value>);
 
 impl Payload {
@@ -472,7 +472,7 @@ impl<'a> Deref for OwnedPayloadRef<'a> {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            OwnedPayloadRef::Ref(reference) => *reference,
+            OwnedPayloadRef::Ref(reference) => reference,
             OwnedPayloadRef::Owned(owned) => owned.deref(),
         }
     }
@@ -481,7 +481,7 @@ impl<'a> Deref for OwnedPayloadRef<'a> {
 impl<'a> AsRef<Payload> for OwnedPayloadRef<'a> {
     fn as_ref(&self) -> &Payload {
         match self {
-            OwnedPayloadRef::Ref(reference) => *reference,
+            OwnedPayloadRef::Ref(reference) => reference,
             OwnedPayloadRef::Owned(owned) => owned.deref(),
         }
     }
@@ -509,7 +509,7 @@ impl<'a> From<&'a Payload> for OwnedPayloadRef<'a> {
 /// {..., "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}},
 /// {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}},
 /// ```
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum PayloadVariant<T> {
@@ -589,7 +589,7 @@ pub fn infer_value_type(value: &Value) -> Option<PayloadSchemaType> {
 }
 
 /// Match by keyword (deprecated)
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[deprecated]
 pub struct MatchKeyword {
@@ -599,7 +599,7 @@ pub struct MatchKeyword {
 }
 
 /// Match filter request (deprecated)
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[deprecated]
 pub struct MatchInteger {
@@ -608,7 +608,7 @@ pub struct MatchInteger {
     pub integer: IntPayloadType,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum ValueVariants {
     Keyword(String),
@@ -616,14 +616,14 @@ pub enum ValueVariants {
     Bool(bool),
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct MatchValue {
     pub value: ValueVariants,
 }
 
 /// Match filter request
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum MatchInterface {
@@ -633,7 +633,7 @@ pub enum MatchInterface {
 }
 
 /// Match filter request
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(from = "MatchInterface")]
 #[serde(untagged)]
 pub enum Match {
@@ -704,7 +704,7 @@ impl Range {
 }
 
 /// Values count filter request
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct ValuesCount {
     /// point.key.length() < values_count.lt
@@ -848,20 +848,20 @@ impl FieldCondition {
 }
 
 /// Payload field
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct PayloadField {
     /// Payload field name
     pub key: PayloadKeyType,
 }
 
 /// Select points with empty payload for a specified field
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct IsEmptyCondition {
     pub is_empty: PayloadField,
 }
 
 /// ID-based filtering condition
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct HasIdCondition {
     pub has_id: HashSet<PointIdType>,
 }

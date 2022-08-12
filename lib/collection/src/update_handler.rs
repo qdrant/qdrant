@@ -47,7 +47,7 @@ pub enum UpdateSignal {
 }
 
 /// Signal, used to inform Optimization process
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum OptimizerSignal {
     /// Sequential number of the operation
     Operation(SeqNumberType),

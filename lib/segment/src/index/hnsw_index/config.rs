@@ -7,7 +7,7 @@ use crate::entry::entry_point::OperationResult;
 
 pub const HNSW_INDEX_CONFIG_FILE: &str = "hnsw_config.json";
 
-#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq)]
 pub struct HnswGraphConfig {
     pub m: usize,
     /// Requested M

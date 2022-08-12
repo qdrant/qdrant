@@ -307,7 +307,7 @@ impl LockedShardHolder {
 
 #[cfg(test)]
 mod tests {
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::shard::remote_shard::RemoteShard;
@@ -315,8 +315,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_shard_holder() {
-        let shard_dir = TempDir::new("shard").unwrap();
-        let collection_dir = TempDir::new("collection").unwrap();
+        let shard_dir = Builder::new().prefix("shard").tempdir().unwrap();
+        let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
         let shard = RemoteShard::init(
             2,

@@ -92,8 +92,8 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 
         (start_from..(first_index + num_entries)).map(move |idx| {
             let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
-            let record: R = serde_cbor::from_slice(&record_bin.to_vec())
-                .or_else(|_err| rmp_serde::from_slice(&record_bin.to_vec()))
+            let record: R = serde_cbor::from_slice(&record_bin)
+                .or_else(|_err| rmp_serde::from_slice(&record_bin))
                 .expect("Can't deserialize entry, probably corrupted WAL on version mismatch");
             (idx, record)
         })
@@ -117,16 +117,16 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 mod tests {
     use super::*;
 
-    extern crate tempdir;
+    extern crate tempfile;
 
     use std::fs;
     use std::os::unix::fs::MetadataExt;
 
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     #[test]
     fn test_wal() {
-        let dir = TempDir::new("wal_test").unwrap();
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
         let wal_options = WalOptions {
             segment_capacity: 32 * 1024 * 1024,
             segment_queue_len: 0,

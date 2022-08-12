@@ -11,14 +11,14 @@ mod tests {
     use segment::segment::Segment;
     use segment::segment_constructor::segment_builder::SegmentBuilder;
     use segment::types::{Indexes, SegmentConfig};
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use crate::fixtures::segment::{build_segment_1, build_segment_2, empty_segment};
 
     #[test]
     fn test_building_new_segment() {
-        let dir = TempDir::new("segment_dir").unwrap();
-        let temp_dir = TempDir::new("segment_temp_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
         let stopped = AtomicBool::new(false);
 
@@ -73,8 +73,8 @@ mod tests {
     fn estimate_build_time(segment: &Segment, stop_timeout_millis: u64) -> (u64, bool) {
         let stopped = Arc::new(AtomicBool::new(false));
 
-        let dir = TempDir::new("segment_dir1").unwrap();
-        let temp_dir = TempDir::new("segment_temp_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir1").tempdir().unwrap();
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
         let segment_config = SegmentConfig {
             vector_size: segment.segment_config.vector_size,
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_building_cancellation() {
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
         let mut segment = empty_segment(dir.path());
 

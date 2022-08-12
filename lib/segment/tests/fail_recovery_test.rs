@@ -4,13 +4,13 @@ mod fixtures;
 mod tests {
     use segment::entry::entry_point::{OperationError, SegmentEntry, SegmentFailedState};
     use serde_json::json;
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use crate::fixtures::segment::empty_segment;
 
     #[test]
     fn test_insert_fail_recovery() {
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
         let vec1 = vec![1.0, 0.0, 1.0, 1.0];
 

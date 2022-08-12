@@ -572,7 +572,7 @@ mod tests {
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use serde_json::json;
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::common::rocksdb_operations::open_db_with_existing_cf;
@@ -606,7 +606,7 @@ mod tests {
     }
 
     fn build_random_index(num_points: usize, num_geo_values: usize) -> GeoMapIndex {
-        let tmp_dir = TempDir::new("test_dir").unwrap();
+        let tmp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
 
         let mut rnd = StdRng::seed_from_u64(42);
@@ -714,7 +714,7 @@ mod tests {
 
     #[test]
     fn match_cardinality_point_with_multi_far_geo_payload() {
-        let tmp_dir = TempDir::new("test_dir").unwrap();
+        let tmp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
 
         let mut index = GeoMapIndex::new(db, FIELD_NAME);
@@ -775,7 +775,7 @@ mod tests {
 
     #[test]
     fn match_cardinality_point_with_multi_close_geo_payload() {
-        let tmp_dir = TempDir::new("test_dir").unwrap();
+        let tmp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
 
         let mut index = GeoMapIndex::new(db, FIELD_NAME);
@@ -809,7 +809,7 @@ mod tests {
 
     #[test]
     fn load_from_disk() {
-        let tmp_dir = TempDir::new("test_dir").unwrap();
+        let tmp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         {
             let db = open_db_with_existing_cf(&tmp_dir.path().join("test_db")).unwrap();
 

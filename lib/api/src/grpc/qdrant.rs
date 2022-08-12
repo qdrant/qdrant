@@ -3853,7 +3853,7 @@ pub mod raft_client {
             self.inner.unary(request.into_request(), path, codec).await
         }
         /// Send to bootstrap peer
-        /// Proposes to add this peer Uri and ID to a map of all peers
+        /// Adds peer to the network
         /// Returns all peers
         pub async fn add_peer_to_known(
             &mut self,
@@ -3874,6 +3874,9 @@ pub mod raft_client {
             );
             self.inner.unary(request.into_request(), path, codec).await
         }
+        /// DEPRECATED
+        /// Its functionality is now included in `AddPeerToKnown`
+        ///
         /// Send to bootstrap peer
         /// Proposes to add this peer as participant of consensus
         pub async fn add_peer_as_participant(
@@ -3916,12 +3919,15 @@ pub mod raft_server {
             request: tonic::Request<super::PeerId>,
         ) -> Result<tonic::Response<super::Uri>, tonic::Status>;
         /// Send to bootstrap peer
-        /// Proposes to add this peer Uri and ID to a map of all peers
+        /// Adds peer to the network
         /// Returns all peers
         async fn add_peer_to_known(
             &self,
             request: tonic::Request<super::AddPeerToKnownMessage>,
         ) -> Result<tonic::Response<super::AllPeers>, tonic::Status>;
+        /// DEPRECATED
+        /// Its functionality is now included in `AddPeerToKnown`
+        ///
         /// Send to bootstrap peer
         /// Proposes to add this peer as participant of consensus
         async fn add_peer_as_participant(

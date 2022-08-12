@@ -16,7 +16,7 @@ mod tests {
         StorageType,
     };
     use serde_json::json;
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     #[test]
     fn test_filterable_hnsw() {
@@ -34,8 +34,8 @@ mod tests {
 
         let mut rnd = thread_rng();
 
-        let dir = TempDir::new("segment_dir").unwrap();
-        let hnsw_dir = TempDir::new("hnsw_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
 
         let config = SegmentConfig {
             vector_size: dim,

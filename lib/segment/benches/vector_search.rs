@@ -9,7 +9,7 @@ use segment::common::rocksdb_operations::open_db;
 use segment::types::{Distance, VectorElementType};
 use segment::vector_storage::simple_vector_storage::open_simple_vector_storage;
 use segment::vector_storage::VectorStorageSS;
-use tempdir::TempDir;
+use tempfile::Builder;
 
 const NUM_VECTORS: usize = 50000;
 const DIM: usize = 1000; // Larger dimensionality - greater the SIMD advantage
@@ -40,7 +40,7 @@ fn init_vector_storage(
 }
 
 fn benchmark_naive(c: &mut Criterion) {
-    let dir = TempDir::new("storage_dir").unwrap();
+    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
     let dist = Distance::Dot;
     let storage = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);

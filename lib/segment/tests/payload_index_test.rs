@@ -18,7 +18,7 @@ mod tests {
         IsEmptyCondition, Payload, PayloadField, PayloadSchemaType, Range, SegmentConfig,
         StorageType, WithPayload,
     };
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
         let mut rnd = StdRng::seed_from_u64(42);
@@ -114,8 +114,8 @@ mod tests {
 
     #[test]
     fn test_is_empty_conditions() {
-        let dir1 = TempDir::new("segment1_dir").unwrap();
-        let dir2 = TempDir::new("segment2_dir").unwrap();
+        let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
+        let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
 
         let (struct_segment, plain_segment) = build_test_segments(dir1.path(), dir2.path());
 
@@ -159,8 +159,8 @@ mod tests {
 
     #[test]
     fn test_cardinality_estimation() {
-        let dir1 = TempDir::new("segment1_dir").unwrap();
-        let dir2 = TempDir::new("segment2_dir").unwrap();
+        let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
+        let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
 
         let (struct_segment, _) = build_test_segments(dir1.path(), dir2.path());
 
@@ -199,8 +199,8 @@ mod tests {
     #[test]
     fn test_struct_payload_index() {
         // Compare search with plain and struct indexes
-        let dir1 = TempDir::new("segment1_dir").unwrap();
-        let dir2 = TempDir::new("segment2_dir").unwrap();
+        let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
+        let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
 
         let dim = 5;
 
@@ -263,8 +263,8 @@ mod tests {
         // Compare search with plain and struct indexes
         let mut rnd = rand::thread_rng();
 
-        let dir1 = TempDir::new("segment1_dir").unwrap();
-        let dir2 = TempDir::new("segment2_dir").unwrap();
+        let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
+        let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
 
         let dim = 5;
 

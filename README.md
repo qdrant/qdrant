@@ -248,6 +248,9 @@ Thanks to the people who contributed to Qdrant:
     <td align="center"><a href="https://github.com/gvelo"><img src="https://avatars.githubusercontent.com/u/943360?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Gabriel Velo</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=gvelo" title="Code">💻</a></td>
     <td align="center"><a href="http://burtonqin.github.io"><img src="https://avatars.githubusercontent.com/u/11943383?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Boqin Qin(秦 伯钦)</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/issues?q=author%3ABurtonQin" title="Bug reports">🐛</a></td>
   </tr>
+  <tr>
+    <td align="center"><a href="https://forloop.co.uk/blog"><img src="https://avatars.githubusercontent.com/u/208231?v=4?s=50" width="50px;" alt=""/><br /><sub><b>Russ Cam</b></sub></a><br /><a href="https://github.com/qdrant/qdrant/commits?author=russcam" title="Code">💻</a></td>
+  </tr>
 </table>
 
 <!-- markdownlint-restore -->

@@ -12,12 +12,12 @@ mod tests {
     use storage::content_manager::toc::TableOfContent;
     use storage::dispatcher::Dispatcher;
     use storage::types::{PerformanceConfig, StorageConfig};
-    use tempdir::TempDir;
+    use tempfile::Builder;
     use tokio::runtime::Runtime;
 
     #[test]
     fn test_alias_operation() {
-        let storage_dir = TempDir::new("storage").unwrap();
+        let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
 
         let config = StorageConfig {
             storage_path: storage_dir.path().to_str().unwrap().to_string(),

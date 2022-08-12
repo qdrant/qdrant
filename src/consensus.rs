@@ -15,7 +15,6 @@ use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{SoftState, StateRole};
 use storage::content_manager::consensus_ops::ConsensusOperations;
-use storage::content_manager::consensus_ops::ConsensusOperations::RemovePeer;
 use storage::content_manager::consensus_state::ConsensusStateRef;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -32,7 +31,6 @@ type Node = RawNode<ConsensusStateRef>;
 pub enum Message {
     FromClient(ConsensusOperations),
     FromPeer(Box<RaftMessage>),
-    ConfChange(ConfChangeV2),
 }
 
 pub struct Consensus {
@@ -165,7 +163,6 @@ impl Consensus {
                 p2p_port,
                 &config,
                 &runtime,
-                sender.clone(),
                 leader_established_in_ms,
             )
             .context("Failed to initialize Consensus for new Raft state")?;
@@ -200,7 +197,6 @@ impl Consensus {
         p2p_port: u16,
         config: &ConsensusConfig,
         runtime: &Runtime,
-        sender: SyncSender<Message>,
         leader_established_in_ms: u64,
     ) -> anyhow::Result<()> {
         if let Some(bootstrap_peer) = bootstrap_peer {
@@ -220,18 +216,11 @@ impl Consensus {
             let tick_period = config.tick_period_ms;
             log::info!("With current tick period of {tick_period}ms, leader will be established in approximately {leader_established_in_ms}ms. To avoid rejected operations - add peers and submit operations only after this period.");
             // First peer needs to add its own address
-            let message = Message::FromClient(ConsensusOperations::AddPeer(
+            state_ref.add_peer(
                 state_ref.this_peer_id(),
-                uri.ok_or_else(|| anyhow::anyhow!("First peer should specify its uri."))?,
-            ));
-            let is_leader_established = state_ref.is_leader_established.clone();
-            thread::spawn(move || {
-                // Wait for the leader to be established
-                is_leader_established.await_ready();
-                if let Err(err) = sender.send(message) {
-                    log::error!("Failed to send message to add this peer to known peers: {err}")
-                }
-            });
+                uri.ok_or_else(|| anyhow::anyhow!("First peer should specify its uri."))?
+                    .parse()?,
+            )?;
             Ok(())
         }
     }
@@ -280,6 +269,7 @@ impl Consensus {
         // This needs to be propagated manually to other peers as it is not contained in any log entry.
         state_ref.set_first_voter(all_peers.first_peer_id);
         state_ref.set_conf_state(ConfState::from((vec![all_peers.first_peer_id], vec![])))?;
+        // TODO: Remove in the next version after 0.10 as it does nothing and is left for compatability
         client
             .add_peer_as_participant(tonic::Request::new(api::grpc::qdrant::PeerId { id }))
             .await
@@ -345,7 +335,7 @@ impl Consensus {
             }
             Ok(Message::FromClient(operation)) => {
                 let result = match operation {
-                    RemovePeer(peer_id) => {
+                    ConsensusOperations::RemovePeer(peer_id) => {
                         let mut change = ConfChangeV2::default();
                         change.set_changes(vec![raft_proto::new_conf_change_single(
                             peer_id,
@@ -353,6 +343,15 @@ impl Consensus {
                         )]);
                         log::debug!("Proposing network configuration change: {:?}", change);
                         self.node.propose_conf_change(vec![], change)
+                    }
+                    ConsensusOperations::AddPeer(peer_id, uri) => {
+                        let mut change = ConfChangeV2::default();
+                        change.set_changes(vec![raft_proto::new_conf_change_single(
+                            peer_id,
+                            ConfChangeType::AddLearnerNode,
+                        )]);
+                        log::debug!("Proposing network configuration change: {:?}", change);
+                        self.node.propose_conf_change(uri.into_bytes(), change)
                     }
                     _ => {
                         let message = match serde_cbor::to_vec(&operation) {
@@ -375,10 +374,6 @@ impl Consensus {
                         return Ok(());
                     }
                 }
-            }
-            Ok(Message::ConfChange(change)) => {
-                log::debug!("Proposing network configuration change: {:?}", change);
-                self.node.propose_conf_change(vec![], change)?
             }
             Err(RecvTimeoutError::Timeout) => (),
             Err(RecvTimeoutError::Disconnected) => {
@@ -670,7 +665,6 @@ async fn send_message(
 mod tests {
     use std::sync::Arc;
     use std::thread;
-    use std::time::Duration;
 
     use collection::shard::ChannelService;
     use segment::types::Distance;
@@ -683,7 +677,7 @@ mod tests {
     use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef};
     use storage::content_manager::toc::TableOfContent;
     use storage::dispatcher::Dispatcher;
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::Consensus;
     use crate::settings::ConsensusConfig;
@@ -691,7 +685,7 @@ mod tests {
     #[test]
     fn collection_creation_passes_consensus() {
         // Given
-        let storage_dir = TempDir::new("storage").unwrap();
+        let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
         let mut settings = crate::Settings::new().expect("Can't read config.");
         settings.storage.storage_path = storage_dir.path().to_str().unwrap().to_string();
         std::env::set_var("RUST_LOG", log::Level::Debug.as_str());
@@ -746,11 +740,8 @@ mod tests {
         });
         // Wait for Raft to establish the leader
         is_leader_established.await_ready();
-        // And also wait for it to commit its own address
-        thread::sleep(Duration::from_secs(10));
         // Leader election produces a raft log entry
-        // Address commit also produces a raft log entry
-        assert_eq!(consensus_state.hard_state().commit, 2);
+        assert_eq!(consensus_state.hard_state().commit, 1);
         // Initially there are 0 collections
         assert_eq!(toc_arc.all_collections_sync().len(), 0);
 
@@ -777,7 +768,7 @@ mod tests {
             .unwrap();
 
         // Then
-        assert_eq!(consensus_state.hard_state().commit, 3);
+        assert_eq!(consensus_state.hard_state().commit, 2);
         assert_eq!(toc_arc.all_collections_sync(), vec!["test"]);
     }
 }

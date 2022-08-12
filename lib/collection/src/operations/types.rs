@@ -130,7 +130,7 @@ pub struct RemoteShardInfo {
     pub peer_id: PeerId,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateStatus {
     /// Request is saved to WAL and will be process in a queue

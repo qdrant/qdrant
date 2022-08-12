@@ -601,14 +601,14 @@ mod tests {
     use std::fs::read_dir;
 
     use segment::types::FieldCondition;
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     use super::*;
     use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
 
     #[test]
     fn test_writing() {
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let original_segment = LockedSegment::new(build_segment_1(dir.path()));
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
         let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
@@ -670,7 +670,7 @@ mod tests {
 
     #[test]
     fn test_read_filter() {
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let original_segment = LockedSegment::new(build_segment_1(dir.path()));
 
         let filter = Filter::new_must_not(Condition::Field(FieldCondition::new_match(
@@ -713,7 +713,7 @@ mod tests {
 
     #[test]
     fn test_take_snapshot() {
-        let dir = TempDir::new("segment_dir").unwrap();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let original_segment = LockedSegment::new(build_segment_1(dir.path()));
         let original_segment_2 = LockedSegment::new(build_segment_2(dir.path()));
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
@@ -748,7 +748,7 @@ mod tests {
 
         proxy_segment2.upsert_point(201, 11.into(), &vec6).unwrap();
 
-        let snapshot_dir = TempDir::new("snapshot_dir").unwrap();
+        let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
         eprintln!("Snapshot into {:?}", snapshot_dir.path());
 
         proxy_segment.take_snapshot(snapshot_dir.path()).unwrap();

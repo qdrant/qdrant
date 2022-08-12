@@ -9,7 +9,7 @@ mod tests {
     use segment::fixtures::payload_fixtures::random_filter;
     use segment::index::PayloadIndex;
     use segment::types::PointOffsetType;
-    use tempdir::TempDir;
+    use tempfile::Builder;
 
     const NUM_POINTS: usize = 2000;
     const ATTEMPTS: usize = 100;
@@ -19,7 +19,7 @@ mod tests {
         let seed = 42;
         let mut rng = StdRng::seed_from_u64(seed);
 
-        let dir = TempDir::new("storage_dir").unwrap();
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let plain_index = create_plain_payload_index(dir.path(), NUM_POINTS, seed);
         let struct_index = create_struct_payload_index(dir.path(), NUM_POINTS, seed);
 

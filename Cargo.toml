@@ -1,6 +1,6 @@
 [package]
 name = "qdrant"
-version = "0.9.0"
+version = "0.9.1"
 authors = ["Andrey Vasnetsov <andrey@vasnetsov.com>"]
 edition = "2021"
 doctest = false
@@ -13,7 +13,7 @@ web = ["actix-web"]
 service_debug = ["parking_lot", "parking_lot/deadlock_detection"]
 
 [dev-dependencies]
-tempdir = "0.3.7"
+tempfile = "3.3.0"
 rusty-hook = "^0.11.2"
 
 
