@@ -1,3 +1,4 @@
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{PointIdType, PointOffsetType, SeqNumberType};
 
@@ -55,10 +56,10 @@ pub trait IdTracker {
     fn max_id(&self) -> PointOffsetType;
 
     /// Flush id mapping to disk
-    fn flush_mapping(&self) -> OperationResult<()>;
+    fn mapping_flusher(&self) -> Flusher;
 
     /// Flush points versions to disk
-    fn flush_versions(&self) -> OperationResult<()>;
+    fn versions_flusher(&self) -> Flusher;
 }
 
 pub type IdTrackerSS = dyn IdTracker + Sync + Send;

@@ -4,6 +4,7 @@ use std::ops::Range;
 use ordered_float::OrderedFloat;
 use rand::Rng;
 
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{PointOffsetType, ScoreType, VectorElementType};
 
@@ -64,8 +65,7 @@ pub trait VectorStorage {
     fn delete(&mut self, key: PointOffsetType) -> OperationResult<()>;
     fn is_deleted(&self, key: PointOffsetType) -> bool;
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
-    /// Iterator over not-deleted ids
-    fn flush(&self) -> OperationResult<()>;
+    fn flusher(&self) -> Flusher;
 
     /// Generate a `RawScorer` object which contains all required context for searching similar vector
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_>;

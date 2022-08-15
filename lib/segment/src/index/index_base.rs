@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use serde_json::Value;
 
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::payload_storage::FilterContext;
@@ -89,8 +90,8 @@ pub trait PayloadIndex {
     /// Completely drop payload. Pufff!
     fn wipe(&mut self) -> OperationResult<()>;
 
-    /// Force persistence of current storage state.
-    fn flush(&self) -> OperationResult<()>;
+    /// Return function that forces persistence of current storage state.
+    fn flusher(&self) -> Flusher;
 
     /// Infer payload type from existing payload data.
     fn infer_payload_type(

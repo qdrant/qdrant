@@ -373,7 +373,7 @@ impl LocalShard {
             bar.inc(1);
         }
 
-        self.segments.read().flush_all().unwrap();
+        self.segments.read().flush_all(true).unwrap();
         bar.finish();
     }
 

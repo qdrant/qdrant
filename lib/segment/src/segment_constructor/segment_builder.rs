@@ -137,7 +137,7 @@ impl SegmentBuilder {
 
             segment.vector_index.borrow_mut().build_index(stopped)?;
 
-            segment.flush()?;
+            segment.flush(true)?;
             // Now segment is going to be evicted from RAM
         }
 

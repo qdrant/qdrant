@@ -1,5 +1,6 @@
 use serde_json::Value;
 
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::map_index::MapIndex;
@@ -20,8 +21,8 @@ pub trait PayloadFieldIndex {
     /// Remove db content of the current payload index
     fn clear(self) -> OperationResult<()>;
 
-    /// Flush all pending updates to disk.
-    fn flush(&self) -> OperationResult<()>;
+    /// Return function that flushes all pending updates to disk.
+    fn flusher(&self) -> Flusher;
 
     /// Get iterator over points fitting given `condition`
     /// Return `None` if condition does not match the index type
@@ -140,8 +141,8 @@ impl FieldIndex {
         self.get_payload_field_index().indexed_points()
     }
 
-    pub fn flush(&self) -> OperationResult<()> {
-        self.get_payload_field_index().flush()
+    pub fn flusher(&self) -> Flusher {
+        self.get_payload_field_index().flusher()
     }
 
     pub fn filter(

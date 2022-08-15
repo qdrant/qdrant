@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use crate::common::rocksdb_operations::{db_options, DB_PAYLOAD_CF};
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::PayloadStorage;
@@ -53,17 +54,20 @@ impl PayloadStorage for SimplePayloadStorage {
     }
 
     fn wipe(&mut self) -> OperationResult<()> {
-        let mut store_ref = self.store.borrow_mut();
+        let mut store_ref = self.store.write();
         self.payload = HashMap::new();
         store_ref.drop_cf(DB_PAYLOAD_CF)?;
         store_ref.create_cf(DB_PAYLOAD_CF, &db_options())?;
         Ok(())
     }
 
-    fn flush(&self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        let cf_handle = store_ref.cf_handle(DB_PAYLOAD_CF).unwrap();
-        Ok(store_ref.flush_cf(cf_handle)?)
+    fn flusher(&self) -> Flusher {
+        let store = self.store.clone();
+        Box::new(move || {
+            let store_ref = store.read();
+            let cf_handle = store_ref.cf_handle(DB_PAYLOAD_CF).unwrap();
+            Ok(store_ref.flush_cf(cf_handle)?)
+        })
     }
 }
 

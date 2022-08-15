@@ -2,11 +2,13 @@ use std::collections::HashMap;
 use std::fs::{remove_dir_all, rename, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::thread::JoinHandle;
 
 use atomic_refcell::AtomicRefCell;
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use fs_extra::dir::{copy_with_progress, CopyOptions, TransitProcess};
+use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 use tar::Builder;
 
@@ -63,7 +65,8 @@ pub struct Segment {
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
     pub error_status: Option<SegmentFailedState>,
-    pub database: Arc<AtomicRefCell<DB>>,
+    pub database: Arc<RwLock<DB>>,
+    pub flush_thread: Mutex<Option<JoinHandle<OperationResult<SeqNumberType>>>>,
 }
 
 impl Segment {
@@ -200,8 +203,8 @@ impl Segment {
         }
     }
 
-    fn save_state(&self, state: &SegmentState) -> OperationResult<()> {
-        let state_path = self.current_path.join(SEGMENT_STATE_FILE);
+    fn save_state(state: &SegmentState, current_path: &Path) -> OperationResult<()> {
+        let state_path = current_path.join(SEGMENT_STATE_FILE);
         let af = AtomicFile::new(state_path, AllowOverwrite);
         let state_bytes = serde_json::to_vec(state).unwrap();
         af.write(|f| f.write_all(&state_bytes))?;
@@ -230,7 +233,7 @@ impl Segment {
     }
 
     pub fn save_current_state(&self) -> OperationResult<()> {
-        self.save_state(&self.get_state())
+        Self::save_state(&self.get_state(), &self.current_path)
     }
 
     fn infer_from_payload_data(
@@ -247,6 +250,33 @@ impl Segment {
         let mut ar = tar::Archive::new(archive_file);
         ar.unpack(&segment_path)?;
         Ok(())
+    }
+
+    // Joins flush thread if exists
+    // Returns lock to guarantee that there will be no other flush in a different thread
+    fn lock_flushing(
+        &self,
+    ) -> OperationResult<parking_lot::MutexGuard<Option<JoinHandle<OperationResult<SeqNumberType>>>>>
+    {
+        let mut lock = self.flush_thread.lock();
+        let mut join_handle: Option<JoinHandle<OperationResult<SeqNumberType>>> = None;
+        std::mem::swap(&mut join_handle, &mut lock);
+        if let Some(join_handle) = join_handle {
+            // Flush result was reported to segment, so we don't need this value anymore
+            let _background_flush_result = join_handle
+                .join()
+                .map_err(|_err| OperationError::service_error("failed to join flush thread"))??;
+        }
+        Ok(lock)
+    }
+
+    fn is_background_flushing(&self) -> bool {
+        let lock = self.flush_thread.lock();
+        if let Some(join_handle) = lock.as_ref() {
+            !join_handle.is_finished()
+        } else {
+            false
+        }
     }
 }
 
@@ -574,45 +604,69 @@ impl SegmentEntry for Segment {
         self.appendable_flag
     }
 
-    fn flush(&self) -> OperationResult<SeqNumberType> {
-        let mut persisted_version = self.persisted_version.lock().unwrap();
-        if *persisted_version == self.version() {
-            return Ok(*persisted_version);
+    fn flush(&self, sync: bool) -> OperationResult<SeqNumberType> {
+        let current_persisted_version: SeqNumberType = *self.persisted_version.lock();
+        if !sync && self.is_background_flushing() {
+            return Ok(current_persisted_version);
+        }
+
+        let mut background_flush_lock = self.lock_flushing()?;
+        if current_persisted_version == self.version() {
+            return Ok(current_persisted_version);
         }
 
         let state = self.get_state();
+        let current_path = self.current_path.clone();
+        let id_tracker_mapping_flusher = self.id_tracker.borrow().mapping_flusher();
+        let vector_storage_flusher = self.vector_storage.borrow().flusher();
+        let payload_index_flusher = self.payload_index.borrow().flusher();
+        let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
+        let persisted_version = self.persisted_version.clone();
+        let flush_op = move || {
+            // Flush mapping first to prevent having orphan internal ids.
+            id_tracker_mapping_flusher().map_err(|err| {
+                OperationError::service_error(&format!(
+                    "Failed to flush id_tracker mapping: {}",
+                    err
+                ))
+            })?;
+            vector_storage_flusher().map_err(|err| {
+                OperationError::service_error(&format!("Failed to flush vector_storage: {}", err))
+            })?;
+            payload_index_flusher().map_err(|err| {
+                OperationError::service_error(&format!("Failed to flush payload_index: {}", err))
+            })?;
+            // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
+            // This is because vector_storage and payload_index flush are not atomic.
+            // If payload or vector flush fails, we will be able to recover data from WAL.
+            // If Id Tracker flush fails, we are also able to recover data from WAL
+            //  by simply overriding data in vector and payload storages.
+            // Once versions are saved - points are considered persisted.
+            id_tracker_versions_flusher().map_err(|err| {
+                OperationError::service_error(&format!(
+                    "Failed to flush id_tracker versions: {}",
+                    err
+                ))
+            })?;
+            Self::save_state(&state, &current_path).map_err(|err| {
+                OperationError::service_error(&format!("Failed to flush segment state: {}", err))
+            })?;
+            *persisted_version.lock() = state.version;
 
-        // Flush mapping first to prevent having orphan internal ids.
-        self.id_tracker.borrow().flush_mapping().map_err(|err| {
-            OperationError::service_error(&format!("Failed to flush id_tracker mapping: {}", err))
-        })?;
-        self.vector_storage.borrow().flush().map_err(|err| {
-            OperationError::service_error(&format!("Failed to flush vector_storage: {}", err))
-        })?;
+            Ok(state.version)
+        };
 
-        self.payload_index.borrow().flush().map_err(|err| {
-            OperationError::service_error(&format!("Failed to flush payload_index: {}", err))
-        })?;
-        // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
-        // This is because vector_storage and payload_index flush are not atomic.
-        // If payload or vector flush fails, we will be able to recover data from WAL.
-        // If Id Tracker flush fails, we are also able to recover data from WAL
-        //  by simply overriding data in vector and payload storages.
-        // Once versions are saved - points are considered persisted.
-        self.id_tracker.borrow().flush_versions().map_err(|err| {
-            OperationError::service_error(&format!("Failed to flush id_tracker versions: {}", err))
-        })?;
-        self.save_state(&state).map_err(|err| {
-            OperationError::service_error(&format!("Failed to flush segment state: {}", err))
-        })?;
-
-        self.database.borrow().flush().map_err(|err| {
-            OperationError::service_error(&format!("Failed to flush database: {}", err))
-        })?;
-
-        *persisted_version = state.version;
-
-        Ok(state.version)
+        if sync {
+            flush_op()
+        } else {
+            *background_flush_lock = Some(
+                std::thread::Builder::new()
+                    .name("background_flush".to_string())
+                    .spawn(flush_op)
+                    .unwrap(),
+            );
+            Ok(current_persisted_version)
+        }
     }
 
     fn drop_data(self) -> OperationResult<()> {
@@ -714,7 +768,7 @@ impl SegmentEntry for Segment {
             )));
         }
         // flush segment to capture latest state
-        self.flush()?;
+        self.flush(true)?;
         // extract segment id from current path
         let segment_id = self
             .current_path
@@ -753,7 +807,7 @@ impl SegmentEntry for Segment {
         }
 
         // flush segment to capture latest state
-        self.flush()?;
+        self.flush(true)?;
 
         let segment_id = self
             .current_path
@@ -787,6 +841,12 @@ impl SegmentEntry for Segment {
     }
 }
 
+impl Drop for Segment {
+    fn drop(&mut self) {
+        let _lock = self.lock_flushing();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -796,7 +856,6 @@ mod tests {
     use walkdir::WalkDir;
 
     use super::*;
-    use crate::entry::entry_point::SegmentEntry;
     use crate::segment_constructor::build_segment;
     use crate::types::{Distance, Indexes, SegmentConfig, StorageType};
 
@@ -940,7 +999,7 @@ mod tests {
 
         let payload: Payload = serde_json::from_str(data).unwrap();
         segment.set_full_payload(0, 0.into(), &payload).unwrap();
-        segment.flush().unwrap();
+        segment.flush(true).unwrap();
 
         // Recursively count all files and folders in directory and subdirectories:
         let segment_file_count = WalkDir::new(segment.current_path.clone())
@@ -1016,7 +1075,7 @@ mod tests {
 
         let payload: Payload = serde_json::from_str(data).unwrap();
         segment.set_full_payload(0, 0.into(), &payload).unwrap();
-        segment.flush().unwrap();
+        segment.flush(true).unwrap();
 
         // Recursively count all files and folders in directory and subdirectories.
         let segment_file_count = WalkDir::new(segment.current_path.clone())
@@ -1033,5 +1092,37 @@ mod tests {
         let copy_segment_file_count = WalkDir::new(full_copy_path).into_iter().count();
 
         assert_eq!(copy_segment_file_count, segment_file_count);
+    }
+
+    #[test]
+    fn test_background_flush() {
+        let data = r#"
+        {
+            "name": "John Doe",
+            "age": 43,
+            "metadata": {
+                "height": 50,
+                "width": 60
+            }
+        }"#;
+
+        let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let config = SegmentConfig {
+            vector_size: 2,
+            index: Indexes::Plain {},
+            storage_type: StorageType::InMemory,
+            distance: Distance::Dot,
+            payload_storage_type: Default::default(),
+        };
+
+        let mut segment = build_segment(segment_base_dir.path(), &config).unwrap();
+        segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
+
+        let payload: Payload = serde_json::from_str(data).unwrap();
+        segment.set_full_payload(0, 0.into(), &payload).unwrap();
+        segment.flush(false).unwrap();
+
+        // call flush second time to check that background flush finished successful
+        segment.flush(true).unwrap();
     }
 }

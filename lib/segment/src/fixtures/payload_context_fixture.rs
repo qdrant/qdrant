@@ -5,6 +5,7 @@ use atomic_refcell::AtomicRefCell;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::fixtures::payload_fixtures::{
     generate_diverse_payload, FLT_KEY, GEO_KEY, INT_KEY, STR_KEY,
@@ -115,12 +116,12 @@ impl IdTracker for FixtureIdTracker {
         self.ids.last().copied().unwrap()
     }
 
-    fn flush_mapping(&self) -> OperationResult<()> {
-        Ok(())
+    fn mapping_flusher(&self) -> Flusher {
+        Box::new(|| Ok(()))
     }
 
-    fn flush_versions(&self) -> OperationResult<()> {
-        Ok(())
+    fn versions_flusher(&self) -> Flusher {
+        Box::new(|| Ok(()))
     }
 }
 

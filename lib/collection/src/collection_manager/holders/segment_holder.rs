@@ -385,7 +385,7 @@ impl<'s> SegmentHolder {
     ///
     /// If there are unsaved changes after flush - detects lowest unsaved change version.
     /// If all changes are saved - returns max version.
-    pub fn flush_all(&self) -> OperationResult<SeqNumberType> {
+    pub fn flush_all(&self, sync: bool) -> OperationResult<SeqNumberType> {
         let mut max_persisted_version: SeqNumberType = SeqNumberType::MIN;
         let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
         let mut has_unsaved = false;
@@ -393,7 +393,7 @@ impl<'s> SegmentHolder {
             let segment_lock = segment.get();
             let read_segment = segment_lock.read();
             let segment_version = read_segment.version();
-            let segment_persisted_version = read_segment.flush()?;
+            let segment_persisted_version = read_segment.flush(sync)?;
 
             if segment_version > segment_persisted_version {
                 has_unsaved = true;

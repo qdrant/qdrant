@@ -3,11 +3,12 @@ use std::collections::BTreeMap;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
+use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
 use crate::common::rocksdb_operations::{db_write_options, recreate_cf};
+use crate::common::Flusher;
 use crate::entry::entry_point::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Point};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
@@ -92,7 +93,7 @@ impl ToRangeValue for IntPayloadType {
 
 pub struct NumericIndex<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> {
     map: BTreeMap<Vec<u8>, u32>,
-    db: Arc<AtomicRefCell<DB>>,
+    db: Arc<RwLock<DB>>,
     store_cf_name: String,
     histogram: Histogram,
     points_count: usize,
@@ -101,7 +102,7 @@ pub struct NumericIndex<T: KeyEncoder + KeyDecoder + FromRangeValue + Clone> {
 }
 
 impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> NumericIndex<T> {
-    pub fn new(db: Arc<AtomicRefCell<DB>>, field: &str) -> Self {
+    pub fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
         Self {
             map: BTreeMap::new(),
             db,
@@ -123,7 +124,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
 
     fn add_value(&mut self, id: PointOffsetType, value: T) -> OperationResult<()> {
         let key = value.encode_key(id);
-        let db_ref = self.db.borrow();
+        let db_ref = self.db.read();
         let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
             OperationError::service_error(&format!("Column not found: {}", self.store_cf_name))
         })?;
@@ -159,7 +160,7 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
     }
 
     pub fn load(&mut self) -> OperationResult<bool> {
-        let db_ref = self.db.borrow();
+        let db_ref = self.db.read();
         let cf_handle = if let Some(cf_handle) = db_ref.cf_handle(&self.store_cf_name) {
             cf_handle
         } else {
@@ -201,19 +202,23 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Numeric
         Ok(true)
     }
 
-    pub fn flush(&self) -> OperationResult<()> {
-        let db_ref = self.db.borrow();
-        let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
-            OperationError::service_error(&format!(
-                "Index flush error: column family {} not found",
-                self.store_cf_name
-            ))
-        })?;
-        Ok(db_ref.flush_cf(cf_handle)?)
+    pub fn flusher(&self) -> Flusher {
+        let db = self.db.clone();
+        let store_cf_name = self.store_cf_name.clone();
+        Box::new(move || {
+            let db_ref = db.read();
+            let cf_handle = db_ref.cf_handle(&store_cf_name).ok_or_else(|| {
+                OperationError::service_error(&format!(
+                    "Index flush error: column family {} not found",
+                    store_cf_name
+                ))
+            })?;
+            Ok(db_ref.flush_cf(cf_handle)?)
+        })
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        let db_ref = self.db.borrow();
+        let db_ref = self.db.read();
 
         let cf_handle = db_ref.cf_handle(&self.store_cf_name).ok_or_else(|| {
             OperationError::service_error(&format!(
@@ -383,11 +388,11 @@ impl<T: KeyEncoder + KeyDecoder + FromRangeValue + ToRangeValue + Clone> Payload
     }
 
     fn clear(self) -> OperationResult<()> {
-        Ok(self.db.borrow_mut().drop_cf(&self.store_cf_name)?)
+        Ok(self.db.write().drop_cf(&self.store_cf_name)?)
     }
 
-    fn flush(&self) -> OperationResult<()> {
-        NumericIndex::flush(self)
+    fn flusher(&self) -> Flusher {
+        NumericIndex::flusher(self)
     }
 
     fn filter(
@@ -765,7 +770,7 @@ mod tests {
                 .unwrap()
         });
 
-        index.flush().unwrap();
+        index.flusher()().unwrap();
 
         let db_ref = index.db;
         let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME);

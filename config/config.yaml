@@ -64,7 +64,7 @@ storage:
     indexing_threshold_kb: 20000
 
     # Interval between forced flushes.
-    flush_interval_sec: 1
+    flush_interval_sec: 5
     
     # Max number of threads, which can be used for optimization.
     max_optimization_threads: 1

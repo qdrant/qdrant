@@ -2,10 +2,13 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::mem::{size_of, transmute};
 use std::path::Path;
+use std::sync::Arc;
 
 use memmap::{Mmap, MmapMut, MmapOptions};
+use parking_lot::{RwLock, RwLockReadGuard};
 
 use crate::common::error_logging::LogError;
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::types::{PointOffsetType, VectorElementType};
 
@@ -18,7 +21,7 @@ pub struct MmapVectors {
     pub dim: usize,
     pub num_vectors: usize,
     mmap: Mmap,
-    deleted_mmap: MmapMut,
+    deleted_mmap: Arc<RwLock<MmapMut>>,
     pub deleted_count: usize,
 }
 
@@ -71,7 +74,7 @@ impl MmapVectors {
             dim,
             num_vectors,
             mmap,
-            deleted_mmap,
+            deleted_mmap: Arc::new(RwLock::new(deleted_mmap)),
             deleted_count,
         })
     }
@@ -100,10 +103,16 @@ impl MmapVectors {
             .map(|offset| self.raw_vector_offset(offset))
     }
 
+    pub fn check_deleted(mmap: &MmapMut, key: PointOffsetType) -> Option<bool> {
+        mmap.get(HEADER_SIZE + (key as usize)).map(|x| *x > 0)
+    }
+
+    pub fn read_deleted_map(&self) -> RwLockReadGuard<MmapMut> {
+        self.deleted_mmap.read()
+    }
+
     pub fn deleted(&self, key: PointOffsetType) -> Option<bool> {
-        self.deleted_mmap
-            .get(HEADER_SIZE + (key as usize))
-            .map(|x| *x > 0)
+        Self::check_deleted(&self.deleted_mmap.read(), key)
     }
 
     /// Creates returns owned vector (copy of internal vector)
@@ -118,10 +127,8 @@ impl MmapVectors {
 
     pub fn delete(&mut self, key: PointOffsetType) -> OperationResult<()> {
         if key < (self.num_vectors as PointOffsetType) {
-            let flag = self
-                .deleted_mmap
-                .get_mut((key as usize) + HEADER_SIZE)
-                .unwrap();
+            let mut deleted_mmap = self.deleted_mmap.write();
+            let flag = deleted_mmap.get_mut((key as usize) + HEADER_SIZE).unwrap();
 
             if *flag == 0 {
                 *flag = 1;
@@ -131,8 +138,11 @@ impl MmapVectors {
         Ok(())
     }
 
-    pub fn flush(&self) -> OperationResult<()> {
-        self.deleted_mmap.flush()?;
-        Ok(())
+    pub fn flusher(&self) -> Flusher {
+        let deleted_mmap = self.deleted_mmap.clone();
+        Box::new(move || {
+            deleted_mmap.read().flush()?;
+            Ok(())
+        })
     }
 }

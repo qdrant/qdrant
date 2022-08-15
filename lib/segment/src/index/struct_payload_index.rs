@@ -6,11 +6,13 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use log::debug;
+use parking_lot::RwLock;
 use rocksdb::DB;
 use schemars::_serde_json::Value;
 
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::common::rocksdb_operations::open_db_with_existing_cf;
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;
@@ -45,7 +47,7 @@ pub struct StructPayloadIndex {
     /// Root of index persistence dir
     path: PathBuf,
     visited_pool: VisitedPool,
-    db: Arc<AtomicRefCell<DB>>,
+    db: Arc<RwLock<DB>>,
 }
 
 impl StructPayloadIndex {
@@ -448,13 +450,20 @@ impl PayloadIndex for StructPayloadIndex {
         self.load_all_fields()
     }
 
-    fn flush(&self) -> OperationResult<()> {
+    fn flusher(&self) -> Flusher {
+        let mut flushers = Vec::new();
         for field_indexes in self.field_indexes.values() {
             for index in field_indexes {
-                index.flush()?;
+                flushers.push(index.flusher());
             }
         }
-        self.payload.borrow().flush()
+        flushers.push(self.payload.borrow().flusher());
+        Box::new(move || {
+            for flusher in flushers {
+                flusher()?
+            }
+            Ok(())
+        })
     }
 
     fn infer_payload_type(
@@ -462,7 +471,7 @@ impl PayloadIndex for StructPayloadIndex {
         key: PayloadKeyTypeRef,
     ) -> OperationResult<Option<PayloadSchemaType>> {
         let mut schema = None;
-        self.payload.borrow().iter(|_id, payload| {
+        self.payload.borrow().iter(|_id, payload: &Payload| {
             let field_value = payload.get_value(key);
             schema = field_value.and_then(infer_value_type);
             Ok(false)

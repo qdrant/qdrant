@@ -236,8 +236,10 @@ pub trait SegmentEntry {
     fn is_appendable(&self) -> bool;
 
     /// Flushes current segment state into a persistent storage, if possible
+    /// if sync == true, block current thread while flushing
+    ///
     /// Returns maximum version number which is guaranteed to be persisted.
-    fn flush(&self) -> OperationResult<SeqNumberType>;
+    fn flush(&self, sync: bool) -> OperationResult<SeqNumberType>;
 
     /// Removes all persisted data and forces to destroy segment
     fn drop_data(self) -> OperationResult<()>;

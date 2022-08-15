@@ -6,12 +6,14 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitVec;
 use log::debug;
+use parking_lot::RwLock;
 use rocksdb::{IteratorMode, DB};
 use serde::{Deserialize, Serialize};
 
 use super::chunked_vectors::ChunkedVectors;
 use super::vector_storage_base::VectorStorage;
 use crate::common::rocksdb_operations::{db_write_options, DB_VECTOR_CF};
+use crate::common::Flusher;
 use crate::entry::entry_point::OperationResult;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric};
@@ -26,7 +28,7 @@ pub struct SimpleVectorStorage<TMetric: Metric> {
     vectors: ChunkedVectors,
     deleted: BitVec,
     deleted_count: usize,
-    store: Arc<AtomicRefCell<DB>>,
+    store: Arc<RwLock<DB>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -83,7 +85,7 @@ where
 }
 
 pub fn open_simple_vector_storage(
-    store: Arc<AtomicRefCell<DB>>,
+    store: Arc<RwLock<DB>>,
     dim: usize,
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageSS>>> {
@@ -92,7 +94,7 @@ pub fn open_simple_vector_storage(
     let mut deleted_count = 0;
 
     {
-        let store_ref = store.borrow();
+        let store_ref = store.read();
         let cf_handle = store_ref.cf_handle(DB_VECTOR_CF).unwrap();
         for item in store_ref.iterator_cf(cf_handle, IteratorMode::Start) {
             let (key, val) = item?;
@@ -163,7 +165,7 @@ where
             vector: v.to_vec(), // ToDo: try to reduce number of vector copies
         };
 
-        let store_ref = self.store.borrow();
+        let store_ref = self.store.read();
         let cf_handle = store_ref.cf_handle(DB_VECTOR_CF).unwrap();
         store_ref.put_cf_opt(
             cf_handle,
@@ -260,10 +262,13 @@ where
         Box::new(iter)
     }
 
-    fn flush(&self) -> OperationResult<()> {
-        let store_ref = self.store.borrow();
-        let cf_handle = store_ref.cf_handle(DB_VECTOR_CF).unwrap();
-        Ok(store_ref.flush_cf(cf_handle)?)
+    fn flusher(&self) -> Flusher {
+        let store = self.store.clone();
+        Box::new(move || {
+            let store_ref = store.read();
+            let cf_handle = store_ref.cf_handle(DB_VECTOR_CF).unwrap();
+            Ok(store_ref.flush_cf(cf_handle)?)
+        })
     }
 
     fn raw_scorer(&self, vector: Vec<VectorElementType>) -> Box<dyn RawScorer + '_> {
