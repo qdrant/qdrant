@@ -1,7 +1,7 @@
 # Leveraging the pre-built Docker images with
 # cargo-chef and the Rust toolchain
 # https://www.lpalmieri.com/posts/fast-rust-docker-builds/
-FROM lukemathwalker/cargo-chef:latest-rust-1.62.1 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.63.0 AS chef
 WORKDIR /qdrant
 
 FROM chef AS planner
