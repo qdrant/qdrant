@@ -28,7 +28,8 @@ use crate::operations::snapshot_ops::{
 use crate::operations::types::{
     CollectionClusterInfo, CollectionError, CollectionInfo, CollectionResult, CountRequest,
     CountResult, LocalShardInfo, PointRequest, RecommendRequest, Record, RemoteShardInfo,
-    ScrollRequest, ScrollResult, SearchRequest, ShardTransferInfo, UpdateResult,
+    ScrollRequest, ScrollResult, SearchRequest, SearchRequestBatch, ShardTransferInfo,
+    UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, Validate};
 use crate::optimizers_builder::OptimizersConfig;
@@ -674,6 +675,49 @@ impl Collection {
             top_result.drain(..request.offset);
         }
         Ok(top_result)
+    }
+
+    // TODO what about a two steps payload retrieval mechanism there as well?
+    pub async fn search_batch(
+        &self,
+        request: SearchRequestBatch,
+        search_runtime_handle: &Handle,
+        shard_selection: Option<ShardId>,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let request = Arc::new(request);
+
+        let all_searches_res = {
+            let shard_holder = self.shards_holder.read().await;
+            let target_shards = shard_holder.target_shards(shard_selection)?;
+            let all_searches = target_shards.iter().map(|shard| {
+                shard
+                    .get()
+                    .search_batch(request.clone(), search_runtime_handle)
+            });
+            try_join_all(all_searches).await?.into_iter().flatten()
+        };
+
+        let distance = self.config.read().await.params.distance;
+        let top_results: Vec<Vec<ScoredPoint>> = all_searches_res
+            .zip(request.searches.iter())
+            .map(|(res, request)| {
+                let mut top_res = match distance.distance_order() {
+                    Order::LargeBetter => {
+                        peek_top_largest_scores_iterable(res, request.limit + request.offset)
+                    }
+                    Order::SmallBetter => {
+                        peek_top_smallest_scores_iterable(res, request.limit + request.offset)
+                    }
+                };
+                if request.offset > 0 {
+                    // Remove offset from top result.
+                    top_res.drain(..request.offset);
+                }
+                top_res
+            })
+            .collect();
+
+        Ok(top_results)
     }
 
     async fn fill_search_result_with_payload(

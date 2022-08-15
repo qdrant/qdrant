@@ -7,7 +7,7 @@ use api::grpc::qdrant::points_internal_client::PointsInternalClient;
 use api::grpc::qdrant::{
     CollectionOperationResponse, CountPoints, CountPointsInternal, GetCollectionInfoRequest,
     GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal, InitiateShardTransferRequest,
-    ScrollPoints, ScrollPointsInternal, SearchPoints, SearchPointsInternal,
+    ScrollPoints, ScrollPointsInternal, SearchBatchPointsInternal, SearchPointsInternal,
 };
 use async_trait::async_trait;
 use parking_lot::Mutex;
@@ -21,7 +21,7 @@ use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::PointOperations;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    Record, SearchRequest, UpdateResult,
+    Record, SearchRequest, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use crate::shard::conversions::{
@@ -155,6 +155,9 @@ impl RemoteShard {
         Ok(res)
     }
 }
+
+// New-type to own the type in the crate for conversions via From
+pub struct CollectionSearchRequest<'a>(pub(crate) (CollectionId, &'a SearchRequest));
 
 #[async_trait]
 #[allow(unused_variables)]
@@ -332,17 +335,8 @@ impl ShardOperation for RemoteShard {
         let mut timer = TelemetryOperationTimer::new(&self.searches_telemetry);
         timer.set_success(false);
 
-        let search_points = SearchPoints {
-            collection_name: self.collection_id.clone(),
-            vector: request.vector.clone(),
-            filter: request.filter.clone().map(|f| f.into()),
-            limit: request.limit as u64,
-            with_vector: Some(request.with_vector),
-            with_payload: request.with_payload.clone().map(|wp| wp.into()),
-            params: request.params.map(|sp| sp.into()),
-            score_threshold: request.score_threshold,
-            offset: Some(request.offset as u64),
-        };
+        let search_points =
+            CollectionSearchRequest((self.collection_id.clone(), request.as_ref())).into();
         let request = &SearchPointsInternal {
             search_points: Some(search_points),
             shard_id: self.id,
@@ -358,6 +352,46 @@ impl ShardOperation for RemoteShard {
             .result
             .into_iter()
             .map(|scored| scored.try_into())
+            .collect();
+        let result = result.map_err(|e| e.into());
+        if result.is_ok() {
+            timer.set_success(true);
+        }
+        result
+    }
+
+    async fn search_batch(
+        &self,
+        request: Arc<SearchRequestBatch>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let mut timer = TelemetryOperationTimer::new(&self.searches_telemetry);
+        timer.set_success(false);
+
+        let search_points = request
+            .searches
+            .iter()
+            .map(|s| CollectionSearchRequest((self.collection_id.clone(), s)).into())
+            .collect();
+
+        let request = &SearchBatchPointsInternal {
+            collection_name: "".to_string(),
+            search_points,
+            shard_id: self.id,
+        };
+        let search_batch_response = self
+            .with_points_client(|mut client| async move {
+                client
+                    .search_batch(tonic::Request::new(request.clone()))
+                    .await
+            })
+            .await?
+            .into_inner();
+
+        let result: Result<Vec<Vec<ScoredPoint>>, Status> = search_batch_response
+            .result
+            .into_iter()
+            .map(|scored| scored.result.into_iter().map(|s| s.try_into()).collect())
             .collect();
         let result = result.map_err(|e| e.into());
         if result.is_ok() {

@@ -100,6 +100,7 @@ impl SegmentsSearcher {
                 .collect()
         };
 
+        // perform search on all segments concurrently
         let all_searches = try_join_all(searches);
         let all_search_results: Vec<CollectionResult<Vec<Vec<ScoredPoint>>>> = all_searches.await?;
 
@@ -219,6 +220,7 @@ struct BatchSearchParams<'a> {
     pub params: Option<&'a SearchParams>,
 }
 
+/// Process sequentially contiguous batches
 async fn search_batch_in_segment(
     segment: LockedSegment,
     request: Arc<SearchRequestBatch>,
@@ -241,9 +243,12 @@ async fn search_batch_in_segment(
             params: search_query.params.as_ref(),
         };
 
+        // same params enables batching
         if params == prev_params {
             vectors_batch.push(search_query.vector.as_ref());
         } else {
+            // different params means different batches
+            // execute what has been batched so far
             if !vectors_batch.is_empty() {
                 let mut res = segment.get().read().search_batch(
                     &vectors_batch,
@@ -254,13 +259,16 @@ async fn search_batch_in_segment(
                     prev_params.params,
                 )?;
                 result.append(&mut res);
+                // clear current batch
                 vectors_batch.clear();
             }
+            // start new batch for current search query
             vectors_batch.push(search_query.vector.as_ref());
             prev_params = params;
         }
     }
 
+    // run last batch if any
     if !vectors_batch.is_empty() {
         let mut res = segment.get().read().search_batch(
             &vectors_batch,

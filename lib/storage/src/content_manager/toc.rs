@@ -11,7 +11,7 @@ use collection::operations::config_diff::DiffConfig;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
     CountRequest, CountResult, PointRequest, RecommendRequest, Record, ScrollRequest, ScrollResult,
-    SearchRequest, UpdateResult,
+    SearchRequest, SearchRequestBatch, UpdateResult,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::shard::collection_shard_distribution::CollectionShardDistribution;
@@ -574,6 +574,30 @@ impl TableOfContent {
         let collection = self.get_collection(collection_name).await?;
         collection
             .search(request, self.search_runtime.handle(), shard_selection)
+            .await
+            .map_err(|err| err.into())
+    }
+
+    /// Search in a batching fashion for the closest points using vector similarity with given restrictions defined
+    /// in the request
+    ///
+    /// # Arguments
+    ///
+    /// * `collection_name` - in what collection do we search
+    /// * `request` - [`SearchRequestBatch`]
+    /// * `shard_selection` - which local shard to use
+    /// # Result
+    ///
+    /// Points with search score
+    pub async fn search_batch(
+        &self,
+        collection_name: &str,
+        request: SearchRequestBatch,
+        shard_selection: Option<ShardId>,
+    ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+        collection
+            .search_batch(request, self.search_runtime.handle(), shard_selection)
             .await
             .map_err(|err| err.into())
     }

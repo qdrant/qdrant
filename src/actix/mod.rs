@@ -18,7 +18,7 @@ use crate::actix::api::collections_api::config_collections_api;
 use crate::actix::api::count_api::count_points;
 use crate::actix::api::recommend_api::recommend_points;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
-use crate::actix::api::search_api::search_points;
+use crate::actix::api::search_api::config_search_api;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::telemetry_api::config_telemetry_api;
 use crate::actix::api::update_api::config_update_api;
@@ -90,10 +90,10 @@ pub fn init(
                 .configure(config_update_api)
                 .configure(config_cluster_api)
                 .configure(config_telemetry_api)
+                .configure(config_search_api)
                 .service(get_point)
                 .service(get_points)
                 .service(scroll_points)
-                .service(search_points)
                 .service(recommend_points)
                 .service(count_points)
         })

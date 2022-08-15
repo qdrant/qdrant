@@ -44,6 +44,10 @@ service Points {
    */
   rpc Search (SearchPoints) returns (SearchResponse) {}
   /*
+   Retrieve closest points based on vector similarity and given filtering conditions
+    */
+  rpc SearchBatch (SearchBatchPoints) returns (SearchBatchResponse) {}
+  /*
   Iterate over all or filtered points points
   */
   rpc Scroll (ScrollPoints) returns (ScrollResponse) {}

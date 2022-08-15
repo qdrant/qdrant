@@ -13,10 +13,11 @@ use crate::operations::point_ops::{
     Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector,
 };
 use crate::operations::types::{
-    CollectionInfo, CollectionStatus, CountResult, OptimizersStatus, Record, UpdateResult,
-    UpdateStatus,
+    CollectionInfo, CollectionStatus, CountResult, OptimizersStatus, Record, SearchRequest,
+    UpdateResult, UpdateStatus,
 };
 use crate::optimizers_builder::OptimizersConfig;
+use crate::shard::remote_shard::CollectionSearchRequest;
 
 impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
     fn from(value: api::grpc::qdrant::HnswConfigDiff) -> Self {
@@ -431,5 +432,40 @@ impl From<CountResult> for api::grpc::qdrant::CountResult {
         Self {
             count: value.count as u64,
         }
+    }
+}
+
+// Use wrapper type to bundle CollectionId & SearchRequest
+impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
+    fn from(value: CollectionSearchRequest<'a>) -> Self {
+        let (collection_id, request) = value.0;
+        api::grpc::qdrant::SearchPoints {
+            collection_name: collection_id,
+            vector: request.vector.clone(),
+            filter: request.filter.clone().map(|f| f.into()),
+            limit: request.limit as u64,
+            with_vector: Some(request.with_vector),
+            with_payload: request.with_payload.clone().map(|wp| wp.into()),
+            params: request.params.map(|sp| sp.into()),
+            score_threshold: request.score_threshold,
+            offset: Some(request.offset as u64),
+        }
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequest {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::SearchPoints) -> Result<Self, Self::Error> {
+        Ok(SearchRequest {
+            vector: value.vector,
+            filter: value.filter.map(|f| f.try_into()).transpose()?,
+            params: value.params.map(|p| p.into()),
+            limit: value.limit as usize,
+            offset: value.offset.unwrap_or_default() as usize,
+            with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
+            with_vector: value.with_vector.unwrap_or(false),
+            score_threshold: value.score_threshold,
+        })
     }
 }

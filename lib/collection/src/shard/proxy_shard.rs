@@ -17,7 +17,7 @@ use crate::operations::operation_effect::{
 };
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    Record, SearchRequest, UpdateResult,
+    Record, SearchRequest, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shard::local_shard::LocalShard;
@@ -189,6 +189,18 @@ impl ShardOperation for ProxyShard {
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let local_shard = &self.wrapped_shard;
         local_shard.search(request, search_runtime_handle).await
+    }
+
+    /// Forward read-only `search_batch` to `wrapped_shard`
+    async fn search_batch(
+        &self,
+        request: Arc<SearchRequestBatch>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let local_shard = &self.wrapped_shard;
+        local_shard
+            .search_batch(request, search_runtime_handle)
+            .await
     }
 
     /// Forward read-only `count` to `wrapped_shard`
