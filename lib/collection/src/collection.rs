@@ -649,32 +649,13 @@ impl Collection {
         search_runtime_handle: &Handle,
         shard_selection: Option<ShardId>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        let request = Arc::new(request);
-
-        let all_searches_res = {
-            let shard_holder = self.shards_holder.read().await;
-            let target_shards = shard_holder.target_shards(shard_selection)?;
-            let all_searches = target_shards
-                .iter()
-                .map(|shard| shard.get().search(request.clone(), search_runtime_handle));
-            try_join_all(all_searches).await?.into_iter().flatten()
+        let request_batch = SearchRequestBatch {
+            searches: vec![request],
         };
-
-        let distance = self.config.read().await.params.distance;
-        let mut top_result = match distance.distance_order() {
-            Order::LargeBetter => {
-                peek_top_largest_scores_iterable(all_searches_res, request.limit + request.offset)
-            }
-            Order::SmallBetter => {
-                peek_top_smallest_scores_iterable(all_searches_res, request.limit + request.offset)
-            }
-        };
-
-        if request.offset > 0 {
-            // Remove offset from top result.
-            top_result.drain(..request.offset);
-        }
-        Ok(top_result)
+        let results = self
+            .search_batch(request_batch, search_runtime_handle, shard_selection)
+            .await?;
+        Ok(results.into_iter().next().unwrap())
     }
 
     // TODO what about a two steps payload retrieval mechanism there as well?
@@ -686,7 +667,8 @@ impl Collection {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let request = Arc::new(request);
 
-        let all_searches_res = {
+        // query all shards concurrently
+        let mut all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.target_shards(shard_selection)?;
             let all_searches = target_shards.iter().map(|shard| {
@@ -694,12 +676,20 @@ impl Collection {
                     .get()
                     .search_batch(request.clone(), search_runtime_handle)
             });
-            try_join_all(all_searches).await?.into_iter().flatten()
+            try_join_all(all_searches).await?
         };
 
+        // merged results from shards in order
+        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; request.searches.len()];
+        for shard_searches_results in all_searches_res.iter_mut() {
+            for (index, shard_searches_result) in shard_searches_results.iter_mut().enumerate() {
+                merged_results[index].append(shard_searches_result)
+            }
+        }
         let distance = self.config.read().await.params.distance;
-        let top_results: Vec<Vec<ScoredPoint>> = all_searches_res
-            .zip(request.searches.iter())
+        let top_results: Vec<Vec<ScoredPoint>> = merged_results
+            .into_iter()
+            .zip(request.clone().searches.iter())
             .map(|(res, request)| {
                 let mut top_res = match distance.distance_order() {
                     Order::LargeBetter => {

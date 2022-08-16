@@ -375,7 +375,7 @@ impl ShardOperation for RemoteShard {
             .collect();
 
         let request = &SearchBatchPointsInternal {
-            collection_name: "".to_string(),
+            collection_name: self.collection_id.clone(),
             search_points,
             shard_id: self.id,
         };
