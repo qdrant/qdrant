@@ -65,6 +65,9 @@ collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
 
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.5"
+
 [[bin]]
 name = "schema_generator"
 path = "src/schema_generator.rs"
