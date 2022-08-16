@@ -25,6 +25,8 @@ use storage::content_manager::consensus::persistent::Persistent;
 use storage::content_manager::consensus_state::{ConsensusState, ConsensusStateRef};
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
 
 use crate::common::helpers::create_search_runtime;
 use crate::common::telemetry::TelemetryCollector;
@@ -32,9 +34,6 @@ use crate::greeting::welcome;
 use crate::settings::Settings;
 use crate::snapshots::{recover_full_snapshot, recover_snapshots};
 use crate::startup::setup_logger;
-
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
