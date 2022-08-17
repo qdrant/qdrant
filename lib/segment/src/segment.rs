@@ -936,7 +936,7 @@ mod tests {
     // }
 
     #[test]
-    fn test_search_batch_equivalence() {
+    fn test_search_batch_equivalence_single() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let dim = 4;
         let config = SegmentConfig {
@@ -977,7 +977,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        eprintln!("search_batch_result = {:#?}", search_result);
+        eprintln!("search_batch_result = {:#?}", search_batch_result);
 
         assert!(!search_result.is_empty());
         assert_eq!(search_result, search_batch_result[0].clone())

@@ -658,7 +658,9 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
+    use crate::collection_manager::fixtures::{
+        build_segment_1, build_segment_2, empty_segment, random_segment,
+    };
 
     #[test]
     fn test_writing() {
@@ -723,7 +725,7 @@ mod tests {
     }
 
     #[test]
-    fn test_search_batch_equivalence() {
+    fn test_search_batch_equivalence_single() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let original_segment = LockedSegment::new(build_segment_1(dir.path()));
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
@@ -773,10 +775,115 @@ mod tests {
             )
             .unwrap();
 
-        eprintln!("search_batch_result = {:#?}", search_result);
+        eprintln!("search_batch_result = {:#?}", search_batch_result);
 
         assert!(!search_result.is_empty());
         assert_eq!(search_result, search_batch_result[0].clone())
+    }
+
+    #[test]
+    fn test_search_batch_equivalence_single_random() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let original_segment = LockedSegment::new(random_segment(dir.path(), 100, 200, 4));
+        let write_segment = LockedSegment::new(empty_segment(dir.path()));
+        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+
+        let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+        let created_indexes = Arc::new(RwLock::new(
+            HashMap::<PayloadKeyType, PayloadSchemaType>::new(),
+        ));
+
+        let proxy_segment = ProxySegment::new(
+            original_segment,
+            write_segment,
+            deleted_points,
+            created_indexes,
+            deleted_indexes,
+        );
+
+        let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+        let search_result = proxy_segment
+            .search(
+                &query_vector,
+                &WithPayload::default(),
+                false,
+                None,
+                10,
+                None,
+            )
+            .unwrap();
+
+        eprintln!("search_result = {:#?}", search_result);
+
+        let search_batch_result = proxy_segment
+            .search_batch(
+                &[&query_vector],
+                &WithPayload::default(),
+                false,
+                None,
+                10,
+                None,
+            )
+            .unwrap();
+
+        eprintln!("search_batch_result = {:#?}", search_batch_result);
+
+        assert!(!search_result.is_empty());
+        assert_eq!(search_result, search_batch_result[0].clone())
+    }
+
+    #[test]
+    fn test_search_batch_equivalence_multi_random() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let original_segment = LockedSegment::new(random_segment(dir.path(), 100, 200, 4));
+        let write_segment = LockedSegment::new(empty_segment(dir.path()));
+        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+
+        let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+        let created_indexes = Arc::new(RwLock::new(
+            HashMap::<PayloadKeyType, PayloadSchemaType>::new(),
+        ));
+
+        let proxy_segment = ProxySegment::new(
+            original_segment,
+            write_segment,
+            deleted_points,
+            created_indexes,
+            deleted_indexes,
+        );
+
+        let q1 = vec![1.0, 1.0, 1.0, 0.1];
+        let q2 = vec![1.0, 1.0, 0.1, 0.1];
+        let q3 = vec![1.0, 0.1, 1.0, 0.1];
+        let q4 = vec![0.1, 1.0, 1.0, 0.1];
+
+        let query_vectors: &[&[VectorElementType]] =
+            &[q1.as_slice(), q2.as_slice(), q3.as_slice(), q4.as_slice()];
+
+        let mut all_single_results = Vec::with_capacity(query_vectors.len());
+        for query_vector in query_vectors {
+            let res = proxy_segment
+                .search(query_vector, &WithPayload::default(), false, None, 10, None)
+                .unwrap();
+            all_single_results.push(res);
+        }
+
+        eprintln!("search_result = {:#?}", all_single_results);
+
+        let search_batch_result = proxy_segment
+            .search_batch(
+                query_vectors,
+                &WithPayload::default(),
+                false,
+                None,
+                10,
+                None,
+            )
+            .unwrap();
+
+        eprintln!("search_batch_result = {:#?}", search_batch_result);
+
+        assert_eq!(all_single_results, search_batch_result)
     }
 
     #[test]
