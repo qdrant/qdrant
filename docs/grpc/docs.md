@@ -44,6 +44,7 @@
     - [NullValue](#qdrant-NullValue)
   
 - [points.proto](#points-proto)
+    - [BatchResult](#qdrant-BatchResult)
     - [ClearPayloadPoints](#qdrant-ClearPayloadPoints)
     - [Condition](#qdrant-Condition)
     - [CountPoints](#qdrant-CountPoints)
@@ -80,6 +81,8 @@
     - [ScoredPoint.PayloadEntry](#qdrant-ScoredPoint-PayloadEntry)
     - [ScrollPoints](#qdrant-ScrollPoints)
     - [ScrollResponse](#qdrant-ScrollResponse)
+    - [SearchBatchPoints](#qdrant-SearchBatchPoints)
+    - [SearchBatchResponse](#qdrant-SearchBatchResponse)
     - [SearchParams](#qdrant-SearchParams)
     - [SearchPoints](#qdrant-SearchPoints)
     - [SearchResponse](#qdrant-SearchResponse)
@@ -718,6 +721,21 @@ The JSON representation for `Value` is JSON value.
 
 
 
+<a name="qdrant-BatchResult"></a>
+
+### BatchResult
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [ScoredPoint](#qdrant-ScoredPoint) | repeated |  |
+
+
+
+
+
+
 <a name="qdrant-ClearPayloadPoints"></a>
 
 ### ClearPayloadPoints
@@ -1326,6 +1344,38 @@ The JSON representation for `Value` is JSON value.
 
 
 
+<a name="qdrant-SearchBatchPoints"></a>
+
+### SearchBatchPoints
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| search_points | [SearchPoints](#qdrant-SearchPoints) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-SearchBatchResponse"></a>
+
+### SearchBatchResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [BatchResult](#qdrant-BatchResult) | repeated |  |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
 <a name="qdrant-SearchParams"></a>
 
 ### SearchParams
@@ -1547,6 +1597,7 @@ The JSON representation for `Value` is JSON value.
 | CreateFieldIndex | [CreateFieldIndexCollection](#qdrant-CreateFieldIndexCollection) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Create index for field in collection |
 | DeleteFieldIndex | [DeleteFieldIndexCollection](#qdrant-DeleteFieldIndexCollection) | [PointsOperationResponse](#qdrant-PointsOperationResponse) | Delete field index for collection |
 | Search | [SearchPoints](#qdrant-SearchPoints) | [SearchResponse](#qdrant-SearchResponse) | Retrieve closest points based on vector similarity and given filtering conditions |
+| SearchBatch | [SearchBatchPoints](#qdrant-SearchBatchPoints) | [SearchBatchResponse](#qdrant-SearchBatchResponse) | Retrieve closest points based on vector similarity and given filtering conditions |
 | Scroll | [ScrollPoints](#qdrant-ScrollPoints) | [ScrollResponse](#qdrant-ScrollResponse) | Iterate over all or filtered points points |
 | Recommend | [RecommendPoints](#qdrant-RecommendPoints) | [RecommendResponse](#qdrant-RecommendResponse) | Look for the points which are closer to stored positive examples and at the same time further to negative examples. |
 | Count | [CountPoints](#qdrant-CountPoints) | [CountResponse](#qdrant-CountResponse) | Count points in collection with given filtering conditions |
