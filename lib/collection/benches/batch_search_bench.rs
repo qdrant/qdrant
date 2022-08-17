@@ -131,7 +131,12 @@ fn batch_search_bench(c: &mut Criterion) {
                             score_threshold: None,
                         };
                         let result = (&shard)
-                            .search(Arc::new(search_query), search_runtime_handle)
+                            .search(
+                                Arc::new(SearchRequestBatch {
+                                    searches: vec![search_query],
+                                }),
+                                search_runtime_handle,
+                            )
                             .await
                             .unwrap();
                         assert!(!result.is_empty());
@@ -162,7 +167,7 @@ fn batch_search_bench(c: &mut Criterion) {
 
                     let search_query = SearchRequestBatch { searches };
                     let result = (&shard)
-                        .search_batch(Arc::new(search_query), search_runtime_handle)
+                        .search(Arc::new(search_query), search_runtime_handle)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());

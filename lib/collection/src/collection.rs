@@ -728,11 +728,9 @@ impl Collection {
         let mut all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.target_shards(shard_selection)?;
-            let all_searches = target_shards.iter().map(|shard| {
-                shard
-                    .get()
-                    .search_batch(request.clone(), search_runtime_handle)
-            });
+            let all_searches = target_shards
+                .iter()
+                .map(|shard| shard.get().search(request.clone(), search_runtime_handle));
             try_join_all(all_searches).await?
         };
 
@@ -746,7 +744,7 @@ impl Collection {
         let distance = self.config.read().await.params.distance;
         let top_results: Vec<Vec<ScoredPoint>> = merged_results
             .into_iter()
-            .zip(request.clone().searches.iter())
+            .zip(request.searches.iter())
             .map(|(res, request)| {
                 let mut top_res = match distance.distance_order() {
                     Order::LargeBetter => {

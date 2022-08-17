@@ -13,7 +13,7 @@ use segment::types::{
 use tokio::runtime::Handle;
 
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
-use crate::operations::types::{CollectionResult, Record, SearchRequest, SearchRequestBatch};
+use crate::operations::types::{CollectionResult, Record, SearchRequestBatch};
 
 /// Simple implementation of segment manager
 ///  - rebuild segment for memory optimization purposes
@@ -22,61 +22,6 @@ pub struct SegmentsSearcher {}
 
 impl SegmentsSearcher {
     pub async fn search(
-        segments: &RwLock<SegmentHolder>,
-        request: Arc<SearchRequest>,
-        runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
-        // Using { } block to ensure segments variable is dropped in the end of it
-        // and is not transferred across the all_searches.await? boundary as it
-        // does not impl Send trait
-        let searches: Vec<_> = {
-            let segments = segments.read();
-
-            let some_segment = segments.iter().next();
-
-            if some_segment.is_none() {
-                return Ok(vec![]);
-            }
-
-            segments
-                .iter()
-                .map(|(_id, segment)| search_in_segment(segment.clone(), request.clone()))
-                .map(|f| runtime_handle.spawn(f))
-                .collect()
-        };
-
-        let all_searches = try_join_all(searches);
-        let all_search_results = all_searches.await?;
-
-        match all_search_results
-            .iter()
-            .filter_map(|res| res.to_owned().err())
-            .next()
-        {
-            None => {}
-            Some(error) => return Err(error),
-        }
-
-        let mut seen_idx: HashSet<PointIdType> = HashSet::new();
-
-        let top_scores = peek_top_largest_scores_iterable(
-            all_search_results
-                .into_iter()
-                .flat_map(Result::unwrap) // already checked for errors
-                .sorted_by_key(|a| (a.id, 1 - a.version as i64)) // Prefer higher version first
-                .dedup_by(|a, b| a.id == b.id) // Keep only highest version
-                .filter(|scored| {
-                    let res = seen_idx.contains(&scored.id);
-                    seen_idx.insert(scored.id);
-                    !res
-                }),
-            request.limit + request.offset,
-        );
-
-        Ok(top_scores)
-    }
-
-    pub async fn search_batch(
         segments: &RwLock<SegmentHolder>,
         request: Arc<SearchRequestBatch>,
         runtime_handle: &Handle,
@@ -95,7 +40,7 @@ impl SegmentsSearcher {
 
             segments
                 .iter()
-                .map(|(_id, segment)| search_batch_in_segment(segment.clone(), request.clone()))
+                .map(|(_id, segment)| search_in_segment(segment.clone(), request.clone()))
                 .map(|f| runtime_handle.spawn(f))
                 .collect()
         };
@@ -188,29 +133,6 @@ impl SegmentsSearcher {
     }
 }
 
-async fn search_in_segment(
-    segment: LockedSegment,
-    request: Arc<SearchRequest>,
-) -> CollectionResult<Vec<ScoredPoint>> {
-    let with_payload_interface = request
-        .with_payload
-        .as_ref()
-        .unwrap_or(&WithPayloadInterface::Bool(false));
-    let with_payload = WithPayload::from(with_payload_interface);
-    let with_vector = request.with_vector;
-
-    let res = segment.get().read().search(
-        &request.vector,
-        &with_payload,
-        with_vector,
-        request.filter.as_ref(),
-        request.limit + request.offset,
-        request.params.as_ref(),
-    )?;
-
-    Ok(res)
-}
-
 #[derive(PartialEq, Default)]
 struct BatchSearchParams<'a> {
     pub filter: Option<&'a Filter>,
@@ -221,7 +143,7 @@ struct BatchSearchParams<'a> {
 }
 
 /// Process sequentially contiguous batches
-async fn search_batch_in_segment(
+async fn search_in_segment(
     segment: LockedSegment,
     request: Arc<SearchRequestBatch>,
 ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -290,6 +212,7 @@ mod tests {
 
     use super::*;
     use crate::collection_manager::fixtures::build_test_holder;
+    use crate::operations::types::SearchRequest;
 
     #[tokio::test]
     async fn test_segments_search() {
@@ -299,7 +222,7 @@ mod tests {
 
         let query = vec![1.0, 1.0, 1.0, 1.0];
 
-        let req = Arc::new(SearchRequest {
+        let req = SearchRequest {
             vector: query,
             with_payload: None,
             with_vector: false,
@@ -308,11 +231,19 @@ mod tests {
             limit: 5,
             score_threshold: None,
             offset: 0,
-        });
+        };
 
-        let result = SegmentsSearcher::search(&segment_holder, req, &Handle::current())
-            .await
-            .unwrap();
+        let batch_request = SearchRequestBatch {
+            searches: vec![req],
+        };
+
+        let result =
+            SegmentsSearcher::search(&segment_holder, Arc::new(batch_request), &Handle::current())
+                .await
+                .unwrap()
+                .into_iter()
+                .next()
+                .unwrap();
 
         // eprintln!("result = {:?}", &result);
 
