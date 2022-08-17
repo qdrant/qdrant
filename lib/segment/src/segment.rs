@@ -936,6 +936,54 @@ mod tests {
     // }
 
     #[test]
+    fn test_search_batch_equivalence() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let dim = 4;
+        let config = SegmentConfig {
+            vector_size: dim,
+            index: Indexes::Plain {},
+            storage_type: StorageType::InMemory,
+            distance: Distance::Dot,
+            payload_storage_type: Default::default(),
+        };
+        let mut segment = build_segment(dir.path(), &config).unwrap();
+
+        let vec4 = vec![1.1, 1.0, 0.0, 1.0];
+        segment.upsert_point(100, 4.into(), &vec4).unwrap();
+        let vec6 = vec![1.0, 1.0, 0.5, 1.0];
+        segment.upsert_point(101, 6.into(), &vec6).unwrap();
+        segment.delete_point(102, 1.into()).unwrap();
+
+        let query_vector = vec![1.0, 1.0, 1.0, 1.0];
+        let search_result = segment
+            .search(
+                &query_vector,
+                &WithPayload::default(),
+                false,
+                None,
+                10,
+                None,
+            )
+            .unwrap();
+        eprintln!("search_result = {:#?}", search_result);
+
+        let search_batch_result = segment
+            .search_batch(
+                &[&query_vector],
+                &WithPayload::default(),
+                false,
+                None,
+                10,
+                None,
+            )
+            .unwrap();
+        eprintln!("search_batch_result = {:#?}", search_result);
+
+        assert!(!search_result.is_empty());
+        assert_eq!(search_result, search_batch_result[0].clone())
+    }
+
+    #[test]
     fn test_from_filter_attributes() {
         let data = r#"
         {
