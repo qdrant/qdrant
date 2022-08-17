@@ -58,8 +58,6 @@ impl SegmentsSearcher {
             Some(error) => return Err(error),
         }
 
-        let mut seen_idx: HashSet<PointIdType> = HashSet::new();
-
         let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; request.searches.len()];
         for segment_result in all_search_results {
             let segment_result = segment_result.unwrap();
@@ -72,6 +70,7 @@ impl SegmentsSearcher {
             .into_iter()
             .zip(request.searches.iter())
             .map(|(all_search_results_per_vector, req)| {
+                let mut seen_idx: HashSet<PointIdType> = HashSet::new();
                 peek_top_largest_scores_iterable(
                     all_search_results_per_vector
                         .into_iter()
