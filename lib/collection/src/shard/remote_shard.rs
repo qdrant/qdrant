@@ -7,7 +7,7 @@ use api::grpc::qdrant::points_internal_client::PointsInternalClient;
 use api::grpc::qdrant::{
     CollectionOperationResponse, CountPoints, CountPointsInternal, GetCollectionInfoRequest,
     GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal, InitiateShardTransferRequest,
-    ScrollPoints, ScrollPointsInternal, SearchBatchPointsInternal, SearchPointsInternal,
+    ScrollPoints, ScrollPointsInternal, SearchBatchPointsInternal,
 };
 use async_trait::async_trait;
 use parking_lot::Mutex;
@@ -328,39 +328,6 @@ impl ShardOperation for RemoteShard {
     }
 
     async fn search(
-        &self,
-        request: Arc<SearchRequest>,
-        search_runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
-        let mut timer = TelemetryOperationTimer::new(&self.searches_telemetry);
-        timer.set_success(false);
-
-        let search_points =
-            CollectionSearchRequest((self.collection_id.clone(), request.as_ref())).into();
-        let request = &SearchPointsInternal {
-            search_points: Some(search_points),
-            shard_id: self.id,
-        };
-        let search_response = self
-            .with_points_client(|mut client| async move {
-                client.search(tonic::Request::new(request.clone())).await
-            })
-            .await?
-            .into_inner();
-
-        let result: Result<Vec<ScoredPoint>, Status> = search_response
-            .result
-            .into_iter()
-            .map(|scored| scored.try_into())
-            .collect();
-        let result = result.map_err(|e| e.into());
-        if result.is_ok() {
-            timer.set_success(true);
-        }
-        result
-    }
-
-    async fn search_batch(
         &self,
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,

@@ -24,7 +24,7 @@ use tonic::transport::Uri;
 
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequest, CountResult, PointRequest,
-    Record, SearchRequest, SearchRequestBatch, UpdateResult,
+    Record, SearchRequestBatch, UpdateResult,
 };
 use crate::operations::CollectionUpdateOperations;
 use crate::shard::forward_proxy_shard::ForwardProxyShard;
@@ -107,12 +107,6 @@ pub trait ShardOperation {
     async fn info(&self) -> CollectionResult<CollectionInfo>;
 
     async fn search(
-        &self,
-        request: Arc<SearchRequest>,
-        search_runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<ScoredPoint>>;
-
-    async fn search_batch(
         &self,
         request: Arc<SearchRequestBatch>,
         search_runtime_handle: &Handle,
