@@ -754,9 +754,14 @@ impl Collection {
                         peek_top_smallest_scores_iterable(res, request.limit + request.offset)
                     }
                 };
+                // Remove offset from top result.
                 if request.offset > 0 {
-                    // Remove offset from top result.
-                    top_res.drain(..request.offset);
+                    if top_res.len() >= request.offset {
+                        // Panics if the end point > length of the vector.
+                        top_res.drain(..request.offset);
+                    } else {
+                        top_res.clear()
+                    }
                 }
                 top_res
             })

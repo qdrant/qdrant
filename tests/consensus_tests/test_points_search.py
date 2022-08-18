@@ -87,9 +87,10 @@ def test_points_search(tmp_path: pathlib.Path):
     q = {
         "vector": [0.2, 0.1, 0.9, 0.7],
         "top": 3,
+        "offset": 1,
         "with_vector": True,
         "with_payload": True,
-        "score_threshold": 1.1
+        "score_threshold": 0.1
     }
     for uri in peer_api_uris:
         r_search = requests.post(
@@ -136,11 +137,13 @@ def test_points_search(tmp_path: pathlib.Path):
     q1 = {
         "vector": [0.2, 0.1, 0.9, 0.7],
         "top": 3,
+        "offset": 1,
         "with_vector": True
     }
     q2 = {
         "vector": [0.1, 0.2, 0.9, 0.7],
         "top": 5,
+        "offset": 3,
         "with_payload": True,
     }
     q3 = {
