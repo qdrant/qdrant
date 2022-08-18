@@ -83,6 +83,9 @@ def test_points_search(tmp_path: pathlib.Path):
     q = {
         "vector": [0.2, 0.1, 0.9, 0.7],
         "top": 3,
+        "with_vector": True,
+        "with_payload": True,
+        "score_threshold": 1.1
     }
     for uri in peer_api_uris:
         r_search = requests.post(
@@ -96,7 +99,10 @@ def test_points_search(tmp_path: pathlib.Path):
             }
         )
         assert_http_ok(r_batch)
-
+        # only one search in the batch
+        assert len(r_batch.json()["result"]) == 1
+        # assert same number of results
+        assert len(r_search.json()["result"]) == len(r_batch.json()["result"][0])
         assert r_search.json()["result"][0] == r_batch.json()["result"][0][0]
         assert r_search.json()["result"][1] == r_batch.json()["result"][0][1]
         assert r_search.json()["result"][2] == r_batch.json()["result"][0][2]
@@ -110,6 +116,13 @@ def test_points_search(tmp_path: pathlib.Path):
         )
         assert_http_ok(r_batch)
 
+        # assert num searches
+        assert len(r_batch.json()["result"]) == 3
+        # assert the search limit
+        assert len(r_batch.json()["result"][0]) == 3
+        assert len(r_batch.json()["result"][1]) == 3
+        assert len(r_batch.json()["result"][2]) == 3
+
         assert r_batch.json()["result"][0][0] == r_batch.json()["result"][1][0]
         assert r_batch.json()["result"][0][1] == r_batch.json()["result"][1][1]
         assert r_batch.json()["result"][0][2] == r_batch.json()["result"][1][2]
@@ -117,18 +130,21 @@ def test_points_search(tmp_path: pathlib.Path):
         assert r_batch.json()["result"][2][1] == r_batch.json()["result"][1][1]
         assert r_batch.json()["result"][2][2] == r_batch.json()["result"][1][2]
 
-    # Check that `search_batch` return the same results on all peers for multiple searches
+    # Check that `search_batch` return the same results on all peers compared to multiple searches
     q1 = {
         "vector": [0.2, 0.1, 0.9, 0.7],
         "top": 3,
+        "with_vector": True
     }
     q2 = {
         "vector": [0.1, 0.2, 0.9, 0.7],
-        "top": 3,
+        "top": 5,
+        "with_payload": True,
     }
     q3 = {
         "vector": [0.2, 0.1, 0.7, 0.9],
-        "top": 3,
+        "top": 10,
+        "score_threshold": 1.1
     }
     for uri in peer_api_uris:
         r_batch = requests.post(
