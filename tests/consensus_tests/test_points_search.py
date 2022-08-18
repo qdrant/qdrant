@@ -72,9 +72,13 @@ def test_points_search(tmp_path: pathlib.Path):
                  "payload": {"city": ["Berlin", "Moscow"]}},
                 {"id": 4, "vector": [0.18, 0.01, 0.85, 0.80],
                  "payload": {"city": ["London", "Moscow"]}},
-                {"id": 5, "vector": [0.24, 0.18, 0.22,
-                                     0.44], "payload": {"count": [0]}},
-                {"id": 6, "vector": [0.35, 0.08, 0.11, 0.44]}
+                {"id": 5, "vector": [0.24, 0.18, 0.22, 0.44],
+                 "payload": {"count": [0]}},
+                {"id": 6, "vector": [0.35, 0.08, 0.11, 0.44]},
+                {"id": 7, "vector": [0.45, 0.07, 0.21, 0.04]},
+                {"id": 8, "vector": [0.75, 0.18, 0.91, 0.48]},
+                {"id": 9, "vector": [0.30, 0.01, 0.1, 0.12]},
+                {"id": 10, "vector": [0.95, 0.8, 0.17, 0.19]}
             ]
         })
     assert_http_ok(r_batch)
@@ -111,24 +115,22 @@ def test_points_search(tmp_path: pathlib.Path):
     for uri in peer_api_uris:
         r_batch = requests.post(
             f"{uri}/collections/test_collection/points/search-batch", json={
-                "searches": [q, q, q]
+                "searches": [q, q, q, q]
             }
         )
         assert_http_ok(r_batch)
 
         # assert num searches
-        assert len(r_batch.json()["result"]) == 3
+        assert len(r_batch.json()["result"]) == 4
         # assert the search limit
         assert len(r_batch.json()["result"][0]) == 3
         assert len(r_batch.json()["result"][1]) == 3
         assert len(r_batch.json()["result"][2]) == 3
+        assert len(r_batch.json()["result"][3]) == 3
 
-        assert r_batch.json()["result"][0][0] == r_batch.json()["result"][1][0]
-        assert r_batch.json()["result"][0][1] == r_batch.json()["result"][1][1]
-        assert r_batch.json()["result"][0][2] == r_batch.json()["result"][1][2]
-        assert r_batch.json()["result"][2][0] == r_batch.json()["result"][1][0]
-        assert r_batch.json()["result"][2][1] == r_batch.json()["result"][1][1]
-        assert r_batch.json()["result"][2][2] == r_batch.json()["result"][1][2]
+        assert r_batch.json()["result"][0] == r_batch.json()["result"][1]
+        assert r_batch.json()["result"][2] == r_batch.json()["result"][1]
+        assert r_batch.json()["result"][3] == r_batch.json()["result"][1]
 
     # Check that `search_batch` return the same results on all peers compared to multiple searches
     q1 = {
